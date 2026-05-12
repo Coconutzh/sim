@@ -2973,17 +2973,6 @@ import {
   xWriteTool,
 } from '@/tools/x'
 import {
-  youtubeChannelInfoTool,
-  youtubeChannelPlaylistsTool,
-  youtubeChannelVideosTool,
-  youtubeCommentsTool,
-  youtubePlaylistItemsTool,
-  youtubeSearchTool,
-  youtubeTrendingTool,
-  youtubeVideoCategoriesTool,
-  youtubeVideoDetailsTool,
-} from '@/tools/youtube'
-import {
   zendeskAutocompleteOrganizationsTool,
   zendeskCreateOrganizationsBulkTool,
   zendeskCreateOrganizationTool,
@@ -3610,15 +3599,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   typeform_create_form: typeformCreateFormTool,
   typeform_update_form: typeformUpdateFormTool,
   typeform_delete_form: typeformDeleteFormTool,
-  youtube_channel_info: youtubeChannelInfoTool,
-  youtube_channel_playlists: youtubeChannelPlaylistsTool,
-  youtube_channel_videos: youtubeChannelVideosTool,
-  youtube_comments: youtubeCommentsTool,
-  youtube_playlist_items: youtubePlaylistItemsTool,
-  youtube_search: youtubeSearchTool,
-  youtube_trending: youtubeTrendingTool,
-  youtube_video_categories: youtubeVideoCategoriesTool,
-  youtube_video_details: youtubeVideoDetailsTool,
   notion_read: notionReadTool,
   notion_read_database: notionReadDatabaseTool,
   notion_write: notionWriteTool,

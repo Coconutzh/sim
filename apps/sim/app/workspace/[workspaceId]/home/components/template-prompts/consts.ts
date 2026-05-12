@@ -55,7 +55,6 @@ import {
   TypeformIcon,
   WebflowIcon,
   WordpressIcon,
-  YouTubeIcon,
   ZendeskIcon,
 } from '@/components/icons'
 import { MarkdownIcon } from '@/components/icons/document-icons'
@@ -571,16 +570,6 @@ const ALL_TEMPLATES: TemplatePrompt[] = [
     modules: ['files', 'agent', 'workflows'],
     category: 'marketing',
     tags: ['content', 'enterprise', 'automation'],
-  },
-  {
-    icon: YouTubeIcon,
-    title: 'Content repurposer',
-    prompt:
-      'Build a workflow that takes a YouTube video URL, pulls the video details and description, researches the topic on the web for additional context, and generates a Twitter thread, LinkedIn post, and blog summary optimized for each platform.',
-    integrationBlockTypes: ['youtube'],
-    modules: ['agent', 'files', 'workflows'],
-    category: 'marketing',
-    tags: ['marketing', 'content', 'automation'],
   },
   {
     icon: RedditIcon,

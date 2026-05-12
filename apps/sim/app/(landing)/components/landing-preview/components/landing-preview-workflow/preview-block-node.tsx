@@ -33,7 +33,6 @@ import {
   WebhookIcon,
   xAIIcon,
   xIcon,
-  YouTubeIcon,
 } from '@/components/icons'
 import {
   BLOCK_STAGGER,
@@ -49,7 +48,6 @@ const BLOCK_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   slack: SlackIcon,
   jira: JiraIcon,
   x: xIcon,
-  youtube: YouTubeIcon,
   schedule: ScheduleIcon,
   telegram: TelegramIcon,
   knowledge_base: Database,

@@ -14316,61 +14316,6 @@
     "tags": ["marketing", "messaging"]
   },
   {
-    "type": "youtube",
-    "slug": "youtube",
-    "name": "YouTube",
-    "description": "Interact with YouTube videos, channels, and playlists",
-    "longDescription": "Integrate YouTube into the workflow. Can search for videos, get trending videos, get video details, get video categories, get channel information, get all videos from a channel, get channel playlists, get playlist items, and get video comments.",
-    "bgColor": "#FF0000",
-    "iconName": "YouTubeIcon",
-    "docsUrl": "https://docs.sim.ai/tools/youtube",
-    "operations": [
-      {
-        "name": "Search Videos",
-        "description": "Search for videos on YouTube using the YouTube Data API. Supports advanced filtering by channel, date range, duration, category, quality, captions, live streams, and more."
-      },
-      {
-        "name": "Get Trending Videos",
-        "description": "Get the most popular/trending videos on YouTube. Can filter by region and video category."
-      },
-      {
-        "name": "Get Video Details",
-        "description": "Get detailed information about a specific YouTube video including statistics, content details, live streaming info, and metadata."
-      },
-      {
-        "name": "Get Video Categories",
-        "description": "Get a list of video categories available on YouTube. Use this to discover valid category IDs for filtering search and trending results."
-      },
-      {
-        "name": "Get Channel Info",
-        "description": "Get detailed information about a YouTube channel including statistics, branding, and content details."
-      },
-      {
-        "name": "Get Channel Videos",
-        "description": "Search for videos from a specific YouTube channel with sorting options. For complete channel video list, use channel_info to get uploadsPlaylistId, then use playlist_items."
-      },
-      {
-        "name": "Get Channel Playlists",
-        "description": "Get all public playlists from a specific YouTube channel."
-      },
-      {
-        "name": "Get Playlist Items",
-        "description": "Get videos from a YouTube playlist. Can be used with a channel uploads playlist to get all channel videos."
-      },
-      {
-        "name": "Get Video Comments",
-        "description": "Get top-level comments from a YouTube video with author details and engagement."
-      }
-    ],
-    "operationCount": 9,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "api-key",
-    "category": "tools",
-    "integrationTypes": ["communication", "analytics", "documents"],
-    "tags": ["google-workspace", "marketing", "content-management"]
-  },
-  {
     "type": "zendesk",
     "slug": "zendesk",
     "name": "Zendesk",
