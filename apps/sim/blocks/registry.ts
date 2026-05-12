@@ -188,7 +188,6 @@ import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpotifyBlock } from '@/blocks/blocks/spotify'
 import { SQSBlock } from '@/blocks/blocks/sqs'
 import { SSHBlock } from '@/blocks/blocks/ssh'
-import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StartTriggerBlock } from '@/blocks/blocks/start_trigger'
 import { StarterBlock } from '@/blocks/blocks/starter'
 import { StripeBlock } from '@/blocks/blocks/stripe'
@@ -439,7 +438,6 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   sqs: SQSBlock,
   ssh: SSHBlock,
   sts: STSBlock,
-  stagehand: StagehandBlock,
   start_trigger: StartTriggerBlock,
   starter: StarterBlock,
   stripe: StripeBlock,

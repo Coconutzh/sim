@@ -85,7 +85,6 @@ const nextConfig: NextConfig = {
     'isolated-vm',
   ],
   outputFileTracingIncludes: {
-    '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',

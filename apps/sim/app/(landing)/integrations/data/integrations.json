@@ -12698,33 +12698,6 @@
     "tags": ["cloud", "automation"]
   },
   {
-    "type": "stagehand",
-    "slug": "stagehand",
-    "name": "Stagehand",
-    "description": "Web automation and data extraction",
-    "longDescription": "Integrate Stagehand into the workflow. Can extract structured data from webpages or run an autonomous agent to perform tasks.",
-    "bgColor": "#FFC83C",
-    "iconName": "StagehandIcon",
-    "docsUrl": "https://docs.sim.ai/tools/stagehand",
-    "operations": [
-      {
-        "name": "Extract Data",
-        "description": "Extract structured data from a webpage using Stagehand"
-      },
-      {
-        "name": "Run Agent",
-        "description": "Run an autonomous web agent to complete tasks and extract structured data"
-      }
-    ],
-    "operationCount": 2,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "api-key",
-    "category": "tools",
-    "integrationTypes": ["ai", "developer-tools", "search"],
-    "tags": ["web-scraping", "automation", "agentic"]
-  },
-  {
     "type": "stripe",
     "slug": "stripe",
     "name": "Stripe",

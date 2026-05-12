@@ -2623,7 +2623,6 @@ import {
   sshUploadFileTool,
   sshWriteFileContentTool,
 } from '@/tools/ssh'
-import { stagehandAgentTool, stagehandExtractTool } from '@/tools/stagehand'
 import {
   stripeCancelPaymentIntentTool,
   stripeCancelSubscriptionTool,
@@ -4721,8 +4720,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   thinking_tool: thinkingTool,
   tinybird_events: tinybirdEventsTool,
   tinybird_query: tinybirdQueryTool,
-  stagehand_extract: stagehandExtractTool,
-  stagehand_agent: stagehandAgentTool,
   mem0_add_memories: mem0AddMemoriesTool,
   mem0_search_memories: mem0SearchMemoriesTool,
   mem0_get_memories: mem0GetMemoriesTool,
