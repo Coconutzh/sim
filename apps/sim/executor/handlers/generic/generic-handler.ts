@@ -5,7 +5,7 @@ import { isMcpTool } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { executeTool } from '@/tools'
-import { getTool } from '@/tools/utils'
+import { getTool, getToolUnavailableErrorMessage } from '@/tools/utils'
 
 const logger = createLogger('GenericBlockHandler')
 
@@ -25,7 +25,10 @@ export class GenericBlockHandler implements BlockHandler {
     if (!isMcp) {
       tool = getTool(block.config.tool)
       if (!tool) {
-        throw new Error(`Tool not found: ${block.config.tool}`)
+        throw new Error(
+          getToolUnavailableErrorMessage(block.config.tool) ??
+            `Tool not found: ${block.config.tool}`
+        )
       }
     }
 

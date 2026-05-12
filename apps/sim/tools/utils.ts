@@ -6,10 +6,11 @@ import {
   normalizeWorkflowVariables,
 } from '@/lib/core/utils/records'
 import type { EnvironmentVariable } from '@/lib/environment/api'
+import { getToolPolicyErrorMessage } from '@/lib/product/tool-policy'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { environmentKeys } from '@/hooks/queries/environment'
-import { tools } from '@/tools/registry'
+import { ALL_TOOLS, tools } from '@/tools/registry'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ToolsUtils')
@@ -61,11 +62,11 @@ export function getLatestVersionTools(
  * @returns The actual tool ID in the registry, or the original name if not found
  */
 export function resolveToolId(toolName: string): string {
-  if (tools[toolName]) {
+  if (tools[toolName] || ALL_TOOLS[toolName]) {
     return toolName
   }
 
-  const latestTools = getLatestVersionTools(tools)
+  const latestTools = getLatestVersionTools(ALL_TOOLS)
   for (const toolId of Object.keys(latestTools)) {
     if (stripVersionSuffix(toolId) === toolName) {
       return toolId
@@ -164,7 +165,7 @@ export function validateRequiredParametersAfterMerge(
   parameterNameMap?: Record<string, string>
 ): void {
   if (!tool) {
-    throw new Error(`Tool not found: ${toolId}`)
+    throw new Error(getToolUnavailableErrorMessage(toolId) ?? `Tool not found: ${toolId}`)
   }
 
   // Validate all required user-or-llm parameters after merge
@@ -290,6 +291,19 @@ export function getTool(toolId: string, _workspaceId?: string): ToolConfig | und
 
   // If not found or running on the server, return undefined
   return undefined
+}
+
+/**
+ * Returns a descriptive error message when a built-in tool is unavailable.
+ */
+export function getToolUnavailableErrorMessage(toolId: string): string | null {
+  const resolvedToolId = resolveToolId(toolId)
+  const builtInTool = ALL_TOOLS[resolvedToolId]
+  if (!builtInTool) {
+    return null
+  }
+
+  return getToolPolicyErrorMessage(resolvedToolId, builtInTool)
 }
 
 // Helper function to create a tool config from a custom tool

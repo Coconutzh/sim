@@ -3049,7 +3049,7 @@ import {
 } from '@/tools/zoom'
 
 // Registry of all available tools
-const ALL_TOOLS: Record<string, ToolConfig> = {
+export const ALL_TOOLS: Record<string, ToolConfig> = {
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_delete_push_notification: a2aDeletePushNotificationTool,
   a2a_get_agent_card: a2aGetAgentCardTool,

@@ -31,7 +31,12 @@ import type {
   ToolResponse,
   ToolRetryConfig,
 } from '@/tools/types'
-import { formatRequestParams, getTool, validateRequiredParametersAfterMerge } from '@/tools/utils'
+import {
+  formatRequestParams,
+  getTool,
+  getToolUnavailableErrorMessage,
+  validateRequiredParametersAfterMerge,
+} from '@/tools/utils'
 import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
@@ -794,7 +799,10 @@ export async function executeTool(
       // For built-in tools, use the synchronous version
       tool = getTool(normalizedToolId)
       if (!tool) {
-        logger.error(`[${requestId}] Built-in tool not found: ${normalizedToolId}`)
+        const unavailableMessage =
+          getToolUnavailableErrorMessage(normalizedToolId) ??
+          `Built-in tool not found: ${normalizedToolId}`
+        logger.error(`[${requestId}] ${unavailableMessage}`)
       }
     }
 

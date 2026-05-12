@@ -131,6 +131,29 @@ export function isToolEnabled(toolId: string, tool: ToolConfig): boolean {
 }
 
 /**
+ * Returns a descriptive error message when a built-in tool is disabled by product policy.
+ */
+export function getToolPolicyErrorMessage(
+  toolId: string,
+  tool: ToolConfig | undefined
+): string | null {
+  if (!TOOL_POLICY_ENABLED || !tool) {
+    return null
+  }
+
+  if (isToolEnabled(toolId, tool)) {
+    return null
+  }
+
+  const service = getToolService(toolId, tool)
+  if (service) {
+    return `Tool disabled in this product edition: ${toolId} (service: ${service})`
+  }
+
+  return `Tool disabled in this product edition: ${toolId}`
+}
+
+/**
  * Returns whether a block type is enabled under the current product policy.
  */
 export function isBlockEnabled(blockType: string): boolean {
