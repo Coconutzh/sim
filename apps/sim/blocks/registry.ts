@@ -233,9 +233,9 @@ import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
+import { filterEnabledBlockRegistry } from '@/lib/product/tool-policy'
 
-// Registry of all available blocks, alphabetically sorted
-export const registry: Record<string, BlockConfig> = {
+const ALL_BLOCKS: Record<string, BlockConfig> = {
   a2a: A2ABlock,
   agent: AgentBlock,
   agentmail: AgentMailBlock,
@@ -493,6 +493,8 @@ export const registry: Record<string, BlockConfig> = {
   zep: ZepBlock,
   zoom: ZoomBlock,
 }
+
+export const registry: Record<string, BlockConfig> = filterEnabledBlockRegistry(ALL_BLOCKS)
 
 export const getBlock = (type: string): BlockConfig | undefined => {
   if (registry[type]) {

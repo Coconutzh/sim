@@ -1,3 +1,4 @@
+import { filterEnabledToolsRegistry } from '@/lib/product/tool-policy'
 import {
   a2aCancelTaskTool,
   a2aDeletePushNotificationTool,
@@ -3048,7 +3049,7 @@ import {
 } from '@/tools/zoom'
 
 // Registry of all available tools
-export const tools: Record<string, ToolConfig> = {
+const ALL_TOOLS: Record<string, ToolConfig> = {
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_delete_push_notification: a2aDeletePushNotificationTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
@@ -5855,3 +5856,5 @@ export const tools: Record<string, ToolConfig> = {
   upstash_redis_exists: upstashRedisExistsTool,
   upstash_redis_setnx: upstashRedisSetnxTool,
 }
+
+export const tools: Record<string, ToolConfig> = filterEnabledToolsRegistry(ALL_TOOLS)
