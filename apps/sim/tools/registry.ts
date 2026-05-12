@@ -272,7 +272,6 @@ import {
   brightDataSnapshotStatusTool,
   brightDataSyncScrapeTool,
 } from '@/tools/brightdata'
-import { browserUseRunTaskTool } from '@/tools/browser_use'
 import {
   calcomCancelBookingTool,
   calcomConfirmBookingTool,
@@ -403,11 +402,6 @@ import {
   confluenceUploadAttachmentTool,
 } from '@/tools/confluence'
 import {
-  crowdstrikeGetSensorAggregatesTool,
-  crowdstrikeGetSensorDetailsTool,
-  crowdstrikeQuerySensorsTool,
-} from '@/tools/crowdstrike'
-import {
   cursorAddFollowupTool,
   cursorAddFollowupV2Tool,
   cursorDeleteAgentTool,
@@ -468,12 +462,6 @@ import {
   datadogSubmitMetricsTool,
 } from '@/tools/datadog'
 import {
-  devinCreateSessionTool,
-  devinGetSessionTool,
-  devinListSessionsTool,
-  devinSendMessageTool,
-} from '@/tools/devin'
-import {
   discordAddReactionTool,
   discordArchiveThreadTool,
   discordAssignRoleTool,
@@ -532,7 +520,6 @@ import {
   dropboxSearchTool,
   dropboxUploadTool,
 } from '@/tools/dropbox'
-import { chainOfThoughtTool, predictTool, reactTool } from '@/tools/dspy'
 import {
   dubCreateLinkTool,
   dubDeleteLinkTool,
@@ -3196,7 +3183,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   box_sign_list_requests: boxSignListRequestsTool,
   box_sign_cancel_request: boxSignCancelRequestTool,
   box_sign_resend_request: boxSignResendRequestTool,
-  browser_use_run_task: browserUseRunTaskTool,
   openai_embeddings: openAIEmbeddingsTool,
   http_request: httpRequestTool,
   webhook_request: webhookRequestTool,
@@ -3814,9 +3800,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   cloudwatch_list_metrics: cloudwatchListMetricsTool,
   cloudwatch_put_metric_data: cloudwatchPutMetricDataTool,
   cloudwatch_query_logs: cloudwatchQueryLogsTool,
-  crowdstrike_get_sensor_aggregates: crowdstrikeGetSensorAggregatesTool,
-  crowdstrike_get_sensor_details: crowdstrikeGetSensorDetailsTool,
-  crowdstrike_query_sensors: crowdstrikeQuerySensorsTool,
   dynamodb_get: dynamodbGetTool,
   dynamodb_put: dynamodbPutTool,
   dynamodb_query: dynamodbQueryTool,
@@ -3834,10 +3817,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   dropbox_get_metadata: dropboxGetMetadataTool,
   dropbox_create_shared_link: dropboxCreateSharedLinkTool,
   dropbox_search: dropboxSearchTool,
-  devin_create_session: devinCreateSessionTool,
-  devin_get_session: devinGetSessionTool,
-  devin_list_sessions: devinListSessionsTool,
-  devin_send_message: devinSendMessageTool,
   dagster_delete_run: dagsterDeleteRunTool,
   dagster_get_run: dagsterGetRunTool,
   dagster_get_run_logs: dagsterGetRunLogsTool,
@@ -3868,9 +3847,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   dub_update_link: dubUpdateLinkTool,
   dub_upsert_link: dubUpsertLinkTool,
   duckduckgo_search: duckduckgoSearchTool,
-  dspy_predict: predictTool,
-  dspy_chain_of_thought: chainOfThoughtTool,
-  dspy_react: reactTool,
   monday_archive_item: mondayArchiveItemTool,
   monday_create_group: mondayCreateGroupTool,
   monday_create_item: mondayCreateItemTool,

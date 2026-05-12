@@ -2040,24 +2040,6 @@
     "tags": ["web-scraping", "automation"]
   },
   {
-    "type": "browser_use",
-    "slug": "browser-use",
-    "name": "Browser Use",
-    "description": "Run browser automation tasks",
-    "longDescription": "Integrate Browser Use into the workflow. Can navigate the web and perform actions as if a real user was interacting with the browser.",
-    "bgColor": "#181C1E",
-    "iconName": "BrowserUseIcon",
-    "docsUrl": "https://docs.sim.ai/tools/browser_use",
-    "operations": [],
-    "operationCount": 0,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "api-key",
-    "category": "tools",
-    "integrationTypes": ["ai", "developer-tools", "search"],
-    "tags": ["web-scraping", "automation", "agentic"]
-  },
-  {
     "type": "calcom",
     "slug": "cal-com",
     "name": "Cal Com",
@@ -2870,37 +2852,6 @@
     "tags": ["knowledge-base", "content-management", "note-taking"]
   },
   {
-    "type": "crowdstrike",
-    "slug": "crowdstrike",
-    "name": "CrowdStrike",
-    "description": "Query CrowdStrike Identity Protection sensors and documented aggregates",
-    "longDescription": "Integrate CrowdStrike Identity Protection into workflows to search sensors, fetch documented sensor details by device ID, and run documented sensor aggregate queries.",
-    "bgColor": "#E01F3D",
-    "iconName": "CrowdStrikeIcon",
-    "docsUrl": "https://docs.sim.ai/tools/crowdstrike",
-    "operations": [
-      {
-        "name": "Query Sensors",
-        "description": "Search CrowdStrike identity protection sensors by hostname, IP, or related fields"
-      },
-      {
-        "name": "Get Sensor Details",
-        "description": "Get documented CrowdStrike Identity Protection sensor details for one or more device IDs"
-      },
-      {
-        "name": "Get Sensor Aggregates",
-        "description": "Get documented CrowdStrike Identity Protection sensor aggregates from a JSON aggregate query body"
-      }
-    ],
-    "operationCount": 3,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "none",
-    "category": "tools",
-    "integrationTypes": ["security", "analytics", "developer-tools"],
-    "tags": ["identity", "monitoring"]
-  },
-  {
     "type": "cursor_v2",
     "slug": "cursor",
     "name": "Cursor",
@@ -3147,41 +3098,6 @@
     "category": "tools",
     "integrationTypes": ["analytics", "developer-tools"],
     "tags": ["monitoring", "incident-management", "error-tracking"]
-  },
-  {
-    "type": "devin",
-    "slug": "devin",
-    "name": "Devin",
-    "description": "Autonomous AI software engineer",
-    "longDescription": "Integrate Devin into your workflow. Create sessions to assign coding tasks, send messages to guide active sessions, and retrieve session status and results. Devin autonomously writes, runs, and tests code.",
-    "bgColor": "#12141A",
-    "iconName": "DevinIcon",
-    "docsUrl": "https://docs.sim.ai/tools/devin",
-    "operations": [
-      {
-        "name": "Create Session",
-        "description": "Create a new Devin session with a prompt. Devin will autonomously work on the task described in the prompt."
-      },
-      {
-        "name": "Get Session",
-        "description": "Retrieve details of an existing Devin session including status, tags, pull requests, and structured output."
-      },
-      {
-        "name": "List Sessions",
-        "description": "List Devin sessions in the organization. Returns up to 100 sessions by default."
-      },
-      {
-        "name": "Send Message",
-        "description": "Send a message to a Devin session. If the session is suspended, it will be automatically resumed. Returns the updated session state."
-      }
-    ],
-    "operationCount": 4,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "api-key",
-    "category": "tools",
-    "integrationTypes": ["developer-tools", "ai"],
-    "tags": ["agentic", "automation"]
   },
   {
     "type": "discord",

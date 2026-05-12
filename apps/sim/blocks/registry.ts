@@ -20,7 +20,6 @@ import { AttioBlock } from '@/blocks/blocks/attio'
 import { BoxBlock } from '@/blocks/blocks/box'
 import { BrandfetchBlock } from '@/blocks/blocks/brandfetch'
 import { BrightDataBlock } from '@/blocks/blocks/brightdata'
-import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
 import { CalComBlock } from '@/blocks/blocks/calcom'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
@@ -33,16 +32,13 @@ import { CloudWatchBlock } from '@/blocks/blocks/cloudwatch'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { CredentialBlock } from '@/blocks/blocks/credential'
-import { CrowdStrikeBlock } from '@/blocks/blocks/crowdstrike'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
 import { DagsterBlock } from '@/blocks/blocks/dagster'
 import { DatabricksBlock } from '@/blocks/blocks/databricks'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
-import { DevinBlock } from '@/blocks/blocks/devin'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DocuSignBlock } from '@/blocks/blocks/docusign'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
-import { DSPyBlock } from '@/blocks/blocks/dspy'
 import { DubBlock } from '@/blocks/blocks/dub'
 import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
@@ -257,7 +253,6 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   box: BoxBlock,
   brandfetch: BrandfetchBlock,
   brightdata: BrightDataBlock,
-  browser_use: BrowserUseBlock,
   calcom: CalComBlock,
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,
@@ -265,7 +260,6 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   cloudflare: CloudflareBlock,
   cloudformation: CloudFormationBlock,
   cloudwatch: CloudWatchBlock,
-  crowdstrike: CrowdStrikeBlock,
   clay: ClayBlock,
   clerk: ClerkBlock,
   condition: ConditionBlock,
@@ -277,11 +271,9 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   dagster: DagsterBlock,
   databricks: DatabricksBlock,
   datadog: DatadogBlock,
-  devin: DevinBlock,
   discord: DiscordBlock,
   docusign: DocuSignBlock,
   dropbox: DropboxBlock,
-  dspy: DSPyBlock,
   dub: DubBlock,
   duckduckgo: DuckDuckGoBlock,
   dynamodb: DynamoDBBlock,
