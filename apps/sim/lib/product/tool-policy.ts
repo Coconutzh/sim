@@ -100,6 +100,9 @@ export function filterEnabledToolsRegistry(
 
 /**
  * Filters a block registry using the configured block policy.
+ * This is intended for user-visible surfaces such as toolbars, templates,
+ * and copilot block pickers. It should not be used to strip the canonical
+ * block registry that existing workflows depend on.
  */
 export function filterEnabledBlockRegistry(
   registry: Record<string, BlockConfig>
@@ -111,6 +114,17 @@ export function filterEnabledBlockRegistry(
   return Object.fromEntries(
     Object.entries(registry).filter(([blockType]) => isBlockEnabled(blockType))
   )
+}
+
+/**
+ * Filters a list of block configs for user-visible product surfaces.
+ */
+export function filterEnabledBlocks(blocks: BlockConfig[]): BlockConfig[] {
+  if (!BLOCK_POLICY_ENABLED) {
+    return blocks
+  }
+
+  return blocks.filter((block) => isBlockEnabled(block.type))
 }
 
 /**

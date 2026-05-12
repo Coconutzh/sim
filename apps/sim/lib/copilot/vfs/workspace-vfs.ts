@@ -80,6 +80,7 @@ import {
   getUsersWithPermissions,
   getWorkspaceWithOwner,
 } from '@/lib/workspaces/permissions/utils'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { getAllBlocks } from '@/blocks/registry'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import { tools as toolRegistry } from '@/tools/registry'
@@ -106,7 +107,7 @@ function getStaticComponentFiles(): Map<string, string> {
   const files = new Map<string, string>()
 
   const allBlocks = getAllBlocks()
-  const visibleBlocks = allBlocks.filter((b) => !b.hideFromToolbar)
+  const visibleBlocks = allBlocks.filter((b) => !b.hideFromToolbar && isBlockEnabled(b.type))
 
   let blocksFiltered = 0
   for (const block of visibleBlocks) {

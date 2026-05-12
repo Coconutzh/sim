@@ -8,6 +8,7 @@ import { listCopilotChatsContract } from '@/lib/api/contracts/copilot'
 import { listKnowledgeBasesContract } from '@/lib/api/contracts/knowledge/base'
 import { listLogsContract } from '@/lib/api/contracts/logs'
 import { listTemplatesContract } from '@/lib/api/contracts/templates'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -284,6 +285,7 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
             b.type !== 'starter' &&
             !b.hideFromToolbar &&
             b.category === 'blocks' &&
+            isBlockEnabled(b.type) &&
             isBlockAllowed(b.type)
         )
         .map((b: any) => ({
@@ -300,6 +302,7 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
             b.type !== 'starter' &&
             !b.hideFromToolbar &&
             b.category === 'tools' &&
+            isBlockEnabled(b.type) &&
             isBlockAllowed(b.type)
         )
         .map((b: any) => ({

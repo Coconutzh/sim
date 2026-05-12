@@ -7,6 +7,7 @@ import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { getAllowedIntegrationsFromEnv, isHosted } from '@/lib/core/config/feature-flags'
 import { getServiceAccountProviderForProviderId } from '@/lib/oauth/utils'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { registry as blockRegistry } from '@/blocks/registry'
 import { AuthMode, type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
@@ -161,6 +162,10 @@ export const getBlocksMetadataServerTool: BaseServerTool<
 
         if (blockConfig.hideFromToolbar) {
           logger.debug('Skipping block hidden from toolbar', { blockId })
+          continue
+        }
+        if (!isBlockEnabled(blockId)) {
+          logger.debug('Skipping block disabled by product policy', { blockId })
           continue
         }
         const tools: CopilotToolMetadata[] = Array.isArray(blockConfig.tools?.access)

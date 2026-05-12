@@ -1,4 +1,22 @@
 import type { PreviewWorkflow } from '@/app/(landing)/components/landing-preview/components/landing-preview-workflow/workflow-data'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
+
+const PREVIEW_TOOL_TYPE_TO_BLOCK_TYPE: Record<string, string> = {
+  knowledge_base: 'knowledge',
+}
+
+function isPreviewWorkflowEnabled(workflow: PreviewWorkflow): boolean {
+  return workflow.blocks.every((block) => {
+    if (block.type !== 'starter' && !isBlockEnabled(block.type)) {
+      return false
+    }
+
+    const tools = Array.isArray(block.tools) ? block.tools : []
+    return tools.every((tool) =>
+      isBlockEnabled(PREVIEW_TOOL_TYPE_TO_BLOCK_TYPE[tool.type] ?? tool.type)
+    )
+  })
+}
 
 /**
  * OCR Invoice to DB — Start → Agent (Textract) → Supabase
@@ -580,7 +598,7 @@ const KNOWLEDGE_QA_WORKFLOW: PreviewWorkflow = {
   ],
 }
 
-export const TEMPLATE_WORKFLOWS: PreviewWorkflow[] = [
+const ALL_TEMPLATE_WORKFLOWS: PreviewWorkflow[] = [
   OCR_INVOICE_WORKFLOW,
   GITHUB_RELEASE_WORKFLOW,
   MEETING_FOLLOWUP_WORKFLOW,
@@ -593,3 +611,6 @@ export const TEMPLATE_WORKFLOWS: PreviewWorkflow[] = [
   PR_REVIEW_WORKFLOW,
   KNOWLEDGE_QA_WORKFLOW,
 ]
+
+export const TEMPLATE_WORKFLOWS: PreviewWorkflow[] =
+  ALL_TEMPLATE_WORKFLOWS.filter(isPreviewWorkflowEnabled)

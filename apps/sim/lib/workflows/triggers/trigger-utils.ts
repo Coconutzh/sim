@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { filterEnabledBlocks } from '@/lib/product/tool-policy'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
 import {
   type StartBlockCandidate,
@@ -161,7 +162,7 @@ export interface TriggerInfo {
  * This includes both dedicated trigger blocks and tools with trigger capabilities
  */
 export function getAllTriggerBlocks(): TriggerInfo[] {
-  const allBlocks = getAllBlocks()
+  const allBlocks = filterEnabledBlocks(getAllBlocks())
   const triggers: TriggerInfo[] = []
 
   for (const block of allBlocks) {
@@ -224,7 +225,7 @@ export function hasTriggerCapability(block: BlockConfig): boolean {
  * This includes all trigger blocks and tools with trigger mode
  */
 export function getTriggersForSidebar(): BlockConfig[] {
-  const allBlocks = getAllBlocks()
+  const allBlocks = filterEnabledBlocks(getAllBlocks())
   return allBlocks.filter((block) => {
     if (block.hideFromToolbar) return false
     // Include blocks with triggers category or trigger-config subblock
@@ -237,7 +238,7 @@ export function getTriggersForSidebar(): BlockConfig[] {
  * This excludes only dedicated trigger blocks, not tools with trigger capability
  */
 export function getBlocksForSidebar(): BlockConfig[] {
-  const allBlocks = getAllBlocks()
+  const allBlocks = filterEnabledBlocks(getAllBlocks())
   return allBlocks.filter((block) => {
     if (block.hideFromToolbar) return false
     if (block.type === 'starter') return false // Legacy block

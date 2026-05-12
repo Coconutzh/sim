@@ -59,6 +59,7 @@ import {
   ZendeskIcon,
 } from '@/components/icons'
 import { MarkdownIcon } from '@/components/icons/document-icons'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 
 /**
  * Modules that a template leverages.
@@ -113,6 +114,25 @@ export interface TemplatePrompt {
   featured?: boolean
 }
 
+const MODULE_REQUIRED_BLOCK_TYPES: Record<ModuleTag, string[]> = {
+  'knowledge-base': ['knowledge'],
+  tables: ['table'],
+  files: ['file'],
+  workflows: [],
+  scheduled: ['schedule'],
+  agent: ['agent'],
+}
+
+function isTemplateEnabled(template: TemplatePrompt): boolean {
+  if (!template.integrationBlockTypes.every((blockType) => isBlockEnabled(blockType))) {
+    return false
+  }
+
+  return template.modules.every((module) =>
+    MODULE_REQUIRED_BLOCK_TYPES[module].every((blockType) => isBlockEnabled(blockType))
+  )
+}
+
 /**
  * To add a new template:
  * 1. Add an entry to this array with the required fields.
@@ -120,7 +140,7 @@ export interface TemplatePrompt {
  * 3. Optionally add a screenshot to `/public/templates/` and reference it in `image`.
  * 4. Add relevant `tags` for cross-cutting filtering (persona, pattern, domain).
  */
-export const TEMPLATES: TemplatePrompt[] = [
+const ALL_TEMPLATES: TemplatePrompt[] = [
   // ── Popular / Featured ──────────────────────────────────────────────────
   {
     icon: Table,
@@ -967,3 +987,5 @@ export const TEMPLATES: TemplatePrompt[] = [
     tags: ['founder', 'sales', 'support', 'enterprise', 'sync'],
   },
 ]
+
+export const TEMPLATES: TemplatePrompt[] = ALL_TEMPLATES.filter(isTemplateEnabled)
