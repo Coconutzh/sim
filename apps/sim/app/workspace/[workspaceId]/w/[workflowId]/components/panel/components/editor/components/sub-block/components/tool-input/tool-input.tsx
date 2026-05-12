@@ -26,6 +26,7 @@ import {
 } from '@/lib/mcp/tool-validation'
 import type { McpToolSchema } from '@/lib/mcp/types'
 import { getProviderIdFromServiceId, type OAuthProvider, type OAuthService } from '@/lib/oauth'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { McpServerFormModal } from '@/app/workspace/[workspaceId]/settings/components/mcp/components/mcp-server-form-modal/mcp-server-form-modal'
@@ -600,6 +601,7 @@ export const ToolInput = memo(function ToolInput({
   const toolBlocks = useMemo(() => {
     const allToolBlocks = getAllBlocks().filter(
       (block) =>
+        isBlockEnabled(block.type) &&
         !block.hideFromToolbar &&
         (block.category === 'tools' ||
           block.type === 'api' ||

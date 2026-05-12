@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { isValidKey } from '@/lib/workflows/sanitization/key-validation'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { getBlock } from '@/blocks/registry'
@@ -25,6 +26,14 @@ import {
 } from './validation'
 
 const logger = createLogger('EditWorkflowServerTool')
+
+function isContainerType(blockType: string): boolean {
+  return blockType === 'loop' || blockType === 'parallel'
+}
+
+function isProductEnabledBlockType(blockType: string): boolean {
+  return isContainerType(blockType) || isBlockEnabled(blockType)
+}
 
 /**
  * Applies loop/parallel container config from `inputs` onto a block state (data.loopType, etc.).
@@ -97,6 +106,17 @@ function processNestedNodesForParent(
         parentBlockId,
         childId,
         childId_type: typeof childId,
+      })
+      return
+    }
+
+    if (!isProductEnabledBlockType(childBlock.type)) {
+      logSkippedItem(skippedItems, {
+        type: 'block_not_allowed',
+        operationType: 'add_nested_node',
+        blockId: childId,
+        reason: `Block type "${childBlock.type}" is disabled by product policy - nested block not added`,
+        details: { requestedType: childBlock.type, parentBlockId },
       })
       return
     }
@@ -268,6 +288,17 @@ function mergeNestedNodesForParent(
         operationType: 'add_nested_node',
         blockId: String(childId || 'invalid'),
         reason: `Invalid childId "${childId}" in nestedNodes - child block skipped`,
+      })
+      return
+    }
+
+    if (!isProductEnabledBlockType(childBlock.type)) {
+      logSkippedItem(skippedItems, {
+        type: 'block_not_allowed',
+        operationType: 'add_nested_node',
+        blockId: childId,
+        reason: `Block type "${childBlock.type}" is disabled by product policy - nested block not added`,
+        details: { requestedType: childBlock.type, parentBlockId },
       })
       return
     }
@@ -561,12 +592,10 @@ export function handleEditOperation(op: EditWorkflowOperation, ctx: OperationCon
 
   // Update basic properties
   if (params?.type !== undefined) {
-    // Special container types (loop, parallel) are not in the block registry but are valid
-    const isContainerType = params.type === 'loop' || params.type === 'parallel'
+    const requestedContainerType = isContainerType(params.type)
 
-    // Validate type before setting (skip validation for container types)
     const blockConfig = getBlock(params.type)
-    if (!blockConfig && !isContainerType) {
+    if (!blockConfig && !requestedContainerType) {
       logSkippedItem(skippedItems, {
         type: 'invalid_block_type',
         operationType: 'edit',
@@ -574,7 +603,15 @@ export function handleEditOperation(op: EditWorkflowOperation, ctx: OperationCon
         reason: `Invalid block type "${params.type}" - type change skipped`,
         details: { requestedType: params.type },
       })
-    } else if (!isContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
+    } else if (!isProductEnabledBlockType(params.type)) {
+      logSkippedItem(skippedItems, {
+        type: 'block_not_allowed',
+        operationType: 'edit',
+        blockId: block_id,
+        reason: `Block type "${params.type}" is disabled by product policy - type change skipped`,
+        details: { requestedType: params.type },
+      })
+    } else if (!requestedContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
       logSkippedItem(skippedItems, {
         type: 'block_not_allowed',
         operationType: 'edit',
@@ -730,11 +767,10 @@ export function handleAddOperation(op: EditWorkflowOperation, ctx: OperationCont
   }
 
   // Special container types (loop, parallel) are not in the block registry but are valid
-  const isContainerType = params.type === 'loop' || params.type === 'parallel'
+  const requestedContainerType = isContainerType(params.type)
 
-  // Validate block type before adding (skip validation for container types)
   const addBlockConfig = getBlock(params.type)
-  if (!addBlockConfig && !isContainerType) {
+  if (!addBlockConfig && !requestedContainerType) {
     logSkippedItem(skippedItems, {
       type: 'invalid_block_type',
       operationType: 'add',
@@ -745,8 +781,18 @@ export function handleAddOperation(op: EditWorkflowOperation, ctx: OperationCont
     return
   }
 
-  // Check if block type is allowed by permission group
-  if (!isContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
+  if (!isProductEnabledBlockType(params.type)) {
+    logSkippedItem(skippedItems, {
+      type: 'block_not_allowed',
+      operationType: 'add',
+      blockId: block_id,
+      reason: `Block type "${params.type}" is disabled by product policy - block not added`,
+      details: { requestedType: params.type },
+    })
+    return
+  }
+
+  if (!requestedContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
     logSkippedItem(skippedItems, {
       type: 'block_not_allowed',
       operationType: 'add',
@@ -962,11 +1008,10 @@ export function handleInsertIntoSubflowOperation(
     }
   } else {
     // Special container types (loop, parallel) are not in the block registry but are valid
-    const isContainerType = params.type === 'loop' || params.type === 'parallel'
+    const requestedContainerType = isContainerType(params.type)
 
-    // Validate block type before creating (skip validation for container types)
     const insertBlockConfig = getBlock(params.type)
-    if (!insertBlockConfig && !isContainerType) {
+    if (!insertBlockConfig && !requestedContainerType) {
       logSkippedItem(skippedItems, {
         type: 'invalid_block_type',
         operationType: 'insert_into_subflow',
@@ -977,8 +1022,18 @@ export function handleInsertIntoSubflowOperation(
       return
     }
 
-    // Check if block type is allowed by permission group
-    if (!isContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
+    if (!isProductEnabledBlockType(params.type)) {
+      logSkippedItem(skippedItems, {
+        type: 'block_not_allowed',
+        operationType: 'insert_into_subflow',
+        blockId: block_id,
+        reason: `Block type "${params.type}" is disabled by product policy - block not inserted`,
+        details: { requestedType: params.type, subflowId },
+      })
+      return
+    }
+
+    if (!requestedContainerType && !isBlockTypeAllowed(params.type, permissionConfig)) {
       logSkippedItem(skippedItems, {
         type: 'block_not_allowed',
         operationType: 'insert_into_subflow',

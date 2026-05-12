@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { filterEnabledBlocks } from '@/lib/product/tool-policy'
 import { getAllBlocks } from '@/blocks'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 
@@ -122,7 +123,7 @@ function resolveToolId(block: BlockConfig, operationId: string): string | null {
  */
 export function buildToolOperationsIndex(): ToolOperationItem[] {
   const operations: ToolOperationItem[] = []
-  const allBlocks = getAllBlocks()
+  const allBlocks = filterEnabledBlocks(getAllBlocks())
 
   for (const block of allBlocks) {
     if (!block.tools?.access?.length || block.hideFromToolbar) {

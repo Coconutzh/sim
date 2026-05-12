@@ -2,6 +2,7 @@ import type { BlockConfig } from '@/blocks/types'
 import type { ToolConfig } from '@/tools/types'
 
 const TAPNOW_MVP_PRESET = 'tapnow-mvp'
+const DISABLED_PRESET_NAMES = new Set(['all', 'full', 'off'])
 
 const TAPNOW_RECOMMENDED_TOOL_SERVICES = [
   'file',
@@ -42,7 +43,10 @@ const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
   'webhook_request',
 ] as const
 
-const PRESET_NAME = normalizeToken(process.env.NEXT_PUBLIC_SIM_TOOL_POLICY_PRESET)
+const CONFIGURED_PRESET_NAME = normalizeToken(process.env.NEXT_PUBLIC_SIM_TOOL_POLICY_PRESET)
+const PRESET_NAME = DISABLED_PRESET_NAMES.has(CONFIGURED_PRESET_NAME)
+  ? ''
+  : CONFIGURED_PRESET_NAME || TAPNOW_MVP_PRESET
 
 const ENABLED_TOOL_SERVICES = createConfiguredSet(
   process.env.NEXT_PUBLIC_SIM_ENABLED_TOOL_SERVICES,
