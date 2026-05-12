@@ -634,7 +634,6 @@ export const auth = betterAuth({
         'pipedrive',
         'hubspot',
         'linkedin',
-        'spotify',
         'google-email',
         'google-calendar',
         'google-contacts',
@@ -2661,55 +2660,6 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error in Zoom getUserInfo:', { error })
-              return null
-            }
-          },
-        },
-
-        // Spotify provider
-        {
-          providerId: 'spotify',
-          clientId: env.SPOTIFY_CLIENT_ID as string,
-          clientSecret: env.SPOTIFY_CLIENT_SECRET as string,
-          authorizationUrl: 'https://accounts.spotify.com/authorize',
-          tokenUrl: 'https://accounts.spotify.com/api/token',
-          userInfoUrl: 'https://api.spotify.com/v1/me',
-          scopes: getCanonicalScopesForProvider('spotify'),
-          responseType: 'code',
-          authentication: 'basic',
-          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/spotify`,
-          getUserInfo: async (tokens) => {
-            try {
-              logger.info('Fetching Spotify user profile')
-
-              const response = await fetch('https://api.spotify.com/v1/me', {
-                headers: {
-                  Authorization: `Bearer ${tokens.accessToken}`,
-                },
-              })
-
-              if (!response.ok) {
-                await response.text().catch(() => {})
-                logger.error('Failed to fetch Spotify user info', {
-                  status: response.status,
-                  statusText: response.statusText,
-                })
-                throw new Error('Failed to fetch user info')
-              }
-
-              const profile = await response.json()
-
-              return {
-                id: `${profile.id.toString()}-${generateId()}`,
-                name: profile.display_name || 'Spotify User',
-                email: profile.email || `${profile.id}@spotify.user`,
-                emailVerified: true,
-                image: profile.images?.[0]?.url || undefined,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              }
-            } catch (error) {
-              logger.error('Error in Spotify getUserInfo:', { error })
               return null
             }
           },

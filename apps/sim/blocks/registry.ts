@@ -185,7 +185,6 @@ import { SimilarwebBlock } from '@/blocks/blocks/similarweb'
 import { SixtyfourBlock } from '@/blocks/blocks/sixtyfour'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
-import { SpotifyBlock } from '@/blocks/blocks/spotify'
 import { SQSBlock } from '@/blocks/blocks/sqs'
 import { SSHBlock } from '@/blocks/blocks/ssh'
 import { StartTriggerBlock } from '@/blocks/blocks/start_trigger'
@@ -432,7 +431,6 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   sixtyfour: SixtyfourBlock,
   slack: SlackBlock,
   smtp: SmtpBlock,
-  spotify: SpotifyBlock,
   secrets_manager: SecretsManagerBlock,
   ses: SESBlock,
   sqs: SQSBlock,

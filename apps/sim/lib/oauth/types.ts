@@ -60,7 +60,6 @@ export type OAuthProvider =
   | 'shopify'
   | 'zoom'
   | 'wordpress'
-  | 'spotify'
   | 'calcom'
   | 'docusign'
 
@@ -111,7 +110,6 @@ export type OAuthService =
   | 'shopify'
   | 'zoom'
   | 'wordpress'
-  | 'spotify'
   | 'calcom'
   | 'docusign'
   | 'github'

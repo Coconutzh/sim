@@ -47,8 +47,6 @@ vi.mock('@/lib/core/config/env', () =>
     ZOOM_CLIENT_SECRET: 'zoom_client_secret',
     WORDPRESS_CLIENT_ID: 'wordpress_client_id',
     WORDPRESS_CLIENT_SECRET: 'wordpress_client_secret',
-    SPOTIFY_CLIENT_ID: 'spotify_client_id',
-    SPOTIFY_CLIENT_SECRET: 'spotify_client_secret',
   })
 )
 
@@ -107,11 +105,6 @@ describe('OAuth Token Refresh', () => {
         name: 'Zoom',
         providerId: 'zoom',
         endpoint: 'https://zoom.us/oauth/token',
-      },
-      {
-        name: 'Spotify',
-        providerId: 'spotify',
-        endpoint: 'https://accounts.spotify.com/api/token',
       },
     ]
 

@@ -522,13 +522,6 @@ describe('parseProvider', () => {
     expect(config.featureType).toBe('wordpress')
   })
 
-  it.concurrent('should parse Spotify provider', () => {
-    const config = parseProvider('spotify' as OAuthProvider)
-
-    expect(config.baseProvider).toBe('spotify')
-    expect(config.featureType).toBe('spotify')
-  })
-
   it.concurrent('should fallback to default for unknown compound provider', () => {
     const config = parseProvider('unknown-provider' as OAuthProvider)
 
