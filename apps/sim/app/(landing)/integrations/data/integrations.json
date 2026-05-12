@@ -13814,49 +13814,6 @@
     "tags": ["llm", "document-processing", "ocr"]
   },
   {
-    "type": "wealthbox",
-    "slug": "wealthbox",
-    "name": "Wealthbox",
-    "description": "Interact with Wealthbox",
-    "longDescription": "Integrate Wealthbox into the workflow. Can read and write notes, read and write contacts, and read and write tasks.",
-    "bgColor": "#E0E0E0",
-    "iconName": "WealthboxIcon",
-    "docsUrl": "https://docs.sim.ai/tools/wealthbox",
-    "operations": [
-      {
-        "name": "Read Note",
-        "description": "Read content from a Wealthbox note"
-      },
-      {
-        "name": "Write Note",
-        "description": "Create or update a Wealthbox note"
-      },
-      {
-        "name": "Read Contact",
-        "description": "Read content from a Wealthbox contact"
-      },
-      {
-        "name": "Write Contact",
-        "description": "Create a new Wealthbox contact"
-      },
-      {
-        "name": "Read Task",
-        "description": "Read content from a Wealthbox task"
-      },
-      {
-        "name": "Write Task",
-        "description": "Create or update a Wealthbox task"
-      }
-    ],
-    "operationCount": 6,
-    "triggers": [],
-    "triggerCount": 0,
-    "authType": "oauth",
-    "category": "tools",
-    "integrationTypes": ["crm", "customer-support", "sales"],
-    "tags": ["sales-engagement", "customer-support"]
-  },
-  {
     "type": "webflow",
     "slug": "webflow",
     "name": "Webflow",

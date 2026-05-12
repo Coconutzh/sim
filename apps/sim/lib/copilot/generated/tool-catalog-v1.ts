@@ -2538,7 +2538,7 @@ export const SearchPatterns: ToolCatalogEntry = {
           'Up to 3 descriptive strings explaining the workflow pattern(s) you need. Focus on intent and desired outcomes.',
         items: {
           type: 'string',
-          description: 'Example: "how to automate wealthbox meeting notes into follow-up tasks"',
+          description: 'Example: "how to turn meeting notes into follow-up tasks"',
         },
       },
     },

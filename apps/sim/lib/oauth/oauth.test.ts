@@ -27,8 +27,6 @@ vi.mock('@/lib/core/config/env', () =>
     REDDIT_CLIENT_SECRET: 'reddit_client_secret',
     DROPBOX_CLIENT_ID: 'dropbox_client_id',
     DROPBOX_CLIENT_SECRET: 'dropbox_client_secret',
-    WEALTHBOX_CLIENT_ID: 'wealthbox_client_id',
-    WEALTHBOX_CLIENT_SECRET: 'wealthbox_client_secret',
     WEBFLOW_CLIENT_ID: 'webflow_client_id',
     WEBFLOW_CLIENT_SECRET: 'webflow_client_secret',
     ASANA_CLIENT_ID: 'asana_client_id',
@@ -176,11 +174,6 @@ describe('OAuth Token Refresh', () => {
         name: 'Dropbox',
         providerId: 'dropbox',
         endpoint: 'https://api.dropboxapi.com/oauth2/token',
-      },
-      {
-        name: 'Wealthbox',
-        providerId: 'wealthbox',
-        endpoint: 'https://app.crmworkspace.com/oauth/token',
       },
       {
         name: 'Webflow',

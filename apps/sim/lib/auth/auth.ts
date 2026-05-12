@@ -662,7 +662,6 @@ export const auth = betterAuth({
         'box',
         'dropbox',
         'salesforce',
-        'wealthbox',
         'zoom',
         'wordpress',
         'linear',
@@ -1601,38 +1600,6 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/sharepoint`,
           getUserInfo: async (tokens) => {
             return getMicrosoftUserInfoFromIdToken(tokens, 'sharepoint')
-          },
-        },
-
-        {
-          providerId: 'wealthbox',
-          clientId: env.WEALTHBOX_CLIENT_ID as string,
-          clientSecret: env.WEALTHBOX_CLIENT_SECRET as string,
-          authorizationUrl: 'https://app.crmworkspace.com/oauth/authorize',
-          tokenUrl: 'https://app.crmworkspace.com/oauth/token',
-          userInfoUrl: 'https://dummy-not-used.wealthbox.com', // Dummy URL since no user info endpoint exists
-          scopes: getCanonicalScopesForProvider('wealthbox'),
-          responseType: 'code',
-          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wealthbox`,
-          getUserInfo: async (_tokens) => {
-            try {
-              logger.info('Creating Wealthbox user profile from token data')
-
-              const uniqueId = 'wealthbox-user'
-              const now = new Date()
-
-              return {
-                id: `${uniqueId}-${generateId()}`,
-                name: 'Wealthbox User',
-                email: `${uniqueId}@wealthbox.user`,
-                emailVerified: false,
-                createdAt: now,
-                updatedAt: now,
-              }
-            } catch (error) {
-              logger.error('Error creating Wealthbox user profile:', { error })
-              return null
-            }
           },
         },
 

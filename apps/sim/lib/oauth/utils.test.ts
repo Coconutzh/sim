@@ -452,13 +452,6 @@ describe('parseProvider', () => {
     expect(config.featureType).toBe('reddit')
   })
 
-  it.concurrent('should parse Wealthbox provider', () => {
-    const config = parseProvider('wealthbox' as OAuthProvider)
-
-    expect(config.baseProvider).toBe('wealthbox')
-    expect(config.featureType).toBe('wealthbox')
-  })
-
   it.concurrent('should parse Webflow provider', () => {
     const config = parseProvider('webflow' as OAuthProvider)
 

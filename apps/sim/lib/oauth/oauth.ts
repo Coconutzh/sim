@@ -44,7 +44,6 @@ import {
   SlackIcon,
   TrelloIcon,
   VertexIcon,
-  WealthboxIcon,
   WebflowIcon,
   WordpressIcon,
   xIcon,
@@ -746,21 +745,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'reddit',
   },
-  wealthbox: {
-    name: 'Wealthbox',
-    icon: WealthboxIcon,
-    services: {
-      wealthbox: {
-        name: 'Wealthbox',
-        description: 'Manage contacts, notes, and tasks in your Wealthbox CRM.',
-        providerId: 'wealthbox',
-        icon: WealthboxIcon,
-        baseProviderIcon: WealthboxIcon,
-        scopes: ['login', 'data'],
-      },
-    },
-    defaultService: 'wealthbox',
-  },
   webflow: {
     name: 'Webflow',
     icon: WebflowIcon,
@@ -1217,19 +1201,6 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         additionalHeaders: {
           'User-Agent': 'sim-studio/1.0 (https://github.com/simstudioai/sim)',
         },
-      }
-    }
-    case 'wealthbox': {
-      const { clientId, clientSecret } = getCredentials(
-        env.WEALTHBOX_CLIENT_ID,
-        env.WEALTHBOX_CLIENT_SECRET
-      )
-      return {
-        tokenEndpoint: 'https://app.crmworkspace.com/oauth/token',
-        clientId,
-        clientSecret,
-        useBasicAuth: false,
-        supportsRefreshTokenRotation: true,
       }
     }
     case 'webflow': {

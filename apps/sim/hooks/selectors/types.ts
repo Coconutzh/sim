@@ -36,7 +36,6 @@ export type SelectorKey =
   | 'microsoft.teams'
   | 'microsoft.chats'
   | 'microsoft.channels'
-  | 'wealthbox.contacts'
   | 'onedrive.files'
   | 'onedrive.folders'
   | 'sharepoint.sites'

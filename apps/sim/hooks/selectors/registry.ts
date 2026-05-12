@@ -18,7 +18,6 @@ import { sharepointSelectors } from '@/hooks/selectors/providers/sharepoint/sele
 import { simSelectors } from '@/hooks/selectors/providers/sim/selectors'
 import { slackSelectors } from '@/hooks/selectors/providers/slack/selectors'
 import { trelloSelectors } from '@/hooks/selectors/providers/trello/selectors'
-import { wealthboxSelectors } from '@/hooks/selectors/providers/wealthbox/selectors'
 import { webflowSelectors } from '@/hooks/selectors/providers/webflow/selectors'
 import { zoomSelectors } from '@/hooks/selectors/providers/zoom/selectors'
 import type { SelectorDefinition, SelectorKey, SelectorOption } from '@/hooks/selectors/types'
@@ -39,7 +38,6 @@ export const selectorRegistry = {
   ...trelloSelectors,
   ...zoomSelectors,
   ...slackSelectors,
-  ...wealthboxSelectors,
   ...jiraSelectors,
   ...mondaySelectors,
   ...linearSelectors,

@@ -2795,14 +2795,6 @@ import {
 } from '@/tools/video'
 import { visionTool, visionToolV2 } from '@/tools/vision'
 import {
-  wealthboxReadContactTool,
-  wealthboxReadNoteTool,
-  wealthboxReadTaskTool,
-  wealthboxWriteContactTool,
-  wealthboxWriteNoteTool,
-  wealthboxWriteTaskTool,
-} from '@/tools/wealthbox'
-import {
   webflowCreateItemTool,
   webflowDeleteItemTool,
   webflowGetItemTool,
@@ -5043,12 +5035,6 @@ export const ALL_TOOLS: Record<string, ToolConfig> = {
   google_forms_delete_watch: googleFormsDeleteWatchTool,
   google_forms_renew_watch: googleFormsRenewWatchTool,
   workflow_executor: workflowExecutorTool,
-  wealthbox_read_contact: wealthboxReadContactTool,
-  wealthbox_write_contact: wealthboxWriteContactTool,
-  wealthbox_read_task: wealthboxReadTaskTool,
-  wealthbox_write_task: wealthboxWriteTaskTool,
-  wealthbox_read_note: wealthboxReadNoteTool,
-  wealthbox_write_note: wealthboxWriteNoteTool,
   webflow_list_items: webflowListItemsTool,
   webflow_get_item: webflowGetItemTool,
   webflow_create_item: webflowCreateItemTool,

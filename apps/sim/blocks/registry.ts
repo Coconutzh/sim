@@ -212,7 +212,6 @@ import { VercelBlock } from '@/blocks/blocks/vercel'
 import { VideoGeneratorBlock, VideoGeneratorV2Block } from '@/blocks/blocks/video_generator'
 import { VisionBlock, VisionV2Block } from '@/blocks/blocks/vision'
 import { WaitBlock } from '@/blocks/blocks/wait'
-import { WealthboxBlock } from '@/blocks/blocks/wealthbox'
 import { WebflowBlock } from '@/blocks/blocks/webflow'
 import { WebhookRequestBlock } from '@/blocks/blocks/webhook_request'
 import { WhatsAppBlock } from '@/blocks/blocks/whatsapp'
@@ -464,7 +463,6 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   vision: VisionBlock,
   vision_v2: VisionV2Block,
   wait: WaitBlock,
-  wealthbox: WealthboxBlock,
   webflow: WebflowBlock,
   webhook_request: WebhookRequestBlock,
   whatsapp: WhatsAppBlock,

@@ -84,12 +84,6 @@ import {
 } from '@/lib/api/contracts/selectors/slack'
 import { trelloBoardsSelectorContract } from '@/lib/api/contracts/selectors/trello'
 import {
-  wealthboxItemContract,
-  wealthboxItemsSelectorContract,
-  wealthboxOAuthItemContract,
-  wealthboxOAuthItemsContract,
-} from '@/lib/api/contracts/selectors/wealthbox'
-import {
   webflowCollectionsSelectorContract,
   webflowItemsSelectorContract,
   webflowSitesSelectorContract,
@@ -116,7 +110,6 @@ export * from '@/lib/api/contracts/selectors/pipedrive'
 export * from '@/lib/api/contracts/selectors/sharepoint'
 export * from '@/lib/api/contracts/selectors/slack'
 export * from '@/lib/api/contracts/selectors/trello'
-export * from '@/lib/api/contracts/selectors/wealthbox'
 export * from '@/lib/api/contracts/selectors/webflow'
 export * from '@/lib/api/contracts/selectors/zoom'
 
@@ -154,10 +147,6 @@ export const selectorContractsByPath = {
   '/api/tools/microsoft-teams/teams': microsoftTeamsSelectorContract,
   '/api/tools/microsoft-teams/chats': microsoftChatsSelectorContract,
   '/api/tools/microsoft-teams/channels': microsoftChannelsSelectorContract,
-  '/api/tools/wealthbox/items': wealthboxItemsSelectorContract,
-  '/api/tools/wealthbox/item': wealthboxItemContract,
-  '/api/auth/oauth/wealthbox/items': wealthboxOAuthItemsContract,
-  '/api/auth/oauth/wealthbox/item': wealthboxOAuthItemContract,
   '/api/tools/jira/projects': jiraProjectsSelectorContract,
   '/api/tools/jira/projects:POST': jiraProjectSelectorContract,
   '/api/tools/jira/issues': jiraIssuesSelectorContract,

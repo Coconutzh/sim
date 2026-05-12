@@ -260,10 +260,6 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   modflair: 'Manage flair in moderated subreddits',
   modmail: 'Access and respond to moderator mail',
 
-  // Wealthbox scopes
-  login: 'Access Wealthbox account',
-  data: 'Access Wealthbox data',
-
   // Linear scopes
   read: 'Read access to connected account data',
   write: 'Write access to connected account data',
