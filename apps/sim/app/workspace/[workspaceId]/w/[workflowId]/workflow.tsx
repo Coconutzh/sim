@@ -20,6 +20,10 @@ import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthConnectEventDetail } from '@/lib/copilot/tools/client/base-tool'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import type { OAuthProvider } from '@/lib/oauth'
+import {
+  getContentNodePreset,
+  type ContentNodePresetId,
+} from '@/lib/product/content-node-presets'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
@@ -92,7 +96,6 @@ import { useOAuthReturnForWorkflow } from '@/hooks/use-oauth-return'
 import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
-import { useSearchModalStore } from '@/stores/modals/search/store'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
 import { useUndoRedoStore } from '@/stores/undo-redo'
@@ -1437,10 +1440,6 @@ const WorkflowContent = React.memo(
       return { canRun: true, reason: undefined }
     }, [contextMenuBlocks, edges, workflowIdParam, getLastExecutionSnapshot, isExecuting])
 
-    const handleContextAddBlock = useCallback(() => {
-      useSearchModalStore.getState().open()
-    }, [])
-
     const handleContextOpenLogs = useCallback(() => {
       router.push(`/workspace/${workspaceId}/logs?workflowIds=${workflowIdParam}`)
     }, [router, workspaceId, workflowIdParam])
@@ -1800,6 +1799,70 @@ const WorkflowContent = React.memo(
     )
 
     /**
+     * Adds a product-facing content node by mapping it to an existing underlying block.
+     */
+    const addContentNodeAtPosition = useCallback(
+      (presetId: ContentNodePresetId, position: { x: number; y: number }) => {
+        const preset = getContentNodePreset(presetId)
+
+        if (!preset?.available || !preset.blockType) {
+          addNotification({
+            level: 'info',
+            message: 'Image editor node is not available yet. Use an Image node for now.',
+            workflowId: activeWorkflowId || undefined,
+          })
+          return
+        }
+
+        const blockConfig = getBlock(preset.blockType)
+        if (!blockConfig) {
+          logger.error('Invalid content node block type', {
+            presetId,
+            blockType: preset.blockType,
+          })
+          return
+        }
+
+        if (checkTriggerConstraints(preset.blockType)) return
+
+        const id = generateId()
+        const name = getUniqueBlockName(preset.label, blocks)
+        const autoConnectEdge = tryCreateAutoConnectEdge(position, id, {
+          targetParentId: null,
+        })
+
+        addBlock(
+          id,
+          preset.blockType,
+          name,
+          position,
+          undefined,
+          undefined,
+          undefined,
+          autoConnectEdge,
+          false,
+          preset.presetSubBlockValues
+        )
+      },
+      [
+        activeWorkflowId,
+        addBlock,
+        addNotification,
+        blocks,
+        checkTriggerConstraints,
+        tryCreateAutoConnectEdge,
+      ]
+    )
+
+    const handleContextAddContentNode = useCallback(
+      (presetId: ContentNodePresetId) => {
+        const flowPosition = screenToFlowPosition(contextMenuPosition)
+        addContentNodeAtPosition(presetId, flowPosition)
+      },
+      [addContentNodeAtPosition, contextMenuPosition, screenToFlowPosition]
+    )
+
+    /**
      * Shared handler for drops of toolbar items onto the workflow canvas.
      *
      * This encapsulates the full drop behavior (container handling, auto-connect,
@@ -2090,6 +2153,32 @@ const WorkflowContent = React.memo(
       checkTriggerConstraints,
       tryCreateAutoConnectEdge,
     ])
+
+    /**
+     * Listen for product-facing content node insertions from canvas-first entry points.
+     */
+    useEffect(() => {
+      const handleAddContentNode = (
+        event: CustomEvent<{ presetId?: ContentNodePresetId }>
+      ) => {
+        if (!effectivePermissions.canEdit) {
+          return
+        }
+
+        const presetId = event.detail?.presetId
+        if (!presetId) {
+          return
+        }
+
+        addContentNodeAtPosition(presetId, getViewportCenter())
+      }
+
+      window.addEventListener('add-content-node', handleAddContentNode as EventListener)
+
+      return () => {
+        window.removeEventListener('add-content-node', handleAddContentNode as EventListener)
+      }
+    }, [addContentNodeAtPosition, effectivePermissions.canEdit, getViewportCenter])
 
     /**
      * Listen for toolbar drops that occur on the empty-workflow overlay (command list).
@@ -4258,7 +4347,7 @@ const WorkflowContent = React.memo(
                       onUndo={undo}
                       onRedo={redo}
                       onPaste={handleContextPaste}
-                      onAddBlock={handleContextAddBlock}
+                      onAddContentNode={handleContextAddContentNode}
                       onAutoLayout={handleAutoLayout}
                       onFitToView={() => fitViewToBounds({ padding: 0.1, duration: 300 })}
                       onOpenLogs={handleContextOpenLogs}

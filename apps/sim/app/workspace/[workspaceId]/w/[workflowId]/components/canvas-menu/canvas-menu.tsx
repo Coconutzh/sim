@@ -8,6 +8,10 @@ import {
   PopoverDivider,
   PopoverItem,
 } from '@/components/emcn'
+import {
+  getAddableContentNodePresets,
+  type ContentNodePresetId,
+} from '@/lib/product/content-node-presets'
 
 /**
  * Props for CanvasMenu component
@@ -20,7 +24,7 @@ export interface CanvasMenuProps {
   onUndo: () => void
   onRedo: () => void
   onPaste: () => void
-  onAddBlock: () => void
+  onAddContentNode: (presetId: ContentNodePresetId) => void
   onAutoLayout: () => void
   onFitToView: () => void
   onOpenLogs: () => void
@@ -56,7 +60,7 @@ export function CanvasMenu({
   onUndo,
   onRedo,
   onPaste,
-  onAddBlock,
+  onAddContentNode,
   onAutoLayout,
   onFitToView,
   onOpenLogs,
@@ -75,6 +79,8 @@ export function CanvasMenu({
   allBlocksLocked = false,
   hasBlocks = false,
 }: CanvasMenuProps) {
+  const contentNodePresets = getAddableContentNodePresets()
+
   return (
     <Popover
       open={isOpen}
@@ -93,7 +99,6 @@ export function CanvasMenu({
         }}
       />
       <PopoverContent ref={menuRef} align='start' side='bottom' sideOffset={4}>
-        {/* History actions */}
         <PopoverItem
           className='group'
           disabled={disableEdit || !canUndo}
@@ -103,7 +108,6 @@ export function CanvasMenu({
           }}
         >
           <span>Undo</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘Z</span>
         </PopoverItem>
         <PopoverItem
           className='group'
@@ -114,7 +118,6 @@ export function CanvasMenu({
           }}
         >
           <span>Redo</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘⇧Z</span>
         </PopoverItem>
         <PopoverItem
           className='group'
@@ -125,22 +128,24 @@ export function CanvasMenu({
           }}
         >
           <span>Paste</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘V</span>
         </PopoverItem>
 
-        {/* Edit and creation actions */}
         <PopoverDivider />
-        <PopoverItem
-          className='group'
-          disabled={disableEdit}
-          onClick={() => {
-            onAddBlock()
-            onClose()
-          }}
-        >
-          <span>Add Block</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘K</span>
-        </PopoverItem>
+        {contentNodePresets.map((preset) => (
+          <PopoverItem
+            key={preset.id}
+            className='group'
+            disabled={disableEdit}
+            onClick={() => {
+              onAddContentNode(preset.id)
+              onClose()
+            }}
+          >
+            <span>{`New ${preset.label}`}</span>
+          </PopoverItem>
+        ))}
+
+        <PopoverDivider />
         <PopoverItem
           className='group'
           disabled={disableEdit || hasLockedBlocks}
@@ -151,7 +156,6 @@ export function CanvasMenu({
           title={hasLockedBlocks ? 'Unlock blocks to use auto-layout' : undefined}
         >
           <span>Auto-layout</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⇧L</span>
         </PopoverItem>
         {canAdmin && onToggleWorkflowLock && (
           <PopoverItem
@@ -173,7 +177,6 @@ export function CanvasMenu({
           Fit to View
         </PopoverItem>
 
-        {/* Navigation actions */}
         <PopoverDivider />
         <PopoverItem
           className='group'
@@ -183,7 +186,6 @@ export function CanvasMenu({
           }}
         >
           <span>Search and replace</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘F</span>
         </PopoverItem>
         <PopoverItem
           className='group'
@@ -193,7 +195,6 @@ export function CanvasMenu({
           }}
         >
           <span>Open Logs</span>
-          <span className='ml-auto opacity-70 group-hover:opacity-100'>⌘L</span>
         </PopoverItem>
         <PopoverItem
           onClick={() => {

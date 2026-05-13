@@ -1,98 +1,64 @@
 'use client'
 
+import type { ComponentType } from 'react'
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
-import { Search } from 'lucide-react'
+import { Library, Search } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { Button, Library } from '@/components/emcn'
-import { AgentIcon } from '@/components/icons'
-import { cn } from '@/lib/core/utils/cn'
 import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import { Button } from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
+import {
+  getAddableContentNodePresets,
+  type ContentNodePresetId,
+} from '@/lib/product/content-node-presets'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 
 const logger = createLogger('WorkflowCommandList')
 
-/**
- * Command item data structure
- */
-interface CommandItem {
-  /** Display label for the command */
+interface UtilityCommand {
   label: string
-  /** Icon component from lucide-react */
-  icon: React.ComponentType<{ className?: string }>
-  /** Keyboard shortcut keys (can be single or array for multiple keys) */
-  shortcut: string | string[]
+  description: string
+  icon: ComponentType<{ className?: string }>
 }
 
-/**
- * Available commands list
- */
-const commands: CommandItem[] = [
-  // {
-  //   label: 'Templates',
-  //   icon: Layout,
-  //   shortcut: 'Y',
-  // },
-  {
-    label: 'New Agent',
-    icon: AgentIcon,
-    shortcut: ['⇧', 'A'],
-  },
+const utilityCommands: UtilityCommand[] = [
   {
     label: 'Logs',
+    description: 'Open workflow logs for debugging.',
     icon: Library,
-    shortcut: 'L',
   },
   {
     label: 'Search Blocks',
+    description: 'Find blocks and jump through the canvas.',
     icon: Search,
-    shortcut: 'K',
   },
-]
+] as const
 
 /**
- * CommandList component that displays available commands with keyboard shortcuts
- * Centered on the screen for empty workflows
+ * Empty workflow overlay that promotes content-node-first creation.
  */
 export function CommandList() {
   const params = useParams()
   const router = useRouter()
   const openSearchModal = useSearchModalStore((s) => s.open)
   const preventZoomRef = usePreventZoom()
+  const contentNodePresets = getAddableContentNodePresets()
 
   const workspaceId = params.workspaceId as string | undefined
 
-  /**
-   * Handle click on a command row.
-   *
-   * Mirrors the behavior of the corresponding global keyboard shortcuts:
-   * - Templates: navigate to workspace templates
-   * - New Agent: add an agent block to the canvas
-   * - Logs: navigate to workspace logs
-   * - Search Blocks: open the universal search modal
-   *
-   * @param label - Command label that was clicked.
-   */
-  const handleCommandClick = useCallback(
+  const handleContentNodeClick = useCallback((presetId: ContentNodePresetId) => {
+    const event = new CustomEvent('add-content-node', {
+      detail: { presetId },
+    })
+    window.dispatchEvent(event)
+  }, [])
+
+  const handleUtilityCommandClick = useCallback(
     (label: string) => {
       try {
         switch (label) {
-          // case 'Templates': {
-          //   if (!workspaceId) {
-          //     logger.warn('No workspace ID found, cannot navigate to templates from command list')
-          //     return
-          //   }
-          //   router.push(`/workspace/${workspaceId}/templates`)
-          //   return
-          // }
-          case 'New Agent': {
-            const event = new CustomEvent('add-block-from-toolbar', {
-              detail: { type: 'agent', enableTriggerMode: false },
-            })
-            window.dispatchEvent(event)
-            return
-          }
           case 'Logs': {
             if (!workspaceId) {
               logger.warn('No workspace ID found, cannot navigate to logs from command list')
@@ -106,24 +72,15 @@ export function CommandList() {
             return
           }
           default:
-            logger.warn('Unknown command label clicked in command list', { label })
+            logger.warn('Unknown utility command clicked in command list', { label })
         }
       } catch (error) {
-        logger.error('Failed to handle command click in command list', { error, label })
+        logger.error('Failed to handle utility command click in command list', { error, label })
       }
     },
-    [router, workspaceId, openSearchModal]
+    [openSearchModal, router, workspaceId]
   )
 
-  /**
-   * Handle drag-over events from the toolbar.
-   *
-   * When a toolbar item is dragged over the command list, mark the drop as valid
-   * so the browser shows the appropriate drop cursor. Only reacts to toolbar
-   * drags that carry the expected JSON payload.
-   *
-   * @param event - Drag event from the browser.
-   */
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer?.types.includes('application/json')) {
       return
@@ -132,16 +89,6 @@ export function CommandList() {
     event.dataTransfer.dropEffect = 'move'
   }, [])
 
-  /**
-   * Handle drops of toolbar items onto the command list.
-   *
-   * This forwards the drop information (block type and cursor position)
-   * to the workflow canvas via a custom event. The workflow component
-   * then reuses its existing drop logic to place the block precisely
-   * under the cursor, including container/subflow handling.
-   *
-   * @param event - Drop event from the browser.
-   */
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer?.types.includes('application/json')) {
       return
@@ -180,12 +127,11 @@ export function CommandList() {
     >
       <div
         data-tour='command-list'
-        className='pointer-events-auto flex flex-col gap-2'
+        className='pointer-events-auto flex w-full max-w-[420px] flex-col gap-4 px-6'
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Logo */}
-        <div className='mb-5 flex justify-center'>
+        <div className='mb-2 flex flex-col items-center gap-3'>
           <Image
             src='/logo/b&w/text/b&w.svg'
             alt='Sim'
@@ -197,46 +143,71 @@ export function CommandList() {
                 'brightness(0) saturate(100%) invert(69%) sepia(0%) saturate(0%) hue-rotate(202deg) brightness(94%) contrast(89%)',
             }}
           />
+          <div className='text-center'>
+            <p className='font-medium text-[var(--text-primary)] text-sm'>
+              Start with a content node
+            </p>
+            <p className='mt-1 text-[var(--text-tertiary)] text-xs'>
+              Build like TapNow first. Advanced workflow configuration stays in the right panel.
+            </p>
+          </div>
         </div>
 
-        {commands.map((command) => {
-          const Icon = command.icon
-          const shortcuts = Array.isArray(command.shortcut) ? command.shortcut : [command.shortcut]
-          return (
-            <div
-              key={command.label}
-              className='group flex cursor-pointer items-center justify-between gap-[60px]'
-              onClick={() => handleCommandClick(command.label)}
-            >
-              {/* Left side: Icon and Label */}
-              <div className='flex items-center gap-2'>
-                <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
-                <span className='font-medium text-[var(--text-tertiary)] text-sm group-hover:text-[var(--text-primary)]'>
-                  {command.label}
-                </span>
-              </div>
+        <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
+          {contentNodePresets.map((preset) => {
+            const Icon = preset.icon
 
-              {/* Right side: Keyboard Shortcut */}
-              <div className='flex items-center gap-1'>
+            return (
+              <button
+                key={preset.id}
+                type='button'
+                className='flex min-h-[74px] flex-col items-start gap-2 rounded-xl border border-[var(--border-1)] bg-[var(--surface-2)] px-3 py-3 text-left transition-colors hover-hover:bg-[var(--surface-3)]'
+                onClick={() => handleContentNodeClick(preset.id)}
+              >
+                <div className='flex items-center gap-2'>
+                  <div className='flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-4)] text-[var(--text-primary)]'>
+                    <Icon className='h-4 w-4' />
+                  </div>
+                  <span className='font-medium text-[var(--text-primary)] text-sm'>
+                    {preset.label}
+                  </span>
+                </div>
+                <span className='text-[var(--text-tertiary)] text-xs'>{preset.description}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className='mt-2 flex flex-col gap-2'>
+          {utilityCommands.map((command) => {
+            const Icon = command.icon
+
+            return (
+              <button
+                key={command.label}
+                type='button'
+                className='flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover-hover:bg-[var(--surface-2)]'
+                onClick={() => handleUtilityCommandClick(command.label)}
+              >
+                <div className='flex h-7 w-7 items-center justify-center rounded-md bg-[var(--surface-3)] text-[var(--text-tertiary)]'>
+                  <Icon className='h-4 w-4' />
+                </div>
+                <div className='min-w-0 flex-1'>
+                  <div className='font-medium text-[var(--text-primary)] text-sm'>
+                    {command.label}
+                  </div>
+                  <div className='text-[var(--text-tertiary)] text-xs'>{command.description}</div>
+                </div>
                 <Button
-                  className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-caption hover-hover:translate-y-0 hover-hover:text-[var(--text-tertiary)] hover-hover:shadow-kbd-sm group-hover:text-[var(--text-primary)] group-hover:shadow-kbd'
+                  className='pointer-events-none px-2 py-[3px] text-caption'
                   variant='3d'
                 >
-                  <span>⌘</span>
+                  Open
                 </Button>
-                {shortcuts.map((key, index) => (
-                  <Button
-                    key={index}
-                    className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-caption hover-hover:translate-y-0 hover-hover:text-[var(--text-tertiary)] hover-hover:shadow-kbd-sm group-hover:text-[var(--text-primary)] group-hover:shadow-kbd'
-                    variant='3d'
-                  >
-                    {key}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )
-        })}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
