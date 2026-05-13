@@ -9,6 +9,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createMcpToolId } from '@/lib/mcp/shared'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
+import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import type { FilterRule, SortRule } from '@/lib/table/types'
 import { HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { calculateWorkflowBlockDimensions } from '@/lib/workflows/blocks/deterministic-dimensions'
@@ -51,7 +52,6 @@ import { useTablesList } from '@/hooks/queries/tables'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { useReactiveConditions } from '@/hooks/use-reactive-conditions'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
-import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -1391,23 +1391,23 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                 row
                   .filter((subBlock) => !inlineSubBlockIds.has(subBlock.id))
                   .map((subBlock) => {
-                  const rawValue = subBlockState[subBlock.id]?.value
-                  return (
-                    <SubBlockRow
-                      key={`${subBlock.id}-${rowIndex}`}
-                      title={subBlock.title ?? subBlock.id}
-                      value={getDisplayValue(rawValue)}
-                      subBlock={subBlock}
-                      rawValue={rawValue}
-                      workspaceId={workspaceId}
-                      workflowId={currentWorkflowId}
-                      blockId={id}
-                      allSubBlockValues={subBlockState}
-                      displayAdvancedOptions={effectiveAdvanced}
-                      canonicalIndex={canonicalIndex}
-                      canonicalModeOverrides={canonicalModeOverrides}
-                    />
-                  )
+                    const rawValue = subBlockState[subBlock.id]?.value
+                    return (
+                      <SubBlockRow
+                        key={`${subBlock.id}-${rowIndex}`}
+                        title={subBlock.title ?? subBlock.id}
+                        value={getDisplayValue(rawValue)}
+                        subBlock={subBlock}
+                        rawValue={rawValue}
+                        workspaceId={workspaceId}
+                        workflowId={currentWorkflowId}
+                        blockId={id}
+                        allSubBlockValues={subBlockState}
+                        displayAdvancedOptions={effectiveAdvanced}
+                        canonicalIndex={canonicalIndex}
+                        canonicalModeOverrides={canonicalModeOverrides}
+                      />
+                    )
                   })
               )
             )}

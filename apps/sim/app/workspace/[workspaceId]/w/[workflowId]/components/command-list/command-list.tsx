@@ -6,13 +6,13 @@ import { createLogger } from '@sim/logger'
 import { Library, Search } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { Button } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
-  getAddableContentNodePresets,
   type ContentNodePresetId,
+  getAddableContentNodePresets,
 } from '@/lib/product/content-node-presets'
+import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 
 const logger = createLogger('WorkflowCommandList')
@@ -198,10 +198,7 @@ export function CommandList() {
                   </div>
                   <div className='text-[var(--text-tertiary)] text-xs'>{command.description}</div>
                 </div>
-                <Button
-                  className='pointer-events-none px-2 py-[3px] text-caption'
-                  variant='3d'
-                >
+                <Button className='pointer-events-none px-2 py-[3px] text-caption' variant='3d'>
                   Open
                 </Button>
               </button>

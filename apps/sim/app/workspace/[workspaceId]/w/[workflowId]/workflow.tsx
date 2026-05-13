@@ -20,10 +20,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthConnectEventDetail } from '@/lib/copilot/tools/client/base-tool'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import type { OAuthProvider } from '@/lib/oauth'
-import {
-  getContentNodePreset,
-  type ContentNodePresetId,
-} from '@/lib/product/content-node-presets'
+import { type ContentNodePresetId, getContentNodePreset } from '@/lib/product/content-node-presets'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
@@ -2158,9 +2155,7 @@ const WorkflowContent = React.memo(
      * Listen for product-facing content node insertions from canvas-first entry points.
      */
     useEffect(() => {
-      const handleAddContentNode = (
-        event: CustomEvent<{ presetId?: ContentNodePresetId }>
-      ) => {
+      const handleAddContentNode = (event: CustomEvent<{ presetId?: ContentNodePresetId }>) => {
         if (!effectivePermissions.canEdit) {
           return
         }

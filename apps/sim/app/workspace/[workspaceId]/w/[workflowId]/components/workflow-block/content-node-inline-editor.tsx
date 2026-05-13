@@ -4,15 +4,15 @@ import type { ChangeEvent } from 'react'
 import { useCallback, useMemo } from 'react'
 import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
-import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import {
   Dropdown,
   FileUpload,
   LongInput,
   TableSelector,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
+import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
-import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import { usePanelEditorStore } from '@/stores/panel'
 
 interface ContentNodeInlineEditorProps {
@@ -214,7 +214,7 @@ export function ContentNodeInlineEditor({
             hideInternalWand={true}
           />
           {visualReferenceConfig && (isPreview || videoProvider === 'runway') && (
-            <div className='rounded-md border border-dashed border-[var(--border-1)] p-2'>
+            <div className='rounded-md border border-[var(--border-1)] border-dashed p-2'>
               <div className='mb-2 font-medium text-[var(--text-tertiary)] text-xs uppercase tracking-[0.08em]'>
                 Reference Image
               </div>

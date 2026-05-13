@@ -1,23 +1,11 @@
 import type { ComponentType } from 'react'
 import { PenTool } from 'lucide-react'
-import {
-  AgentIcon,
-  DocumentIcon,
-  ImageIcon,
-  TableIcon,
-  VideoIcon,
-} from '@/components/icons'
+import { AgentIcon, DocumentIcon, ImageIcon, TableIcon, VideoIcon } from '@/components/icons'
 
 /**
  * TapNow-style content node identifiers used by product-facing creation flows.
  */
-export type ContentNodePresetId =
-  | 'text'
-  | 'image'
-  | 'video'
-  | 'document'
-  | 'table'
-  | 'image_editor'
+export type ContentNodePresetId = 'text' | 'image' | 'video' | 'document' | 'table' | 'image_editor'
 
 /**
  * Product-layer preset that maps a user-facing content node to an existing Sim block.
@@ -124,8 +112,6 @@ export function getContentNodePreset(id: ContentNodePresetId): ContentNodePreset
 /**
  * Looks up the content node preset that owns a given underlying block type.
  */
-export function getContentNodePresetForBlockType(
-  blockType: string
-): ContentNodePreset | undefined {
+export function getContentNodePresetForBlockType(blockType: string): ContentNodePreset | undefined {
   return CONTENT_NODE_PRESETS.find((preset) => preset.blockType === blockType)
 }
