@@ -789,7 +789,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                 data-tab-button='editor'
                 data-tour='tab-editor'
               >
-                Editor
+                Advanced
               </Button>
             </div>
           </div>

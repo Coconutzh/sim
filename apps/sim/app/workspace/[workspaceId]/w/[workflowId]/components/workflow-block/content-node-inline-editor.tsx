@@ -2,7 +2,7 @@
 
 import type { ChangeEvent } from 'react'
 import { useCallback, useMemo } from 'react'
-import { Textarea } from '@/components/emcn'
+import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
 import type { SubBlockConfig } from '@/blocks/types'
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
+import { usePanelEditorStore } from '@/stores/panel'
 
 interface ContentNodeInlineEditorProps {
   blockId: string
@@ -166,6 +167,10 @@ export function ContentNodeInlineEditor({
     return null
   }
 
+  const openAdvancedSettings = () => {
+    usePanelEditorStore.getState().setCurrentBlockId(blockId)
+  }
+
   return (
     <div
       className='rounded-lg border border-[var(--border-1)] bg-[var(--surface-3)] p-2'
@@ -288,6 +293,16 @@ export function ContentNodeInlineEditor({
           </div>
         </div>
       )}
+
+      <div className='mt-2 flex justify-end border-[var(--border-1)] border-t pt-2'>
+        <Button
+          variant='ghost'
+          className='h-7 px-2 text-[11px] text-[var(--text-tertiary)] hover-hover:text-[var(--text-primary)]'
+          onClick={openAdvancedSettings}
+        >
+          {preset.advancedPanelLabel}
+        </Button>
+      </div>
     </div>
   )
 }

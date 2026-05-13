@@ -29,6 +29,7 @@ const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
   'chat_trigger',
   'condition',
   'file',
+  'image_generator',
   'function',
   'generic_webhook',
   'loop',
@@ -39,7 +40,9 @@ const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
   'router',
   'search',
   'start_trigger',
+  'table',
   'variables',
+  'video_generator',
   'webhook_request',
 ] as const
 

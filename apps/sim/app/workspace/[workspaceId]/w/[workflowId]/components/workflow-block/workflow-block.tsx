@@ -51,6 +51,7 @@ import { useTablesList } from '@/hooks/queries/tables'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { useReactiveConditions } from '@/hooks/use-reactive-conditions'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
+import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -928,6 +929,11 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
 
   const currentStoreBlock = currentWorkflow.getBlockById(id)
+  const contentNodePreset = useMemo(() => getContentNodePresetForBlockType(type), [type])
+  const inlineSubBlockIds = useMemo(
+    () => new Set(contentNodePreset?.inlineSubBlockIds ?? []),
+    [contentNodePreset]
+  )
 
   const isStarterBlock = type === 'starter'
   const isWebhookTriggerBlock = type === 'webhook' || type === 'generic_webhook'
@@ -1382,7 +1388,9 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               </>
             ) : (
               subBlockRows.map((row, rowIndex) =>
-                row.map((subBlock) => {
+                row
+                  .filter((subBlock) => !inlineSubBlockIds.has(subBlock.id))
+                  .map((subBlock) => {
                   const rawValue = subBlockState[subBlock.id]?.value
                   return (
                     <SubBlockRow
@@ -1400,7 +1408,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                       canonicalModeOverrides={canonicalModeOverrides}
                     />
                   )
-                })
+                  })
               )
             )}
             {shouldShowDefaultHandles && <SubBlockRow title='error' />}
