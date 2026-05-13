@@ -24,6 +24,7 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
+import { ContentNodeInlineEditor } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/content-node-inline-editor'
 import {
   useBlockProperties,
   useChildWorkflow,
@@ -1352,6 +1353,14 @@ export const WorkflowBlock = memo(function WorkflowBlock({
 
         {hasContentBelowHeader && (
           <div className='flex flex-col gap-2 p-2'>
+            <ContentNodeInlineEditor
+              blockId={id}
+              blockType={type}
+              subBlocks={config.subBlocks}
+              disabled={!canEditWorkflow}
+              isPreview={data.isPreview ?? false}
+              previewSubBlockValues={data.subBlockValues}
+            />
             {type === 'condition' ? (
               conditionRows.map((cond) => (
                 <SubBlockRow key={cond.id} title={cond.title} value={getDisplayValue(cond.value)} />
