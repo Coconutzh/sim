@@ -31,6 +31,7 @@ import {
   Notifications,
   Panel,
   Terminal,
+  WorkflowTrackBar,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
 import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/block-menu'
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
@@ -255,6 +256,16 @@ const WorkflowContent = React.memo(
     const workflowIdParam = propWorkflowId || (params.workflowId as string)
 
     const addNotification = useNotificationStore((state) => state.addNotification)
+    const notifyTrackAction = useCallback(
+      (message: string, level: 'info' | 'error' = 'info') => {
+        addNotification({
+          level,
+          message,
+          workflowId: workflowIdParam || undefined,
+        })
+      },
+      [addNotification, workflowIdParam]
+    )
 
     useEffect(() => {
       if (!embedded || !workflowIdParam) return
@@ -340,6 +351,7 @@ const WorkflowContent = React.memo(
 
     const { blocks, edges, lastSaved } = currentWorkflow
     const workflowMetadata = workflows[workflowIdParam]
+    const isPublishedTrack = workflowMetadata?.track === 'published'
     const workflowRowLocked = !!workflowMetadata?.locked
     const workflowFolderLocked = isFolderOrAncestorLocked(workflowMetadata?.folderId, folders)
 
@@ -349,8 +361,9 @@ const WorkflowContent = React.memo(
     }, [blocks])
     const workflowLocked = workflowRowLocked || workflowFolderLocked
     const workflowReadOnly = workflowLocked && !sandbox
+    const workflowTrackReadOnly = Boolean(isPublishedTrack && !sandbox)
     const canvasOpacityClass = isCanvasReady
-      ? workflowReadOnly
+      ? workflowReadOnly || workflowTrackReadOnly
         ? 'opacity-75'
         : 'opacity-100'
       : 'opacity-0'
@@ -604,7 +617,7 @@ const WorkflowContent = React.memo(
       useWorkspacePermissionsContext()
     /** Returns read-only permissions when viewing snapshot or a locked workflow. */
     const effectivePermissions = useMemo(() => {
-      if (currentWorkflow.isSnapshotView || workflowReadOnly) {
+      if (currentWorkflow.isSnapshotView || workflowReadOnly || workflowTrackReadOnly) {
         return {
           ...userPermissions,
           canEdit: false,
@@ -613,7 +626,7 @@ const WorkflowContent = React.memo(
         }
       }
       return userPermissions
-    }, [userPermissions, currentWorkflow.isSnapshotView, workflowReadOnly])
+    }, [userPermissions, currentWorkflow.isSnapshotView, workflowReadOnly, workflowTrackReadOnly])
     const {
       collaborativeBatchAddEdges,
       collaborativeBatchRemoveEdges,
@@ -1292,11 +1305,12 @@ const WorkflowContent = React.memo(
       const canAdminChanged = prevIsAdminRef.current !== isAdmin
       prevIsAdminRef.current = isAdmin
 
-      const lockSignature = workflowReadOnly
-        ? workflowRowLocked
-          ? 'row'
-          : `folder:${inheritedLockFolderName ?? ''}`
-        : null
+      const lockSignature =
+        workflowReadOnly || workflowTrackReadOnly
+          ? workflowRowLocked
+            ? 'row'
+            : `folder:${inheritedLockFolderName ?? ''}`
+          : null
       const lockSignatureChanged = prevLockSignatureRef.current !== lockSignature
       prevLockSignatureRef.current = lockSignature
 
@@ -1304,7 +1318,7 @@ const WorkflowContent = React.memo(
         clearLockNotification()
       }
 
-      if (workflowReadOnly) {
+      if (workflowReadOnly || workflowTrackReadOnly) {
         if (lockNotificationIdRef.current) return
         const isFolderInherited = workflowFolderLocked && !workflowRowLocked
         const message = isFolderInherited
@@ -1330,6 +1344,7 @@ const WorkflowContent = React.memo(
       }
     }, [
       workflowReadOnly,
+      workflowTrackReadOnly,
       workflowRowLocked,
       workflowFolderLocked,
       inheritedLockFolderName,
@@ -2599,7 +2614,8 @@ const WorkflowContent = React.memo(
             parentId: block.data?.parentId,
             extent: block.data?.extent || undefined,
             dragHandle: '.workflow-drag-handle',
-            draggable: !workflowReadOnly && !isBlockProtected(block.id, blocks),
+            draggable:
+              !(workflowReadOnly || workflowTrackReadOnly) && !isBlockProtected(block.id, blocks),
             zIndex: depth,
             className: block.data?.parentId ? 'nested-subflow-node' : undefined,
             data: {
@@ -2608,7 +2624,7 @@ const WorkflowContent = React.memo(
               width: block.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH,
               height: block.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
               kind: block.type === 'loop' ? 'loop' : 'parallel',
-              isWorkflowLocked: workflowReadOnly,
+              isWorkflowLocked: workflowReadOnly || workflowTrackReadOnly,
             },
           })
           return
@@ -2644,7 +2660,8 @@ const WorkflowContent = React.memo(
           position,
           parentId: block.data?.parentId,
           dragHandle,
-          draggable: !workflowReadOnly && !isBlockProtected(block.id, blocks),
+          draggable:
+            !(workflowReadOnly || workflowTrackReadOnly) && !isBlockProtected(block.id, blocks),
           ...(childZIndex !== undefined && { zIndex: childZIndex }),
           extent: (() => {
             // Clamp children to subflow body (exclude header)
@@ -2673,7 +2690,7 @@ const WorkflowContent = React.memo(
             isPending,
             ...(embedded && { isEmbedded: true }),
             ...(sandbox && { isSandbox: true }),
-            isWorkflowLocked: workflowReadOnly,
+            isWorkflowLocked: workflowReadOnly || workflowTrackReadOnly,
           },
           // Include dynamic dimensions for container resizing calculations (must match rendered size)
           // Both note and workflow blocks calculate dimensions deterministically via useBlockDimensions
@@ -2696,6 +2713,7 @@ const WorkflowContent = React.memo(
       sandbox,
       embedded,
       workflowReadOnly,
+      workflowTrackReadOnly,
     ])
 
     // Local state for nodes - allows smooth drag without store updates on every frame
@@ -4203,6 +4221,16 @@ const WorkflowContent = React.memo(
 
             {isWorkflowReady && (
               <>
+                {!embedded && workflowMetadata && (
+                  <WorkflowTrackBar
+                    workspaceId={workspaceId}
+                    workflowId={workflowIdParam}
+                    workflow={workflowMetadata}
+                    canPublish={userPermissions.canAdmin}
+                    onNotify={notifyTrackAction}
+                  />
+                )}
+
                 <ReactFlow
                   nodes={nodesForRender}
                   edges={edgesWithSelection}
@@ -4221,12 +4249,14 @@ const WorkflowContent = React.memo(
                   onDrop={
                     effectivePermissions.canEdit
                       ? onDrop
-                      : workflowReadOnly
+                      : workflowReadOnly || workflowTrackReadOnly
                         ? onDropLocked
                         : undefined
                   }
                   onDragOver={
-                    effectivePermissions.canEdit || workflowReadOnly ? onDragOver : undefined
+                    effectivePermissions.canEdit || workflowReadOnly || workflowTrackReadOnly
+                      ? onDragOver
+                      : undefined
                   }
                   onInit={(instance) => {
                     if (embedded) {
@@ -4331,7 +4361,10 @@ const WorkflowContent = React.memo(
                         edges.filter((e) => e.target === contextMenuBlocks[0]?.id).length === 0
                       }
                       onToggleLocked={handleContextToggleLocked}
-                      canAdmin={effectivePermissions.canAdmin && !workflowReadOnly}
+                      canAdmin={
+                        effectivePermissions.canAdmin &&
+                        !(workflowReadOnly || workflowTrackReadOnly)
+                      }
                     />
 
                     <CanvasMenu
@@ -4358,7 +4391,10 @@ const WorkflowContent = React.memo(
                       hasLockedBlocks={hasLockedBlocks}
                       onToggleWorkflowLock={handleToggleWorkflowLock}
                       allBlocksLocked={allBlocksLocked}
-                      canAdmin={effectivePermissions.canAdmin && !workflowReadOnly}
+                      canAdmin={
+                        effectivePermissions.canAdmin &&
+                        !(workflowReadOnly || workflowTrackReadOnly)
+                      }
                       hasBlocks={hasBlocks}
                     />
                   </>
