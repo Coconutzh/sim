@@ -344,6 +344,7 @@ export const PUT = withRouteHandler(
       if (updates.color !== undefined) updateData.color = updates.color
       if (updates.folderId !== undefined) updateData.folderId = updates.folderId
       if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder
+      if (updates.visibility !== undefined) updateData.visibility = updates.visibility
       if (updates.locked !== undefined) updateData.locked = updates.locked
 
       if (updates.name !== undefined || updates.folderId !== undefined) {
@@ -398,6 +399,10 @@ export const PUT = withRouteHandler(
           workspaceId: workflow.workspaceId,
           folderId: workflow.folderId,
           sortOrder: workflow.sortOrder,
+          track: workflow.track,
+          visibility: workflow.visibility,
+          sourceWorkflowId: workflow.sourceWorkflowId,
+          publishedAt: workflow.publishedAt,
           locked: workflow.locked,
           createdAt: workflow.createdAt,
           updatedAt: workflow.updatedAt,

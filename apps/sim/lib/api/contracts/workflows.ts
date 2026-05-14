@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { nonEmptyIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 
@@ -190,9 +191,19 @@ export const cleanedWorkflowStateSchema = z.object({
 export type CleanedWorkflowState = z.output<typeof cleanedWorkflowStateSchema>
 
 export const workflowScopeSchema = z.enum(['active', 'archived', 'all'])
+export const workflowTrackSchema = z.enum(['draft', 'published'])
+export const workflowVisibilitySchema = z.enum(['workspace', 'organization', 'selected_workgroups'])
 
 export const workflowIdParamsSchema = z.object({
   id: z.string().min(1, 'Invalid workflow ID'),
+})
+
+export const workgroupIdParamsSchema = z.object({
+  workgroupId: nonEmptyIdSchema,
+})
+
+export const workspaceIdParamsSchema = z.object({
+  workspaceId: workspaceIdSchema,
 })
 
 export const workflowListQuerySchema = z.object({
@@ -210,6 +221,10 @@ export const workflowListItemSchema = z.object({
   workspaceId: z.string().nullable(),
   folderId: z.string().nullable(),
   sortOrder: z.number(),
+  track: workflowTrackSchema,
+  visibility: workflowVisibilitySchema,
+  sourceWorkflowId: z.string().nullable(),
+  publishedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),
@@ -228,6 +243,9 @@ export const createWorkflowBodySchema = z.object({
   folderId: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
   deduplicate: z.boolean().optional(),
+  track: workflowTrackSchema.optional().default('draft'),
+  visibility: workflowVisibilitySchema.optional().default('workspace'),
+  sourceWorkflowId: z.string().nullable().optional(),
 })
 
 export const createWorkflowResponseSchema = z.object({
@@ -238,6 +256,10 @@ export const createWorkflowResponseSchema = z.object({
   workspaceId: z.string(),
   folderId: z.string().nullable().optional(),
   sortOrder: z.number(),
+  track: workflowTrackSchema,
+  visibility: workflowVisibilitySchema,
+  sourceWorkflowId: z.string().nullable(),
+  publishedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   startBlockId: z.string(),
@@ -280,9 +302,56 @@ export const updateWorkflowBodySchema = z.object({
   folderId: z.string().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
   locked: z.boolean().optional(),
+  visibility: workflowVisibilitySchema.optional(),
 })
 
 export type UpdateWorkflowBody = z.input<typeof updateWorkflowBodySchema>
+
+export const workflowTracksResponseSchema = z.object({
+  drafts: z.array(workflowListItemSchema),
+  published: z.array(workflowListItemSchema),
+})
+
+export type WorkflowTracksResponse = z.output<typeof workflowTracksResponseSchema>
+
+export const publishWorkflowBodySchema = z.object({
+  name: z.string().min(1).optional(),
+  visibility: workflowVisibilitySchema.optional().default('organization'),
+  viewerWorkgroupIds: z.array(nonEmptyIdSchema).optional().default([]),
+})
+
+export type PublishWorkflowBody = z.input<typeof publishWorkflowBodySchema>
+
+export const publicationViewerScopeSchema = z.object({
+  workgroupId: z.string(),
+})
+
+export const workflowPublicationSchema = z.object({
+  workflowId: z.string(),
+  track: workflowTrackSchema,
+  visibility: workflowVisibilitySchema,
+  sourceWorkflowId: z.string().nullable(),
+  publishedWorkflowId: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+  publishedBy: z.string().nullable(),
+  viewerScopes: z.array(publicationViewerScopeSchema),
+})
+
+export type WorkflowPublication = z.output<typeof workflowPublicationSchema>
+
+export const updateWorkflowPublicationBodySchema = z.object({
+  visibility: workflowVisibilitySchema,
+  viewerWorkgroupIds: z.array(nonEmptyIdSchema).optional().default([]),
+})
+
+export type UpdateWorkflowPublicationBody = z.input<typeof updateWorkflowPublicationBodySchema>
+
+export const publishedWorkflowListItemSchema = workflowListItemSchema.extend({
+  workspaceName: z.string(),
+  ownerWorkgroupId: z.string().nullable(),
+})
+
+export type PublishedWorkflowListItem = z.output<typeof publishedWorkflowListItemSchema>
 
 export const reorderWorkflowsBodySchema = z.object({
   workspaceId: z.string(),
@@ -571,6 +640,11 @@ export const getWorkflowResponseDataSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   color: z.string(),
+  track: workflowTrackSchema,
+  visibility: workflowVisibilitySchema,
+  sourceWorkflowId: z.string().nullable(),
+  publishedAt: z.coerce.date().nullable(),
+  publishedBy: z.string().nullable(),
   lastSynced: z.coerce.date(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
@@ -694,6 +768,62 @@ export const restoreWorkflowContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: successResponseSchema,
+  },
+})
+
+export const listWorkflowTracksContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[workspaceId]/workflow-tracks',
+  params: workspaceIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: workflowTracksResponseSchema,
+  },
+})
+
+export const publishWorkflowContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workflows/[id]/publish',
+  params: workflowIdParamsSchema,
+  body: publishWorkflowBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      publishedWorkflow: workflowListItemSchema,
+    }),
+  },
+})
+
+export const getWorkflowPublicationContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workflows/[id]/publication',
+  params: workflowIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: workflowPublicationSchema,
+  },
+})
+
+export const updateWorkflowPublicationContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/workflows/[id]/publication',
+  params: workflowIdParamsSchema,
+  body: updateWorkflowPublicationBodySchema,
+  response: {
+    mode: 'json',
+    schema: workflowPublicationSchema,
+  },
+})
+
+export const listPublishedWorkflowsForWorkgroupContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workgroups/[workgroupId]/published-workflows',
+  params: workgroupIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      data: z.array(publishedWorkflowListItemSchema),
+    }),
   },
 })
 
