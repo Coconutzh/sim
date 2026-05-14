@@ -1,18 +1,22 @@
 import {
   db,
+  member,
   permissions,
   type permissionTypeEnum,
   workflow,
+  workflowPublicationScope,
   workflowFolder,
   workspace,
 } from '@sim/db'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 export type ActiveWorkflowRecord = typeof workflow.$inferSelect
 
 export interface ActiveWorkflowContext {
   workflow: ActiveWorkflowRecord
   workspaceId: string
+  workspaceOrganizationId: string | null
+  workspaceWorkgroupId: string | null
 }
 
 export async function getActiveWorkflowContext(
@@ -22,6 +26,8 @@ export async function getActiveWorkflowContext(
     .select({
       workflow,
       workspaceId: workspace.id,
+      workspaceOrganizationId: workspace.organizationId,
+      workspaceWorkgroupId: workspace.workgroupId,
     })
     .from(workflow)
     .innerJoin(workspace, eq(workflow.workspaceId, workspace.id))
@@ -37,6 +43,8 @@ export async function getActiveWorkflowContext(
   return {
     workflow: rows[0].workflow,
     workspaceId: rows[0].workspaceId,
+    workspaceOrganizationId: rows[0].workspaceOrganizationId,
+    workspaceWorkgroupId: rows[0].workspaceWorkgroupId,
   }
 }
 
@@ -58,6 +66,7 @@ export async function assertActiveWorkflowContext(
 }
 
 export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
+export type WorkflowAccessSource = 'workspace' | 'organization' | 'selected_workgroups'
 
 type WorkflowRecord = typeof workflow.$inferSelect
 
@@ -197,6 +206,99 @@ export interface WorkflowWorkspaceAuthorizationResult {
   message?: string
   workflow: WorkflowRecord | null
   workspacePermission: PermissionType | null
+  accessSource: WorkflowAccessSource | null
+}
+
+function isPermissionSatisfied(
+  permission: PermissionType | null,
+  action: 'read' | 'write' | 'admin'
+): boolean {
+  if (permission === null) {
+    return false
+  }
+
+  if (action === 'read') {
+    return true
+  }
+
+  if (action === 'write') {
+    return permission === 'write' || permission === 'admin'
+  }
+
+  return permission === 'admin'
+}
+
+async function getWorkspacePermission(
+  userId: string,
+  workspaceId: string
+): Promise<PermissionType | null> {
+  const [permissionRow] = await db
+    .select({ permissionType: permissions.permissionType })
+    .from(permissions)
+    .where(
+      and(
+        eq(permissions.userId, userId),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.entityId, workspaceId)
+      )
+    )
+    .limit(1)
+
+  return (permissionRow?.permissionType as PermissionType | undefined) ?? null
+}
+
+async function hasOrganizationReadAccess(userId: string, organizationId: string): Promise<boolean> {
+  const [membership] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
+    .limit(1)
+
+  return Boolean(membership)
+}
+
+async function getUserAccessibleWorkgroupIds(
+  userId: string,
+  organizationId: string | null
+): Promise<string[]> {
+  const rows = await db
+    .select({ workgroupId: workspace.workgroupId })
+    .from(permissions)
+    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+    .where(
+      and(
+        eq(permissions.userId, userId),
+        eq(permissions.entityType, 'workspace'),
+        isNull(workspace.archivedAt),
+        organizationId ? eq(workspace.organizationId, organizationId) : isNull(workspace.organizationId)
+      )
+    )
+
+  return [...new Set(rows.map((row) => row.workgroupId).filter((id): id is string => Boolean(id)))]
+}
+
+async function hasSelectedWorkgroupReadAccess(params: {
+  workflowId: string
+  userId: string
+  organizationId: string | null
+}): Promise<boolean> {
+  const viewerWorkgroupIds = await getUserAccessibleWorkgroupIds(params.userId, params.organizationId)
+  if (viewerWorkgroupIds.length === 0) {
+    return false
+  }
+
+  const [scopeRow] = await db
+    .select({ id: workflowPublicationScope.id })
+    .from(workflowPublicationScope)
+    .where(
+      and(
+        eq(workflowPublicationScope.workflowId, params.workflowId),
+        inArray(workflowPublicationScope.viewerWorkgroupId, viewerWorkgroupIds)
+      )
+    )
+    .limit(1)
+
+  return Boolean(scopeRow)
 }
 
 export async function authorizeWorkflowByWorkspacePermission(params: {
@@ -214,6 +316,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       message: 'Workflow not found',
       workflow: null,
       workspacePermission: null,
+      accessSource: null,
     }
   }
 
@@ -227,54 +330,71 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
       workflow: wf,
       workspacePermission: null,
+      accessSource: null,
     }
   }
 
-  const [permissionRow] = await db
-    .select({ permissionType: permissions.permissionType })
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.userId, userId),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, wf.workspaceId)
-      )
+  const workspacePermission = await getWorkspacePermission(userId, wf.workspaceId)
+  if (isPermissionSatisfied(workspacePermission, action)) {
+    return {
+      allowed: true,
+      status: 200,
+      workflow: wf,
+      workspacePermission,
+      accessSource: 'workspace',
+    }
+  }
+
+  if (action !== 'read' || wf.track !== 'published') {
+    return {
+      allowed: false,
+      status: 403,
+      message: `Unauthorized: Access denied to ${action} this workflow`,
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+    }
+  }
+
+  if (wf.visibility === 'organization' && activeContext.workspaceOrganizationId) {
+    const organizationAllowed = await hasOrganizationReadAccess(
+      userId,
+      activeContext.workspaceOrganizationId
     )
-    .limit(1)
-
-  const workspacePermission = (permissionRow?.permissionType as PermissionType | undefined) ?? null
-
-  if (workspacePermission === null) {
-    return {
-      allowed: false,
-      status: 403,
-      message: `Unauthorized: Access denied to ${action} this workflow`,
-      workflow: wf,
-      workspacePermission,
+    if (organizationAllowed) {
+      return {
+        allowed: true,
+        status: 200,
+        workflow: wf,
+        workspacePermission: 'read',
+        accessSource: 'organization',
+      }
     }
   }
 
-  const permissionSatisfied =
-    action === 'read'
-      ? true
-      : action === 'write'
-        ? workspacePermission === 'write' || workspacePermission === 'admin'
-        : workspacePermission === 'admin'
-
-  if (!permissionSatisfied) {
-    return {
-      allowed: false,
-      status: 403,
-      message: `Unauthorized: Access denied to ${action} this workflow`,
-      workflow: wf,
-      workspacePermission,
+  if (wf.visibility === 'selected_workgroups') {
+    const selectedWorkgroupsAllowed = await hasSelectedWorkgroupReadAccess({
+      workflowId,
+      userId,
+      organizationId: activeContext.workspaceOrganizationId,
+    })
+    if (selectedWorkgroupsAllowed) {
+      return {
+        allowed: true,
+        status: 200,
+        workflow: wf,
+        workspacePermission: 'read',
+        accessSource: 'selected_workgroups',
+      }
     }
   }
 
   return {
-    allowed: true,
-    status: 200,
+    allowed: false,
+    status: 403,
+    message: `Unauthorized: Access denied to ${action} this workflow`,
     workflow: wf,
     workspacePermission,
+    accessSource: null,
   }
 }

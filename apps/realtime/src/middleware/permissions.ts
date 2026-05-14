@@ -116,6 +116,13 @@ export async function verifyWorkflowAccess(
       return { hasAccess: false }
     }
 
+    if (authorization.accessSource !== 'workspace') {
+      logger.warn(
+        `User ${userId} cannot join realtime for workflow ${workflowId} via ${authorization.accessSource} access`
+      )
+      return { hasAccess: false }
+    }
+
     logger.debug(
       `User ${userId} has ${authorization.workspacePermission} access to workflow ${workflowId} (${workflowName}) via workspace ${workspaceId}`
     )
