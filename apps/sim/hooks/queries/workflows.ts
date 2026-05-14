@@ -18,13 +18,18 @@ import {
   createWorkflowContract,
   deleteWorkflowContract,
   duplicateWorkflowContract,
+  getWorkflowPublicationContract,
   getWorkflowStateContract,
   type ImportWorkflowAsSuperuserBody,
   type ImportWorkflowAsSuperuserResponse,
   importWorkflowAsSuperuserContract,
+  listPublishedWorkflowsForWorkgroupContract,
+  listWorkflowTracksContract,
+  publishWorkflowContract,
   reorderWorkflowsContract,
   restoreWorkflowContract,
   updateWorkflowContract,
+  updateWorkflowPublicationContract,
 } from '@/lib/api/contracts/workflows'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { deploymentKeys } from '@/hooks/queries/deployments'
@@ -136,6 +141,73 @@ export function useWorkflowMap(workspaceId?: string, options?: { scope?: Workflo
   })
 }
 
+async function fetchWorkflowTracks(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<WorkflowTracksData> {
+  const response = await requestJson(listWorkflowTracksContract, {
+    params: { workspaceId },
+    signal,
+  })
+
+  return {
+    drafts: response.drafts.map(mapWorkflow),
+    published: response.published.map(mapWorkflow),
+  }
+}
+
+export function useWorkflowTracks(workspaceId?: string) {
+  return useQuery({
+    queryKey: workflowKeys.trackList(workspaceId),
+    queryFn: workspaceId ? ({ signal }) => fetchWorkflowTracks(workspaceId, signal) : skipToken,
+    staleTime: WORKFLOW_LIST_STALE_TIME,
+  })
+}
+
+async function fetchWorkflowPublication(
+  workflowId: string,
+  signal?: AbortSignal
+): Promise<WorkflowPublicationData> {
+  return requestJson(getWorkflowPublicationContract, {
+    params: { id: workflowId },
+    signal,
+  })
+}
+
+export function useWorkflowPublication(workflowId?: string) {
+  return useQuery({
+    queryKey: workflowKeys.publication(workflowId),
+    queryFn: workflowId ? ({ signal }) => fetchWorkflowPublication(workflowId, signal) : skipToken,
+    staleTime: 30 * 1000,
+  })
+}
+
+async function fetchPublishedWorkflowsForWorkgroup(
+  workgroupId: string,
+  signal?: AbortSignal
+): Promise<PublishedWorkflowView[]> {
+  const response = await requestJson(listPublishedWorkflowsForWorkgroupContract, {
+    params: { workgroupId },
+    signal,
+  })
+
+  return response.data.map((workflow) => ({
+    ...mapWorkflow(workflow),
+    workspaceName: workflow.workspaceName,
+    ownerWorkgroupId: workflow.ownerWorkgroupId,
+  }))
+}
+
+export function usePublishedWorkflowsForWorkgroup(workgroupId?: string) {
+  return useQuery({
+    queryKey: workflowKeys.publishedWorkgroupList(workgroupId),
+    queryFn: workgroupId
+      ? ({ signal }) => fetchPublishedWorkflowsForWorkgroup(workgroupId, signal)
+      : skipToken,
+    staleTime: WORKFLOW_LIST_STALE_TIME,
+  })
+}
+
 interface CreateWorkflowVariables {
   workspaceId: string
   name?: string
@@ -145,6 +217,9 @@ interface CreateWorkflowVariables {
   sortOrder?: number
   id?: string
   deduplicate?: boolean
+  track?: 'draft' | 'published'
+  visibility?: 'workspace' | 'organization' | 'selected_workgroups'
+  sourceWorkflowId?: string | null
 }
 
 interface CreateWorkflowMutationData {
@@ -155,7 +230,36 @@ interface CreateWorkflowMutationData {
   workspaceId: string
   folderId?: string | null
   sortOrder: number
+  track: 'draft' | 'published'
+  visibility: 'workspace' | 'organization' | 'selected_workgroups'
+  sourceWorkflowId?: string | null
+  publishedAt?: Date | null
   subBlockValues?: Record<string, Record<string, unknown>>
+}
+
+interface WorkflowPublicationScope {
+  workgroupId: string
+}
+
+export interface WorkflowPublicationData {
+  workflowId: string
+  track: 'draft' | 'published'
+  visibility: 'workspace' | 'organization' | 'selected_workgroups'
+  sourceWorkflowId: string | null
+  publishedWorkflowId: string | null
+  publishedAt: string | null
+  publishedBy: string | null
+  viewerScopes: WorkflowPublicationScope[]
+}
+
+export interface WorkflowTracksData {
+  drafts: WorkflowMetadata[]
+  published: WorkflowMetadata[]
+}
+
+export interface PublishedWorkflowView extends WorkflowMetadata {
+  workspaceName: string
+  ownerWorkgroupId?: string | null
 }
 
 export function useCreateWorkflow() {
@@ -163,8 +267,19 @@ export function useCreateWorkflow() {
 
   return useMutation({
     mutationFn: async (variables: CreateWorkflowVariables): Promise<CreateWorkflowMutationData> => {
-      const { workspaceId, name, description, color, folderId, sortOrder, id, deduplicate } =
-        variables
+      const {
+        workspaceId,
+        name,
+        description,
+        color,
+        folderId,
+        sortOrder,
+        id,
+        deduplicate,
+        track,
+        visibility,
+        sourceWorkflowId,
+      } = variables
 
       logger.info(`Creating new workflow in workspace: ${workspaceId}`)
 
@@ -178,6 +293,9 @@ export function useCreateWorkflow() {
           folderId: folderId || null,
           sortOrder,
           deduplicate,
+          track,
+          visibility,
+          sourceWorkflowId,
         },
       })
       const workflowId = createdWorkflow.id
@@ -192,6 +310,10 @@ export function useCreateWorkflow() {
         workspaceId,
         folderId: createdWorkflow.folderId,
         sortOrder: createdWorkflow.sortOrder ?? 0,
+        track: createdWorkflow.track,
+        visibility: createdWorkflow.visibility,
+        sourceWorkflowId: createdWorkflow.sourceWorkflowId,
+        publishedAt: createdWorkflow.publishedAt ? new Date(createdWorkflow.publishedAt) : null,
         subBlockValues: createdWorkflow.subBlockValues,
       }
     },
@@ -230,6 +352,10 @@ export function useCreateWorkflow() {
         workspaceId: variables.workspaceId,
         folderId: variables.folderId || null,
         sortOrder,
+        track: variables.track ?? 'draft',
+        visibility: variables.visibility ?? 'workspace',
+        sourceWorkflowId: variables.sourceWorkflowId ?? null,
+        publishedAt: null,
         locked: false,
       }
 
@@ -260,6 +386,10 @@ export function useCreateWorkflow() {
                   workspaceId: data.workspaceId,
                   folderId: data.folderId,
                   sortOrder: data.sortOrder,
+                  track: data.track,
+                  visibility: data.visibility,
+                  sourceWorkflowId: data.sourceWorkflowId ?? null,
+                  publishedAt: data.publishedAt ?? null,
                 }
               : w
           )
@@ -302,6 +432,71 @@ export function useCreateWorkflow() {
     },
     onSettled: (_data, _error, variables) => {
       return invalidateWorkflowLists(queryClient, variables.workspaceId, ['active', 'archived'])
+    },
+  })
+}
+
+interface PublishWorkflowVariables {
+  workflowId: string
+  workspaceId: string
+  name?: string
+  visibility?: 'workspace' | 'organization' | 'selected_workgroups'
+  viewerWorkgroupIds?: string[]
+}
+
+export function usePublishWorkflow() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (variables: PublishWorkflowVariables): Promise<WorkflowMetadata> => {
+      const response = await requestJson(publishWorkflowContract, {
+        params: { id: variables.workflowId },
+        body: {
+          name: variables.name,
+          visibility: variables.visibility ?? 'organization',
+          viewerWorkgroupIds: variables.viewerWorkgroupIds ?? [],
+        },
+      })
+
+      return mapWorkflow(response.publishedWorkflow)
+    },
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowKeys.list(variables.workspaceId, 'active'),
+        }),
+        queryClient.invalidateQueries({ queryKey: workflowKeys.trackList(variables.workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: workflowKeys.publication(variables.workflowId) }),
+      ])
+    },
+  })
+}
+
+interface UpdateWorkflowPublicationVariables {
+  workflowId: string
+  visibility: 'workspace' | 'organization' | 'selected_workgroups'
+  viewerWorkgroupIds?: string[]
+}
+
+export function useUpdateWorkflowPublication() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (
+      variables: UpdateWorkflowPublicationVariables
+    ): Promise<WorkflowPublicationData> => {
+      return requestJson(updateWorkflowPublicationContract, {
+        params: { id: variables.workflowId },
+        body: {
+          visibility: variables.visibility,
+          viewerWorkgroupIds: variables.viewerWorkgroupIds ?? [],
+        },
+      })
+    },
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: workflowKeys.publication(variables.workflowId),
+      })
     },
   })
 }
