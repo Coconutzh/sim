@@ -397,6 +397,7 @@ async function createWorkspace({
     color,
     ownerId: userId,
     organizationId,
+    workgroupId: null,
     workspaceMode,
     billedAccountUserId,
     allowPersonalApiKeys: true,

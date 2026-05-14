@@ -14,6 +14,7 @@ export const workspaceSchema = z.object({
   logoUrl: z.string().nullable().optional(),
   ownerId: z.string(),
   organizationId: z.string().nullable(),
+  workgroupId: z.string().nullable().optional(),
   workspaceMode: workspaceModeSchema,
   role: z.string().optional(),
   membershipId: z.string().optional(),

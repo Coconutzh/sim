@@ -57,6 +57,7 @@ async function fetchWorkspaces(
       data.workspaces?.map((workspace: Workspace) => ({
         ...workspace,
         organizationId: workspace.organizationId ?? null,
+        workgroupId: workspace.workgroupId ?? null,
         workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
         inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
         inviteDisabledReason: workspace.inviteDisabledReason ?? null,
@@ -329,6 +330,7 @@ async function fetchAdminWorkspaces(
   const allUserWorkspaces = (workspacesData.workspaces || []).map((workspace: Workspace) => ({
     ...workspace,
     organizationId: workspace.organizationId ?? null,
+    workgroupId: workspace.workgroupId ?? null,
     workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
     inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
     inviteDisabledReason: workspace.inviteDisabledReason ?? null,
