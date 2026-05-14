@@ -147,6 +147,16 @@ export const workflowFolder = pgTable(
   })
 )
 
+export const workflowTrackEnum = pgEnum('workflow_track', ['draft', 'published'])
+export type WorkflowTrack = (typeof workflowTrackEnum.enumValues)[number]
+
+export const workflowVisibilityEnum = pgEnum('workflow_visibility', [
+  'workspace',
+  'organization',
+  'selected_workgroups',
+])
+export type WorkflowVisibility = (typeof workflowVisibilityEnum.enumValues)[number]
+
 export const workflow = pgTable(
   'workflow',
   {
@@ -163,6 +173,11 @@ export const workflow = pgTable(
     lastSynced: timestamp('last_synced').notNull(),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
+    track: workflowTrackEnum('track').notNull().default('draft'),
+    visibility: workflowVisibilityEnum('visibility').notNull().default('workspace'),
+    sourceWorkflowId: text('source_workflow_id'),
+    publishedAt: timestamp('published_at'),
+    publishedBy: text('published_by').references(() => user.id, { onDelete: 'set null' }),
     isDeployed: boolean('is_deployed').notNull().default(false),
     deployedAt: timestamp('deployed_at'),
     isPublicApi: boolean('is_public_api').notNull().default(false),
@@ -176,6 +191,9 @@ export const workflow = pgTable(
     userIdIdx: index('workflow_user_id_idx').on(table.userId),
     workspaceIdIdx: index('workflow_workspace_id_idx').on(table.workspaceId),
     userWorkspaceIdx: index('workflow_user_workspace_idx').on(table.userId, table.workspaceId),
+    workspaceTrackIdx: index('workflow_workspace_track_idx').on(table.workspaceId, table.track),
+    sourceWorkflowIdx: index('workflow_source_workflow_idx').on(table.sourceWorkflowId),
+    visibilityIdx: index('workflow_visibility_idx').on(table.visibility),
     workspaceFolderNameUnique: uniqueIndex('workflow_workspace_folder_name_active_unique')
       .on(table.workspaceId, sql`coalesce(${table.folderId}, '')`, table.name)
       .where(sql`${table.archivedAt} IS NULL`),
@@ -184,6 +202,32 @@ export const workflow = pgTable(
     workspaceArchivedAtPartialIdx: index('workflow_workspace_archived_partial_idx')
       .on(table.workspaceId, table.archivedAt)
       .where(sql`${table.archivedAt} IS NOT NULL`),
+  })
+)
+
+export const workflowPublicationScope = pgTable(
+  'workflow_publication_scope',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    viewerWorkgroupId: text('viewer_workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdx: index('workflow_publication_scope_workflow_idx').on(table.workflowId),
+    viewerWorkgroupIdx: index('workflow_publication_scope_viewer_workgroup_idx').on(
+      table.viewerWorkgroupId
+    ),
+    workflowViewerUnique: uniqueIndex('workflow_publication_scope_workflow_viewer_unique').on(
+      table.workflowId,
+      table.viewerWorkgroupId
+    ),
   })
 )
 
@@ -1010,6 +1054,32 @@ export const organization = pgTable('organization', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const workgroup = pgTable(
+  'workgroup',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIdIdx: index('workgroup_organization_id_idx').on(table.organizationId),
+    organizationSlugUnique: uniqueIndex('workgroup_org_slug_unique').on(
+      table.organizationId,
+      table.slug
+    ),
+    organizationNameUnique: uniqueIndex('workgroup_org_name_unique').on(
+      table.organizationId,
+      table.name
+    ),
+  })
+)
+
 export const member = pgTable(
   'member',
   {
@@ -1103,6 +1173,9 @@ export const workspace = pgTable(
     organizationId: text('organization_id').references(() => organization.id, {
       onDelete: 'set null',
     }),
+    workgroupId: text('workgroup_id').references(() => workgroup.id, {
+      onDelete: 'set null',
+    }),
     workspaceMode: workspaceModeEnum('workspace_mode').notNull().default('grandfathered_shared'),
     billedAccountUserId: text('billed_account_user_id')
       .notNull()
@@ -1118,6 +1191,7 @@ export const workspace = pgTable(
   (table) => ({
     ownerIdIdx: index('workspace_owner_id_idx').on(table.ownerId),
     organizationIdIdx: index('workspace_organization_id_idx').on(table.organizationId),
+    workgroupIdIdx: index('workspace_workgroup_id_idx').on(table.workgroupId),
     workspaceModeIdx: index('workspace_mode_idx').on(table.workspaceMode),
   })
 )
