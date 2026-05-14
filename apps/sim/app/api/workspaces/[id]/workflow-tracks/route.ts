@@ -11,7 +11,7 @@ import { listWorkflowTracksForWorkspace } from '@/lib/workflows/publication'
 const logger = createLogger('WorkspaceWorkflowTracksAPI')
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, context: { params: Promise<{ workspaceId: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
@@ -24,7 +24,7 @@ export const GET = withRouteHandler(
 
     try {
       const tracks = await listWorkflowTracksForWorkspace({
-        workspaceId: parsed.data.params.workspaceId,
+        workspaceId: parsed.data.params.id,
         userId: auth.userId,
       })
 

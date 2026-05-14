@@ -206,6 +206,10 @@ export const workspaceIdParamsSchema = z.object({
   workspaceId: workspaceIdSchema,
 })
 
+export const workspaceRouteIdParamsSchema = z.object({
+  id: workspaceIdSchema,
+})
+
 export const workflowListQuerySchema = z.object({
   workspaceId: z.string().min(1).optional(),
   scope: workflowScopeSchema.default('active'),
@@ -773,8 +777,8 @@ export const restoreWorkflowContract = defineRouteContract({
 
 export const listWorkflowTracksContract = defineRouteContract({
   method: 'GET',
-  path: '/api/workspaces/[workspaceId]/workflow-tracks',
-  params: workspaceIdParamsSchema,
+  path: '/api/workspaces/[id]/workflow-tracks',
+  params: workspaceRouteIdParamsSchema,
   response: {
     mode: 'json',
     schema: workflowTracksResponseSchema,

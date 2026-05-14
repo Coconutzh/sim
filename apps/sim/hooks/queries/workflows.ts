@@ -146,7 +146,7 @@ async function fetchWorkflowTracks(
   signal?: AbortSignal
 ): Promise<WorkflowTracksData> {
   const response = await requestJson(listWorkflowTracksContract, {
-    params: { workspaceId },
+    params: { id: workspaceId },
     signal,
   })
 
