@@ -155,6 +155,7 @@ type UnifiedChatBranch =
         commands?: string[]
         prefetch?: boolean
         implicitFeedback?: string
+        conversationHistory?: unknown[]
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -180,6 +181,7 @@ type UnifiedChatBranch =
         userPermission?: string
         userTimezone?: string
         workspaceContext?: string
+        conversationHistory?: unknown[]
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -545,6 +547,7 @@ async function resolveBranch(params: {
             chatId: payloadParams.chatId,
             prefetch: payloadParams.prefetch,
             implicitFeedback: payloadParams.implicitFeedback,
+            conversationHistory: payloadParams.conversationHistory,
             userPermission: payloadParams.userPermission,
             userTimezone: payloadParams.userTimezone,
           },
@@ -602,6 +605,7 @@ async function resolveBranch(params: {
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
           workspaceContext: payloadParams.workspaceContext,
+          conversationHistory: payloadParams.conversationHistory,
           userPermission: payloadParams.userPermission,
           userTimezone: payloadParams.userTimezone,
         },
@@ -909,6 +913,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 commands: body.commands,
                 prefetch: body.prefetch,
                 implicitFeedback: body.implicitFeedback,
+                conversationHistory,
               })
             : branch.buildPayload({
                 message: body.message,
@@ -920,6 +925,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userPermission: userPermission ?? undefined,
                 userTimezone: body.userTimezone,
                 workspaceContext,
+                conversationHistory,
               }),
         activeOtelRoot.context
       )

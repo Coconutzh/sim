@@ -185,6 +185,29 @@ function makeNestedLoopWorkflow() {
   }
 }
 
+describe('handleEditOperation position updates', () => {
+  it('updates an existing block position without changing its inputs or edges', () => {
+    const workflow = makeLoopWorkflow()
+
+    const { state, skippedItems } = applyOperationsToWorkflowState(workflow, [
+      {
+        operation_type: 'edit',
+        block_id: 'condition-1',
+        params: {
+          position: { x: 720, y: 240 },
+        },
+      },
+    ])
+
+    expect(skippedItems).toHaveLength(0)
+    expect(state.blocks['condition-1'].position).toEqual({ x: 720, y: 240 })
+    expect(state.blocks['condition-1'].subBlocks.conditions.value).toBe(
+      workflow.blocks['condition-1'].subBlocks.conditions.value
+    )
+    expect(state.edges).toEqual(workflow.edges)
+  })
+})
+
 describe('handleEditOperation nestedNodes merge', () => {
   it('preserves existing child block IDs when editing a loop with nestedNodes', () => {
     const workflow = makeLoopWorkflow()

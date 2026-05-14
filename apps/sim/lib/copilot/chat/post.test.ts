@@ -205,6 +205,41 @@ describe('handleUnifiedChatPost', () => {
     )
   })
 
+  it('passes persisted conversation history into the copilot payload', async () => {
+    resolveOrCreateChat.mockResolvedValue({
+      chatId: 'chat-1',
+      chat: { id: 'chat-1' },
+      conversationHistory: [
+        { id: 'old-user', role: 'user', content: 'Create a workflow' },
+        { id: 'old-assistant', role: 'assistant', content: 'I created a proposal.' },
+      ],
+      isNew: false,
+    })
+
+    const response = await handleUnifiedChatPost(
+      new NextRequest('http://localhost/api/copilot/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Now make it horizontal',
+          chatId: 'chat-1',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(buildCopilotRequestPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationHistory: [
+          { id: 'old-user', role: 'user', content: 'Create a workflow' },
+          { id: 'old-assistant', role: 'assistant', content: 'I created a proposal.' },
+        ],
+      }),
+      { selectedModel: 'claude-opus-4-6' }
+    )
+  })
+
   it('rejects requests that have neither workflow nor workspace attachment', async () => {
     const response = await handleUnifiedChatPost(
       new NextRequest('http://localhost/api/copilot/chat', {

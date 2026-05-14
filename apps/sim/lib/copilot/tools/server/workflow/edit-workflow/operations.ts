@@ -35,6 +35,21 @@ function isProductEnabledBlockType(blockType: string): boolean {
   return isContainerType(blockType) || isBlockEnabled(blockType)
 }
 
+function normalizePosition(value: unknown): { x: number; y: number } | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const position = value as Record<string, unknown>
+  const x = typeof position.x === 'number' ? position.x : Number(position.x)
+  const y = typeof position.y === 'number' ? position.y : Number(position.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null
+  }
+
+  return { x, y }
+}
+
 /**
  * Applies loop/parallel container config from `inputs` onto a block state (data.loopType, etc.).
  */
@@ -663,6 +678,21 @@ export function handleEditOperation(op: EditWorkflowOperation, ctx: OperationCon
       } else {
         block.name = params.name
       }
+    }
+  }
+
+  if (params?.position !== undefined) {
+    const nextPosition = normalizePosition(params.position)
+    if (!nextPosition) {
+      logSkippedItem(skippedItems, {
+        type: 'missing_required_params',
+        operationType: 'edit',
+        blockId: block_id,
+        reason: `Invalid position for block "${block_id}"`,
+        details: { requestedPosition: params.position },
+      })
+    } else {
+      block.position = nextPosition
     }
   }
 

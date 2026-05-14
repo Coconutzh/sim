@@ -16,9 +16,9 @@ export const runwayVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Runway API key',
+      description: 'Runway API key. Optional when RUNWAY_API_KEY is configured server-side.',
     },
     model: {
       type: 'string',

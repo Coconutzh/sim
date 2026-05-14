@@ -6,7 +6,7 @@ import { createLogger } from '@sim/logger'
 import { Library, Search } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { Button } from '@/components/emcn'
+import { buttonVariants } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
   type ContentNodePresetId,
@@ -198,9 +198,14 @@ export function CommandList() {
                   </div>
                   <div className='text-[var(--text-tertiary)] text-xs'>{command.description}</div>
                 </div>
-                <Button className='pointer-events-none px-2 py-[3px] text-caption' variant='3d'>
+                <span
+                  className={cn(
+                    buttonVariants({ variant: '3d' }),
+                    'pointer-events-none px-2 py-[3px] text-caption'
+                  )}
+                >
                   Open
-                </Button>
+                </span>
               </button>
             )
           })}

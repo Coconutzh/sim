@@ -1,9 +1,21 @@
 import { createLogger } from '@sim/logger'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { env } from '@/lib/core/config/env'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImageTool')
+
+function resolveOpenAIImageApiKey(userProvidedKey?: string): string {
+  if (userProvidedKey) {
+    return userProvidedKey
+  }
+  if (env.OPENAI_API_KEY) {
+    return env.OPENAI_API_KEY
+  }
+  return getRotatingApiKey('openai')
+}
 
 export const imageTool: ToolConfig = {
   id: 'openai_image',
@@ -70,9 +82,9 @@ export const imageTool: ToolConfig = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Your OpenAI API key',
+      description: 'Your OpenAI API key. Optional when OPENAI_API_KEY is configured server-side.',
     },
   },
 
@@ -81,7 +93,7 @@ export const imageTool: ToolConfig = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${resolveOpenAIImageApiKey(params.apiKey)}`,
     }),
     body: (params) => {
       const body: BaseImageRequestBody = {

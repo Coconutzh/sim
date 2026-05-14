@@ -40,6 +40,18 @@ function getPreviewValue(
   return previewSubBlockValues?.[subBlockId]?.value
 }
 
+function getDropdownPreviewValue(value: unknown): string | string[] | null {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value
+  }
+
+  return null
+}
+
 function getPrimaryAgentContent(messages: AgentMessage[] | null | undefined): string {
   if (!messages || messages.length === 0) {
     return ''
@@ -281,7 +293,7 @@ export function ContentNodeInlineEditor({
                 }
                 placeholder={operationConfig.placeholder}
                 isPreview={isPreview}
-                previewValue={operationPreviewValue}
+                previewValue={getDropdownPreviewValue(operationPreviewValue)}
                 disabled={disabled}
                 multiSelect={operationConfig.multiSelect}
                 fetchOptions={operationConfig.fetchOptions}

@@ -18,6 +18,10 @@ import {
   runStreamLoop,
 } from '@/lib/copilot/request/go/stream'
 import {
+  runLocalWorkflowFallback,
+  shouldUseLocalWorkflowFallback,
+} from '@/lib/copilot/request/lifecycle/local-workflow-fallback'
+import {
   getToolCallTerminalData,
   requireToolCallStateResult,
   setTerminalToolCallState,
@@ -41,6 +45,18 @@ const logger = createLogger('CopilotLifecycle')
 
 const MAX_RESUME_ATTEMPTS = 3
 const RESUME_BACKOFF_MS = [250, 500, 1000] as const
+
+function getFallbackGoRoute(route: string, error: unknown): string | null {
+  if (!(error instanceof CopilotBackendError) || error.status !== 404) {
+    return null
+  }
+
+  if (route === '/api/copilot') {
+    return '/api/mcp'
+  }
+
+  return null
+}
 
 export interface CopilotLifecycleOptions extends OrchestratorOptions {
   userId: string
@@ -123,7 +139,26 @@ export async function runCopilotLifecycle(
   })
 
   try {
-    await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    if (
+      shouldUseLocalWorkflowFallback({
+        workflowId,
+        disableAuth: Boolean(env.DISABLE_AUTH),
+        hasCopilotApiKey: Boolean(env.COPILOT_API_KEY),
+      })
+    ) {
+      logger.warn('Using local workflow fallback before remote Copilot call', {
+        workflowId,
+        chatId,
+      })
+      await runLocalWorkflowFallback({
+        requestPayload,
+        context,
+        execContext,
+        options: lifecycleOptions,
+      })
+    } else {
+      await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    }
 
     const result: OrchestratorResult = {
       success: context.errors.length === 0 && !context.wasAborted,
@@ -148,6 +183,49 @@ export async function runCopilotLifecycle(
     await lifecycleOptions.onComplete?.(result)
     return result
   } catch (error) {
+    if (
+      shouldUseLocalWorkflowFallback({
+        workflowId,
+        disableAuth: Boolean(env.DISABLE_AUTH),
+        hasCopilotApiKey: Boolean(env.COPILOT_API_KEY),
+        error,
+      })
+    ) {
+      logger.warn('Remote Copilot unavailable, recovering with local workflow fallback', {
+        workflowId,
+        chatId,
+        error: toError(error).message,
+      })
+
+      context.errors = []
+      context.wasAborted = false
+      context.accumulatedContent = ''
+      context.contentBlocks = []
+      context.toolCalls.clear()
+
+      await runLocalWorkflowFallback({
+        requestPayload,
+        context,
+        execContext,
+        options: lifecycleOptions,
+      })
+
+      const fallbackResult: OrchestratorResult = {
+        success: context.errors.length === 0 && !context.wasAborted,
+        cancelled: context.wasAborted && context.errors.length === 0,
+        content: context.accumulatedContent,
+        contentBlocks: context.contentBlocks,
+        toolCalls: buildToolCallSummaries(context),
+        chatId: context.chatId,
+        requestId: context.requestId,
+        errors: context.errors.length ? context.errors : undefined,
+        usage: context.usage,
+        cost: context.cost,
+      }
+      await lifecycleOptions.onComplete?.(fallbackResult)
+      return fallbackResult
+    }
+
     const err = error instanceof Error ? error : new Error('Copilot orchestration failed')
     logger.error('Copilot orchestration failed', { error: err.message })
     // If the abort signal fired, this throw is a consequence of the
@@ -273,6 +351,17 @@ async function runCheckpointLoop(
       if (streamError instanceof BillingLimitError) {
         await handleBillingLimitResponse(streamError.userId, context, execContext, options)
         break
+      }
+      const fallbackRoute = !isResume ? getFallbackGoRoute(route, streamError) : null
+      if (fallbackRoute) {
+        logger.warn('Copilot backend route returned 404, retrying with fallback route', {
+          route,
+          fallbackRoute,
+          error: toError(streamError).message,
+        })
+        route = fallbackRoute
+        resumeAttempt = 0
+        continue
       }
       if (
         isResume &&

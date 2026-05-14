@@ -16,6 +16,15 @@ const DEFAULT_COMPLETED_TTL_SECONDS = 5 * 60
 const DEFAULT_EVENT_LIMIT = 5_000
 const RETRY_DELAYS_MS = [0, 50, 150] as const
 
+type InMemoryStreamBufferState = {
+  seq: number
+  events: PersistedStreamEventEnvelope[]
+  abort: boolean
+  expiresAt: number | null
+}
+
+const inMemoryStreamBuffers = new Map<string, InMemoryStreamBufferState>()
+
 type RedisOperationMetadata = {
   operation: string
   streamId: string
@@ -31,6 +40,31 @@ function getSeqKey(streamId: string) {
 
 function getAbortKey(streamId: string) {
   return `${STREAM_OUTBOX_PREFIX}${streamId}:abort`
+}
+
+function getInMemoryBufferState(streamId: string): InMemoryStreamBufferState {
+  const existing = inMemoryStreamBuffers.get(streamId)
+  if (existing && (existing.expiresAt === null || existing.expiresAt > Date.now())) {
+    return existing
+  }
+
+  if (existing) {
+    inMemoryStreamBuffers.delete(streamId)
+  }
+
+  const created: InMemoryStreamBufferState = {
+    seq: 0,
+    events: [],
+    abort: false,
+    expiresAt: null,
+  }
+  inMemoryStreamBuffers.set(streamId, created)
+  return created
+}
+
+function setInMemoryBufferExpiry(streamId: string, ttlSeconds: number): void {
+  const state = getInMemoryBufferState(streamId)
+  state.expiresAt = Date.now() + ttlSeconds * 1000
 }
 
 export type StreamConfig = {
@@ -85,6 +119,14 @@ export async function allocateCursor(streamId: string): Promise<{
   cursor: string
 }> {
   const config = getStreamConfig()
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    state.seq += 1
+    setInMemoryBufferExpiry(streamId, config.ttlSeconds)
+    return { seq: state.seq, cursor: String(state.seq) }
+  }
+
   const seq = await withRedisRetry({ operation: 'allocate_cursor', streamId }, async (redis) => {
     const nextValue = await redis.incr(getSeqKey(streamId))
     await redis.expire(getSeqKey(streamId), config.ttlSeconds)
@@ -99,6 +141,12 @@ export async function resetBuffer(streamId: string): Promise<void> {
 }
 
 export async function clearBuffer(streamId: string, operation = 'clear_outbox'): Promise<void> {
+  const redis = getRedisClient()
+  if (!redis) {
+    inMemoryStreamBuffers.delete(streamId)
+    return
+  }
+
   await withRedisRetry({ operation, streamId }, async (redis) => {
     await redis.del(getEventsKey(streamId), getSeqKey(streamId), getAbortKey(streamId))
   })
@@ -108,6 +156,14 @@ export async function scheduleBufferCleanup(
   streamId: string,
   ttlSeconds = DEFAULT_COMPLETED_TTL_SECONDS
 ): Promise<void> {
+  const redis = getRedisClient()
+  if (!redis) {
+    if (inMemoryStreamBuffers.has(streamId)) {
+      setInMemoryBufferExpiry(streamId, ttlSeconds)
+    }
+    return
+  }
+
   try {
     await withRedisRetry({ operation: 'schedule_outbox_cleanup', streamId }, async (redis) => {
       const pipeline = redis.pipeline()
@@ -134,6 +190,20 @@ export async function appendEvents(
 
   const streamId = envelopes[0].stream.streamId
   const config = getStreamConfig()
+
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    state.events.push(...envelopes)
+    state.events.sort((left, right) => left.seq - right.seq)
+    state.seq = Math.max(state.seq, envelopes[envelopes.length - 1].seq)
+    if (state.events.length > config.eventLimit) {
+      state.events = state.events.slice(-config.eventLimit)
+    }
+    state.abort = state.abort && !envelopes.some((envelope) => envelope.seq > state.seq)
+    setInMemoryBufferExpiry(streamId, config.ttlSeconds)
+    return envelopes
+  }
 
   await withRedisRetry({ operation: 'append_event', streamId }, async (redis) => {
     const key = getEventsKey(streamId)
@@ -179,6 +249,12 @@ export async function readEvents(
   }
   const minScore = afterSeq + 1
 
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    return state.events.filter((event) => event.seq >= minScore)
+  }
+
   const rawEntries = await withRedisRetry({ operation: 'read_events', streamId }, async (redis) => {
     return redis.zrangebyscore(getEventsKey(streamId), minScore, '+inf')
   })
@@ -201,6 +277,12 @@ export async function readEvents(
 }
 
 export async function getOldestSeq(streamId: string): Promise<number | null> {
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    return state.events.length > 0 ? state.events[0].seq : null
+  }
+
   return withRedisRetry({ operation: 'get_oldest_seq', streamId }, async (redis) => {
     const entries = await redis.zrangebyscore(getEventsKey(streamId), '-inf', '+inf', 'LIMIT', 0, 1)
     if (!entries || entries.length === 0) {
@@ -217,6 +299,12 @@ export async function getOldestSeq(streamId: string): Promise<number | null> {
 }
 
 export async function getLatestSeq(streamId: string): Promise<number | null> {
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    return state.seq > 0 ? state.seq : null
+  }
+
   return withRedisRetry({ operation: 'get_latest_seq', streamId }, async (redis) => {
     const currentSeq = await redis.get(getSeqKey(streamId))
     if (currentSeq === null) {
@@ -229,12 +317,25 @@ export async function getLatestSeq(streamId: string): Promise<number | null> {
 
 export async function writeAbortMarker(streamId: string): Promise<void> {
   const ttlSeconds = getStreamConfig().ttlSeconds
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    state.abort = true
+    setInMemoryBufferExpiry(streamId, ttlSeconds)
+    return
+  }
+
   await withRedisRetry({ operation: 'write_abort_marker', streamId }, async (redis) => {
     await redis.set(getAbortKey(streamId), '1', 'EX', ttlSeconds)
   })
 }
 
 export async function hasAbortMarker(streamId: string): Promise<boolean> {
+  const redis = getRedisClient()
+  if (!redis) {
+    return getInMemoryBufferState(streamId).abort
+  }
+
   return withRedisRetry({ operation: 'read_abort_marker', streamId }, async (redis) => {
     const marker = await redis.get(getAbortKey(streamId))
     return marker === '1'
@@ -242,6 +343,13 @@ export async function hasAbortMarker(streamId: string): Promise<boolean> {
 }
 
 export async function clearAbortMarker(streamId: string): Promise<void> {
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryBufferState(streamId)
+    state.abort = false
+    return
+  }
+
   await withRedisRetry({ operation: 'clear_abort_marker', streamId }, async (redis) => {
     await redis.del(getAbortKey(streamId))
   })

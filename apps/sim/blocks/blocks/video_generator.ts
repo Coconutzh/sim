@@ -1,7 +1,31 @@
 import { VideoIcon } from '@/components/icons'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import type { VideoBlockResponse } from '@/tools/video/types'
+
+const VIDEO_PROVIDER_ENV_FLAGS = {
+  runway: 'NEXT_PUBLIC_RUNWAY_CONFIGURED',
+  veo: 'NEXT_PUBLIC_VEO_CONFIGURED',
+  luma: 'NEXT_PUBLIC_LUMA_CONFIGURED',
+  minimax: 'NEXT_PUBLIC_MINIMAX_CONFIGURED',
+  falai: 'NEXT_PUBLIC_FAL_CONFIGURED',
+} as const
+
+function isVideoProviderPreconfigured(provider: unknown): boolean {
+  if (typeof provider !== 'string') return false
+  const envFlag = VIDEO_PROVIDER_ENV_FLAGS[provider as keyof typeof VIDEO_PROVIDER_ENV_FLAGS]
+  return Boolean(envFlag && isTruthy(getEnv(envFlag)))
+}
+
+function getVideoApiKeyCondition() {
+  return (values?: Record<string, unknown>) => {
+    const provider = values?.provider
+    return isVideoProviderPreconfigured(provider)
+      ? { field: 'provider', value: '__video_provider_key_preconfigured__' }
+      : { field: 'provider', value: ['runway', 'veo', 'luma', 'minimax', 'falai'] }
+  }
+}
 
 export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
   type: 'video_generator',
@@ -354,7 +378,8 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       type: 'short-input',
       placeholder: 'Enter your provider API key',
       password: true,
-      required: true,
+      required: getVideoApiKeyCondition(),
+      condition: getVideoApiKeyCondition(),
     },
   ],
 
@@ -754,7 +779,8 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       type: 'short-input',
       placeholder: 'Enter your provider API key',
       password: true,
-      required: true,
+      required: getVideoApiKeyCondition(),
+      condition: getVideoApiKeyCondition(),
     },
   ],
   tools: {

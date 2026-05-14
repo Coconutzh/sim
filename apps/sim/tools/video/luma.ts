@@ -16,9 +16,9 @@ export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Luma AI API key',
+      description: 'Luma AI API key. Optional when LUMA_API_KEY is configured server-side.',
     },
     model: {
       type: 'string',

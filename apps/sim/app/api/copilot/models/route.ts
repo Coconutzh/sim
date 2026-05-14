@@ -8,6 +8,7 @@ import { fetchGo } from '@/lib/copilot/request/go/fetch'
 import { authenticateCopilotRequestSessionOnly } from '@/lib/copilot/request/http'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { DYNAMIC_MODEL_PROVIDERS, PROVIDER_DEFINITIONS } from '@/providers/models'
 
 interface AvailableModel {
   id: string
@@ -31,6 +32,26 @@ function isRawAvailableModel(item: unknown): item is RawAvailableModel {
     'id' in item &&
     typeof (item as { id: unknown }).id === 'string'
   )
+}
+
+function buildStaticAvailableModels(): AvailableModel[] {
+  const models: AvailableModel[] = []
+
+  for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
+    if ((DYNAMIC_MODEL_PROVIDERS as readonly string[]).includes(providerId)) {
+      continue
+    }
+
+    for (const model of provider.models) {
+      models.push({
+        id: model.id,
+        friendlyName: model.id,
+        provider: provider.id,
+      })
+    }
+  }
+
+  return models
 }
 
 export const GET = withRouteHandler(async (req: NextRequest) => {
@@ -65,11 +86,12 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
       })
       return NextResponse.json(
         {
-          success: false,
-          error: payload?.error || 'Failed to fetch available models',
-          models: [],
+          success: true,
+          fallback: 'static',
+          ...(payload?.error ? { error: payload.error } : {}),
+          models: buildStaticAvailableModels(),
         },
-        { status: response.status }
+        { status: 200 }
       )
     }
 
@@ -89,11 +111,12 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
     })
     return NextResponse.json(
       {
-        success: false,
+        success: true,
+        fallback: 'static',
         error: 'Failed to fetch available models',
-        models: [],
+        models: buildStaticAvailableModels(),
       },
-      { status: 500 }
+      { status: 200 }
     )
   }
 })

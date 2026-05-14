@@ -27,6 +27,17 @@ vi.mock('@/blocks/registry', () => ({
 }))
 
 describe('createBlockFromParams', () => {
+  it('uses requested position when creating a new block', () => {
+    const block = createBlockFromParams('b-agent', {
+      type: 'agent',
+      name: 'Agent',
+      position: { x: 480, y: 160 },
+      triggerMode: false,
+    })
+
+    expect(block.position).toEqual({ x: 480, y: 160 })
+  })
+
   it('derives agent outputs from responseFormat when outputs are not provided', () => {
     const block = createBlockFromParams('b-agent', {
       type: 'agent',
