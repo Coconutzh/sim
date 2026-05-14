@@ -743,6 +743,12 @@ export const Sidebar = memo(function Sidebar() {
           icon: Library,
           href: `/workspace/${workspaceId}/logs`,
         },
+        {
+          id: 'published',
+          label: 'Published',
+          icon: Compass,
+          href: `/workspace/${workspaceId}/published`,
+        },
       ].filter((item) => !item.hidden),
     [
       workspaceId,
