@@ -17,9 +17,9 @@ export const falaiVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Fal.ai API key',
+      description: 'Fal.ai API key. Optional when FAL_API_KEY is configured server-side.',
     },
     model: {
       type: 'string',

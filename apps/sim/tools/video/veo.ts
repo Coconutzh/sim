@@ -16,9 +16,9 @@ export const veoVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Google Gemini API key',
+      description: 'Google Gemini API key. Optional when GEMINI_API_KEY is configured server-side.',
     },
     model: {
       type: 'string',

@@ -1,4 +1,7 @@
 import type { Config } from 'tailwindcss'
+import plugin from 'tailwindcss/plugin'
+import tailwindcssAnimate from 'tailwindcss-animate'
+import typography from '@tailwindcss/typography'
 
 export default {
   darkMode: ['class'],
@@ -234,12 +237,10 @@ export default {
     },
   },
   plugins: [
-    require('tailwindcss-animate'),
-    require('@tailwindcss/typography'),
-    require('tailwindcss/plugin')(
-      ({ addVariant }: { addVariant: (name: string, definition: string) => void }) => {
-        addVariant('hover-hover', '@media (hover: hover) and (pointer: fine) { &:hover }')
-      }
-    ),
+    tailwindcssAnimate,
+    typography,
+    plugin(({ addVariant }: { addVariant: (name: string, definition: string) => void }) => {
+      addVariant('hover-hover', '@media (hover: hover) and (pointer: fine) { &:hover }')
+    }),
   ],
 } satisfies Config

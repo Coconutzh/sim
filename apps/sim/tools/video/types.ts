@@ -3,7 +3,7 @@ import type { ToolResponse } from '@/tools/types'
 
 export interface VideoParams {
   provider: 'runway' | 'veo' | 'luma' | 'minimax' | 'falai'
-  apiKey: string
+  apiKey?: string
   model?: string
   prompt: string
   duration?: number

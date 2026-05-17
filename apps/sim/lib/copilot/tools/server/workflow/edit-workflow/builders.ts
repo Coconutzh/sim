@@ -31,6 +31,7 @@ export function createBlockFromParams(
   skippedItems?: SkippedItem[]
 ): any {
   const blockConfig = getAllBlocks().find((b) => b.type === params.type)
+  const requestedPosition = normalizePosition(params.position)
 
   // Validate inputs against block configuration
   let validatedInputs: Record<string, any> | undefined
@@ -73,7 +74,7 @@ export function createBlockFromParams(
     id: blockId,
     type: params.type,
     name: params.name,
-    position: { x: 0, y: 0 },
+    position: requestedPosition ?? { x: 0, y: 0 },
     enabled: params.enabled !== undefined ? params.enabled : true,
     horizontalHandles: true,
     advancedMode: params.advancedMode || false,
@@ -173,6 +174,21 @@ export function createBlockFromParams(
   }
 
   return blockState
+}
+
+function normalizePosition(value: unknown): { x: number; y: number } | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const position = value as Record<string, unknown>
+  const x = typeof position.x === 'number' ? position.x : Number(position.x)
+  const y = typeof position.y === 'number' ? position.y : Number(position.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null
+  }
+
+  return { x, y }
 }
 
 export function updateCanonicalModesForInputs(

@@ -18,6 +18,13 @@ const STREAM_OUTBOX_PREFIX = 'mothership_stream:'
 const DEFAULT_COMPLETED_TTL_SECONDS = 5 * 60
 const RETRY_DELAYS_MS = [0, 50, 150] as const
 
+type InMemoryPreviewSessionState = {
+  sessions: Map<string, FilePreviewSession>
+  expiresAt: number | null
+}
+
+const inMemoryPreviewSessions = new Map<string, InMemoryPreviewSessionState>()
+
 export type {
   FilePreviewContentMode,
   FilePreviewSession,
@@ -32,6 +39,29 @@ export {
 
 function getPreviewSessionsKey(streamId: string): string {
   return `${STREAM_OUTBOX_PREFIX}${streamId}:preview_sessions`
+}
+
+function getInMemoryPreviewState(streamId: string): InMemoryPreviewSessionState {
+  const existing = inMemoryPreviewSessions.get(streamId)
+  if (existing && (existing.expiresAt === null || existing.expiresAt > Date.now())) {
+    return existing
+  }
+
+  if (existing) {
+    inMemoryPreviewSessions.delete(streamId)
+  }
+
+  const created: InMemoryPreviewSessionState = {
+    sessions: new Map<string, FilePreviewSession>(),
+    expiresAt: null,
+  }
+  inMemoryPreviewSessions.set(streamId, created)
+  return created
+}
+
+function setInMemoryPreviewExpiry(streamId: string, ttlSeconds: number): void {
+  const state = getInMemoryPreviewState(streamId)
+  state.expiresAt = Date.now() + ttlSeconds * 1000
 }
 
 type RedisOperationMetadata = {
@@ -112,6 +142,14 @@ export async function upsertFilePreviewSession(
   session: FilePreviewSession
 ): Promise<FilePreviewSession> {
   const config = getStreamConfig()
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryPreviewState(session.streamId)
+    state.sessions.set(session.id, session)
+    setInMemoryPreviewExpiry(session.streamId, config.ttlSeconds)
+    return session
+  }
+
   await withRedisRetry(
     { operation: 'upsert_preview_session', streamId: session.streamId },
     async (redis) => {
@@ -126,6 +164,12 @@ export async function upsertFilePreviewSession(
 }
 
 export async function readFilePreviewSessions(streamId: string): Promise<FilePreviewSession[]> {
+  const redis = getRedisClient()
+  if (!redis) {
+    const state = getInMemoryPreviewState(streamId)
+    return sortFilePreviewSessions(Array.from(state.sessions.values()))
+  }
+
   const raw = await withRedisRetry(
     { operation: 'read_preview_sessions', streamId },
     async (redis) => redis.hgetall(getPreviewSessionsKey(streamId))
@@ -153,6 +197,12 @@ export async function readFilePreviewSessions(streamId: string): Promise<FilePre
 }
 
 export async function clearFilePreviewSessions(streamId: string): Promise<void> {
+  const redis = getRedisClient()
+  if (!redis) {
+    inMemoryPreviewSessions.delete(streamId)
+    return
+  }
+
   await withRedisRetry({ operation: 'clear_preview_sessions', streamId }, async (redis) => {
     await redis.del(getPreviewSessionsKey(streamId))
   })
@@ -162,6 +212,14 @@ export async function scheduleFilePreviewSessionCleanup(
   streamId: string,
   ttlSeconds = DEFAULT_COMPLETED_TTL_SECONDS
 ): Promise<void> {
+  const redis = getRedisClient()
+  if (!redis) {
+    if (inMemoryPreviewSessions.has(streamId)) {
+      setInMemoryPreviewExpiry(streamId, ttlSeconds)
+    }
+    return
+  }
+
   try {
     await withRedisRetry(
       { operation: 'schedule_preview_session_cleanup', streamId },

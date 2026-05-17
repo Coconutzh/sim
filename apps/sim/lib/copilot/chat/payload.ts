@@ -40,6 +40,7 @@ interface BuildPayloadParams {
   workspaceContext?: string
   userPermission?: string
   userTimezone?: string
+  conversationHistory?: unknown[]
 }
 
 export interface ToolSchema {
@@ -224,6 +225,7 @@ export async function buildCopilotRequestPayload(
     chatId,
     prefetch,
     implicitFeedback,
+    conversationHistory,
   } = params
 
   const selectedModel = options.selectedModel
@@ -338,6 +340,7 @@ export async function buildCopilotRequestPayload(
     ...(params.workspaceContext ? { workspaceContext: params.workspaceContext } : {}),
     ...(params.userPermission ? { userPermission: params.userPermission } : {}),
     ...(params.userTimezone ? { userTimezone: params.userTimezone } : {}),
+    ...(conversationHistory && conversationHistory.length > 0 ? { conversationHistory } : {}),
     isHosted,
   }
 }

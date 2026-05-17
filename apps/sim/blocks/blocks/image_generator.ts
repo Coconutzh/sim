@@ -1,6 +1,18 @@
 import { ImageIcon } from '@/components/icons'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import type { DalleResponse } from '@/tools/openai/types'
+
+function isPreconfiguredImageKeyAvailable(): boolean {
+  return isTruthy(getEnv('NEXT_PUBLIC_OPENAI_IMAGE_CONFIGURED'))
+}
+
+function getImageApiKeyCondition() {
+  return () =>
+    isPreconfiguredImageKeyAvailable()
+      ? { field: 'model', value: '__openai_image_key_preconfigured__' }
+      : { field: 'model', value: ['dall-e-3', 'gpt-image-1', 'gpt-image-2'] }
+}
 
 export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
   type: 'image_generator',
@@ -169,10 +181,11 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      required: true,
+      required: getImageApiKeyCondition(),
       placeholder: 'Enter your OpenAI API key',
       password: true,
       connectionDroppable: false,
+      condition: getImageApiKeyCondition(),
     },
   ],
   tools: {
@@ -180,7 +193,8 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
     config: {
       tool: () => 'openai_image',
       params: (params) => {
-        if (!params.apiKey) {
+        const resolvedApiKey = params.apiKey || getEnv('OPENAI_API_KEY')
+        if (!resolvedApiKey) {
           throw new Error('API key is required')
         }
         if (!params.prompt) {
@@ -211,7 +225,7 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
           prompt: params.prompt,
           model,
           size,
-          apiKey: params.apiKey,
+          apiKey: resolvedApiKey,
         }
 
         if (model === 'dall-e-3') {

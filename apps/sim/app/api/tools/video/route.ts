@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { videoProviders, videoToolContract } from '@/lib/api/contracts/tools/media/video'
 import { getValidationErrorMessage, parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { env } from '@/lib/core/config/env'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
@@ -14,6 +15,27 @@ const logger = createLogger('VideoProxyAPI')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 600 // 10 minutes for video generation
+
+function resolveVideoProviderApiKey(provider: string, userProvidedKey?: string): string | null {
+  if (userProvidedKey) {
+    return userProvidedKey
+  }
+
+  switch (provider) {
+    case 'runway':
+      return env.RUNWAY_API_KEY ?? null
+    case 'veo':
+      return env.GEMINI_API_KEY ?? env.GEMINI_API_KEY_1 ?? null
+    case 'luma':
+      return env.LUMA_API_KEY ?? null
+    case 'minimax':
+      return env.MINIMAX_API_KEY ?? null
+    case 'falai':
+      return env.FAL_API_KEY ?? null
+    default:
+      return null
+  }
+}
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateId()
@@ -42,12 +64,23 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (!parsed.success) return parsed.response
 
     const body = parsed.data.body
-    const { provider, apiKey, model, prompt, duration, aspectRatio, resolution } = body
+    const { provider, model, prompt, duration, aspectRatio, resolution } = body
+    const apiKey = resolveVideoProviderApiKey(provider, body.apiKey)
 
     const validProviders = videoProviders
     if (!validProviders.includes(provider as (typeof videoProviders)[number])) {
       return NextResponse.json(
         { error: `Invalid provider. Must be one of: ${validProviders.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            'API key is required. Provide it in the block or configure the matching server environment variable.',
+        },
         { status: 400 }
       )
     }
