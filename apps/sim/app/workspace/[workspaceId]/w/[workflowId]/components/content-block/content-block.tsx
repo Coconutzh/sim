@@ -1,0 +1,1021 @@
+"use client";
+
+import { Copy as CopyIcon, ImagePlus, List, Pilcrow, Type } from "lucide-react";
+import { useParams } from "next/navigation";
+import type {
+	ChangeEvent,
+	ReactNode,
+	PointerEvent as ReactPointerEvent,
+} from "react";
+import {
+	createElement,
+	memo,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import type { NodeProps } from "reactflow";
+import { useUserPermissionsContext } from "@/app/workspace/[workspaceId]/providers/workspace-permissions-provider";
+import { ActionBar } from "@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar";
+import { useSubBlockValue } from "@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value";
+import type { WorkflowBlockProps } from "@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types";
+import { useBlockVisual } from "@/app/workspace/[workspaceId]/w/[workflowId]/hooks";
+import { useBlockDimensions } from "@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions";
+import { useUploadWorkspaceFile } from "@/hooks/queries/workspace-files";
+import { cn } from "@/lib/core/utils/cn";
+import { useWorkflowRegistry } from "@/stores/workflows/registry/store";
+import { useSubBlockStore } from "@/stores/workflows/subblock/store";
+
+type ContentVariant = "text" | "image";
+type StoredValueRecord =
+	| Record<string, { value?: unknown } | unknown>
+	| undefined;
+
+interface ContentBlockNodeData extends WorkflowBlockProps {}
+
+interface UploadedFileValue {
+	name?: string;
+	path?: string;
+	key?: string;
+	size?: number;
+	type?: string;
+}
+
+const DEFAULT_TEXT_HTML = "<p></p>";
+const DEFAULT_TEXT_WIDTH = 320;
+const DEFAULT_TEXT_HEIGHT = 160;
+const MIN_TEXT_WIDTH = 220;
+const MAX_TEXT_WIDTH = 640;
+const MIN_TEXT_HEIGHT = 120;
+const MAX_TEXT_HEIGHT = 720;
+const DEFAULT_BACKGROUND_COLOR = "#FFF8C5";
+const DEFAULT_FONT_SIZE = 16;
+const IMAGE_CARD_WIDTH = 320;
+const IMAGE_CARD_HEIGHT = 240;
+
+const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const;
+const BACKGROUND_COLORS = [
+	"#FFF8C5",
+	"#FEE2E2",
+	"#DBEAFE",
+	"#DCFCE7",
+	"#F3E8FF",
+] as const;
+
+function extractStoredValue<T>(
+	source: StoredValueRecord,
+	key: string,
+	fallback: T,
+): T {
+	const rawValue = source?.[key];
+	if (rawValue && typeof rawValue === "object" && "value" in rawValue) {
+		return ((rawValue as { value?: T }).value ?? fallback) as T;
+	}
+	return (rawValue ?? fallback) as T;
+}
+
+function coerceNumber(value: unknown, fallback: number): number {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string") {
+		const parsed = Number.parseFloat(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return fallback;
+}
+
+function clampTextWidth(value: number): number {
+	return Math.max(MIN_TEXT_WIDTH, Math.min(MAX_TEXT_WIDTH, value));
+}
+
+function clampTextHeight(value: number): number {
+	return Math.max(MIN_TEXT_HEIGHT, Math.min(MAX_TEXT_HEIGHT, value));
+}
+
+function normalizeVariant(value: unknown): ContentVariant | null {
+	return value === "image" || value === "text" ? value : null;
+}
+
+function hasImageFileValue(value: unknown): boolean {
+	return Boolean(
+		value &&
+			typeof value === "object" &&
+			("path" in value || "key" in value || "name" in value) &&
+			(typeof (value as UploadedFileValue).path === "string" ||
+				typeof (value as UploadedFileValue).key === "string" ||
+				typeof (value as UploadedFileValue).name === "string"),
+	);
+}
+
+function resolveContentVariant(
+	variant: unknown,
+	sourceValues: StoredValueRecord,
+	fileValue?: unknown,
+): ContentVariant {
+	const directVariant = normalizeVariant(variant);
+	if (directVariant) return directVariant;
+
+	const storedVariant = normalizeVariant(
+		extractStoredValue(sourceValues, "contentVariant", null),
+	);
+	if (storedVariant) return storedVariant;
+
+	if (
+		hasImageFileValue(fileValue) ||
+		hasImageFileValue(extractStoredValue(sourceValues, "file", null))
+	) {
+		return "image";
+	}
+
+	return "text";
+}
+
+function isMeaningfulHtml(html: string): boolean {
+	return (
+		html
+			.replace(/<[^>]+>/g, "")
+			.replace(/&nbsp;/g, " ")
+			.trim().length > 0
+	);
+}
+
+function normalizeContentHtml(input: string | null | undefined): string {
+	if (typeof window === "undefined") {
+		return input && input.trim().length > 0 ? input : DEFAULT_TEXT_HTML;
+	}
+
+	const parser = new DOMParser();
+	const doc = parser.parseFromString(
+		input && input.trim().length > 0 ? input : DEFAULT_TEXT_HTML,
+		"text/html",
+	);
+	const output = doc.createElement("div");
+	const inlineTags = new Set(["strong", "em", "br"]);
+	const blockTags = new Set(["p", "h1", "h2", "h3", "ul", "ol", "li"]);
+
+	const sanitizeNode = (node: ChildNode, parent: HTMLElement) => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			parent.appendChild(doc.createTextNode(node.textContent ?? ""));
+			return;
+		}
+
+		if (!(node instanceof HTMLElement)) {
+			return;
+		}
+
+		let tagName = node.tagName.toLowerCase();
+		if (tagName === "b") tagName = "strong";
+		if (tagName === "i") tagName = "em";
+		if (tagName === "div") tagName = "p";
+		if (tagName === "font" || tagName === "span") {
+			Array.from(node.childNodes).forEach((child) =>
+				sanitizeNode(child, parent),
+			);
+			return;
+		}
+
+		if (!inlineTags.has(tagName) && !blockTags.has(tagName)) {
+			Array.from(node.childNodes).forEach((child) =>
+				sanitizeNode(child, parent),
+			);
+			return;
+		}
+
+		const element = doc.createElement(tagName);
+		Array.from(node.childNodes).forEach((child) =>
+			sanitizeNode(child, element),
+		);
+		parent.appendChild(element);
+	};
+
+	Array.from(doc.body.childNodes).forEach((node) => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			const paragraph = doc.createElement("p");
+			sanitizeNode(node, paragraph);
+			output.appendChild(paragraph);
+			return;
+		}
+		sanitizeNode(node, output);
+	});
+
+	const sanitized = output.innerHTML.trim();
+	return isMeaningfulHtml(sanitized) ? sanitized : DEFAULT_TEXT_HTML;
+}
+
+function getPlainTextFromHtml(input: string | null | undefined): string {
+	const normalizedHtml = normalizeContentHtml(input);
+
+	if (typeof window === "undefined") {
+		return normalizedHtml
+			.replace(/<[^>]+>/g, " ")
+			.replace(/&nbsp;/g, " ")
+			.trim();
+	}
+
+	const parser = new DOMParser();
+	const doc = parser.parseFromString(normalizedHtml, "text/html");
+	return doc.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function renderContentHtml(
+	input: string | null | undefined,
+	emptyStateText: string,
+): ReactNode {
+	const normalizedHtml = normalizeContentHtml(input);
+
+	if (!isMeaningfulHtml(normalizedHtml)) {
+		return createElement("p", { style: { opacity: 0.65 } }, emptyStateText);
+	}
+
+	if (typeof window === "undefined") {
+		return getPlainTextFromHtml(normalizedHtml);
+	}
+
+	const parser = new DOMParser();
+	const doc = parser.parseFromString(normalizedHtml, "text/html");
+	const allowedTags = new Set([
+		"p",
+		"h1",
+		"h2",
+		"h3",
+		"ul",
+		"ol",
+		"li",
+		"strong",
+		"em",
+		"br",
+	]);
+
+	const renderNode = (node: ChildNode, key: string): ReactNode => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return node.textContent ?? "";
+		}
+
+		if (!(node instanceof HTMLElement)) {
+			return null;
+		}
+
+		let tagName = node.tagName.toLowerCase();
+		if (tagName === "b") tagName = "strong";
+		if (tagName === "i") tagName = "em";
+		if (tagName === "div") tagName = "p";
+		if (tagName === "font" || tagName === "span") {
+			return Array.from(node.childNodes).map((child, index) =>
+				renderNode(child, `${key}-${index}`),
+			);
+		}
+
+		if (!allowedTags.has(tagName)) {
+			return Array.from(node.childNodes).map((child, index) =>
+				renderNode(child, `${key}-${index}`),
+			);
+		}
+
+		if (tagName === "br") {
+			return createElement("br", { key });
+		}
+
+		return createElement(
+			tagName,
+			{ key },
+			Array.from(node.childNodes).map((child, index) =>
+				renderNode(child, `${key}-${index}`),
+			),
+		);
+	};
+
+	return Array.from(doc.body.childNodes).map((child, index) =>
+		renderNode(child, `root-${index}`),
+	);
+}
+
+function TextToolbarButton({
+	label,
+	onClick,
+	active = false,
+	title,
+	children,
+}: {
+	label: string;
+	onClick: () => void;
+	active?: boolean;
+	title?: string;
+	children?: ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			title={title ?? label}
+			aria-label={label}
+			onMouseDown={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+			}}
+			onClick={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				onClick();
+			}}
+			className={cn(
+				"flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs transition-colors",
+				active
+					? "border-transparent bg-[var(--brand-secondary)] text-[var(--text-inverse)]"
+					: "border-[var(--border-1)] bg-[var(--surface-1)] text-[var(--text-secondary)] hover-hover:bg-[var(--surface-3)]",
+			)}
+		>
+			{children ?? label}
+		</button>
+	);
+}
+
+function TextContentCard({
+	blockId,
+	selected,
+	canEdit,
+	isPreview,
+	html,
+	blockStyle,
+	backgroundColor,
+	fontSize,
+	width,
+	height,
+	onChangeHtml,
+	onChangeBlockStyle,
+	onChangeBackgroundColor,
+	onChangeFontSize,
+	onChangeWidth,
+	onChangeHeight,
+}: {
+	blockId: string;
+	selected: boolean;
+	canEdit: boolean;
+	isPreview: boolean;
+	html: string;
+	blockStyle: string;
+	backgroundColor: string;
+	fontSize: number;
+	width: number;
+	height: number;
+	onChangeHtml: (value: string) => void;
+	onChangeBlockStyle: (value: string) => void;
+	onChangeBackgroundColor: (value: string) => void;
+	onChangeFontSize: (value: number) => void;
+	onChangeWidth: (value: number) => void;
+	onChangeHeight: (value: number) => void;
+}) {
+	const editorRef = useRef<HTMLDivElement>(null);
+	const [isEditing, setIsEditing] = useState(false);
+	const [draftHtml, setDraftHtml] = useState(html);
+
+	useEffect(() => {
+		if (!isEditing) {
+			setDraftHtml(html);
+		}
+	}, [html, isEditing]);
+
+	useEffect(() => {
+		if (!isEditing || !editorRef.current) return;
+		editorRef.current.innerHTML = html;
+		editorRef.current.focus();
+		const selection = window.getSelection();
+		if (!selection) return;
+		const range = document.createRange();
+		range.selectNodeContents(editorRef.current);
+		range.collapse(false);
+		selection.removeAllRanges();
+		selection.addRange(range);
+	}, [html, isEditing]);
+
+	const syncDraftFromEditor = useCallback(() => {
+		const nextHtml = normalizeContentHtml(
+			editorRef.current?.innerHTML ?? DEFAULT_TEXT_HTML,
+		);
+		setDraftHtml(nextHtml);
+		onChangeHtml(nextHtml);
+		return nextHtml;
+	}, [onChangeHtml]);
+
+	const applyEditorCommand = useCallback(
+		(command: string, value?: string) => {
+			if (!editorRef.current) return;
+			editorRef.current.focus();
+			document.execCommand(command, false, value);
+			syncDraftFromEditor();
+		},
+		[syncDraftFromEditor],
+	);
+
+	const handleApplyBlockStyle = useCallback(
+		(nextStyle: string) => {
+			onChangeBlockStyle(nextStyle);
+			if (!isEditing) return;
+			const formatTarget =
+				nextStyle === "paragraph" ? "<p>" : `<${nextStyle.toLowerCase()}>`;
+			applyEditorCommand("formatBlock", formatTarget);
+		},
+		[applyEditorCommand, isEditing, onChangeBlockStyle],
+	);
+
+	const handleCopyNode = useCallback(() => {
+		useWorkflowRegistry.getState().copyBlocks([blockId]);
+
+		const plainText = getPlainTextFromHtml(isEditing ? draftHtml : html);
+		if (typeof navigator !== "undefined" && navigator.clipboard) {
+			void navigator.clipboard.writeText(plainText).catch(() => {});
+		}
+	}, [blockId, draftHtml, html, isEditing]);
+
+	const startResizeSession = useCallback(
+		(event: ReactPointerEvent<HTMLElement>, axis: "width" | "height") => {
+			if (!canEdit || isPreview) return;
+
+			event.preventDefault();
+			event.stopPropagation();
+
+			const startX = event.clientX;
+			const startY = event.clientY;
+			const startWidth = width;
+			const startHeight = height;
+
+			const handlePointerMove = (moveEvent: PointerEvent) => {
+				if (axis === "width") {
+					const nextWidth = clampTextWidth(
+						startWidth + (moveEvent.clientX - startX),
+					);
+					onChangeWidth(nextWidth);
+					return;
+				}
+
+				const nextHeight = clampTextHeight(
+					startHeight + (moveEvent.clientY - startY),
+				);
+				onChangeHeight(nextHeight);
+			};
+
+			const handlePointerUp = () => {
+				window.removeEventListener("pointermove", handlePointerMove);
+				window.removeEventListener("pointerup", handlePointerUp);
+			};
+
+			window.addEventListener("pointermove", handlePointerMove);
+			window.addEventListener("pointerup", handlePointerUp);
+		},
+		[canEdit, height, isPreview, onChangeHeight, onChangeWidth, width],
+	);
+
+	const enterEditing = useCallback(() => {
+		if (!canEdit || isPreview) return;
+		setIsEditing(true);
+	}, [canEdit, isPreview]);
+
+	const editingContentClassName =
+		"nodrag nopan px-4 py-3 text-[var(--text-primary)] outline-none [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1";
+	const displayContentClassName =
+		"nopan px-4 py-3 text-[var(--text-primary)] [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1";
+	const cardMinHeight = clampTextHeight(height);
+
+	const showToolbar = selected && !isPreview;
+	const normalizedHtml = normalizeContentHtml(isEditing ? draftHtml : html);
+	const isEmpty = !isMeaningfulHtml(normalizedHtml);
+
+	return (
+		<div className="relative" style={{ width, minHeight: cardMinHeight }}>
+			{showToolbar && (
+				<div
+					className="nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg"
+					onPointerDownCapture={(event) => {
+						event.stopPropagation();
+					}}
+				>
+					<div className="flex items-center gap-1 rounded-lg bg-[var(--surface-1)] p-1">
+						{BACKGROUND_COLORS.map((color) => (
+							<button
+								key={color}
+								type="button"
+								aria-label={`Background ${color}`}
+								onMouseDown={(event) => {
+									event.preventDefault();
+									event.stopPropagation();
+								}}
+								onClick={() => onChangeBackgroundColor(color)}
+								className={cn(
+									"h-6 w-6 rounded-full border transition-transform hover-hover:scale-105",
+									backgroundColor === color
+										? "border-[var(--brand-secondary)] ring-1 ring-[var(--brand-secondary)]"
+										: "border-[var(--border-1)]",
+								)}
+								style={{ backgroundColor: color }}
+							/>
+						))}
+					</div>
+
+					<label className="flex items-center gap-1 rounded-md border border-[var(--border-1)] bg-[var(--surface-1)] px-2 py-1 text-[var(--text-secondary)] text-xs">
+						<Type className="h-3.5 w-3.5" />
+						<select
+							value={fontSize}
+							onChange={(event) => onChangeFontSize(Number(event.target.value))}
+							className="bg-transparent outline-none"
+						>
+							{FONT_SIZE_OPTIONS.map((size) => (
+								<option key={size} value={size}>
+									{size}px
+								</option>
+							))}
+						</select>
+					</label>
+
+					<label className="flex items-center gap-1 rounded-md border border-[var(--border-1)] bg-[var(--surface-1)] px-2 py-1 text-[var(--text-secondary)] text-xs">
+						<Pilcrow className="h-3.5 w-3.5" />
+						<select
+							value={blockStyle}
+							onChange={(event) => handleApplyBlockStyle(event.target.value)}
+							className="bg-transparent outline-none"
+						>
+							<option value="h1">H1</option>
+							<option value="h2">H2</option>
+							<option value="h3">H3</option>
+							<option value="paragraph">Body</option>
+						</select>
+					</label>
+
+					<TextToolbarButton
+						label="Bold"
+						onClick={() => applyEditorCommand("bold")}
+					>
+						<span className="font-semibold">B</span>
+					</TextToolbarButton>
+					<TextToolbarButton
+						label="Italic"
+						onClick={() => applyEditorCommand("italic")}
+					>
+						<span className="italic">I</span>
+					</TextToolbarButton>
+					<TextToolbarButton
+						label="List"
+						onClick={() => applyEditorCommand("insertUnorderedList")}
+					>
+						<List className="h-3.5 w-3.5" />
+					</TextToolbarButton>
+					<TextToolbarButton label="Copy Node" onClick={handleCopyNode}>
+						<CopyIcon className="h-3.5 w-3.5" />
+					</TextToolbarButton>
+				</div>
+			)}
+
+			<div
+				className="relative rounded-2xl border border-[var(--border)] shadow-sm transition-shadow"
+				style={{ backgroundColor, minHeight: cardMinHeight }}
+			>
+				{isEditing ? (
+					<div
+						key="editing"
+						ref={editorRef}
+						contentEditable={canEdit}
+						role="textbox"
+						aria-multiline="true"
+						tabIndex={0}
+						suppressContentEditableWarning
+						onInput={() => {
+							setDraftHtml(
+								normalizeContentHtml(
+									editorRef.current?.innerHTML ?? DEFAULT_TEXT_HTML,
+								),
+							);
+						}}
+						onBlur={() => {
+							syncDraftFromEditor();
+							setIsEditing(false);
+						}}
+						className={editingContentClassName}
+						style={{ fontSize, minHeight: cardMinHeight }}
+					/>
+				) : (
+					<div
+						key="display"
+						className={displayContentClassName}
+						style={{ fontSize, minHeight: cardMinHeight }}
+						onDoubleClickCapture={(event) => {
+							event.stopPropagation();
+							enterEditing();
+						}}
+					>
+						{renderContentHtml(
+							isEmpty ? DEFAULT_TEXT_HTML : normalizedHtml,
+							"Double click to edit text",
+						)}
+					</div>
+				)}
+
+				{selected && canEdit && !isPreview && (
+					<button
+						type="button"
+						aria-label="Resize text card width"
+						onPointerDown={(event) => startResizeSession(event, "width")}
+						className="nodrag nopan absolute inset-y-0 right-[-8px] z-30 w-4 cursor-ew-resize"
+					>
+						<div className="-translate-y-1/2 absolute top-1/2 right-[5px] h-16 w-[3px] rounded-full border border-[var(--border)] bg-[var(--surface-1)] shadow-sm" />
+					</button>
+				)}
+
+				{selected && canEdit && !isPreview && (
+					<button
+						type="button"
+						aria-label="Resize text card height"
+						onPointerDown={(event) => startResizeSession(event, "height")}
+						className="nodrag nopan absolute inset-x-0 bottom-[-8px] z-30 h-4 cursor-ns-resize"
+					>
+						<div className="-translate-x-1/2 absolute bottom-[5px] left-1/2 h-[3px] w-16 rounded-full border border-[var(--border)] bg-[var(--surface-1)] shadow-sm" />
+					</button>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function ImageContentCard({
+	canEdit,
+	isPreview,
+	file,
+	selected,
+	onChangeFile,
+}: {
+	canEdit: boolean;
+	isPreview: boolean;
+	file: UploadedFileValue | null;
+	selected: boolean;
+	onChangeFile: (value: UploadedFileValue | null) => void;
+}) {
+	const params = useParams<{ workspaceId: string }>();
+	const inputRef = useRef<HTMLInputElement>(null);
+	const uploadFileMutation = useUploadWorkspaceFile();
+	const [error, setError] = useState<string | null>(null);
+	const [isBroken, setIsBroken] = useState(false);
+
+	const imagePath = file?.path ?? "";
+	const canUpload = canEdit && !isPreview;
+
+	useEffect(() => {
+		setIsBroken(false);
+	}, [imagePath]);
+
+	const openFileDialog = useCallback(() => {
+		if (!canUpload) return;
+		inputRef.current?.click();
+	}, [canUpload]);
+
+	const handleFileChange = useCallback(
+		async (event: ChangeEvent<HTMLInputElement>) => {
+			const nextFile = event.target.files?.[0];
+			event.target.value = "";
+
+			if (!nextFile) return;
+			if (!nextFile.type.startsWith("image/")) {
+				setError("Only image files are supported in this card.");
+				return;
+			}
+
+			if (!params.workspaceId) {
+				setError("Missing workspace context for upload.");
+				return;
+			}
+
+			setError(null);
+
+			try {
+				const result = await uploadFileMutation.mutateAsync({
+					workspaceId: params.workspaceId,
+					file: nextFile,
+					skipToast: true,
+				});
+
+				onChangeFile({
+					name: result.file.name,
+					path: result.file.url,
+					key: result.file.key,
+					size: result.file.size,
+					type: result.file.type,
+				});
+			} catch (uploadError) {
+				const message =
+					uploadError instanceof Error
+						? uploadError.message
+						: "Failed to upload image.";
+				setError(message);
+			}
+		},
+		[onChangeFile, params.workspaceId, uploadFileMutation],
+	);
+
+	const hasImage = Boolean(imagePath) && !isBroken;
+
+	return (
+		<div
+			className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]"
+			style={{ width: IMAGE_CARD_WIDTH, minHeight: IMAGE_CARD_HEIGHT }}
+		>
+			<input
+				ref={inputRef}
+				type="file"
+				accept="image/*"
+				className="hidden"
+				onChange={handleFileChange}
+			/>
+
+			{hasImage ? (
+				<div className="relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3">
+					<img
+						src={imagePath}
+						alt={file?.name || "Uploaded content"}
+						className="max-h-full max-w-full rounded-xl object-contain"
+						onError={() => setIsBroken(true)}
+					/>
+				</div>
+			) : (
+				<button
+					type="button"
+					onPointerDown={(event) => {
+						event.stopPropagation();
+					}}
+					onClick={(event) => {
+						event.stopPropagation();
+						openFileDialog();
+					}}
+					disabled={!canUpload}
+					className="nodrag nopan flex h-[240px] w-[320px] flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent"
+				>
+					<div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-4)]">
+						<ImagePlus className="h-5 w-5" />
+					</div>
+					<div>
+						<div className="font-medium text-sm">
+							{canUpload ? "Upload image" : "No image available"}
+						</div>
+						<div className="mt-1 text-[var(--text-tertiary)] text-xs">
+							Supports a single local image file.
+						</div>
+					</div>
+				</button>
+			)}
+
+			{selected && canUpload && (
+				<button
+					type="button"
+					onPointerDown={(event) => {
+						event.stopPropagation();
+					}}
+					onClick={(event) => {
+						event.stopPropagation();
+						openFileDialog();
+					}}
+					className="nodrag nopan absolute top-3 right-3 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]"
+				>
+					Replace
+				</button>
+			)}
+
+			{uploadFileMutation.isPending && (
+				<div className="absolute inset-x-0 bottom-0 bg-[var(--surface-4)] px-3 py-2 text-[11px] text-[var(--text-secondary)]">
+					Uploading image...
+				</div>
+			)}
+
+			{error && (
+				<div className="border-[var(--border)] border-t bg-[var(--surface-1)] px-3 py-2 text-[11px] text-[var(--text-error)]">
+					{error}
+				</div>
+			)}
+		</div>
+	);
+}
+
+export const ContentBlock = memo(function ContentBlock({
+	id,
+	data,
+	selected,
+}: NodeProps<ContentBlockNodeData>) {
+	const variant = data.contentVariant as ContentVariant | undefined;
+
+	const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual(
+		{
+			blockId: id,
+			data,
+			isSelected: selected,
+		},
+	);
+
+	const storedValues = useSubBlockStore(
+		useCallback(
+			(state) => {
+				if (!activeWorkflowId) return undefined;
+				return state.workflowValues[activeWorkflowId]?.[id];
+			},
+			[activeWorkflowId, id],
+		),
+	);
+
+	const sourceValues = data.isPreview
+		? (data.subBlockValues as StoredValueRecord)
+		: storedValues;
+
+	const [contentHtmlValue, setContentHtmlValue] = useSubBlockValue<string>(
+		id,
+		"contentHtml",
+	);
+	const [blockStyleValue, setBlockStyleValue] = useSubBlockValue<string>(
+		id,
+		"blockStyle",
+	);
+	const [backgroundColorValue, setBackgroundColorValue] =
+		useSubBlockValue<string>(id, "backgroundColor");
+	const [fontSizeValue, setFontSizeValue] = useSubBlockValue<number>(
+		id,
+		"fontSize",
+	);
+	const [widthValue, setWidthValue] = useSubBlockValue<number>(id, "width");
+	const [heightValue, setHeightValue] = useSubBlockValue<number>(id, "height");
+	const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(
+		id,
+		"file",
+	);
+
+	const userPermissions = useUserPermissionsContext();
+	const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked;
+
+	const resolvedVariant = resolveContentVariant(
+		variant,
+		sourceValues,
+		data.isPreview ? undefined : fileValue,
+	);
+	const resolvedHtml = extractStoredValue<string>(
+		data.isPreview
+			? sourceValues
+			: ({ contentHtml: contentHtmlValue } as StoredValueRecord),
+		"contentHtml",
+		DEFAULT_TEXT_HTML,
+	);
+	const resolvedBlockStyle = extractStoredValue<string>(
+		data.isPreview
+			? sourceValues
+			: ({ blockStyle: blockStyleValue } as StoredValueRecord),
+		"blockStyle",
+		"paragraph",
+	);
+	const resolvedBackgroundColor = extractStoredValue<string>(
+		data.isPreview
+			? sourceValues
+			: ({ backgroundColor: backgroundColorValue } as StoredValueRecord),
+		"backgroundColor",
+		DEFAULT_BACKGROUND_COLOR,
+	);
+	const resolvedFontSize = coerceNumber(
+		extractStoredValue<number | string>(
+			data.isPreview
+				? sourceValues
+				: ({ fontSize: fontSizeValue } as StoredValueRecord),
+			"fontSize",
+			DEFAULT_FONT_SIZE,
+		),
+		DEFAULT_FONT_SIZE,
+	);
+	const resolvedWidth = clampTextWidth(
+		coerceNumber(
+			extractStoredValue<number | string>(
+				data.isPreview
+					? sourceValues
+					: ({ width: widthValue } as StoredValueRecord),
+				"width",
+				DEFAULT_TEXT_WIDTH,
+			),
+			DEFAULT_TEXT_WIDTH,
+		),
+	);
+	const resolvedHeight = clampTextHeight(
+		coerceNumber(
+			extractStoredValue<number | string>(
+				data.isPreview
+					? sourceValues
+					: ({ height: heightValue } as StoredValueRecord),
+				"height",
+				DEFAULT_TEXT_HEIGHT,
+			),
+			DEFAULT_TEXT_HEIGHT,
+		),
+	);
+	const resolvedFile = extractStoredValue<UploadedFileValue | null>(
+		data.isPreview ? sourceValues : ({ file: fileValue } as StoredValueRecord),
+		"file",
+		null,
+	);
+
+	const cardRef = useRef<HTMLDivElement>(null);
+
+	useBlockDimensions({
+		blockId: id,
+		calculateDimensions: () => {
+			if (cardRef.current) {
+				return {
+					width: Math.ceil(cardRef.current.offsetWidth),
+					height: Math.ceil(cardRef.current.offsetHeight),
+				};
+			}
+
+			return resolvedVariant === "image"
+				? { width: IMAGE_CARD_WIDTH, height: IMAGE_CARD_HEIGHT }
+				: { width: resolvedWidth, height: resolvedHeight };
+		},
+		dependencies: [
+			resolvedVariant,
+			resolvedWidth,
+			resolvedHeight,
+			resolvedHtml,
+			resolvedBackgroundColor,
+			resolvedFontSize,
+			resolvedFile?.path,
+			selected,
+		],
+	});
+
+	return (
+		<div className="group relative">
+			<div
+				ref={cardRef}
+				// biome-ignore lint/a11y/useSemanticElements: this ReactFlow node shell cannot be a button because it contains nested interactive controls.
+				role="button"
+				tabIndex={0}
+				className="relative z-[20] cursor-grab select-none content-drag-handle [&:active]:cursor-grabbing"
+				onClick={handleClick}
+				onKeyDown={(event) => {
+					if (event.target !== event.currentTarget) {
+						return;
+					}
+					if (event.key === "Enter" || event.key === " ") {
+						event.preventDefault();
+						handleClick();
+					}
+				}}
+			>
+				{!data.isPreview && !data.isEmbedded && (
+					<div className="nodrag nopan">
+						<ActionBar
+							blockId={id}
+							blockType="content"
+							disabled={!canEditWorkflow}
+						/>
+					</div>
+				)}
+
+				{resolvedVariant === "image" ? (
+					<ImageContentCard
+						canEdit={canEditWorkflow}
+						isPreview={Boolean(data.isPreview)}
+						file={resolvedFile}
+						selected={selected}
+						onChangeFile={(value) => {
+							if (!data.isPreview) setFileValue(value);
+						}}
+					/>
+				) : (
+					<TextContentCard
+						blockId={id}
+						selected={selected}
+						canEdit={canEditWorkflow}
+						isPreview={Boolean(data.isPreview)}
+						html={normalizeContentHtml(resolvedHtml)}
+						blockStyle={resolvedBlockStyle}
+						backgroundColor={resolvedBackgroundColor}
+						fontSize={resolvedFontSize}
+						width={resolvedWidth}
+						height={resolvedHeight}
+						onChangeHtml={(value) => {
+							if (!data.isPreview) setContentHtmlValue(value);
+						}}
+						onChangeBlockStyle={(value) => {
+							if (!data.isPreview) setBlockStyleValue(value);
+						}}
+						onChangeBackgroundColor={(value) => {
+							if (!data.isPreview) setBackgroundColorValue(value);
+						}}
+						onChangeFontSize={(value) => {
+							if (!data.isPreview) setFontSizeValue(value);
+						}}
+						onChangeWidth={(value) => {
+							if (!data.isPreview) setWidthValue(value);
+						}}
+						onChangeHeight={(value) => {
+							if (!data.isPreview) setHeightValue(value);
+						}}
+					/>
+				)}
+
+				{hasRing && (
+					<div
+						className={cn(
+							"pointer-events-none absolute inset-0 z-40 rounded-2xl",
+							ringStyles,
+						)}
+					/>
+				)}
+			</div>
+		</div>
+	);
+});

@@ -16,9 +16,11 @@ import 'reactflow/dist/style.css'
 import { createLogger } from '@sim/logger'
 import { cn } from '@/lib/core/utils/cn'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
+import { getCanvasNodeType, isPureCanvasBlockType } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { WorkflowEdge } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-edge/workflow-edge'
 import { estimateBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { PreviewBlock } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow/components/block'
+import { PreviewContentBlock } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow/components/content-block/content-block'
 import { PreviewSubflow } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow/components/subflow'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -35,6 +37,22 @@ function getPreviewBlockDimensions(block: BlockState): { width: number; height: 
       height: block.data?.height
         ? Math.max(block.data.height, CONTAINER_DIMENSIONS.MIN_HEIGHT)
         : CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
+    }
+  }
+
+  if (isPureCanvasBlockType(block.type)) {
+    return {
+      width:
+        block.layout?.measuredWidth ??
+        (typeof block.data?.width === 'number' ? block.data.width : BLOCK_DIMENSIONS.FIXED_WIDTH),
+      height: Math.max(
+        block.layout?.measuredHeight ??
+          block.height ??
+          (typeof block.data?.height === 'number'
+            ? block.data.height
+            : BLOCK_DIMENSIONS.MIN_HEIGHT),
+        BLOCK_DIMENSIONS.MIN_HEIGHT
+      ),
     }
   }
 
@@ -159,6 +177,7 @@ interface PreviewWorkflowProps {
 const previewNodeTypes: NodeTypes = {
   workflowBlock: PreviewBlock,
   noteBlock: PreviewBlock,
+  contentBlock: PreviewContentBlock,
   subflowNode: PreviewSubflow,
 }
 
@@ -425,7 +444,7 @@ export function PreviewWorkflow({
         }
       }
 
-      const nodeType = block.type === 'note' ? 'noteBlock' : 'workflowBlock'
+      const nodeType = getCanvasNodeType(block.type)
 
       nodeArray.push({
         id: blockId,
@@ -436,6 +455,8 @@ export function PreviewWorkflow({
         data: {
           type: block.type,
           name: block.name,
+          contentVariant:
+            typeof block.data?.contentVariant === 'string' ? block.data.contentVariant : undefined,
           workflowMap,
           workflowLabelsReady,
           isTrigger: block.triggerMode === true,

@@ -7,6 +7,7 @@ export interface WorkflowBlockProps {
   type: string
   config: BlockConfig
   name: string
+  contentVariant?: string
   isActive?: boolean
   isPending?: boolean
   isPreview?: boolean

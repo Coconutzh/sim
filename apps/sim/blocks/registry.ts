@@ -31,6 +31,7 @@ import { CloudFormationBlock } from '@/blocks/blocks/cloudformation'
 import { CloudWatchBlock } from '@/blocks/blocks/cloudwatch'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
+import { ContentBlock } from '@/blocks/blocks/content'
 import { CredentialBlock } from '@/blocks/blocks/credential'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
 import { DagsterBlock } from '@/blocks/blocks/dagster'
@@ -259,6 +260,7 @@ const ALL_BLOCKS: Record<string, BlockConfig> = {
   clay: ClayBlock,
   clerk: ClerkBlock,
   condition: ConditionBlock,
+  content: ContentBlock,
   credential: CredentialBlock,
   confluence: ConfluenceBlock,
   confluence_v2: ConfluenceV2Block,

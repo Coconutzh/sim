@@ -8,6 +8,10 @@ import {
   PopoverDivider,
   PopoverItem,
 } from '@/components/emcn'
+import {
+  isContentBlockType,
+  isPureCanvasBlockType,
+} from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 
 /**
@@ -114,7 +118,9 @@ export function BlockMenu({
   // A block is a trigger if it's explicitly a trigger type OR has no incoming edges (positional trigger)
   const hasTriggerBlock =
     selectedBlocks.some((b) => TriggerUtils.isTriggerBlock(b)) || isPositionalTrigger
-  const allNoteBlocks = selectedBlocks.every((b) => b.type === 'note')
+  const hasPureCanvasBlock = selectedBlocks.some((b) => isPureCanvasBlockType(b.type))
+  const allPureCanvasBlocks = selectedBlocks.every((b) => isPureCanvasBlockType(b.type))
+  const isSingleContentBlock = isSingleBlock && isContentBlockType(selectedBlocks[0]?.type)
   const isSubflow =
     isSingleBlock && (selectedBlocks[0]?.type === 'loop' || selectedBlocks[0]?.type === 'parallel')
   const isInsideSubflow =
@@ -199,8 +205,8 @@ export function BlockMenu({
         )}
 
         {/* Toggle and edit actions */}
-        {!allNoteBlocks && <PopoverDivider />}
-        {!allNoteBlocks && (
+        {!hasPureCanvasBlock && <PopoverDivider />}
+        {!hasPureCanvasBlock && (
           <PopoverItem
             disabled={disableEdit || hasBlockWithDisabledParent}
             onClick={() => {
@@ -213,7 +219,7 @@ export function BlockMenu({
             {hasBlockWithDisabledParent ? 'Parent is disabled' : getToggleEnabledLabel()}
           </PopoverItem>
         )}
-        {!allNoteBlocks && !isSubflow && (
+        {!hasPureCanvasBlock && !isSubflow && (
           <PopoverItem
             disabled={disableEdit}
             onClick={() => {
@@ -262,7 +268,7 @@ export function BlockMenu({
             Rename
           </PopoverItem>
         )}
-        {isSingleBlock && (
+        {isSingleBlock && !isSingleContentBlock && (
           <PopoverItem
             onClick={() => {
               onOpenEditor()
@@ -274,7 +280,7 @@ export function BlockMenu({
         )}
 
         {/* Run from/until block - only for single non-note block, not inside subflows */}
-        {isSingleBlock && !allNoteBlocks && !isInsideSubflow && (
+        {isSingleBlock && !allPureCanvasBlocks && !isInsideSubflow && (
           <>
             <PopoverDivider />
             <PopoverItem

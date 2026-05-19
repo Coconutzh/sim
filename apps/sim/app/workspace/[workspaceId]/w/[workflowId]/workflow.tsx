@@ -22,6 +22,11 @@ import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/creden
 import type { OAuthProvider } from '@/lib/oauth'
 import { type ContentNodePresetId, getContentNodePreset } from '@/lib/product/content-node-presets'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
+import {
+  getCanvasNodeDragHandle,
+  getCanvasNodeType,
+  isPureCanvasBlockType,
+} from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -1440,13 +1445,13 @@ const WorkflowContent = React.memo(
       const dependenciesSatisfied =
         isTriggerBlock ||
         (snapshot && incomingEdges.every((edge) => isSourceSatisfied(edge.source)))
-      const isNoteBlock = block.type === 'note'
+      const isPureCanvasBlock = isPureCanvasBlockType(block.type)
       const isInsideSubflow =
         block.parentId && (block.parentType === 'loop' || block.parentType === 'parallel')
 
       if (isInsideSubflow) return { canRun: false, reason: 'Cannot run from inside subflow' }
       if (!dependenciesSatisfied) return { canRun: false, reason: 'Run previous blocks first' }
-      if (isNoteBlock) return { canRun: false, reason: undefined }
+      if (isPureCanvasBlock) return { canRun: false, reason: undefined }
       if (isExecuting) return { canRun: false, reason: undefined }
 
       return { canRun: true, reason: undefined }
@@ -1811,13 +1816,13 @@ const WorkflowContent = React.memo(
     )
 
     /**
-     * Adds a product-facing content node by mapping it to an existing underlying block.
+     * Adds a pure canvas content node at the requested workflow position.
      */
     const addContentNodeAtPosition = useCallback(
       (presetId: ContentNodePresetId, position: { x: number; y: number }) => {
         const preset = getContentNodePreset(presetId)
 
-        if (!preset?.available || !preset.blockType) {
+        if (!preset?.available || !preset.blockType || !preset.contentVariant) {
           addNotification({
             level: 'info',
             message: 'Image editor node is not available yet. Use an Image node for now.',
@@ -1835,35 +1840,25 @@ const WorkflowContent = React.memo(
           return
         }
 
-        if (checkTriggerConstraints(preset.blockType)) return
-
         const id = generateId()
         const name = getUniqueBlockName(preset.label, blocks)
-        const autoConnectEdge = tryCreateAutoConnectEdge(position, id, {
-          targetParentId: null,
-        })
 
         addBlock(
           id,
           preset.blockType,
           name,
           position,
+          {
+            contentVariant: preset.contentVariant,
+          },
           undefined,
           undefined,
           undefined,
-          autoConnectEdge,
           false,
           preset.presetSubBlockValues
         )
       },
-      [
-        activeWorkflowId,
-        addBlock,
-        addNotification,
-        blocks,
-        checkTriggerConstraints,
-        tryCreateAutoConnectEdge,
-      ]
+      [activeWorkflowId, addBlock, addNotification, blocks]
     )
 
     const handleContextAddContentNode = useCallback(
@@ -2644,8 +2639,8 @@ const WorkflowContent = React.memo(
         const isPending = isDebugging && pendingBlocks.includes(block.id)
 
         // Both note blocks and workflow blocks use deterministic dimensions
-        const nodeType = block.type === 'note' ? 'noteBlock' : 'workflowBlock'
-        const dragHandle = block.type === 'note' ? '.note-drag-handle' : '.workflow-drag-handle'
+        const nodeType = getCanvasNodeType(block.type)
+        const dragHandle = getCanvasNodeDragHandle(block.type)
 
         // Compute zIndex for blocks inside containers so they render above the
         // parent subflow's interactive body area (which needs pointer-events for
@@ -2686,6 +2681,10 @@ const WorkflowContent = React.memo(
             type: block.type,
             config: blockConfig, // Cached config reference
             name: block.name,
+            contentVariant:
+              typeof block.data?.contentVariant === 'string'
+                ? block.data.contentVariant
+                : undefined,
             isActive,
             isPending,
             ...(embedded && { isEmbedded: true }),
@@ -2695,7 +2694,11 @@ const WorkflowContent = React.memo(
           // Include dynamic dimensions for container resizing calculations (must match rendered size)
           // Both note and workflow blocks calculate dimensions deterministically via useBlockDimensions
           // Use estimated dimensions for blocks without measured height to ensure selection bounds are correct
-          width: BLOCK_DIMENSIONS.FIXED_WIDTH,
+          width:
+            block.layout?.measuredWidth ??
+            (typeof block.data?.width === 'number'
+              ? block.data.width
+              : BLOCK_DIMENSIONS.FIXED_WIDTH),
           height: block.height
             ? Math.max(block.height, BLOCK_DIMENSIONS.MIN_HEIGHT)
             : estimateBlockDimensions(block.type).height,

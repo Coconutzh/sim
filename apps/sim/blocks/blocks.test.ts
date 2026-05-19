@@ -63,6 +63,15 @@ describe.concurrent('Blocks Module', () => {
       expect(block?.name).toBe('Function')
     })
 
+    it('should return the pure canvas content block by type', () => {
+      const block = getBlock('content')
+      expect(block).toBeDefined()
+      expect(block?.type).toBe('content')
+      expect(block?.hideFromToolbar).toBe(true)
+      expect(block?.tools.access).toEqual([])
+      expect(block?.outputs).toEqual({})
+    })
+
     it('should return undefined for non-existent block type', () => {
       const block = getBlock('non-existent-block')
       expect(block).toBeUndefined()

@@ -3,6 +3,7 @@ import { ArrowLeftRight, ArrowUpDown, Circle, CircleOff, Lock, LogOut, Unlock } 
 import { useShallow } from 'zustand/react/shallow'
 import { Button, Copy, PlayOutline, Tooltip, Trash2 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { isPureCanvasBlockType } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
@@ -124,7 +125,7 @@ export const ActionBar = memo(
 
     const isStartBlock = isInputDefinitionTrigger(blockType)
     const isResponseBlock = blockType === 'response'
-    const isNoteBlock = blockType === 'note'
+    const isPureCanvasBlock = isPureCanvasBlockType(blockType)
     const isSubflowBlock = blockType === 'loop' || blockType === 'parallel'
     const isInsideSubflow = parentId && (parentType === 'loop' || parentType === 'parallel')
 
@@ -144,7 +145,7 @@ export const ActionBar = memo(
     const dependenciesSatisfied =
       isTriggerBlock || (snapshot && incomingEdges.every((edge) => isSourceSatisfied(edge.source)))
     const canRunFromBlock =
-      dependenciesSatisfied && !isNoteBlock && !isInsideSubflow && !isExecuting
+      dependenciesSatisfied && !isPureCanvasBlock && !isInsideSubflow && !isExecuting
 
     const handleRunFromBlockClick = useCallback(() => {
       if (!activeWorkflowId || !canRunFromBlock) return
@@ -175,7 +176,7 @@ export const ActionBar = memo(
           'dark:border-transparent dark:bg-[var(--surface-4)]'
         )}
       >
-        {!isNoteBlock && !isInsideSubflow && (
+        {!isPureCanvasBlock && !isInsideSubflow && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <span className='inline-flex'>
@@ -205,7 +206,7 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
-        {!isNoteBlock && (
+        {!isPureCanvasBlock && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Button
@@ -289,7 +290,7 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
-        {!isNoteBlock && !isSubflowBlock && (
+        {!isPureCanvasBlock && !isSubflowBlock && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Button

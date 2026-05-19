@@ -3,6 +3,7 @@
 import { type CSSProperties, memo, useMemo } from 'react'
 import { Handle, type NodeProps, Position } from 'reactflow'
 import { HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
+import { isPureCanvasBlockType } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
@@ -427,9 +428,9 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
 
   const IconComponent = blockConfig.icon
   const isStarterOrTrigger = blockConfig.category === 'triggers' || type === 'starter' || isTrigger
-  const isNoteBlock = type === 'note'
+  const isPureCanvasBlock = isPureCanvasBlockType(type)
 
-  const shouldShowDefaultHandles = !isStarterOrTrigger && !isNoteBlock
+  const shouldShowDefaultHandles = !isStarterOrTrigger && !isPureCanvasBlock
   const hasSubBlocks = visibleSubBlocks.length > 0
   const hasContentBelowHeader =
     type === 'condition'
@@ -476,7 +477,7 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
         className={`flex items-center justify-between p-2 ${hasContentBelowHeader ? 'border-[var(--border-1)] border-b' : ''}`}
       >
         <div className='relative z-10 flex min-w-0 flex-1 items-center gap-2.5'>
-          {!isNoteBlock && (
+          {!isPureCanvasBlock && (
             <div
               className='flex h-[24px] w-[24px] flex-shrink-0 items-center justify-center rounded-md'
               style={{ background: enabled ? blockConfig.bgColor : 'gray' }}
@@ -607,31 +608,34 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
         </>
       )}
 
-      {/* Source and error handles for non-condition/router/note blocks */}
-      {type !== 'condition' && type !== 'router_v2' && type !== 'response' && !isNoteBlock && (
-        <>
-          <Handle
-            type='source'
-            position={horizontalHandles ? Position.Right : Position.Bottom}
-            id='source'
-            className={horizontalHandles ? HANDLE_STYLES.right : HANDLE_STYLES.vertical}
-            style={
-              horizontalHandles
-                ? { right: '-7px', top: `${HANDLE_POSITIONS.DEFAULT_Y_OFFSET}px` }
-                : { bottom: '-7px', left: '50%', transform: 'translateX(-50%)' }
-            }
-          />
-          {shouldShowDefaultHandles && (
+      {/* Source and error handles for non-condition/router/pure-canvas blocks */}
+      {type !== 'condition' &&
+        type !== 'router_v2' &&
+        type !== 'response' &&
+        !isPureCanvasBlock && (
+          <>
             <Handle
               type='source'
-              position={Position.Right}
-              id='error'
-              className={HANDLE_STYLES.error}
-              style={ERROR_HANDLE_STYLE}
+              position={horizontalHandles ? Position.Right : Position.Bottom}
+              id='source'
+              className={horizontalHandles ? HANDLE_STYLES.right : HANDLE_STYLES.vertical}
+              style={
+                horizontalHandles
+                  ? { right: '-7px', top: `${HANDLE_POSITIONS.DEFAULT_Y_OFFSET}px` }
+                  : { bottom: '-7px', left: '50%', transform: 'translateX(-50%)' }
+              }
             />
-          )}
-        </>
-      )}
+            {shouldShowDefaultHandles && (
+              <Handle
+                type='source'
+                position={Position.Right}
+                id='error'
+                className={HANDLE_STYLES.error}
+                style={ERROR_HANDLE_STYLE}
+              />
+            )}
+          </>
+        )}
     </div>
   )
 }
