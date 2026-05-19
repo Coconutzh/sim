@@ -7,6 +7,7 @@ import {
 	TableIcon,
 	VideoIcon,
 } from "@/components/icons";
+import { AudioIcon } from "@/components/icons/document-icons";
 
 /**
  * TapNow-style content node identifiers used by product-facing creation flows.
@@ -15,11 +16,12 @@ export type ContentNodePresetId =
 	| "text"
 	| "image"
 	| "video"
+	| "audio"
 	| "document"
 	| "table"
 	| "image_editor";
 
-export type ContentNodeVariant = "text" | "image";
+export type ContentNodeVariant = "text" | "image" | "video" | "audio";
 
 /**
  * Product-layer preset that maps a user-facing content node to a pure canvas content block.
@@ -76,12 +78,32 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
 	{
 		id: "video",
 		label: "Video",
-		description: "Reserved for a future canvas video card.",
-		blockType: null,
+		description: "Upload and play a single video in a canvas card.",
+		blockType: "content",
+		contentVariant: "video",
 		icon: VideoIcon,
-		available: false,
+		available: true,
 		inlineSubBlockIds: [],
-		advancedPanelLabel: "Video card settings",
+		presetSubBlockValues: {
+			contentVariant: "video",
+			file: null,
+		},
+		advancedPanelLabel: "Video settings",
+	},
+	{
+		id: "audio",
+		label: "Audio",
+		description: "Upload and play a single audio file in a canvas card.",
+		blockType: "content",
+		contentVariant: "audio",
+		icon: AudioIcon,
+		available: true,
+		inlineSubBlockIds: [],
+		presetSubBlockValues: {
+			contentVariant: "audio",
+			file: null,
+		},
+		advancedPanelLabel: "Audio settings",
 	},
 	{
 		id: "document",

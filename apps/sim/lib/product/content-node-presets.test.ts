@@ -5,10 +5,10 @@ import {
 } from "@/lib/product/content-node-presets";
 
 describe("content-node-presets", () => {
-	it("creates only text and image content nodes from addable presets", () => {
+	it("creates text, image, video, and audio content nodes from addable presets", () => {
 		const presetIds = getAddableContentNodePresets().map((preset) => preset.id);
 
-		expect(presetIds).toEqual(["text", "image"]);
+		expect(presetIds).toEqual(["text", "image", "video", "audio"]);
 	});
 
 	it("maps the text preset to a pure canvas content block", () => {
@@ -36,6 +36,30 @@ describe("content-node-presets", () => {
 		expect(preset?.contentVariant).toBe("image");
 		expect(preset?.presetSubBlockValues).toMatchObject({
 			contentVariant: "image",
+			file: null,
+		});
+	});
+
+	it("maps the video preset to a pure canvas content block", () => {
+		const preset = getContentNodePreset("video");
+
+		expect(preset).toBeDefined();
+		expect(preset?.blockType).toBe("content");
+		expect(preset?.contentVariant).toBe("video");
+		expect(preset?.presetSubBlockValues).toMatchObject({
+			contentVariant: "video",
+			file: null,
+		});
+	});
+
+	it("maps the audio preset to a pure canvas content block", () => {
+		const preset = getContentNodePreset("audio");
+
+		expect(preset).toBeDefined();
+		expect(preset?.blockType).toBe("content");
+		expect(preset?.contentVariant).toBe("audio");
+		expect(preset?.presetSubBlockValues).toMatchObject({
+			contentVariant: "audio",
 			file: null,
 		});
 	});

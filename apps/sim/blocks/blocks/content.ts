@@ -62,9 +62,9 @@ export const ContentBlock: BlockConfig = {
 		},
 		{
 			id: "file",
-			title: "Image",
+			title: "Media",
 			type: "file-upload",
-			acceptedTypes: "image/*",
+			acceptedTypes: "image/*,video/*,audio/*",
 			multiple: false,
 		},
 	],

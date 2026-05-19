@@ -4,12 +4,13 @@ import { createElement, memo } from "react";
 import type { NodeProps } from "reactflow";
 import { cn } from "@/lib/core/utils/cn";
 
-type ContentVariant = "text" | "image";
+type ContentVariant = "text" | "image" | "video" | "audio";
 
 interface UploadedFileValue {
 	name?: string;
 	path?: string;
 	key?: string;
+	type?: string;
 }
 
 interface PreviewContentBlockData {
@@ -129,10 +130,15 @@ function renderContentHtml(
 }
 
 function normalizeVariant(value: unknown): ContentVariant | null {
-	return value === "image" || value === "text" ? value : null;
+	return value === "image" ||
+		value === "text" ||
+		value === "video" ||
+		value === "audio"
+		? value
+		: null;
 }
 
-function hasImageFileValue(value: unknown): boolean {
+function hasUploadedFileValue(value: unknown): boolean {
 	return Boolean(
 		value &&
 			typeof value === "object" &&
@@ -141,6 +147,24 @@ function hasImageFileValue(value: unknown): boolean {
 				typeof (value as UploadedFileValue).key === "string" ||
 				typeof (value as UploadedFileValue).name === "string"),
 	);
+}
+
+function inferVariantFromFile(value: unknown): ContentVariant | null {
+	if (!hasUploadedFileValue(value)) return null;
+
+	const file = value as UploadedFileValue;
+	const fileType = file.type?.toLowerCase();
+	if (fileType?.startsWith("image/")) return "image";
+	if (fileType?.startsWith("video/")) return "video";
+	if (fileType?.startsWith("audio/")) return "audio";
+
+	const fileName = `${file.name ?? ""} ${file.path ?? ""}`.toLowerCase();
+	if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName))
+		return "image";
+	if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return "video";
+	if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return "audio";
+
+	return null;
 }
 
 function resolveContentVariant(
@@ -155,11 +179,10 @@ function resolveContentVariant(
 	);
 	if (storedVariant) return storedVariant;
 
-	if (hasImageFileValue(extractStoredValue(sourceValues, "file", null))) {
-		return "image";
-	}
-
-	return "text";
+	return (
+		inferVariantFromFile(extractStoredValue(sourceValues, "file", null)) ??
+		"text"
+	);
 }
 
 export const PreviewContentBlock = memo(function PreviewContentBlock({
@@ -211,7 +234,11 @@ export const PreviewContentBlock = memo(function PreviewContentBlock({
 			style={
 				variant === "image"
 					? { width: 320, minHeight: 240 }
-					: { width, minHeight: height }
+					: variant === "video"
+						? { width: 360, minHeight: 240 }
+						: variant === "audio"
+							? { width: 360, minHeight: 132 }
+							: { width, minHeight: height }
 			}
 		>
 			{variant === "image" ? (
@@ -226,6 +253,41 @@ export const PreviewContentBlock = memo(function PreviewContentBlock({
 				) : (
 					<div className="flex h-[240px] w-[320px] items-center justify-center px-6 text-center text-[var(--text-tertiary)] text-sm">
 						No image uploaded
+					</div>
+				)
+			) : variant === "video" ? (
+				file?.path ? (
+					<div className="flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3">
+						{/* biome-ignore lint/a11y/useMediaCaption: preview video cards do not have a caption track in this iteration. */}
+						<video
+							src={file.path}
+							controls
+							preload="metadata"
+							className="aspect-video w-full rounded-xl bg-black object-contain"
+						/>
+					</div>
+				) : (
+					<div className="flex h-[240px] w-[360px] items-center justify-center px-6 text-center text-[var(--text-tertiary)] text-sm">
+						No video uploaded
+					</div>
+				)
+			) : variant === "audio" ? (
+				file?.path ? (
+					<div className="flex min-h-[132px] w-[360px] flex-col justify-center gap-3 bg-[var(--surface-1)] px-4 py-4">
+						<div className="truncate font-medium text-[var(--text-primary)] text-sm">
+							{file.name || "Uploaded audio"}
+						</div>
+						{/* biome-ignore lint/a11y/useMediaCaption: preview audio cards do not have a caption track in this iteration. */}
+						<audio
+							src={file.path}
+							controls
+							preload="metadata"
+							className="w-full"
+						/>
+					</div>
+				) : (
+					<div className="flex h-[132px] w-[360px] items-center justify-center px-6 text-center text-[var(--text-tertiary)] text-sm">
+						No audio uploaded
 					</div>
 				)
 			) : (

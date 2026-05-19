@@ -27,7 +27,7 @@ import { cn } from "@/lib/core/utils/cn";
 import { useWorkflowRegistry } from "@/stores/workflows/registry/store";
 import { useSubBlockStore } from "@/stores/workflows/subblock/store";
 
-type ContentVariant = "text" | "image";
+type ContentVariant = "text" | "image" | "video" | "audio";
 type StoredValueRecord =
 	| Record<string, { value?: unknown } | unknown>
 	| undefined;
@@ -53,6 +53,10 @@ const DEFAULT_BACKGROUND_COLOR = "#FFF8C5";
 const DEFAULT_FONT_SIZE = 16;
 const IMAGE_CARD_WIDTH = 320;
 const IMAGE_CARD_HEIGHT = 240;
+const VIDEO_CARD_WIDTH = 360;
+const VIDEO_CARD_HEIGHT = 240;
+const AUDIO_CARD_WIDTH = 360;
+const AUDIO_CARD_HEIGHT = 132;
 
 const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const;
 const BACKGROUND_COLORS = [
@@ -93,10 +97,15 @@ function clampTextHeight(value: number): number {
 }
 
 function normalizeVariant(value: unknown): ContentVariant | null {
-	return value === "image" || value === "text" ? value : null;
+	return value === "image" ||
+		value === "text" ||
+		value === "video" ||
+		value === "audio"
+		? value
+		: null;
 }
 
-function hasImageFileValue(value: unknown): boolean {
+function hasUploadedFileValue(value: unknown): boolean {
 	return Boolean(
 		value &&
 			typeof value === "object" &&
@@ -105,6 +114,28 @@ function hasImageFileValue(value: unknown): boolean {
 				typeof (value as UploadedFileValue).key === "string" ||
 				typeof (value as UploadedFileValue).name === "string"),
 	);
+}
+
+function inferVariantFromFile(value: unknown): ContentVariant | null {
+	if (!hasUploadedFileValue(value)) return null;
+
+	const file = value as UploadedFileValue;
+	const fileType = file.type?.toLowerCase();
+	if (fileType?.startsWith("image/")) return "image";
+	if (fileType?.startsWith("video/")) return "video";
+	if (fileType?.startsWith("audio/")) return "audio";
+
+	const fileName = `${file.name ?? ""} ${file.path ?? ""}`.toLowerCase();
+	if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName))
+		return "image";
+	if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return "video";
+	if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return "audio";
+
+	return null;
+}
+
+function matchesVariantFile(value: unknown, variant: ContentVariant): boolean {
+	return inferVariantFromFile(value) === variant;
 }
 
 function resolveContentVariant(
@@ -120,14 +151,11 @@ function resolveContentVariant(
 	);
 	if (storedVariant) return storedVariant;
 
-	if (
-		hasImageFileValue(fileValue) ||
-		hasImageFileValue(extractStoredValue(sourceValues, "file", null))
-	) {
-		return "image";
-	}
-
-	return "text";
+	return (
+		inferVariantFromFile(fileValue) ??
+		inferVariantFromFile(extractStoredValue(sourceValues, "file", null)) ??
+		"text"
+	);
 }
 
 function isMeaningfulHtml(html: string): boolean {
@@ -632,13 +660,15 @@ function TextContentCard({
 	);
 }
 
-function ImageContentCard({
+function MediaContentCard({
+	variant,
 	canEdit,
 	isPreview,
 	file,
 	selected,
 	onChangeFile,
 }: {
+	variant: Extract<ContentVariant, "image" | "video" | "audio">;
 	canEdit: boolean;
 	isPreview: boolean;
 	file: UploadedFileValue | null;
@@ -651,12 +681,48 @@ function ImageContentCard({
 	const [error, setError] = useState<string | null>(null);
 	const [isBroken, setIsBroken] = useState(false);
 
-	const imagePath = file?.path ?? "";
+	const mediaPath = file?.path ?? "";
 	const canUpload = canEdit && !isPreview;
+	const accept =
+		variant === "image"
+			? "image/*"
+			: variant === "video"
+				? "video/*"
+				: "audio/*";
+	const cardWidth =
+		variant === "image"
+			? IMAGE_CARD_WIDTH
+			: variant === "video"
+				? VIDEO_CARD_WIDTH
+				: AUDIO_CARD_WIDTH;
+	const cardHeight =
+		variant === "image"
+			? IMAGE_CARD_HEIGHT
+			: variant === "video"
+				? VIDEO_CARD_HEIGHT
+				: AUDIO_CARD_HEIGHT;
+	const uploadLabel =
+		variant === "image"
+			? "Upload image"
+			: variant === "video"
+				? "Upload video"
+				: "Upload audio";
+	const emptyLabel =
+		variant === "image"
+			? "No image available"
+			: variant === "video"
+				? "No video available"
+				: "No audio available";
+	const helperText =
+		variant === "image"
+			? "Supports a single local image file."
+			: variant === "video"
+				? "Supports a single local video file."
+				: "Supports a single local audio file.";
 
 	useEffect(() => {
 		setIsBroken(false);
-	}, [imagePath]);
+	}, [mediaPath]);
 
 	const openFileDialog = useCallback(() => {
 		if (!canUpload) return;
@@ -669,8 +735,8 @@ function ImageContentCard({
 			event.target.value = "";
 
 			if (!nextFile) return;
-			if (!nextFile.type.startsWith("image/")) {
-				setError("Only image files are supported in this card.");
+			if (!matchesVariantFile(nextFile, variant)) {
+				setError(`Only ${variant} files are supported in this card.`);
 				return;
 			}
 
@@ -699,37 +765,70 @@ function ImageContentCard({
 				const message =
 					uploadError instanceof Error
 						? uploadError.message
-						: "Failed to upload image.";
+						: `Failed to upload ${variant}.`;
 				setError(message);
 			}
 		},
-		[onChangeFile, params.workspaceId, uploadFileMutation],
+		[accept, onChangeFile, params.workspaceId, uploadFileMutation, variant],
 	);
 
-	const hasImage = Boolean(imagePath) && !isBroken;
+	const hasMedia = Boolean(mediaPath) && !isBroken;
 
 	return (
 		<div
 			className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]"
-			style={{ width: IMAGE_CARD_WIDTH, minHeight: IMAGE_CARD_HEIGHT }}
+			style={{ width: cardWidth, minHeight: cardHeight }}
 		>
 			<input
 				ref={inputRef}
 				type="file"
-				accept="image/*"
+				accept={accept}
 				className="hidden"
 				onChange={handleFileChange}
 			/>
 
-			{hasImage ? (
-				<div className="relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3">
-					<img
-						src={imagePath}
-						alt={file?.name || "Uploaded content"}
-						className="max-h-full max-w-full rounded-xl object-contain"
-						onError={() => setIsBroken(true)}
-					/>
-				</div>
+			{hasMedia ? (
+				variant === "image" ? (
+					<div className="relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3">
+						<img
+							src={mediaPath}
+							alt={file?.name || "Uploaded content"}
+							className="max-h-full max-w-full rounded-xl object-contain"
+							onError={() => setIsBroken(true)}
+						/>
+					</div>
+				) : variant === "video" ? (
+					<div className="flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3">
+						{/* biome-ignore lint/a11y/useMediaCaption: uploaded local video cards do not have a caption track in this iteration. */}
+						<video
+							src={mediaPath}
+							controls
+							preload="metadata"
+							className="nodrag nopan aspect-video w-full rounded-xl bg-black object-contain"
+							onPointerDown={(event) => {
+								event.stopPropagation();
+							}}
+							onError={() => setIsBroken(true)}
+						/>
+					</div>
+				) : (
+					<div className="flex min-h-[132px] w-[360px] flex-col justify-center gap-3 bg-[var(--surface-1)] px-4 py-4">
+						<div className="truncate font-medium text-[var(--text-primary)] text-sm">
+							{file?.name || "Uploaded audio"}
+						</div>
+						{/* biome-ignore lint/a11y/useMediaCaption: uploaded local audio cards do not have a caption track in this iteration. */}
+						<audio
+							src={mediaPath}
+							controls
+							preload="metadata"
+							className="nodrag nopan w-full"
+							onPointerDown={(event) => {
+								event.stopPropagation();
+							}}
+							onError={() => setIsBroken(true)}
+						/>
+					</div>
+				)
 			) : (
 				<button
 					type="button"
@@ -741,17 +840,20 @@ function ImageContentCard({
 						openFileDialog();
 					}}
 					disabled={!canUpload}
-					className="nodrag nopan flex h-[240px] w-[320px] flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent"
+					className={cn(
+						"nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent",
+						variant === "audio" ? "h-[132px] w-[360px]" : "h-[240px] w-full",
+					)}
 				>
 					<div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-4)]">
 						<ImagePlus className="h-5 w-5" />
 					</div>
 					<div>
 						<div className="font-medium text-sm">
-							{canUpload ? "Upload image" : "No image available"}
+							{canUpload ? uploadLabel : emptyLabel}
 						</div>
 						<div className="mt-1 text-[var(--text-tertiary)] text-xs">
-							Supports a single local image file.
+							{helperText}
 						</div>
 					</div>
 				</button>
@@ -775,7 +877,7 @@ function ImageContentCard({
 
 			{uploadFileMutation.isPending && (
 				<div className="absolute inset-x-0 bottom-0 bg-[var(--surface-4)] px-3 py-2 text-[11px] text-[var(--text-secondary)]">
-					Uploading image...
+					Uploading {variant}...
 				</div>
 			)}
 
@@ -921,7 +1023,11 @@ export const ContentBlock = memo(function ContentBlock({
 
 			return resolvedVariant === "image"
 				? { width: IMAGE_CARD_WIDTH, height: IMAGE_CARD_HEIGHT }
-				: { width: resolvedWidth, height: resolvedHeight };
+				: resolvedVariant === "video"
+					? { width: VIDEO_CARD_WIDTH, height: VIDEO_CARD_HEIGHT }
+					: resolvedVariant === "audio"
+						? { width: AUDIO_CARD_WIDTH, height: AUDIO_CARD_HEIGHT }
+						: { width: resolvedWidth, height: resolvedHeight };
 		},
 		dependencies: [
 			resolvedVariant,
@@ -964,8 +1070,11 @@ export const ContentBlock = memo(function ContentBlock({
 					</div>
 				)}
 
-				{resolvedVariant === "image" ? (
-					<ImageContentCard
+				{resolvedVariant === "image" ||
+				resolvedVariant === "video" ||
+				resolvedVariant === "audio" ? (
+					<MediaContentCard
+						variant={resolvedVariant}
 						canEdit={canEditWorkflow}
 						isPreview={Boolean(data.isPreview)}
 						file={resolvedFile}
