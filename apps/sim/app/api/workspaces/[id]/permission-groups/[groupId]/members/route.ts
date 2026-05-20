@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissionGroup, permissionGroupMember, permissions, user } from '@sim/db/schema'
+import { permissionGroup, permissionGroupMember, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresConstraintName, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -12,7 +12,11 @@ import { getSession } from '@/lib/auth'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { PERMISSION_GROUP_MEMBER_CONSTRAINTS } from '@/lib/permission-groups/types'
-import { checkWorkspaceAccess, hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUsersWithPermissions,
+  hasWorkspaceAdminAccess,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspacePermissionGroupMembers')
 
@@ -112,18 +116,8 @@ export const POST = withRouteHandler(
       if (!parsed.success) return parsed.response
       const { userId } = parsed.data.body
 
-      const [workspaceMember] = await db
-        .select({ email: user.email })
-        .from(permissions)
-        .innerJoin(user, eq(permissions.userId, user.id))
-        .where(
-          and(
-            eq(permissions.userId, userId),
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workspaceId)
-          )
-        )
-        .limit(1)
+      const workspaceMembers = await getUsersWithPermissions(workspaceId)
+      const workspaceMember = workspaceMembers.find((member) => member.userId === userId)
 
       if (!workspaceMember) {
         return NextResponse.json(
