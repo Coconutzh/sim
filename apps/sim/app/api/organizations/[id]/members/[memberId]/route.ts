@@ -21,6 +21,10 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrganizationMemberAPI')
 
+function resolveOrganizationMemberUserId(memberId: string): string {
+  return memberId.startsWith('external-') ? memberId.slice('external-'.length) : memberId
+}
+
 /**
  * GET /api/organizations/[id]/members/[memberId]
  * Get individual organization member details
@@ -275,7 +279,8 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId, memberId: targetUserId } = await params
+      const { id: organizationId, memberId } = await params
+      const targetUserId = resolveOrganizationMemberUserId(memberId)
       const queryResult = removeOrganizationMemberQuerySchema.safeParse(
         Object.fromEntries(request.nextUrl.searchParams.entries())
       )
