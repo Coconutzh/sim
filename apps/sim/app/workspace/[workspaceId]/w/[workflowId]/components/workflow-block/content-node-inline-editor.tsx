@@ -1,7 +1,7 @@
 'use client'
 
 import type { ChangeEvent } from 'react'
-import { Suspense, lazy, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useCallback, useMemo } from 'react'
 import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'

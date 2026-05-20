@@ -1,5 +1,5 @@
-import { Suspense, lazy, type ReactNode } from 'react'
 import type React from 'react'
+import { lazy, type ReactNode, Suspense } from 'react'
 import { EnvVarDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/env-var-dropdown'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import type { SubBlockConfig } from '@/blocks/types'

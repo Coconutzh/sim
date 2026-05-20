@@ -36,9 +36,7 @@ const {
   mockGetBYOKKey: vi.fn(),
   mockGetToolAsync: vi.fn(),
   mockActualGetToolAsync: {
-    value: undefined as
-      | undefined
-      | ((toolId: string, context?: unknown) => Promise<unknown>),
+    value: undefined as undefined | ((toolId: string, context?: unknown) => Promise<unknown>),
   },
   mockRateLimiterFns: {
     acquireKey: vi.fn(),

@@ -1,5 +1,5 @@
-import type { PreviewWorkflow } from '@/app/(landing)/components/landing-preview/components/landing-preview-workflow/workflow-data'
 import { isBlockEnabled } from '@/lib/product/tool-policy'
+import type { PreviewWorkflow } from '@/app/(landing)/components/landing-preview/components/landing-preview-workflow/workflow-data'
 
 const PREVIEW_TOOL_TYPE_TO_BLOCK_TYPE: Record<string, string> = {
   knowledge_base: 'knowledge',

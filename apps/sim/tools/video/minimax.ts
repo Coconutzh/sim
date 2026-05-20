@@ -19,7 +19,8 @@ export const minimaxVideoTool: ToolConfig<VideoParams, VideoResponse> = {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'MiniMax API key from platform.minimax.io. Optional when MINIMAX_API_KEY is configured server-side.',
+      description:
+        'MiniMax API key from platform.minimax.io. Optional when MINIMAX_API_KEY is configured server-side.',
     },
     model: {
       type: 'string',

@@ -1,9 +1,9 @@
 import {
   type JSX,
-  type MouseEvent,
-  Suspense,
   lazy,
+  type MouseEvent,
   memo,
+  Suspense,
   useCallback,
   useMemo,
   useRef,

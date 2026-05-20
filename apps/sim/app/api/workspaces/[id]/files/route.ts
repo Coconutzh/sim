@@ -1,135 +1,109 @@
-import { AuditAction, AuditResourceType, recordAudit } from "@sim/audit";
-import { createLogger } from "@sim/logger";
-import { type NextRequest, NextResponse } from "next/server";
-import { verifyWorkspaceMembership } from "@/app/api/workflows/utils";
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import { createLogger } from '@sim/logger'
+import { type NextRequest, NextResponse } from 'next/server'
 import {
-	listWorkspaceFilesQuerySchema,
-	workspaceFilesParamsSchema,
-} from "@/lib/api/contracts/workspace-files";
-import { getValidationErrorMessage } from "@/lib/api/server";
-import { getSession } from "@/lib/auth";
-import { generateRequestId } from "@/lib/core/utils/request";
-import { withRouteHandler } from "@/lib/core/utils/with-route-handler";
-import { captureServerEvent } from "@/lib/posthog/server";
+  listWorkspaceFilesQuerySchema,
+  workspaceFilesParamsSchema,
+} from '@/lib/api/contracts/workspace-files'
+import { getValidationErrorMessage } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
+import { generateRequestId } from '@/lib/core/utils/request'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { captureServerEvent } from '@/lib/posthog/server'
 import {
-	FileConflictError,
-	listWorkspaceFiles,
-	uploadWorkspaceFile,
-} from "@/lib/uploads/contexts/workspace";
-import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from "@/lib/uploads/shared/types";
-import { getUserEntityPermissions } from "@/lib/workspaces/permissions/utils";
+  FileConflictError,
+  listWorkspaceFiles,
+  uploadWorkspaceFile,
+} from '@/lib/uploads/contexts/workspace'
+import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
+import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
-const logger = createLogger("WorkspaceFilesAPI");
+const logger = createLogger('WorkspaceFilesAPI')
 
 class WorkspaceUploadRequestError extends Error {
-	constructor(
-		message: string,
-		readonly status: number,
-	) {
-		super(message);
-		this.name = "WorkspaceUploadRequestError";
-	}
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+    this.name = 'WorkspaceUploadRequestError'
+  }
 }
 
 type ParsedWorkspaceUpload = {
-	buffer: Buffer;
-	fileName: string;
-	contentType: string;
-	size: number;
-};
+  buffer: Buffer
+  fileName: string
+  contentType: string
+  size: number
+}
 
 const getWorkspaceUploadSizeError = (sizeBytes: number) =>
-	`File size exceeds maximum of ${MAX_WORKSPACE_FORMDATA_FILE_SIZE} bytes (${(sizeBytes / (1024 * 1024)).toFixed(2)}MB)`;
+  `File size exceeds maximum of ${MAX_WORKSPACE_FORMDATA_FILE_SIZE} bytes (${(sizeBytes / (1024 * 1024)).toFixed(2)}MB)`
 
-async function parseWorkspaceUploadRequest(
-	request: NextRequest,
-): Promise<ParsedWorkspaceUpload> {
-	const rawHeaderName = request.headers.get("x-upload-file-name");
-	if (rawHeaderName) {
-		const declaredSize = Number(
-			request.headers.get("x-upload-file-size") ?? "",
-		);
-		if (
-			Number.isFinite(declaredSize) &&
-			declaredSize > MAX_WORKSPACE_FORMDATA_FILE_SIZE
-		) {
-			throw new WorkspaceUploadRequestError(
-				getWorkspaceUploadSizeError(declaredSize),
-				413,
-			);
-		}
+async function parseWorkspaceUploadRequest(request: NextRequest): Promise<ParsedWorkspaceUpload> {
+  const rawHeaderName = request.headers.get('x-upload-file-name')
+  if (rawHeaderName) {
+    const declaredSize = Number(request.headers.get('x-upload-file-size') ?? '')
+    if (Number.isFinite(declaredSize) && declaredSize > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
+      throw new WorkspaceUploadRequestError(getWorkspaceUploadSizeError(declaredSize), 413)
+    }
 
-		const contentLength = Number(request.headers.get("content-length") ?? "");
-		if (
-			Number.isFinite(contentLength) &&
-			contentLength > MAX_WORKSPACE_FORMDATA_FILE_SIZE
-		) {
-			throw new WorkspaceUploadRequestError(
-				getWorkspaceUploadSizeError(contentLength),
-				413,
-			);
-		}
+    const contentLength = Number(request.headers.get('content-length') ?? '')
+    if (Number.isFinite(contentLength) && contentLength > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
+      throw new WorkspaceUploadRequestError(getWorkspaceUploadSizeError(contentLength), 413)
+    }
 
-		const buffer = Buffer.from(await request.arrayBuffer());
-		if (buffer.length > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
-			throw new WorkspaceUploadRequestError(
-				getWorkspaceUploadSizeError(buffer.length),
-				413,
-			);
-		}
-		if (Number.isFinite(declaredSize) && declaredSize !== buffer.length) {
-			throw new WorkspaceUploadRequestError(
-				`Upload body appears truncated: expected ${declaredSize} bytes but received ${buffer.length} bytes`,
-				413,
-			);
-		}
+    const buffer = Buffer.from(await request.arrayBuffer())
+    if (buffer.length > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
+      throw new WorkspaceUploadRequestError(getWorkspaceUploadSizeError(buffer.length), 413)
+    }
+    if (Number.isFinite(declaredSize) && declaredSize !== buffer.length) {
+      throw new WorkspaceUploadRequestError(
+        `Upload body appears truncated: expected ${declaredSize} bytes but received ${buffer.length} bytes`,
+        413
+      )
+    }
 
-		let fileName = "untitled.md";
-		try {
-			fileName = decodeURIComponent(rawHeaderName) || fileName;
-		} catch {
-			fileName = rawHeaderName || fileName;
-		}
+    let fileName = 'untitled.md'
+    try {
+      fileName = decodeURIComponent(rawHeaderName) || fileName
+    } catch {
+      fileName = rawHeaderName || fileName
+    }
 
-		return {
-			buffer,
-			fileName,
-			contentType:
-				request.headers.get("content-type") || "application/octet-stream",
-			size: buffer.length,
-		};
-	}
+    return {
+      buffer,
+      fileName,
+      contentType: request.headers.get('content-type') || 'application/octet-stream',
+      size: buffer.length,
+    }
+  }
 
-	let formData: FormData;
-	try {
-		formData = await request.formData();
-	} catch {
-		throw new WorkspaceUploadRequestError(
-			"Request body must be valid multipart form data",
-			400,
-		);
-	}
+  let formData: FormData
+  try {
+    formData = await request.formData()
+  } catch {
+    throw new WorkspaceUploadRequestError('Request body must be valid multipart form data', 400)
+  }
 
-	const rawFile = formData.get("file");
-	if (!rawFile || !(rawFile instanceof File)) {
-		throw new WorkspaceUploadRequestError("No file provided", 400);
-	}
+  const rawFile = formData.get('file')
+  if (!rawFile || !(rawFile instanceof File)) {
+    throw new WorkspaceUploadRequestError('No file provided', 400)
+  }
 
-	if (rawFile.size > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
-		throw new WorkspaceUploadRequestError(
-			getWorkspaceUploadSizeError(rawFile.size),
-			413,
-		);
-	}
+  if (rawFile.size > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
+    throw new WorkspaceUploadRequestError(getWorkspaceUploadSizeError(rawFile.size), 413)
+  }
 
-	return {
-		buffer: Buffer.from(await rawFile.arrayBuffer()),
-		fileName: rawFile.name || "untitled.md",
-		contentType: rawFile.type || "application/octet-stream",
-		size: rawFile.size,
-	};
+  return {
+    buffer: Buffer.from(await rawFile.arrayBuffer()),
+    fileName: rawFile.name || 'untitled.md',
+    contentType: rawFile.type || 'application/octet-stream',
+    size: rawFile.size,
+  }
 }
 
 /**
@@ -137,198 +111,164 @@ async function parseWorkspaceUploadRequest(
  * List all files for a workspace (requires read permission)
  */
 export const GET = withRouteHandler(
-	async (
-		request: NextRequest,
-		{ params }: { params: Promise<{ id: string }> },
-	) => {
-		const requestId = generateRequestId();
-		const paramsResult = workspaceFilesParamsSchema.safeParse(await params);
-		if (!paramsResult.success) {
-			return NextResponse.json(
-				{
-					error: getValidationErrorMessage(
-						paramsResult.error,
-						"Invalid route parameters",
-					),
-				},
-				{ status: 400 },
-			);
-		}
-		const { id: workspaceId } = paramsResult.data;
+  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    const requestId = generateRequestId()
+    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
+    if (!paramsResult.success) {
+      return NextResponse.json(
+        {
+          error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters'),
+        },
+        { status: 400 }
+      )
+    }
+    const { id: workspaceId } = paramsResult.data
 
-		try {
-			const session = await getSession();
-			if (!session?.user?.id) {
-				return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-			}
+    try {
+      const session = await getSession()
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-			// Check workspace permissions (requires read)
-			const userPermission = await verifyWorkspaceMembership(
-				session.user.id,
-				workspaceId,
-			);
-			if (!userPermission) {
-				logger.warn(
-					`[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`,
-				);
-				return NextResponse.json(
-					{ error: "Insufficient permissions" },
-					{ status: 403 },
-				);
-			}
+      // Check workspace permissions (requires read)
+      const userPermission = await verifyWorkspaceMembership(session.user.id, workspaceId)
+      if (!userPermission) {
+        logger.warn(
+          `[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`
+        )
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
 
-			const queryResult = listWorkspaceFilesQuerySchema.safeParse(
-				Object.fromEntries(request.nextUrl.searchParams.entries()),
-			);
-			if (!queryResult.success) {
-				return NextResponse.json(
-					{
-						error: getValidationErrorMessage(
-							queryResult.error,
-							"Invalid scope",
-						),
-					},
-					{ status: 400 },
-				);
-			}
-			const { scope } = queryResult.data;
+      const queryResult = listWorkspaceFilesQuerySchema.safeParse(
+        Object.fromEntries(request.nextUrl.searchParams.entries())
+      )
+      if (!queryResult.success) {
+        return NextResponse.json(
+          {
+            error: getValidationErrorMessage(queryResult.error, 'Invalid scope'),
+          },
+          { status: 400 }
+        )
+      }
+      const { scope } = queryResult.data
 
-			const files = await listWorkspaceFiles(workspaceId, { scope });
+      const files = await listWorkspaceFiles(workspaceId, { scope })
 
-			logger.info(
-				`[${requestId}] Listed ${files.length} files for workspace ${workspaceId}`,
-			);
+      logger.info(`[${requestId}] Listed ${files.length} files for workspace ${workspaceId}`)
 
-			return NextResponse.json({
-				success: true,
-				files,
-			});
-		} catch (error) {
-			logger.error(`[${requestId}] Error listing workspace files:`, error);
-			return NextResponse.json(
-				{
-					success: false,
-					error:
-						error instanceof Error ? error.message : "Failed to list files",
-				},
-				{ status: 500 },
-			);
-		}
-	},
-);
+      return NextResponse.json({
+        success: true,
+        files,
+      })
+    } catch (error) {
+      logger.error(`[${requestId}] Error listing workspace files:`, error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to list files',
+        },
+        { status: 500 }
+      )
+    }
+  }
+)
 
 /**
  * POST /api/workspaces/[id]/files
  * Upload a new file to workspace storage (requires write permission)
  */
 export const POST = withRouteHandler(
-	async (
-		request: NextRequest,
-		{ params }: { params: Promise<{ id: string }> },
-	) => {
-		const requestId = generateRequestId();
-		const paramsResult = workspaceFilesParamsSchema.safeParse(await params);
-		if (!paramsResult.success) {
-			return NextResponse.json(
-				{
-					error: getValidationErrorMessage(
-						paramsResult.error,
-						"Invalid route parameters",
-					),
-				},
-				{ status: 400 },
-			);
-		}
-		const { id: workspaceId } = paramsResult.data;
+  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    const requestId = generateRequestId()
+    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
+    if (!paramsResult.success) {
+      return NextResponse.json(
+        {
+          error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters'),
+        },
+        { status: 400 }
+      )
+    }
+    const { id: workspaceId } = paramsResult.data
 
-		try {
-			const session = await getSession();
-			if (!session?.user?.id) {
-				return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-			}
+    try {
+      const session = await getSession()
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-			// Check workspace permissions (requires write)
-			const userPermission = await getUserEntityPermissions(
-				session.user.id,
-				"workspace",
-				workspaceId,
-			);
-			if (userPermission !== "admin" && userPermission !== "write") {
-				logger.warn(
-					`[${requestId}] User ${session.user.id} lacks write permission for workspace ${workspaceId}`,
-				);
-				return NextResponse.json(
-					{ error: "Insufficient permissions" },
-					{ status: 403 },
-				);
-			}
+      // Check workspace permissions (requires write)
+      const userPermission = await getUserEntityPermissions(
+        session.user.id,
+        'workspace',
+        workspaceId
+      )
+      if (userPermission !== 'admin' && userPermission !== 'write') {
+        logger.warn(
+          `[${requestId}] User ${session.user.id} lacks write permission for workspace ${workspaceId}`
+        )
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
 
-			const parsedUpload = await parseWorkspaceUploadRequest(request);
+      const parsedUpload = await parseWorkspaceUploadRequest(request)
 
-			const userFile = await uploadWorkspaceFile(
-				workspaceId,
-				session.user.id,
-				parsedUpload.buffer,
-				parsedUpload.fileName,
-				parsedUpload.contentType,
-			);
+      const userFile = await uploadWorkspaceFile(
+        workspaceId,
+        session.user.id,
+        parsedUpload.buffer,
+        parsedUpload.fileName,
+        parsedUpload.contentType
+      )
 
-			logger.info(
-				`[${requestId}] Uploaded workspace file: ${parsedUpload.fileName}`,
-			);
+      logger.info(`[${requestId}] Uploaded workspace file: ${parsedUpload.fileName}`)
 
-			captureServerEvent(
-				session.user.id,
-				"file_uploaded",
-				{ workspace_id: workspaceId, file_type: parsedUpload.contentType },
-				{ groups: { workspace: workspaceId } },
-			);
+      captureServerEvent(
+        session.user.id,
+        'file_uploaded',
+        { workspace_id: workspaceId, file_type: parsedUpload.contentType },
+        { groups: { workspace: workspaceId } }
+      )
 
-			recordAudit({
-				workspaceId,
-				actorId: session.user.id,
-				actorName: session.user.name,
-				actorEmail: session.user.email,
-				action: AuditAction.FILE_UPLOADED,
-				resourceType: AuditResourceType.FILE,
-				resourceId: userFile.id,
-				resourceName: parsedUpload.fileName,
-				description: `Uploaded file "${parsedUpload.fileName}"`,
-				metadata: {
-					fileSize: parsedUpload.size,
-					fileType: parsedUpload.contentType,
-				},
-				request,
-			});
+      recordAudit({
+        workspaceId,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.FILE_UPLOADED,
+        resourceType: AuditResourceType.FILE,
+        resourceId: userFile.id,
+        resourceName: parsedUpload.fileName,
+        description: `Uploaded file "${parsedUpload.fileName}"`,
+        metadata: {
+          fileSize: parsedUpload.size,
+          fileType: parsedUpload.contentType,
+        },
+        request,
+      })
 
-			return NextResponse.json({
-				success: true,
-				file: userFile,
-			});
-		} catch (error) {
-			if (error instanceof WorkspaceUploadRequestError) {
-				return NextResponse.json(
-					{ success: false, error: error.message },
-					{ status: error.status },
-				);
-			}
+      return NextResponse.json({
+        success: true,
+        file: userFile,
+      })
+    } catch (error) {
+      if (error instanceof WorkspaceUploadRequestError) {
+        return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+      }
 
-			logger.error(`[${requestId}] Error uploading workspace file:`, error);
+      logger.error(`[${requestId}] Error uploading workspace file:`, error)
 
-			const errorMessage =
-				error instanceof Error ? error.message : "Failed to upload file";
-			const isDuplicate =
-				error instanceof FileConflictError ||
-				errorMessage.includes("already exists");
+      const errorMessage = error instanceof Error ? error.message : 'Failed to upload file'
+      const isDuplicate =
+        error instanceof FileConflictError || errorMessage.includes('already exists')
 
-			return NextResponse.json(
-				{
-					success: false,
-					error: errorMessage,
-					isDuplicate,
-				},
-				{ status: isDuplicate ? 409 : 500 },
-			);
-		}
-	},
-);
+      return NextResponse.json(
+        {
+          success: false,
+          error: errorMessage,
+          isDuplicate,
+        },
+        { status: isDuplicate ? 409 : 500 }
+      )
+    }
+  }
+)

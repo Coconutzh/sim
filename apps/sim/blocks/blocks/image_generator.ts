@@ -1,6 +1,6 @@
 import { ImageIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { DalleResponse } from '@/tools/openai/types'
 
 function isPreconfiguredImageKeyAvailable(): boolean {

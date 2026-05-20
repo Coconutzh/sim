@@ -75,9 +75,6 @@ describe('file preview session helpers', () => {
     await upsertFilePreviewSession(newerSession)
     await upsertFilePreviewSession(olderSession)
 
-    await expect(readFilePreviewSessions('stream-1')).resolves.toEqual([
-      olderSession,
-      newerSession,
-    ])
+    await expect(readFilePreviewSessions('stream-1')).resolves.toEqual([olderSession, newerSession])
   })
 })

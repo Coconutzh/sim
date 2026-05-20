@@ -1,7 +1,7 @@
 import { VideoIcon } from '@/components/icons'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
-import { getEnv, isTruthy } from '@/lib/core/config/env'
 import type { VideoBlockResponse } from '@/tools/video/types'
 
 const VIDEO_PROVIDER_ENV_FLAGS = {

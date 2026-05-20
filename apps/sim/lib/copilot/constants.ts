@@ -5,14 +5,13 @@ export const SIM_AGENT_VERSION = '3.0.0'
 
 /** Resolved copilot backend URL — reads from env with fallback to default. */
 const rawAgentUrl = env.SIM_AGENT_API_URL || SIM_AGENT_API_URL_DEFAULT
-export const SIM_AGENT_API_URL =
-  rawAgentUrl.startsWith('http://copilot.sim.ai')
-    ? rawAgentUrl.replace('http://copilot.sim.ai', 'https://www.copilot.sim.ai')
-    : rawAgentUrl.startsWith('https://copilot.sim.ai')
-      ? rawAgentUrl.replace('https://copilot.sim.ai', 'https://www.copilot.sim.ai')
-      : rawAgentUrl.startsWith('http://') || rawAgentUrl.startsWith('https://')
-        ? rawAgentUrl
-        : SIM_AGENT_API_URL_DEFAULT
+export const SIM_AGENT_API_URL = rawAgentUrl.startsWith('http://copilot.sim.ai')
+  ? rawAgentUrl.replace('http://copilot.sim.ai', 'https://www.copilot.sim.ai')
+  : rawAgentUrl.startsWith('https://copilot.sim.ai')
+    ? rawAgentUrl.replace('https://copilot.sim.ai', 'https://www.copilot.sim.ai')
+    : rawAgentUrl.startsWith('http://') || rawAgentUrl.startsWith('https://')
+      ? rawAgentUrl
+      : SIM_AGENT_API_URL_DEFAULT
 
 /** Default timeout for the copilot orchestration stream loop (60 min). */
 export const ORCHESTRATION_TIMEOUT_MS = 3_600_000
