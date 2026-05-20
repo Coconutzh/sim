@@ -28,6 +28,67 @@ import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/w
 
 const logger = createLogger('WorkflowStateAPI')
 
+function buildPublishedWorkflowStateSummary(
+  workflowState: NonNullable<Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>>,
+  workflowId: string
+) {
+  const summarizedBlocks = Object.values(workflowState.blocks).reduce<
+    Record<string, WorkflowState['blocks'][string]>
+  >((acc, block, index) => {
+    const summaryId = `published-block-${index + 1}`
+    acc[summaryId] = {
+      id: summaryId,
+      type: block.type,
+      name: block.name,
+      position: block.position,
+      subBlocks: {},
+      outputs: {},
+      enabled: block.enabled,
+    }
+    return acc
+  }, {})
+
+  const summarizedEdges = workflowState.edges.map((_, index) => ({
+    id: `published-edge-${index + 1}`,
+    source: 'published',
+    target: workflowId,
+  }))
+
+  const summarizedLoops = Object.keys(workflowState.loops || {}).reduce<
+    NonNullable<WorkflowState['loops']>
+  >((acc, _loopId, index) => {
+    const summaryId = `published-loop-${index + 1}`
+    acc[summaryId] = {
+      id: summaryId,
+      nodes: [],
+      iterations: 0,
+      loopType: 'for',
+    }
+    return acc
+  }, {})
+
+  const summarizedParallels = Object.keys(workflowState.parallels || {}).reduce<
+    NonNullable<WorkflowState['parallels']>
+  >((acc, _parallelId, index) => {
+    const summaryId = `published-parallel-${index + 1}`
+    acc[summaryId] = {
+      id: summaryId,
+      nodes: [],
+      count: 0,
+      parallelType: 'count',
+    }
+    return acc
+  }, {})
+
+  return {
+    blocks: summarizedBlocks,
+    edges: summarizedEdges,
+    loops: summarizedLoops,
+    parallels: summarizedParallels,
+    variables: {},
+  }
+}
+
 /**
  * GET /api/workflows/[id]/state
  * Fetch the current workflow state from normalized tables.
@@ -51,12 +112,6 @@ export const GET = withRouteHandler(
       if (!authorization.allowed) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
-        return NextResponse.json(
-          { error: 'Cross-team published workflow access does not include workflow state reads' },
-          { status: 403 }
-        )
-      }
 
       const snapshot = await db.transaction(async (tx) => {
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
@@ -73,6 +128,12 @@ export const GET = withRouteHandler(
 
       if (!snapshot.normalized) {
         return NextResponse.json({ error: 'Workflow state not found' }, { status: 404 })
+      }
+
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return NextResponse.json(
+          buildPublishedWorkflowStateSummary(snapshot.normalized, workflowId)
+        )
       }
 
       // Stamp `workflowId` from the path param on each variable so the

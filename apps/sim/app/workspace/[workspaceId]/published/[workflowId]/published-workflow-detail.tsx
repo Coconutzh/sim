@@ -93,7 +93,6 @@ export function PublishedWorkflowDetail() {
                 <span className='truncate font-medium text-[var(--text-body)] text-sm'>
                   {block.name}
                 </span>
-                <span className='truncate text-[12px] text-[var(--text-muted)]'>{block.id}</span>
               </div>
             ),
           },

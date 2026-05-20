@@ -91,7 +91,7 @@ describe('Workflow State API Route', () => {
     })
   })
 
-  it('rejects workflow state reads via cross-team published access', async () => {
+  it('returns a sanitized workflow summary for cross-team published readers', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,
       userId: 'viewer-123',
@@ -105,10 +105,28 @@ describe('Workflow State API Route', () => {
       accessSource: 'organization',
     })
     mockLoadWorkflowFromNormalizedTables.mockResolvedValueOnce({
-      blocks: {},
-      edges: [],
-      loops: {},
-      parallels: {},
+      blocks: {
+        'block-1': {
+          id: 'block-1',
+          type: 'http',
+          name: 'Fetch leads',
+          position: { x: 120, y: 240 },
+          subBlocks: {
+            token: { id: 'token', type: 'short-input', value: 'secret-token' },
+          },
+          outputs: {
+            body: { ok: true },
+          },
+          enabled: true,
+        },
+      },
+      edges: [{ id: 'edge-1', source: 'block-1', target: 'block-2' }],
+      loops: {
+        'loop-1': { id: 'loop-1', nodes: ['block-1'], iterations: 3, loopType: 'for' },
+      },
+      parallels: {
+        'parallel-1': { id: 'parallel-1', nodes: ['block-1'], count: 2, parallelType: 'count' },
+      },
     })
 
     const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123/state')
@@ -116,11 +134,25 @@ describe('Workflow State API Route', () => {
 
     const response = await GET(req, { params })
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(200)
     const data = await response.json()
-    expect(data.error).toBe(
-      'Cross-team published workflow access does not include workflow state reads'
-    )
+    expect(data.variables).toEqual({})
+    expect(data.blocks).toEqual({
+      'published-block-1': {
+        id: 'published-block-1',
+        type: 'http',
+        name: 'Fetch leads',
+        position: { x: 120, y: 240 },
+        subBlocks: {},
+        outputs: {},
+        enabled: true,
+      },
+    })
+    expect(data.edges).toEqual([
+      { id: 'published-edge-1', source: 'published', target: 'workflow-123' },
+    ])
+    expect(Object.keys(data.loops)).toEqual(['published-loop-1'])
+    expect(Object.keys(data.parallels)).toEqual(['published-parallel-1'])
   })
 
   it('rejects workflow state writes via cross-team published access', async () => {
