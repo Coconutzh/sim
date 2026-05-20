@@ -2,7 +2,7 @@ import type { ToolConfig } from '@/tools/types'
 
 export type ToolCatalogEntry = Pick<
   ToolConfig,
-  'id' | 'name' | 'description' | 'version' | 'params' | 'outputs' | 'oauth'
+  'id' | 'name' | 'description' | 'version' | 'params' | 'oauth'
 > & {
   service: string
   module: string

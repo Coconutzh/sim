@@ -734,7 +734,10 @@ export function serializeSkill(s: {
 /**
  * Serialize an integration/tool schema for VFS components/integrations/{service}/{operation}.json
  */
-export function serializeIntegrationSchema(tool: ToolConfig): string {
+export function serializeIntegrationSchema(
+  tool: ToolConfig,
+  outputs: ToolConfig['outputs'] = tool.outputs
+): string {
   const hostedApiKeyParam = isHosted && tool.hosting ? tool.hosting.apiKeyParam : null
 
   return JSON.stringify(
@@ -771,9 +774,9 @@ export function serializeIntegrationSchema(tool: ToolConfig): string {
             }),
           }
         : undefined,
-      outputs: tool.outputs
+      outputs: outputs
         ? Object.fromEntries(
-            Object.entries(tool.outputs)
+            Object.entries(outputs)
               .filter(([, val]) => val != null)
               .map(([key, val]) => [key, { type: val.type, description: val.description }])
           )

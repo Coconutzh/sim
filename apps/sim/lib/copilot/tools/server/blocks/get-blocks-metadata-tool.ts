@@ -13,6 +13,7 @@ import { AuthMode, type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import { getToolCatalogEntry } from '@/tools/catalog'
+import { getToolOutputsFromCatalog } from '@/tools/outputs'
 import type { ToolConfig } from '@/tools/types'
 import { getTrigger, isTriggerValid } from '@/triggers'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
@@ -173,6 +174,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
           ? blockConfig.tools!.access.map((toolId) => {
               const tool = getToolCatalogEntry(toolId)
               if (!tool) return { id: toolId, name: toolId }
+              const outputs = getToolOutputsFromCatalog(toolId)
               return {
                 id: toolId,
                 name: tool.name || toolId,
@@ -181,7 +183,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
                   fallbackName: toolId,
                 }),
                 inputs: tool.params || {},
-                outputs: tool.outputs || {},
+                outputs: outputs || {},
               }
             })
           : []
@@ -256,10 +258,11 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         for (const opId of operationIds) {
           const resolvedToolId = resolveToolIdForOperation(blockConfig, opId)
           const toolCfg = resolvedToolId ? getToolCatalogEntry(resolvedToolId) : undefined
+          const outputs = resolvedToolId ? getToolOutputsFromCatalog(resolvedToolId) : undefined
           const toolParams: Record<string, any> = toolCfg?.params || {}
-          const toolOutputs: Record<string, any> = toolCfg?.outputs
+          const toolOutputs: Record<string, any> = outputs
             ? Object.fromEntries(
-                Object.entries(toolCfg.outputs).filter(([_, def]) => !isHiddenFromDisplay(def))
+                Object.entries(outputs).filter(([_, def]) => !isHiddenFromDisplay(def))
               )
             : {}
           const filteredToolParams: Record<string, any> = {}

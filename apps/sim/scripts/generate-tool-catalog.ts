@@ -21,12 +21,16 @@ interface GeneratedToolEntry {
   service: string
   module: string
   params: ToolConfig['params']
-  outputs?: ToolConfig['outputs']
   oauth?: ToolConfig['oauth']
   hosting?: ToolConfig['hosting']
 }
 
 type GeneratedToolOutputs = Record<string, ToolConfig['outputs']>
+
+interface GeneratedToolArtifacts {
+  catalog: GeneratedToolEntry
+  outputs: ToolConfig['outputs']
+}
 
 const TOOLS_DIR = new URL('../tools', import.meta.url)
 const TOOLS_DIR_PATH = fileURLToPath(TOOLS_DIR)
@@ -92,24 +96,26 @@ async function getToolModuleNames(): Promise<string[]> {
   return moduleNames.sort((a, b) => a.localeCompare(b))
 }
 
-async function loadGeneratedToolEntries(moduleName: string): Promise<GeneratedToolEntry[]> {
+async function loadGeneratedToolEntries(moduleName: string): Promise<GeneratedToolArtifacts[]> {
   const module = (await import(`../tools/${moduleName}`)) as Record<string, unknown>
-  const entries: GeneratedToolEntry[] = []
+  const entries: GeneratedToolArtifacts[] = []
 
   for (const exportedValue of Object.values(module)) {
     if (!isToolConfig(exportedValue)) continue
 
     entries.push({
-      id: exportedValue.id,
-      name: exportedValue.name,
-      description: exportedValue.description,
-      version: exportedValue.version,
-      service: moduleName,
-      module: moduleName,
-      params: toSerializable(exportedValue.params),
+      catalog: {
+        id: exportedValue.id,
+        name: exportedValue.name,
+        description: exportedValue.description,
+        version: exportedValue.version,
+        service: moduleName,
+        module: moduleName,
+        params: toSerializable(exportedValue.params),
+        oauth: toSerializable(exportedValue.oauth),
+        hosting: toSerializable(exportedValue.hosting),
+      },
       outputs: toSerializable(exportedValue.outputs),
-      oauth: toSerializable(exportedValue.oauth),
-      hosting: toSerializable(exportedValue.hosting),
     })
   }
 
@@ -120,10 +126,10 @@ function renderCatalog(entries: GeneratedToolEntry[]): string {
   return JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.id, entry])))
 }
 
-function renderOutputs(entries: GeneratedToolEntry[]): string {
+function renderOutputs(entries: GeneratedToolArtifacts[]): string {
   return JSON.stringify(
     Object.fromEntries(
-      entries.map((entry) => [entry.id, entry.outputs ?? {}])
+      entries.map((entry) => [entry.catalog.id, entry.outputs ?? {}])
     ) satisfies GeneratedToolOutputs
   )
 }
@@ -142,9 +148,10 @@ ${entries}
 
 async function main(): Promise<void> {
   const moduleNames = await getToolModuleNames()
-  const entries = (await Promise.all(moduleNames.map(loadGeneratedToolEntries)))
+  const artifacts = (await Promise.all(moduleNames.map(loadGeneratedToolEntries)))
     .flat()
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .sort((a, b) => a.catalog.id.localeCompare(b.catalog.id))
+  const entries = artifacts.map((artifact) => artifact.catalog)
 
   await writeFile(
     new URL('../tools/catalog.generated.json', import.meta.url),
@@ -152,7 +159,7 @@ async function main(): Promise<void> {
   )
   await writeFile(
     new URL('../tools/outputs.generated.json', import.meta.url),
-    renderOutputs(entries)
+    renderOutputs(artifacts)
   )
   await writeFile(
     new URL('../tools/loaders.generated.ts', import.meta.url),
