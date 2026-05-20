@@ -33,9 +33,10 @@ import {
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { revokeWorkspaceCredentialMemberships } from '@/lib/credentials/access'
-import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
+  badRequestResponse,
   internalErrorResponse,
   notFoundResponse,
   singleResponse,
@@ -49,6 +50,10 @@ interface RouteParams {
   memberId: string
 }
 
+function ownerMemberId(workspaceId: string, ownerId: string): string {
+  return `owner:${workspaceId}:${ownerId}`
+}
+
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
     const parsed = await parseRequest(adminV1GetWorkspaceMemberContract, request, context)
@@ -57,10 +62,41 @@ export const GET = withRouteHandler(
     const { id: workspaceId, memberId } = parsed.data.params
 
     try {
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
+        const [ownerData] = await db
+          .select({
+            id: user.id,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            userName: user.name,
+            userEmail: user.email,
+            userImage: user.image,
+          })
+          .from(user)
+          .where(eq(user.id, workspaceData.ownerId))
+          .limit(1)
+
+        if (!ownerData) {
+          return notFoundResponse('Workspace member')
+        }
+
+        return singleResponse({
+          id: memberId,
+          workspaceId,
+          userId: ownerData.id,
+          permissions: 'admin',
+          createdAt: ownerData.createdAt.toISOString(),
+          updatedAt: ownerData.updatedAt.toISOString(),
+          userName: ownerData.userName,
+          userEmail: ownerData.userEmail,
+          userImage: ownerData.userImage,
+        } satisfies AdminWorkspaceMember)
       }
 
       const [memberData] = await db
@@ -120,10 +156,14 @@ export const PATCH = withRouteHandler(
     const { permissions: permissionLevel } = parsed.data.body
 
     try {
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
+        return badRequestResponse('Cannot modify the workspace owner from this endpoint')
       }
 
       const [existingMember] = await db
@@ -193,10 +233,14 @@ export const DELETE = withRouteHandler(
     const { id: workspaceId, memberId } = parsed.data.params
 
     try {
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
+        return badRequestResponse('Cannot remove the workspace owner from this endpoint')
       }
 
       const [existingMember] = await db

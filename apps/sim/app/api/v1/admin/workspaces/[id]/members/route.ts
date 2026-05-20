@@ -34,7 +34,7 @@ import { db } from '@sim/db'
 import { permissions, user, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, count, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import {
   adminV1CreateWorkspaceMemberContract,
   adminV1DeleteWorkspaceMemberContract,
@@ -44,9 +44,10 @@ import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
 import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
-import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
+  badRequestResponse,
   internalErrorResponse,
   listResponse,
   notFoundResponse,
@@ -60,6 +61,10 @@ interface RouteParams {
   id: string
 }
 
+function ownerMemberId(workspaceId: string, ownerId: string): string {
+  return `owner:${workspaceId}:${ownerId}`
+}
+
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
     const parsed = await parseRequest(adminV1ListWorkspaceMembersContract, request, context)
@@ -69,19 +74,25 @@ export const GET = withRouteHandler(
     const { limit, offset } = parsed.data.query
 
     try {
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
       }
 
-      const [countResult, membersData] = await Promise.all([
+      const [ownerData, membersData] = await Promise.all([
         db
-          .select({ count: count() })
-          .from(permissions)
-          .where(
-            and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))
-          ),
+          .select({
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            userImage: user.image,
+            userCreatedAt: user.createdAt,
+            userUpdatedAt: user.updatedAt,
+          })
+          .from(user)
+          .where(eq(user.id, workspaceData.ownerId))
+          .limit(1),
         db
           .select({
             id: permissions.id,
@@ -98,23 +109,50 @@ export const GET = withRouteHandler(
           .where(
             and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))
           )
-          .orderBy(permissions.createdAt)
-          .limit(limit)
-          .offset(offset),
+          .orderBy(permissions.createdAt),
       ])
 
-      const total = countResult[0].count
-      const data: AdminWorkspaceMember[] = membersData.map((m) => ({
-        id: m.id,
-        workspaceId,
-        userId: m.userId,
-        permissions: m.permissionType,
-        createdAt: m.createdAt.toISOString(),
-        updatedAt: m.updatedAt.toISOString(),
-        userName: m.userName,
-        userEmail: m.userEmail,
-        userImage: m.userImage,
-      }))
+      const membersByUserId = new Map<string, AdminWorkspaceMember>(
+        membersData.map((member) => [
+          member.userId,
+          {
+            id: member.id,
+            workspaceId,
+            userId: member.userId,
+            permissions: member.permissionType,
+            createdAt: member.createdAt.toISOString(),
+            updatedAt: member.updatedAt.toISOString(),
+            userName: member.userName,
+            userEmail: member.userEmail,
+            userImage: member.userImage,
+          },
+        ])
+      )
+
+      const owner = ownerData[0]
+      if (owner) {
+        membersByUserId.set(workspaceData.ownerId, {
+          id:
+            membersByUserId.get(workspaceData.ownerId)?.id ??
+            ownerMemberId(workspaceId, workspaceData.ownerId),
+          workspaceId,
+          userId: workspaceData.ownerId,
+          permissions: 'admin',
+          createdAt:
+            membersByUserId.get(workspaceData.ownerId)?.createdAt ??
+            owner.userCreatedAt.toISOString(),
+          updatedAt:
+            membersByUserId.get(workspaceData.ownerId)?.updatedAt ??
+            owner.userUpdatedAt.toISOString(),
+          userName: owner.userName,
+          userEmail: owner.userEmail,
+          userImage: owner.userImage,
+        })
+      }
+
+      const allMembers = [...membersByUserId.values()]
+      const total = allMembers.length
+      const data = allMembers.slice(offset, offset + limit)
 
       const pagination = createPaginationMeta(total, limit, offset)
 
@@ -137,10 +175,41 @@ export const POST = withRouteHandler(
     const { userId, permissions: permissionLevel } = parsed.data.body
 
     try {
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (workspaceData.ownerId === userId) {
+        const [ownerData] = await db
+          .select({
+            name: user.name,
+            email: user.email,
+            image: user.image,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+          })
+          .from(user)
+          .where(eq(user.id, userId))
+          .limit(1)
+
+        if (!ownerData) {
+          return notFoundResponse('User')
+        }
+
+        return singleResponse({
+          id: ownerMemberId(workspaceId, userId),
+          workspaceId,
+          userId,
+          permissions: 'admin' as const,
+          createdAt: ownerData.createdAt.toISOString(),
+          updatedAt: ownerData.updatedAt.toISOString(),
+          userName: ownerData.name,
+          userEmail: ownerData.email,
+          userImage: ownerData.image,
+          action: 'already_member' as const,
+        })
       }
 
       const [userData] = await db
@@ -276,10 +345,14 @@ export const DELETE = withRouteHandler(
     try {
       targetUserId = userId
 
-      const workspaceData = await getWorkspaceById(workspaceId)
+      const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (workspaceData.ownerId === userId) {
+        return badRequestResponse('Cannot remove the workspace owner from this endpoint')
       }
 
       const [existingPermission] = await db
