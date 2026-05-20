@@ -142,4 +142,27 @@ describe('GET /api/organizations/[id]/roster', () => {
       },
     ])
   })
+
+  it('does not surface external users from personal workspaces in the roster', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    mockDbResults.value = [
+      [{ role: 'owner' }],
+      [{ id: 'ws-personal', name: 'Personal Workspace', ownerId: 'external-1', createdAt }],
+      [],
+      [],
+      [],
+      [],
+    ]
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/organizations/org-1/roster'),
+      {
+        params: Promise.resolve({ id: 'org-1' }),
+      } as any
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data.members).toEqual([])
+  })
 })

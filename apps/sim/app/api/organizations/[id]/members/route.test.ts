@@ -165,4 +165,32 @@ describe('GET /api/organizations/[id]/members', () => {
       hasAdminAccess: true,
     })
   })
+
+  it('does not surface external users from personal workspaces', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    mockDbResults.value = [
+      [{ role: 'owner' }],
+      [{ id: 'ws-personal', ownerId: 'external-1', createdAt }],
+      [],
+      [],
+      [],
+    ]
+
+    const request = Object.assign(
+      new Request('http://localhost:3000/api/organizations/org-1/members'),
+      { nextUrl: new URL('http://localhost:3000/api/organizations/org-1/members') }
+    )
+
+    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data).toEqual({
+      success: true,
+      data: [],
+      total: 0,
+      userRole: 'owner',
+      hasAdminAccess: true,
+    })
+  })
 })
