@@ -1,9 +1,15 @@
+import { Suspense, lazy, type ReactNode } from 'react'
 import type React from 'react'
 import { EnvVarDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/env-var-dropdown'
-import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useTagSelection } from '@/hooks/kb/use-tag-selection'
+
+const TagDropdown = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
+  ).then((module) => ({ default: module.TagDropdown }))
+)
 
 /**
  * Props for the headless SubBlockInputController.
@@ -66,7 +72,7 @@ export interface SubBlockInputControllerProps {
     onDragOver: (e: React.DragEvent<HTMLTextAreaElement | HTMLInputElement>) => void
     onFocus: (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => void
     onScroll?: (e: React.UIEvent<HTMLTextAreaElement>) => void
-  }) => React.ReactNode
+  }) => ReactNode
 }
 
 /**
@@ -141,23 +147,27 @@ export function SubBlockInputController(props: SubBlockInputControllerProps): Re
         inputRef={ctrl.inputRef}
       />
 
-      <TagDropdown
-        visible={ctrl.showTags && !isStreaming}
-        onSelect={(newValue: string) => {
-          if (onChange) {
-            onChange(newValue)
-          } else if (!isPreview) {
-            emitTagSelection(newValue)
-          }
-          ctrl.controls.hideTags()
-        }}
-        blockId={blockId}
-        activeSourceBlockId={ctrl.activeSourceBlockId}
-        inputValue={ctrl.valueString}
-        cursorPosition={ctrl.cursorPosition}
-        onClose={ctrl.controls.hideTags}
-        inputRef={ctrl.inputRef}
-      />
+      {ctrl.showTags && !isStreaming ? (
+        <Suspense fallback={null}>
+          <TagDropdown
+            visible={true}
+            onSelect={(newValue: string) => {
+              if (onChange) {
+                onChange(newValue)
+              } else if (!isPreview) {
+                emitTagSelection(newValue)
+              }
+              ctrl.controls.hideTags()
+            }}
+            blockId={blockId}
+            activeSourceBlockId={ctrl.activeSourceBlockId}
+            inputValue={ctrl.valueString}
+            cursorPosition={ctrl.cursorPosition}
+            onClose={ctrl.controls.hideTags}
+            inputRef={ctrl.inputRef}
+          />
+        </Suspense>
+      ) : null}
     </>
   )
 }

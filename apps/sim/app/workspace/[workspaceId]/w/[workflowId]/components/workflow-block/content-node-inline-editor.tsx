@@ -1,12 +1,11 @@
 'use client'
 
 import type { ChangeEvent } from 'react'
-import { useCallback, useMemo } from 'react'
+import { Suspense, lazy, useCallback, useMemo } from 'react'
 import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import {
-  Dropdown,
   FileUpload,
   LongInput,
   TableSelector,
@@ -14,6 +13,12 @@ import {
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
 import { usePanelEditorStore } from '@/stores/panel'
+
+const Dropdown = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/dropdown/dropdown'
+  ).then((module) => ({ default: module.Dropdown }))
+)
 
 interface ContentNodeInlineEditorProps {
   blockId: string
@@ -282,25 +287,27 @@ export function ContentNodeInlineEditor({
               Action
             </div>
             <div className={cn('rounded-md border border-[var(--border-1)] bg-[var(--surface-1)]')}>
-              <Dropdown
-                blockId={blockId}
-                subBlockId={operationConfig.id}
-                options={operationConfig.options as { label: string; id: string }[]}
-                defaultValue={
-                  typeof operationConfig.value === 'function'
-                    ? operationConfig.value({})
-                    : operationConfig.value
-                }
-                placeholder={operationConfig.placeholder}
-                isPreview={isPreview}
-                previewValue={getDropdownPreviewValue(operationPreviewValue)}
-                disabled={disabled}
-                multiSelect={operationConfig.multiSelect}
-                fetchOptions={operationConfig.fetchOptions}
-                fetchOptionById={operationConfig.fetchOptionById}
-                dependsOn={operationConfig.dependsOn}
-                searchable={operationConfig.searchable}
-              />
+              <Suspense fallback={<div className='h-8' />}>
+                <Dropdown
+                  blockId={blockId}
+                  subBlockId={operationConfig.id}
+                  options={operationConfig.options as { label: string; id: string }[]}
+                  defaultValue={
+                    typeof operationConfig.value === 'function'
+                      ? operationConfig.value({})
+                      : operationConfig.value
+                  }
+                  placeholder={operationConfig.placeholder}
+                  isPreview={isPreview}
+                  previewValue={getDropdownPreviewValue(operationPreviewValue)}
+                  disabled={disabled}
+                  multiSelect={operationConfig.multiSelect}
+                  fetchOptions={operationConfig.fetchOptions}
+                  fetchOptionById={operationConfig.fetchOptionById}
+                  dependsOn={operationConfig.dependsOn}
+                  searchable={operationConfig.searchable}
+                />
+              </Suspense>
             </div>
           </div>
         </div>

@@ -1,4 +1,14 @@
-import { type JSX, type MouseEvent, memo, useCallback, useMemo, useRef, useState } from 'react'
+import {
+  type JSX,
+  type MouseEvent,
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { isEqual } from 'es-toolkit'
 import {
   AlertTriangle,
@@ -15,11 +25,9 @@ import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
 import {
   CheckboxList,
   Code,
-  ComboBox,
   ConditionInput,
   CredentialSelector,
   DocumentTagEntry,
-  Dropdown,
   EvalInput,
   FileUpload,
   FilterBuilder,
@@ -46,7 +54,6 @@ import {
   TableSelector,
   Text,
   TimeInput,
-  ToolInput,
   VariablesInput,
   WorkflowSelectorInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
@@ -65,6 +72,24 @@ const SLACK_OVERRIDES: SelectorOverrides = {
     return { ...context, oauthCredential }
   },
 }
+
+const ToolInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/tool-input'
+  ).then((module) => ({ default: module.ToolInput }))
+)
+
+const Dropdown = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/dropdown/dropdown'
+  ).then((module) => ({ default: module.Dropdown }))
+)
+
+const ComboBox = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/combobox/combobox'
+  ).then((module) => ({ default: module.ComboBox }))
+)
 
 const FOLDER_OVERRIDES: SelectorOverrides = {
   getDefaultValue: (subBlock) => {
@@ -694,21 +719,23 @@ function SubBlockComponent({
       case 'dropdown':
         return (
           <div onMouseDown={handleMouseDown}>
-            <Dropdown
-              blockId={blockId}
-              subBlockId={config.id}
-              options={config.options as { label: string; id: string }[]}
-              defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
-              placeholder={config.placeholder}
-              isPreview={isPreview}
-              previewValue={previewValue}
-              disabled={isDisabled}
-              multiSelect={config.multiSelect}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
-              dependsOn={config.dependsOn}
-              searchable={config.searchable}
-            />
+            <Suspense fallback={<div className='h-8' />}>
+              <Dropdown
+                blockId={blockId}
+                subBlockId={config.id}
+                options={config.options as { label: string; id: string }[]}
+                defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
+                placeholder={config.placeholder}
+                isPreview={isPreview}
+                previewValue={previewValue}
+                disabled={isDisabled}
+                multiSelect={config.multiSelect}
+                fetchOptions={config.fetchOptions}
+                fetchOptionById={config.fetchOptionById}
+                dependsOn={config.dependsOn}
+                searchable={config.searchable}
+              />
+            </Suspense>
           </div>
         )
 
@@ -728,20 +755,22 @@ function SubBlockComponent({
       case 'combobox':
         return (
           <div onMouseDown={handleMouseDown}>
-            <ComboBox
-              blockId={blockId}
-              subBlockId={config.id}
-              options={config.options as { label: string; id: string }[]}
-              defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
-              placeholder={config.placeholder}
-              isPreview={isPreview}
-              previewValue={previewValue as any}
-              disabled={isDisabled}
-              config={config}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
-              dependsOn={config.dependsOn}
-            />
+            <Suspense fallback={<div className='h-8' />}>
+              <ComboBox
+                blockId={blockId}
+                subBlockId={config.id}
+                options={config.options as { label: string; id: string }[]}
+                defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
+                placeholder={config.placeholder}
+                isPreview={isPreview}
+                previewValue={previewValue as any}
+                disabled={isDisabled}
+                config={config}
+                fetchOptions={config.fetchOptions}
+                fetchOptionById={config.fetchOptionById}
+                dependsOn={config.dependsOn}
+              />
+            </Suspense>
           </div>
         )
 
@@ -819,14 +848,16 @@ function SubBlockComponent({
 
       case 'tool-input':
         return (
-          <ToolInput
-            blockId={blockId}
-            subBlockId={config.id}
-            isPreview={isPreview}
-            previewValue={previewValue}
-            disabled={allowExpandInPreview ? false : isDisabled}
-            allowExpandInPreview={allowExpandInPreview}
-          />
+          <Suspense fallback={<div className='h-8' />}>
+            <ToolInput
+              blockId={blockId}
+              subBlockId={config.id}
+              isPreview={isPreview}
+              previewValue={previewValue}
+              disabled={allowExpandInPreview ? false : isDisabled}
+              allowExpandInPreview={allowExpandInPreview}
+            />
+          </Suspense>
         )
 
       case 'skill-input':
