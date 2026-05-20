@@ -156,7 +156,7 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
       exists: true,
       hasAccess: true,
       canWrite: true,
-      workspace: { id: 'ws-1', ownerId: 'owner-1' },
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'organization' },
     })
     transactionMock.mockImplementation(async (callback) => {
       const txSelectChain: {
@@ -218,6 +218,25 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
 
     expect(response.status).toBe(400)
     expect(data).toEqual({ error: 'User does not have access to this workspace' })
+    expect(insertValuesMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects permission-group membership changes for personal workspaces', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'personal' },
+    })
+
+    const response = await POST(createMockRequest('POST'), {
+      params: Promise.resolve({ id: 'ws-1', groupId: 'group-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
   })
 })

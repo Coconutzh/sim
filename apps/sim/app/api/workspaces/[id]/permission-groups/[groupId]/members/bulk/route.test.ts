@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   andMock,
+  checkWorkspaceAccessMock,
   eqMock,
   getUsersWithPermissionsMock,
   hasWorkspaceAdminAccessMock,
@@ -24,6 +25,7 @@ const {
 
   return {
     andMock: vi.fn((...args) => ({ kind: 'and', args })),
+    checkWorkspaceAccessMock: vi.fn(),
     eqMock: vi.fn((left, right) => ({ kind: 'eq', left, right })),
     getUsersWithPermissionsMock: vi.fn(),
     hasWorkspaceAdminAccessMock: vi.fn(),
@@ -129,6 +131,7 @@ vi.mock('@/lib/posthog/server', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: checkWorkspaceAccessMock,
   getUsersWithPermissions: getUsersWithPermissionsMock,
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
@@ -147,6 +150,12 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
     })
     hasWorkspaceAdminAccessMock.mockResolvedValue(true)
     isWorkspaceOnEnterprisePlanMock.mockResolvedValue(true)
+    checkWorkspaceAccessMock.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
     getUsersWithPermissionsMock.mockResolvedValue([
       { userId: 'owner-1', permissionType: 'admin' },
       { userId: 'member-1', permissionType: 'member' },
@@ -213,5 +222,24 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
     expect(insertValuesMock).toHaveBeenCalledWith([
       expect.objectContaining({ userId: 'owner-1', workspaceId: 'ws-1' }),
     ])
+  })
+
+  it('rejects bulk permission-group assignment for personal workspaces', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'personal' },
+    })
+
+    const response = await POST(createMockRequest('POST'), {
+      params: Promise.resolve({ id: 'ws-1', groupId: 'group-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
+    expect(insertValuesMock).not.toHaveBeenCalled()
   })
 })
