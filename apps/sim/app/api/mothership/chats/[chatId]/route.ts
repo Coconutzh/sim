@@ -137,6 +137,11 @@ export const PATCH = withRouteHandler(
       const { chatId } = parsed.data.params
       const { title, isUnread } = parsed.data.body
 
+      const chat = await getAccessibleMothershipChat(chatId, userId)
+      if (!chat) {
+        return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
+      }
+
       const updates: Record<string, unknown> = {}
 
       if (title !== undefined) {
