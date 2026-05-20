@@ -35,6 +35,10 @@ import {
 
 const logger = createLogger('OrganizationMembersAPI')
 
+function toOrganizationMemberId(userId: string, role: 'owner' | 'admin' | 'member' | 'external') {
+  return role === 'external' ? `external-${userId}` : userId
+}
+
 /**
  * GET /api/organizations/[id]/members
  * Get organization members with optional usage data
@@ -170,6 +174,7 @@ export const GET = withRouteHandler(
       }
       const combinedMembers = [...members, ...externalByUserId.values()].map((row) => ({
         ...row,
+        id: toOrganizationMemberId(row.userId, row.role),
         organizationId: row.organizationId ?? organizationId,
       }))
 
@@ -257,6 +262,7 @@ export const GET = withRouteHandler(
         }
         const combinedWithUsage = [...base, ...externalUsageByUserId.values()].map((row) => ({
           ...row,
+          id: toOrganizationMemberId(row.userId, row.role),
           organizationId: row.organizationId ?? organizationId,
         }))
 
