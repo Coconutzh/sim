@@ -1,9 +1,13 @@
 import { db } from '@sim/db'
-import { permissions, workspace } from '@sim/db/schema'
+import { workspace } from '@sim/db/schema'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, desc, eq, isNotNull, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { getWorkflowById } from '@/lib/workflows/utils'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+  listAccessibleWorkspaceIds,
+} from '@/lib/workspaces/permissions/utils'
 
 type WorkflowRecord = NonNullable<Awaited<ReturnType<typeof getWorkflowById>>>
 
@@ -36,22 +40,16 @@ export async function ensureWorkflowAccess(
 }
 
 export async function getDefaultWorkspaceId(userId: string): Promise<string> {
+  const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(userId)
+  if (accessibleWorkspaceIds.length === 0) {
+    throw new Error('No workspace found for user')
+  }
+
   const workspaces = await db
     .select({ workspaceId: workspace.id })
     .from(workspace)
-    .leftJoin(
-      permissions,
-      and(
-        eq(permissions.entityId, workspace.id),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.userId, userId)
-      )
-    )
     .where(
-      and(
-        or(eq(workspace.ownerId, userId), isNotNull(permissions.id)),
-        isNull(workspace.archivedAt)
-      )
+      and(inArray(workspace.id, accessibleWorkspaceIds), isNull(workspace.archivedAt))
     )
     .orderBy(desc(workspace.createdAt))
     .limit(1)

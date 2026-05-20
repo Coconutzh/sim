@@ -14,19 +14,16 @@ const {
   eqMock,
   fromMock,
   getUserEntityPermissionsMock,
-  isNotNullMock,
   isNullMock,
-  leftJoinMock,
+  inArrayMock,
   limitMock,
-  orMock,
   orderByMock,
   whereMock,
 } = vi.hoisted(() => {
   const limitMock = vi.fn()
   const orderByMock = vi.fn(() => ({ limit: limitMock }))
   const whereMock = vi.fn(() => ({ orderBy: orderByMock }))
-  const leftJoinMock = vi.fn(() => ({ where: whereMock }))
-  const fromMock = vi.fn(() => ({ leftJoin: leftJoinMock }))
+  const fromMock = vi.fn(() => ({ where: whereMock }))
   const chain = { from: fromMock }
 
   return {
@@ -39,11 +36,9 @@ const {
     eqMock: vi.fn((left, right) => ({ kind: 'eq', left, right })),
     fromMock,
     getUserEntityPermissionsMock: vi.fn(),
-    isNotNullMock: vi.fn((value) => ({ kind: 'isNotNull', value })),
+    inArrayMock: vi.fn((left, right) => ({ kind: 'inArray', left, right })),
     isNullMock: vi.fn((value) => ({ kind: 'isNull', value })),
-    leftJoinMock,
     limitMock,
-    orMock: vi.fn((...args) => ({ kind: 'or', args })),
     orderByMock,
     whereMock,
   }
@@ -56,12 +51,7 @@ vi.mock('@sim/db', () => ({
 }))
 
 vi.mock('@sim/db/schema', () => ({
-  permissions: {
-    entityId: 'permissions.entityId',
-    entityType: 'permissions.entityType',
-    id: 'permissions.id',
-    userId: 'permissions.userId',
-  },
+  permissions: {},
   workspace: {
     archivedAt: 'workspace.archivedAt',
     createdAt: 'workspace.createdAt',
@@ -78,17 +68,18 @@ vi.mock('drizzle-orm', () => ({
   and: andMock,
   desc: descMock,
   eq: eqMock,
-  isNotNull: isNotNullMock,
+  inArray: inArrayMock,
   isNull: isNullMock,
-  or: orMock,
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
   checkWorkspaceAccess: checkWorkspaceAccessMock,
   getUserEntityPermissions: getUserEntityPermissionsMock,
+  listAccessibleWorkspaceIds: vi.fn(),
 }))
 
 import { ensureWorkflowAccess, getDefaultWorkspaceId } from '@/lib/copilot/tools/handlers/access'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 describe('ensureWorkflowAccess', () => {
   beforeEach(() => {
@@ -125,28 +116,23 @@ describe('getDefaultWorkspaceId', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     dbSelectMock.mockReturnValue(chain)
-    fromMock.mockReturnValue({ leftJoin: leftJoinMock })
-    leftJoinMock.mockReturnValue({ where: whereMock })
+    fromMock.mockReturnValue({ where: whereMock })
     whereMock.mockReturnValue({ orderBy: orderByMock })
     orderByMock.mockReturnValue({ limit: limitMock })
   })
 
   it('returns the newest owner workspace without an explicit permission row', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-owner', 'ws-team'])
     limitMock.mockResolvedValue([{ workspaceId: 'ws-owner' }])
 
     await expect(getDefaultWorkspaceId('user-owner')).resolves.toBe('ws-owner')
 
     expect(fromMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'workspace.id' }))
-    expect(leftJoinMock).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: 'permissions.entityId' }),
-      expect.anything()
-    )
-    expect(isNotNullMock).toHaveBeenCalledWith('permissions.id')
-    expect(orMock).toHaveBeenCalled()
+    expect(inArrayMock).toHaveBeenCalledWith('workspace.id', ['ws-owner', 'ws-team'])
   })
 
   it('throws when the user has no accessible workspace', async () => {
-    limitMock.mockResolvedValue([])
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce([])
 
     await expect(getDefaultWorkspaceId('user-missing')).rejects.toThrow(
       'No workspace found for user'
