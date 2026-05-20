@@ -14,8 +14,10 @@ const {
   mockWhere,
   mockOrderBy,
   mockEq,
+  mockInArray,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockAssertActiveWorkspaceAccess,
+  mockListAccessibleWorkspaceIds,
   mockResolveOrCreateChat,
   mockPublishStatusChanged,
 } = vi.hoisted(() => ({
@@ -25,8 +27,10 @@ const {
   mockWhere: vi.fn(),
   mockOrderBy: vi.fn(),
   mockEq: vi.fn((field: unknown, value: unknown) => ({ field, value, type: 'eq' })),
+  mockInArray: vi.fn((field: unknown, value: unknown[]) => ({ field, value, type: 'inArray' })),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockAssertActiveWorkspaceAccess: vi.fn(),
+  mockListAccessibleWorkspaceIds: vi.fn(),
   mockResolveOrCreateChat: vi.fn(),
   mockPublishStatusChanged: vi.fn(),
 }))
@@ -40,6 +44,7 @@ vi.mock('@sim/db', () => ({
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...conditions: unknown[]) => ({ conditions, type: 'and' })),
   eq: mockEq,
+  inArray: mockInArray,
   or: vi.fn((...conditions: unknown[]) => ({ conditions, type: 'or' })),
   isNull: vi.fn((field: unknown) => ({ field, type: 'isNull' })),
   desc: vi.fn((field: unknown) => ({ field, type: 'desc' })),
@@ -52,6 +57,7 @@ vi.mock('@sim/workflow-authz', () => ({
 }))
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
   assertActiveWorkspaceAccess: mockAssertActiveWorkspaceAccess,
+  listAccessibleWorkspaceIds: mockListAccessibleWorkspaceIds,
 }))
 vi.mock('@/lib/copilot/chat/lifecycle', () => ({
   resolveOrCreateChat: mockResolveOrCreateChat,
@@ -80,6 +86,7 @@ describe('Copilot Chats List API Route', () => {
       workflow: { workspaceId: 'ws-1' },
     })
     mockAssertActiveWorkspaceAccess.mockResolvedValue(undefined)
+    mockListAccessibleWorkspaceIds.mockResolvedValue(['ws-1'])
     mockResolveOrCreateChat.mockResolvedValue({ chatId: 'chat-new' })
   })
 
@@ -255,17 +262,18 @@ describe('Copilot Chats List API Route', () => {
       expect(mockWhere).toHaveBeenCalled()
     })
 
-    it('includes workspace owner access in the visibility filter', async () => {
+    it('filters visible chats through accessible workspace ids', async () => {
       copilotHttpMockFns.mockAuthenticateCopilotRequestSessionOnly.mockResolvedValueOnce({
         userId: 'owner-123',
         isAuthenticated: true,
       })
+      mockListAccessibleWorkspaceIds.mockResolvedValueOnce(['ws-owner', 'ws-team'])
 
       const request = new Request('http://localhost:3000/api/copilot/chats')
       await GET(request as any)
 
       expect(mockWhere).toHaveBeenCalled()
-      expect(mockEq).toHaveBeenCalledWith('ownerId', 'owner-123')
+      expect(mockInArray).toHaveBeenCalledWith('id', ['ws-owner', 'ws-team'])
     })
 
     it('should return 401 when userId is null despite isAuthenticated being true', async () => {

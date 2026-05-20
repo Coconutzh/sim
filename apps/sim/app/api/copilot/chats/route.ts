@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
-import { copilotChats, permissions, workflow, workspace } from '@sim/db/schema'
+import { copilotChats, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createWorkflowCopilotChatContract } from '@/lib/api/contracts/copilot'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
@@ -15,7 +15,10 @@ import {
 } from '@/lib/copilot/request/http'
 import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  listAccessibleWorkspaceIds,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CopilotChatsListAPI')
 
@@ -27,6 +30,8 @@ export const GET = withRouteHandler(async (_request: NextRequest) => {
     if (!isAuthenticated || !userId) {
       return createUnauthorizedResponse()
     }
+
+    const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(userId)
 
     const visibleChats = await db
       .selectDistinctOn([copilotChats.id], {
@@ -46,21 +51,14 @@ export const GET = withRouteHandler(async (_request: NextRequest) => {
           and(isNull(copilotChats.workflowId), eq(copilotChats.workspaceId, workspace.id))
         )
       )
-      .leftJoin(
-        permissions,
-        and(
-          eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, workspace.id),
-          eq(permissions.userId, userId)
-        )
-      )
       .where(
         and(
           eq(copilotChats.userId, userId),
           or(
             and(isNull(copilotChats.workflowId), isNull(copilotChats.workspaceId)),
-            sql`${permissions.id} IS NOT NULL`,
-            eq(workspace.ownerId, userId)
+            accessibleWorkspaceIds.length > 0
+              ? inArray(workspace.id, accessibleWorkspaceIds)
+              : sql`false`
           ),
           or(isNull(workflow.id), isNull(workflow.archivedAt)),
           or(isNull(workspace.id), isNull(workspace.archivedAt))
