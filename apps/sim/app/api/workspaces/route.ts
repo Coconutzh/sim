@@ -159,7 +159,7 @@ export const GET = withRouteHandler(async (request: Request) => {
             : permissionType === 'admin'
               ? 'admin'
               : 'member',
-        permissions: permissionType,
+        permissions: workspaceDetails.ownerId === session.user.id ? 'admin' : permissionType,
         inviteMembersEnabled: invitePolicy.allowed,
         inviteDisabledReason,
         inviteUpgradeRequired: canActOnUpgrade,

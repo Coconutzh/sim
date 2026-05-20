@@ -96,6 +96,7 @@ describe('GET /api/workspaces', () => {
           id: 'ws-owner',
           ownerId: 'user-1',
           role: 'owner',
+          permissions: 'admin',
         },
       ],
     })
