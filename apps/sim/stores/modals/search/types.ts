@@ -37,7 +37,7 @@ export interface SearchDocItem {
 }
 
 /**
- * Pre-computed search data that is initialized on app load.
+ * Pre-computed search data that is initialized on demand.
  */
 export interface SearchData {
   blocks: SearchBlockItem[]
@@ -78,7 +78,7 @@ export interface SearchModalState {
   close: () => void
 
   /**
-   * Initialize search data. Called once on app load.
+   * Initialize search data. Called when the search modal opens.
    */
-  initializeData: (filterBlocks: <T extends { type: string }>(blocks: T[]) => T[]) => void
+  initializeData: (filterBlocks: <T extends { type: string }>(blocks: T[]) => T[]) => Promise<void>
 }

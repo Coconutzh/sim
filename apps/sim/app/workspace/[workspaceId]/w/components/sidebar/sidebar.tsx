@@ -1,6 +1,16 @@
 'use client'
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createLogger } from '@sim/logger'
 import { Compass, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
@@ -56,7 +66,6 @@ import {
   CollapsedWorkflowFlyoutItem,
   HelpModal,
   NavItemContextMenu,
-  SearchModal,
   SettingsSidebar,
   WorkflowList,
   WorkspaceHeader,
@@ -106,6 +115,11 @@ import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
+const SearchModal = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-modal'
+  ).then((module) => ({ default: module.SearchModal }))
+)
 
 export function SidebarTooltip({
   children,
@@ -355,10 +369,6 @@ export const Sidebar = memo(function Sidebar() {
   const { navigateToSettings, getSettingsHref } = useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
 
-  useEffect(() => {
-    initializeSearchData(filterBlocks)
-  }, [initializeSearchData, filterBlocks])
-
   const setSidebarWidth = useSidebarStore((state) => state.setSidebarWidth)
   const isCollapsed = useSidebarStore((state) => state.isCollapsed)
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed)
@@ -436,6 +446,11 @@ export const Sidebar = memo(function Sidebar() {
   const isSearchModalOpen = useSearchModalStore((state) => state.isOpen)
   const setIsSearchModalOpen = useSearchModalStore((state) => state.setOpen)
   const openSearchModal = useSearchModalStore((state) => state.open)
+
+  useEffect(() => {
+    if (!isSearchModalOpen) return
+    void initializeSearchData(filterBlocks)
+  }, [isSearchModalOpen, initializeSearchData, filterBlocks])
 
   const {
     workspaces,
@@ -1813,17 +1828,21 @@ export const Sidebar = memo(function Sidebar() {
         )}
       </div>
 
-      <SearchModal
-        open={isSearchModalOpen}
-        onOpenChange={setIsSearchModalOpen}
-        workflows={searchModalWorkflows}
-        workspaces={searchModalWorkspaces}
-        tasks={tasks}
-        tables={searchModalTables}
-        files={searchModalFiles}
-        knowledgeBases={searchModalKnowledgeBases}
-        isOnWorkflowPage={!!workflowId}
-      />
+      {isSearchModalOpen && (
+        <Suspense fallback={null}>
+          <SearchModal
+            open={isSearchModalOpen}
+            onOpenChange={setIsSearchModalOpen}
+            workflows={searchModalWorkflows}
+            workspaces={searchModalWorkspaces}
+            tasks={tasks}
+            tables={searchModalTables}
+            files={searchModalFiles}
+            knowledgeBases={searchModalKnowledgeBases}
+            isOnWorkflowPage={!!workflowId}
+          />
+        </Suspense>
+      )}
 
       <HelpModal
         open={isHelpModalOpen}
