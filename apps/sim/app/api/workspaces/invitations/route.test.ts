@@ -478,7 +478,9 @@ describe('GET /api/workspaces/invitations', () => {
     mockGetSession.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@test.com', name: 'Owner User' },
     })
-    permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValue(['ws-owner'])
+    permissionsMockFns.mockGetManageableWorkspaces.mockResolvedValue([
+      { id: 'ws-owner', name: 'Owner Workspace', ownerId: 'owner-1', accessType: 'owner' },
+    ])
     mockListInvitationsForWorkspaces.mockResolvedValue([])
   })
 
@@ -493,10 +495,22 @@ describe('GET /api/workspaces/invitations', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(permissionsMockFns.mockListAccessibleWorkspaceIds).toHaveBeenCalledWith('owner-1')
+    expect(permissionsMockFns.mockGetManageableWorkspaces).toHaveBeenCalledWith('owner-1')
     expect(mockListInvitationsForWorkspaces).toHaveBeenCalledWith(['ws-owner'])
     await expect(response.json()).resolves.toMatchObject({
       invitations: [{ id: 'invite-1', workspaceId: 'ws-owner' }],
     })
+  })
+
+  it('does not expose invitations to non-admin workspace members', async () => {
+    permissionsMockFns.mockGetManageableWorkspaces.mockResolvedValueOnce([])
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/workspaces/invitations') as any
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockListInvitationsForWorkspaces).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({ invitations: [] })
   })
 })

@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { listInvitationsForWorkspaces } from '@/lib/invitations/core'
-import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
+import { getManageableWorkspaces } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +19,9 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
   }
 
   try {
-    const workspaceIds = await listAccessibleWorkspaceIds(session.user.id)
+    const workspaceIds = (await getManageableWorkspaces(session.user.id)).map(
+      (workspace) => workspace.id
+    )
 
     if (workspaceIds.length === 0) {
       return NextResponse.json({ invitations: [] })
