@@ -192,7 +192,7 @@ async function fetchPublishedWorkflowsForWorkgroup(
     signal,
   })
 
-  return response.data
+  return response.data.map(mapPublishedWorkflowCatalogItem)
 }
 
 export function usePublishedWorkflowsForWorkgroup(workgroupId?: string) {
@@ -255,7 +255,19 @@ export interface WorkflowTracksData {
 }
 
 export interface PublishedWorkflowView extends PublishedWorkflowCatalogItem {
+  description?: string
+  publishedAt: Date | null
   workspaceName: string
+}
+
+export function mapPublishedWorkflowCatalogItem(
+  workflow: PublishedWorkflowCatalogItem
+): PublishedWorkflowView {
+  return {
+    ...workflow,
+    description: workflow.description ?? undefined,
+    publishedAt: workflow.publishedAt ? new Date(workflow.publishedAt) : null,
+  }
 }
 
 export function useCreateWorkflow() {
