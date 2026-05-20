@@ -90,7 +90,7 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
       userId: context.userId,
       action: 'write',
     })
-    if (!authorization.allowed) {
+    if (!authorization.allowed || authorization.accessSource !== 'workspace') {
       throw new Error(authorization.message || 'Unauthorized workflow access')
     }
 
