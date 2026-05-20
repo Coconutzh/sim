@@ -284,6 +284,9 @@ async function processWorkflowFromDb(
       if (!authorization.allowed) {
         return null
       }
+      if (kind !== 'workflow' && authorization.accessSource !== 'workspace') {
+        return null
+      }
       if (currentWorkspaceId && authorization.workflow?.workspaceId !== currentWorkspaceId) {
         return null
       }
@@ -592,7 +595,7 @@ async function processWorkflowBlockFromDb(
         userId,
         action: 'read',
       })
-      if (!authorization.allowed) {
+      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
         return null
       }
       if (currentWorkspaceId && authorization.workflow?.workspaceId !== currentWorkspaceId) {
