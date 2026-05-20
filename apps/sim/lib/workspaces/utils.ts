@@ -1,7 +1,8 @@
 import { db } from '@sim/db'
 import { permissions, workspace as workspaceTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceUtils')
 
@@ -44,6 +45,11 @@ export async function getWorkspaceBilledAccountUserId(workspaceId: string): Prom
 }
 
 export async function listUserWorkspaces(userId: string, scope: WorkspaceScope = 'active') {
+  const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(userId)
+  if (accessibleWorkspaceIds.length === 0) {
+    return []
+  }
+
   const workspaces = await db
     .select({
       workspaceId: workspaceTable.id,
@@ -62,14 +68,14 @@ export async function listUserWorkspaces(userId: string, scope: WorkspaceScope =
     )
     .where(
       scope === 'all'
-        ? or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id))
+        ? inArray(workspaceTable.id, accessibleWorkspaceIds)
         : scope === 'archived'
           ? and(
-              or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id)),
+              inArray(workspaceTable.id, accessibleWorkspaceIds),
               sql`${workspaceTable.archivedAt} IS NOT NULL`
             )
           : and(
-              or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id)),
+              inArray(workspaceTable.id, accessibleWorkspaceIds),
               isNull(workspaceTable.archivedAt)
             )
     )

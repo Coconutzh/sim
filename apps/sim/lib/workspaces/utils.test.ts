@@ -23,7 +23,12 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  listAccessibleWorkspaceIds: vi.fn(),
+}))
+
 import { listUserWorkspaces } from './utils'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 describe('listUserWorkspaces', () => {
   beforeEach(() => {
@@ -31,6 +36,7 @@ describe('listUserWorkspaces', () => {
   })
 
   it('includes owner-only workspaces even without a permission row', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-owner'])
     mockSelect.mockReturnValueOnce(
       createChain([
         {
@@ -51,5 +57,14 @@ describe('listUserWorkspaces', () => {
         role: 'owner',
       },
     ])
+  })
+
+  it('filters out foreign personal workspaces before querying workspace rows', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce([])
+
+    const result = await listUserWorkspaces('user-1')
+
+    expect(result).toEqual([])
+    expect(mockSelect).not.toHaveBeenCalled()
   })
 })
