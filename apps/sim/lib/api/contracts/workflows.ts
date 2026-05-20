@@ -351,12 +351,18 @@ export const updateWorkflowPublicationBodySchema = z.object({
 
 export type UpdateWorkflowPublicationBody = z.input<typeof updateWorkflowPublicationBodySchema>
 
-export const publishedWorkflowListItemSchema = workflowListItemSchema.extend({
+export const publishedWorkflowCatalogItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  color: z.string(),
+  track: workflowTrackSchema,
+  visibility: workflowVisibilitySchema,
+  publishedAt: z.string().nullable(),
   workspaceName: z.string(),
-  ownerWorkgroupId: z.string().nullable(),
 })
 
-export type PublishedWorkflowListItem = z.output<typeof publishedWorkflowListItemSchema>
+export type PublishedWorkflowCatalogItem = z.output<typeof publishedWorkflowCatalogItemSchema>
 
 export const reorderWorkflowsBodySchema = z.object({
   workspaceId: z.string(),
@@ -827,7 +833,7 @@ export const listPublishedWorkflowsForWorkgroupContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: z.object({
-      data: z.array(publishedWorkflowListItemSchema),
+      data: z.array(publishedWorkflowCatalogItemSchema),
     }),
   },
 })

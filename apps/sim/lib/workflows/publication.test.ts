@@ -197,9 +197,17 @@ describe('workflow publication access', () => {
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({
       id: 'published-1',
+      track: 'published',
+      visibility: 'workspace',
+      publishedAt: '2026-05-20T00:00:00.000Z',
       workspaceName: 'Team One',
-      ownerWorkgroupId: 'wg-1',
     })
+    expect(result[0]).not.toHaveProperty('sourceWorkflowId')
+    expect(result[0]).not.toHaveProperty('workspaceId')
+    expect(result[0]).not.toHaveProperty('folderId')
+    expect(result[0]).not.toHaveProperty('sortOrder')
+    expect(result[0]).not.toHaveProperty('locked')
+    expect(result[0]).not.toHaveProperty('ownerWorkgroupId')
   })
 
   it('does not list organization-visible workflows from workspaces without a workgroup', async () => {

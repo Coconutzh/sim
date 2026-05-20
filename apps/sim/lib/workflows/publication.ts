@@ -11,7 +11,7 @@ import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, asc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import type {
-  PublishedWorkflowListItem,
+  PublishedWorkflowCatalogItem,
   WorkflowPublication,
   WorkflowTracksResponse,
 } from '@/lib/api/contracts/workflows'
@@ -78,6 +78,28 @@ function mapWorkflowListRow(row: {
     updatedAt: row.updatedAt.toISOString(),
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
     locked: row.locked,
+  }
+}
+
+function mapPublishedWorkflowCatalogRow(row: {
+  id: string
+  name: string
+  description: string | null
+  color: string
+  track: string
+  visibility: string
+  publishedAt: Date | null
+  workspaceName: string
+}): PublishedWorkflowCatalogItem {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    color: row.color,
+    track: row.track as PublishedWorkflowCatalogItem['track'],
+    visibility: row.visibility as PublishedWorkflowCatalogItem['visibility'],
+    publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+    workspaceName: row.workspaceName,
   }
 }
 
@@ -500,7 +522,7 @@ export async function updateWorkflowPublicationDetails(params: {
 export async function listPublishedWorkflowsForWorkgroup(params: {
   workgroupId: string
   userId: string
-}): Promise<PublishedWorkflowListItem[]> {
+}): Promise<PublishedWorkflowCatalogItem[]> {
   await assertWorkgroupMembership(params.userId, params.workgroupId)
 
   const [workgroupRow] = await db
@@ -571,9 +593,5 @@ export async function listPublishedWorkflowsForWorkgroup(params: {
 
       return row.visibility === 'selected_workgroups' && scopedWorkflowIds.has(row.id)
     })
-    .map((row) => ({
-      ...mapWorkflowListRow(row),
-      workspaceName: row.workspaceName,
-      ownerWorkgroupId: row.ownerWorkgroupId,
-    }))
+    .map((row) => mapPublishedWorkflowCatalogRow(row))
 }

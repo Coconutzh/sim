@@ -25,6 +25,7 @@ import {
   importWorkflowAsSuperuserContract,
   listPublishedWorkflowsForWorkgroupContract,
   listWorkflowTracksContract,
+  type PublishedWorkflowCatalogItem,
   publishWorkflowContract,
   reorderWorkflowsContract,
   restoreWorkflowContract,
@@ -191,11 +192,7 @@ async function fetchPublishedWorkflowsForWorkgroup(
     signal,
   })
 
-  return response.data.map((workflow) => ({
-    ...mapWorkflow(workflow),
-    workspaceName: workflow.workspaceName,
-    ownerWorkgroupId: workflow.ownerWorkgroupId,
-  }))
+  return response.data
 }
 
 export function usePublishedWorkflowsForWorkgroup(workgroupId?: string) {
@@ -257,9 +254,8 @@ export interface WorkflowTracksData {
   published: WorkflowMetadata[]
 }
 
-export interface PublishedWorkflowView extends WorkflowMetadata {
+export interface PublishedWorkflowView extends PublishedWorkflowCatalogItem {
   workspaceName: string
-  ownerWorkgroupId?: string | null
 }
 
 export function useCreateWorkflow() {
