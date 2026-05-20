@@ -14,7 +14,10 @@ const logger = createLogger('WorkspaceByIdAPI')
 import { db } from '@sim/db'
 import { permissions, templates, workspace } from '@sim/db/schema'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  listAccessibleWorkspaceIds,
+} from '@/lib/workspaces/permissions/utils'
 
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -296,27 +299,17 @@ export const DELETE = withRouteHandler(
     }
 
     try {
-      const [[workspaceRecord], totalWorkspaces] = await Promise.all([
+      const [accessibleWorkspaceIds, [workspaceRecord]] = await Promise.all([
+        listAccessibleWorkspaceIds(session.user.id),
         db
           .select({ name: workspace.name })
           .from(workspace)
           .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
           .limit(1),
-        db
-          .select({ id: permissions.entityId })
-          .from(permissions)
-          .innerJoin(workspace, eq(permissions.entityId, workspace.id))
-          .where(
-            and(
-              eq(permissions.userId, session.user.id),
-              eq(permissions.entityType, 'workspace'),
-              isNull(workspace.archivedAt)
-            )
-          ),
       ])
 
-      /** Counts all workspace memberships (any role), not just admin — prevents the user from reaching a zero-workspace state. */
-      if (totalWorkspaces.length <= 1) {
+      /** Counts all active workspace memberships including owner-only workspaces. */
+      if (accessibleWorkspaceIds.length <= 1) {
         return NextResponse.json({ error: 'Cannot delete the only workspace' }, { status: 400 })
       }
 
