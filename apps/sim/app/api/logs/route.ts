@@ -2,7 +2,6 @@ import { db } from '@sim/db'
 import {
   jobExecutionLogs,
   pausedExecutions,
-  permissions,
   workflow,
   workflowDeploymentVersion,
   workflowExecutionLogs,
@@ -33,6 +32,7 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { buildFilterConditions } from '@/lib/logs/filters'
 import { expandFolderIdsWithDescendants } from '@/lib/logs/folder-expansion'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('LogsAPI')
 
@@ -72,6 +72,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   const params = parsed.data.query
+  const access = await checkWorkspaceAccess(params.workspaceId, userId)
+  if (!access.hasAccess) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   const sortBy = params.sortBy as SortBy
   const sortOrder = params.sortOrder as SortOrder
   const cursor = params.cursor ? decodeCursor(params.cursor) : null
@@ -225,14 +229,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       eq(workflowDeploymentVersion.id, workflowExecutionLogs.deploymentVersionId)
     )
     .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
-    .innerJoin(
-      permissions,
-      and(
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-        eq(permissions.userId, userId)
-      )
-    )
     .where(and(...workflowConditions))
     .orderBy(orderByClause(workflowSortExpr), dir(workflowExecutionLogs.id))
     .limit(fetchSize)
@@ -240,10 +236,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const jobConditions: SQL[] = [eq(jobExecutionLogs.workspaceId, params.workspaceId)]
 
   if (includeJobLogs) {
-    jobConditions.push(
-      sql`EXISTS (SELECT 1 FROM ${permissions} WHERE ${permissions.entityType} = 'workspace' AND ${permissions.entityId} = ${jobExecutionLogs.workspaceId} AND ${permissions.userId} = ${userId})`
-    )
-
     if (params.level && params.level !== 'all') {
       const levels = params.level.split(',').filter(Boolean)
       const jobLevelConditions: SQL[] = []
