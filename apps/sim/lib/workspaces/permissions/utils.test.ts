@@ -490,6 +490,51 @@ describe('Permission Utils', () => {
         },
       ])
     })
+
+    it('hides stale non-owner permission rows on personal workspaces', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              email: 'owner@example.com',
+              name: 'Owner User',
+              image: null,
+              permissionType: 'admin' as PermissionType,
+              workspaceOrganizationId: 'org-1',
+              organizationMemberId: 'member-owner',
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'member-1',
+              email: 'member@example.com',
+              name: 'Member User',
+              image: null,
+              permissionType: 'write' as PermissionType,
+              workspaceMode: 'personal',
+              workspaceOrganizationId: 'org-1',
+              workspaceOwnerId: 'owner-1',
+              organizationMemberId: 'member-1',
+            },
+          ])
+        )
+
+      const result = await getUsersWithPermissions('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'owner-1',
+          email: 'owner@example.com',
+          name: 'Owner User',
+          image: null,
+          permissionType: 'admin',
+          isExternal: false,
+        },
+      ])
+    })
   })
 
   describe('getWorkspaceMemberProfiles', () => {
@@ -555,6 +600,40 @@ describe('Permission Utils', () => {
           userId: 'member-1',
           name: 'Member User',
           image: 'https://example.com/member.png',
+        },
+      ])
+    })
+
+    it('hides stale non-owner profiles on personal workspaces', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              name: 'Owner User',
+              image: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'member-1',
+              name: 'Member User',
+              image: 'https://example.com/member.png',
+              workspaceMode: 'personal',
+              workspaceOwnerId: 'owner-1',
+            },
+          ])
+        )
+
+      const result = await getWorkspaceMemberProfiles('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'owner-1',
+          name: 'Owner User',
+          image: null,
         },
       ])
     })

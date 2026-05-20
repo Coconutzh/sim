@@ -324,7 +324,9 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
       name: user.name,
       image: user.image,
       permissionType: permissions.permissionType,
+      workspaceMode: workspace.workspaceMode,
       workspaceOrganizationId: workspace.organizationId,
+      workspaceOwnerId: workspace.ownerId,
       organizationMemberId: member.id,
     })
     .from(permissions)
@@ -357,6 +359,10 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
   const permissionOrder: Record<PermissionType, number> = { admin: 3, write: 2, read: 1 }
 
   for (const row of [...ownerRows, ...permissionRows]) {
+    if (row.workspaceMode === 'personal' && row.workspaceOwnerId !== row.userId) {
+      continue
+    }
+
     const nextUser = {
       userId: row.userId,
       email: row.email,
@@ -407,6 +413,8 @@ export async function getWorkspaceMemberProfiles(
       userId: user.id,
       name: user.name,
       image: user.image,
+      workspaceMode: workspace.workspaceMode,
+      workspaceOwnerId: workspace.ownerId,
     })
     .from(permissions)
     .innerJoin(user, eq(permissions.userId, user.id))
@@ -422,6 +430,10 @@ export async function getWorkspaceMemberProfiles(
   const profilesByUserId = new Map<string, WorkspaceMemberProfile>()
 
   for (const row of [...ownerRows, ...permissionRows]) {
+    if (row.workspaceMode === 'personal' && row.workspaceOwnerId !== row.userId) {
+      continue
+    }
+
     profilesByUserId.set(row.userId, {
       userId: row.userId,
       name: row.name,
