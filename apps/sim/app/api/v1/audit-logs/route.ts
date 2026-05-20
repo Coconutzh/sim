@@ -56,7 +56,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return authResult.response
     }
 
-    const { orgMemberIds } = authResult.context
+    const { orgMemberIds, organizationId } = authResult.context
 
     const parsed = await parseRequest(
       v1ListAuditLogsContract,
@@ -84,7 +84,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const scopeCondition = await buildOrgScopeCondition(orgMemberIds, params.includeDeparted)
+    const scopeCondition = await buildOrgScopeCondition(
+      organizationId,
+      orgMemberIds,
+      params.includeDeparted
+    )
     const filterConditions = buildFilterConditions({
       action: params.action,
       resourceType: params.resourceType,

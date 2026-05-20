@@ -11,7 +11,7 @@
  */
 
 import { db } from '@sim/db'
-import { auditLog, workspace } from '@sim/db/schema'
+import { auditLog } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, or } from 'drizzle-orm'
@@ -21,6 +21,7 @@ import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { validateEnterpriseAuditAccess } from '@/app/api/v1/audit-logs/auth'
 import { formatAuditLogEntry } from '@/app/api/v1/audit-logs/format'
+import { listOrganizationWorkspaceIds } from '@/app/api/v1/audit-logs/query'
 import { createApiResponse, getUserLimits } from '@/app/api/v1/logs/meta'
 import { checkRateLimit, createRateLimitResponse } from '@/app/api/v1/middleware'
 
@@ -52,12 +53,8 @@ export const GET = withRouteHandler(
         return authResult.response
       }
 
-      const { orgMemberIds } = authResult.context
-
-      const orgWorkspaceIds = db
-        .select({ id: workspace.id })
-        .from(workspace)
-        .where(inArray(workspace.ownerId, orgMemberIds))
+      const { orgMemberIds, organizationId } = authResult.context
+      const orgWorkspaceIds = await listOrganizationWorkspaceIds(organizationId)
 
       const [log] = await db
         .select()

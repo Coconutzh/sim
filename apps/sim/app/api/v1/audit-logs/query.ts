@@ -1,7 +1,20 @@
 import { db } from '@sim/db'
 import { auditLog, workspace } from '@sim/db/schema'
 import type { InferSelectModel } from 'drizzle-orm'
-import { and, desc, eq, gte, ilike, inArray, lt, lte, or, type SQL, sql } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm'
 
 type DbAuditLog = InferSelectModel<typeof auditLog>
 
@@ -64,7 +77,23 @@ export function buildFilterConditions(params: AuditLogFilterParams): SQL<unknown
   return conditions
 }
 
+export async function listOrganizationWorkspaceIds(organizationId: string): Promise<string[]> {
+  const orgWorkspaces = await db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .where(
+      and(
+        eq(workspace.organizationId, organizationId),
+        eq(workspace.workspaceMode, 'organization'),
+        isNull(workspace.archivedAt)
+      )
+    )
+
+  return orgWorkspaces.map((entry) => entry.id)
+}
+
 export async function buildOrgScopeCondition(
+  organizationId: string,
   orgMemberIds: string[],
   includeDeparted: boolean
 ): Promise<SQL<unknown>> {
@@ -76,12 +105,7 @@ export async function buildOrgScopeCondition(
     return inArray(auditLog.actorId, orgMemberIds)
   }
 
-  const orgWorkspaces = await db
-    .select({ id: workspace.id })
-    .from(workspace)
-    .where(inArray(workspace.ownerId, orgMemberIds))
-
-  const orgWorkspaceIds = orgWorkspaces.map((w) => w.id)
+  const orgWorkspaceIds = await listOrganizationWorkspaceIds(organizationId)
 
   if (orgWorkspaceIds.length > 0) {
     return or(
