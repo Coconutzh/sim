@@ -1,6 +1,6 @@
 import { generateId } from '@sim/utils/id'
 import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import type { BlockState, SubBlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -58,7 +58,7 @@ function resolveInitialValue(subBlock: SubBlockConfig): unknown {
 }
 
 function buildStartBlockConfig(): BlockConfig {
-  const blockConfig = getBlock(START_BLOCK_TYPE)
+  const blockConfig = getBlockConfigFromCatalog(START_BLOCK_TYPE)
 
   if (!blockConfig) {
     throw new Error('Start trigger block configuration is not registered')

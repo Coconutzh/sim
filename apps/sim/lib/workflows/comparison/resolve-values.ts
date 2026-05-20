@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { buildSelectorContextFromBlock } from '@/lib/workflows/subblocks/context'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET, isUuid } from '@/executor/constants'
 import { fetchCredentialSetById } from '@/hooks/queries/credential-sets'
@@ -135,7 +135,7 @@ export function resolveFieldLabel(blockType: string, subBlockId: string): string
   if (subBlockId.startsWith('data.')) {
     return formatParameterLabel(subBlockId.slice(5))
   }
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getBlockConfigFromCatalog(blockType)
   if (!blockConfig) return subBlockId
   const subBlockConfig = blockConfig.subBlocks.find((sb) => sb.id === subBlockId)
   return subBlockConfig?.title ?? subBlockId
@@ -204,7 +204,7 @@ export async function resolveValueForDisplay(
     }
   }
 
-  const blockConfig = getBlock(context.blockType)
+  const blockConfig = getBlockConfigFromCatalog(context.blockType)
   const subBlockConfig = blockConfig?.subBlocks.find((sb) => sb.id === context.subBlockId)
   if (!subBlockConfig) {
     return { original: value, displayLabel: formatValueForDisplay(value), resolved: false }

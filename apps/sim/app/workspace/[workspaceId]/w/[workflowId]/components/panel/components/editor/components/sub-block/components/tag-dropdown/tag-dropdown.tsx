@@ -29,7 +29,7 @@ import type {
   NestedTagChild,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/types'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockConfig } from '@/blocks/types'
 import { normalizeName } from '@/executor/constants'
 import { useVariablesStore } from '@/stores/variables/store'
@@ -488,7 +488,7 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
         let childType = ''
         const block = Object.values(blocks).find((b) => b.id === group.blockId)
         if (block) {
-          const blockConfig = getBlock(block.type)
+          const blockConfig = getBlockConfigFromCatalog(block.type)
           const mergedSubBlocks = getMergedSubBlocks(group.blockId)
 
           childType = getOutputTypeForPath(
@@ -683,7 +683,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
 
     const block = Object.values(blocks).find((b) => b.id === group.blockId)
     if (block) {
-      const blockConfig = getBlock(block.type)
+      const blockConfig = getBlockConfigFromCatalog(block.type)
       const mergedSubBlocks = getMergedSubBlocks(group.blockId)
 
       tagDescription = getOutputTypeForPath(
@@ -1030,7 +1030,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         return { tags: [], variableInfoMap: emptyVariableInfoMap, blockTagGroups: [] }
       }
 
-      const blockConfig = getBlock(sourceBlock.type)
+      const blockConfig = getBlockConfigFromCatalog(sourceBlock.type)
 
       if (!blockConfig) {
         if (sourceBlock.type === 'loop' || sourceBlock.type === 'parallel') {
@@ -1266,7 +1266,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       // Exception: human_in_the_loop blocks can reference their own outputs (url, resumeEndpoint)
       if (accessibleBlockId === blockId && accessibleBlock.type !== 'human_in_the_loop') continue
 
-      const blockConfig = getBlock(accessibleBlock.type)
+      const blockConfig = getBlockConfigFromCatalog(accessibleBlock.type)
 
       if (!blockConfig) {
         if (accessibleBlock.type === 'loop' || accessibleBlock.type === 'parallel') {
@@ -1497,7 +1497,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       if (parts.length >= 3 && blockGroup) {
         const arrayFieldName = parts[1]
         const block = useWorkflowStore.getState().blocks[blockGroup.blockId]
-        const blockConfig = block ? (getBlock(block.type) ?? null) : null
+        const blockConfig = block ? (getBlockConfigFromCatalog(block.type) ?? null) : null
         const mergedSubBlocks = getMergedSubBlocks(blockGroup.blockId)
 
         const fieldType = getOutputTypeForPath(
@@ -1750,7 +1750,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                 )}
 
                 {nestedBlockTagGroups.map((group: NestedBlockTagGroup, groupIndex: number) => {
-                  const blockConfig = getBlock(group.blockType)
+                  const blockConfig = getBlockConfigFromCatalog(group.blockType)
                   let blockColor = blockConfig?.bgColor || BLOCK_COLORS.DEFAULT
 
                   if (group.blockType === 'loop') {

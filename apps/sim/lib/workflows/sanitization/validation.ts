@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 import { getTool, getToolUnavailableErrorMessage } from '@/tools/utils'
@@ -193,7 +193,7 @@ export function validateWorkflowState(
       }
 
       // Check if block type exists
-      const blockConfig = getBlock(block.type)
+      const blockConfig = getAnyBlockCatalogEntry(block.type)
 
       // Special handling for container blocks (loop and parallel)
       if (block.type === 'loop' || block.type === 'parallel') {
@@ -214,7 +214,7 @@ export function validateWorkflowState(
       if (block.type === 'api' || block.type === 'generic') {
         // For API and generic blocks, the tool is determined by the block's tool configuration
         // In the workflow state, we need to check if the block type has valid tool access
-        const blockConfig = getBlock(block.type)
+        const blockConfig = getAnyBlockCatalogEntry(block.type)
         if (blockConfig?.tools?.access) {
           // API block has static tool access
           const toolIds = blockConfig.tools.access

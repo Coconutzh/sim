@@ -115,13 +115,7 @@ async function loadGeneratedToolEntries(moduleName: string): Promise<GeneratedTo
 }
 
 function renderCatalog(entries: GeneratedToolEntry[]): string {
-  return `${GENERATED_HEADER}
-import type { ToolCatalogEntry } from '@/tools/catalog-types'
-
-export const TOOL_CATALOG = ${JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.id, entry])), null, 2)} as const satisfies Record<string, ToolCatalogEntry>
-
-export type ToolCatalogId = keyof typeof TOOL_CATALOG
-`
+  return JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.id, entry])))
 }
 
 function renderLoaders(moduleNames: string[]): string {
@@ -142,7 +136,10 @@ async function main(): Promise<void> {
     .flat()
     .sort((a, b) => a.id.localeCompare(b.id))
 
-  await writeFile(new URL('../tools/catalog.generated.ts', import.meta.url), renderCatalog(entries))
+  await writeFile(
+    new URL('../tools/catalog.generated.json', import.meta.url),
+    renderCatalog(entries)
+  )
   await writeFile(
     new URL('../tools/loaders.generated.ts', import.meta.url),
     renderLoaders(moduleNames)

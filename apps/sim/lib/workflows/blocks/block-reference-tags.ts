@@ -1,7 +1,7 @@
 import { getEffectiveBlockOutputPaths } from '@/lib/workflows/blocks/block-outputs'
 import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { TRIGGER_TYPES } from '@/lib/workflows/triggers/triggers'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { normalizeName } from '@/executor/constants'
 
 interface ReferenceableBlock {
@@ -47,7 +47,7 @@ export function getBlockReferenceTags({
     return [normalizedBlockName]
   }
 
-  const blockConfig = getBlock(block.type)
+  const blockConfig = getBlockConfigFromCatalog(block.type)
   if (!blockConfig) {
     return []
   }

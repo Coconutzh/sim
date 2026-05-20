@@ -82,8 +82,11 @@ import {
   reactFlowStyles,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow-constants'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
-import { getAnyBlockCatalogEntry, resolveCatalogBlockType } from '@/blocks/catalog'
-import { loadBlock, loadBlocks } from '@/blocks/loader'
+import {
+  getAnyBlockCatalogEntry,
+  getBlockConfigFromCatalog,
+  resolveCatalogBlockType,
+} from '@/blocks/catalog'
 import type { BlockConfig } from '@/blocks/types'
 import { isAnnotationOnlyBlock } from '@/executor/constants'
 import { useWorkspaceEnvironment } from '@/hooks/queries/environment'
@@ -403,30 +406,18 @@ const WorkflowContent = React.memo(
       [blocks]
     )
 
-    const [blockConfigs, setBlockConfigs] = useState<Record<string, BlockConfig>>({})
-    const blockTypesKey = workflowBlockTypes.join('|')
-
-    useEffect(() => {
-      let cancelled = false
-
-      const missingTypes = workflowBlockTypes.filter((type) => !blockConfigs[type])
-      if (missingTypes.length === 0) {
-        return
-      }
-
-      loadBlocks(missingTypes)
-        .then((loadedConfigs) => {
-          if (cancelled || Object.keys(loadedConfigs).length === 0) return
-          setBlockConfigs((current) => ({ ...current, ...loadedConfigs }))
-        })
-        .catch((error) => {
-          logger.error('Failed to load workflow block configs', { error })
-        })
-
-      return () => {
-        cancelled = true
-      }
-    }, [blockTypesKey, blockConfigs, workflowBlockTypes])
+    const blockConfigs = useMemo(
+      () =>
+        Object.fromEntries(
+          workflowBlockTypes
+            .map((type) => {
+              const config = getBlockConfigFromCatalog(type)
+              return config ? ([type, config] as const) : null
+            })
+            .filter((entry): entry is readonly [string, BlockConfig] => Boolean(entry))
+        ),
+      [workflowBlockTypes]
+    )
 
     const areWorkflowBlockConfigsReady = useMemo(
       () => workflowBlockTypes.every((type) => Boolean(blockConfigs[type])),
@@ -1891,7 +1882,7 @@ const WorkflowContent = React.memo(
           return
         }
 
-        const blockConfig = await loadBlock(preset.blockType)
+        const blockConfig = getBlockConfigFromCatalog(preset.blockType)
         if (!blockConfig) {
           logger.error('Invalid content node block type', {
             presetId,
@@ -2025,7 +2016,7 @@ const WorkflowContent = React.memo(
           }
 
           // Validate block config for regular blocks
-          const blockConfig = await loadBlock(data.type)
+          const blockConfig = getBlockConfigFromCatalog(data.type)
           if (!blockConfig) {
             logger.error('Invalid block type:', { data })
             return
@@ -2187,7 +2178,7 @@ const WorkflowContent = React.memo(
           return
         }
 
-        const blockConfig = await loadBlock(type)
+        const blockConfig = getBlockConfigFromCatalog(type)
         if (!blockConfig) {
           logger.error('Invalid block type:', { type })
           return

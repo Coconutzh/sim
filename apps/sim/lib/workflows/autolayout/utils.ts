@@ -20,7 +20,7 @@ import {
   isSubBlockHidden,
   isSubBlockVisibleForMode,
 } from '@/lib/workflows/subblocks/visibility'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 /**
@@ -147,7 +147,7 @@ function getContainerMetrics(block: BlockState): BlockMetrics {
  * workflow block preview when no DOM measurements are available.
  */
 function getVisiblePreviewSubBlockCount(block: BlockState): number {
-  const blockConfig = getBlock(block.type)
+  const blockConfig = getBlockConfigFromCatalog(block.type)
   if (!blockConfig?.subBlocks?.length) {
     return Object.values(block.subBlocks || {}).filter((subBlock) => subBlock != null).length
   }
@@ -206,7 +206,7 @@ function getVisiblePreviewSubBlockCount(block: BlockState): number {
  * formula used by the canvas block renderer.
  */
 function estimateWorkflowBlockDimensions(block: BlockState): { width: number; height: number } {
-  const blockConfig = getBlock(block.type)
+  const blockConfig = getBlockConfigFromCatalog(block.type)
   const visibleCount = getVisiblePreviewSubBlockCount(block)
 
   if (!blockConfig) {

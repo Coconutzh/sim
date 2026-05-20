@@ -7,7 +7,7 @@ import {
   isSubBlockVisibleForMode,
   type SubBlockCondition,
 } from '@/lib/workflows/subblocks/visibility'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { BlockState, SubBlockState, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -72,7 +72,7 @@ export function extractRequiredCredentials(
   Object.values(state.blocks).forEach((block: BlockState) => {
     if (!block?.type) return
 
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getBlockConfigFromCatalog(block.type)
     if (!blockConfig) return
 
     // Add OAuth credential if block has OAuth auth mode
@@ -121,7 +121,7 @@ export function extractRequiredCredentials(
     if (!isSubBlockFeatureEnabled(subBlockConfig)) return false
 
     const values = buildSubBlockValues(block?.subBlocks || {})
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getBlockConfigFromCatalog(block.type)
     const blockSubBlocks = blockConfig?.subBlocks || []
     const canonicalIndex = buildCanonicalIndex(blockSubBlocks)
     const effectiveAdvanced =
@@ -250,7 +250,7 @@ export function sanitizeWorkflowForSharing(
     // First, remove any malformed subBlocks that may have been created by bugs
     removeMalformedSubBlocks(block)
 
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getBlockConfigFromCatalog(block.type)
 
     // Process subBlocks with config
     if (blockConfig) {

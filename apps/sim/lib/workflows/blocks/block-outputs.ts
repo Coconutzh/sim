@@ -15,7 +15,7 @@ import {
   USER_FILE_ACCESSIBLE_PROPERTIES,
   USER_FILE_PROPERTY_TYPES,
 } from '@/lib/workflows/types'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import {
   type BlockConfig,
   isHiddenFromDisplay,
@@ -259,7 +259,7 @@ export function getBlockOutputs(
   options?: { includeHidden?: boolean }
 ): OutputDefinition {
   const includeHidden = options?.includeHidden ?? false
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getBlockConfigFromCatalog(blockType)
   if (!blockConfig) return {}
 
   if (triggerMode && blockConfig.triggers?.enabled) {
@@ -374,7 +374,7 @@ export function getEffectiveBlockOutputs(
   if (triggerMode) {
     baseOutputs = getBlockOutputs(blockType, subBlocks, true, { includeHidden })
   } else if (preferToolOutputs) {
-    const blockConfig = getBlock(blockType)
+    const blockConfig = getBlockConfigFromCatalog(blockType)
     const toolOutputs = blockConfig
       ? (getToolOutputs(blockConfig, subBlocks, { includeHidden }) as OutputDefinition)
       : {}

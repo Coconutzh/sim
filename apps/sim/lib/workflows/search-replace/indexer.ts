@@ -38,7 +38,7 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { isSyntheticToolSubBlockId } from '@/lib/workflows/tool-input/synthetic-subblocks'
 import { type ParsedStoredTool, parseStoredToolInputValue } from '@/lib/workflows/tool-input/types'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { isReference } from '@/executor/constants'
 import type { SelectorContext } from '@/hooks/selectors/types'
@@ -477,7 +477,7 @@ function getToolInputParamConfigs({
   const scopedCanonicalModes = scopeToolCanonicalModes(parentCanonicalModes, tool.type)
   const blockConfig =
     tool.type !== 'custom-tool' && tool.type !== 'mcp'
-      ? (blockConfigs?.[tool.type] ?? getBlock(tool.type))
+      ? (blockConfigs?.[tool.type] ?? getAnyBlockCatalogEntry(tool.type))
       : null
   const subBlocksResult =
     tool.type !== 'custom-tool' && tool.type !== 'mcp'
@@ -970,7 +970,7 @@ export function indexWorkflowSearchMatches(
   const resourceQueryEnabled = includeResourceMatchesWithoutQuery || Boolean(query)
 
   for (const block of Object.values(workflow.blocks)) {
-    const blockConfig = blockConfigs[block.type] ?? getBlock(block.type)
+    const blockConfig = blockConfigs[block.type] ?? getAnyBlockCatalogEntry(block.type)
     const subBlockConfigs = blockConfig?.subBlocks ?? []
     const canonicalSubBlockConfigs = block.triggerMode
       ? subBlockConfigs.filter(shouldUseSubBlockForTriggerModeCanonicalIndex)

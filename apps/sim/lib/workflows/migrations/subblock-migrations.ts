@@ -8,7 +8,7 @@ import {
   isCanonicalPair,
   resolveCanonicalMode,
 } from '@/lib/workflows/subblocks/visibility'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('SubblockMigrations')
@@ -97,7 +97,7 @@ function migrateBlockSubblockIds(
   if (!migrated) return { subBlocks, migrated: false }
 
   const result = { ...subBlocks }
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getBlockConfigFromCatalog(blockType)
 
   for (const [oldId, newId] of Object.entries(renames)) {
     if (!(oldId in result)) continue
@@ -196,7 +196,7 @@ export function backfillCanonicalModes(blocks: Record<string, BlockState>): {
   const result: Record<string, BlockState> = {}
 
   for (const [blockId, block] of Object.entries(blocks)) {
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getBlockConfigFromCatalog(block.type)
     if (!blockConfig?.subBlocks || !block.subBlocks) {
       result[blockId] = block
       continue

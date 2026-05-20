@@ -32,7 +32,7 @@ import {
   useFloatDrag,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
@@ -413,7 +413,7 @@ export function WorkflowSearchReplace() {
 
       for (const update of plan.updates) {
         const block = searchBlocks[update.blockId]
-        const blockConfig = block ? getBlock(block.type) : null
+        const blockConfig = block ? getAnyBlockCatalogEntry(block.type) : null
         if (!blockConfig?.subBlocks) continue
 
         const dependentClears = getWorkflowSearchDependentClears(

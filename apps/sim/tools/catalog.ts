@@ -2,8 +2,10 @@ import {
   getToolCatalogPolicyErrorMessage,
   isToolCatalogEntryEnabled,
 } from '@/lib/product/tool-policy'
-import { TOOL_CATALOG } from '@/tools/catalog.generated'
+import toolCatalogJson from '@/tools/catalog.generated.json'
 import type { ToolCatalogEntry } from '@/tools/catalog-types'
+
+const TOOL_CATALOG = toolCatalogJson as Record<string, ToolCatalogEntry>
 
 export const ALL_TOOL_CATALOG: Record<string, ToolCatalogEntry> = TOOL_CATALOG
 

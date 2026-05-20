@@ -9,7 +9,7 @@ import {
   type FlattenOutputsBlockInput,
   flattenWorkflowOutputs,
 } from '@/lib/workflows/blocks/flatten-outputs'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -112,8 +112,7 @@ export function OutputSelect({
     const blockArray = Object.values(workflowBlocks) as any[]
     if (blockArray.length === 0) return []
 
-    // Merge the editor's subblock store values into the blocks before flattening —
-    // the workflow store doesn't always have the latest subBlocks.value.
+    // Merge the editor's subblock store values into the blocks before flattening 鈥?    // the workflow store doesn't always have the latest subBlocks.value.
     const mergedBlocks: FlattenOutputsBlockInput[] = blockArray.map((block) => {
       const rawSubBlockValues =
         shouldUseBaseline && baselineWorkflow
@@ -192,7 +191,7 @@ export function OutputSelect({
    * @returns The hex color code for the block
    */
   const getOutputColor = (blockType: string) => {
-    const blockConfig = getBlock(blockType)
+    const blockConfig = getBlockConfigFromCatalog(blockType)
     return blockConfig?.bgColor || '#2F55FF'
   }
 
@@ -247,7 +246,7 @@ export function OutputSelect({
 
     return sortedGroups.map(({ blockName, outputs }) => {
       const firstOutput = outputs[0]
-      const blockConfig = getBlock(firstOutput.blockType)
+      const blockConfig = getBlockConfigFromCatalog(firstOutput.blockType)
       const blockColor = getOutputColor(firstOutput.blockType)
 
       let blockIcon: string | React.ComponentType<{ className?: string }> = blockName

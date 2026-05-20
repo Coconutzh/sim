@@ -1,7 +1,6 @@
 'use client'
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
 import { isEqual } from 'es-toolkit'
 import {
   BookOpen,
@@ -47,9 +46,11 @@ import {
   isAncestorProtected,
   isBlockProtected,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils/block-protection-utils'
-import { getAnyBlockCatalogEntry, resolveCatalogBlockType } from '@/blocks/catalog'
-import { loadBlock } from '@/blocks/loader'
-import type { BlockConfig } from '@/blocks/types'
+import {
+  getAnyBlockCatalogEntry,
+  getBlockConfigFromCatalog,
+  resolveCatalogBlockType,
+} from '@/blocks/catalog'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
 import { useWorkflowMap, useWorkflowState } from '@/hooks/queries/workflows'
@@ -67,8 +68,6 @@ const DASHED_DIVIDER_STYLE = {
   backgroundImage:
     'repeating-linear-gradient(to right, var(--border) 0px, var(--border) 6px, transparent 6px, transparent 12px)',
 } as const
-
-const logger = createLogger('Editor')
 
 const LazyPreviewWorkflow = lazy(() =>
   import('@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow').then(
@@ -122,9 +121,7 @@ export function Editor() {
     resolvedCurrentBlockType && getAnyBlockCatalogEntry(resolvedCurrentBlockType)
       ? resolvedCurrentBlockType
       : null
-  const [loadedBlockConfig, setLoadedBlockConfig] = useState<BlockConfig | null>(null)
-  const blockConfig =
-    currentBlockType && loadedBlockConfig?.type === currentBlockType ? loadedBlockConfig : null
+  const blockConfig = currentBlockType ? getBlockConfigFromCatalog(currentBlockType) : null
 
   const subflowConfig = isSubflow ? (currentBlock.type === 'loop' ? LoopTool : ParallelTool) : null
 
@@ -136,29 +133,6 @@ export function Editor() {
   const posthog = usePostHog()
 
   const subBlocksRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!currentBlockType) {
-      setLoadedBlockConfig(null)
-      return
-    }
-
-    let cancelled = false
-    setLoadedBlockConfig((current) => (current?.type === currentBlockType ? current : null))
-
-    loadBlock(currentBlockType)
-      .then((config) => {
-        if (cancelled) return
-        setLoadedBlockConfig(config ?? null)
-      })
-      .catch((error) => {
-        logger.error('Failed to load editor block config', { blockType: currentBlockType, error })
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [currentBlockType])
 
   const userPermissions = useUserPermissionsContext()
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { DEFAULT_SUBBLOCK_TYPE } from '@sim/workflow-persistence/subblocks'
 import { isPlainRecord } from '@/lib/core/utils/records'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowSubblockSanitization')
@@ -25,7 +25,7 @@ export function sanitizeMalformedSubBlocks(
   options: SanitizeMalformedSubBlocksOptions = {}
 ): { subBlocks: Record<string, BlockState['subBlocks'][string]>; changed: boolean } {
   let changed = false
-  const blockConfig = getBlock(block.type)
+  const blockConfig = getBlockConfigFromCatalog(block.type)
   const result: Record<string, BlockState['subBlocks'][string]> = {}
 
   for (const [subBlockId, subBlock] of Object.entries(block.subBlocks || {})) {

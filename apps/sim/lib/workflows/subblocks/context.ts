@@ -1,4 +1,4 @@
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { SelectorContext } from '@/hooks/selectors/types'
 import type { SubBlockState } from '@/stores/workflows/workflow/types'
 import { buildCanonicalIndex } from './visibility'
@@ -47,7 +47,7 @@ export function buildSelectorContextFromBlock(
   if (opts?.workflowId) context.workflowId = opts.workflowId
   if (opts?.workspaceId) context.workspaceId = opts.workspaceId
 
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getBlockConfigFromCatalog(blockType)
   if (!blockConfig) return context
 
   const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks)

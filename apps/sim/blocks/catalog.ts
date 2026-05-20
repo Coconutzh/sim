@@ -1,6 +1,10 @@
 import { isBlockEnabled } from '@/lib/product/tool-policy'
-import { BLOCK_CATALOG } from '@/blocks/catalog.generated'
+import blockCatalogJson from '@/blocks/catalog.generated.json'
 import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import { getBlockCatalogIcon } from '@/blocks/icons'
+import type { BlockConfig } from '@/blocks/types'
+
+const BLOCK_CATALOG = blockCatalogJson as Record<string, BlockCatalogEntry>
 
 export const ALL_BLOCK_CATALOG: Record<string, BlockCatalogEntry> = BLOCK_CATALOG
 
@@ -64,6 +68,17 @@ export function getBlockCatalogEntry(type: string): BlockCatalogEntry | undefine
 
 export function getAnyBlockCatalogEntry(type: string): BlockCatalogEntry | undefined {
   return ALL_BLOCK_CATALOG[resolveCatalogBlockType(type)]
+}
+
+export function getBlockConfigFromCatalog(type: string): BlockConfig | undefined {
+  const entry = getAnyBlockCatalogEntry(type)
+  if (!entry) return undefined
+
+  return {
+    ...entry,
+    icon: getBlockCatalogIcon(entry.iconName) ?? (() => null),
+    tools: entry.tools ?? { access: [] },
+  } as BlockConfig
 }
 
 export function getAllBlockCatalogEntries(): BlockCatalogEntry[] {

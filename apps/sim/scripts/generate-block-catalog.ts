@@ -141,13 +141,7 @@ async function loadGeneratedBlockEntries(moduleName: string): Promise<GeneratedB
 }
 
 function renderCatalog(entries: GeneratedBlockEntry[]): string {
-  return `${GENERATED_HEADER}
-import type { BlockCatalogEntry } from '@/blocks/catalog-types'
-
-export const BLOCK_CATALOG: Record<string, BlockCatalogEntry> = ${JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.type, entry])), null, 2)}
-
-export type BlockCatalogType = keyof typeof BLOCK_CATALOG
-`
+  return JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.type, entry])))
 }
 
 function renderLoaders(moduleNames: string[]): string {
@@ -171,7 +165,7 @@ async function main(): Promise<void> {
   entries.sort((a, b) => a.type.localeCompare(b.type))
 
   await writeFile(
-    new URL('../blocks/catalog.generated.ts', import.meta.url),
+    new URL('../blocks/catalog.generated.json', import.meta.url),
     renderCatalog(entries)
   )
   await writeFile(
