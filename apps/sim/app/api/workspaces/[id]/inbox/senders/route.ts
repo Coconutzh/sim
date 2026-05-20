@@ -1,14 +1,17 @@
-import { db, mothershipInboxAllowedSender, permissions, user } from '@sim/db'
+import { db, mothershipInboxAllowedSender } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { addInboxSenderContract, removeInboxSenderContract } from '@/lib/api/contracts/inbox'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  getUsersWithPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InboxSendersAPI')
 
@@ -42,14 +45,7 @@ export const GET = withRouteHandler(
         .from(mothershipInboxAllowedSender)
         .where(eq(mothershipInboxAllowedSender.workspaceId, workspaceId))
         .orderBy(mothershipInboxAllowedSender.createdAt),
-      db
-        .select({
-          email: user.email,
-          name: user.name,
-        })
-        .from(permissions)
-        .innerJoin(user, eq(permissions.userId, user.id))
-        .where(and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))),
+      getUsersWithPermissions(workspaceId),
     ])
 
     return NextResponse.json({
