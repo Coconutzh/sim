@@ -150,8 +150,8 @@ export const useWorkflowDiffStore = create<WorkflowDiffState & WorkflowDiffActio
           })
 
           // Validate proposed workflow using serializer round-trip
-          const { Serializer } = await import('@/serializer')
-          const serializer = new Serializer()
+          const { LightweightSerializer } = await import('@/serializer/lightweight')
+          const serializer = new LightweightSerializer()
           const serialized = serializer.serializeWorkflow(
             candidateState.blocks,
             candidateState.edges,

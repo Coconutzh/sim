@@ -33,8 +33,8 @@ const scheduleValidationCheck: PreDeployCheck = async ({ blocks }) => {
  */
 const requiredFieldsCheck: PreDeployCheck = async ({ blocks, edges, loops, parallels }) => {
   try {
-    const { Serializer } = await import('@/serializer')
-    const serializer = new Serializer()
+    const { LightweightSerializer } = await import('@/serializer/lightweight')
+    const serializer = new LightweightSerializer()
     serializer.serializeWorkflow(blocks, edges, loops, parallels, true)
     return { passed: true }
   } catch (error) {
