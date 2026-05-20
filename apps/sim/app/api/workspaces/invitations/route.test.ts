@@ -340,6 +340,36 @@ describe('POST /api/workspaces/invitations/batch', () => {
     expect(mockValidateSeatAvailability).not.toHaveBeenCalled()
   })
 
+  it('lets a workspace owner invite users without an explicit admin permission row', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Owner Workspace',
+      ownerId: 'user-1',
+      organizationId: null,
+      workspaceMode: 'grandfathered_shared',
+      billedAccountUserId: 'user-1',
+    })
+    mockDbResults.value = [[], []]
+
+    const request = createMockRequest('POST', {
+      workspaceId: 'workspace-1',
+      invitations: [{ email: 'owner-path@example.com', permission: 'read' }],
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.success).toBe(true)
+    expect(data.successful).toEqual(['owner-path@example.com'])
+    expect(mockCreatePendingInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inviterId: 'user-1',
+        grants: [{ workspaceId: 'workspace-1', permission: 'read' }],
+      })
+    )
+  })
+
   it('creates multiple workspace invitations in one batch request', async () => {
     mockDbResults.value = [[{ permissionType: 'admin' }], [], []]
     mockCreatePendingInvitation

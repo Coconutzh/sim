@@ -90,16 +90,16 @@ export async function prepareWorkspaceInvitationContext({
     )
     .then((rows) => rows[0])
 
-  if (!userPermission) {
+  const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
+  if (!workspaceDetails) {
+    throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
+  }
+
+  if (!userPermission && workspaceDetails.ownerId !== inviterId) {
     throw new WorkspaceInvitationError({
       message: 'You need admin permissions to invite users',
       status: 403,
     })
-  }
-
-  const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
-  if (!workspaceDetails) {
-    throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
   }
 
   const invitePolicy = await getWorkspaceInvitePolicy(workspaceDetails)
