@@ -13,20 +13,46 @@ import type { StreamingMode } from './text-editor-state'
 
 export type { StreamingMode } from './text-editor-state'
 
-import { DocxPreview } from './docx-preview'
 import { ImagePreview } from './image-preview'
 import type { PdfDocumentSource } from './pdf-viewer'
-import { PptxPreview } from './pptx-preview'
 import { resolvePreviewType } from './preview-panel'
 import { PDF_PAGE_SKELETON, PreviewError, resolvePreviewError } from './preview-shared'
-import { TextEditor } from './text-editor'
-import { XlsxPreview } from './xlsx-preview'
 
 const PdfViewerCore = dynamic(() => import('./pdf-viewer').then((m) => m.PdfViewerCore), {
   ssr: false,
 })
 
+const TextEditor = dynamic(() => import('./text-editor').then((m) => m.TextEditor), {
+  ssr: false,
+  loading: () => <FileViewerLoading />,
+})
+
+const DocxPreview = dynamic(() => import('./docx-preview').then((m) => m.DocxPreview), {
+  ssr: false,
+  loading: () => <FileViewerLoading />,
+})
+
+const PptxPreview = dynamic(() => import('./pptx-preview').then((m) => m.PptxPreview), {
+  ssr: false,
+  loading: () => <FileViewerLoading />,
+})
+
+const XlsxPreview = dynamic(() => import('./xlsx-preview').then((m) => m.XlsxPreview), {
+  ssr: false,
+  loading: () => <FileViewerLoading />,
+})
+
 const logger = createLogger('FileViewer')
+
+function FileViewerLoading() {
+  return (
+    <div className='flex h-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] p-8'>
+      <Skeleton className='h-10 w-10 rounded-full' />
+      <Skeleton className='h-3.5 w-40' />
+      <Skeleton className='h-9 w-full max-w-[420px] rounded-md' />
+    </div>
+  )
+}
 
 export function isTextEditable(file: { type: string; name: string }): boolean {
   return resolveFileCategory(file.type, file.name) === 'text-editable'

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 import { env, isTruthy } from "./lib/core/config/env";
 import { isDev } from "./lib/core/config/feature-flags";
@@ -11,6 +12,16 @@ import {
 const nextConfig: NextConfig = {
 	devIndicators: false,
 	poweredByHeader: false,
+	turbopack: isTruthy(process.env.SIM_LOW_MEMORY_DEV)
+		? {
+				resolveAlias: {
+					"@/blocks/registry": "./blocks/registry.low-memory.ts",
+					"@/app/workspace/[workspaceId]/files/components/file-viewer":
+						"./app/workspace/[workspaceId]/files/components/file-viewer/file-viewer.low-memory.tsx",
+					"@/tools/registry": "./tools/registry.low-memory.ts",
+				},
+			}
+		: undefined,
 	images: {
 		formats: ["image/avif", "image/webp"],
 		remotePatterns: [
@@ -125,6 +136,14 @@ const nextConfig: NextConfig = {
 					],
 				}),
 		preloadEntriesOnStart: false,
+		...(isTruthy(process.env.SIM_LOW_MEMORY_DEV)
+			? {
+					turbopackFileSystemCacheForDev: false,
+					turbopackInputSourceMaps: false,
+					turbopackMemoryLimit: 4096,
+					turbopackSourceMaps: false,
+				}
+			: {}),
 	},
 	...(isDev && {
 		allowedDevOrigins: [
@@ -449,6 +468,27 @@ const nextConfig: NextConfig = {
 				destination: "https://go.trybeluga.ai/:shortCode",
 			},
 		];
+	},
+	webpack(config) {
+		if (isTruthy(process.env.SIM_LOW_MEMORY_DEV)) {
+			config.resolve ??= {};
+			config.resolve.alias ??= {};
+			config.resolve.alias["@/blocks/registry"] = path.resolve(
+				process.cwd(),
+				"blocks/registry.low-memory.ts",
+			);
+			config.resolve.alias["@/app/workspace/[workspaceId]/files/components/file-viewer"] =
+				path.resolve(
+					process.cwd(),
+					"app/workspace/[workspaceId]/files/components/file-viewer/file-viewer.low-memory.tsx",
+				);
+			config.resolve.alias["@/tools/registry"] = path.resolve(
+				process.cwd(),
+				"tools/registry.low-memory.ts",
+			);
+		}
+
+		return config;
 	},
 };
 
