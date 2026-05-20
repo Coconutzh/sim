@@ -75,6 +75,18 @@ function Stop-RepoProcesses {
   }
 }
 
+function Ensure-LocalDatabase {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot
+  )
+
+  $startDbScript = Join-Path $RepoRoot 'scripts\start-local-db.ps1'
+  if (Test-Path $startDbScript) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $startDbScript
+  }
+}
+
 function Wait-ForUrl {
   param(
     [Parameter(Mandatory = $true)]
@@ -101,6 +113,7 @@ $repoRoot = $PSScriptRoot
 $bunExe = Resolve-BunPath
 
 Stop-RepoProcesses -RepoRoot $repoRoot
+Ensure-LocalDatabase -RepoRoot $repoRoot
 
 $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
 $appOut = Join-Path $env:TEMP "sim-canonical-app-$runId.stdout.log"
