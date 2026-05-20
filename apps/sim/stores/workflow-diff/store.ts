@@ -6,7 +6,6 @@ import { COPILOT_STATS_API_PATH } from '@/lib/copilot/constants'
 import { stripWorkflowDiffMarkers, WorkflowDiffEngine } from '@/lib/workflows/diff'
 import { enqueueReplaceWorkflowState } from '@/lib/workflows/operations/socket-operations'
 import { validateWorkflowState } from '@/lib/workflows/sanitization/validation'
-import { Serializer } from '@/serializer'
 import { useWorkflowRegistry } from '../workflows/registry/store'
 import { mergeSubblockState } from '../workflows/utils'
 import { useWorkflowStore } from '../workflows/workflow/store'
@@ -151,6 +150,7 @@ export const useWorkflowDiffStore = create<WorkflowDiffState & WorkflowDiffActio
           })
 
           // Validate proposed workflow using serializer round-trip
+          const { Serializer } = await import('@/serializer')
           const serializer = new Serializer()
           const serialized = serializer.serializeWorkflow(
             candidateState.blocks,

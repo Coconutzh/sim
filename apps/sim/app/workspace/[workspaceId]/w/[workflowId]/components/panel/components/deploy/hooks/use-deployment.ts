@@ -62,7 +62,7 @@ export function useDeployment({ workflowId, isDeployed, deployReadiness }: UseDe
 
       const { blocks, edges, loops, parallels } = useWorkflowStore.getState()
       const liveBlocks = mergeSubblockState(blocks, workflowId)
-      const checkResult = runPreDeployChecks({
+      const checkResult = await runPreDeployChecks({
         blocks: liveBlocks,
         edges,
         loops,

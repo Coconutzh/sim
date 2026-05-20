@@ -1,6 +1,5 @@
 import type { Edge } from 'reactflow'
 import { validateWorkflowSchedules } from '@/lib/workflows/schedules/validation'
-import { Serializer } from '@/serializer'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 
 export interface PreDeployCheckResult {
@@ -16,12 +15,12 @@ export interface PreDeployContext {
   workflowId: string
 }
 
-type PreDeployCheck = (context: PreDeployContext) => PreDeployCheckResult
+type PreDeployCheck = (context: PreDeployContext) => Promise<PreDeployCheckResult>
 
 /**
  * Validates schedule block configuration
  */
-const scheduleValidationCheck: PreDeployCheck = ({ blocks }) => {
+const scheduleValidationCheck: PreDeployCheck = async ({ blocks }) => {
   const result = validateWorkflowSchedules(blocks)
   return {
     passed: result.isValid,
@@ -32,8 +31,9 @@ const scheduleValidationCheck: PreDeployCheck = ({ blocks }) => {
 /**
  * Validates required fields using the serializer's validation
  */
-const requiredFieldsCheck: PreDeployCheck = ({ blocks, edges, loops, parallels }) => {
+const requiredFieldsCheck: PreDeployCheck = async ({ blocks, edges, loops, parallels }) => {
   try {
+    const { Serializer } = await import('@/serializer')
     const serializer = new Serializer()
     serializer.serializeWorkflow(blocks, edges, loops, parallels, true)
     return { passed: true }
@@ -54,9 +54,9 @@ const preDeployChecks: PreDeployCheck[] = [scheduleValidationCheck, requiredFiel
 /**
  * Runs all pre-deploy checks and returns the first failure or success
  */
-export function runPreDeployChecks(context: PreDeployContext): PreDeployCheckResult {
+export async function runPreDeployChecks(context: PreDeployContext): Promise<PreDeployCheckResult> {
   for (const check of preDeployChecks) {
-    const result = check(context)
+    const result = await check(context)
     if (!result.passed) {
       return result
     }
