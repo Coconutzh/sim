@@ -19,18 +19,38 @@ function getPostgresErrorCode(error: unknown): string | undefined {
 export async function getWorkspaceMemberUserIds(workspaceId: string): Promise<string[]> {
   const [workspaceRows, permissionRows] = await Promise.all([
     db
-      .select({ ownerId: workspace.ownerId })
+      .select({
+        ownerId: workspace.ownerId,
+        workspaceMode: workspace.workspaceMode,
+      })
       .from(workspace)
       .where(eq(workspace.id, workspaceId))
       .limit(1),
     db
-      .select({ userId: permissions.userId })
+      .select({
+        userId: permissions.userId,
+        workspaceMode: workspace.workspaceMode,
+        workspaceOwnerId: workspace.ownerId,
+      })
       .from(permissions)
-      .where(and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))),
+      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+      .where(
+        and(
+          eq(permissions.entityType, 'workspace'),
+          eq(permissions.entityId, workspaceId),
+          isNull(workspace.archivedAt)
+        )
+      ),
   ])
   const workspaceRow = workspaceRows[0]
 
-  const memberIds = new Set<string>(permissionRows.map((row) => row.userId))
+  const memberIds = new Set<string>(
+    permissionRows
+      .filter(
+        (row) => row.workspaceMode !== 'personal' || row.workspaceOwnerId === row.userId
+      )
+      .map((row) => row.userId)
+  )
   if (workspaceRow?.ownerId) {
     memberIds.add(workspaceRow.ownerId)
   }
@@ -40,7 +60,11 @@ export async function getWorkspaceMemberUserIds(workspaceId: string): Promise<st
 export async function getUserWorkspaceIds(userId: string): Promise<string[]> {
   const [permissionRows, ownedWorkspaceRows] = await Promise.all([
     db
-      .select({ workspaceId: workspace.id })
+      .select({
+        workspaceId: workspace.id,
+        workspaceMode: workspace.workspaceMode,
+        workspaceOwnerId: workspace.ownerId,
+      })
       .from(permissions)
       .innerJoin(
         workspace,
@@ -53,7 +77,13 @@ export async function getUserWorkspaceIds(userId: string): Promise<string[]> {
       .where(and(eq(workspace.ownerId, userId), isNull(workspace.archivedAt))),
   ])
 
-  const workspaceIds = new Set<string>(permissionRows.map((row) => row.workspaceId))
+  const workspaceIds = new Set<string>(
+    permissionRows
+      .filter(
+        (row) => row.workspaceMode !== 'personal' || row.workspaceOwnerId === userId
+      )
+      .map((row) => row.workspaceId)
+  )
   for (const row of ownedWorkspaceRows) {
     workspaceIds.add(row.workspaceId)
   }
