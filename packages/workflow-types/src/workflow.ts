@@ -46,6 +46,7 @@ export interface BlockData {
   extent?: 'parent'
   width?: number
   height?: number
+  contentVariant?: string
   collection?: any
   count?: number
   loopType?: 'for' | 'forEach' | 'while' | 'doWhile'

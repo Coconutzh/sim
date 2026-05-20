@@ -23,6 +23,7 @@ const {
   mockEnv,
   mockGetBYOKKey,
   mockGetToolAsync,
+  mockActualGetToolAsync,
   mockRateLimiterFns,
   mockGetCustomToolById,
   mockListCustomTools,
@@ -34,6 +35,11 @@ const {
   mockEnv: { NEXT_PUBLIC_APP_URL: 'http://localhost:3000' } as Record<string, string | undefined>,
   mockGetBYOKKey: vi.fn(),
   mockGetToolAsync: vi.fn(),
+  mockActualGetToolAsync: {
+    value: undefined as
+      | undefined
+      | ((toolId: string, context?: unknown) => Promise<unknown>),
+  },
   mockRateLimiterFns: {
     acquireKey: vi.fn(),
     preConsumeCapacity: vi.fn(),
@@ -341,6 +347,7 @@ vi.mock('@/lib/workflows/custom-tools/operations', () => ({
 
 vi.mock('@/tools/utils.server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/tools/utils.server')>()
+  mockActualGetToolAsync.value = actual.getToolAsync
   mockGetToolAsync.mockImplementation(actual.getToolAsync)
   return {
     ...actual,
@@ -352,6 +359,12 @@ import { executeTool, postProcessToolOutput } from '@/tools'
 import { tools } from '@/tools/registry'
 import { getTool } from '@/tools/utils'
 import { getToolAsync } from '@/tools/utils.server'
+
+beforeEach(() => {
+  mockGetToolAsync.mockImplementation(async (toolId, context) => {
+    return tools[toolId] ?? mockActualGetToolAsync.value?.(toolId, context)
+  })
+})
 
 /**
  * Sets up global fetch mock with Next.js preconnect support.
@@ -501,7 +514,7 @@ describe('executeTool Function', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -620,7 +633,7 @@ describe('Automatic Internal Route Detection', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -876,7 +889,7 @@ describe('Copilot File Parameter Normalization', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -1066,7 +1079,7 @@ describe('Copilot OAuth Credential Enforcement', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -1097,7 +1110,7 @@ describe('Centralized Error Handling', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -1326,7 +1339,7 @@ describe('MCP Tool Execution', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -1791,7 +1804,7 @@ describe('Hosted Key Injection', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -2051,7 +2064,7 @@ describe('Rate Limiting and Retry Logic', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
     mockIsHosted.value = false
     mockEnv.TEST_HOSTED_KEY = undefined
@@ -2262,7 +2275,7 @@ describe('stripInternalFields Safety', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
   })
 
@@ -2430,7 +2443,7 @@ describe('Cost Field Handling', () => {
   })
 
   afterEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
     cleanupEnvVars()
     mockIsHosted.value = false
     mockEnv.TEST_HOSTED_KEY = undefined

@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, memo } from "react";
+import { createElement, memo, type ReactNode } from "react";
 import type { NodeProps } from "reactflow";
 import { cn } from "@/lib/core/utils/cn";
 
@@ -57,7 +57,7 @@ function normalizeContentHtml(input: string | null | undefined): string {
 function renderContentHtml(
 	input: string | null | undefined,
 	emptyStateText: string,
-) {
+): ReactNode {
 	const normalizedHtml = normalizeContentHtml(input);
 
 	if (!isMeaningfulHtml(normalizedHtml)) {
@@ -86,7 +86,7 @@ function renderContentHtml(
 		"br",
 	]);
 
-	const renderNode = (node: ChildNode, key: string): unknown => {
+	const renderNode = (node: ChildNode, key: string): ReactNode => {
 		if (node.nodeType === Node.TEXT_NODE) {
 			return node.textContent ?? "";
 		}
