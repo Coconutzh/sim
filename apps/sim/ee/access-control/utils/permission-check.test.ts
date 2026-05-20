@@ -8,6 +8,7 @@ const {
   mockGetAllowedIntegrationsFromEnv,
   mockIsWorkspaceOnEnterprisePlan,
   mockGetProviderFromModel,
+  mockSelectWhereCalls,
   mockDbGroupMembership,
 } = vi.hoisted(() => ({
   DEFAULT_PERMISSION_GROUP_CONFIG: {
@@ -36,6 +37,7 @@ const {
   mockGetAllowedIntegrationsFromEnv: vi.fn<() => string[] | null>(),
   mockIsWorkspaceOnEnterprisePlan: vi.fn<() => Promise<boolean>>(),
   mockGetProviderFromModel: vi.fn<(model: string) => string>(),
+  mockSelectWhereCalls: [] as unknown[],
   mockDbGroupMembership: { value: [] as Array<{ config: Record<string, unknown> }> },
 }))
 
@@ -45,7 +47,10 @@ vi.mock('@sim/db', () => ({
       const chain: Record<string, unknown> = {}
       chain.from = vi.fn().mockReturnValue(chain)
       chain.innerJoin = vi.fn().mockReturnValue(chain)
-      chain.where = vi.fn().mockReturnValue(chain)
+      chain.where = vi.fn().mockImplementation((condition) => {
+        mockSelectWhereCalls.push(condition)
+        return chain
+      })
       chain.orderBy = vi.fn().mockReturnValue(chain)
       chain.limit = vi.fn().mockImplementation(() => Promise.resolve(mockDbGroupMembership.value))
       return chain
@@ -54,14 +59,21 @@ vi.mock('@sim/db', () => ({
 }))
 
 vi.mock('@sim/db/schema', () => ({
-  permissionGroup: {},
-  permissionGroupMember: {},
+  permissionGroup: { config: 'permissionGroup.config' },
+  permissionGroupMember: { userId: 'permissionGroupMember.userId' },
+  workspace: {
+    archivedAt: 'workspace.archivedAt',
+    organizationId: 'workspace.organizationId',
+    workspaceMode: 'workspace.workspaceMode',
+  },
 }))
 
 vi.mock('drizzle-orm', () => ({
-  and: vi.fn(),
-  eq: vi.fn(),
-  asc: vi.fn(),
+  and: vi.fn((...args) => ({ kind: 'and', args })),
+  eq: vi.fn((left, right) => ({ kind: 'eq', left, right })),
+  asc: vi.fn((value) => ({ kind: 'asc', value })),
+  isNull: vi.fn((value) => ({ kind: 'isNull', value })),
+  sql: vi.fn((strings, ...values) => ({ kind: 'sql', strings, values })),
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -96,6 +108,7 @@ import {
   McpToolsNotAllowedError,
   ProviderNotAllowedError,
   SkillsNotAllowedError,
+  validateInvitationsAllowed,
   validateBlockType,
   validateMcpToolsAllowed,
   validateModelProvider,
@@ -236,6 +249,31 @@ describe('validateModelProvider', () => {
     mockGetProviderFromModel.mockReturnValue('openai')
 
     await validateModelProvider('user-123', 'workspace-1', 'gpt-4')
+  })
+})
+
+describe('validateInvitationsAllowed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbGroupMembership.value = []
+    mockSelectWhereCalls.length = 0
+    mockIsWorkspaceOnEnterprisePlan.mockResolvedValue(true)
+    mockGetAllowedIntegrationsFromEnv.mockReturnValue(null)
+  })
+
+  it('scopes organization-wide invitation checks to active organization workspaces', async () => {
+    await validateInvitationsAllowed('user-123', { organizationId: 'org-1' })
+
+    expect(mockSelectWhereCalls).toContainEqual({
+      kind: 'and',
+      args: [
+        { kind: 'eq', left: 'permissionGroupMember.userId', right: 'user-123' },
+        { kind: 'eq', left: 'workspace.organizationId', right: 'org-1' },
+        { kind: 'eq', left: 'workspace.workspaceMode', right: 'organization' },
+        { kind: 'isNull', value: 'workspace.archivedAt' },
+        expect.anything(),
+      ],
+    })
   })
 })
 

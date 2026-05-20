@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { permissionGroup, permissionGroupMember, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing'
 import {
   getAllowedIntegrationsFromEnv,
@@ -340,6 +340,8 @@ export async function validateInvitationsAllowed(
         and(
           eq(permissionGroupMember.userId, userId),
           eq(workspace.organizationId, organizationId),
+          eq(workspace.workspaceMode, 'organization'),
+          isNull(workspace.archivedAt),
           sql`${permissionGroup.config} @> '{"disableInvitations": true}'::jsonb`
         )
       )

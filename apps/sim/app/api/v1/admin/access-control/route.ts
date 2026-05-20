@@ -26,7 +26,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { permissionGroup, permissionGroupMember, user, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { count, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   type AdminV1PermissionGroup,
   adminV1DeleteAccessControlContract,
@@ -42,6 +42,14 @@ import {
 } from '@/app/api/v1/admin/responses'
 
 const logger = createLogger('AdminAccessControlAPI')
+
+function buildOrganizationWorkspaceCondition(organizationId: string) {
+  return and(
+    eq(workspace.organizationId, organizationId),
+    eq(workspace.workspaceMode, 'organization'),
+    isNull(workspace.archivedAt)
+  )
+}
 
 export const GET = withRouteHandler(
   withAdminAuth(async (request) => {
@@ -76,7 +84,7 @@ export const GET = withRouteHandler(
       if (workspaceId) {
         groups = await baseQuery.where(eq(permissionGroup.workspaceId, workspaceId))
       } else if (organizationId) {
-        groups = await baseQuery.where(eq(workspace.organizationId, organizationId))
+        groups = await baseQuery.where(buildOrganizationWorkspaceCondition(organizationId))
       } else {
         groups = await baseQuery
       }
@@ -157,7 +165,7 @@ export const DELETE = withRouteHandler(
         ? await selectBase.where(eq(permissionGroup.workspaceId, workspaceId))
         : await selectBase
             .innerJoin(workspace, eq(workspace.id, permissionGroup.workspaceId))
-            .where(eq(workspace.organizationId, organizationId!))
+            .where(buildOrganizationWorkspaceCondition(organizationId!))
 
       if (existingGroups.length === 0) {
         logger.info('Admin API: No permission groups to delete', { workspaceId, organizationId })
