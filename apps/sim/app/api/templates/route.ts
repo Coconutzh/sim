@@ -63,7 +63,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         userId: session.user.id,
         action: 'write',
       })
-      if (!authorization.allowed) {
+      const canReadWorkflowTemplate =
+        authorization.allowed && authorization.accessSource === 'workspace'
+      if (!canReadWorkflowTemplate) {
         return NextResponse.json(
           {
             data: [],
@@ -218,7 +220,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
 
-    if (!workflowAuthorization.allowed) {
+    const canCreateTemplate =
+      workflowAuthorization.allowed && workflowAuthorization.accessSource === 'workspace'
+
+    if (!canCreateTemplate) {
       logger.warn(`[${requestId}] User denied permission to template workflow ${data.workflowId}`)
       return NextResponse.json(
         { error: workflowAuthorization.message || 'Access denied' },
