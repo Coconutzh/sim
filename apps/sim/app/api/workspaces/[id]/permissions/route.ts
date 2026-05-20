@@ -116,6 +116,7 @@ export const PATCH = withRouteHandler(
         .select({
           billedAccountUserId: workspace.billedAccountUserId,
           ownerId: workspace.ownerId,
+          workspaceMode: workspace.workspaceMode,
         })
         .from(workspace)
         .where(eq(workspace.id, workspaceId))
@@ -127,6 +128,13 @@ export const PATCH = withRouteHandler(
 
       const billedAccountUserId = workspaceRow[0].billedAccountUserId
       const ownerId = workspaceRow[0].ownerId
+
+      if (workspaceRow[0].workspaceMode === 'personal') {
+        return NextResponse.json(
+          { error: 'Personal workspaces do not support shared members' },
+          { status: 403 }
+        )
+      }
 
       if (body.updates.some((update) => update.userId === ownerId)) {
         return NextResponse.json(

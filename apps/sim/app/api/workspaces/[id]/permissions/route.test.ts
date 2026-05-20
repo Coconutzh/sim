@@ -137,4 +137,27 @@ describe('PATCH /api/workspaces/[id]/permissions', () => {
     expect(response.status).toBe(400)
     expect(data).toEqual({ error: 'Cannot modify the workspace owner permissions' })
   })
+
+  it('rejects permission updates for personal workspaces', async () => {
+    parseRequestMock.mockResolvedValueOnce({
+      success: true,
+      data: {
+        body: {
+          updates: [{ userId: 'member-1', permissions: 'read' }],
+        },
+        params: { id: 'ws-1' },
+      },
+    })
+    mockDbResults.value = [
+      [{ billedAccountUserId: 'owner-1', ownerId: 'owner-1', workspaceMode: 'personal' }],
+    ]
+
+    const response = await PATCH(createMockRequest('PATCH'), {
+      params: Promise.resolve({ id: 'ws-1' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+  })
 })

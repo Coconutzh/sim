@@ -138,6 +138,28 @@ describe('Permission Utils', () => {
       expect(result).toBe('admin')
     })
 
+    it('ignores direct permission rows for personal workspaces owned by another user', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace456',
+              name: 'Personal Workspace',
+              ownerId: 'owner-1',
+              organizationId: 'org-1',
+              workspaceMode: 'personal',
+              billedAccountUserId: 'owner-1',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([{ permissionType: 'admin' as PermissionType }]))
+
+      const result = await getUserEntityPermissions('user123', 'workspace', 'workspace456')
+
+      expect(result).toBeNull()
+    })
+
     it('should work with organization entity type', async () => {
       const mockResults = [{ permissionType: 'read' as PermissionType }]
       const chain = createMockChain(mockResults)
@@ -171,6 +193,19 @@ describe('Permission Utils', () => {
       const result = await listAccessibleWorkspaceIds('user123')
 
       expect(result).toEqual(['workspace-owned', 'workspace-shared'])
+    })
+
+    it('filters out personal workspaces the user does not own even when a permission row exists', async () => {
+      const chain = createMockChain([
+        { id: 'workspace-owned', ownerId: 'user123', workspaceMode: 'personal' },
+        { id: 'workspace-team', ownerId: 'other-user', workspaceMode: 'organization' },
+        { id: 'workspace-foreign-personal', ownerId: 'other-user', workspaceMode: 'personal' },
+      ])
+      mockDb.select.mockReturnValue(chain)
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual(['workspace-owned', 'workspace-team'])
     })
   })
 
@@ -559,6 +594,25 @@ describe('Permission Utils', () => {
       expect(result).toBe(false)
     })
 
+    it('should return false for non-owners on personal workspaces even with admin permission rows', async () => {
+      const chain = createMockChain([
+        {
+          id: 'workspace456',
+          name: 'Personal Workspace',
+          ownerId: 'other-user',
+          organizationId: 'org-1',
+          workspaceMode: 'personal',
+          billedAccountUserId: 'other-user',
+          archivedAt: null,
+        },
+      ])
+      mockDb.select.mockReturnValue(chain)
+
+      const result = await hasWorkspaceAdminAccess('user123', 'workspace456')
+
+      expect(result).toBe(false)
+    })
+
     it('should return false when user has no admin access', async () => {
       let callCount = 0
       mockDb.select.mockImplementation(() => {
@@ -728,7 +782,14 @@ describe('Permission Utils', () => {
     })
 
     it('should return workspaces with direct admin permissions', async () => {
-      const mockAdminWorkspaces = [{ id: 'ws1', name: 'Shared Workspace', ownerId: 'other-user' }]
+      const mockAdminWorkspaces = [
+        {
+          id: 'ws1',
+          name: 'Shared Workspace',
+          ownerId: 'other-user',
+          workspaceMode: 'organization',
+        },
+      ]
 
       let callCount = 0
       mockDb.select.mockImplementation(() => {
@@ -744,6 +805,30 @@ describe('Permission Utils', () => {
       expect(result).toEqual([
         { id: 'ws1', name: 'Shared Workspace', ownerId: 'other-user', accessType: 'direct' },
       ])
+    })
+
+    it('should exclude personal workspaces from direct admin management when not owned by the user', async () => {
+      const mockAdminWorkspaces = [
+        {
+          id: 'ws1',
+          name: 'Other Personal Workspace',
+          ownerId: 'other-user',
+          workspaceMode: 'personal',
+        },
+      ]
+
+      let callCount = 0
+      mockDb.select.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createMockChain([])
+        }
+        return createMockChain(mockAdminWorkspaces)
+      })
+
+      const result = await getManageableWorkspaces('user123')
+
+      expect(result).toEqual([])
     })
 
     it('should combine owned and admin workspaces without duplicates', async () => {
@@ -970,6 +1055,44 @@ describe('Permission Utils', () => {
       expect(result.exists).toBe(true)
       expect(result.hasAccess).toBe(true)
       expect(result.canWrite).toBe(true)
+    })
+
+    it('denies access to personal workspaces owned by another user even with permission rows', async () => {
+      let callCount = 0
+      mockDb.select.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createMockChain([
+            {
+              id: 'workspace123',
+              name: 'Private Workspace',
+              ownerId: 'other-user',
+              organizationId: 'org-1',
+              workspaceMode: 'personal',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+            },
+          ])
+        }
+        return createMockChain([{ permissionType: 'admin' }])
+      })
+
+      const result = await checkWorkspaceAccess('workspace123', 'user123')
+
+      expect(result).toEqual({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace123',
+          name: 'Private Workspace',
+          ownerId: 'other-user',
+          organizationId: 'org-1',
+          workspaceMode: 'personal',
+          billedAccountUserId: 'other-user',
+          archivedAt: null,
+        },
+      })
     })
 
     it('should return canWrite=true when user has write permission', async () => {

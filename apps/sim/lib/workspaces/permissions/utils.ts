@@ -32,6 +32,13 @@ export interface WorkspaceAccess {
   workspace: WorkspaceWithOwner | null
 }
 
+function isPersonalWorkspaceRestricted(
+  workspaceRecord: WorkspaceWithOwner,
+  userId: string
+): boolean {
+  return workspaceRecord.workspaceMode === 'personal' && workspaceRecord.ownerId !== userId
+}
+
 /**
  * Check if a workspace exists
  *
@@ -127,6 +134,10 @@ export async function checkWorkspaceAccess(
     return { exists: true, hasAccess: true, canWrite: true, workspace: ws }
   }
 
+  if (isPersonalWorkspaceRestricted(ws, userId)) {
+    return { exists: true, hasAccess: false, canWrite: false, workspace: ws }
+  }
+
   const [permissionRow] = await db
     .select({ permissionType: permissions.permissionType })
     .from(permissions)
@@ -182,6 +193,10 @@ export async function getUserEntityPermissions(
     if (ws.ownerId === userId) {
       return 'admin'
     }
+
+    if (isPersonalWorkspaceRestricted(ws, userId)) {
+      return null
+    }
   }
 
   const result = await db
@@ -214,7 +229,11 @@ export async function getUserEntityPermissions(
  */
 export async function listAccessibleWorkspaceIds(userId: string): Promise<string[]> {
   const rows = await db
-    .select({ id: workspace.id })
+    .select({
+      id: workspace.id,
+      ownerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
+    })
     .from(workspace)
     .leftJoin(
       permissions,
@@ -231,7 +250,13 @@ export async function listAccessibleWorkspaceIds(userId: string): Promise<string
       )
     )
 
-  return [...new Set(rows.map((row) => row.id))]
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.ownerId === userId || row.workspaceMode !== 'personal')
+        .map((row) => row.id)
+    ),
+  ]
 }
 
 /**
@@ -428,6 +453,10 @@ export async function hasWorkspaceAdminAccess(
     return true
   }
 
+  if (isPersonalWorkspaceRestricted(ws, userId)) {
+    return false
+  }
+
   if (await hasAdminPermission(userId, workspaceId)) {
     return true
   }
@@ -481,6 +510,7 @@ export async function getManageableWorkspaces(userId: string): Promise<
       id: workspace.id,
       name: workspace.name,
       ownerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
     })
     .from(workspace)
     .innerJoin(permissions, eq(permissions.entityId, workspace.id))
@@ -497,8 +527,9 @@ export async function getManageableWorkspaces(userId: string): Promise<
   const combined = [
     ...ownedWorkspaces.map((ws) => ({ ...ws, accessType: 'owner' as const })),
     ...adminWorkspaces
+      .filter((ws) => ws.workspaceMode !== 'personal')
       .filter((ws) => !ownedSet.has(ws.id))
-      .map((ws) => ({ ...ws, accessType: 'direct' as const })),
+      .map(({ id, name, ownerId }) => ({ id, name, ownerId, accessType: 'direct' as const })),
   ]
 
   return combined
