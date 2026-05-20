@@ -94,9 +94,9 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
-describe('POST /api/workspaces/[id]/permission-groups', () => {
+describe('/api/workspaces/[id]/permission-groups', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     checkWorkspaceAccessMock.mockResolvedValue({
@@ -118,6 +118,24 @@ describe('POST /api/workspaces/[id]/permission-groups', () => {
         },
       },
     })
+  })
+
+  it('rejects reading permission groups for personal workspaces', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
 
   it('rejects permission group creation for personal workspaces', async () => {

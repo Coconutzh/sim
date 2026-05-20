@@ -51,6 +51,12 @@ export const GET = withRouteHandler(
       if (!isAdmin && !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
       }
+      if (access.workspace?.workspaceMode === 'personal') {
+        return NextResponse.json(
+          { error: 'Personal workspaces do not expose shared permission settings' },
+          { status: 403 }
+        )
+      }
 
       const explicitPermission = await getUserEntityPermissions(
         session.user.id,

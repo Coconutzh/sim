@@ -30,6 +30,12 @@ export const GET = withRouteHandler(async (req: Request) => {
   if (!access.hasAccess) {
     return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 })
   }
+  if (access.workspace?.workspaceMode === 'personal') {
+    return NextResponse.json(
+      { error: 'Personal workspaces do not support permission groups' },
+      { status: 403 }
+    )
+  }
 
   const isEnterprise = await isWorkspaceOnEnterprisePlan(workspaceId)
   if (!isEnterprise) {

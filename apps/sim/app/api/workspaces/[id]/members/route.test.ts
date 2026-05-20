@@ -25,7 +25,12 @@ describe('GET /api/workspaces/[id]/members', () => {
       exists: true,
       hasAccess: true,
       canWrite: true,
-      workspace: { id: 'ws-owner', name: 'Owner Workspace', ownerId: 'owner-1' },
+      workspace: {
+        id: 'ws-owner',
+        name: 'Owner Workspace',
+        ownerId: 'owner-1',
+        workspaceMode: 'organization',
+      },
     })
     permissionsMockFns.mockGetWorkspaceMemberProfiles.mockResolvedValue([
       { userId: 'owner-1', name: 'Owner', image: null },
@@ -38,7 +43,12 @@ describe('GET /api/workspaces/[id]/members', () => {
       exists: true,
       hasAccess: true,
       canWrite: true,
-      workspace: { id: 'ws-owner', name: 'Owner Workspace', ownerId: 'owner-1' },
+      workspace: {
+        id: 'ws-owner',
+        name: 'Owner Workspace',
+        ownerId: 'owner-1',
+        workspaceMode: 'organization',
+      },
     })
 
     const response = await GET(createMockRequest('GET'), {
@@ -62,7 +72,12 @@ describe('GET /api/workspaces/[id]/members', () => {
       exists: true,
       hasAccess: false,
       canWrite: false,
-      workspace: { id: 'ws-owner', name: 'Owner Workspace', ownerId: 'owner-1' },
+      workspace: {
+        id: 'ws-owner',
+        name: 'Owner Workspace',
+        ownerId: 'owner-1',
+        workspaceMode: 'organization',
+      },
     })
 
     const response = await GET(createMockRequest('GET'), {
@@ -72,6 +87,29 @@ describe('GET /api/workspaces/[id]/members', () => {
 
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for personal workspaces', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'ws-owner',
+        name: 'Owner Workspace',
+        ownerId: 'owner-1',
+        workspaceMode: 'personal',
+      },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not expose shared member lists' })
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
   })
 })

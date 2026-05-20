@@ -39,6 +39,12 @@ export const GET = withRouteHandler(
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
       }
+      if (access.workspace?.workspaceMode === 'personal') {
+        return NextResponse.json(
+          { error: 'Personal workspaces do not expose shared member lists' },
+          { status: 403 }
+        )
+      }
 
       const members = await getWorkspaceMemberProfiles(workspaceId)
 

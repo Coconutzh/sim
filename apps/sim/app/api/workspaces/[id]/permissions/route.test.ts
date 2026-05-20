@@ -5,8 +5,18 @@
 import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, hasWorkspaceAdminAccessMock, parseRequestMock } = vi.hoisted(() => ({
+const {
+  checkWorkspaceAccessMock,
+  getSessionMock,
+  getUserEntityPermissionsMock,
+  getUsersWithPermissionsMock,
+  hasWorkspaceAdminAccessMock,
+  parseRequestMock,
+} = vi.hoisted(() => ({
+  checkWorkspaceAccessMock: vi.fn(),
   getSessionMock: vi.fn(),
+  getUserEntityPermissionsMock: vi.fn(),
+  getUsersWithPermissionsMock: vi.fn(),
   hasWorkspaceAdminAccessMock: vi.fn(),
   parseRequestMock: vi.fn(),
 }))
@@ -99,15 +109,15 @@ vi.mock('@/lib/posthog/server', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
-  checkWorkspaceAccess: vi.fn(),
-  getUserEntityPermissions: vi.fn(),
-  getUsersWithPermissions: vi.fn(),
+  checkWorkspaceAccess: checkWorkspaceAccessMock,
+  getUserEntityPermissions: getUserEntityPermissionsMock,
+  getUsersWithPermissions: getUsersWithPermissionsMock,
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { PATCH } from './route'
+import { GET, PATCH } from './route'
 
-describe('PATCH /api/workspaces/[id]/permissions', () => {
+describe('/api/workspaces/[id]/permissions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDbResults.value = []
@@ -115,6 +125,23 @@ describe('PATCH /api/workspaces/[id]/permissions', () => {
       user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
     })
     hasWorkspaceAdminAccessMock.mockResolvedValue(true)
+    checkWorkspaceAccessMock.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+    getUserEntityPermissionsMock.mockResolvedValue('admin')
+    getUsersWithPermissionsMock.mockResolvedValue([
+      {
+        userId: 'owner-1',
+        email: 'owner@example.com',
+        name: 'Owner',
+        image: null,
+        permissionType: 'admin',
+        isExternal: false,
+      },
+    ])
     parseRequestMock.mockResolvedValue({
       success: true,
       data: {
@@ -126,38 +153,58 @@ describe('PATCH /api/workspaces/[id]/permissions', () => {
     })
   })
 
-  it('rejects permission updates that target the workspace owner', async () => {
-    mockDbResults.value = [[{ billedAccountUserId: 'billing-1', ownerId: 'owner-1' }]]
-
-    const response = await PATCH(createMockRequest('PATCH'), {
-      params: Promise.resolve({ id: 'ws-1' }),
-    } as any)
-    const data = await response.json()
-
-    expect(response.status).toBe(400)
-    expect(data).toEqual({ error: 'Cannot modify the workspace owner permissions' })
-  })
-
-  it('rejects permission updates for personal workspaces', async () => {
-    parseRequestMock.mockResolvedValueOnce({
-      success: true,
-      data: {
-        body: {
-          updates: [{ userId: 'member-1', permissions: 'read' }],
-        },
-        params: { id: 'ws-1' },
-      },
+  it('rejects reading permissions for personal workspaces', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'personal' },
     })
-    mockDbResults.value = [
-      [{ billedAccountUserId: 'owner-1', ownerId: 'owner-1', workspaceMode: 'personal' }],
-    ]
 
-    const response = await PATCH(createMockRequest('PATCH'), {
+    const response = await GET(createMockRequest('GET'), {
       params: Promise.resolve({ id: 'ws-1' }),
     } as any)
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+    expect(data).toEqual({ error: 'Personal workspaces do not expose shared permission settings' })
+    expect(getUsersWithPermissionsMock).not.toHaveBeenCalled()
+  })
+
+  describe('PATCH', () => {
+    it('rejects permission updates that target the workspace owner', async () => {
+      mockDbResults.value = [[{ billedAccountUserId: 'billing-1', ownerId: 'owner-1' }]]
+
+      const response = await PATCH(createMockRequest('PATCH'), {
+        params: Promise.resolve({ id: 'ws-1' }),
+      } as any)
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      expect(data).toEqual({ error: 'Cannot modify the workspace owner permissions' })
+    })
+
+    it('rejects permission updates for personal workspaces', async () => {
+      parseRequestMock.mockResolvedValueOnce({
+        success: true,
+        data: {
+          body: {
+            updates: [{ userId: 'member-1', permissions: 'read' }],
+          },
+          params: { id: 'ws-1' },
+        },
+      })
+      mockDbResults.value = [
+        [{ billedAccountUserId: 'owner-1', ownerId: 'owner-1', workspaceMode: 'personal' }],
+      ]
+
+      const response = await PATCH(createMockRequest('PATCH'), {
+        params: Promise.resolve({ id: 'ws-1' }),
+      } as any)
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+    })
   })
 })
