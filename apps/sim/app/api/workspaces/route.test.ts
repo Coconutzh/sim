@@ -101,4 +101,55 @@ describe('GET /api/workspaces', () => {
       ],
     })
   })
+
+  it('filters out personal workspaces owned by other users even if a permission row exists', async () => {
+    mockDbSelect.mockReset()
+    mockDbSelect
+      .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: 'ws-team' }]))
+      .mockReturnValueOnce(
+        createChain([
+          {
+            workspace: {
+              id: 'ws-foreign-personal',
+              name: 'Foreign Personal',
+              ownerId: 'other-user',
+              workspaceMode: 'personal',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+              createdAt: new Date('2026-05-20T00:00:00Z'),
+              updatedAt: new Date('2026-05-20T00:00:00Z'),
+            },
+            permissionType: 'admin',
+          },
+          {
+            workspace: {
+              id: 'ws-team',
+              name: 'Team Workspace',
+              ownerId: 'other-user',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'owner-1',
+              archivedAt: null,
+              createdAt: new Date('2026-05-21T00:00:00Z'),
+              updatedAt: new Date('2026-05-21T00:00:00Z'),
+            },
+            permissionType: 'read',
+          },
+        ])
+      )
+
+    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      lastActiveWorkspaceId: 'ws-team',
+      workspaces: [
+        {
+          id: 'ws-team',
+          ownerId: 'other-user',
+          role: 'member',
+          permissions: 'read',
+        },
+      ],
+    })
+  })
 })

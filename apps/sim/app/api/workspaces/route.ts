@@ -59,7 +59,7 @@ export const GET = withRouteHandler(async (request: Request) => {
     .where(eq(settings.userId, session.user.id))
     .limit(1)
 
-  const [userWorkspaces, userSettings] = await Promise.all([
+  const [userWorkspacesRaw, userSettings] = await Promise.all([
     db
       .select({
         workspace: workspace,
@@ -90,6 +90,11 @@ export const GET = withRouteHandler(async (request: Request) => {
       .orderBy(desc(workspace.createdAt)),
     settingsQuery,
   ])
+
+  const userWorkspaces = userWorkspacesRaw.filter(
+    ({ workspace: workspaceDetails }) =>
+      workspaceDetails.ownerId === session.user.id || workspaceDetails.workspaceMode !== 'personal'
+  )
 
   const lastActiveWorkspaceId = userSettings[0]?.lastActiveWorkspaceId ?? null
 
