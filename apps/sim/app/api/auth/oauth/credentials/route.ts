@@ -111,6 +111,15 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           { status: workflowAuthorization.status }
         )
       }
+
+      if (workflowAuthorization.accessSource !== 'workspace') {
+        logger.warn(`[${requestId}] Published workflow access cannot read workspace credentials`, {
+          requesterUserId,
+          workflowId,
+        })
+        return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+      }
+
       effectiveWorkspaceId = workflowAuthorization.workflow?.workspaceId || undefined
     }
 

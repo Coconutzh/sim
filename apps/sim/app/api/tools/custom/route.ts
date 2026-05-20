@@ -57,6 +57,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      if (workflowAuthorization.accessSource !== 'workspace') {
+        logger.warn(`[${requestId}] Published workflow access cannot read workspace custom tools`, {
+          workflowId,
+          userId,
+        })
+        return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+      }
+
       resolvedWorkspaceId = workflowAuthorization.workflow?.workspaceId ?? null
       resolvedFromWorkflowAuthorization = true
     }

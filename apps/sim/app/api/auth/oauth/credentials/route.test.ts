@@ -4,7 +4,12 @@
  * @vitest-environment node
  */
 
-import { hybridAuthMockFns, permissionsMock, workflowsUtilsMock } from '@sim/testing'
+import {
+  hybridAuthMockFns,
+  permissionsMock,
+  workflowAuthzMockFns,
+  workflowsUtilsMock,
+} from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,6 +31,12 @@ describe('OAuth Credentials API Route', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      accessSource: 'workspace',
+      workflow: { workspaceId: 'workspace-123' },
+    })
   })
 
   it('should handle unauthenticated user', async () => {
@@ -89,5 +100,30 @@ describe('OAuth Credentials API Route', () => {
 
     expect(response.status).toBe(200)
     expect(data.credentials).toHaveLength(0)
+  })
+
+  it('should reject published workflow readers requesting workspace credentials', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      accessSource: 'published',
+      workflow: { workspaceId: 'workspace-123' },
+    })
+
+    const req = createMockRequestWithQuery(
+      'GET',
+      '?provider=google&workflowId=11111111-1111-4111-8111-111111111111'
+    )
+
+    const response = await GET(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data.error).toBe('Workspace access required')
   })
 })

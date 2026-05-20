@@ -236,6 +236,7 @@ describe('Custom Tools API Routes', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
+      accessSource: 'workspace',
       workflow: { workspaceId: 'workspace-123' },
     })
   })
@@ -293,6 +294,24 @@ describe('Custom Tools API Routes', () => {
       expect(data).toHaveProperty('data')
 
       expect(mockWhere).toHaveBeenCalled()
+    })
+
+    it('should reject published workflow readers requesting workspace custom tools', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        status: 200,
+        accessSource: 'published',
+        workflow: { workspaceId: 'workspace-123' },
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/tools/custom?workflowId=workflow-123')
+
+      const response = await GET(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data).toEqual({ error: 'Workspace access required' })
+      expect(mockWhere).not.toHaveBeenCalled()
     })
   })
 
