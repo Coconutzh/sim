@@ -10,6 +10,7 @@ const { mockDbTransaction } = vi.hoisted(() => ({
 }))
 
 const mockLoadWorkflowFromNormalizedTables = vi.hoisted(() => vi.fn())
+const mockSaveWorkflowToNormalizedTables = vi.hoisted(() => vi.fn())
 
 vi.mock('@sim/db', () => ({
   db: {
@@ -23,10 +24,10 @@ vi.mock('@sim/db', () => ({
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadWorkflowFromNormalizedTables: mockLoadWorkflowFromNormalizedTables,
-  saveWorkflowToNormalizedTables: vi.fn(),
+  saveWorkflowToNormalizedTables: mockSaveWorkflowToNormalizedTables,
 }))
 
-import { GET } from '@/app/api/workflows/[id]/state/route'
+import { GET, PUT } from '@/app/api/workflows/[id]/state/route'
 
 describe('Workflow State API Route', () => {
   beforeEach(() => {
@@ -118,5 +119,42 @@ describe('Workflow State API Route', () => {
     expect(response.status).toBe(200)
     const data = await response.json()
     expect(data.variables).toEqual({})
+  })
+
+  it('rejects workflow state writes via cross-team published access', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'viewer-123',
+      authType: 'session',
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: { id: 'workflow-123', workspaceId: 'workspace-456', track: 'published' },
+      workspacePermission: 'write',
+      accessSource: 'organization',
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123/state', {
+      method: 'PUT',
+      body: JSON.stringify({
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        variables: {},
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+    const params = Promise.resolve({ id: 'workflow-123' })
+
+    const response = await PUT(req, { params })
+
+    expect(response.status).toBe(403)
+    const data = await response.json()
+    expect(data.error).toBe(
+      'Cross-team published workflow access does not include workflow state writes'
+    )
+    expect(mockSaveWorkflowToNormalizedTables).not.toHaveBeenCalled()
   })
 })

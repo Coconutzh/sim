@@ -47,6 +47,12 @@ export const GET = withRouteHandler(
           logger.warn(`[${requestId}] Access denied to workflow ${metadataToCheck.workflowId}`)
           return createErrorResponse('Access denied', 403)
         }
+        if (accessCheck.accessSource && accessCheck.accessSource !== 'workspace') {
+          logger.warn(
+            `[${requestId}] Published workflow access cannot read async job ${metadataToCheck.workflowId}`
+          )
+          return createErrorResponse('Workspace access required', 403)
+        }
 
         if (authResult.apiKeyType === 'workspace' && authResult.workspaceId) {
           const { getWorkflowById } = await import('@/lib/workflows/utils')

@@ -54,6 +54,16 @@ export const POST = withRouteHandler(
         )
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        logger.warn(
+          `[${requestId}] User ${userId} attempted to update variables for workflow ${workflowId} via ${authorization.accessSource} publication access`
+        )
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include variables' },
+          { status: 403 }
+        )
+      }
+
       await assertWorkflowMutable(workflowId)
 
       const parsed = await parseRequest(workflowVariablesContract, req, context)

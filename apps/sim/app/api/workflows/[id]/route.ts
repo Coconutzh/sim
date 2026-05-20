@@ -209,6 +209,13 @@ export const DELETE = withRouteHandler(
         )
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include workflow deletion' },
+          { status: 403 }
+        )
+      }
+
       await assertWorkflowMutable(workflowId)
 
       const { searchParams } = new URL(request.url)
@@ -321,6 +328,13 @@ export const PUT = withRouteHandler(
         return NextResponse.json(
           { error: authorization.message || 'Access denied' },
           { status: authorization.status || 403 }
+        )
+      }
+
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include workflow updates' },
+          { status: 403 }
         )
       }
 

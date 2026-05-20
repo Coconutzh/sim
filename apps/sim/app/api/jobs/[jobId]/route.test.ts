@@ -88,6 +88,30 @@ describe('GET /api/jobs/[jobId]', () => {
     expect(body.output).toEqual({ success: true })
   })
 
+  it('rejects published workflow readers from async job status', async () => {
+    mockAuthorizeWorkflow.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      accessSource: 'published',
+      workflow: { id: 'workflow-1', workspaceId: 'workspace-1' },
+    })
+    mockGetJob.mockResolvedValue({
+      id: 'job-3',
+      status: 'pending',
+      metadata: {
+        workflowId: 'workflow-1',
+      },
+    })
+
+    const response = await GET(createMockRequest(), {
+      params: Promise.resolve({ jobId: 'job-3' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.error).toBe('Workspace access required')
+  })
+
   it('returns 404 when job does not exist', async () => {
     mockGetJob.mockResolvedValue(null)
 

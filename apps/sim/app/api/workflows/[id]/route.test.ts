@@ -450,6 +450,40 @@ describe('Workflow By ID API Route', () => {
       const data = await response.json()
       expect(data.error).toBe('Unauthorized: Access denied to admin this workflow')
     })
+
+    it('should reject deletion via cross-team published access', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'owner-123',
+        name: 'Published Workflow',
+        workspaceId: 'workspace-456',
+      }
+
+      mockGetSession({ user: { id: 'viewer-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'admin',
+        accessSource: 'selected_workgroups',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        method: 'DELETE',
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await DELETE(req, { params })
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data.error).toBe(
+        'Cross-team published workflow access does not include workflow deletion'
+      )
+      expect(mockPerformDeleteWorkflow).not.toHaveBeenCalled()
+    })
   })
 
   describe('PUT /api/workflows/[id]', () => {
@@ -583,6 +617,41 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(403)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized: Access denied to write this workflow')
+    })
+
+    it('should reject updates via cross-team published access', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'owner-123',
+        name: 'Published Workflow',
+        workspaceId: 'workspace-456',
+      }
+
+      mockGetSession({ user: { id: 'viewer-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'write',
+        accessSource: 'selected_workgroups',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        method: 'PUT',
+        body: JSON.stringify({ name: 'Updated Workflow' }),
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await PUT(req, { params })
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data.error).toBe(
+        'Cross-team published workflow access does not include workflow updates'
+      )
+      expect(mockDbUpdate).not.toHaveBeenCalled()
     })
 
     it('should reject cross-team visibility updates for workflows without a workgroup', async () => {

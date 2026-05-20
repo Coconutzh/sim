@@ -147,6 +147,13 @@ export const PUT = withRouteHandler(
         )
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include workflow state writes' },
+          { status: 403 }
+        )
+      }
+
       await assertWorkflowMutable(workflowId)
 
       // Note: prior versions cross-checked that each variable's `workflowId`

@@ -110,7 +110,17 @@ export const POST = withRouteHandler(
       if (!workflowAuthorization.allowed) {
         return NextResponse.json(
           { error: workflowAuthorization.message || 'Access denied' },
-          { status: workflowAuthorization.status }
+          { status: workflowAuthorization.status || 403 }
+        )
+      }
+
+      if (
+        workflowAuthorization.accessSource &&
+        workflowAuthorization.accessSource !== 'workspace'
+      ) {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include workflow execution' },
+          { status: 403 }
         )
       }
 

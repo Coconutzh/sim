@@ -288,6 +288,23 @@ describe('POST /api/workflows/[id]/executions/[executionId]/cancel', () => {
     expect(response.status).toBe(403)
   })
 
+  it('returns 403 when workflow access comes from published sharing', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      accessSource: 'selected_workgroups',
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+    })
+
+    const response = await POST(makeRequest(), makeParams())
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Cross-team published workflow access does not include workflow execution',
+    })
+    expect(mockMarkExecutionCancelled).not.toHaveBeenCalled()
+  })
+
   it('updates execution log status in DB when durably recorded', async () => {
     const mockWhere = vi.fn().mockResolvedValue(undefined)
     const mockSet = vi.fn(() => ({ where: mockWhere }))

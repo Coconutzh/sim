@@ -334,6 +334,40 @@ describe('Workflow Variables API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to write this workflow')
     })
 
+    it('should reject variable writes via cross-team published access', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'other-user',
+        workspaceId: 'workspace-456',
+        variables: {},
+      }
+
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'session',
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'write',
+        accessSource: 'selected_workgroups',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123/variables', {
+        method: 'POST',
+        body: JSON.stringify({ variables: {} }),
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(403)
+      const data = await response.json()
+      expect(data.error).toBe('Cross-team published workflow access does not include variables')
+    })
+
     it('should validate request data schema', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
