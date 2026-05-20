@@ -502,6 +502,21 @@ describe('GET /api/workspaces/invitations', () => {
     })
   })
 
+  it('hides invitations for personal workspaces', async () => {
+    permissionsMockFns.mockGetManageableWorkspaces.mockResolvedValueOnce([
+      { id: 'ws-personal', name: 'Personal Workspace', ownerId: 'owner-1', accessType: 'owner' },
+    ])
+    mockDbResults.value = [[{ id: 'ws-personal', workspaceMode: 'personal' }]]
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/workspaces/invitations') as any
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockListInvitationsForWorkspaces).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({ invitations: [] })
+  })
+
   it('does not expose invitations to non-admin workspace members', async () => {
     permissionsMockFns.mockGetManageableWorkspaces.mockResolvedValueOnce([])
 

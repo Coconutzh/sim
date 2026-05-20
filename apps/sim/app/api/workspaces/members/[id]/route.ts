@@ -34,6 +34,7 @@ export const DELETE = withRouteHandler(
         .select({
           ownerId: workspace.ownerId,
           billedAccountUserId: workspace.billedAccountUserId,
+          workspaceMode: workspace.workspaceMode,
         })
         .from(workspace)
         .where(eq(workspace.id, workspaceId))
@@ -41,6 +42,13 @@ export const DELETE = withRouteHandler(
 
       if (!workspaceRow.length) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+
+      if (workspaceRow[0].workspaceMode === 'personal') {
+        return NextResponse.json(
+          { error: 'Personal workspaces do not support shared members' },
+          { status: 403 }
+        )
       }
 
       if (workspaceRow[0].billedAccountUserId === userId) {

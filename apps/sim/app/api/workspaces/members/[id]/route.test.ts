@@ -139,7 +139,7 @@ describe('DELETE /api/workspaces/members/[id]', () => {
 
   it('allows an admin to leave when the only other admin is an owner-only workspace owner', async () => {
     mockDbResults.value = [
-      [{ ownerId: 'owner-1', billedAccountUserId: 'owner-1' }],
+      [{ ownerId: 'owner-1', billedAccountUserId: 'owner-1', workspaceMode: 'organization' }],
       [{ permissionType: 'admin' }],
       [],
     ]
@@ -153,5 +153,21 @@ describe('DELETE /api/workspaces/members/[id]', () => {
     expect(data).toEqual({ success: true })
     expect(transactionMock).toHaveBeenCalled()
     expect(recordAuditMock).toHaveBeenCalled()
+  })
+
+  it('rejects member removal for personal workspaces', async () => {
+    mockDbResults.value = [
+      [{ ownerId: 'owner-1', billedAccountUserId: 'owner-1', workspaceMode: 'personal' }],
+    ]
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: 'member-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+    expect(transactionMock).not.toHaveBeenCalled()
+    expect(recordAuditMock).not.toHaveBeenCalled()
   })
 })

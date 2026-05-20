@@ -28,10 +28,14 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
     }
 
     const activeWorkspaceIds = await db
-      .select({ id: workspace.id })
+      .select({ id: workspace.id, workspaceMode: workspace.workspaceMode })
       .from(workspace)
       .where(isNull(workspace.archivedAt))
-      .then((rows) => rows.map((row) => row.id).filter((id) => workspaceIds.includes(id)))
+      .then((rows) =>
+        rows
+          .filter((row) => workspaceIds.includes(row.id) && row.workspaceMode !== 'personal')
+          .map((row) => row.id)
+      )
 
     if (activeWorkspaceIds.length === 0) {
       return NextResponse.json({ invitations: [] })
