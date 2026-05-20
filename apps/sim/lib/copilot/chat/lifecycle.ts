@@ -20,6 +20,36 @@ export interface ChatLoadResult {
   isNew: boolean
 }
 
+export async function getAccessibleMothershipChat(chatId: string, userId: string) {
+  const [chat] = await db
+    .select()
+    .from(copilotChats)
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.type, 'mothership')))
+    .limit(1)
+
+  if (!chat) {
+    logger.warn('Mothership chat not found', { chatId, userId })
+    return null
+  }
+
+  if (!chat.workspaceId) {
+    logger.warn('Mothership chat is missing a workspace', { chatId, userId })
+    return null
+  }
+
+  const access = await checkWorkspaceAccess(chat.workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    logger.warn('Mothership chat workspace not accessible to user', {
+      chatId,
+      userId,
+      workspaceId: chat.workspaceId,
+    })
+    return null
+  }
+
+  return chat
+}
+
 export async function getAccessibleCopilotChat(chatId: string, userId: string) {
   const [chat] = await db
     .select()
@@ -81,7 +111,10 @@ export async function resolveOrCreateChat(params: {
   }
 
   if (chatId) {
-    const chat = await getAccessibleCopilotChat(chatId, userId)
+    const chat =
+      type === 'mothership'
+        ? await getAccessibleMothershipChat(chatId, userId)
+        : await getAccessibleCopilotChat(chatId, userId)
 
     if (chat) {
       if (workflowId && chat.workflowId !== workflowId) {

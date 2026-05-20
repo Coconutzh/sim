@@ -12,7 +12,7 @@ import {
 import { parseRequest } from '@/lib/api/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
 import { buildEffectiveChatTranscript } from '@/lib/copilot/chat/effective-transcript'
-import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
+import { getAccessibleMothershipChat } from '@/lib/copilot/chat/lifecycle'
 import { normalizeMessage } from '@/lib/copilot/chat/persisted-message'
 import {
   authenticateCopilotRequestSessionOnly,
@@ -41,8 +41,8 @@ export const GET = withRouteHandler(
       if (!paramsResult.success) return paramsResult.response
       const { chatId } = paramsResult.data.params
 
-      const chat = await getAccessibleCopilotChat(chatId, userId)
-      if (!chat || chat.type !== 'mothership') {
+      const chat = await getAccessibleMothershipChat(chatId, userId)
+      if (!chat) {
         return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
       }
 
@@ -154,13 +154,7 @@ export const PATCH = withRouteHandler(
       const [updatedChat] = await db
         .update(copilotChats)
         .set(updates)
-        .where(
-          and(
-            eq(copilotChats.id, chatId),
-            eq(copilotChats.userId, userId),
-            eq(copilotChats.type, 'mothership')
-          )
-        )
+        .where(and(eq(copilotChats.id, chatId), eq(copilotChats.type, 'mothership')))
         .returning({
           id: copilotChats.id,
           workspaceId: copilotChats.workspaceId,
@@ -218,20 +212,14 @@ export const DELETE = withRouteHandler(
       if (!parsed.success) return parsed.response
       const { chatId } = parsed.data.params
 
-      const chat = await getAccessibleCopilotChat(chatId, userId)
-      if (!chat || chat.type !== 'mothership') {
+      const chat = await getAccessibleMothershipChat(chatId, userId)
+      if (!chat) {
         return NextResponse.json({ success: true })
       }
 
       const [deletedChat] = await db
         .delete(copilotChats)
-        .where(
-          and(
-            eq(copilotChats.id, chatId),
-            eq(copilotChats.userId, userId),
-            eq(copilotChats.type, 'mothership')
-          )
-        )
+        .where(and(eq(copilotChats.id, chatId), eq(copilotChats.type, 'mothership')))
         .returning({
           workspaceId: copilotChats.workspaceId,
         })

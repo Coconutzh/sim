@@ -2,10 +2,10 @@ import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { forkMothershipChatContract } from '@/lib/api/contracts/mothership-tasks'
 import { parseRequest } from '@/lib/api/server'
+import { getAccessibleMothershipChat } from '@/lib/copilot/chat/lifecycle'
 import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
 import { fetchGo } from '@/lib/copilot/request/go/fetch'
@@ -21,7 +21,6 @@ import { taskPubSub } from '@/lib/copilot/tasks'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('ForkChatAPI')
 
@@ -45,19 +44,9 @@ export const POST = withRouteHandler(
       const { chatId } = parsed.data.params
       const { upToMessageId } = parsed.data.body
 
-      // Load parent chat and verify ownership.
-      const [parent] = await db
-        .select()
-        .from(copilotChats)
-        .where(eq(copilotChats.id, chatId))
-        .limit(1)
-
-      if (!parent || parent.userId !== userId || parent.type !== 'mothership') {
+      const parent = await getAccessibleMothershipChat(chatId, userId)
+      if (!parent) {
         return createNotFoundResponse('Chat not found')
-      }
-
-      if (parent.workspaceId) {
-        await assertActiveWorkspaceAccess(parent.workspaceId, userId)
       }
 
       // Find the fork point in the Sim-side messages array.

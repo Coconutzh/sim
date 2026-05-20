@@ -46,13 +46,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         lastSeenAt: copilotChats.lastSeenAt,
       })
       .from(copilotChats)
-      .where(
-        and(
-          eq(copilotChats.userId, userId),
-          eq(copilotChats.workspaceId, workspaceId),
-          eq(copilotChats.type, 'mothership')
-        )
-      )
+      .where(and(eq(copilotChats.workspaceId, workspaceId), eq(copilotChats.type, 'mothership')))
       .orderBy(desc(copilotChats.updatedAt))
 
     return NextResponse.json({ success: true, data: chats })
