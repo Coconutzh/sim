@@ -81,6 +81,7 @@ describe('Copilot Checkpoints API Route', () => {
     })
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
+      accessSource: 'workspace',
     })
   })
 
@@ -264,6 +265,27 @@ describe('Copilot Checkpoints API Route', () => {
       expect(response.status).toBe(500)
       const responseData = await response.json()
       expect(responseData.error).toBe('Failed to create checkpoint')
+    })
+
+    it('should reject published workflow readers when creating a checkpoint', async () => {
+      authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'published',
+      })
+
+      const req = createMockRequest('POST', {
+        workflowId: 'workflow-123',
+        chatId: 'chat-123',
+        workflowState: '{"blocks": []}',
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(401)
+      const responseData = await response.json()
+      expect(responseData).toEqual({ error: 'Unauthorized' })
+      expect(mockInsert).not.toHaveBeenCalled()
     })
   })
 

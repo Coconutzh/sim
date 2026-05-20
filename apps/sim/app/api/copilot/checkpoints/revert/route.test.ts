@@ -66,6 +66,7 @@ describe('Copilot Checkpoints Revert API Route', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
+      accessSource: 'workspace',
     })
 
     mockSelect.mockReturnValue({ from: mockFrom })
@@ -267,6 +268,44 @@ describe('Copilot Checkpoints Revert API Route', () => {
       expect(response.status).toBe(401)
       const responseData = await response.json()
       expect(responseData).toEqual({ error: 'Unauthorized' })
+    })
+
+    it('should reject published workflow readers when reverting a checkpoint', async () => {
+      setAuthenticated()
+
+      const mockCheckpoint = {
+        id: 'checkpoint-123',
+        chatId: 'chat-123',
+        workflowId: 'c3d4e5f6-a7b8-4c09-a1e2-f3a4b5c6d7e8',
+        userId: 'user-123',
+        workflowState: { blocks: {}, edges: [] },
+      }
+
+      const mockWorkflow = {
+        id: 'c3d4e5f6-a7b8-4c09-a1e2-f3a4b5c6d7e8',
+        userId: 'user-123',
+      }
+
+      thenResults.push(mockCheckpoint)
+      thenResults.push(mockWorkflow)
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        status: 200,
+        accessSource: 'published',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpointId: 'checkpoint-123' }),
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(401)
+      const responseData = await response.json()
+      expect(responseData).toEqual({ error: 'Unauthorized' })
+      expect(global.fetch).not.toHaveBeenCalled()
     })
 
     it('should successfully revert checkpoint with basic workflow state', async () => {

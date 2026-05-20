@@ -75,7 +75,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       userId,
       action: 'write',
     })
-    if (!authorization.allowed) {
+    if (!authorization.allowed || authorization.accessSource !== 'workspace') {
       return createUnauthorizedResponse()
     }
 
