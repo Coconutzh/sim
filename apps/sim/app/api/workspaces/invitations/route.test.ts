@@ -22,6 +22,7 @@ const {
   mockSendInvitationEmail,
   mockCancelPendingInvitation,
   mockFindPendingGrantForWorkspaceEmail,
+  mockListInvitationsForWorkspaces,
   mockDbResults,
 } = vi.hoisted(() => ({
   mockGetWorkspaceInvitePolicy: vi.fn(),
@@ -32,6 +33,7 @@ const {
   mockSendInvitationEmail: vi.fn(),
   mockCancelPendingInvitation: vi.fn(),
   mockFindPendingGrantForWorkspaceEmail: vi.fn(),
+  mockListInvitationsForWorkspaces: vi.fn().mockResolvedValue([]),
   mockDbResults: { value: [] as any[] },
 }))
 
@@ -85,7 +87,7 @@ vi.mock('@/lib/invitations/send', () => ({
 
 vi.mock('@/lib/invitations/core', () => ({
   normalizeEmail: (email: string) => email.trim().toLowerCase(),
-  listInvitationsForWorkspaces: vi.fn().mockResolvedValue([]),
+  listInvitationsForWorkspaces: mockListInvitationsForWorkspaces,
 }))
 
 vi.mock('@/ee/access-control/utils/permission-check', () => ({
@@ -108,6 +110,7 @@ const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
 
 import { UPGRADE_TO_INVITE_REASON } from '@/lib/workspaces/policy-constants'
 import { POST } from '@/app/api/workspaces/invitations/batch/route'
+import { GET } from './route'
 
 describe('POST /api/workspaces/invitations/batch', () => {
   beforeEach(() => {
@@ -401,5 +404,35 @@ describe('POST /api/workspaces/invitations/batch', () => {
       })
     )
     expect(mockCancelPendingInvitation).toHaveBeenCalledWith('inv-1')
+  })
+})
+
+describe('GET /api/workspaces/invitations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbResults.value = []
+    mockGetSession.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@test.com', name: 'Owner User' },
+    })
+    permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValue(['ws-owner'])
+    mockListInvitationsForWorkspaces.mockResolvedValue([])
+  })
+
+  it('includes owner-only workspaces when listing invitations', async () => {
+    mockDbResults.value = [[{ id: 'ws-owner' }]]
+    mockListInvitationsForWorkspaces.mockResolvedValueOnce([
+      { id: 'invite-1', workspaceId: 'ws-owner', email: 'user@example.com' },
+    ])
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/workspaces/invitations') as any
+    )
+
+    expect(response.status).toBe(200)
+    expect(permissionsMockFns.mockListAccessibleWorkspaceIds).toHaveBeenCalledWith('owner-1')
+    expect(mockListInvitationsForWorkspaces).toHaveBeenCalledWith(['ws-owner'])
+    await expect(response.json()).resolves.toMatchObject({
+      invitations: [{ id: 'invite-1', workspaceId: 'ws-owner' }],
+    })
   })
 })
