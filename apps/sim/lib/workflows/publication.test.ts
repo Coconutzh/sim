@@ -70,6 +70,7 @@ const {
       id: 'workspace.id',
       name: 'workspace.name',
       ownerId: 'workspace.ownerId',
+      workspaceMode: 'workspace.workspaceMode',
       workgroupId: 'workspace.workgroupId',
       organizationId: 'workspace.organizationId',
       archivedAt: 'workspace.archivedAt',
@@ -163,7 +164,7 @@ describe('workflow publication access', () => {
 
   it('lets a workspace owner browse published workflows for their workgroup', async () => {
     mockResultsQueue.push(
-      [{ id: 'ws-in-wg' }],
+      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
       [{ organizationId: 'org-1' }],
       [],
       [
@@ -211,7 +212,12 @@ describe('workflow publication access', () => {
   })
 
   it('does not list organization-visible workflows from workspaces without a workgroup', async () => {
-    mockResultsQueue.push([{ id: 'ws-in-wg' }], [{ organizationId: 'org-1' }], [], [])
+    mockResultsQueue.push(
+      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
+      [{ organizationId: 'org-1' }],
+      [],
+      []
+    )
 
     const result = await listPublishedWorkflowsForWorkgroup({
       workgroupId: 'wg-1',
@@ -222,7 +228,12 @@ describe('workflow publication access', () => {
   })
 
   it('does not list published workflows from personal workspaces in a workgroup', async () => {
-    mockResultsQueue.push([{ id: 'ws-in-wg' }], [{ organizationId: 'org-1' }], [], [])
+    mockResultsQueue.push(
+      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
+      [{ organizationId: 'org-1' }],
+      [],
+      []
+    )
 
     const result = await listPublishedWorkflowsForWorkgroup({
       workgroupId: 'wg-1',
@@ -230,6 +241,23 @@ describe('workflow publication access', () => {
     })
 
     expect(result).toEqual([])
+  })
+
+  it('rejects workgroup browsing through foreign personal workspace permissions', async () => {
+    mockResultsQueue.push([
+      {
+        id: 'ws-foreign-personal',
+        ownerId: 'other-user',
+        workspaceMode: 'personal',
+      },
+    ])
+
+    await expect(
+      listPublishedWorkflowsForWorkgroup({
+        workgroupId: 'wg-foreign',
+        userId: 'viewer-1',
+      })
+    ).rejects.toThrow('Access denied to workgroup')
   })
 
   it('redacts workspace-only publication metadata for cross-team readers', async () => {

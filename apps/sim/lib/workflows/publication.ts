@@ -112,7 +112,11 @@ async function assertWorkspaceReadAccess(userId: string, workspaceId: string): P
 
 async function assertWorkgroupMembership(userId: string, workgroupId: string): Promise<void> {
   const [membership] = await db
-    .select({ id: workspace.id })
+    .select({
+      id: workspace.id,
+      ownerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
+    })
     .from(workspace)
     .leftJoin(
       permissions,
@@ -131,7 +135,7 @@ async function assertWorkgroupMembership(userId: string, workgroupId: string): P
     )
     .limit(1)
 
-  if (!membership) {
+  if (!membership || (membership.workspaceMode === 'personal' && membership.ownerId !== userId)) {
     throw new Error('Access denied to workgroup')
   }
 }
