@@ -15,6 +15,7 @@ import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getUniqueBlockName, regenerateBlockIds } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
+import { canHydrateWorkflowInWorkspace, getWorkflowWorkspaceScopeError } from './workspace-scope'
 
 const logger = createLogger('WorkflowRegistry')
 const initialHydration: HydrationState = {
@@ -96,6 +97,12 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           const { data: workflowData } = await requestJson(getWorkflowStateContract, {
             params: { id: workflowId },
           })
+
+          if (!canHydrateWorkflowInWorkspace(workflowData.workspaceId, workspaceId)) {
+            throw new Error(
+              getWorkflowWorkspaceScopeError(workflowId, workflowData.workspaceId, workspaceId)
+            )
+          }
 
           const deployedAt = workflowData.deployedAt ? workflowData.deployedAt.toISOString() : null
 
