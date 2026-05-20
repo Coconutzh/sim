@@ -13,8 +13,11 @@ import {
 import { getAllBlockCatalogEntries } from '@/blocks/catalog'
 import type { BlockCatalogEntry } from '@/blocks/catalog-types'
 import type { SubBlockConfig as BlockSubBlockConfig, GenerationType } from '@/blocks/types'
+
+export { deepMergeInputMapping, mergeToolParameters } from '@/tools/merge-params'
+export { formatParameterLabel } from '@/tools/param-label'
+
 import { safeAssign } from '@/tools/safe-assign'
-import { isEmptyTagValue } from '@/tools/shared/tags'
 import type { OAuthConfig, ParameterVisibility, ToolConfig } from '@/tools/types'
 import { getTool } from '@/tools/utils'
 
@@ -714,104 +717,6 @@ export function createExecutionToolSchema(toolConfig: ToolConfig): ToolSchema {
 }
 
 /**
- * Deep merges inputMapping objects, where LLM values fill in empty/missing user values.
- * User-provided non-empty values take precedence.
- */
-export function deepMergeInputMapping(
-  llmInputMapping: Record<string, unknown> | undefined,
-  userInputMapping: Record<string, unknown> | string | undefined
-): Record<string, unknown> {
-  // Parse user inputMapping if it's a JSON string
-  let parsedUserMapping: Record<string, unknown> = {}
-  if (typeof userInputMapping === 'string') {
-    try {
-      const parsed = JSON.parse(userInputMapping)
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        parsedUserMapping = parsed
-      }
-    } catch {
-      // Invalid JSON, treat as empty
-    }
-  } else if (
-    typeof userInputMapping === 'object' &&
-    userInputMapping !== null &&
-    !Array.isArray(userInputMapping)
-  ) {
-    parsedUserMapping = userInputMapping
-  }
-
-  // If no LLM mapping, return user mapping (or empty)
-  if (!llmInputMapping || typeof llmInputMapping !== 'object') {
-    return parsedUserMapping
-  }
-
-  // Deep merge: LLM values as base, user non-empty values override
-  // If user provides empty object {}, LLM values fill all fields (intentional)
-  const merged: Record<string, unknown> = { ...llmInputMapping }
-
-  for (const [key, userValue] of Object.entries(parsedUserMapping)) {
-    // Only override LLM value if user provided a non-empty value
-    if (isNonEmpty(userValue)) {
-      merged[key] = userValue
-    }
-  }
-
-  return merged
-}
-
-/**
- * Merges user-provided parameters with LLM-generated parameters.
- * User-provided parameters take precedence, but empty strings are skipped
- * so that LLM-generated values are used when user clears a field.
- *
- * Special handling for inputMapping: deep merges so LLM can fill in
- * fields that user left empty in the UI.
- */
-export function mergeToolParameters(
-  userProvidedParams: Record<string, unknown>,
-  llmGeneratedParams: Record<string, unknown>
-): Record<string, unknown> {
-  // Filter out empty and effectively-empty values from user-provided params
-  // so that cleared fields don't override LLM values
-  const filteredUserParams: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(userProvidedParams)) {
-    if (isNonEmpty(value)) {
-      // Skip tag-based params if they're effectively empty (only default/unfilled entries)
-      if ((key === 'documentTags' || key === 'tagFilters') && isEmptyTagValue(value)) {
-        continue
-      }
-      filteredUserParams[key] = value
-    }
-  }
-
-  // Start with LLM params as base
-  const result: Record<string, unknown> = { ...llmGeneratedParams }
-
-  // Apply user params, with special handling for inputMapping
-  for (const [key, userValue] of Object.entries(filteredUserParams)) {
-    if (key === 'inputMapping') {
-      // Deep merge inputMapping so LLM values fill in empty user fields
-      const llmInputMapping = llmGeneratedParams.inputMapping as Record<string, unknown> | undefined
-      const mergedInputMapping = deepMergeInputMapping(
-        llmInputMapping,
-        userValue as Record<string, unknown> | string | undefined
-      )
-      result.inputMapping = mergedInputMapping
-    } else {
-      // Normal override for other params
-      result[key] = userValue
-    }
-  }
-
-  // If LLM provided inputMapping but user didn't, ensure it's included
-  if (llmGeneratedParams.inputMapping && !filteredUserParams.inputMapping) {
-    result.inputMapping = llmGeneratedParams.inputMapping
-  }
-
-  return result
-}
-
-/**
  * Filters out user-provided parameters from tool schema for LLM
  */
 export function filterSchemaForLLM(
@@ -885,47 +790,6 @@ export function isPasswordParameter(paramId: string): boolean {
   ]
 
   return passwordFields.some((field) => paramId.toLowerCase().includes(field.toLowerCase()))
-}
-
-/**
- * Formats parameter IDs into human-readable labels
- */
-export function formatParameterLabel(paramId: string): string {
-  // Special cases
-  if (paramId === 'apiKey') return 'API Key'
-  if (paramId === 'apiVersion') return 'API Version'
-  if (paramId === 'accessToken') return 'Access Token'
-  if (paramId === 'refreshToken') return 'Refresh Token'
-  if (paramId === 'botToken') return 'Bot Token'
-
-  // Handle underscore and hyphen separated words
-  if (paramId.includes('_') || paramId.includes('-')) {
-    return paramId
-      .split(/[-_]/)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
-  }
-
-  // Handle single character parameters
-  if (paramId.length === 1) return paramId.toUpperCase()
-
-  // Handle camelCase
-  if (/[A-Z]/.test(paramId)) {
-    const result = paramId.replace(/([A-Z])/g, ' $1')
-    return (
-      result.charAt(0).toUpperCase() +
-      result
-        .slice(1)
-        .replace(/ Api/g, ' API')
-        .replace(/ Id/g, ' ID')
-        .replace(/ Url/g, ' URL')
-        .replace(/ Uri/g, ' URI')
-        .replace(/ Ui/g, ' UI')
-    )
-  }
-
-  // Simple case - just capitalize first letter
-  return paramId.charAt(0).toUpperCase() + paramId.slice(1)
 }
 
 /**

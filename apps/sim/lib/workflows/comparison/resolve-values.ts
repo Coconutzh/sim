@@ -9,7 +9,7 @@ import { getSelectorDefinition } from '@/hooks/selectors/registry'
 import { resolveSelectorForSubBlock } from '@/hooks/selectors/resolution'
 import type { SelectorContext, SelectorKey } from '@/hooks/selectors/types'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
-import { formatParameterLabel } from '@/tools/params'
+import { formatParameterLabel } from '@/tools/param-label'
 
 const logger = createLogger('ResolveValues')
 

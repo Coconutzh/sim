@@ -8,7 +8,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { resolvePreviewContextValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/utils'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useMcpTools } from '@/hooks/mcp/use-mcp-tools'
-import { formatParameterLabel } from '@/tools/params'
+import { formatParameterLabel } from '@/tools/param-label'
 
 const logger = createLogger('McpDynamicArgs')
 
