@@ -134,4 +134,35 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
       accessSource: 'selected_workgroups',
     })
   })
+
+  it('does not expose non-workgroup published workflows through organization visibility', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-3',
+            workspaceId: 'ws-personal',
+            track: 'published',
+            visibility: 'organization',
+          },
+          workspaceId: 'ws-personal',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: null,
+        },
+      ],
+      [{ ownerId: 'other-user' }],
+      []
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-3',
+      userId: 'org-member',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      accessSource: null,
+    })
+  })
 })

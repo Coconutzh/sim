@@ -188,4 +188,15 @@ describe('workflow publication access', () => {
       ownerWorkgroupId: 'wg-1',
     })
   })
+
+  it('does not list organization-visible workflows from workspaces without a workgroup', async () => {
+    mockResultsQueue.push([{ id: 'ws-in-wg' }], [{ organizationId: 'org-1' }], [], [])
+
+    const result = await listPublishedWorkflowsForWorkgroup({
+      workgroupId: 'wg-1',
+      userId: 'owner-1',
+    })
+
+    expect(result).toEqual([])
+  })
 })

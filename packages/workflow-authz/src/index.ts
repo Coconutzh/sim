@@ -381,6 +381,18 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
     }
   }
 
+  // Cross-team publication visibility only applies to workgroup-backed team canvases.
+  if (!activeContext.workspaceWorkgroupId) {
+    return {
+      allowed: false,
+      status: 403,
+      message: `Unauthorized: Access denied to ${action} this workflow`,
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+    }
+  }
+
   if (wf.visibility === 'organization' && activeContext.workspaceOrganizationId) {
     const organizationAllowed = await hasOrganizationReadAccess(
       userId,
