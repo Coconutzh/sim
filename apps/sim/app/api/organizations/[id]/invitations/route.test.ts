@@ -5,18 +5,22 @@ import { auditMock, createMockRequest, createSession, loggerMock } from '@sim/te
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  mockHasWorkspaceAdminAccess,
   mockDbState,
   mockGetSession,
+  mockIsOrganizationWorkspace,
   mockValidateInvitationsAllowed,
   mockValidateSeatAvailability,
   mockCreatePendingInvitation,
   mockSendInvitationEmail,
   mockCancelPendingInvitation,
 } = vi.hoisted(() => ({
+  mockHasWorkspaceAdminAccess: vi.fn(),
   mockDbState: {
     selectResults: [] as any[],
   },
   mockGetSession: vi.fn(),
+  mockIsOrganizationWorkspace: vi.fn(),
   mockValidateInvitationsAllowed: vi.fn(),
   mockValidateSeatAvailability: vi.fn(),
   mockCreatePendingInvitation: vi.fn(),
@@ -74,6 +78,7 @@ vi.mock('@sim/db/schema', () => ({
     email: 'user.email',
   },
   workspace: {
+    archivedAt: 'workspace.archivedAt',
     id: 'workspace.id',
     name: 'workspace.name',
     organizationId: 'workspace.organizationId',
@@ -85,6 +90,7 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...conditions: unknown[]) => ({ type: 'and', conditions })),
   eq: vi.fn((field: unknown, value: unknown) => ({ field, value })),
   inArray: vi.fn((field: unknown, values: unknown[]) => ({ field, values })),
+  isNull: vi.fn((field: unknown) => ({ type: 'isNull', field })),
 }))
 
 vi.mock('@sim/logger', () => loggerMock)
@@ -111,11 +117,11 @@ vi.mock('@/lib/messaging/email/validation', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
-  hasWorkspaceAdminAccess: vi.fn().mockResolvedValue(true),
+  hasWorkspaceAdminAccess: mockHasWorkspaceAdminAccess,
 }))
 
 vi.mock('@/lib/workspaces/policy', () => ({
-  isOrganizationWorkspace: vi.fn().mockReturnValue(true),
+  isOrganizationWorkspace: mockIsOrganizationWorkspace,
 }))
 
 vi.mock('@/ee/access-control/utils/permission-check', () => ({
@@ -129,6 +135,8 @@ describe('POST /api/organizations/[id]/invitations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDbState.selectResults = []
+    mockHasWorkspaceAdminAccess.mockResolvedValue(true)
+    mockIsOrganizationWorkspace.mockReturnValue(true)
     mockValidateInvitationsAllowed.mockResolvedValue(undefined)
     mockValidateSeatAvailability.mockResolvedValue({
       canInvite: true,
@@ -207,5 +215,64 @@ describe('POST /api/organizations/[id]/invitations', () => {
 
     expect(response.status).toBe(502)
     expect(mockCancelPendingInvitation).toHaveBeenCalledWith('inv-1')
+  })
+
+  it('rejects batch grants for personal workspaces', async () => {
+    mockGetSession.mockResolvedValue(
+      createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
+    )
+    mockIsOrganizationWorkspace.mockReturnValue(false)
+    mockDbState.selectResults = [
+      [{ role: 'owner' }],
+      [{ name: 'Org One' }],
+      [{ id: 'ws-personal', archivedAt: null, organizationId: 'org-1', workspaceMode: 'personal' }],
+    ]
+
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        {
+          emails: ['invitee@example.com'],
+          workspaceInvitations: [{ workspaceId: 'ws-personal', permission: 'read' }],
+        },
+        { batch: 'true' },
+        'http://localhost/api/organizations/org-1/invitations?batch=true'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data).toEqual({
+      error: 'Workspace ws-personal is not an organization-owned workspace.',
+    })
+    expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
+  })
+
+  it('rejects batch grants for archived organization workspaces', async () => {
+    mockGetSession.mockResolvedValue(
+      createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
+    )
+    mockDbState.selectResults = [[{ role: 'owner' }], [{ name: 'Org One' }], []]
+
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        {
+          emails: ['invitee@example.com'],
+          workspaceInvitations: [{ workspaceId: 'ws-archived', permission: 'read' }],
+        },
+        { batch: 'true' },
+        'http://localhost/api/organizations/org-1/invitations?batch=true'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data).toEqual({
+      error: 'Workspace ws-archived is not an organization-owned workspace.',
+    })
+    expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
   })
 })

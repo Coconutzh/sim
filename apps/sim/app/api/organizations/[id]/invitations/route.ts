@@ -2,7 +2,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { invitation, member, organization, user, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   inviteOrganizationMembersContract,
@@ -198,12 +198,13 @@ export const POST = withRouteHandler(
 
           const [workspaceEntry] = await db
             .select({
+              archivedAt: workspace.archivedAt,
               id: workspace.id,
               organizationId: workspace.organizationId,
               workspaceMode: workspace.workspaceMode,
             })
             .from(workspace)
-            .where(eq(workspace.id, wsInvitation.workspaceId))
+            .where(and(eq(workspace.id, wsInvitation.workspaceId), isNull(workspace.archivedAt)))
             .limit(1)
 
           if (!workspaceEntry || !isOrganizationWorkspace(workspaceEntry)) {
