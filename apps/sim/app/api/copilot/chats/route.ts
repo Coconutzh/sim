@@ -59,7 +59,8 @@ export const GET = withRouteHandler(async (_request: NextRequest) => {
           eq(copilotChats.userId, userId),
           or(
             and(isNull(copilotChats.workflowId), isNull(copilotChats.workspaceId)),
-            sql`${permissions.id} IS NOT NULL`
+            sql`${permissions.id} IS NOT NULL`,
+            eq(workspace.ownerId, userId)
           ),
           or(isNull(workflow.id), isNull(workflow.archivedAt)),
           or(isNull(workspace.id), isNull(workspace.archivedAt))

@@ -6,13 +6,16 @@
 import { copilotHttpMock, copilotHttpMockFns } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockSelectDistinctOn, mockFrom, mockLeftJoin, mockWhere, mockOrderBy } = vi.hoisted(() => ({
-  mockSelectDistinctOn: vi.fn(),
-  mockFrom: vi.fn(),
-  mockLeftJoin: vi.fn(),
-  mockWhere: vi.fn(),
-  mockOrderBy: vi.fn(),
-}))
+const { mockSelectDistinctOn, mockFrom, mockLeftJoin, mockWhere, mockOrderBy, mockEq } = vi.hoisted(
+  () => ({
+    mockSelectDistinctOn: vi.fn(),
+    mockFrom: vi.fn(),
+    mockLeftJoin: vi.fn(),
+    mockWhere: vi.fn(),
+    mockOrderBy: vi.fn(),
+    mockEq: vi.fn((field: unknown, value: unknown) => ({ field, value, type: 'eq' })),
+  })
+)
 
 vi.mock('@sim/db', () => ({
   db: {
@@ -22,7 +25,7 @@ vi.mock('@sim/db', () => ({
 
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...conditions: unknown[]) => ({ conditions, type: 'and' })),
-  eq: vi.fn((field: unknown, value: unknown) => ({ field, value, type: 'eq' })),
+  eq: mockEq,
   or: vi.fn((...conditions: unknown[]) => ({ conditions, type: 'or' })),
   isNull: vi.fn((field: unknown) => ({ field, type: 'isNull' })),
   desc: vi.fn((field: unknown) => ({ field, type: 'desc' })),
@@ -214,6 +217,19 @@ describe('Copilot Chats List API Route', () => {
 
       expect(mockSelectDistinctOn).toHaveBeenCalled()
       expect(mockWhere).toHaveBeenCalled()
+    })
+
+    it('includes workspace owner access in the visibility filter', async () => {
+      copilotHttpMockFns.mockAuthenticateCopilotRequestSessionOnly.mockResolvedValueOnce({
+        userId: 'owner-123',
+        isAuthenticated: true,
+      })
+
+      const request = new Request('http://localhost:3000/api/copilot/chats')
+      await GET(request as any)
+
+      expect(mockWhere).toHaveBeenCalled()
+      expect(mockEq).toHaveBeenCalledWith('ownerId', 'owner-123')
     })
 
     it('should return 401 when userId is null despite isAuthenticated being true', async () => {

@@ -1,9 +1,9 @@
 import { type Context as OtelContext, context as otelContextApi } from '@opentelemetry/api'
 import { db } from '@sim/db'
-import { copilotChats, permissions } from '@sim/db/schema'
+import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
@@ -41,7 +41,10 @@ import { taskPubSub } from '@/lib/copilot/tasks'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { getWorkflowById, resolveWorkflowIdForUser } from '@/lib/workflows/utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -570,19 +573,9 @@ async function resolveBranch(params: {
     return createBadRequestResponse('workspaceId is required when workflowId is not provided')
   }
 
-  const [permissionRow] = await db
-    .select({ permissionType: permissions.permissionType })
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.userId, authenticatedUserId),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, requestedWorkspaceId)
-      )
-    )
-    .limit(1)
-
-  if (!permissionRow) {
+  try {
+    await assertActiveWorkspaceAccess(requestedWorkspaceId, authenticatedUserId)
+  } catch {
     return createBadRequestResponse('Workspace not found or access denied')
   }
 

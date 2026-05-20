@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const resolveWorkflowIdForUser = workflowsUtilsMockFns.mockResolveWorkflowIdForUser
 const getWorkflowById = workflowsUtilsMockFns.mockGetWorkflowById
 const getUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const assertActiveWorkspaceAccess = permissionsMockFns.mockAssertActiveWorkspaceAccess
 
 const {
   getEffectiveDecryptedEnv,
@@ -120,6 +121,12 @@ describe('handleUnifiedChatPost', () => {
       workflowId: 'wf-1',
       workflowName: 'Workflow One',
     })
+    assertActiveWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'user-1' },
+    })
     getWorkflowById.mockResolvedValue({ workspaceId: 'ws-1' })
     getUserEntityPermissions.mockResolvedValue('write')
     getEffectiveDecryptedEnv.mockResolvedValue({ API_KEY: 'secret' })
@@ -200,6 +207,37 @@ describe('handleUnifiedChatPost', () => {
             workspaceId: 'ws-1',
             requestMode: 'agent',
           }),
+        }),
+      })
+    )
+  })
+
+  it('allows workspace chat requests for a workspace owner without a permission row', async () => {
+    getUserEntityPermissions.mockResolvedValueOnce(null)
+    assertActiveWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'user-1' },
+    })
+
+    const response = await handleUnifiedChatPost(
+      new NextRequest('http://localhost/api/copilot/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Hello',
+          workspaceId: 'ws-1',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(assertActiveWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'user-1')
+    expect(createSSEStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        orchestrateOptions: expect.objectContaining({
+          goRoute: '/api/mothership',
         }),
       })
     )
