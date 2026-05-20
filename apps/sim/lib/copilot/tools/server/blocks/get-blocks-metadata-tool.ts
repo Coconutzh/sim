@@ -12,7 +12,8 @@ import { registry as blockRegistry } from '@/blocks/registry'
 import { AuthMode, type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
-import { tools as toolsRegistry } from '@/tools/registry'
+import { getToolCatalogEntry } from '@/tools/catalog'
+import type { ToolConfig } from '@/tools/types'
 import { getTrigger, isTriggerValid } from '@/triggers'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
@@ -170,12 +171,12 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         }
         const tools: CopilotToolMetadata[] = Array.isArray(blockConfig.tools?.access)
           ? blockConfig.tools!.access.map((toolId) => {
-              const tool = toolsRegistry[toolId]
+              const tool = getToolCatalogEntry(toolId)
               if (!tool) return { id: toolId, name: toolId }
               return {
                 id: toolId,
                 name: tool.name || toolId,
-                description: getCopilotToolDescription(tool, {
+                description: getCopilotToolDescription(tool as unknown as ToolConfig, {
                   isHosted,
                   fallbackName: toolId,
                 }),
@@ -254,7 +255,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         const operations: Record<string, any> = {}
         for (const opId of operationIds) {
           const resolvedToolId = resolveToolIdForOperation(blockConfig, opId)
-          const toolCfg = resolvedToolId ? toolsRegistry[resolvedToolId] : undefined
+          const toolCfg = resolvedToolId ? getToolCatalogEntry(resolvedToolId) : undefined
           const toolParams: Record<string, any> = toolCfg?.params || {}
           const toolOutputs: Record<string, any> = toolCfg?.outputs
             ? Object.fromEntries(
@@ -269,7 +270,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
             toolId: resolvedToolId,
             toolName: toolCfg?.name || resolvedToolId,
             description: toolCfg
-              ? getCopilotToolDescription(toolCfg, {
+              ? getCopilotToolDescription(toolCfg as unknown as ToolConfig, {
                   isHosted,
                   fallbackName: resolvedToolId,
                 })

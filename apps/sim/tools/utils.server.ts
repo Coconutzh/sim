@@ -8,7 +8,7 @@ import { getCustomToolByIdOrTitle } from '@/lib/workflows/custom-tools/operation
 import { isCustomTool } from '@/executor/constants'
 import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { extractErrorMessage } from '@/tools/error-extractors'
-import { tools } from '@/tools/registry'
+import { loadTool } from '@/tools/loader.server'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type { RequestParams } from '@/tools/utils'
 import {
@@ -121,7 +121,7 @@ export async function getToolAsync(
   toolId: string,
   context: GetToolAsyncContext = {}
 ): Promise<ToolConfig | undefined> {
-  const builtInTool = tools[resolveToolId(toolId)]
+  const builtInTool = await loadTool(resolveToolId(toolId))
   if (builtInTool) return builtInTool
 
   if (isCustomTool(toolId)) {

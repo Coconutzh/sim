@@ -5,7 +5,8 @@ import { isMcpTool } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { executeTool } from '@/tools'
-import { getTool, getToolUnavailableErrorMessage } from '@/tools/utils'
+import { getToolUnavailableErrorMessage } from '@/tools/utils'
+import { getToolAsync } from '@/tools/utils.server'
 
 const logger = createLogger('GenericBlockHandler')
 
@@ -23,7 +24,11 @@ export class GenericBlockHandler implements BlockHandler {
     let tool = null
 
     if (!isMcp) {
-      tool = getTool(block.config.tool)
+      tool = await getToolAsync(block.config.tool, {
+        workflowId: ctx.workflowId,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      })
       if (!tool) {
         throw new Error(
           getToolUnavailableErrorMessage(block.config.tool) ??

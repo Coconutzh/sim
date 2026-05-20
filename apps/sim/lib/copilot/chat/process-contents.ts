@@ -465,8 +465,10 @@ async function processBlockMetadata(
       return null
     }
 
-    const { registry: blockRegistry } = await import('@/blocks/registry')
-    const { tools: toolsRegistry } = await import('@/tools/registry')
+    const [{ registry: blockRegistry }, { getToolCatalogEntry }] = await Promise.all([
+      import('@/blocks/registry'),
+      import('@/tools/catalog'),
+    ])
     const SPECIAL_BLOCKS_METADATA: Record<string, any> = {}
 
     let metadata: any = {}
@@ -511,7 +513,7 @@ async function processBlockMetadata(
     if (Array.isArray(metadata.tools) && metadata.tools.length > 0) {
       metadata.toolDetails = {}
       for (const toolId of metadata.tools) {
-        const tool = (toolsRegistry as any)[toolId]
+        const tool = getToolCatalogEntry(toolId)
         if (tool) {
           metadata.toolDetails[toolId] = { name: tool.name, description: tool.description }
         }

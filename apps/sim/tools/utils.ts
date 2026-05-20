@@ -6,11 +6,15 @@ import {
   normalizeWorkflowVariables,
 } from '@/lib/core/utils/records'
 import type { EnvironmentVariable } from '@/lib/environment/api'
-import { getToolPolicyErrorMessage } from '@/lib/product/tool-policy'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { environmentKeys } from '@/hooks/queries/environment'
-import { ALL_TOOLS, tools } from '@/tools/registry'
+import {
+  getToolCatalogEntry,
+  getToolCatalogUnavailableErrorMessage,
+  resolveCatalogToolId,
+  stripToolVersionSuffix,
+} from '@/tools/catalog'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ToolsUtils')
@@ -21,7 +25,7 @@ const logger = createLogger('ToolsUtils')
  * @example stripVersionSuffix('github_create_pr_v3') => 'github_create_pr'
  */
 export function stripVersionSuffix(name: string): string {
-  return name.replace(/_v\d+$/, '')
+  return stripToolVersionSuffix(name)
 }
 
 /**
@@ -30,10 +34,8 @@ export function stripVersionSuffix(name: string): string {
  * @param toolsMap Record of tool ID to ToolConfig
  * @returns Filtered record containing only the latest version of each tool
  */
-export function getLatestVersionTools(
-  toolsMap: Record<string, ToolConfig>
-): Record<string, ToolConfig> {
-  const latestTools: Record<string, ToolConfig> = {}
+export function getLatestVersionTools<T>(toolsMap: Record<string, T>): Record<string, T> {
+  const latestTools: Record<string, T> = {}
   const baseNameToVersions: Record<string, { toolId: string; version: number }[]> = {}
 
   for (const toolId of Object.keys(toolsMap)) {
@@ -62,18 +64,7 @@ export function getLatestVersionTools(
  * @returns The actual tool ID in the registry, or the original name if not found
  */
 export function resolveToolId(toolName: string): string {
-  if (tools[toolName] || ALL_TOOLS[toolName]) {
-    return toolName
-  }
-
-  const latestTools = getLatestVersionTools(ALL_TOOLS)
-  for (const toolId of Object.keys(latestTools)) {
-    if (stripVersionSuffix(toolId) === toolName) {
-      return toolId
-    }
-  }
-
-  return toolName
+  return resolveCatalogToolId(toolName)
 }
 
 export interface RequestParams {
@@ -285,11 +276,9 @@ export function createCustomToolRequestBody(customTool: any, isClient = true, wo
 
 // Get a tool by its ID
 export function getTool(toolId: string, _workspaceId?: string): ToolConfig | undefined {
-  // Check for built-in tools
-  const builtInTool = tools[resolveToolId(toolId)]
-  if (builtInTool) return builtInTool
+  const builtInTool = getToolCatalogEntry(toolId)
+  if (builtInTool) return builtInTool as unknown as ToolConfig
 
-  // If not found or running on the server, return undefined
   return undefined
 }
 
@@ -297,13 +286,7 @@ export function getTool(toolId: string, _workspaceId?: string): ToolConfig | und
  * Returns a descriptive error message when a built-in tool is unavailable.
  */
 export function getToolUnavailableErrorMessage(toolId: string): string | null {
-  const resolvedToolId = resolveToolId(toolId)
-  const builtInTool = ALL_TOOLS[resolvedToolId]
-  if (!builtInTool) {
-    return null
-  }
-
-  return getToolPolicyErrorMessage(resolvedToolId, builtInTool)
+  return getToolCatalogUnavailableErrorMessage(toolId)
 }
 
 // Helper function to create a tool config from a custom tool

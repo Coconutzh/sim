@@ -4,7 +4,8 @@ import { BlockType, HTTP } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { executeTool } from '@/tools'
-import { getTool, getToolUnavailableErrorMessage } from '@/tools/utils'
+import { getToolUnavailableErrorMessage } from '@/tools/utils'
+import { getToolAsync } from '@/tools/utils.server'
 
 const logger = createLogger('ApiBlockHandler')
 
@@ -21,7 +22,11 @@ export class ApiBlockHandler implements BlockHandler {
     block: SerializedBlock,
     inputs: Record<string, any>
   ): Promise<any> {
-    const tool = getTool(block.config.tool)
+    const tool = await getToolAsync(block.config.tool, {
+      workflowId: ctx.workflowId,
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+    })
     if (!tool) {
       throw new Error(
         getToolUnavailableErrorMessage(block.config.tool) ?? `Tool not found: ${block.config.tool}`

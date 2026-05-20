@@ -16,7 +16,6 @@ import {
   getCanonicalValues,
   isCanonicalPair,
 } from '@/lib/workflows/subblocks/visibility'
-import { isCustomTool } from '@/executor/constants'
 import {
   getComputerUseModels,
   getEmbeddingModelPricing,
@@ -496,7 +495,7 @@ export async function transformBlockTool(
 
   let toolConfig: any
 
-  if (isCustomTool(toolId) && getToolAsync) {
+  if (getToolAsync) {
     toolConfig = await getToolAsync(toolId)
   } else {
     toolConfig = getTool(toolId)

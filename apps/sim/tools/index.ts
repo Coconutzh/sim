@@ -33,7 +33,6 @@ import type {
 } from '@/tools/types'
 import {
   formatRequestParams,
-  getTool,
   getToolUnavailableErrorMessage,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
@@ -796,8 +795,11 @@ export async function executeTool(
         startTimeISO
       )
     } else {
-      // For built-in tools, use the synchronous version
-      tool = getTool(normalizedToolId)
+      tool = await toolsUtilsServer.getToolAsync(normalizedToolId, {
+        workflowId: scope.workflowId,
+        userId: scope.userId,
+        workspaceId: scope.workspaceId,
+      })
       if (!tool) {
         const unavailableMessage =
           getToolUnavailableErrorMessage(normalizedToolId) ??

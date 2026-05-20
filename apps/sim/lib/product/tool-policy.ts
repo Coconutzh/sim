@@ -152,6 +152,22 @@ export function isToolEnabled(toolId: string, tool: ToolConfig): boolean {
 }
 
 /**
+ * Returns whether a tool is enabled using lightweight catalog metadata.
+ */
+export function isToolCatalogEntryEnabled(toolId: string, service: string): boolean {
+  if (!TOOL_POLICY_ENABLED) {
+    return true
+  }
+
+  const normalizedToolId = stripVersionSuffix(normalizeToken(toolId))
+  if (ENABLED_TOOL_IDS.has(toolId) || ENABLED_TOOL_IDS.has(normalizedToolId)) {
+    return true
+  }
+
+  return ENABLED_TOOL_SERVICES.has(normalizeToken(service))
+}
+
+/**
  * Returns a descriptive error message when a built-in tool is disabled by product policy.
  */
 export function getToolPolicyErrorMessage(
@@ -172,6 +188,24 @@ export function getToolPolicyErrorMessage(
   }
 
   return `Tool disabled in this product edition: ${toolId}`
+}
+
+/**
+ * Returns a policy error message using lightweight catalog metadata.
+ */
+export function getToolCatalogPolicyErrorMessage(
+  toolId: string,
+  service: string | undefined
+): string | null {
+  if (!TOOL_POLICY_ENABLED || !service) {
+    return null
+  }
+
+  if (isToolCatalogEntryEnabled(toolId, service)) {
+    return null
+  }
+
+  return `Tool disabled in this product edition: ${toolId} (service: ${service})`
 }
 
 /**

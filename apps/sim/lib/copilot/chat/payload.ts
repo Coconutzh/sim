@@ -7,7 +7,8 @@ import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { tools } from '@/tools/registry'
+import { toolCatalog } from '@/tools/catalog'
+import type { ToolConfig } from '@/tools/types'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
 
 const logger = createLogger('CopilotChatPayload')
@@ -88,7 +89,7 @@ export async function buildIntegrationToolSchemas(
     const integrationTools: ToolSchema[] = []
     try {
       const { createUserToolSchema } = await import('@/tools/params')
-      const latestTools = getLatestVersionTools(tools)
+      const latestTools = getLatestVersionTools(toolCatalog)
       let shouldAppendEmailTagline = false
 
       try {
@@ -141,13 +142,13 @@ export async function buildIntegrationToolSchemas(
               continue
             }
           }
-          const userSchema = createUserToolSchema(toolConfig, {
+          const userSchema = createUserToolSchema(toolConfig as unknown as ToolConfig, {
             surface: options.schemaSurface ?? 'copilot',
           })
           const catalogEntry = getToolEntry(strippedName)
           integrationTools.push({
             name: strippedName,
-            description: getCopilotToolDescription(toolConfig, {
+            description: getCopilotToolDescription(toolConfig as unknown as ToolConfig, {
               isHosted,
               fallbackName: strippedName,
               appendEmailTagline: shouldAppendEmailTagline,

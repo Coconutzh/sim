@@ -62,6 +62,7 @@ import { BINARY_DOC_TASKS, MAX_DOCUMENT_PREVIEW_CODE_BYTES } from '@/lib/executi
 import { runSandboxTask, SandboxUserCodeError } from '@/lib/execution/sandbox/run-task'
 import { getKnowledgeBases } from '@/lib/knowledge/service'
 import { validateMermaidSource } from '@/lib/mermaid/validate'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { listTables } from '@/lib/table/service'
 import {
   fetchWorkspaceFileBuffer,
@@ -80,10 +81,10 @@ import {
   getUsersWithPermissions,
   getWorkspaceWithOwner,
 } from '@/lib/workspaces/permissions/utils'
-import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { getAllBlocks } from '@/blocks/registry'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
-import { tools as toolRegistry } from '@/tools/registry'
+import { toolCatalog } from '@/tools/catalog'
+import type { ToolConfig } from '@/tools/types'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
 import { TRIGGER_REGISTRY } from '@/triggers/registry'
 
@@ -125,7 +126,7 @@ function getStaticComponentFiles(): Map<string, string> {
     }
   }
 
-  const latestTools = getLatestVersionTools(toolRegistry)
+  const latestTools = getLatestVersionTools(toolCatalog)
   let integrationCount = 0
 
   const oauthServices = new Map<string, { provider: string; operations: string[] }>()
@@ -143,7 +144,7 @@ function getStaticComponentFiles(): Map<string, string> {
     const operation = baseName.startsWith(prefix) ? baseName.slice(prefix.length) : baseName
 
     const path = `components/integrations/${service}/${operation}.json`
-    files.set(path, serializeIntegrationSchema(tool))
+    files.set(path, serializeIntegrationSchema(tool as unknown as ToolConfig))
     integrationCount++
 
     if (tool.oauth?.required) {
