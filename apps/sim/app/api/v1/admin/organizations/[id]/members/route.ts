@@ -94,7 +94,14 @@ export const GET = withRouteHandler(
           createdAt: workspace.createdAt,
         })
         .from(workspace)
-        .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
+        .where(
+          and(
+            eq(workspace.organizationId, organizationId),
+            eq(workspace.workspaceMode, 'organization'),
+            isNull(workspace.archivedAt)
+          )
+        )
+
       const orgWorkspaceIds = orgWorkspaces.map((row) => row.id)
 
       const membersData = await db

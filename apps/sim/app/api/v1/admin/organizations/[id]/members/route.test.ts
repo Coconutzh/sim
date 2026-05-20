@@ -59,6 +59,7 @@ vi.mock('@sim/db/schema', () => ({
     id: 'workspace.id',
     ownerId: 'workspace.ownerId',
     organizationId: 'workspace.organizationId',
+    workspaceMode: 'workspace.workspaceMode',
     createdAt: 'workspace.createdAt',
     archivedAt: 'workspace.archivedAt',
   },
@@ -139,5 +140,29 @@ describe('GET /api/v1/admin/organizations/[id]/members', () => {
       }),
     ])
     expect(data.pagination.total).toBe(1)
+  })
+
+  it('does not surface external users from personal workspaces', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    mockDbSelect
+      .mockReturnValueOnce(createSelectChain([{ id: 'org-1' }]))
+      .mockReturnValueOnce(
+        createSelectChain([{ id: 'ws-personal', ownerId: 'external-1', createdAt }])
+      )
+      .mockReturnValueOnce(createSelectChain([]))
+      .mockReturnValueOnce(createSelectChain([]))
+      .mockReturnValueOnce(createSelectChain([]))
+
+    const response = await GET(
+      new Request('http://localhost/api/v1/admin/organizations/org-1/members') as any,
+      {
+        params: Promise.resolve({ id: 'org-1' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data).toEqual([])
+    expect(data.pagination.total).toBe(0)
   })
 })
