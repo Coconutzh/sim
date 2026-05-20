@@ -40,6 +40,10 @@ interface CleanupJobConfig {
 
 const DAY = 24
 
+function buildActiveOrganizationWorkspaceCondition() {
+  return and(isNull(workspace.archivedAt), eq(workspace.workspaceMode, 'organization'))
+}
+
 /**
  * Single source of truth for cleanup retention: which key each job type reads
  * from `organization.dataRetentionSettings`, and the default retention (in
@@ -130,7 +134,7 @@ export async function resolveCleanupScope(
     .select({ settings: organization.dataRetentionSettings })
     .from(workspace)
     .innerJoin(organization, eq(organization.id, workspace.organizationId))
-    .where(eq(workspace.id, payload.workspaceId))
+    .where(and(eq(workspace.id, payload.workspaceId), buildActiveOrganizationWorkspaceCondition()))
     .limit(1)
 
   const hours = row?.settings?.[config.key]
@@ -202,7 +206,7 @@ export async function dispatchCleanupJobs(
     )
     .where(
       and(
-        isNull(workspace.archivedAt),
+        buildActiveOrganizationWorkspaceCondition(),
         isNotNull(sql`${organization.dataRetentionSettings}->>${config.key}`)
       )
     )
