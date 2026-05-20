@@ -658,7 +658,7 @@ async function processExecutionLogFromDb(
         userId,
         action: 'read',
       })
-      if (!authorization.allowed) {
+      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
         return null
       }
       if (currentWorkspaceId && authorization.workflow?.workspaceId !== currentWorkspaceId) {

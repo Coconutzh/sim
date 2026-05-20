@@ -7,15 +7,25 @@ const {
   mockAuthorizeWorkflowByWorkspacePermission,
   mockGetActiveWorkflowRecord,
   mockLoadWorkflowFromNormalizedTables,
+  mockDbSelect,
+  mockDbFrom,
+  mockDbInnerJoin,
+  mockDbWhere,
+  mockDbLimit,
 } = vi.hoisted(() => ({
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockGetActiveWorkflowRecord: vi.fn(),
   mockLoadWorkflowFromNormalizedTables: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbFrom: vi.fn(),
+  mockDbInnerJoin: vi.fn(),
+  mockDbWhere: vi.fn(),
+  mockDbLimit: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
   db: {
-    select: vi.fn(),
+    select: mockDbSelect,
   },
 }))
 
@@ -23,6 +33,8 @@ vi.mock('@sim/db/schema', () => ({
   document: {},
   knowledgeBase: {},
   templates: {},
+  workflow: {},
+  workflowExecutionLogs: {},
 }))
 
 vi.mock('@sim/workflow-authz', () => ({
@@ -77,6 +89,11 @@ import { processContextsServer } from './process-contents'
 describe('processContextsServer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDbSelect.mockReturnValue({ from: mockDbFrom })
+    mockDbFrom.mockReturnValue({ innerJoin: mockDbInnerJoin })
+    mockDbInnerJoin.mockReturnValue({ where: mockDbWhere })
+    mockDbWhere.mockReturnValue({ limit: mockDbLimit })
+    mockDbLimit.mockResolvedValue([])
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
@@ -131,5 +148,35 @@ describe('processContextsServer', () => {
 
     expect(result).toEqual([])
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
+
+  it('does not expose workflow execution logs to published workflow readers', async () => {
+    mockDbLimit.mockResolvedValueOnce([
+      {
+        id: 'log-1',
+        workflowId: 'wf-1',
+        executionId: 'exec-1',
+        level: 'info',
+        trigger: 'manual',
+        startedAt: new Date('2026-05-21T00:00:00Z'),
+        endedAt: new Date('2026-05-21T00:00:01Z'),
+        totalDurationMs: 1000,
+        executionData: {},
+        cost: null,
+        workflowName: 'Published Workflow',
+      },
+    ])
+
+    const contexts = [
+      {
+        kind: 'logs' as const,
+        executionId: 'exec-1',
+        label: 'Execution Logs',
+      },
+    ]
+
+    const result = await processContextsServer(contexts, 'user-1', undefined, 'ws-1')
+
+    expect(result).toEqual([])
   })
 })

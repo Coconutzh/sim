@@ -125,7 +125,7 @@ export const getWorkflowLogsServerTool: BaseServerTool<GetWorkflowLogsArgs, Simp
         userId: context.userId,
         action: 'read',
       })
-      if (!authorization.allowed) {
+      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
         throw new Error(authorization.message || 'Unauthorized workflow access')
       }
 
