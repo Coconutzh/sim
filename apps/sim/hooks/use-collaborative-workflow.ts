@@ -43,6 +43,10 @@ import {
   WORKFLOW_DIFF_SETTLED_EVENT,
 } from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import {
+  canHydrateWorkflowInWorkspace,
+  getWorkflowWorkspaceScopeError,
+} from '@/stores/workflows/registry/workspace-scope'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { filterNewEdges, filterValidEdges, mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -632,6 +636,19 @@ export function useCollaborativeWorkflow() {
         const responseData = await requestJson(getWorkflowStateContract, {
           params: { id: workflowId },
         })
+        const currentWorkspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+        if (!currentWorkspaceId) {
+          throw new Error(`Cannot reload workflow ${workflowId} without an active workspace scope`)
+        }
+        if (!canHydrateWorkflowInWorkspace(responseData.data.workspaceId, currentWorkspaceId)) {
+          throw new Error(
+            getWorkflowWorkspaceScopeError(
+              workflowId,
+              responseData.data.workspaceId,
+              currentWorkspaceId
+            )
+          )
+        }
         const wireState = responseData.data?.state
         if (wireState) {
           // double-cast-allowed: workflowStateSchema is structurally a supertype of the store's WorkflowState (subBlocks.value is `unknown`, optional booleans, etc.); the server persists store-shaped values so the runtime shape matches

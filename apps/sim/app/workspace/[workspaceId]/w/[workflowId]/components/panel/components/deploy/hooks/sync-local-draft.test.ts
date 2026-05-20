@@ -13,7 +13,10 @@ const {
 } = vi.hoisted(() => ({
   mockRequestJson: vi.fn(),
   mockApplyWorkflowStateToStores: vi.fn(),
-  mockGetRegistryState: vi.fn(() => ({ activeWorkflowId: 'workflow-a' })),
+  mockGetRegistryState: vi.fn(() => ({
+    activeWorkflowId: 'workflow-a',
+    hydration: { workspaceId: 'ws-1' },
+  })),
   mockHasPendingOperations: vi.fn(() => false),
   mockGetOperationQueueState: vi.fn(() => ({
     hasPendingOperations: mockHasPendingOperations,
@@ -63,7 +66,10 @@ import { syncLocalDraftFromServer } from '@/app/workspace/[workspaceId]/w/[workf
 describe('syncLocalDraftFromServer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetRegistryState.mockReturnValue({ activeWorkflowId: 'workflow-a' })
+    mockGetRegistryState.mockReturnValue({
+      activeWorkflowId: 'workflow-a',
+      hydration: { workspaceId: 'ws-1' },
+    })
     mockHasPendingOperations.mockReturnValue(false)
     mockGetOperationQueueState.mockImplementation(() => ({
       hasPendingOperations: mockHasPendingOperations,
@@ -81,6 +87,7 @@ describe('syncLocalDraftFromServer', () => {
   it('hydrates sibling workflow variables into the applied workflow state', async () => {
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -119,10 +126,11 @@ describe('syncLocalDraftFromServer', () => {
 
   it('does not apply a fetched draft after navigation changes the active workflow', async () => {
     mockGetRegistryState
-      .mockReturnValueOnce({ activeWorkflowId: 'workflow-a' })
-      .mockReturnValueOnce({ activeWorkflowId: 'workflow-b' })
+      .mockReturnValueOnce({ activeWorkflowId: 'workflow-a', hydration: { workspaceId: 'ws-1' } })
+      .mockReturnValueOnce({ activeWorkflowId: 'workflow-b', hydration: { workspaceId: 'ws-1' } })
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -142,6 +150,7 @@ describe('syncLocalDraftFromServer', () => {
   it('does not synthesize an empty variables object when the server omits variables', async () => {
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -162,6 +171,7 @@ describe('syncLocalDraftFromServer', () => {
     mockHasPendingOperations.mockReturnValueOnce(false).mockReturnValueOnce(true)
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -196,6 +206,7 @@ describe('syncLocalDraftFromServer', () => {
       })
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -228,6 +239,7 @@ describe('syncLocalDraftFromServer', () => {
       })
     mockRequestJson.mockResolvedValue({
       data: {
+        workspaceId: 'ws-1',
         state: {
           blocks: {},
           edges: [],
@@ -240,6 +252,28 @@ describe('syncLocalDraftFromServer', () => {
     })
 
     await expect(syncLocalDraftFromServer('workflow-a')).resolves.toBe(false)
+
+    expect(mockApplyWorkflowStateToStores).not.toHaveBeenCalled()
+  })
+
+  it('rejects syncing a published-safe summary without a workspace scope', async () => {
+    mockRequestJson.mockResolvedValue({
+      data: {
+        workspaceId: null,
+        state: {
+          blocks: {},
+          edges: [],
+          loops: {},
+          parallels: {},
+          lastSaved: 1,
+        },
+        variables: {},
+      },
+    })
+
+    await expect(syncLocalDraftFromServer('workflow-a')).rejects.toThrow(
+      'Workflow workflow-a is not editable in workspace ws-1'
+    )
 
     expect(mockApplyWorkflowStateToStores).not.toHaveBeenCalled()
   })

@@ -4,6 +4,10 @@ import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { applyWorkflowStateToStores } from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import {
+  canHydrateWorkflowInWorkspace,
+  getWorkflowWorkspaceScopeError,
+} from '@/stores/workflows/registry/workspace-scope'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 function canApplyServerSnapshot(
@@ -32,8 +36,13 @@ function canApplyServerSnapshot(
 }
 
 export async function syncLocalDraftFromServer(workflowId: string): Promise<boolean> {
-  if (useWorkflowRegistry.getState().activeWorkflowId !== workflowId) return false
+  const registryState = useWorkflowRegistry.getState()
+  if (registryState.activeWorkflowId !== workflowId) return false
   if (useOperationQueueStore.getState().hasPendingOperations(workflowId)) return false
+  const currentWorkspaceId = registryState.hydration.workspaceId
+  if (!currentWorkspaceId) {
+    throw new Error(`Cannot sync workflow ${workflowId} without an active workspace scope`)
+  }
   const localOperationVersionAtStart =
     useOperationQueueStore.getState().workflowOperationVersions[workflowId] ?? 0
   const remoteVersionAtStart = useWorkflowDiffStore.getState().remoteUpdateVersions[workflowId] ?? 0
@@ -41,6 +50,11 @@ export async function syncLocalDraftFromServer(workflowId: string): Promise<bool
   const responseData = await requestJson(getWorkflowStateContract, {
     params: { id: workflowId },
   })
+  if (!canHydrateWorkflowInWorkspace(responseData.data.workspaceId, currentWorkspaceId)) {
+    throw new Error(
+      getWorkflowWorkspaceScopeError(workflowId, responseData.data.workspaceId, currentWorkspaceId)
+    )
+  }
   const wireState = responseData.data?.state
   if (!canApplyServerSnapshot(workflowId, remoteVersionAtStart, localOperationVersionAtStart)) {
     return false
