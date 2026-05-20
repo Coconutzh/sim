@@ -5,7 +5,7 @@ import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
-  getUserEntityPermissions,
+  checkWorkspaceAccess,
   getWorkspaceMemberProfiles,
 } from '@/lib/workspaces/permissions/utils'
 
@@ -35,8 +35,8 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
 
-      const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
-      if (permission === null) {
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
       }
 
