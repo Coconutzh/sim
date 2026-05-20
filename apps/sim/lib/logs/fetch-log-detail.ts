@@ -2,12 +2,12 @@ import { db } from '@sim/db'
 import {
   jobExecutionLogs,
   pausedExecutions,
-  permissions,
   workflow,
   workflowDeploymentVersion,
   workflowExecutionLogs,
 } from '@sim/db/schema'
 import { and, eq, type SQL } from 'drizzle-orm'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 type LookupColumn = 'id' | 'executionId'
 
@@ -29,6 +29,11 @@ export async function fetchLogDetail({
   lookupColumn,
   lookupValue,
 }: FetchLogDetailArgs) {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.hasAccess) {
+    return null
+  }
+
   const workflowMatch: SQL =
     lookupColumn === 'id'
       ? eq(workflowExecutionLogs.id, lookupValue)
@@ -71,14 +76,6 @@ export async function fetchLogDetail({
       eq(workflowDeploymentVersion.id, workflowExecutionLogs.deploymentVersionId)
     )
     .leftJoin(pausedExecutions, eq(pausedExecutions.executionId, workflowExecutionLogs.executionId))
-    .innerJoin(
-      permissions,
-      and(
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-        eq(permissions.userId, userId)
-      )
-    )
     .where(and(workflowMatch, eq(workflowExecutionLogs.workspaceId, workspaceId)))
     .limit(1)
 
@@ -155,14 +152,6 @@ export async function fetchLogDetail({
       createdAt: jobExecutionLogs.createdAt,
     })
     .from(jobExecutionLogs)
-    .innerJoin(
-      permissions,
-      and(
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, jobExecutionLogs.workspaceId),
-        eq(permissions.userId, userId)
-      )
-    )
     .where(and(jobMatch, eq(jobExecutionLogs.workspaceId, workspaceId)))
     .limit(1)
 
