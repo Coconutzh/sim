@@ -21,22 +21,9 @@ import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/typ
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { getTool } from '@/tools/utils'
 
-const logger = createLogger('Serializer')
+export { WorkflowValidationError } from '@/serializer/errors'
 
-/**
- * Structured validation error for pre-execution workflow validation
- */
-export class WorkflowValidationError extends Error {
-  constructor(
-    message: string,
-    public blockId?: string,
-    public blockType?: string,
-    public blockName?: string
-  ) {
-    super(message)
-    this.name = 'WorkflowValidationError'
-  }
-}
+const logger = createLogger('Serializer')
 
 /**
  * Helper function to check if a subblock should be serialized.

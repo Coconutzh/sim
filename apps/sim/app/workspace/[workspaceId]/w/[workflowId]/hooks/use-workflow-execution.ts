@@ -45,7 +45,7 @@ import {
   SSEStreamInterruptedError,
   useExecutionStream,
 } from '@/hooks/use-execution-stream'
-import { WorkflowValidationError } from '@/serializer'
+import { WorkflowValidationError } from '@/serializer/errors'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import {
