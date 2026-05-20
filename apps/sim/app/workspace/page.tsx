@@ -8,6 +8,7 @@ import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
+import { getWorkflowRedirectPath } from '@/app/workspace/redirect-workflow'
 import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')
@@ -88,12 +89,14 @@ async function handleWorkflowRedirect(
     const workflowData = await requestJson(getWorkflowStateContract, {
       params: { id: workflowId },
     })
-    const workspaceId = workflowData.data.workspaceId
-    if (workspaceId) {
-      logger.info(`Redirecting workflow ${workflowId} to workspace ${workspaceId}`)
-      router.replace(`/workspace/${workspaceId}/w/${workflowId}`)
-      return
-    }
+    const redirectPath = getWorkflowRedirectPath({
+      workflowId,
+      fallbackWorkspaceId,
+      workflow: workflowData.data,
+    })
+    logger.info(`Redirecting workflow ${workflowId} to ${redirectPath}`)
+    router.replace(redirectPath)
+    return
   } catch (error) {
     logger.error('Error fetching workflow for redirect:', error)
   }
