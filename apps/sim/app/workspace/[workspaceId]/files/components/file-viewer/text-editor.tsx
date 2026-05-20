@@ -14,8 +14,8 @@ import {
 } from '@/hooks/queries/workspace-files'
 import { useAutosave } from '@/hooks/use-autosave'
 import { EditorContextMenu } from './editor-context-menu'
-import type { PreviewMode } from './file-viewer'
-import { PreviewPanel, resolvePreviewType } from './preview-panel'
+import { PreviewPanel } from './preview-panel'
+import { type PreviewMode, resolvePreviewType } from './preview-types'
 import {
   INITIAL_TEXT_EDITOR_CONTENT_STATE,
   type StreamingMode,

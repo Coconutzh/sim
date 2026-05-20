@@ -4,8 +4,10 @@ import { forwardRef, memo, useState } from 'react'
 import type { FilePreviewSession } from '@/lib/copilot/request/session'
 import { cn } from '@/lib/core/utils/cn'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
-import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
-import { RICH_PREVIEWABLE_EXTENSIONS } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
+import {
+  type PreviewMode,
+  RICH_PREVIEWABLE_EXTENSIONS,
+} from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-types'
 import { hasRenderableFilePreviewContent } from '@/app/workspace/[workspaceId]/home/hooks/use-file-preview-sessions'
 import type {
   GenericResourceData,

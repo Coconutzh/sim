@@ -9,6 +9,7 @@ import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
 import { useWorkspaceFileBinary } from '@/hooks/queries/workspace-files'
 import { resolveFileCategory } from './file-category'
+import type { PreviewMode } from './preview-types'
 import type { StreamingMode } from './text-editor-state'
 
 export type { StreamingMode } from './text-editor-state'
@@ -17,7 +18,6 @@ import { DocxPreview } from './docx-preview'
 import { ImagePreview } from './image-preview'
 import type { PdfDocumentSource } from './pdf-viewer'
 import { PptxPreview } from './pptx-preview'
-import { resolvePreviewType } from './preview-panel'
 import { PDF_PAGE_SKELETON, PreviewError, resolvePreviewError } from './preview-shared'
 import { TextEditor } from './text-editor'
 import { XlsxPreview } from './xlsx-preview'
@@ -27,16 +27,6 @@ const PdfViewerCore = dynamic(() => import('./pdf-viewer').then((m) => m.PdfView
 })
 
 const logger = createLogger('FileViewer')
-
-export function isTextEditable(file: { type: string; name: string }): boolean {
-  return resolveFileCategory(file.type, file.name) === 'text-editable'
-}
-
-export function isPreviewable(file: { type: string; name: string }): boolean {
-  return resolvePreviewType(file.type, file.name) !== null
-}
-
-export type PreviewMode = 'editor' | 'split' | 'preview'
 
 interface FileViewerProps {
   file: WorkspaceFileRecord

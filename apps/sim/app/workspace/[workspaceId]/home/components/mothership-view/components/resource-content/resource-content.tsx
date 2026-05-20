@@ -23,10 +23,7 @@ import {
 import { triggerFileDownload } from '@/lib/uploads/client/download'
 import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
 import { workflowBorderColor } from '@/lib/workspaces/colors'
-import {
-  FileViewer,
-  type PreviewMode,
-} from '@/app/workspace/[workspaceId]/files/components/file-viewer'
+import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-types'
 import { GenericResourceContent } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-content/generic-resource-content'
 import {
   RESOURCE_TAB_ICON_BUTTON_CLASS,
@@ -56,6 +53,11 @@ import { useExecutionStore } from '@/stores/execution/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const Workflow = lazy(() => import('@/app/workspace/[workspaceId]/w/[workflowId]/workflow'))
+const LazyFileViewer = lazy(() =>
+  import('@/app/workspace/[workspaceId]/files/components/file-viewer').then((module) => ({
+    default: module.FileViewer,
+  }))
+)
 
 const LOADING_SKELETON = (
   <div className='flex h-full flex-col gap-2 p-6'>
@@ -133,16 +135,18 @@ export const ResourceContent = memo(function ResourceContent({
     return (
       <div className='flex h-full flex-col overflow-hidden'>
         {streamingPreviewText !== undefined ? (
-          <FileViewer
-            file={syntheticFile}
-            workspaceId={workspaceId}
-            canEdit={false}
-            previewMode={previewMode ?? 'preview'}
-            streamingContent={streamingPreviewText}
-            streamingMode='replace'
-            disableStreamingAutoScroll={disableStreamingAutoScroll}
-            previewContextKey={previewContextKey}
-          />
+          <Suspense fallback={LOADING_SKELETON}>
+            <LazyFileViewer
+              file={syntheticFile}
+              workspaceId={workspaceId}
+              canEdit={false}
+              previewMode={previewMode ?? 'preview'}
+              streamingContent={streamingPreviewText}
+              streamingMode='replace'
+              disableStreamingAutoScroll={disableStreamingAutoScroll}
+              previewContextKey={previewContextKey}
+            />
+          </Suspense>
         ) : (
           <div className='flex h-full items-center justify-center'>
             <p className='text-[13px] text-[var(--text-muted)]'>Processing file...</p>
@@ -559,17 +563,19 @@ function EmbeddedFile({
 
   return (
     <div className='flex h-full flex-col overflow-hidden'>
-      <FileViewer
-        key={file.id}
-        file={file}
-        workspaceId={workspaceId}
-        canEdit={canEdit}
-        streamingMode={streamingMode}
-        previewMode={previewMode}
-        streamingContent={streamingContent}
-        disableStreamingAutoScroll={disableStreamingAutoScroll}
-        previewContextKey={previewContextKey}
-      />
+      <Suspense fallback={LOADING_SKELETON}>
+        <LazyFileViewer
+          key={file.id}
+          file={file}
+          workspaceId={workspaceId}
+          canEdit={canEdit}
+          streamingMode={streamingMode}
+          previewMode={previewMode}
+          streamingContent={streamingContent}
+          disableStreamingAutoScroll={disableStreamingAutoScroll}
+          previewContextKey={previewContextKey}
+        />
+      </Suspense>
     </div>
   )
 }

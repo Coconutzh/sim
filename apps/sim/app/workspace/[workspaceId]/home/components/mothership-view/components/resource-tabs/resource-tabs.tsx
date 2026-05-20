@@ -15,7 +15,7 @@ import { Columns3, Eye, PanelLeft, Pencil } from '@/components/emcn/icons'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { isEphemeralResource } from '@/lib/copilot/resources/types'
 import { cn } from '@/lib/core/utils/cn'
-import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
+import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-types'
 import { AddResourceDropdown } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown'
 import { getResourceConfig } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
 import {
