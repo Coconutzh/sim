@@ -43,7 +43,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
 
 const logger = createLogger('TemplateDetails')
@@ -809,7 +809,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                 {template.requiredCredentials
                   .map((cred: CredentialRequirement) => {
                     const blockName =
-                      getBlock(cred.blockType)?.name ||
+                      getBlockConfigFromCatalog(cred.blockType)?.name ||
                       cred.blockType.charAt(0).toUpperCase() + cred.blockType.slice(1)
                     const alreadyHasBlock = cred.label
                       .toLowerCase()

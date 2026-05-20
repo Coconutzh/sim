@@ -3,6 +3,7 @@ import blockCatalogJson from '@/blocks/catalog.generated.json'
 import type { BlockCatalogEntry } from '@/blocks/catalog-types'
 import { getBlockCatalogIcon } from '@/blocks/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { getAnyToolCatalogEntry } from '@/tools/catalog'
 
 const BLOCK_CATALOG = blockCatalogJson as Record<string, BlockCatalogEntry>
 
@@ -79,6 +80,20 @@ export function getBlockConfigFromCatalog(type: string): BlockConfig | undefined
     icon: getBlockCatalogIcon(entry.iconName) ?? (() => null),
     tools: entry.tools ?? { access: [] },
   } as BlockConfig
+}
+
+export function getBlockConfigByToolNameFromCatalog(toolName: string): BlockConfig | undefined {
+  const toolEntry = getAnyToolCatalogEntry(toolName)
+  if (toolEntry?.service) {
+    const serviceBlock = getBlockConfigFromCatalog(toolEntry.service)
+    if (serviceBlock) return serviceBlock
+  }
+
+  const blockType = Object.keys(ALL_BLOCK_CATALOG).find((type) =>
+    ALL_BLOCK_CATALOG[type].tools?.access?.includes(toolName)
+  )
+
+  return blockType ? getBlockConfigFromCatalog(blockType) : undefined
 }
 
 export function getAllBlockCatalogEntries(): BlockCatalogEntry[] {

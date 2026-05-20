@@ -4,7 +4,7 @@ import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import type { TraceSpan } from '@/lib/logs/types'
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
 import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
-import { getBlock, getBlockByToolName } from '@/blocks'
+import { getBlockConfigByToolNameFromCatalog, getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import { normalizeToolId } from '@/tools/normalize'
 
@@ -43,7 +43,7 @@ export function getBlockIconAndColor(
   if (lowerType === 'tool' && toolName) {
     const normalized = normalizeToolId(toolName)
     if (normalized === 'load_skill') return { icon: AgentSkillsIcon, bgColor: '#8B5CF6' }
-    const toolBlock = getBlockByToolName(normalized)
+    const toolBlock = getBlockConfigByToolNameFromCatalog(normalized)
     if (toolBlock) return { icon: toolBlock.icon, bgColor: toolBlock.bgColor }
   }
   if (lowerType === 'loop' || lowerType === 'loop-iteration')
@@ -57,7 +57,7 @@ export function getBlockIconAndColor(
       return { icon: providerDef.icon, bgColor: providerDef.color ?? DEFAULT_BLOCK_COLOR }
   }
   const blockType = lowerType === 'model' ? 'agent' : lowerType
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getBlockConfigFromCatalog(blockType)
   if (blockConfig) return { icon: blockConfig.icon, bgColor: blockConfig.bgColor }
   return { icon: null, bgColor: DEFAULT_BLOCK_COLOR }
 }

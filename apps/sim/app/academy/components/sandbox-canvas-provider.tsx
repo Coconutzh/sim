@@ -18,7 +18,7 @@ import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { SandboxWorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import Workflow from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { workflowKeys } from '@/hooks/queries/workflows'
 import { SandboxBlockConstraintsContext } from '@/hooks/use-sandbox-block-constraints'
 import { useExecutionStore } from '@/stores/execution/store'
@@ -63,7 +63,7 @@ function buildWorkflowState(
   const blocks: Record<string, BlockState> = {}
 
   for (const exerciseBlock of initialBlocks) {
-    const config = getBlock(exerciseBlock.type)
+    const config = getBlockConfigFromCatalog(exerciseBlock.type)
     if (!config) {
       logger.warn(`Unknown block type "${exerciseBlock.type}" in exercise config`)
       continue

@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { cn } from '@/lib/core/utils/cn'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useStarTemplate } from '@/hooks/queries/templates'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -72,7 +72,7 @@ const extractBlockTypesFromState = (state?: {
 }
 
 const getBlockConfig = (blockType: string) => {
-  const block = getBlock(blockType)
+  const block = getBlockConfigFromCatalog(blockType)
   return block
 }
 

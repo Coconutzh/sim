@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { ColumnDefinition, TableDefinition, TableRow, WorkflowGroup } from '@/lib/table'
 import { TABLE_LIMITS } from '@/lib/table/constants'
 import type { FlattenOutputsBlockInput } from '@/lib/workflows/blocks/flatten-outputs'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import {
   tableRowsInfiniteOptions,
   useInfiniteTableRows,
@@ -150,7 +150,7 @@ export function useTable({ workspaceId, tableId, queryOptions }: UseTableParams)
       const blocks = (state as { blocks?: Record<string, FlattenOutputsBlockInput> } | null)?.blocks
       for (const out of group.outputs) {
         const block = blocks?.[out.blockId]
-        const blockConfig = block?.type ? getBlock(block.type) : undefined
+        const blockConfig = block?.type ? getBlockConfigFromCatalog(block.type) : undefined
         const blockIconInfo: BlockIconInfo | undefined = blockConfig?.icon
           ? { icon: blockConfig.icon, color: blockConfig.bgColor || '#2F55FF' }
           : undefined

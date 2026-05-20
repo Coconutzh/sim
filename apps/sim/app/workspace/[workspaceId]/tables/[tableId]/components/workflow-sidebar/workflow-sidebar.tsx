@@ -46,7 +46,7 @@ import { normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import {
   useAddWorkflowGroup,
   useUpdateColumn,
@@ -402,7 +402,7 @@ function WorkflowSidebarBody({
     for (const f of flat) {
       let group = groupsByBlockId.get(f.blockId)
       if (!group) {
-        const blockConfig = getBlock(f.blockType)
+        const blockConfig = getBlockConfigFromCatalog(f.blockType)
         const blockColor = blockConfig?.bgColor || '#2F55FF'
         let blockIcon: string | React.ComponentType<{ className?: string }> = f.blockName
           .charAt(0)

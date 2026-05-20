@@ -22,7 +22,7 @@ import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
 import { captureEvent } from '@/lib/posthog/client'
 import { workflowBorderColor } from '@/lib/workspaces/colors'
 import { type LogStatus, STATUS_CONFIG } from '@/app/workspace/[workspaceId]/logs/utils'
-import { getBlock } from '@/blocks/registry'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useFilterStore } from '@/stores/logs/filters/store'
@@ -147,7 +147,7 @@ function getTriggerIcon(
 ): React.ComponentType<{ className?: string }> | undefined {
   if ((CORE_TRIGGER_TYPES as readonly string[]).includes(triggerType)) return undefined
 
-  const block = getBlock(triggerType)
+  const block = getBlockConfigFromCatalog(triggerType)
   if (!block?.icon) return undefined
 
   const BlockIcon = block.icon
