@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { member, permissions, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import {
   ensureUserInOrganization,
@@ -47,7 +47,7 @@ export async function attachOwnedWorkspacesToOrganization({
   const ownedWorkspaces = await db
     .select({ id: workspace.id })
     .from(workspace)
-    .where(eq(workspace.ownerId, ownerUserId))
+    .where(and(eq(workspace.ownerId, ownerUserId), isNull(workspace.archivedAt)))
 
   const billedAccountUserId = await getOrganizationOwnerId(organizationId)
   if (!billedAccountUserId) {
@@ -160,7 +160,8 @@ export async function detachOrganizationWorkspaces(
     .where(
       and(
         eq(workspace.organizationId, organizationId),
-        eq(workspace.workspaceMode, WORKSPACE_MODE.ORGANIZATION)
+        eq(workspace.workspaceMode, WORKSPACE_MODE.ORGANIZATION),
+        isNull(workspace.archivedAt)
       )
     )
 

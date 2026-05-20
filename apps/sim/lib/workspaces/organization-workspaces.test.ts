@@ -231,6 +231,20 @@ describe('organization workspace helpers', () => {
     })
   })
 
+  it('skips archived owned workspaces during organization attachment', async () => {
+    mockDbResults.value = [[], [{ userId: 'owner-1' }], [], [], []]
+
+    const result = await attachOwnedWorkspacesToOrganization({
+      ownerUserId: 'user-1',
+      organizationId: 'org-1',
+    })
+
+    expect(result.attachedWorkspaceIds).toEqual([])
+    expect(result.addedMemberIds).toEqual([])
+    expect(mockEnsureUserInOrganization).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
   it('detaches organization workspaces into grandfathered shared mode', async () => {
     mockDbResults.value = [[{ userId: 'owner-1' }], [{ id: 'ws-1', ownerId: 'creator-1' }]]
 
@@ -246,5 +260,16 @@ describe('organization workspace helpers', () => {
       })
     )
     expect(mockOnConflictDoUpdate).toHaveBeenCalled()
+  })
+
+  it('skips archived organization workspaces during detach', async () => {
+    mockDbResults.value = [[{ userId: 'owner-1' }], []]
+
+    const result = await detachOrganizationWorkspaces('org-1')
+
+    expect(result.detachedWorkspaceIds).toEqual([])
+    expect(result.billedAccountUserId).toBe('owner-1')
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+    expect(mockDbInsert).not.toHaveBeenCalled()
   })
 })
