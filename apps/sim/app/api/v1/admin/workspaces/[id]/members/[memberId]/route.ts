@@ -37,6 +37,7 @@ import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
+  forbiddenResponse,
   internalErrorResponse,
   notFoundResponse,
   singleResponse,
@@ -52,6 +53,10 @@ interface RouteParams {
 
 function ownerMemberId(workspaceId: string, ownerId: string): string {
   return `owner:${workspaceId}:${ownerId}`
+}
+
+function isPersonalWorkspace(workspaceMode: string | null | undefined): boolean {
+  return workspaceMode === 'personal'
 }
 
 function ownerMemberResponse({
@@ -155,6 +160,13 @@ export const GET = withRouteHandler(
         return notFoundResponse('Workspace member')
       }
 
+      if (
+        isPersonalWorkspace(workspaceData.workspaceMode) &&
+        memberData.userId !== workspaceData.ownerId
+      ) {
+        return notFoundResponse('Workspace member')
+      }
+
       if (memberData.userId === workspaceData.ownerId) {
         return singleResponse(
           ownerMemberResponse({
@@ -235,6 +247,10 @@ export const PATCH = withRouteHandler(
         return badRequestResponse('Cannot modify the workspace owner from this endpoint')
       }
 
+      if (isPersonalWorkspace(workspaceData.workspaceMode)) {
+        return forbiddenResponse('Personal workspaces do not support shared members')
+      }
+
       const now = new Date()
 
       await db
@@ -312,6 +328,10 @@ export const DELETE = withRouteHandler(
 
       if (existingMember.userId === workspaceData.ownerId) {
         return badRequestResponse('Cannot remove the workspace owner from this endpoint')
+      }
+
+      if (isPersonalWorkspace(workspaceData.workspaceMode)) {
+        return forbiddenResponse('Personal workspaces do not support shared members')
       }
 
       await db.delete(permissions).where(eq(permissions.id, memberId))

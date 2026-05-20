@@ -53,6 +53,8 @@ import { DELETE, GET, PATCH } from './route'
 describe('GET /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDbSelect.mockReset()
+    mockParseRequest.mockReset()
     permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
       id: 'ws-owner',
       name: 'Owner Workspace',
@@ -147,11 +149,50 @@ describe('GET /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
       })
     )
   })
+
+  it('hides stale non-owner permission rows for personal workspaces', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-user-2' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-user-2',
+          userId: 'user-2',
+          permissionType: 'write',
+          createdAt: new Date('2026-05-21T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+          userName: 'User Two',
+          userEmail: 'user2@example.com',
+          userImage: null,
+        },
+      ])
+    )
+
+    const response = await GET(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-user-2') as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-user-2' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data.error).toEqual({
+      code: 'NOT_FOUND',
+      message: 'Workspace member not found',
+    })
+  })
 })
 
 describe('PATCH /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDbSelect.mockReset()
+    mockParseRequest.mockReset()
     permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
       id: 'ws-owner',
       name: 'Owner Workspace',
@@ -199,11 +240,50 @@ describe('PATCH /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
       message: 'Cannot modify the workspace owner from this endpoint',
     })
   })
+
+  it('rejects non-owner updates on personal workspaces', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-user-2' },
+        body: { permissions: 'read' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-user-2',
+          userId: 'user-2',
+          permissionType: 'write',
+          createdAt: new Date('2026-05-21T00:00:00.000Z'),
+        },
+      ])
+    )
+
+    const response = await PATCH(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-user-2', {
+        method: 'PATCH',
+        body: JSON.stringify({ permissions: 'read' }),
+      }) as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-user-2' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data.error).toEqual({
+      code: 'FORBIDDEN',
+      message: 'Personal workspaces do not support shared members',
+    })
+  })
 })
 
 describe('DELETE /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDbSelect.mockReset()
+    mockParseRequest.mockReset()
     permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
       id: 'ws-owner',
       name: 'Owner Workspace',
@@ -245,6 +325,39 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
     expect(data.error).toEqual({
       code: 'BAD_REQUEST',
       message: 'Cannot remove the workspace owner from this endpoint',
+    })
+  })
+
+  it('rejects non-owner removals on personal workspaces', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-user-2' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-user-2',
+          userId: 'user-2',
+        },
+      ])
+    )
+
+    const response = await DELETE(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-user-2', {
+        method: 'DELETE',
+      }) as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-user-2' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data.error).toEqual({
+      code: 'FORBIDDEN',
+      message: 'Personal workspaces do not support shared members',
     })
   })
 })

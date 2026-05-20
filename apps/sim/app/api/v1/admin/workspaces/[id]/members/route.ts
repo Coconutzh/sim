@@ -48,6 +48,7 @@ import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
+  forbiddenResponse,
   internalErrorResponse,
   listResponse,
   notFoundResponse,
@@ -63,6 +64,10 @@ interface RouteParams {
 
 function ownerMemberId(workspaceId: string, ownerId: string): string {
   return `owner:${workspaceId}:${ownerId}`
+}
+
+function isPersonalWorkspace(workspaceMode: string | null | undefined): boolean {
+  return workspaceMode === 'personal'
 }
 
 export const GET = withRouteHandler(
@@ -93,23 +98,25 @@ export const GET = withRouteHandler(
           .from(user)
           .where(eq(user.id, workspaceData.ownerId))
           .limit(1),
-        db
-          .select({
-            id: permissions.id,
-            userId: permissions.userId,
-            permissionType: permissions.permissionType,
-            createdAt: permissions.createdAt,
-            updatedAt: permissions.updatedAt,
-            userName: user.name,
-            userEmail: user.email,
-            userImage: user.image,
-          })
-          .from(permissions)
-          .innerJoin(user, eq(permissions.userId, user.id))
-          .where(
-            and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))
-          )
-          .orderBy(permissions.createdAt),
+        isPersonalWorkspace(workspaceData.workspaceMode)
+          ? Promise.resolve([])
+          : db
+              .select({
+                id: permissions.id,
+                userId: permissions.userId,
+                permissionType: permissions.permissionType,
+                createdAt: permissions.createdAt,
+                updatedAt: permissions.updatedAt,
+                userName: user.name,
+                userEmail: user.email,
+                userImage: user.image,
+              })
+              .from(permissions)
+              .innerJoin(user, eq(permissions.userId, user.id))
+              .where(
+                and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))
+              )
+              .orderBy(permissions.createdAt),
       ])
 
       const membersByUserId = new Map<string, AdminWorkspaceMember>(
@@ -177,6 +184,10 @@ export const POST = withRouteHandler(
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
+        return forbiddenResponse('Personal workspaces do not support shared members')
       }
 
       if (workspaceData.ownerId === userId) {
@@ -351,6 +362,10 @@ export const DELETE = withRouteHandler(
 
       if (workspaceData.ownerId === userId) {
         return badRequestResponse('Cannot remove the workspace owner from this endpoint')
+      }
+
+      if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
+        return forbiddenResponse('Personal workspaces do not support shared members')
       }
 
       const [existingPermission] = await db
