@@ -199,6 +199,16 @@ export const PUT = withRouteHandler(
           return NextResponse.json({ error: 'Access denied to workflow' }, { status: 403 })
         }
 
+        if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+          logger.warn(
+            `[${requestId}] User denied workspace-only workflow state sync for template ${id}`
+          )
+          return NextResponse.json(
+            { error: 'Cross-team published workflow access does not include template state sync' },
+            { status: 403 }
+          )
+        }
+
         const { loadWorkflowFromNormalizedTables } = await import(
           '@/lib/workflows/persistence/utils'
         )
