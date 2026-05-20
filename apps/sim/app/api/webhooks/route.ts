@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, webhook, workflow, workflowDeploymentVersion } from '@sim/db/schema'
+import { webhook, workflow, workflowDeploymentVersion } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import {
@@ -27,6 +27,7 @@ import {
 import { getProviderHandler } from '@/lib/webhooks/providers'
 import { mergeNonUserFields } from '@/lib/webhooks/utils'
 import { syncWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import { extractCredentialSetId, isCredentialSetValue } from '@/executor/constants'
 
 const logger = createLogger('WebhooksAPI')
@@ -147,12 +148,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ webhooks: [] }, { status: 200 })
     }
 
-    const workspacePermissionRows = await db
-      .select({ workspaceId: permissions.entityId })
-      .from(permissions)
-      .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-
-    const workspaceIds = workspacePermissionRows.map((row) => row.workspaceId)
+    const workspaceIds = await listAccessibleWorkspaceIds(session.user.id)
     if (workspaceIds.length === 0) {
       return NextResponse.json({ webhooks: [] }, { status: 200 })
     }
