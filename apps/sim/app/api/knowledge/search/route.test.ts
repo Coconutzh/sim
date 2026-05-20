@@ -172,6 +172,8 @@ describe('Knowledge Search API Route', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockClear().mockResolvedValue({
       allowed: true,
       status: 200,
+      accessSource: 'workspace',
+      workflow: { id: 'workflow-123', workspaceId: 'ws-1' },
     })
 
     vi.stubGlobal('crypto', {
@@ -211,6 +213,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          workspaceId: 'ws-1',
         },
       })
 
@@ -303,6 +306,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          workspaceId: 'ws-1',
         },
       })
 
@@ -329,6 +333,28 @@ describe('Knowledge Search API Route', () => {
         userId: 'user-123',
         action: 'read',
       })
+    })
+
+    it('should reject published workflow readers from knowledge search', async () => {
+      const workflowData = {
+        ...validSearchData,
+        workflowId: 'workflow-123',
+      }
+
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        status: 200,
+        accessSource: 'published',
+        workflow: { id: 'workflow-123', workspaceId: 'ws-1' },
+      })
+
+      const req = createMockRequest('POST', workflowData)
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data.error).toBe('Access denied')
+      expect(mockCheckKnowledgeBaseAccess).not.toHaveBeenCalled()
     })
 
     it.concurrent('should return unauthorized for unauthenticated request', async () => {

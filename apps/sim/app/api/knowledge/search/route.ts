@@ -43,6 +43,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = auth.userId
+    let workflowWorkspaceId: string | null = null
 
     if (workflowId) {
       const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -53,9 +54,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       if (!authorization.allowed) {
         return NextResponse.json(
           { error: authorization.message || 'Access denied' },
-          { status: authorization.status }
+          { status: authorization.status || 403 }
         )
       }
+      if (authorization.accessSource !== 'workspace') {
+        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      }
+      workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
     }
 
     const validation = knowledgeSearchBodySchema.safeParse(searchParams)
@@ -222,25 +227,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       ? generateSearchEmbedding(validatedData.query!, queryEmbeddingModel, workspaceId)
       : Promise.resolve(null)
 
-    if (workflowId) {
-      const authorization = await authorizeWorkflowByWorkspacePermission({
-        workflowId: workflowId as string,
-        userId,
-        action: 'read',
-      })
-      const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
-      if (
-        workflowWorkspaceId &&
-        accessChecks.some(
-          (accessCheck) =>
-            accessCheck?.hasAccess && accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
-        )
-      ) {
-        return NextResponse.json(
-          { error: 'Knowledge base does not belong to the workflow workspace' },
-          { status: 400 }
-        )
-      }
+    if (
+      workflowWorkspaceId &&
+      accessChecks.some(
+        (accessCheck) =>
+          accessCheck?.hasAccess && accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Knowledge base does not belong to the workflow workspace' },
+        { status: 400 }
+      )
     }
 
     let results: SearchResult[]
