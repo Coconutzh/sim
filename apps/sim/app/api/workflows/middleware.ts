@@ -77,6 +77,15 @@ export async function validateWorkflowAccess(
         }
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return {
+          error: {
+            message: 'Cross-team published workflow access does not include workspace operations',
+            status: 403,
+          },
+        }
+      }
+
       return { workflow, auth }
     }
 

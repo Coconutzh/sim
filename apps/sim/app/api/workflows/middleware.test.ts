@@ -127,4 +127,26 @@ describe('validateWorkflowAccess (requireDeployment=false)', () => {
 
     expect(result.error).toEqual({ message: 'Access denied', status: 403 })
   })
+
+  it('rejects cross-team published access for workspace operations', async () => {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-1',
+      authType: 'session',
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: { id: 'wf-1', workspaceId: 'ws-A' },
+      workspacePermission: 'read',
+      accessSource: 'organization',
+    })
+
+    const result = await validateWorkflowAccess(makeRequest(), 'wf-1', false)
+
+    expect(result.error).toEqual({
+      message: 'Cross-team published workflow access does not include workspace operations',
+      status: 403,
+    })
+  })
 })

@@ -63,6 +63,16 @@ export const GET = withRouteHandler(
         )
       }
 
+      if (
+        workflowAuthorization.accessSource &&
+        workflowAuthorization.accessSource !== 'workspace'
+      ) {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include execution streams' },
+          { status: 403 }
+        )
+      }
+
       const metaResult = await readExecutionMetaState(executionId)
       if (metaResult.status === 'unavailable') {
         return NextResponse.json({ error: 'Run buffer temporarily unavailable' }, { status: 503 })

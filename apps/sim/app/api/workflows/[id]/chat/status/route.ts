@@ -41,6 +41,13 @@ export const GET = withRouteHandler(
         )
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return createErrorResponse(
+          'Cross-team published workflow access does not include deployment status',
+          403
+        )
+      }
+
       // Find any active chat deployments for this workflow
       const deploymentResults = await db
         .select({
