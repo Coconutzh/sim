@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { permissions, workspace } from '@sim/db/schema'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import type { getWorkflowById } from '@/lib/workflows/utils'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
@@ -35,12 +35,18 @@ export async function ensureWorkflowAccess(
 export async function getDefaultWorkspaceId(userId: string): Promise<string> {
   const workspaces = await db
     .select({ workspaceId: workspace.id })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+    .from(workspace)
+    .leftJoin(
+      permissions,
+      and(
+        eq(permissions.entityId, workspace.id),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.userId, userId)
+      )
+    )
     .where(
       and(
-        eq(permissions.userId, userId),
-        eq(permissions.entityType, 'workspace'),
+        or(eq(workspace.ownerId, userId), isNotNull(permissions.id)),
         isNull(workspace.archivedAt)
       )
     )
