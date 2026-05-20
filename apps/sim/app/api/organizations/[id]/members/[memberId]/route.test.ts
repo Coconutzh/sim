@@ -5,12 +5,17 @@
 import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, recordAuditMock, removeExternalUserFromOrganizationWorkspacesMock } =
-  vi.hoisted(() => ({
-    getSessionMock: vi.fn(),
-    recordAuditMock: vi.fn(),
-    removeExternalUserFromOrganizationWorkspacesMock: vi.fn(),
-  }))
+const {
+  getSessionMock,
+  getUserUsageDataMock,
+  recordAuditMock,
+  removeExternalUserFromOrganizationWorkspacesMock,
+} = vi.hoisted(() => ({
+  getSessionMock: vi.fn(),
+  getUserUsageDataMock: vi.fn(),
+  recordAuditMock: vi.fn(),
+  removeExternalUserFromOrganizationWorkspacesMock: vi.fn(),
+}))
 
 const mockDbResults = vi.hoisted(() => ({ value: [] as unknown[] }))
 
@@ -43,6 +48,7 @@ vi.mock('@sim/db/schema', () => ({
     userId: 'member.userId',
   },
   user: {
+    createdAt: 'user.createdAt',
     email: 'user.email',
     id: 'user.id',
     name: 'user.name',
@@ -80,7 +86,7 @@ vi.mock('@/lib/auth/active-organization', () => ({
 }))
 
 vi.mock('@/lib/billing/core/usage', () => ({
-  getUserUsageData: vi.fn(),
+  getUserUsageData: getUserUsageDataMock,
 }))
 
 vi.mock('@/lib/billing/organizations/membership', () => ({
@@ -96,7 +102,57 @@ vi.mock('@/lib/core/utils/with-route-handler', () => ({
   withRouteHandler: vi.fn((handler) => handler),
 }))
 
-import { DELETE } from './route'
+import { DELETE, GET } from './route'
+
+describe('GET /api/organizations/[id]/members/[memberId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbResults.value = []
+    getSessionMock.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+  })
+
+  it('returns details for synthetic external roster members', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    mockDbResults.value = [
+      [{ role: 'owner' }],
+      [],
+      [
+        {
+          id: 'external-1',
+          createdAt,
+          userName: 'External User',
+          userEmail: 'external@example.com',
+        },
+      ],
+    ]
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/organizations/org-1/members/external-external-1'),
+      {
+        params: Promise.resolve({ id: 'org-1', memberId: 'external-external-1' }),
+      } as any
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data).toEqual({
+      success: true,
+      data: {
+        id: 'external-external-1',
+        userId: 'external-1',
+        organizationId: 'org-1',
+        role: 'external',
+        createdAt: createdAt.toISOString(),
+        userName: 'External User',
+        userEmail: 'external@example.com',
+      },
+      userRole: 'owner',
+      hasAdminAccess: true,
+    })
+  })
+})
 
 describe('DELETE /api/organizations/[id]/members/[memberId]', () => {
   beforeEach(() => {

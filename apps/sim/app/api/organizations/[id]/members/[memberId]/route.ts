@@ -42,6 +42,7 @@ export const GET = withRouteHandler(
       }
 
       const { id: organizationId, memberId } = await params
+      const targetUserId = resolveOrganizationMemberUserId(memberId)
       const url = new URL(request.url)
       const includeUsage = url.searchParams.get('include') === 'usage'
 
@@ -73,22 +74,49 @@ export const GET = withRouteHandler(
         })
         .from(member)
         .innerJoin(user, eq(member.userId, user.id))
-        .where(and(eq(member.organizationId, organizationId), eq(member.userId, memberId)))
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, targetUserId)))
         .limit(1)
 
       const memberEntry = await memberQuery
 
-      if (memberEntry.length === 0) {
-        return NextResponse.json({ error: 'Member not found' }, { status: 404 })
-      }
-
-      const canViewDetails = hasAdminAccess || session.user.id === memberId
+      const canViewDetails = hasAdminAccess || session.user.id === targetUserId
 
       if (!canViewDetails) {
         return NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 })
       }
 
-      let memberData = memberEntry[0]
+      let memberData: Record<string, unknown> | null = memberEntry[0] ?? null
+
+      if (!memberData && memberId.startsWith('external-')) {
+        const [externalUser] = await db
+          .select({
+            id: user.id,
+            createdAt: user.createdAt,
+            userName: user.name,
+            userEmail: user.email,
+          })
+          .from(user)
+          .where(eq(user.id, targetUserId))
+          .limit(1)
+
+        if (!externalUser) {
+          return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+        }
+
+        memberData = {
+          id: memberId,
+          userId: externalUser.id,
+          organizationId,
+          role: 'external',
+          createdAt: externalUser.createdAt,
+          userName: externalUser.userName,
+          userEmail: externalUser.userEmail,
+        }
+      }
+
+      if (!memberData) {
+        return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+      }
 
       if (includeUsage && hasAdminAccess) {
         const usageData = await db
@@ -99,10 +127,10 @@ export const GET = withRouteHandler(
             lastPeriodCost: userStats.lastPeriodCost,
           })
           .from(userStats)
-          .where(eq(userStats.userId, memberId))
+          .where(eq(userStats.userId, targetUserId))
           .limit(1)
 
-        const computed = await getUserUsageData(memberId)
+        const computed = await getUserUsageData(targetUserId)
 
         if (usageData.length > 0) {
           memberData = {
