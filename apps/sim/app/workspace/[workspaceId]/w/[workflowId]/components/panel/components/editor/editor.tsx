@@ -53,6 +53,7 @@ import {
 } from '@/blocks/catalog'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
+import { isPublishedSummaryWorkflowState } from '@/hooks/queries/workflow-state-access'
 import { useWorkflowMap, useWorkflowState } from '@/hooks/queries/workflows'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePanelEditorStore } from '@/stores/panel'
@@ -362,6 +363,7 @@ export function Editor() {
 
   const { data: childWorkflowState, isLoading: isLoadingChildWorkflow } =
     useWorkflowState(childWorkflowId)
+  const childWorkflowIsPublishedSummary = isPublishedSummaryWorkflowState(childWorkflowState)
 
   /**
    * Handles opening the child workflow in a new tab.
@@ -576,19 +578,21 @@ export function Editor() {
                               />
                             </Suspense>
                           </div>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <Button
-                                type='button'
-                                variant='ghost'
-                                onClick={handleOpenChildWorkflow}
-                                className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
-                              >
-                                <ExternalLink className='h-[12px] w-[12px]' />
-                              </Button>
-                            </Tooltip.Trigger>
-                            <Tooltip.Content side='top'>Open workflow</Tooltip.Content>
-                          </Tooltip.Root>
+                          {!childWorkflowIsPublishedSummary && (
+                            <Tooltip.Root>
+                              <Tooltip.Trigger asChild>
+                                <Button
+                                  type='button'
+                                  variant='ghost'
+                                  onClick={handleOpenChildWorkflow}
+                                  className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
+                                >
+                                  <ExternalLink className='h-[12px] w-[12px]' />
+                                </Button>
+                              </Tooltip.Trigger>
+                              <Tooltip.Content side='top'>Open workflow</Tooltip.Content>
+                            </Tooltip.Root>
+                          )}
                         </>
                       ) : (
                         <div className='flex h-full items-center justify-center bg-[var(--surface-3)]'>

@@ -69,6 +69,7 @@ import {
   useMcpToolsEvents,
   useStoredMcpTools,
 } from '@/hooks/queries/mcp'
+import { isPublishedSummaryWorkflowState } from '@/hooks/queries/workflow-state-access'
 import { useWorkflowState, useWorkflows } from '@/hooks/queries/workflows'
 import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -147,9 +148,13 @@ function WorkflowInputMapperInput({
   workflowId: string
 }) {
   const { data: workflowState, isLoading } = useWorkflowState(workflowId)
+  const isPublishedSummary = isPublishedSummaryWorkflowState(workflowState)
   const inputFields = useMemo(
-    () => (workflowState?.blocks ? extractInputFieldsFromBlocks(workflowState.blocks) : []),
-    [workflowState?.blocks]
+    () =>
+      workflowState?.blocks && !isPublishedSummary
+        ? extractInputFieldsFromBlocks(workflowState.blocks)
+        : [],
+    [isPublishedSummary, workflowState?.blocks]
   )
 
   const parsedValue = useMemo(() => {
@@ -185,6 +190,13 @@ function WorkflowInputMapperInput({
   }
 
   if (inputFields.length === 0) {
+    if (isPublishedSummary) {
+      return (
+        <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
+          Shared published workflows do not expose editable input definitions
+        </div>
+      )
+    }
     return (
       <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
         This workflow has no custom input fields

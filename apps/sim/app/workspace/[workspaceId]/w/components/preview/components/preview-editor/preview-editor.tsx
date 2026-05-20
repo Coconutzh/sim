@@ -47,6 +47,7 @@ import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockConfig, BlockIcon, SubBlockConfig, SubBlockType } from '@/blocks/types'
 import { normalizeName } from '@/executor/constants'
 import { navigatePath } from '@/executor/variables/resolvers/reference'
+import { isPublishedSummaryWorkflowState } from '@/hooks/queries/workflow-state-access'
 import { useWorkflowState } from '@/hooks/queries/workflows'
 import { useCodeViewerFeatures } from '@/hooks/use-code-viewer'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -786,6 +787,8 @@ function PreviewEditorContent({
   const resolvedChildWorkflowState = isExecutionMode
     ? childWorkflowSnapshotState
     : childWorkflowState
+  const childWorkflowIsPublishedSummary =
+    !isExecutionMode && isPublishedSummaryWorkflowState(resolvedChildWorkflowState)
   const resolvedIsLoadingChildWorkflow = isExecutionMode ? false : isLoadingChildWorkflow
   const isBlockNotExecuted = isExecutionMode && !executionData
   const isMissingChildWorkflow =
@@ -801,12 +804,13 @@ function PreviewEditorContent({
     if (isExecutionMode && onDrillDown) {
       if (!childWorkflowSnapshotState) return
       onDrillDown(block.id, childWorkflowSnapshotState)
-    } else if (workspaceId) {
+    } else if (workspaceId && !childWorkflowIsPublishedSummary) {
       window.open(`/workspace/${workspaceId}/w/${childWorkflowId}`, '_blank', 'noopener,noreferrer')
     }
   }, [
     childWorkflowId,
     childWorkflowSnapshotState,
+    childWorkflowIsPublishedSummary,
     isExecutionMode,
     onDrillDown,
     block.id,
@@ -1410,25 +1414,29 @@ function PreviewEditorContent({
                             cursorStyle='grab'
                           />
                         </div>
-                        <Tooltip.Root>
-                          <Tooltip.Trigger asChild>
-                            <Button
-                              type='button'
-                              variant='ghost'
-                              onClick={handleExpandChildWorkflow}
-                              className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
-                            >
-                              {isExecutionMode && onDrillDown ? (
-                                <Maximize2 className='h-[12px] w-[12px]' />
-                              ) : (
-                                <ExternalLink className='h-[12px] w-[12px]' />
-                              )}
-                            </Button>
-                          </Tooltip.Trigger>
-                          <Tooltip.Content side='top'>
-                            {isExecutionMode && onDrillDown ? 'Expand workflow' : 'Open in new tab'}
-                          </Tooltip.Content>
-                        </Tooltip.Root>
+                        {(isExecutionMode || !childWorkflowIsPublishedSummary) && (
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                onClick={handleExpandChildWorkflow}
+                                className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
+                              >
+                                {isExecutionMode && onDrillDown ? (
+                                  <Maximize2 className='h-[12px] w-[12px]' />
+                                ) : (
+                                  <ExternalLink className='h-[12px] w-[12px]' />
+                                )}
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content side='top'>
+                              {isExecutionMode && onDrillDown
+                                ? 'Expand workflow'
+                                : 'Open in new tab'}
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                        )}
                       </>
                     ) : (
                       <div className='flex h-full items-center justify-center bg-[var(--surface-3)]'>

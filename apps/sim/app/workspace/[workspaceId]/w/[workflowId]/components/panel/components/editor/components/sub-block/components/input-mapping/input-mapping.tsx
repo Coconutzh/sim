@@ -9,6 +9,7 @@ import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { resolvePreviewContextValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/utils'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
+import { isPublishedSummaryWorkflowState } from '@/hooks/queries/workflow-state-access'
 import { useWorkflowState } from '@/hooks/queries/workflows'
 
 /**
@@ -79,9 +80,13 @@ export function InputMapping({
 
   const workflowId = typeof selectedWorkflowId === 'string' ? selectedWorkflowId : undefined
   const { data: workflowState, isLoading } = useWorkflowState(workflowId)
+  const isPublishedSummary = isPublishedSummaryWorkflowState(workflowState)
   const childInputFields = useMemo(
-    () => (workflowState?.blocks ? extractInputFieldsFromBlocks(workflowState.blocks) : []),
-    [workflowState?.blocks]
+    () =>
+      workflowState?.blocks && !isPublishedSummary
+        ? extractInputFieldsFromBlocks(workflowState.blocks)
+        : [],
+    [isPublishedSummary, workflowState?.blocks]
   )
   const [collapsedFields, setCollapsedFields] = useState<Record<string, boolean>>({})
 
@@ -150,6 +155,13 @@ export function InputMapping({
   }
 
   if (!childInputFields || childInputFields.length === 0) {
+    if (isPublishedSummary) {
+      return (
+        <p className='text-[var(--text-muted)] text-sm'>
+          Shared published workflows do not expose editable input definitions
+        </p>
+      )
+    }
     return <p className='text-[var(--text-muted)] text-sm'>No inputs available</p>
   }
 
