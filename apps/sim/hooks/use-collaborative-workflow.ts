@@ -23,7 +23,7 @@ import {
   workflowSearchSubflowFieldMatchesExpected,
 } from '@/lib/workflows/search-replace/subflow-fields'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { getSubBlocksDependingOnChange } from '@/blocks/utils'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { invalidateDeploymentQueries } from '@/hooks/queries/deployments'
@@ -1512,7 +1512,7 @@ export function useCollaborativeWorkflow() {
         if (visited.has(subblockId)) return
         visited.add(subblockId)
         const blockType = useWorkflowStore.getState().blocks?.[blockId]?.type
-        const blockConfig = blockType ? getBlock(blockType) : null
+        const blockConfig = blockType ? getAnyBlockCatalogEntry(blockType) : null
         if (blockConfig?.subBlocks && Array.isArray(blockConfig.subBlocks)) {
           const dependents = getSubBlocksDependingOnChange(blockConfig.subBlocks, subblockId)
           for (const dep of dependents) {

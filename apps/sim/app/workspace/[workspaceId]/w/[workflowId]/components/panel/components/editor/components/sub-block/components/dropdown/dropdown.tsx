@@ -6,7 +6,7 @@ import { Badge } from '@/components/emcn'
 import { Combobox, type ComboboxOption } from '@/components/emcn/components'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { getDependsOnFields } from '@/blocks/utils'
 import { ResponseBlockHandler } from '@/executor/handlers/response/response-handler'
@@ -99,7 +99,7 @@ export const Dropdown = memo(function Dropdown({
 
   const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blockState = useWorkflowStore((state) => state.blocks[blockId])
-  const blockConfig = blockState?.type ? getBlock(blockState.type) : null
+  const blockConfig = blockState?.type ? getAnyBlockCatalogEntry(blockState.type) : null
   const canonicalIndex = useMemo(
     () => buildCanonicalIndex(blockConfig?.subBlocks || []),
     [blockConfig?.subBlocks]

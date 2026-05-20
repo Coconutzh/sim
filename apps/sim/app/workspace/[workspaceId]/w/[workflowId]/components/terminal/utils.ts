@@ -7,7 +7,8 @@ import {
   SplitIcon,
   XCircleIcon,
 } from 'lucide-react'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import { isWorkflowBlockType } from '@/executor/constants'
 import { TERMINAL_BLOCK_COLUMN_WIDTH } from '@/stores/constants'
 import type { ConsoleEntry } from '@/stores/terminal'
@@ -36,10 +37,11 @@ const SPECIAL_BLOCK_COLORS = {
 export function getBlockIcon(
   blockType: string
 ): React.ComponentType<{ className?: string }> | null {
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getAnyBlockCatalogEntry(blockType)
+  const Icon = getBlockCatalogIcon(blockConfig?.iconName)
 
-  if (blockConfig?.icon) {
-    return blockConfig.icon
+  if (Icon) {
+    return Icon
   }
 
   if (blockType === 'loop') {
@@ -73,7 +75,7 @@ export function getBlockIcon(
  * Gets the background color for a block type
  */
 export function getBlockColor(blockType: string): string {
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getAnyBlockCatalogEntry(blockType)
   if (blockConfig?.bgColor) {
     return blockConfig.bgColor
   }

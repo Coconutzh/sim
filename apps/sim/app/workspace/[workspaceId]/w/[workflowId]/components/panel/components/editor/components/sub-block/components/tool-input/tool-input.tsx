@@ -49,7 +49,9 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WandControlHandlers } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block'
-import { getAllBlocks } from '@/blocks'
+import { getAllBlockCatalogEntries, getAnyBlockCatalogEntry } from '@/blocks/catalog'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
 import { BUILT_IN_TOOL_TYPES } from '@/blocks/utils'
 import { useMcpTools } from '@/hooks/mcp/use-mcp-tools'
@@ -97,6 +99,12 @@ import {
 } from '@/tools/params-resolver'
 
 const logger = createLogger('ToolInput')
+
+type ToolBlockItem = BlockCatalogEntry & {
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const EmptyToolIcon = () => null
 
 /**
  * Extracts canonical mode overrides scoped to a specific tool type.
@@ -348,7 +356,7 @@ function resolveCustomToolFromReference(
  * @returns `true` if the block has more than one tool operation available
  */
 function hasMultipleOperations(blockType: string): boolean {
-  const block = getAllBlocks().find((b) => b.type === blockType)
+  const block = getAnyBlockCatalogEntry(blockType)
   return (block?.tools?.access?.length || 0) > 1
 }
 
@@ -359,7 +367,7 @@ function hasMultipleOperations(blockType: string): boolean {
  * @returns Array of operation options with label and id properties
  */
 function getOperationOptions(blockType: string): { label: string; id: string }[] {
-  const block = getAllBlocks().find((b) => b.type === blockType)
+  const block = getAnyBlockCatalogEntry(blockType)
   if (!block || !block.tools?.access) return []
 
   const operationSubBlock = block.subBlocks.find((sb) => sb.id === 'operation')
@@ -460,9 +468,8 @@ export const ToolInput = memo(function ToolInput({
   // Look up credential type for reactive condition filtering (e.g. service account detection).
   // Uses canonical resolution so the active field (basic vs advanced) is respected.
   const toolCredentialId = useMemo(() => {
-    const allBlocks = getAllBlocks()
     for (const tool of selectedTools) {
-      const blockConfig = allBlocks.find((b: { type: string }) => b.type === tool.type)
+      const blockConfig = getAnyBlockCatalogEntry(tool.type)
       if (!blockConfig?.subBlocks) continue
       const toolCanonical = buildCanonicalIndex(blockConfig.subBlocks)
       const scopedOverrides: CanonicalModeOverrides = {}
@@ -599,7 +606,7 @@ export const ToolInput = memo(function ToolInput({
   const { filterBlocks, config: permissionConfig } = usePermissionConfig()
 
   const toolBlocks = useMemo(() => {
-    const allToolBlocks = getAllBlocks().filter(
+    const allToolBlocks = getAllBlockCatalogEntries().filter(
       (block) =>
         isBlockEnabled(block.type) &&
         !block.hideFromToolbar &&
@@ -615,7 +622,10 @@ export const ToolInput = memo(function ToolInput({
         block.type !== 'mcp' &&
         block.type !== 'file'
     )
-    return filterBlocks(allToolBlocks)
+    return filterBlocks(allToolBlocks).map((block) => ({
+      ...block,
+      icon: getBlockCatalogIcon(block.iconName) ?? EmptyToolIcon,
+    })) as ToolBlockItem[]
   }, [filterBlocks])
 
   const hasBackfilledRef = useRef(false)

@@ -1,10 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
-import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import type { SchemaField } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/connection-blocks/components/field-item/field-item'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
 const RESERVED_KEYS = new Set(['type', 'description'])
@@ -101,10 +99,9 @@ export function useBlockOutputFields({
   blockId,
   blockType,
   mergedSubBlocks,
-  triggerMode,
 }: UseBlockOutputFieldsParams): SchemaField[] {
   return useMemo(() => {
-    const blockConfig = getBlock(blockType)
+    const blockConfig = getAnyBlockCatalogEntry(blockType)
 
     // Handle loop/parallel blocks without config
     if (!blockConfig && (blockType === 'loop' || blockType === 'parallel')) {
@@ -140,16 +137,11 @@ export function useBlockOutputFields({
       return []
     }
 
-    const isTriggerCapable = hasTriggerCapability(blockConfig)
-    const effectiveTriggerMode = Boolean(triggerMode && isTriggerCapable)
-    const baseOutputs = getEffectiveBlockOutputs(blockType, mergedSubBlocks, {
-      triggerMode: effectiveTriggerMode,
-      preferToolOutputs: !effectiveTriggerMode,
-    }) as Record<string, any>
+    const baseOutputs = blockConfig.outputs as Record<string, any>
     if (Object.keys(baseOutputs).length === 0) {
       return []
     }
 
     return Object.entries(baseOutputs).map(([name, output]) => createFieldFromOutput(name, output))
-  }, [blockId, blockType, mergedSubBlocks, triggerMode])
+  }, [blockId, blockType, mergedSubBlocks])
 }

@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { AgentIcon } from '@/components/icons'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
@@ -53,12 +54,7 @@ interface AgentResponse extends ToolResponse {
 // Helper function to get the tool ID from a block type
 const getToolIdFromBlock = (blockType: string): string | undefined => {
   try {
-    const { getAllBlocks } = require('@/blocks/registry')
-    const blocks = getAllBlocks()
-    const block = blocks.find(
-      (b: { type: string; tools?: { access?: string[] } }) => b.type === blockType
-    )
-    return block?.tools?.access?.[0]
+    return getAnyBlockCatalogEntry(blockType)?.tools?.access?.[0]
   } catch (error) {
     logger.error('Error getting tool ID from block', { error })
     return undefined

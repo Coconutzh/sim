@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { populateTriggerFieldsFromConfig } from '@/hooks/use-trigger-config-aggregation'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -125,7 +125,7 @@ export const useSubBlockStore = create<SubBlockStore>()(
       }))
 
       Object.entries(blocks).forEach(([blockId, block]) => {
-        const blockConfig = getBlock(block.type)
+        const blockConfig = getAnyBlockCatalogEntry(block.type)
         if (!blockConfig) return
 
         const isTriggerBlock = blockConfig.category === 'triggers' || block.triggerMode === true

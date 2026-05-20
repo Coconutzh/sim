@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { isEqual } from 'es-toolkit'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -21,7 +21,7 @@ export function useCanonicalSubBlockValue<T = unknown>(
 ): T | null {
   const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blockState = useWorkflowStore((state) => state.blocks[blockId])
-  const blockConfig = blockState?.type ? getBlock(blockState.type) : null
+  const blockConfig = blockState?.type ? getAnyBlockCatalogEntry(blockState.type) : null
   const canonicalIndex = useMemo(
     () => buildCanonicalIndex(blockConfig?.subBlocks || []),
     [blockConfig?.subBlocks]

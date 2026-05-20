@@ -38,7 +38,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/utils'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
 import { getDependsOnFields } from '@/blocks/utils'
 import { useKnowledgeBase } from '@/hooks/kb/use-knowledge'
@@ -733,7 +733,7 @@ const SubBlockRow = memo(function SubBlockRow({
           tool.type !== 'workflow' &&
           tool.type !== 'workflow_input'
         ) {
-          const blockConfig = getBlock(tool.type)
+          const blockConfig = getAnyBlockCatalogEntry(tool.type)
           if (blockConfig?.name) return blockConfig.name
         }
 

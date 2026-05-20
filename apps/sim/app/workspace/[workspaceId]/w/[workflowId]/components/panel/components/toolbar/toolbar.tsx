@@ -28,7 +28,8 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/hooks'
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
 import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSandboxBlockConstraints } from '@/hooks/use-sandbox-block-constraints'
 import { useToolbarStore } from '@/stores/panel'
@@ -37,7 +38,7 @@ interface BlockItem {
   name: string
   type: string
   isSpecial: boolean
-  config?: BlockConfig
+  config?: BlockCatalogEntry
   icon?: any
   bgColor?: string
   docsLink?: string
@@ -175,7 +176,7 @@ function getTriggers(): BlockItem[] {
       name: trigger.name,
       type: trigger.type,
       config: trigger,
-      icon: trigger.icon,
+      icon: getBlockCatalogIcon(trigger.iconName),
       bgColor: trigger.bgColor,
       docsLink: trigger.docsLink,
       isSpecial: false,
@@ -205,7 +206,7 @@ function getBlocks() {
       name: block.name,
       type: block.type,
       config: block,
-      icon: block.icon,
+      icon: getBlockCatalogIcon(block.iconName),
       bgColor: block.bgColor,
       isSpecial: false,
     }))
@@ -234,7 +235,7 @@ function getBlocks() {
       name: block.name,
       type: block.type,
       config: block,
-      icon: block.icon,
+      icon: getBlockCatalogIcon(block.iconName),
       bgColor: block.bgColor,
       isSpecial: false,
     }))

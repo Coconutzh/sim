@@ -33,6 +33,7 @@
     "mship-tools:generate": "bun run scripts/sync-tool-catalog.ts",
     "mship-tools:check": "bun run scripts/sync-tool-catalog.ts --check",
     "sim-tools:generate": "bun run apps/sim/scripts/generate-tool-catalog.ts",
+    "sim-blocks:generate": "bun run apps/sim/scripts/generate-block-catalog.ts",
     "trace-contracts:generate": "bun run scripts/sync-request-trace-contract.ts",
     "trace-contracts:check": "bun run scripts/sync-request-trace-contract.ts --check",
     "trace-spans-contract:generate": "bun run scripts/sync-trace-spans-contract.ts",

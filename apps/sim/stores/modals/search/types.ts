@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
 
 /**
  * Represents a block item in the search results.
@@ -10,7 +10,7 @@ export interface SearchBlockItem {
   icon: ComponentType<{ className?: string }>
   bgColor: string
   type: string
-  config?: BlockConfig
+  config?: BlockCatalogEntry
 }
 
 /**

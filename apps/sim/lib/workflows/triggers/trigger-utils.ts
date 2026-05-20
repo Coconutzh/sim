@@ -1,14 +1,20 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { filterEnabledBlocks } from '@/lib/product/tool-policy'
+import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
+import { generateMockPayloadFromOutputsDefinition } from '@/lib/workflows/triggers/mock-payload'
 import {
   type StartBlockCandidate,
   StartBlockPath,
   TRIGGER_TYPES,
 } from '@/lib/workflows/triggers/triggers'
-import { getAllBlocks, getBlock } from '@/blocks'
-import type { BlockConfig } from '@/blocks/types'
+import {
+  getAllBlockCatalogEntries,
+  getAnyBlockCatalogEntry,
+  hasBlockCatalogTriggerCapability,
+} from '@/blocks/catalog'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 import { getTrigger } from '@/triggers'
 
@@ -30,123 +36,6 @@ export function hasValidStartBlockInState(state: WorkflowState | null | undefine
   return !!startBlock
 }
 
-/**
- * Generates mock data based on the output type definition
- */
-function generateMockValue(type: string, _description?: string, fieldName?: string): unknown {
-  const name = fieldName || 'value'
-
-  switch (type) {
-    case 'string':
-      return `mock_${name}`
-
-    case 'number':
-      return 42
-
-    case 'boolean':
-      return true
-
-    case 'array':
-      return [
-        {
-          id: 'item_1',
-          name: 'Sample Item',
-          value: 'Sample Value',
-        },
-      ]
-
-    case 'json':
-    case 'object':
-      return {
-        id: 'sample_id',
-        name: 'Sample Object',
-        status: 'active',
-      }
-
-    default:
-      return null
-  }
-}
-
-/**
- * Recursively processes nested output structures, expanding JSON-Schema-style
- * objects/arrays that define `properties` or `items` instead of returning
- * a generic placeholder.
- */
-function processOutputField(key: string, field: unknown, depth = 0, maxDepth = 10): unknown {
-  if (depth > maxDepth) {
-    return null
-  }
-
-  if (
-    field &&
-    typeof field === 'object' &&
-    'type' in field &&
-    typeof (field as Record<string, unknown>).type === 'string'
-  ) {
-    const typedField = field as {
-      type: string
-      description?: string
-      properties?: Record<string, unknown>
-      items?: unknown
-    }
-
-    if (
-      (typedField.type === 'object' || typedField.type === 'json') &&
-      typedField.properties &&
-      typeof typedField.properties === 'object'
-    ) {
-      const nestedObject: Record<string, unknown> = {}
-      for (const [nestedKey, nestedField] of Object.entries(typedField.properties)) {
-        nestedObject[nestedKey] = processOutputField(nestedKey, nestedField, depth + 1, maxDepth)
-      }
-      return nestedObject
-    }
-
-    if (typedField.type === 'array' && typedField.items && typeof typedField.items === 'object') {
-      const itemValue = processOutputField(`${key}_item`, typedField.items, depth + 1, maxDepth)
-      return [itemValue]
-    }
-
-    return generateMockValue(typedField.type, typedField.description, key)
-  }
-
-  if (field && typeof field === 'object' && !Array.isArray(field)) {
-    const nestedObject: Record<string, unknown> = {}
-    for (const [nestedKey, nestedField] of Object.entries(field)) {
-      nestedObject[nestedKey] = processOutputField(nestedKey, nestedField, depth + 1, maxDepth)
-    }
-    return nestedObject
-  }
-
-  return null
-}
-
-/**
- * Generates mock payload from outputs object
- */
-function generateMockPayloadFromOutputs(outputs: Record<string, unknown>): Record<string, unknown> {
-  const mockPayload: Record<string, unknown> = {}
-
-  for (const [key, output] of Object.entries(outputs)) {
-    if (key === 'visualization') {
-      continue
-    }
-    mockPayload[key] = processOutputField(key, output)
-  }
-
-  return mockPayload
-}
-
-/**
- * Generates a mock payload based on outputs definition
- */
-export function generateMockPayloadFromOutputsDefinition(
-  outputs: Record<string, unknown>
-): Record<string, unknown> {
-  return generateMockPayloadFromOutputs(outputs)
-}
-
 export interface TriggerInfo {
   id: string
   name: string
@@ -157,12 +46,21 @@ export interface TriggerInfo {
   enableTriggerMode?: boolean
 }
 
+type TriggerCapableBlock = Pick<
+  BlockCatalogEntry,
+  'category' | 'subBlocks' | 'triggers' | 'type' | 'name'
+>
+
+function getEnabledCatalogBlocks(): BlockCatalogEntry[] {
+  return getAllBlockCatalogEntries().filter((block) => isBlockEnabled(block.type))
+}
+
 /**
  * Get all blocks that can act as triggers
  * This includes both dedicated trigger blocks and tools with trigger capabilities
  */
 export function getAllTriggerBlocks(): TriggerInfo[] {
-  const allBlocks = filterEnabledBlocks(getAllBlocks())
+  const allBlocks = getEnabledCatalogBlocks()
   const triggers: TriggerInfo[] = []
 
   for (const block of allBlocks) {
@@ -175,7 +73,7 @@ export function getAllTriggerBlocks(): TriggerInfo[] {
         id: block.type,
         name: block.name,
         description: block.description,
-        icon: block.icon,
+        icon: getBlockCatalogIcon(block.iconName) ?? (() => null),
         color: block.bgColor,
         category: 'core',
         enableTriggerMode: hasTriggerCapability(block),
@@ -187,7 +85,7 @@ export function getAllTriggerBlocks(): TriggerInfo[] {
         id: block.type,
         name: block.name,
         description: block.description.replace(' or trigger workflows from ', ', trigger from '),
-        icon: block.icon,
+        icon: getBlockCatalogIcon(block.iconName) ?? (() => null),
         color: block.bgColor,
         category: 'integration',
         enableTriggerMode: true,
@@ -207,25 +105,16 @@ export function getAllTriggerBlocks(): TriggerInfo[] {
 /**
  * Check if a block has trigger capability (contains trigger mode subblocks)
  */
-export function hasTriggerCapability(block: BlockConfig): boolean {
-  const hasTriggerModeSubBlocks = block.subBlocks.some((subBlock) => subBlock.mode === 'trigger')
-
-  if (block.category === 'triggers') {
-    return hasTriggerModeSubBlocks
-  }
-
-  return (
-    (block.triggers?.enabled === true && block.triggers.available.length > 0) ||
-    hasTriggerModeSubBlocks
-  )
+export function hasTriggerCapability(block: TriggerCapableBlock): boolean {
+  return hasBlockCatalogTriggerCapability(block as BlockCatalogEntry)
 }
 
 /**
  * Get blocks that should appear in the triggers tab
  * This includes all trigger blocks and tools with trigger mode
  */
-export function getTriggersForSidebar(): BlockConfig[] {
-  const allBlocks = filterEnabledBlocks(getAllBlocks())
+export function getTriggersForSidebar(): BlockCatalogEntry[] {
+  const allBlocks = getEnabledCatalogBlocks()
   return allBlocks.filter((block) => {
     if (block.hideFromToolbar) return false
     // Include blocks with triggers category or trigger-config subblock
@@ -237,8 +126,8 @@ export function getTriggersForSidebar(): BlockConfig[] {
  * Get blocks that should appear in the blocks tab
  * This excludes only dedicated trigger blocks, not tools with trigger capability
  */
-export function getBlocksForSidebar(): BlockConfig[] {
-  const allBlocks = filterEnabledBlocks(getAllBlocks())
+export function getBlocksForSidebar(): BlockCatalogEntry[] {
+  const allBlocks = getEnabledCatalogBlocks()
   return allBlocks.filter((block) => {
     if (block.hideFromToolbar) return false
     if (block.type === 'starter') return false // Legacy block
@@ -252,7 +141,7 @@ export function getBlocksForSidebar(): BlockConfig[] {
  * Get the proper display name for a trigger block in the UI
  */
 export function getTriggerDisplayName(blockType: string): string {
-  const block = getBlock(blockType)
+  const block = getAnyBlockCatalogEntry(blockType)
   if (!block) return blockType
 
   if (blockType === TRIGGER_TYPES.GENERIC_WEBHOOK) {
@@ -419,7 +308,7 @@ export function extractTriggerMockPayload<
     triggerId = subBlocks.selectedTriggerId.value
   } else {
     // For single-trigger blocks, get from block config
-    const blockConfig = getBlock(trigger.block.type)
+    const blockConfig = getAnyBlockCatalogEntry(trigger.block.type)
 
     if (blockConfig?.triggers?.available?.length === 1) {
       triggerId = blockConfig.triggers.available[0]

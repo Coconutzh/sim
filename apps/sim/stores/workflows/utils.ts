@@ -2,11 +2,9 @@ import { generateId } from '@sim/utils/id'
 import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import type { Edge } from 'reactflow'
 import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
-import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
 import { buildDefaultCanonicalModes } from '@/lib/workflows/subblocks/visibility'
-import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
-import { getBlock } from '@/blocks'
+import { type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
 import { normalizeName } from '@/executor/constants'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { validateEdges } from '@/stores/workflows/workflow/edge-validation'
@@ -104,6 +102,13 @@ export interface PrepareBlockStateOptions {
   parentId?: string
   extent?: 'parent'
   triggerMode?: boolean
+  blockConfig?: BlockConfig
+}
+
+function getInitialBlockOutputs(blockConfig: BlockConfig): BlockState['outputs'] {
+  return Object.fromEntries(
+    Object.entries(blockConfig.outputs || {}).filter(([, output]) => !isHiddenFromDisplay(output))
+  ) as BlockState['outputs']
 }
 
 /**
@@ -111,9 +116,17 @@ export interface PrepareBlockStateOptions {
  * Generates subBlocks and outputs from the block registry.
  */
 export function prepareBlockState(options: PrepareBlockStateOptions): BlockState {
-  const { id, type, name, position, data, parentId, extent, triggerMode = false } = options
-
-  const blockConfig = getBlock(type)
+  const {
+    id,
+    type,
+    name,
+    position,
+    data,
+    parentId,
+    extent,
+    triggerMode = false,
+    blockConfig,
+  } = options
 
   const blockData: Record<string, unknown> = { ...(data || {}) }
   if (parentId) blockData.parentId = parentId
@@ -172,12 +185,7 @@ export function prepareBlockState(options: PrepareBlockStateOptions): BlockState
     })
   }
 
-  const isTriggerCapable = hasTriggerCapability(blockConfig)
-  const effectiveTriggerMode = Boolean(triggerMode && isTriggerCapable)
-  const outputs = getEffectiveBlockOutputs(type, subBlocks, {
-    triggerMode: effectiveTriggerMode,
-    preferToolOutputs: !effectiveTriggerMode,
-  })
+  const outputs = getInitialBlockOutputs(blockConfig)
 
   if (blockConfig.subBlocks) {
     const canonicalModes = buildDefaultCanonicalModes(blockConfig.subBlocks)

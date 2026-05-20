@@ -32,7 +32,7 @@ import {
   handleExecutionCancelledConsole as sharedHandleExecutionCancelledConsole,
   handleExecutionErrorConsole as sharedHandleExecutionErrorConsole,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-execution-utils'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SerializableExecutionState } from '@/executor/execution/types'
 import type { BlockLog, BlockState, ExecutionResult, StreamingExecution } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
@@ -1824,7 +1824,7 @@ export function useWorkflowExecution() {
           // Fallback: block is trigger by position but not classified as start candidate
           const block = mergedStates[blockId]
           if (block) {
-            const blockConfig = getBlock(block.type)
+            const blockConfig = getAnyBlockCatalogEntry(block.type)
             const hasTriggers = blockConfig?.triggers?.available?.length
 
             if (hasTriggers || block.triggerMode) {

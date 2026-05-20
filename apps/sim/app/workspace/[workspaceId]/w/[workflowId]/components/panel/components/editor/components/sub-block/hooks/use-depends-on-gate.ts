@@ -10,7 +10,7 @@ import {
   parseDependsOn,
   resolveDependencyValue,
 } from '@/lib/workflows/subblocks/visibility'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -33,7 +33,7 @@ export function useDependsOnGate(
 
   const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blockState = useWorkflowStore((state) => state.blocks[blockId])
-  const blockConfig = blockState?.type ? getBlock(blockState.type) : null
+  const blockConfig = blockState?.type ? getAnyBlockCatalogEntry(blockState.type) : null
   const canonicalIndex = useMemo(
     () => buildCanonicalIndex(blockConfig?.subBlocks || []),
     [blockConfig?.subBlocks]

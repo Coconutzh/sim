@@ -3,7 +3,8 @@ import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { getToolOperationsIndex } from '@/lib/search/tool-operations'
 import { getTriggersForSidebar } from '@/lib/workflows/triggers/trigger-utils'
-import { getAllBlocks } from '@/blocks'
+import { getAllBlockCatalogEntries } from '@/blocks/catalog'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import type {
   SearchBlockItem,
   SearchData,
@@ -40,7 +41,7 @@ export const useSearchModalStore = create<SearchModalState>()(
       },
 
       initializeData: (filterBlocks) => {
-        const allBlocks = getAllBlocks()
+        const allBlocks = getAllBlockCatalogEntries()
         const filteredAllBlocks = filterBlocks(allBlocks) as typeof allBlocks
 
         const regularBlocks: SearchBlockItem[] = []
@@ -53,7 +54,7 @@ export const useSearchModalStore = create<SearchModalState>()(
           const searchItem: SearchBlockItem = {
             id: block.type,
             name: block.name,
-            icon: block.icon,
+            icon: getBlockCatalogIcon(block.iconName) ?? (() => null),
             bgColor: block.bgColor || '#6B7280',
             type: block.type,
           }
@@ -68,7 +69,7 @@ export const useSearchModalStore = create<SearchModalState>()(
             docs.push({
               id: `docs-${block.type}`,
               name: block.name,
-              icon: block.icon,
+              icon: getBlockCatalogIcon(block.iconName) ?? (() => null),
               href: block.docsLink,
             })
           }
@@ -115,7 +116,7 @@ export const useSearchModalStore = create<SearchModalState>()(
           (block): SearchBlockItem => ({
             id: block.type,
             name: block.name,
-            icon: block.icon,
+            icon: getBlockCatalogIcon(block.iconName) ?? (() => null),
             bgColor: block.bgColor || '#6B7280',
             type: block.type,
             config: block,

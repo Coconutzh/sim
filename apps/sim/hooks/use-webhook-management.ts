@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { useWebhookQuery } from '@/hooks/queries/webhooks'
 import { populateTriggerFieldsFromConfig } from '@/hooks/use-trigger-config-aggregation'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -54,7 +54,7 @@ function resolveEffectiveTriggerId(
   const workflowState = useWorkflowStore.getState()
   const block = workflowState.blocks?.[blockId]
   if (block) {
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getAnyBlockCatalogEntry(block.type)
     if (blockConfig) {
       if (blockConfig.category === 'triggers') {
         return block.type

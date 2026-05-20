@@ -12,7 +12,8 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/connection-blocks/components/field-item/field-item'
 import type { ConnectedBlock } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/hooks/use-block-connections'
 import { useBlockOutputFields } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-output-fields'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -55,7 +56,7 @@ function ConnectionItem({
   mergedSubBlocks,
   sourceBlock,
 }: ConnectionItemProps) {
-  const blockConfig = getBlock(connection.type)
+  const blockConfig = getAnyBlockCatalogEntry(connection.type)
 
   const fields = useBlockOutputFields({
     blockId: connection.id,
@@ -65,7 +66,7 @@ function ConnectionItem({
   })
   const hasFields = fields.length > 0
 
-  let Icon = blockConfig?.icon
+  let Icon = getBlockCatalogIcon(blockConfig?.iconName)
   let bgColor = blockConfig?.bgColor || '#6B7280'
 
   if (!blockConfig) {

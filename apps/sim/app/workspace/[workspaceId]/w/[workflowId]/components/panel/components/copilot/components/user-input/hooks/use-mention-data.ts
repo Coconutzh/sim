@@ -9,6 +9,8 @@ import { listKnowledgeBasesContract } from '@/lib/api/contracts/knowledge/base'
 import { listLogsContract } from '@/lib/api/contracts/logs'
 import { listTemplatesContract } from '@/lib/api/contracts/templates'
 import { isBlockEnabled } from '@/lib/product/tool-policy'
+import { getAllBlockCatalogEntries, getAnyBlockCatalogEntry } from '@/blocks/catalog'
+import { getBlockCatalogIcon } from '@/blocks/icons'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -198,15 +200,14 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
         // Fetch current blocks from store
         const workflowStoreBlocks = useWorkflowStore.getState().blocks
 
-        const { registry: blockRegistry } = await import('@/blocks/registry')
         const mapped = Object.values(workflowStoreBlocks).map((b: any) => {
-          const reg = (blockRegistry as any)[b.type]
+          const block = getAnyBlockCatalogEntry(b.type)
           return {
             id: b.id,
             name: b.name || b.id,
             type: b.type,
-            iconComponent: reg?.icon,
-            bgColor: reg?.bgColor || '#6B7280',
+            iconComponent: getBlockCatalogIcon(block?.iconName),
+            bgColor: block?.bgColor || '#6B7280',
           }
         })
         setWorkflowBlocks(mapped)
@@ -277,8 +278,7 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     if (isLoadingBlocks || blocksList.length > 0) return
     try {
       setIsLoadingBlocks(true)
-      const { getAllBlocks } = await import('@/blocks')
-      const all = getAllBlocks()
+      const all = getAllBlockCatalogEntries()
       const regularBlocks = all
         .filter(
           (b: any) =>
@@ -291,7 +291,7 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
         .map((b: any) => ({
           id: b.type,
           name: b.name || b.type,
-          iconComponent: b.icon,
+          iconComponent: getBlockCatalogIcon(b.iconName),
           bgColor: b.bgColor,
         }))
         .sort((a: any, b: any) => a.name.localeCompare(b.name))
@@ -308,7 +308,7 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
         .map((b: any) => ({
           id: b.type,
           name: b.name || b.type,
-          iconComponent: b.icon,
+          iconComponent: getBlockCatalogIcon(b.iconName),
           bgColor: b.bgColor,
         }))
         .sort((a: any, b: any) => a.name.localeCompare(b.name))

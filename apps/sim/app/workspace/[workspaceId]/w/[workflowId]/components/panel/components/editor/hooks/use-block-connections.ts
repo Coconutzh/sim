@@ -1,10 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
-import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { BlockPathCalculator } from '@/lib/workflows/blocks/block-path-calculator'
-import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
-import { getBlock } from '@/blocks'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 interface Field {
@@ -28,21 +24,6 @@ export function useBlockConnections(blockId: string) {
       blocks: state.blocks,
     }))
   )
-
-  const workflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-
-  const getMergedSubBlocks = (sourceBlockId: string): Record<string, any> => {
-    const base = blocks[sourceBlockId]?.subBlocks || {}
-    const workflowSubBlockValues = workflowId
-      ? (useSubBlockStore.getState().workflowValues[workflowId] ?? {})
-      : {}
-    const live = workflowSubBlockValues?.[sourceBlockId] || {}
-    const merged: Record<string, any> = { ...base }
-    for (const [subId, liveVal] of Object.entries(live)) {
-      merged[subId] = { ...(base[subId] || {}), value: liveVal }
-    }
-    return merged
-  }
 
   // Early return if block doesn't exist or has no incoming edges
   // This prevents triggers and unconnected blocks from showing phantom connections
@@ -87,16 +68,9 @@ export function useBlockConnections(blockId: string) {
       const sourceBlock = blocks[sourceId]
       if (!sourceBlock) return null
 
-      // Get merged subblocks for this source block
-      const mergedSubBlocks = getMergedSubBlocks(sourceId)
-      const blockConfig = getBlock(sourceBlock.type)
-      const isTriggerCapable = blockConfig ? hasTriggerCapability(blockConfig) : false
-      const effectiveTriggerMode = Boolean(sourceBlock.triggerMode && isTriggerCapable)
+      const blockConfig = getAnyBlockCatalogEntry(sourceBlock.type)
 
-      const blockOutputs = getEffectiveBlockOutputs(sourceBlock.type, mergedSubBlocks, {
-        triggerMode: effectiveTriggerMode,
-        preferToolOutputs: !effectiveTriggerMode,
-      })
+      const blockOutputs = blockConfig?.outputs ?? {}
 
       const outputFields: Field[] = Object.entries(blockOutputs).map(
         ([key, value]: [string, any]) => ({

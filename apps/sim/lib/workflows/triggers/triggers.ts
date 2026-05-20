@@ -1,4 +1,4 @@
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 /**
@@ -113,7 +113,7 @@ export function classifyStartBlock<T extends MinimalBlock>(block: T): StartBlock
   const triggerModeEnabled = Boolean(blockState.triggerMode)
 
   // If not available on the block, fetch from registry
-  const blockConfig = getBlock(block.type)
+  const blockConfig = getAnyBlockCatalogEntry(block.type)
 
   if (blockConfig) {
     category = blockConfig.category
@@ -259,7 +259,7 @@ export class TriggerUtils {
    * Check if a block is any kind of trigger
    */
   static isTriggerBlock(block: { type: string; triggerMode?: boolean }): boolean {
-    const blockConfig = getBlock(block.type)
+    const blockConfig = getAnyBlockCatalogEntry(block.type)
 
     return (
       // New trigger blocks (explicit category)
@@ -352,7 +352,7 @@ export class TriggerUtils {
    */
   static getDefaultTriggerName(triggerType: string): string | null {
     // Use the block's actual name from the registry
-    const block = getBlock(triggerType)
+    const block = getAnyBlockCatalogEntry(triggerType)
     if (block) {
       if (triggerType === TRIGGER_TYPES.GENERIC_WEBHOOK) {
         return 'Webhook'
@@ -599,7 +599,7 @@ export class TriggerUtils {
   }
 
   static isSingleInstanceBlockType(blockType: string): boolean {
-    const blockConfig = getBlock(blockType)
+    const blockConfig = getAnyBlockCatalogEntry(blockType)
     return blockConfig?.singleInstance === true
   }
 
@@ -623,7 +623,7 @@ export class TriggerUtils {
       return null
     }
 
-    const blockConfig = getBlock(blockType)
+    const blockConfig = getAnyBlockCatalogEntry(blockType)
     const blockName = blockConfig?.name || blockType
     return { issue: 'duplicate', blockName }
   }

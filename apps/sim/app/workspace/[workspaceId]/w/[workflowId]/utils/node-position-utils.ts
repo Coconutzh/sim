@@ -1,5 +1,5 @@
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
-import { getBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 
 /**
  * Estimates block dimensions based on block type.
@@ -9,7 +9,7 @@ import { getBlock } from '@/blocks/registry'
  * @returns Estimated width and height for the block
  */
 export function estimateBlockDimensions(blockType: string): { width: number; height: number } {
-  const blockConfig = getBlock(blockType)
+  const blockConfig = getAnyBlockCatalogEntry(blockType)
   const subBlockCount = blockConfig?.subBlocks?.length ?? 3
   const estimatedRows = Math.max(3, Math.min(Math.ceil(subBlockCount / 2), 7))
   const hasErrorRow = blockType !== 'starter' && blockType !== 'response' ? 1 : 0

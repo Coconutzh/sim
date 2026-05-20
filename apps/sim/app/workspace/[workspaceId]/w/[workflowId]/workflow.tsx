@@ -42,7 +42,6 @@ import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/componen
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
-import { WorkflowSearchReplace } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/search-replace/workflow-search-replace'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
 import { WorkflowControls } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-controls/workflow-controls'
 import {
@@ -83,7 +82,9 @@ import {
   reactFlowStyles,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow-constants'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
-import { getBlock } from '@/blocks'
+import { getAnyBlockCatalogEntry, resolveCatalogBlockType } from '@/blocks/catalog'
+import { loadBlock, loadBlocks } from '@/blocks/loader'
+import type { BlockConfig } from '@/blocks/types'
 import { isAnnotationOnlyBlock } from '@/executor/constants'
 import { useWorkspaceEnvironment } from '@/hooks/queries/environment'
 import { useFolderMap } from '@/hooks/queries/folders'
@@ -114,6 +115,14 @@ import type { BlockState } from '@/stores/workflows/workflow/types'
 const LazyChat = lazy(() =>
   import('@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat').then((mod) => ({
     default: mod.Chat,
+  }))
+)
+
+const LazyWorkflowSearchReplace = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/search-replace/workflow-search-replace'
+  ).then((mod) => ({
+    default: mod.WorkflowSearchReplace,
   }))
 )
 
@@ -348,6 +357,7 @@ const WorkflowContent = React.memo(
     // Panel open states for context menu
     const isVariablesOpen = useVariablesModalStore((state) => state.isOpen)
     const isChatOpen = useChatStore((state) => state.isChatOpen)
+    const isWorkflowSearchReplaceOpen = useWorkflowSearchReplaceStore((state) => state.isOpen)
 
     const snapGrid: [number, number] = useMemo(
       () => [snapToGridSize, snapToGridSize],
@@ -377,6 +387,52 @@ const WorkflowContent = React.memo(
 
     const hasLockedBlocks = useMemo(() => Object.values(blocks).some((b) => b.locked), [blocks])
 
+    const workflowBlockTypes = useMemo(
+      () =>
+        Array.from(
+          new Set(
+            Object.values(blocks)
+              .map((block) => block.type)
+              .filter(
+                (type): type is string => Boolean(type) && type !== 'loop' && type !== 'parallel'
+              )
+              .map(resolveCatalogBlockType)
+              .filter((type) => Boolean(getAnyBlockCatalogEntry(type)))
+          )
+        ).sort((a, b) => a.localeCompare(b)),
+      [blocks]
+    )
+
+    const [blockConfigs, setBlockConfigs] = useState<Record<string, BlockConfig>>({})
+    const blockTypesKey = workflowBlockTypes.join('|')
+
+    useEffect(() => {
+      let cancelled = false
+
+      const missingTypes = workflowBlockTypes.filter((type) => !blockConfigs[type])
+      if (missingTypes.length === 0) {
+        return
+      }
+
+      loadBlocks(missingTypes)
+        .then((loadedConfigs) => {
+          if (cancelled || Object.keys(loadedConfigs).length === 0) return
+          setBlockConfigs((current) => ({ ...current, ...loadedConfigs }))
+        })
+        .catch((error) => {
+          logger.error('Failed to load workflow block configs', { error })
+        })
+
+      return () => {
+        cancelled = true
+      }
+    }, [blockTypesKey, blockConfigs, workflowBlockTypes])
+
+    const areWorkflowBlockConfigsReady = useMemo(
+      () => workflowBlockTypes.every((type) => Boolean(blockConfigs[type])),
+      [blockConfigs, workflowBlockTypes]
+    )
+
     const isWorkflowReady = useMemo(
       () =>
         !isWorkflowMapPlaceholderData &&
@@ -384,7 +440,8 @@ const WorkflowContent = React.memo(
         hydration.workflowId === workflowIdParam &&
         activeWorkflowId === workflowIdParam &&
         Boolean(workflows[workflowIdParam]) &&
-        lastSaved !== undefined,
+        lastSaved !== undefined &&
+        areWorkflowBlockConfigsReady,
       [
         isWorkflowMapPlaceholderData,
         hydration.phase,
@@ -393,6 +450,7 @@ const WorkflowContent = React.memo(
         activeWorkflowId,
         workflows,
         lastSaved,
+        areWorkflowBlockConfigsReady,
       ]
     )
 
@@ -791,7 +849,8 @@ const WorkflowContent = React.memo(
         extent?: 'parent',
         autoConnectEdge?: Edge,
         triggerMode?: boolean,
-        presetSubBlockValues?: Record<string, unknown>
+        presetSubBlockValues?: Record<string, unknown>,
+        blockConfig?: BlockConfig
       ) => {
         setPendingSelection([id])
         setSelectedEdges(new Map())
@@ -809,6 +868,7 @@ const WorkflowContent = React.memo(
           parentId,
           extent,
           triggerMode,
+          blockConfig,
         })
 
         const subBlockValues: Record<string, Record<string, unknown>> = {}
@@ -1819,7 +1879,7 @@ const WorkflowContent = React.memo(
      * Adds a pure canvas content node at the requested workflow position.
      */
     const addContentNodeAtPosition = useCallback(
-      (presetId: ContentNodePresetId, position: { x: number; y: number }) => {
+      async (presetId: ContentNodePresetId, position: { x: number; y: number }) => {
         const preset = getContentNodePreset(presetId)
 
         if (!preset?.available || !preset.blockType || !preset.contentVariant) {
@@ -1831,7 +1891,7 @@ const WorkflowContent = React.memo(
           return
         }
 
-        const blockConfig = getBlock(preset.blockType)
+        const blockConfig = await loadBlock(preset.blockType)
         if (!blockConfig) {
           logger.error('Invalid content node block type', {
             presetId,
@@ -1855,7 +1915,8 @@ const WorkflowContent = React.memo(
           undefined,
           undefined,
           false,
-          preset.presetSubBlockValues
+          preset.presetSubBlockValues,
+          blockConfig
         )
       },
       [activeWorkflowId, addBlock, addNotification, blocks]
@@ -1864,7 +1925,7 @@ const WorkflowContent = React.memo(
     const handleContextAddContentNode = useCallback(
       (presetId: ContentNodePresetId) => {
         const flowPosition = screenToFlowPosition(contextMenuPosition)
-        addContentNodeAtPosition(presetId, flowPosition)
+        void addContentNodeAtPosition(presetId, flowPosition)
       },
       [addContentNodeAtPosition, contextMenuPosition, screenToFlowPosition]
     )
@@ -1880,7 +1941,10 @@ const WorkflowContent = React.memo(
      * @param position - Drop position in ReactFlow coordinates.
      */
     const handleToolbarDrop = useCallback(
-      (data: { type: string; enableTriggerMode?: boolean }, position: { x: number; y: number }) => {
+      async (
+        data: { type: string; enableTriggerMode?: boolean },
+        position: { x: number; y: number }
+      ) => {
         if (!data.type || data.type === 'connectionBlock') return
 
         try {
@@ -1961,7 +2025,7 @@ const WorkflowContent = React.memo(
           }
 
           // Validate block config for regular blocks
-          const blockConfig = getBlock(data.type)
+          const blockConfig = await loadBlock(data.type)
           if (!blockConfig) {
             logger.error('Invalid block type:', { data })
             return
@@ -2026,7 +2090,10 @@ const WorkflowContent = React.memo(
               },
               containerInfo.loopId,
               'parent',
-              autoConnectEdge
+              autoConnectEdge,
+              undefined,
+              undefined,
+              blockConfig
             )
 
             // Resize the container node to fit the new block
@@ -2052,7 +2119,9 @@ const WorkflowContent = React.memo(
               undefined,
               undefined,
               autoConnectEdge,
-              enableTriggerMode
+              enableTriggerMode,
+              undefined,
+              blockConfig
             )
           }
         } catch (err) {
@@ -2073,13 +2142,18 @@ const WorkflowContent = React.memo(
 
     /** Handles toolbar block click events to add blocks to the canvas. */
     useEffect(() => {
-      const handleAddBlockFromToolbar = (event: CustomEvent) => {
+      const handleAddBlockFromToolbar = async (event: Event) => {
         // Check if user has permission to interact with blocks
         if (!effectivePermissions.canEdit) {
           return
         }
 
-        const { type, enableTriggerMode, presetOperation } = event.detail
+        const customEvent = event as CustomEvent<{
+          type?: string
+          enableTriggerMode?: boolean
+          presetOperation?: string
+        }>
+        const { type, enableTriggerMode, presetOperation } = customEvent.detail ?? {}
 
         if (!type) return
         if (type === 'connectionBlock') return
@@ -2113,7 +2187,7 @@ const WorkflowContent = React.memo(
           return
         }
 
-        const blockConfig = getBlock(type)
+        const blockConfig = await loadBlock(type)
         if (!blockConfig) {
           logger.error('Invalid block type:', { type })
           return
@@ -2140,17 +2214,15 @@ const WorkflowContent = React.memo(
           undefined,
           autoConnectEdge,
           enableTriggerMode,
-          presetOperation ? { operation: presetOperation } : undefined
+          presetOperation ? { operation: presetOperation } : undefined,
+          blockConfig
         )
       }
 
-      window.addEventListener('add-block-from-toolbar', handleAddBlockFromToolbar as EventListener)
+      window.addEventListener('add-block-from-toolbar', handleAddBlockFromToolbar)
 
       return () => {
-        window.removeEventListener(
-          'add-block-from-toolbar',
-          handleAddBlockFromToolbar as EventListener
-        )
+        window.removeEventListener('add-block-from-toolbar', handleAddBlockFromToolbar)
       }
     }, [
       getViewportCenter,
@@ -2175,7 +2247,7 @@ const WorkflowContent = React.memo(
           return
         }
 
-        addContentNodeAtPosition(presetId, getViewportCenter())
+        void addContentNodeAtPosition(presetId, getViewportCenter())
       }
 
       window.addEventListener('add-content-node', handleAddContentNode as EventListener)
@@ -2217,7 +2289,7 @@ const WorkflowContent = React.memo(
             y: detail.clientY - bounds.top,
           })
 
-          handleToolbarDrop(
+          void handleToolbarDrop(
             {
               type: detail.type,
               enableTriggerMode: detail.enableTriggerMode ?? false,
@@ -2312,7 +2384,7 @@ const WorkflowContent = React.memo(
             y: event.clientY - reactFlowBounds.top,
           })
 
-          handleToolbarDrop(
+          void handleToolbarDrop(
             {
               type: data.type,
               enableTriggerMode: data.enableTriggerMode ?? false,
@@ -2550,13 +2622,12 @@ const WorkflowContent = React.memo(
       workflows,
     ])
 
-    const blockConfigCache = useRef<Map<string, any>>(new Map())
-    const getBlockConfig = useCallback((type: string) => {
-      if (!blockConfigCache.current.has(type)) {
-        blockConfigCache.current.set(type, getBlock(type))
-      }
-      return blockConfigCache.current.get(type)
-    }, [])
+    const getBlockConfig = useCallback(
+      (type: string) => {
+        return blockConfigs[resolveCatalogBlockType(type)]
+      },
+      [blockConfigs]
+    )
 
     const prevBlocksHashRef = useRef<string>('')
     const prevBlocksRef = useRef(blocks)
@@ -4406,7 +4477,11 @@ const WorkflowContent = React.memo(
             )}
 
             <Notifications embedded={embedded} />
-            {!embedded && <WorkflowSearchReplace />}
+            {!embedded && isWorkflowSearchReplaceOpen && (
+              <Suspense fallback={null}>
+                <LazyWorkflowSearchReplace />
+              </Suspense>
+            )}
 
             {!embedded && isWorkflowReady && isWorkflowEmpty && effectivePermissions.canEdit && (
               <CommandList />
