@@ -52,6 +52,7 @@ import {
   useUpdateColumn,
   useUpdateWorkflowGroup,
 } from '@/hooks/queries/tables'
+import { isPublishedSummaryWorkflowState } from '@/hooks/queries/workflow-state-access'
 import { useWorkflowState, workflowKeys } from '@/hooks/queries/workflows'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 import { RunSettingsSection } from './run-settings-section'
@@ -291,6 +292,7 @@ function WorkflowSidebarBody({
   const [nameError, setNameError] = useState<string | null>(null)
 
   const workflowState = useWorkflowState(selectedWorkflowId || undefined)
+  const selectedWorkflowIsPublishedSummary = isPublishedSummaryWorkflowState(workflowState.data)
 
   /** Resolves the unified Start block id and its current `inputFormat` field
    *  names. The "Add inputs" mutation only adds rows for table columns that
@@ -300,6 +302,9 @@ function WorkflowSidebarBody({
     existingNames: Set<string>
     existing: InputFormatField[]
   }>(() => {
+    if (selectedWorkflowIsPublishedSummary) {
+      return { blockId: null, existingNames: new Set(), existing: [] }
+    }
     const blocks = (workflowState.data as { blocks?: Record<string, { type: string }> } | null)
       ?.blocks
     if (!blocks) return { blockId: null, existingNames: new Set(), existing: [] }
@@ -314,7 +319,7 @@ function WorkflowSidebarBody({
       existingNames: new Set(existing.map((f) => f.name).filter((n): n is string => !!n)),
       existing,
     }
-  }, [workflowState.data])
+  }, [selectedWorkflowIsPublishedSummary, workflowState.data])
 
   const missingInputColumnNames = useMemo<string[]>(() => {
     if (!startBlockInputs.blockId) return []
@@ -384,6 +389,9 @@ function WorkflowSidebarBody({
   })
 
   const blockOutputGroups = useMemo<BlockOutputGroup[]>(() => {
+    if (selectedWorkflowIsPublishedSummary) {
+      return []
+    }
     const state = workflowState.data as
       | {
           blocks?: Record<string, FlattenOutputsBlockInput>
@@ -430,7 +438,7 @@ function WorkflowSidebarBody({
       const sb = db === undefined || db < 0 ? Number.POSITIVE_INFINITY : db
       return sa - sb
     })
-  }, [workflowState.data])
+  }, [selectedWorkflowIsPublishedSummary, workflowState.data])
 
   const outputGroupOptions = useMemo<ComboboxOptionGroup[]>(
     () =>
@@ -769,25 +777,27 @@ function WorkflowSidebarBody({
                         lightweight
                       />
                     </div>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger asChild>
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          onClick={() =>
-                            window.open(
-                              `/workspace/${workspaceId}/w/${selectedWorkflowId}`,
-                              '_blank',
-                              'noopener,noreferrer'
-                            )
-                          }
-                          className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
-                        >
-                          <ExternalLink className='h-[12px] w-[12px]' />
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content side='top'>Open workflow</Tooltip.Content>
-                    </Tooltip.Root>
+                    {!selectedWorkflowIsPublishedSummary && (
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            onClick={() =>
+                              window.open(
+                                `/workspace/${workspaceId}/w/${selectedWorkflowId}`,
+                                '_blank',
+                                'noopener,noreferrer'
+                              )
+                            }
+                            className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
+                          >
+                            <ExternalLink className='h-[12px] w-[12px]' />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content side='top'>Open workflow</Tooltip.Content>
+                      </Tooltip.Root>
+                    )}
                   </>
                 ) : (
                   <div className='flex h-full items-center justify-center bg-[var(--surface-3)]'>
@@ -797,6 +807,11 @@ function WorkflowSidebarBody({
                   </div>
                 )}
               </div>
+              {selectedWorkflowIsPublishedSummary && (
+                <p className='pl-0.5 text-[var(--text-muted)] text-sm'>
+                  Shared published workflows do not expose editable workflow internals
+                </p>
+              )}
             </div>
             <FieldDivider />
           </>
@@ -832,7 +847,13 @@ function WorkflowSidebarBody({
             dropdownWidth='trigger'
             maxHeight={280}
             disabled={workflowState.isLoading || blockOutputGroups.length === 0}
-            emptyMessage={workflowState.isLoading ? 'Loading workflow…' : 'No outputs found.'}
+            emptyMessage={
+              workflowState.isLoading
+                ? 'Loading workflow...'
+                : selectedWorkflowIsPublishedSummary
+                  ? 'Shared published workflows do not expose editable outputs.'
+                  : 'No outputs found.'
+            }
             // Combobox ignores `options` when `groups` is set (see combobox.tsx),
             // but the prop is required by the type — pass an empty array.
             options={[]}
