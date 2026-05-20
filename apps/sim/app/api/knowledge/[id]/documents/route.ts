@@ -141,8 +141,11 @@ export const POST = withRouteHandler(
         if (!authorization.allowed) {
           return NextResponse.json(
             { error: authorization.message || 'Access denied' },
-            { status: authorization.status }
+            { status: authorization.status || 403 }
           )
+        }
+        if (authorization.accessSource !== 'workspace') {
+          return NextResponse.json({ error: 'Access denied' }, { status: 403 })
         }
       }
 

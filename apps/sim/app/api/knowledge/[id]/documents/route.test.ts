@@ -3,7 +3,13 @@
  *
  * @vitest-environment node
  */
-import { auditMock, authMockFns, createMockRequest, knowledgeApiUtilsMock } from '@sim/testing'
+import {
+  auditMock,
+  authMockFns,
+  createMockRequest,
+  knowledgeApiUtilsMock,
+  workflowAuthzMockFns,
+} from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDbChain } = vi.hoisted(() => {
@@ -105,6 +111,11 @@ describe('Knowledge Base Documents API Route', () => {
 
   beforeEach(() => {
     resetMocks()
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      accessSource: 'workspace',
+      workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+    })
 
     vi.stubGlobal('crypto', {
       randomUUID: vi.fn().mockReturnValue('mock-uuid-1234-5678'),
@@ -568,6 +579,26 @@ describe('Knowledge Base Documents API Route', () => {
 
       expect(response.status).toBe(401)
       expect(data.error).toBe('Unauthorized')
+    })
+
+    it('should reject published workflow readers from creating documents', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'published',
+        workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+      })
+
+      const req = createMockRequest('POST', {
+        ...validDocumentData,
+        workflowId: 'workflow-1',
+      })
+      const response = await POST(req, { params: mockParams })
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data.error).toBe('Access denied')
+      expect(vi.mocked(createSingleDocument)).not.toHaveBeenCalled()
+      expect(vi.mocked(checkKnowledgeBaseWriteAccess)).not.toHaveBeenCalled()
     })
 
     it('should handle database errors during creation', async () => {
