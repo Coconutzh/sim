@@ -7,7 +7,7 @@ import {
 } from '@/lib/core/utils/response-format'
 import { encodeSSE } from '@/lib/core/utils/sse'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { processStreamingBlockLogs } from '@/lib/tokenization'
+import { processStreamingBlockLogs } from '@/lib/tokenization/streaming'
 import {
   cleanupExecutionBase64Cache,
   hydrateUserFilesWithBase64,
@@ -310,7 +310,7 @@ export async function createStreamingResponse(
             streamedContent,
             state.streamCompletionTimes
           )
-          processStreamingBlockLogs(result.logs, streamedContent)
+          await processStreamingBlockLogs(result.logs, streamedContent)
         }
 
         if (

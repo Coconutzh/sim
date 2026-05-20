@@ -4,7 +4,6 @@
 
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { calculateStreamingCost } from '@/lib/tokenization/calculators'
 import { TOKENIZATION_CONFIG } from '@/lib/tokenization/constants'
 import {
   extractTextContent,
@@ -20,7 +19,10 @@ const logger = createLogger('StreamingTokenization')
 /**
  * Processes a block log and adds tokenization data if needed
  */
-export function processStreamingBlockLog(log: BlockLog, streamedContent: string): boolean {
+export async function processStreamingBlockLog(
+  log: BlockLog,
+  streamedContent: string
+): Promise<boolean> {
   // Check if this block should be tokenized
   if (!isTokenizableBlockType(log.blockType)) {
     return false
@@ -48,13 +50,13 @@ export function processStreamingBlockLog(log: BlockLog, streamedContent: string)
     // Prepare input text from log
     const inputText = extractTextContent(log.input)
 
-    // Calculate streaming cost
     const systemPrompt =
       typeof log.input?.systemPrompt === 'string' ? log.input.systemPrompt : undefined
     const context = typeof log.input?.context === 'string' ? log.input.context : undefined
     const messages = Array.isArray(log.input?.messages)
       ? (log.input.messages as Array<{ role: string; content: string }>)
       : undefined
+    const { calculateStreamingCost } = await import('@/lib/tokenization/calculators')
     const result = calculateStreamingCost(
       model,
       inputText,
@@ -126,15 +128,15 @@ function getModelForBlock(log: BlockLog): string {
 /**
  * Processes multiple block logs for streaming tokenization
  */
-export function processStreamingBlockLogs(
+export async function processStreamingBlockLogs(
   logs: BlockLog[],
   streamedContentMap: Map<string, string>
-): number {
+): Promise<number> {
   let processedCount = 0
 
   for (const log of logs) {
     const content = streamedContentMap.get(log.blockId)
-    if (content && processStreamingBlockLog(log, content)) {
+    if (content && (await processStreamingBlockLog(log, content))) {
       processedCount++
     }
   }

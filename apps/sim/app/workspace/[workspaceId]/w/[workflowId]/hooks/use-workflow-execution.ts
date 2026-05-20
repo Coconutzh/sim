@@ -9,7 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { requestJson } from '@/lib/api/client/request'
 import { cancelWorkflowExecutionContract, workflowLogContract } from '@/lib/api/contracts/workflows'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { processStreamingBlockLogs } from '@/lib/tokenization'
+import { processStreamingBlockLogs } from '@/lib/tokenization/streaming'
 import { DirectUploadError, runUploadStrategy } from '@/lib/uploads/client/direct-upload'
 import type { ExecutionPausedData } from '@/lib/workflows/executor/execution-events'
 import {
@@ -757,7 +757,10 @@ export function useWorkflowExecution() {
                   })
 
                   // Process all logs for streaming tokenization
-                  const processedCount = processStreamingBlockLogs(result.logs, streamedContent)
+                  const processedCount = await processStreamingBlockLogs(
+                    result.logs,
+                    streamedContent
+                  )
                   logger.info(`Processed ${processedCount} blocks for streaming tokenization`)
                 }
 
