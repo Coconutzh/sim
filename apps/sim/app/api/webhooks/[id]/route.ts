@@ -70,7 +70,7 @@ export const GET = withRouteHandler(
         userId,
         action: 'read',
       })
-      const hasAccess = authorization.allowed
+      const hasAccess = authorization.allowed && authorization.accessSource === 'workspace'
 
       if (!hasAccess) {
         logger.warn(`[${requestId}] User ${userId} denied access to webhook: ${id}`)
@@ -129,7 +129,7 @@ export const PATCH = withRouteHandler(
         userId,
         action: 'write',
       })
-      const canModify = authorization.allowed
+      const canModify = authorization.allowed && authorization.accessSource === 'workspace'
 
       if (!canModify) {
         logger.warn(`[${requestId}] User ${userId} denied permission to modify webhook: ${id}`)
@@ -204,7 +204,7 @@ export const DELETE = withRouteHandler(
         userId,
         action: 'write',
       })
-      const canDelete = authorization.allowed
+      const canDelete = authorization.allowed && authorization.accessSource === 'workspace'
 
       if (!canDelete) {
         logger.warn(`[${requestId}] User ${userId} denied permission to delete webhook: ${id}`)

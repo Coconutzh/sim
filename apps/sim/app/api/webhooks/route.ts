@@ -98,7 +98,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         userId: session.user.id,
         action: 'read',
       })
-      const canRead = authorization.allowed
+      const canRead = authorization.allowed && authorization.accessSource === 'workspace'
 
       if (!canRead) {
         logger.warn(
@@ -285,7 +285,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId,
       action: 'write',
     })
-    const canModify = authorization.allowed
+    const canModify = authorization.allowed && authorization.accessSource === 'workspace'
 
     if (!canModify) {
       logger.warn(
