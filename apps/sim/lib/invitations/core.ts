@@ -303,6 +303,14 @@ export async function acceptInvitation(
       .where(eq(invitation.id, inv.id))
 
     for (const grant of inv.grants) {
+      const [workspaceRow] = await tx
+        .select({ ownerId: workspace.ownerId })
+        .from(workspace)
+        .where(eq(workspace.id, grant.workspaceId))
+        .limit(1)
+
+      const isWorkspaceOwner = workspaceRow?.ownerId === input.userId
+
       const [existingPermission] = await tx
         .select({ id: permissions.id, permissionType: permissions.permissionType })
         .from(permissions)
@@ -318,7 +326,9 @@ export async function acceptInvitation(
       const newPermission = grant.permission as PermissionLevel
       const newRank = PERMISSION_RANK[newPermission] ?? 0
 
-      if (existingPermission) {
+      if (isWorkspaceOwner) {
+        // Owners already have implicit admin access even without a permission row.
+      } else if (existingPermission) {
         const existingRank =
           PERMISSION_RANK[existingPermission.permissionType as PermissionLevel] ?? 0
         if (newRank > existingRank) {

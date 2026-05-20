@@ -94,6 +94,7 @@ describe('acceptInvitation', () => {
       ],
       [{ name: 'Acme' }],
       [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [{ ownerId: 'someone-else' }],
       [],
       [],
       [{ variables: {} }],
@@ -165,6 +166,7 @@ describe('acceptInvitation', () => {
       ],
       [{ name: 'Acme' }],
       [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [{ ownerId: 'someone-else' }],
       [],
       [],
       [{ variables: {} }],
@@ -203,6 +205,63 @@ describe('acceptInvitation', () => {
         entityType: 'workspace',
         entityId: 'workspace-1',
         permissionType: 'read',
+      })
+    )
+  })
+
+  it('does not insert a permission row when the invited user already owns the workspace', async () => {
+    queueWhereResponses([
+      [
+        {
+          id: 'inv-1',
+          kind: 'workspace',
+          email: 'owner@example.com',
+          organizationId: null,
+          membershipIntent: 'internal',
+          inviterId: 'inviter-1',
+          role: 'member',
+          status: 'pending',
+          token: 'tok-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'grant-1',
+          workspaceId: 'workspace-1',
+          permission: 'read',
+          workspaceName: 'Workspace',
+        },
+      ],
+      [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [{ ownerId: 'owner-user' }],
+      [],
+      [{ variables: {} }],
+    ])
+
+    const result = await acceptInvitation({
+      userId: 'owner-user',
+      userEmail: 'owner@example.com',
+      invitationId: 'inv-1',
+      token: 'tok-1',
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.acceptedWorkspaceIds).toEqual(['workspace-1'])
+    }
+    expect(mockApplyWorkspaceAutoAddGroup).toHaveBeenCalledWith(
+      expect.anything(),
+      'workspace-1',
+      'owner-user'
+    )
+    expect(dbChainMockFns.values).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'owner-user',
+        entityType: 'workspace',
+        entityId: 'workspace-1',
       })
     )
   })
