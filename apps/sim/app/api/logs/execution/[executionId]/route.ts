@@ -1,7 +1,6 @@
 import { db } from '@sim/db'
 import {
   jobExecutionLogs,
-  permissions,
   workflow,
   workflowExecutionLogs,
   workflowExecutionSnapshots,
@@ -14,6 +13,7 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('LogsByExecutionIdAPI')
 
@@ -34,6 +34,12 @@ export const GET = withRouteHandler(
       }
 
       const authenticatedUserId = authResult.userId
+      const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(authenticatedUserId)
+
+      if (accessibleWorkspaceIds.length === 0) {
+        logger.warn(`[${requestId}] Execution not found or access denied: ${executionId}`)
+        return NextResponse.json({ error: 'Workflow execution not found' }, { status: 404 })
+      }
 
       const [workflowLog] = await db
         .select({
@@ -50,15 +56,12 @@ export const GET = withRouteHandler(
         })
         .from(workflowExecutionLogs)
         .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
-        .innerJoin(
-          permissions,
+        .where(
           and(
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-            eq(permissions.userId, authenticatedUserId)
+            eq(workflowExecutionLogs.executionId, executionId),
+            inArray(workflowExecutionLogs.workspaceId, accessibleWorkspaceIds)
           )
         )
-        .where(eq(workflowExecutionLogs.executionId, executionId))
         .limit(1)
 
       // Fallback: check job_execution_logs
@@ -75,15 +78,12 @@ export const GET = withRouteHandler(
             executionData: jobExecutionLogs.executionData,
           })
           .from(jobExecutionLogs)
-          .innerJoin(
-            permissions,
+          .where(
             and(
-              eq(permissions.entityType, 'workspace'),
-              eq(permissions.entityId, jobExecutionLogs.workspaceId),
-              eq(permissions.userId, authenticatedUserId)
+              eq(jobExecutionLogs.executionId, executionId),
+              inArray(jobExecutionLogs.workspaceId, accessibleWorkspaceIds)
             )
           )
-          .where(eq(jobExecutionLogs.executionId, executionId))
           .limit(1)
 
         if (!jobLog) {
