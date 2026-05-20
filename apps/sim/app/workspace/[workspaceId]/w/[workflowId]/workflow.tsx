@@ -16,6 +16,8 @@ import 'reactflow/dist/style.css'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { useShallow } from 'zustand/react/shallow'
+import { requestJson } from '@/lib/api/client/request'
+import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthConnectEventDetail } from '@/lib/copilot/tools/client/base-tool'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
@@ -82,6 +84,7 @@ import {
   reactFlowStyles,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow-constants'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
+import { getWorkflowEditorRedirectPath } from '@/app/workspace/redirect-workflow'
 import {
   getAnyBlockCatalogEntry,
   getBlockConfigFromCatalog,
@@ -2545,6 +2548,14 @@ const WorkflowContent = React.memo(
     useWorkspaceEnvironment(sandbox ? '' : workspaceId)
 
     const workflowCount = useMemo(() => Object.keys(workflows).length, [workflows])
+    const workspaceWorkflowIds = useMemo(
+      () =>
+        Object.entries(workflows)
+          .filter(([, workflow]) => workflow.workspaceId === workspaceId)
+          .map(([id]) => id),
+      [workflows, workspaceId]
+    )
+    const missingWorkflowRedirectRef = useRef<string | null>(null)
 
     /** Handles navigation validation and redirects for invalid workflow IDs. */
     useEffect(() => {
@@ -2572,23 +2583,43 @@ const WorkflowContent = React.memo(
 
       // Navigate to existing workflow or first available
       if (!currentWorkflowExists) {
-        logger.info(
-          `Workflow ${workflowIdParam} not found, redirecting to first available workflow`
-        )
-
-        // Validate that workflows belong to the current workspace before redirecting
-        const workspaceWorkflows = Object.entries(workflows)
-          .filter(([, workflow]) => workflow.workspaceId === workspaceId)
-          .map(([id]) => id)
-
-        if (workspaceWorkflows.length > 0) {
-          router.replace(`/workspace/${workspaceId}/w/${workspaceWorkflows[0]}`)
-        } else {
-          // No valid workflows for this workspace, redirect to workspace root
-          router.replace(`/workspace/${workspaceId}/w`)
+        if (!workflowIdParam || missingWorkflowRedirectRef.current === workflowIdParam) {
+          return
         }
+
+        missingWorkflowRedirectRef.current = workflowIdParam
+
+        logger.info(`Workflow ${workflowIdParam} not found locally, probing safe redirect target`)
+
+        void (async () => {
+          let redirectPath = getWorkflowEditorRedirectPath({
+            workflowId: workflowIdParam,
+            fallbackWorkspaceId: workspaceId,
+            workflow: null,
+            workspaceWorkflowIds,
+          })
+
+          try {
+            const workflowResponse = await requestJson(getWorkflowStateContract, {
+              params: { id: workflowIdParam },
+            })
+
+            redirectPath = getWorkflowEditorRedirectPath({
+              workflowId: workflowIdParam,
+              fallbackWorkspaceId: workspaceId,
+              workflow: workflowResponse.data,
+              workspaceWorkflowIds,
+            })
+          } catch (error) {
+            logger.info(`Workflow ${workflowIdParam} probe fell back to local redirect`, { error })
+          }
+
+          router.replace(redirectPath)
+        })()
         return
       }
+
+      missingWorkflowRedirectRef.current = null
 
       // Validate that the current workflow belongs to the current workspace
       const workflowData = workflows[workflowIdParam]
@@ -2606,6 +2637,7 @@ const WorkflowContent = React.memo(
       isWorkflowMapPlaceholderData,
       currentWorkflowExists,
       workflowCount,
+      workspaceWorkflowIds,
       hydration.phase,
       hydration.workspaceId,
       workspaceId,
