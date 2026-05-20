@@ -65,7 +65,12 @@ export const GET = withRouteHandler(
       await expireStalePendingInvitationsForOrganization(organizationId)
 
       const orgWorkspaces = await db
-        .select({ id: workspace.id, name: workspace.name, ownerId: workspace.ownerId })
+        .select({
+          id: workspace.id,
+          name: workspace.name,
+          ownerId: workspace.ownerId,
+          createdAt: workspace.createdAt,
+        })
         .from(workspace)
         .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
 
@@ -177,6 +182,23 @@ export const GET = withRouteHandler(
               )
           : []
 
+      const externalOwnerIds = [...new Set(orgWorkspaces.map((ws) => ws.ownerId))].filter(
+        (ownerId) => !memberUserIds.includes(ownerId)
+      )
+
+      const externalOwnerRows =
+        externalOwnerIds.length > 0
+          ? await db
+              .select({
+                userId: user.id,
+                userName: user.name,
+                userEmail: user.email,
+                userImage: user.image,
+              })
+              .from(user)
+              .where(inArray(user.id, externalOwnerIds))
+          : []
+
       const externalMembersByUser = new Map<
         string,
         {
@@ -191,7 +213,15 @@ export const GET = withRouteHandler(
         }
       >()
 
-      for (const row of externalPermissionRows) {
+      const upsertExternalMember = (row: {
+        userId: string
+        userName: string
+        userEmail: string
+        userImage: string | null
+        workspaceId: string
+        permission: 'admin' | 'write' | 'read'
+        createdAt: Date
+      }) => {
         const existing = externalMembersByUser.get(row.userId)
         const workspaceAccess: RosterWorkspaceAccess = {
           workspaceId: row.workspaceId,
@@ -200,9 +230,16 @@ export const GET = withRouteHandler(
         }
 
         if (existing) {
-          existing.workspaces.push(workspaceAccess)
+          const existingIndex = existing.workspaces.findIndex(
+            (entry) => entry.workspaceId === row.workspaceId
+          )
+          if (existingIndex >= 0) {
+            existing.workspaces[existingIndex] = workspaceAccess
+          } else {
+            existing.workspaces.push(workspaceAccess)
+          }
           if (row.createdAt < existing.createdAt) existing.createdAt = row.createdAt
-          continue
+          return
         }
 
         externalMembersByUser.set(row.userId, {
@@ -214,6 +251,32 @@ export const GET = withRouteHandler(
           email: row.userEmail,
           image: row.userImage,
           workspaces: [workspaceAccess],
+        })
+      }
+
+      for (const row of externalPermissionRows) {
+        upsertExternalMember(row)
+      }
+
+      const externalOwnerById = new Map(externalOwnerRows.map((row) => [row.userId, row]))
+      for (const orgWorkspace of orgWorkspaces) {
+        if (memberUserIds.includes(orgWorkspace.ownerId)) {
+          continue
+        }
+
+        const ownerRow = externalOwnerById.get(orgWorkspace.ownerId)
+        if (!ownerRow) {
+          continue
+        }
+
+        upsertExternalMember({
+          userId: ownerRow.userId,
+          userName: ownerRow.userName,
+          userEmail: ownerRow.userEmail,
+          userImage: ownerRow.userImage,
+          workspaceId: orgWorkspace.id,
+          permission: 'admin',
+          createdAt: orgWorkspace.createdAt,
         })
       }
 

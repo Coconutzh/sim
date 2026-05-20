@@ -50,7 +50,7 @@ describe('GET /api/organizations/[id]/roster', () => {
     const createdAt = new Date('2026-05-21T00:00:00.000Z')
     mockDbResults.value = [
       [{ role: 'owner' }],
-      [{ id: 'ws-owner', name: 'Owner Workspace', ownerId: 'user-1' }],
+      [{ id: 'ws-owner', name: 'Owner Workspace', ownerId: 'user-1', createdAt }],
       [
         {
           memberId: 'member-1',
@@ -94,5 +94,52 @@ describe('GET /api/organizations/[id]/roster', () => {
       },
     ])
     expect(mockExpireStalePendingInvitationsForOrganization).toHaveBeenCalledWith('org-1')
+  })
+
+  it('includes owner-only external workspace owners in the roster', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    mockDbResults.value = [
+      [{ role: 'owner' }],
+      [{ id: 'ws-external', name: 'External Workspace', ownerId: 'external-1', createdAt }],
+      [],
+      [],
+      [
+        {
+          userId: 'external-1',
+          userName: 'External Owner',
+          userEmail: 'external@example.com',
+          userImage: null,
+        },
+      ],
+      [],
+    ]
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/organizations/org-1/roster'),
+      {
+        params: Promise.resolve({ id: 'org-1' }),
+      } as any
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data.members).toEqual([
+      {
+        memberId: 'external-external-1',
+        userId: 'external-1',
+        role: 'external',
+        createdAt: createdAt.toISOString(),
+        name: 'External Owner',
+        email: 'external@example.com',
+        image: null,
+        workspaces: [
+          {
+            workspaceId: 'ws-external',
+            workspaceName: 'External Workspace',
+            permission: 'admin',
+          },
+        ],
+      },
+    ])
   })
 })
