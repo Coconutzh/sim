@@ -27,7 +27,7 @@ vi.mock('@sim/workflow-authz', () => ({
   assertActiveWorkflowContext: vi.fn(),
 }))
 
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { resolveWorkflowIdForUser, validateWorkflowPermissions } from '@/lib/workflows/utils'
 
 const mockSession = createSession({ userId: 'user-1', email: 'user1@test.com' })
 const mockWorkflow = createWorkflowRecord({
@@ -243,6 +243,26 @@ describe('validateWorkflowPermissions', () => {
 
       const result = await validateWorkflowPermissions('wf-1', 'req-1')
       expectWorkflowAccessGranted(result)
+    })
+  })
+})
+
+describe('resolveWorkflowIdForUser', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should reject published workflow readers when a workflowId is supplied directly', async () => {
+    mockAuthorizeWorkflow.mockResolvedValue({
+      ...allowed('read'),
+      accessSource: 'selected_workgroups',
+    })
+
+    const result = await resolveWorkflowIdForUser('user-1', 'wf-1')
+
+    expect(result).toEqual({
+      status: 'not_found',
+      message: 'No workflows found. Create a workflow first or provide a valid workflowId.',
     })
   })
 })

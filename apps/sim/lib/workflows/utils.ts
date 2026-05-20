@@ -135,7 +135,7 @@ export async function resolveWorkflowIdForUser(
       userId,
       action: 'read',
     })
-    if (!authorization.allowed) {
+    if (!authorization.allowed || authorization.accessSource !== 'workspace') {
       return {
         status: 'not_found',
         message: 'No workflows found. Create a workflow first or provide a valid workflowId.',
