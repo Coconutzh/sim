@@ -29,6 +29,11 @@ vi.mock('@sim/db', () => ({
 
 vi.mock('@sim/db/schema', () => schemaMock)
 
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  getUserEntityPermissions: vi.fn(),
+  listAccessibleWorkspaceIds: vi.fn(),
+}))
+
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...conditions: unknown[]) => ({ conditions, type: 'and' })),
   count: vi.fn((field: unknown) => ({ field, type: 'count' })),
@@ -50,10 +55,11 @@ vi.mock('drizzle-orm', () => ({
   ),
 }))
 
-import { workspace } from '@sim/db/schema'
+import { knowledgeBase } from '@sim/db/schema'
 import { getKnowledgeBases } from '@/lib/knowledge/service'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
-function hasOwnerAccessBranch(value: unknown, ownerId: string): boolean {
+function hasAccessibleWorkspaceFilter(value: unknown, workspaceIds: string[]): boolean {
   if (!value || typeof value !== 'object') {
     return false
   }
@@ -65,12 +71,16 @@ function hasOwnerAccessBranch(value: unknown, ownerId: string): boolean {
     conditions?: unknown[]
   }
 
-  if (node.type === 'eq' && node.field === workspace.ownerId && node.value === ownerId) {
+  if (
+    node.type === 'inArray' &&
+    node.field === knowledgeBase.workspaceId &&
+    JSON.stringify(node.value) === JSON.stringify(workspaceIds)
+  ) {
     return true
   }
 
   return Array.isArray(node.conditions)
-    ? node.conditions.some((condition) => hasOwnerAccessBranch(condition, ownerId))
+    ? node.conditions.some((condition) => hasAccessibleWorkspaceFilter(condition, workspaceIds))
     : false
 }
 
@@ -80,17 +90,23 @@ describe('getKnowledgeBases', () => {
     mockOrderBy.mockResolvedValue([])
   })
 
-  it('includes workspace ownership in the filtered workspace access predicate', async () => {
+  it('filters workspace-backed knowledge bases through accessible workspace ids', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-owner'])
+
     await getKnowledgeBases('owner-1', 'ws-owner')
 
     expect(mockWhere).toHaveBeenCalledTimes(1)
-    expect(hasOwnerAccessBranch(mockWhere.mock.calls[0][0], 'owner-1')).toBe(true)
+    expect(hasAccessibleWorkspaceFilter(mockWhere.mock.calls[0][0], ['ws-owner'])).toBe(true)
   })
 
-  it('includes workspace ownership in the unfiltered workspace access predicate', async () => {
+  it('filters unscoped workspace-backed knowledge bases through accessible workspace ids', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-owner', 'ws-team'])
+
     await getKnowledgeBases('owner-1')
 
     expect(mockWhere).toHaveBeenCalledTimes(1)
-    expect(hasOwnerAccessBranch(mockWhere.mock.calls[0][0], 'owner-1')).toBe(true)
+    expect(hasAccessibleWorkspaceFilter(mockWhere.mock.calls[0][0], ['ws-owner', 'ws-team'])).toBe(
+      true
+    )
   })
 })

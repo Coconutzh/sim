@@ -3,14 +3,17 @@ import { document, knowledgeBase, knowledgeConnector, permissions, workspace } f
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { generateRestoreName } from '@/lib/core/utils/restore-name'
 import type {
   ChunkingConfig,
   CreateKnowledgeBaseData,
   KnowledgeBaseWithCounts,
 } from '@/lib/knowledge/types'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  listAccessibleWorkspaceIds,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('KnowledgeBaseService')
 
@@ -31,12 +34,18 @@ export async function getKnowledgeBases(
   workspaceId?: string | null,
   scope: KnowledgeBaseScope = 'active'
 ): Promise<KnowledgeBaseWithCounts[]> {
+  const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(userId)
   const scopeCondition =
     scope === 'all'
       ? undefined
       : scope === 'archived'
         ? sql`${knowledgeBase.deletedAt} IS NOT NULL`
         : isNull(knowledgeBase.deletedAt)
+
+  const accessibleWorkspaceCondition =
+    accessibleWorkspaceIds.length > 0
+      ? and(inArray(knowledgeBase.workspaceId, accessibleWorkspaceIds), isNull(workspace.archivedAt))
+      : sql`false`
 
   const knowledgeBasesWithCounts = await db
     .select({
@@ -82,8 +91,7 @@ export async function getKnowledgeBases(
               // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
               and(
                 eq(knowledgeBase.workspaceId, workspaceId),
-                or(eq(workspace.ownerId, userId), isNotNull(permissions.userId)),
-                isNull(workspace.archivedAt)
+                accessibleWorkspaceCondition
               ),
               // Fallback: User-owned knowledge bases without workspace (legacy)
               and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId))
@@ -93,10 +101,7 @@ export async function getKnowledgeBases(
               // User owns the knowledge base directly
               eq(knowledgeBase.userId, userId),
               // User has permissions on the knowledge base's workspace
-              and(
-                or(eq(workspace.ownerId, userId), isNotNull(permissions.userId)),
-                isNull(workspace.archivedAt)
-              )
+              accessibleWorkspaceCondition
             )
       )
     )
