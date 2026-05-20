@@ -35,6 +35,14 @@ const logger = createLogger('OrganizationMembership')
 
 export type BillingBlockReason = 'payment_failed' | 'dispute'
 
+function buildActiveOrganizationWorkspaceCondition(organizationId: string) {
+  return and(
+    eq(workspace.organizationId, organizationId),
+    eq(workspace.workspaceMode, 'organization'),
+    isNull(workspace.archivedAt)
+  )
+}
+
 /**
  * Get all member user IDs for an organization
  */
@@ -315,7 +323,7 @@ async function reassignOwnedOrganizationWorkspacesTx({
     .set({ ownerId, updatedAt: new Date() })
     .where(
       and(
-        eq(workspace.organizationId, organizationId),
+        buildActiveOrganizationWorkspaceCondition(organizationId),
         eq(workspace.ownerId, userId),
         inArray(workspace.id, workspaceIds)
       )
@@ -977,7 +985,7 @@ export async function removeUserFromOrganization(
       const orgWorkspaces = await tx
         .select({ id: workspace.id })
         .from(workspace)
-        .where(eq(workspace.organizationId, organizationId))
+        .where(buildActiveOrganizationWorkspaceCondition(organizationId))
 
       if (orgWorkspaces.length === 0) {
         return {
@@ -1142,7 +1150,7 @@ export async function removeExternalUserFromOrganizationWorkspaces(params: {
       const orgWorkspaces = await tx
         .select({ id: workspace.id })
         .from(workspace)
-        .where(eq(workspace.organizationId, organizationId))
+        .where(buildActiveOrganizationWorkspaceCondition(organizationId))
 
       if (orgWorkspaces.length === 0) {
         return {
@@ -1338,7 +1346,7 @@ export async function transferOrganizationOwnership(
         .set({ billedAccountUserId: newOwnerUserId })
         .where(
           and(
-            eq(workspace.organizationId, organizationId),
+            buildActiveOrganizationWorkspaceCondition(organizationId),
             eq(workspace.billedAccountUserId, currentOwnerUserId)
           )
         )
@@ -1351,7 +1359,7 @@ export async function transferOrganizationOwnership(
         .set({ ownerId: newOwnerUserId })
         .where(
           and(
-            eq(workspace.organizationId, organizationId),
+            buildActiveOrganizationWorkspaceCondition(organizationId),
             eq(workspace.ownerId, currentOwnerUserId)
           )
         )

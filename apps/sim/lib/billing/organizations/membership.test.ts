@@ -4,12 +4,19 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { dbSelectResults, deleteResults, insertOnConflictResults, transactionMock, updateResults } =
-  vi.hoisted(() => ({
+const {
+  dbSelectResults,
+  deleteResults,
+  insertOnConflictResults,
+  transactionMock,
+  txSelectWhereCalls,
+  updateResults,
+} = vi.hoisted(() => ({
     dbSelectResults: [] as unknown[],
     deleteResults: [] as unknown[],
     insertOnConflictResults: [] as unknown[],
     transactionMock: vi.fn(),
+    txSelectWhereCalls: [] as unknown[],
     updateResults: [] as unknown[],
   }))
 
@@ -37,7 +44,10 @@ vi.mock('@sim/db', () => {
     }
     chain.from.mockReturnValue(chain)
     chain.innerJoin.mockReturnValue(chain)
-    chain.where.mockReturnValue(chain)
+    chain.where.mockImplementation((condition) => {
+      txSelectWhereCalls.push(condition)
+      return chain
+    })
     return chain
   }
 
@@ -132,9 +142,13 @@ vi.mock('@sim/db/schema', () => ({
   user: { email: 'user.email', id: 'user.id' },
   userStats: { billingBlockedReason: 'userStats.billingBlockedReason', userId: 'userStats.userId' },
   workspace: {
+    archivedAt: 'workspace.archivedAt',
+    billedAccountUserId: 'workspace.billedAccountUserId',
     id: 'workspace.id',
     organizationId: 'workspace.organizationId',
     ownerId: 'workspace.ownerId',
+    updatedAt: 'workspace.updatedAt',
+    workspaceMode: 'workspace.workspaceMode',
   },
 }))
 
@@ -199,6 +213,7 @@ describe('removeExternalUserFromOrganizationWorkspaces', () => {
     updateResults.length = 0
     deleteResults.length = 0
     insertOnConflictResults.length = 0
+    txSelectWhereCalls.length = 0
 
     transactionMock.mockImplementation(async (callback) => {
       const txSelectResults: unknown[] = [[{ id: 'ws-1' }], [], [{ userId: 'org-owner-1' }], []]
@@ -222,7 +237,10 @@ describe('removeExternalUserFromOrganizationWorkspaces', () => {
         }
         chain.from.mockReturnValue(chain)
         chain.innerJoin.mockReturnValue(chain)
-        chain.where.mockReturnValue(chain)
+        chain.where.mockImplementation((condition) => {
+          txSelectWhereCalls.push(condition)
+          return chain
+        })
         return chain
       }
 
@@ -295,6 +313,14 @@ describe('removeExternalUserFromOrganizationWorkspaces', () => {
       permissionGroupsRevoked: 0,
       credentialMembershipsRevoked: 0,
       pendingInvitationsCancelled: 0,
+    })
+    expect(txSelectWhereCalls).toContainEqual({
+      kind: 'and',
+      args: [
+        { kind: 'eq', left: 'workspace.organizationId', right: 'org-1' },
+        { kind: 'eq', left: 'workspace.workspaceMode', right: 'organization' },
+        { kind: 'isNull', value: 'workspace.archivedAt' },
+      ],
     })
   })
 })
