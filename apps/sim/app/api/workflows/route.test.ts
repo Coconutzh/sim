@@ -21,6 +21,7 @@ const { mockWorkflowCreated, mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
 }))
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const mockListAccessibleWorkspaceIds = permissionsMockFns.mockListAccessibleWorkspaceIds
 
 vi.mock('drizzle-orm', () => ({
   ...drizzleOrmMock,
@@ -63,7 +64,7 @@ vi.mock('@/lib/workflows/defaults', () => ({
 
 vi.mock('@/lib/workflows/persistence/utils', () => workflowsPersistenceUtilsMock)
 
-import { POST } from '@/app/api/workflows/route'
+import { GET, POST } from '@/app/api/workflows/route'
 
 describe('Workflows API Route - POST ordering', () => {
   beforeEach(() => {
@@ -160,5 +161,58 @@ describe('Workflows API Route - POST ordering', () => {
     expect(response.status).toBe(200)
     expect(data.sortOrder).toBe(0)
     expect(insertedValues?.sortOrder).toBe(0)
+  })
+})
+
+describe('Workflows API Route - GET access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValue({
+      success: true,
+      userId: 'user-123',
+      userName: 'Test User',
+      userEmail: 'test@example.com',
+    })
+  })
+
+  it('lists workflows from owned workspaces when no explicit permission row exists', async () => {
+    mockListAccessibleWorkspaceIds.mockResolvedValue(['workspace-owned'])
+    mockDbSelect.mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([
+            {
+              id: 'workflow-1',
+              name: 'Owned Workflow',
+              description: null,
+              color: '#3972F6',
+              workspaceId: 'workspace-owned',
+              folderId: null,
+              sortOrder: 0,
+              track: 'draft',
+              visibility: 'workspace',
+              sourceWorkflowId: null,
+              publishedAt: null,
+              createdAt: new Date('2026-05-20T00:00:00Z'),
+              updatedAt: new Date('2026-05-20T00:00:00Z'),
+              archivedAt: null,
+              locked: false,
+            },
+          ]),
+        }),
+      }),
+    }))
+
+    const response = await GET(createMockRequest('GET'))
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockListAccessibleWorkspaceIds).toHaveBeenCalledWith('user-123')
+    expect(data.data).toHaveLength(1)
+    expect(data.data[0]).toMatchObject({
+      id: 'workflow-1',
+      workspaceId: 'workspace-owned',
+    })
   })
 })

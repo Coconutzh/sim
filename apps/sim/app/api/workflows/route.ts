@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, workflow, workflowFolder } from '@sim/db/schema'
+import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull, min, sql } from 'drizzle-orm'
@@ -14,7 +14,11 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
-import { getUserEntityPermissions, workspaceExists } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  listAccessibleWorkspaceIds,
+  workspaceExists,
+} from '@/lib/workspaces/permissions/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 
 const logger = createLogger('WorkflowAPI')
@@ -108,11 +112,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         )
         .orderBy(...orderByClause)
     } else {
-      const workspacePermissionRows = await db
-        .select({ workspaceId: permissions.entityId })
-        .from(permissions)
-        .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
-      const workspaceIds = workspacePermissionRows.map((row) => row.workspaceId)
+      const workspaceIds = await listAccessibleWorkspaceIds(userId)
       if (workspaceIds.length === 0) {
         return NextResponse.json({ data: [] }, { status: 200 })
       }

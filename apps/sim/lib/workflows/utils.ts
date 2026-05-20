@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { permissions, userStats, workflowFolder, workflow as workflowTable } from '@sim/db/schema'
+import { userStats, workflowFolder, workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
@@ -9,6 +9,7 @@ import { getSession } from '@/lib/auth'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 import type { ExecutionResult } from '@/executor/types'
 
@@ -144,12 +145,7 @@ export async function resolveWorkflowIdForUser(
     return { status: 'resolved', workflowId, workflowName: wf?.name || undefined }
   }
 
-  const workspaceIds = await db
-    .select({ entityId: permissions.entityId })
-    .from(permissions)
-    .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
-
-  const workspaceIdList = workspaceIds.map((row) => row.entityId)
+  const workspaceIdList = await listAccessibleWorkspaceIds(userId)
   const allowedWorkspaceIds = workspaceId
     ? workspaceIdList.filter((candidateWorkspaceId) => candidateWorkspaceId === workspaceId)
     : workspaceIdList

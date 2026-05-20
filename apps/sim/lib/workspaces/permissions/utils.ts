@@ -7,7 +7,7 @@ import {
   type WorkspaceMode,
   workspace,
 } from '@sim/db/schema'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, or } from 'drizzle-orm'
 
 export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 export interface WorkspaceBasic {
@@ -172,9 +172,13 @@ export async function getUserEntityPermissions(
   entityId: string
 ): Promise<PermissionType | null> {
   if (entityType === 'workspace') {
-    const activeWorkspace = await workspaceExists(entityId)
-    if (!activeWorkspace) {
+    const ws = await getWorkspaceWithOwner(entityId)
+    if (!ws) {
       return null
+    }
+
+    if (ws.ownerId === userId) {
+      return 'admin'
     }
   }
 
@@ -201,6 +205,31 @@ export async function getUserEntityPermissions(
   })
 
   return highestPermission.permissionType
+}
+
+/**
+ * Returns the active workspace IDs a user can access, including owned workspaces.
+ */
+export async function listAccessibleWorkspaceIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .leftJoin(
+      permissions,
+      and(
+        eq(permissions.entityId, workspace.id),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.userId, userId)
+      )
+    )
+    .where(
+      and(
+        isNull(workspace.archivedAt),
+        or(eq(workspace.ownerId, userId), isNotNull(permissions.id))
+      )
+    )
+
+  return [...new Set(rows.map((row) => row.id))]
 }
 
 /**

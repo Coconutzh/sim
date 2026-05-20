@@ -9,6 +9,7 @@ import {
   getWorkspaceWithOwner,
   hasAdminPermission,
   hasWorkspaceAdminAccess,
+  listAccessibleWorkspaceIds,
   workspaceExists,
 } from '@/lib/workspaces/permissions/utils'
 
@@ -36,6 +37,25 @@ describe('Permission Utils', () => {
   })
 
   describe('getUserEntityPermissions', () => {
+    it('should treat the workspace owner as admin without a permission row', async () => {
+      const workspaceChain = createMockChain([
+        {
+          id: 'workspace456',
+          name: 'Owner Workspace',
+          ownerId: 'user123',
+          organizationId: null,
+          workspaceMode: 'personal',
+          billedAccountUserId: 'user123',
+          archivedAt: null,
+        },
+      ])
+      mockDb.select.mockReturnValueOnce(workspaceChain)
+
+      const result = await getUserEntityPermissions('user123', 'workspace', 'workspace456')
+
+      expect(result).toBe('admin')
+    })
+
     it('should return null when user has no permissions', async () => {
       const chain = createMockChain([])
       mockDb.select.mockReturnValue(chain)
@@ -134,6 +154,21 @@ describe('Permission Utils', () => {
       const result = await getUserEntityPermissions('user123', 'custom_entity', 'entity123')
 
       expect(result).toBe('write')
+    })
+  })
+
+  describe('listAccessibleWorkspaceIds', () => {
+    it('should include owned and permissioned workspaces without duplicates', async () => {
+      const chain = createMockChain([
+        { id: 'workspace-owned' },
+        { id: 'workspace-shared' },
+        { id: 'workspace-owned' },
+      ])
+      mockDb.select.mockReturnValue(chain)
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual(['workspace-owned', 'workspace-shared'])
     })
   })
 
