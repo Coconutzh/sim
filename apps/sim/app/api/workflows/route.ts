@@ -209,6 +209,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
+    if (track === 'published') {
+      return NextResponse.json(
+        {
+          error: 'Published workflows must be created via the publish workflow flow',
+        },
+        { status: 400 }
+      )
+    }
+
     const workflowId = clientId || generateId()
     const now = new Date()
 

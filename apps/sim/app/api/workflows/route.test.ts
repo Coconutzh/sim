@@ -231,6 +231,28 @@ describe('Workflows API Route - POST ordering', () => {
       'Only organization team workspaces with a workgroup can create cross-team workflows'
     )
   })
+
+  it('rejects direct published workflow creation outside the publish flow', async () => {
+    const req = createMockRequest('POST', {
+      name: 'Published Workflow',
+      description: 'desc',
+      color: '#3972F6',
+      workspaceId: 'workspace-123',
+      track: 'published',
+      visibility: 'organization',
+      sourceWorkflowId: 'workflow-draft-123',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Published workflows must be created via the publish workflow flow')
+    expect(mockDbInsert).not.toHaveBeenCalled()
+    expect(
+      workflowsPersistenceUtilsMockFns.mockSaveWorkflowToNormalizedTables
+    ).not.toHaveBeenCalled()
+  })
 })
 
 describe('Workflows API Route - GET access', () => {
