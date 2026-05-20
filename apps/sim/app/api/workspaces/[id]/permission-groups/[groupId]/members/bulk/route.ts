@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissionGroup, permissionGroupMember, permissions } from '@sim/db/schema'
+import { permissionGroup, permissionGroupMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresConstraintName, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -12,7 +12,10 @@ import { getSession } from '@/lib/auth'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { PERMISSION_GROUP_MEMBER_CONSTRAINTS } from '@/lib/permission-groups/types'
-import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  getUsersWithPermissions,
+  hasWorkspaceAdminAccess,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspacePermissionGroupBulkMembers')
 
@@ -66,30 +69,14 @@ export const POST = withRouteHandler(
       const { userIds, addAllWorkspaceMembers } = parsed.data.body
 
       let targetUserIds: string[] = []
+      const workspaceMembers = await getUsersWithPermissions(workspaceId)
+      const workspaceMemberIds = new Set(workspaceMembers.map((member) => member.userId))
 
       if (addAllWorkspaceMembers) {
-        const workspaceMembers = await db
-          .select({ userId: permissions.userId })
-          .from(permissions)
-          .where(
-            and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId))
-          )
-
-        targetUserIds = Array.from(new Set(workspaceMembers.map((m) => m.userId)))
+        targetUserIds = Array.from(workspaceMemberIds)
       } else if (userIds && userIds.length > 0) {
         const uniqueUserIds = Array.from(new Set(userIds))
-        const validMembers = await db
-          .select({ userId: permissions.userId })
-          .from(permissions)
-          .where(
-            and(
-              eq(permissions.entityType, 'workspace'),
-              eq(permissions.entityId, workspaceId),
-              inArray(permissions.userId, uniqueUserIds)
-            )
-          )
-
-        targetUserIds = Array.from(new Set(validMembers.map((m) => m.userId)))
+        targetUserIds = uniqueUserIds.filter((userId) => workspaceMemberIds.has(userId))
       }
 
       if (targetUserIds.length === 0) {
