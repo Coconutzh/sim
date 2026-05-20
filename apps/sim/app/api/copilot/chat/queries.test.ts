@@ -12,6 +12,11 @@ const {
   mockGetLatestRunForStream,
   mockBuildEffectiveChatTranscript,
   mockNormalizeMessage,
+  mockAuthorizeWorkflowByWorkspacePermission,
+  mockSelect,
+  mockFrom,
+  mockWhere,
+  mockOrderBy,
 } = vi.hoisted(() => ({
   mockAuthenticateCopilotRequestSessionOnly: vi.fn(),
   mockGetAccessibleCopilotChat: vi.fn(),
@@ -20,6 +25,11 @@ const {
   mockGetLatestRunForStream: vi.fn(),
   mockBuildEffectiveChatTranscript: vi.fn(),
   mockNormalizeMessage: vi.fn((message: unknown) => message),
+  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
+  mockSelect: vi.fn(),
+  mockFrom: vi.fn(),
+  mockWhere: vi.fn(),
+  mockOrderBy: vi.fn(),
 }))
 
 vi.mock('@/lib/copilot/request/http', () => ({
@@ -60,7 +70,7 @@ vi.mock('@/lib/copilot/request/session/types', () => ({
 
 vi.mock('@sim/db', () => ({
   db: {
-    select: vi.fn(),
+    select: mockSelect,
   },
 }))
 
@@ -69,7 +79,7 @@ vi.mock('@sim/db/schema', () => ({
 }))
 
 vi.mock('@sim/workflow-authz', () => ({
-  authorizeWorkflowByWorkspacePermission: vi.fn(),
+  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
@@ -91,6 +101,16 @@ describe('copilot chat queries GET', () => {
     mockReadEvents.mockResolvedValue([])
     mockReadFilePreviewSessions.mockResolvedValue([])
     mockGetLatestRunForStream.mockResolvedValue(null)
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      accessSource: 'workspace',
+      workflow: { workspaceId: 'ws-1' },
+    })
+    mockSelect.mockReturnValue({ from: mockFrom })
+    mockFrom.mockReturnValue({ where: mockWhere })
+    mockWhere.mockReturnValue({ orderBy: mockOrderBy })
+    mockOrderBy.mockResolvedValue([])
   })
 
   it('allows workspace member access for the legacy mothership alias path', async () => {
@@ -135,5 +155,21 @@ describe('copilot chat queries GET', () => {
     expect(mockGetAccessibleCopilotChat).toHaveBeenCalledWith('chat-1', 'viewer-1', {
       allowWorkspaceMembers: false,
     })
+  })
+
+  it('rejects workflow chat listings for published workflow readers', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      accessSource: 'published',
+      workflow: { workspaceId: 'ws-1' },
+    })
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/copilot/chat?workflowId=wf-1')
+    )
+
+    expect(response.status).toBe(401)
+    expect(mockOrderBy).not.toHaveBeenCalled()
   })
 })

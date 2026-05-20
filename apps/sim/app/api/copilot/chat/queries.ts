@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
         userId: authenticatedUserId,
         action: 'read',
       })
-      if (!authorization.allowed) {
+      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
         return createUnauthorizedResponse()
       }
     }

@@ -90,11 +90,16 @@ export async function getAccessibleCopilotChat(
       userId,
       action: 'read',
     })
-    if (!authorization.allowed || !authorization.workflow) {
+    if (
+      !authorization.allowed ||
+      !authorization.workflow ||
+      authorization.accessSource !== 'workspace'
+    ) {
       logger.warn('Copilot chat workflow not authorized for user', {
         chatId,
         userId,
         workflowId: chat.workflowId,
+        accessSource: authorization.accessSource,
       })
       return null
     }

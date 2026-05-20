@@ -165,4 +165,32 @@ describe('getAccessibleCopilotChat', () => {
     expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
     expect(mockAuthorizeWorkflow).not.toHaveBeenCalled()
   })
+
+  it('rejects owner access to workflow-scoped chats when authorization only comes from publication', async () => {
+    mockSelectLimit.mockResolvedValueOnce([
+      {
+        id: 'chat-workflow-owner',
+        userId: 'viewer-1',
+        workspaceId: 'ws-1',
+        workflowId: 'wf-1',
+        type: 'copilot',
+        messages: [],
+      },
+    ])
+    mockAuthorizeWorkflow.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      accessSource: 'published',
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+    })
+
+    const result = await getAccessibleCopilotChat('chat-workflow-owner', 'viewer-1')
+
+    expect(result).toBeNull()
+    expect(mockAuthorizeWorkflow).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      userId: 'viewer-1',
+      action: 'read',
+    })
+  })
 })

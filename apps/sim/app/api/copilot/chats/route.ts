@@ -118,6 +118,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         { status: authorization.status }
       )
     }
+    if (authorization.accessSource !== 'workspace') {
+      return NextResponse.json(
+        { success: false, error: 'Workspace access required' },
+        { status: 403 }
+      )
+    }
 
     if (authorization.workflow.workspaceId !== workspaceId) {
       return createBadRequestResponse('workflow does not belong to this workspace')
