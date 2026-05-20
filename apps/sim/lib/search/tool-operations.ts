@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
-import { filterEnabledBlocks } from '@/lib/product/tool-policy'
-import { getAllBlocks } from '@/blocks'
-import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
+import { getAllBlockCatalogEntries, getBlockConfigFromCatalog } from '@/blocks/catalog'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import type { SubBlockConfig } from '@/blocks/types'
 
 /**
  * Represents a searchable tool operation extracted from block configurations.
@@ -80,34 +80,12 @@ function generateAliases(operationName: string): string[] {
  * Extracts the operation dropdown subblock from a block's configuration.
  * Returns null if no operation dropdown exists.
  */
-function findOperationDropdown(block: BlockConfig): SubBlockConfig | null {
+function findOperationDropdown(block: BlockCatalogEntry): SubBlockConfig | null {
   return (
     block.subBlocks.find(
       (sb) => sb.id === 'operation' && sb.type === 'dropdown' && Array.isArray(sb.options)
     ) ?? null
   )
-}
-
-/**
- * Resolves the tool ID for a given operation using the block's tool config.
- * Falls back to checking tools.access if no config.tool function exists.
- */
-function resolveToolId(block: BlockConfig, operationId: string): string | null {
-  if (!block.tools) return null
-
-  if (block.tools.config?.tool) {
-    try {
-      return block.tools.config.tool({ operation: operationId })
-    } catch {
-      return null
-    }
-  }
-
-  if (block.tools.access?.length === 1) {
-    return block.tools.access[0]
-  }
-
-  return null
 }
 
 /**
@@ -123,7 +101,7 @@ function resolveToolId(block: BlockConfig, operationId: string): string | null {
  */
 export function buildToolOperationsIndex(): ToolOperationItem[] {
   const operations: ToolOperationItem[] = []
-  const allBlocks = filterEnabledBlocks(getAllBlocks())
+  const allBlocks = getAllBlockCatalogEntries()
 
   for (const block of allBlocks) {
     if (!block.tools?.access?.length || block.hideFromToolbar) {
@@ -147,10 +125,11 @@ export function buildToolOperationsIndex(): ToolOperationItem[] {
     if (!options) continue
 
     for (const option of options) {
-      if (!resolveToolId(block, option.id)) continue
+      if (!block.tools?.operationToolMap?.[option.id]) continue
 
       const operationName = option.label
       const aliases = generateAliases(operationName)
+      const blockConfig = getBlockConfigFromCatalog(block.type)
 
       operations.push({
         id: `${block.type}_${option.id}`,
@@ -158,7 +137,7 @@ export function buildToolOperationsIndex(): ToolOperationItem[] {
         operationId: option.id,
         serviceName: block.name,
         operationName,
-        icon: block.icon,
+        icon: blockConfig?.icon ?? (() => null),
         bgColor: block.bgColor,
         aliases,
       })

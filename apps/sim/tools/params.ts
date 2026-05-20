@@ -10,11 +10,9 @@ import {
   resolveCanonicalMode,
   type SubBlockCondition,
 } from '@/lib/workflows/subblocks/visibility'
-import type {
-  BlockConfig as AppBlockConfig,
-  SubBlockConfig as BlockSubBlockConfig,
-  GenerationType,
-} from '@/blocks/types'
+import { getAllBlockCatalogEntries } from '@/blocks/catalog'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
+import type { SubBlockConfig as BlockSubBlockConfig, GenerationType } from '@/blocks/types'
 import { safeAssign } from '@/tools/safe-assign'
 import { isEmptyTagValue } from '@/tools/shared/tags'
 import type { OAuthConfig, ParameterVisibility, ToolConfig } from '@/tools/types'
@@ -110,7 +108,7 @@ export interface SubBlockConfig {
   dependsOn?: string[]
 }
 
-type ToolInputBlockConfig = Pick<AppBlockConfig, 'type' | 'subBlocks' | 'tools'>
+type ToolInputBlockConfig = Pick<BlockCatalogEntry, 'type' | 'subBlocks' | 'tools'>
 
 export interface SchemaProperty {
   type: string
@@ -165,10 +163,9 @@ let blockConfigCache: Record<string, ToolInputBlockConfig> | null = null
 function getBlockConfigurations(): Record<string, ToolInputBlockConfig> {
   if (!blockConfigCache) {
     try {
-      const { getAllBlocks } = require('@/blocks')
-      const allBlocks = getAllBlocks()
+      const allBlocks = getAllBlockCatalogEntries()
       blockConfigCache = {}
-      allBlocks.forEach((block: AppBlockConfig) => {
+      allBlocks.forEach((block) => {
         blockConfigCache![block.type] = block
       })
     } catch (error) {
@@ -190,12 +187,8 @@ export function getToolIdForOperation(blockType: string, operation?: string): st
     return block.tools.access[0]
   }
 
-  if (operation && block.tools.config?.tool) {
-    try {
-      return block.tools.config.tool({ operation })
-    } catch (error) {
-      logger.error('Error selecting tool for operation:', error)
-    }
+  if (operation && block.tools.operationToolMap?.[operation]) {
+    return block.tools.operationToolMap[operation]
   }
 
   if (operation && block.tools.access.includes(operation)) {

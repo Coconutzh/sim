@@ -1,4 +1,4 @@
-import { getLatestBlock } from '@/blocks/registry'
+import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { getAllTriggers } from '@/triggers'
 
 export interface TriggerOption {
@@ -52,7 +52,7 @@ export function getTriggerOptions(): TriggerOption[] {
       continue
     }
 
-    const block = getLatestBlock(provider)
+    const block = getAnyBlockCatalogEntry(provider)
 
     providerMap.set(provider, {
       value: provider,

@@ -18,6 +18,7 @@ export interface BlockCatalogEntry {
   tools?: {
     access?: string[]
     config?: Record<string, unknown>
+    operationToolMap?: Record<string, string>
   }
   inputs: Record<string, unknown>
   outputs: Record<string, unknown>

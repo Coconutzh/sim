@@ -36,6 +36,12 @@ interface GeneratedBlockEntry {
   triggers?: BlockConfig['triggers']
 }
 
+interface SerializableTools {
+  access?: string[]
+  config?: Record<string, unknown>
+  operationToolMap?: Record<string, string>
+}
+
 const BLOCKS_DIR = new URL('../blocks/blocks', import.meta.url)
 const BLOCKS_DIR_PATH = fileURLToPath(BLOCKS_DIR)
 const GENERATED_HEADER = `/**
@@ -86,6 +92,77 @@ function toSerializable<T>(value: T): T {
   return result as T
 }
 
+function getOperationOptions(block: BlockConfig): Array<{ id?: string }> {
+  const operationSubBlock = block.subBlocks.find(
+    (subBlock) => subBlock.id === 'operation' && subBlock.type === 'dropdown'
+  )
+  const options = operationSubBlock?.options
+  if (Array.isArray(options)) return options as Array<{ id?: string }>
+  if (typeof options !== 'function') return []
+
+  try {
+    const resolvedOptions = options()
+    return Array.isArray(resolvedOptions) ? (resolvedOptions as Array<{ id?: string }>) : []
+  } catch {
+    return []
+  }
+}
+
+function inferToolIdForOperation(block: BlockConfig, operationId: string): string | undefined {
+  const access = block.tools?.access ?? []
+  if (access.length === 0) return undefined
+  if (access.length === 1) return access[0]
+
+  const toolSelector = block.tools?.config?.tool
+  if (toolSelector) {
+    try {
+      const selectedTool = toolSelector({ operation: operationId })
+      if (typeof selectedTool === 'string' && selectedTool.length > 0) return selectedTool
+    } catch {
+      return undefined
+    }
+  }
+
+  if (access.includes(operationId)) return operationId
+
+  const servicePrefix = `${block.type}_`
+  if (operationId.startsWith(servicePrefix)) {
+    const withoutPrefix = operationId.slice(servicePrefix.length)
+    const prefixedTool = `${block.type}_${withoutPrefix}`
+    if (access.includes(prefixedTool)) return prefixedTool
+  }
+
+  if (operationId.endsWith(`_${block.type}`)) {
+    const withoutSuffix = operationId.slice(0, -block.type.length - 1)
+    const prefixedTool = `${block.type}_${withoutSuffix}`
+    if (access.includes(prefixedTool)) return prefixedTool
+  }
+
+  const prefixedOperation = `${block.type}_${operationId}`
+  if (access.includes(prefixedOperation)) return prefixedOperation
+
+  return access.find((toolId) => toolId.startsWith(prefixedOperation))
+}
+
+function buildSerializableTools(block: BlockConfig): SerializableTools {
+  const tools = toSerializable(block.tools) as SerializableTools
+  const operationToolMap = Object.fromEntries(
+    getOperationOptions(block)
+      .map((option) => {
+        if (!option.id) return null
+        const toolId = inferToolIdForOperation(block, option.id)
+        return toolId ? ([option.id, toolId] as const) : null
+      })
+      .filter((entry): entry is readonly [string, string] => !!entry)
+  )
+
+  if (Object.keys(operationToolMap).length > 0) {
+    tools.operationToolMap = operationToolMap
+  }
+
+  return tools
+}
+
 async function getBlockModuleNames(): Promise<string[]> {
   const entries = await readdir(BLOCKS_DIR, { withFileTypes: true })
 
@@ -129,7 +206,7 @@ async function loadGeneratedBlockEntries(moduleName: string): Promise<GeneratedB
       triggerAllowed: exportedValue.triggerAllowed,
       authMode: exportedValue.authMode,
       singleInstance: exportedValue.singleInstance,
-      tools: toSerializable(exportedValue.tools),
+      tools: buildSerializableTools(exportedValue),
       inputs: toSerializable(exportedValue.inputs),
       outputs: toSerializable(exportedValue.outputs),
       hideFromToolbar: exportedValue.hideFromToolbar,
