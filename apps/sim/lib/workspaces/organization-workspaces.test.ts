@@ -109,10 +109,22 @@ describe('organization workspace helpers', () => {
     mockDbResults.value = [
       [{ id: 'ws-1' }, { id: 'ws-2' }],
       [{ userId: 'owner-1' }],
+      [{ userId: 'user-1' }],
       [{ userId: 'owner-1' }, { userId: 'member-1' }],
-      [{ userId: 'owner-1', organizationId: 'org-1' }],
+      [
+        { userId: 'user-1', organizationId: 'org-1' },
+        { userId: 'owner-1', organizationId: 'org-1' },
+      ],
     ]
     mockEnsureUserInOrganization
+      .mockResolvedValueOnce({
+        success: true,
+        alreadyMember: true,
+        billingActions: {
+          proUsageSnapshotted: false,
+          proCancelledAtPeriodEnd: false,
+        },
+      })
       .mockResolvedValueOnce({
         success: true,
         alreadyMember: true,
@@ -140,6 +152,12 @@ describe('organization workspace helpers', () => {
     expect(result.addedMemberIds).toEqual(['member-1'])
     expect(result.skippedMembers).toEqual([])
     expect(mockEnsureUserInOrganization).toHaveBeenCalledWith({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      role: 'member',
+      skipSeatValidation: true,
+    })
+    expect(mockEnsureUserInOrganization).toHaveBeenCalledWith({
       userId: 'owner-1',
       organizationId: 'org-1',
       role: 'owner',
@@ -152,6 +170,7 @@ describe('organization workspace helpers', () => {
       skipSeatValidation: true,
     })
     expect(mockSyncUsageLimitsFromSubscription).toHaveBeenCalledWith('member-1')
+    expect(mockReapplyPaidOrgJoinBillingForExistingMember).toHaveBeenCalledWith('user-1', 'org-1')
     expect(mockReapplyPaidOrgJoinBillingForExistingMember).toHaveBeenCalledWith('owner-1', 'org-1')
     expect(mockReapplyPaidOrgJoinBillingForExistingMember).not.toHaveBeenCalledWith(
       'member-1',
@@ -163,6 +182,7 @@ describe('organization workspace helpers', () => {
     mockDbResults.value = [
       [{ id: 'ws-1' }],
       [{ userId: 'owner-1' }],
+      [{ userId: 'user-1' }],
       [{ userId: 'owner-1' }, { userId: 'member-2' }],
       [{ userId: 'member-2', organizationId: 'org-2' }],
     ]
@@ -176,6 +196,39 @@ describe('organization workspace helpers', () => {
 
     expect(mockEnsureUserInOrganization).not.toHaveBeenCalled()
     expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it('includes owner-only workspaces when attaching members to an organization', async () => {
+    mockDbResults.value = [
+      [{ id: 'ws-1' }],
+      [{ userId: 'owner-1' }],
+      [{ userId: 'user-1' }],
+      [],
+      [{ userId: 'user-1', organizationId: 'org-1' }],
+    ]
+    mockEnsureUserInOrganization.mockResolvedValueOnce({
+      success: true,
+      alreadyMember: false,
+      memberId: 'user-1',
+      billingActions: {
+        proUsageSnapshotted: false,
+        proCancelledAtPeriodEnd: false,
+      },
+    })
+
+    const result = await attachOwnedWorkspacesToOrganization({
+      ownerUserId: 'user-1',
+      organizationId: 'org-1',
+    })
+
+    expect(result.attachedWorkspaceIds).toEqual(['ws-1'])
+    expect(result.addedMemberIds).toEqual(['user-1'])
+    expect(mockEnsureUserInOrganization).toHaveBeenCalledWith({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      role: 'member',
+      skipSeatValidation: true,
+    })
   })
 
   it('detaches organization workspaces into grandfathered shared mode', async () => {

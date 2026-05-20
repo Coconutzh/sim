@@ -254,12 +254,18 @@ async function getWorkspaceMemberIds(workspaceIds: string[]): Promise<string[]> 
     return []
   }
 
-  const rows = await db
-    .select({ userId: permissions.userId })
-    .from(permissions)
-    .where(
-      and(eq(permissions.entityType, 'workspace'), inArray(permissions.entityId, workspaceIds))
-    )
+  const [ownerRows, permissionRows] = await Promise.all([
+    db
+      .select({ userId: workspace.ownerId })
+      .from(workspace)
+      .where(inArray(workspace.id, workspaceIds)),
+    db
+      .select({ userId: permissions.userId })
+      .from(permissions)
+      .where(
+        and(eq(permissions.entityType, 'workspace'), inArray(permissions.entityId, workspaceIds))
+      ),
+  ])
 
-  return [...new Set(rows.map((row) => row.userId))]
+  return [...new Set([...ownerRows, ...permissionRows].map((row) => row.userId))]
 }
