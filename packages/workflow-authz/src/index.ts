@@ -207,6 +207,7 @@ export interface WorkflowWorkspaceAuthorizationResult {
   workflow: WorkflowRecord | null
   workspacePermission: PermissionType | null
   accessSource: WorkflowAccessSource | null
+  workspaceWorkgroupId?: string | null
 }
 
 function isPermissionSatisfied(
@@ -367,6 +368,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workflow: wf,
       workspacePermission,
       accessSource: 'workspace',
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
     }
   }
 
@@ -378,6 +380,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workflow: wf,
       workspacePermission,
       accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
     }
   }
 
@@ -390,6 +393,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workflow: wf,
       workspacePermission,
       accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
     }
   }
 
@@ -405,6 +409,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         workflow: wf,
         workspacePermission: 'read',
         accessSource: 'organization',
+        workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
       }
     }
   }
@@ -422,6 +427,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         workflow: wf,
         workspacePermission: 'read',
         accessSource: 'selected_workgroups',
+        workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
       }
     }
   }
@@ -433,5 +439,6 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
     workflow: wf,
     workspacePermission,
     accessSource: null,
+    workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
   }
 }
