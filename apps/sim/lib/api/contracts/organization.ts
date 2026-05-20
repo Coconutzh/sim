@@ -219,7 +219,7 @@ export const organizationMemberUsageSchema = z
     id: z.string(),
     userId: z.string(),
     organizationId: z.string(),
-    role: organizationRoleSchema,
+    role: z.enum(['owner', 'admin', 'member', 'external']),
     createdAt: z.string(),
     userName: z.string().nullable(),
     userEmail: z.string().nullable(),

@@ -3,12 +3,14 @@ import { db } from '@sim/db'
 import {
   invitation,
   member,
+  permissions,
   subscription as subscriptionTable,
   user,
   userStats,
+  workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   inviteOrganizationMemberContract,
@@ -82,9 +84,18 @@ export const GET = withRouteHandler(
 
       const userRole = memberEntry[0].role
       const hasAdminAccess = ['owner', 'admin'].includes(userRole)
+      const orgWorkspaces = await db
+        .select({
+          id: workspace.id,
+          ownerId: workspace.ownerId,
+          createdAt: workspace.createdAt,
+        })
+        .from(workspace)
+        .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
+      const orgWorkspaceIds = orgWorkspaces.map((row) => row.id)
 
       // Get organization members
-      const query = db
+      const members = await db
         .select({
           id: member.id,
           userId: member.userId,
@@ -97,6 +108,70 @@ export const GET = withRouteHandler(
         .from(member)
         .innerJoin(user, eq(member.userId, user.id))
         .where(eq(member.organizationId, organizationId))
+      const memberUserIds = members.map((row) => row.userId)
+
+      const externalMembers =
+        orgWorkspaceIds.length > 0
+          ? await db
+              .select({
+                id: user.id,
+                userId: user.id,
+                organizationId: member.organizationId,
+                role: 'external' as const,
+                createdAt: permissions.createdAt,
+                userName: user.name,
+                userEmail: user.email,
+              })
+              .from(permissions)
+              .innerJoin(user, eq(permissions.userId, user.id))
+              .leftJoin(
+                member,
+                and(eq(member.userId, user.id), eq(member.organizationId, organizationId))
+              )
+              .where(
+                and(
+                  eq(permissions.entityType, 'workspace'),
+                  inArray(permissions.entityId, orgWorkspaceIds),
+                  isNull(member.id)
+                )
+              )
+          : []
+      const externalOwnerIds = [...new Set(orgWorkspaces.map((row) => row.ownerId))].filter(
+        (ownerId) => !memberUserIds.includes(ownerId)
+      )
+      const externalOwners =
+        externalOwnerIds.length > 0
+          ? await db
+              .select({
+                id: user.id,
+                userId: user.id,
+                organizationId: workspace.organizationId,
+                role: 'external' as const,
+                createdAt: workspace.createdAt,
+                userName: user.name,
+                userEmail: user.email,
+              })
+              .from(workspace)
+              .innerJoin(user, eq(workspace.ownerId, user.id))
+              .where(inArray(workspace.ownerId, externalOwnerIds))
+          : []
+      const externalByUserId = new Map<string, (typeof externalMembers)[number]>()
+      for (const row of externalMembers) {
+        const existing = externalByUserId.get(row.userId)
+        if (!existing || row.createdAt < existing.createdAt) {
+          externalByUserId.set(row.userId, row)
+        }
+      }
+      for (const row of externalOwners) {
+        const existing = externalByUserId.get(row.userId)
+        if (!existing || row.createdAt < existing.createdAt) {
+          externalByUserId.set(row.userId, row as (typeof externalMembers)[number])
+        }
+      }
+      const combinedMembers = [...members, ...externalByUserId.values()].map((row) => ({
+        ...row,
+        organizationId: row.organizationId ?? organizationId,
+      }))
 
       // Include usage data if requested and user has admin access
       if (includeUsage && hasAdminAccess) {
@@ -117,6 +192,73 @@ export const GET = withRouteHandler(
           .innerJoin(user, eq(member.userId, user.id))
           .leftJoin(userStats, eq(user.id, userStats.userId))
           .where(eq(member.organizationId, organizationId))
+        const externalWithUsage =
+          orgWorkspaceIds.length > 0
+            ? await db
+                .select({
+                  id: user.id,
+                  userId: user.id,
+                  organizationId: member.organizationId,
+                  role: 'external' as const,
+                  createdAt: permissions.createdAt,
+                  userName: user.name,
+                  userEmail: user.email,
+                  currentPeriodCost: userStats.currentPeriodCost,
+                  currentUsageLimit: userStats.currentUsageLimit,
+                  usageLimitUpdatedAt: userStats.usageLimitUpdatedAt,
+                })
+                .from(permissions)
+                .innerJoin(user, eq(permissions.userId, user.id))
+                .leftJoin(userStats, eq(user.id, userStats.userId))
+                .leftJoin(
+                  member,
+                  and(eq(member.userId, user.id), eq(member.organizationId, organizationId))
+                )
+                .where(
+                  and(
+                    eq(permissions.entityType, 'workspace'),
+                    inArray(permissions.entityId, orgWorkspaceIds),
+                    isNull(member.id)
+                  )
+                )
+            : []
+        const externalOwnersWithUsage =
+          externalOwnerIds.length > 0
+            ? await db
+                .select({
+                  id: user.id,
+                  userId: user.id,
+                  organizationId: workspace.organizationId,
+                  role: 'external' as const,
+                  createdAt: workspace.createdAt,
+                  userName: user.name,
+                  userEmail: user.email,
+                  currentPeriodCost: userStats.currentPeriodCost,
+                  currentUsageLimit: userStats.currentUsageLimit,
+                  usageLimitUpdatedAt: userStats.usageLimitUpdatedAt,
+                })
+                .from(workspace)
+                .innerJoin(user, eq(workspace.ownerId, user.id))
+                .leftJoin(userStats, eq(user.id, userStats.userId))
+                .where(inArray(workspace.ownerId, externalOwnerIds))
+            : []
+        const externalUsageByUserId = new Map<string, (typeof externalWithUsage)[number]>()
+        for (const row of externalWithUsage) {
+          const existing = externalUsageByUserId.get(row.userId)
+          if (!existing || row.createdAt < existing.createdAt) {
+            externalUsageByUserId.set(row.userId, row)
+          }
+        }
+        for (const row of externalOwnersWithUsage) {
+          const existing = externalUsageByUserId.get(row.userId)
+          if (!existing || row.createdAt < existing.createdAt) {
+            externalUsageByUserId.set(row.userId, row as (typeof externalWithUsage)[number])
+          }
+        }
+        const combinedWithUsage = [...base, ...externalUsageByUserId.values()].map((row) => ({
+          ...row,
+          organizationId: row.organizationId ?? organizationId,
+        }))
 
         // The billing period is the same for every member — it comes from
         // whichever subscription covers them. Fetch once and attach to
@@ -139,7 +281,7 @@ export const GET = withRouteHandler(
         const billingPeriodStart = orgSub?.periodStart ?? null
         const billingPeriodEnd = orgSub?.periodEnd ?? null
 
-        const membersWithUsage = base.map((row) => ({
+        const membersWithUsage = combinedWithUsage.map((row) => ({
           ...row,
           billingPeriodStart,
           billingPeriodEnd,
@@ -154,12 +296,10 @@ export const GET = withRouteHandler(
         })
       }
 
-      const members = await query
-
       return NextResponse.json({
         success: true,
-        data: members,
-        total: members.length,
+        data: combinedMembers,
+        total: combinedMembers.length,
         userRole,
         hasAdminAccess,
       })
