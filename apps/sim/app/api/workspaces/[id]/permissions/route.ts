@@ -113,7 +113,10 @@ export const PATCH = withRouteHandler(
       const body = parsed.data.body
 
       const workspaceRow = await db
-        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .select({
+          billedAccountUserId: workspace.billedAccountUserId,
+          ownerId: workspace.ownerId,
+        })
         .from(workspace)
         .where(eq(workspace.id, workspaceId))
         .limit(1)
@@ -123,6 +126,14 @@ export const PATCH = withRouteHandler(
       }
 
       const billedAccountUserId = workspaceRow[0].billedAccountUserId
+      const ownerId = workspaceRow[0].ownerId
+
+      if (body.updates.some((update) => update.userId === ownerId)) {
+        return NextResponse.json(
+          { error: 'Cannot modify the workspace owner permissions' },
+          { status: 400 }
+        )
+      }
 
       const selfUpdate = body.updates.find((update) => update.userId === session.user.id)
       if (selfUpdate && selfUpdate.permissions !== 'admin') {
