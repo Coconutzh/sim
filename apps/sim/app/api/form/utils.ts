@@ -39,7 +39,7 @@ export async function checkWorkflowAccessForFormCreation(
     return { hasAccess: false }
   }
 
-  if (authorization.allowed) {
+  if (authorization.allowed && authorization.accessSource === 'workspace') {
     return { hasAccess: true, workflow: authorization.workflow }
   }
 
@@ -75,7 +75,7 @@ export async function checkFormAccess(
     action: 'admin',
   })
 
-  return authorization.allowed
+  return authorization.allowed && authorization.accessSource === 'workspace'
     ? { hasAccess: true, form: formRecord, workspaceId: workflowWorkspaceId }
     : { hasAccess: false }
 }

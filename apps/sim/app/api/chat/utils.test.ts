@@ -4,9 +4,11 @@
  * @vitest-environment node
  */
 import {
+  databaseMock,
   encryptionMock,
   encryptionMockFns,
   loggingSessionMock,
+  workflowAuthzMockFns,
   workflowsUtilsMock,
 } from '@sim/testing'
 import type { NextResponse } from 'next/server'
@@ -33,6 +35,13 @@ const {
 vi.mock('@/lib/auth', () => ({
   auth: { api: { getSession: vi.fn() } },
   getSession: mockGetSession,
+}))
+
+vi.mock('@sim/db', () => databaseMock)
+
+vi.mock('@sim/workflow-authz', () => ({
+  authorizeWorkflowByWorkspacePermission:
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission,
 }))
 
 const mockDecryptSecret = encryptionMockFns.mockDecryptSecret
@@ -70,7 +79,12 @@ vi.mock('@/lib/core/config/feature-flags', () => ({
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 import { decryptSecret } from '@/lib/core/security/encryption'
-import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+import {
+  checkChatAccess,
+  checkWorkflowAccessForChatCreation,
+  setChatAuthCookie,
+  validateChatAuth,
+} from '@/app/api/chat/utils'
 
 describe('Chat API Utils', () => {
   beforeEach(() => {
@@ -128,6 +142,46 @@ describe('Chat API Utils', () => {
 
       const result = await validateChatAuth('request-id', deployment, mockRequest)
       expect(result.authorized).toBe(false)
+    })
+  })
+
+  describe('Workflow access helpers', () => {
+    it('rejects chat creation for published workflow readers', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'published',
+        workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+      })
+
+      const result = await checkWorkflowAccessForChatCreation('workflow-1', 'user-1')
+
+      expect(result).toEqual({ hasAccess: false })
+    })
+
+    it('rejects chat management for published workflow readers', async () => {
+      databaseMock.db.select.mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  chat: { id: 'chat-1', workflowId: 'workflow-1' },
+                  workflowWorkspaceId: 'ws-1',
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'selected_workgroups',
+        workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+      })
+
+      const result = await checkChatAccess('chat-1', 'user-1')
+
+      expect(result).toEqual({ hasAccess: false })
     })
   })
 

@@ -3,7 +3,13 @@
  *
  * @vitest-environment node
  */
-import { encryptionMock, encryptionMockFns, workflowsUtilsMock } from '@sim/testing'
+import {
+  databaseMock,
+  encryptionMock,
+  encryptionMockFns,
+  workflowAuthzMockFns,
+  workflowsUtilsMock,
+} from '@sim/testing'
 import type { NextResponse } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,6 +26,13 @@ const {
 }))
 
 const mockDecryptSecret = encryptionMockFns.mockDecryptSecret
+
+vi.mock('@sim/db', () => databaseMock)
+
+vi.mock('@sim/workflow-authz', () => ({
+  authorizeWorkflowByWorkspacePermission:
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission,
+}))
 
 vi.mock('@/lib/core/security/encryption', () => encryptionMock)
 
@@ -40,6 +53,8 @@ vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 import { decryptSecret } from '@/lib/core/security/encryption'
 import {
+  checkFormAccess,
+  checkWorkflowAccessForFormCreation,
   DEFAULT_FORM_CUSTOMIZATIONS,
   setFormAuthCookie,
   validateFormAuth,
@@ -94,6 +109,46 @@ describe('Form API Utils', () => {
 
       const result = await validateFormAuth('request-id', deployment, mockRequest)
       expect(result.authorized).toBe(false)
+    })
+  })
+
+  describe('Workflow access helpers', () => {
+    it('rejects form creation for published workflow readers', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'published',
+        workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+      })
+
+      const result = await checkWorkflowAccessForFormCreation('workflow-1', 'user-1')
+
+      expect(result).toEqual({ hasAccess: false })
+    })
+
+    it('rejects form management for published workflow readers', async () => {
+      databaseMock.db.select.mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  form: { id: 'form-1', workflowId: 'workflow-1' },
+                  workflowWorkspaceId: 'ws-1',
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        accessSource: 'selected_workgroups',
+        workflow: { id: 'workflow-1', workspaceId: 'ws-1' },
+      })
+
+      const result = await checkFormAccess('form-1', 'user-1')
+
+      expect(result).toEqual({ hasAccess: false })
     })
   })
 

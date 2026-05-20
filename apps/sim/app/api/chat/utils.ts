@@ -39,7 +39,7 @@ export async function checkWorkflowAccessForChatCreation(
     return { hasAccess: false }
   }
 
-  if (authorization.allowed) {
+  if (authorization.allowed && authorization.accessSource === 'workspace') {
     return { hasAccess: true, workflow: authorization.workflow }
   }
 
@@ -78,7 +78,7 @@ export async function checkChatAccess(
     action: 'admin',
   })
 
-  return authorization.allowed
+  return authorization.allowed && authorization.accessSource === 'workspace'
     ? { hasAccess: true, chat: chatRecord, workspaceId: workflowWorkspaceId }
     : { hasAccess: false }
 }
