@@ -103,7 +103,9 @@ export const DELETE = withRouteHandler(
           )
           .then((rows) => rows.filter((row) => row.userId !== session.user.id))
 
-        if (otherAdmins.length === 0) {
+        const hasOtherOwnerAdmin = workspaceRow[0].ownerId !== session.user.id
+
+        if (otherAdmins.length === 0 && !hasOtherOwnerAdmin) {
           return NextResponse.json(
             { error: 'Cannot remove the last admin from a workspace' },
             { status: 400 }
