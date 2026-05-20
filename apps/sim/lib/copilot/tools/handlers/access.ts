@@ -28,6 +28,9 @@ export async function ensureWorkflowAccess(
   if (!result.allowed) {
     throw new Error(result.message || 'Unauthorized workflow access')
   }
+  if (result.accessSource !== 'workspace') {
+    throw new Error('Workspace access required for workflow tools')
+  }
 
   return { workflow: result.workflow, workspaceId: result.workflow.workspaceId }
 }

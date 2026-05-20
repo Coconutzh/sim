@@ -88,7 +88,38 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   getUserEntityPermissions: getUserEntityPermissionsMock,
 }))
 
-import { getDefaultWorkspaceId } from '@/lib/copilot/tools/handlers/access'
+import { ensureWorkflowAccess, getDefaultWorkspaceId } from '@/lib/copilot/tools/handlers/access'
+
+describe('ensureWorkflowAccess', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the workflow for workspace-backed access', async () => {
+    authorizeWorkflowByWorkspacePermissionMock.mockResolvedValueOnce({
+      allowed: true,
+      accessSource: 'workspace',
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+    })
+
+    await expect(ensureWorkflowAccess('wf-1', 'user-1')).resolves.toEqual({
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+      workspaceId: 'ws-1',
+    })
+  })
+
+  it('rejects published workflow access for copilot workflow tools', async () => {
+    authorizeWorkflowByWorkspacePermissionMock.mockResolvedValueOnce({
+      allowed: true,
+      accessSource: 'published',
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+    })
+
+    await expect(ensureWorkflowAccess('wf-1', 'user-1')).rejects.toThrow(
+      'Workspace access required for workflow tools'
+    )
+  })
+})
 
 describe('getDefaultWorkspaceId', () => {
   beforeEach(() => {
