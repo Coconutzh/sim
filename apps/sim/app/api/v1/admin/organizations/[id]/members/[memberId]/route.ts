@@ -35,7 +35,10 @@ import {
   adminV1UpdateOrganizationMemberContract,
 } from '@/lib/api/contracts/v1/admin'
 import { parseRequest } from '@/lib/api/server'
-import { removeUserFromOrganization } from '@/lib/billing/organizations/membership'
+import {
+  removeExternalUserFromOrganizationWorkspaces,
+  removeUserFromOrganization,
+} from '@/lib/billing/organizations/membership'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
@@ -55,6 +58,10 @@ interface RouteParams {
   memberId: string
 }
 
+function resolveOrganizationMemberUserId(memberId: string): string {
+  return memberId.startsWith('external-') ? memberId.slice('external-'.length) : memberId
+}
+
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
     const parsed = await parseRequest(adminV1GetOrganizationMemberContract, request, context, {
@@ -63,6 +70,7 @@ export const GET = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     const { id: organizationId, memberId } = parsed.data.params
+    const targetUserId = resolveOrganizationMemberUserId(memberId)
 
     try {
       const [orgData] = await db
@@ -92,8 +100,44 @@ export const GET = withRouteHandler(
         .from(member)
         .innerJoin(user, eq(member.userId, user.id))
         .leftJoin(userStats, eq(member.userId, userStats.userId))
-        .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, targetUserId)))
         .limit(1)
+
+      if (!memberData && memberId.startsWith('external-')) {
+        const [externalUser] = await db
+          .select({
+            id: user.id,
+            createdAt: user.createdAt,
+            userName: user.name,
+            userEmail: user.email,
+            currentPeriodCost: userStats.currentPeriodCost,
+            currentUsageLimit: userStats.currentUsageLimit,
+            lastActive: userStats.lastActive,
+            billingBlocked: userStats.billingBlocked,
+          })
+          .from(user)
+          .leftJoin(userStats, eq(user.id, userStats.userId))
+          .where(eq(user.id, targetUserId))
+          .limit(1)
+
+        if (!externalUser) {
+          return notFoundResponse('Member')
+        }
+
+        return singleResponse({
+          id: memberId,
+          userId: externalUser.id,
+          organizationId,
+          role: 'external',
+          createdAt: externalUser.createdAt.toISOString(),
+          userName: externalUser.userName,
+          userEmail: externalUser.userEmail,
+          currentPeriodCost: externalUser.currentPeriodCost ?? '0',
+          currentUsageLimit: externalUser.currentUsageLimit,
+          lastActive: externalUser.lastActive?.toISOString() ?? null,
+          billingBlocked: externalUser.billingBlocked ?? false,
+        } satisfies AdminMemberDetail)
+      }
 
       if (!memberData) {
         return notFoundResponse('Member')
@@ -142,6 +186,10 @@ export const PATCH = withRouteHandler(
 
       const { role } = parsed.data.body
 
+      if (memberId.startsWith('external-')) {
+        return badRequestResponse('Cannot update external workspace member role')
+      }
+
       const [orgData] = await db
         .select({ id: organization.id })
         .from(organization)
@@ -159,7 +207,7 @@ export const PATCH = withRouteHandler(
           role: member.role,
         })
         .from(member)
-        .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, memberId)))
         .limit(1)
 
       if (!existingMember) {
@@ -213,6 +261,7 @@ export const DELETE = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     const { id: organizationId, memberId } = parsed.data.params
+    const targetUserId = resolveOrganizationMemberUserId(memberId)
     const skipBillingLogic = !isBillingEnabled || parsed.data.query.skipBillingLogic
 
     try {
@@ -233,11 +282,55 @@ export const DELETE = withRouteHandler(
           role: member.role,
         })
         .from(member)
-        .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, targetUserId)))
         .limit(1)
 
       if (!existingMember) {
-        return notFoundResponse('Member')
+        if (!memberId.startsWith('external-')) {
+          return notFoundResponse('Member')
+        }
+
+        const [targetUser] = await db
+          .select({ id: user.id })
+          .from(user)
+          .where(eq(user.id, targetUserId))
+          .limit(1)
+
+        if (!targetUser) {
+          return notFoundResponse('Member')
+        }
+
+        const result = await removeExternalUserFromOrganizationWorkspaces({
+          userId: targetUserId,
+          organizationId,
+        })
+
+        if (!result.success) {
+          const error = result.error || 'External workspace member not found'
+          if (error === 'External workspace member not found') {
+            return notFoundResponse('Member')
+          }
+          if (error === 'User is an organization member') {
+            return badRequestResponse(error)
+          }
+          return internalErrorResponse(error)
+        }
+
+        return singleResponse({
+          success: true,
+          memberId,
+          userId: targetUserId,
+          billingActions: {
+            usageCaptured: false,
+            proRestored: false,
+            usageRestored: false,
+            skipBillingLogic,
+          },
+          workspaceAccessRevoked: result.workspaceAccessRevoked,
+          permissionGroupsRevoked: result.permissionGroupsRevoked,
+          credentialMembershipsRevoked: result.credentialMembershipsRevoked,
+          pendingInvitationsCancelled: result.pendingInvitationsCancelled,
+        })
       }
 
       const userId = existingMember.userId

@@ -29,9 +29,9 @@
  */
 
 import { db } from '@sim/db'
-import { member, organization, user, userStats } from '@sim/db/schema'
+import { member, organization, permissions, user, userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { count, eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import {
   adminV1AddOrganizationMemberContract,
   adminV1ListOrganizationMembersContract,
@@ -62,6 +62,10 @@ interface RouteParams {
   id: string
 }
 
+function toOrganizationMemberId(userId: string, role: string): string {
+  return role === 'external' ? `external-${userId}` : userId
+}
+
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
     const parsed = await parseRequest(adminV1ListOrganizationMembersContract, request, context, {
@@ -83,45 +87,125 @@ export const GET = withRouteHandler(
         return notFoundResponse('Organization')
       }
 
-      const [countResult, membersData] = await Promise.all([
-        db.select({ count: count() }).from(member).where(eq(member.organizationId, organizationId)),
-        db
-          .select({
-            id: member.id,
-            userId: member.userId,
-            organizationId: member.organizationId,
-            role: member.role,
-            createdAt: member.createdAt,
-            userName: user.name,
-            userEmail: user.email,
-            currentPeriodCost: userStats.currentPeriodCost,
-            currentUsageLimit: userStats.currentUsageLimit,
-            lastActive: userStats.lastActive,
-            billingBlocked: userStats.billingBlocked,
-          })
-          .from(member)
-          .innerJoin(user, eq(member.userId, user.id))
-          .leftJoin(userStats, eq(member.userId, userStats.userId))
-          .where(eq(member.organizationId, organizationId))
-          .orderBy(member.createdAt)
-          .limit(limit)
-          .offset(offset),
-      ])
+      const orgWorkspaces = await db
+        .select({
+          id: workspace.id,
+          ownerId: workspace.ownerId,
+          createdAt: workspace.createdAt,
+        })
+        .from(workspace)
+        .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
+      const orgWorkspaceIds = orgWorkspaces.map((row) => row.id)
 
-      const total = countResult[0].count
-      const data: AdminMemberDetail[] = membersData.map((m) => ({
-        id: m.id,
-        userId: m.userId,
-        organizationId: m.organizationId,
-        role: m.role,
-        createdAt: m.createdAt.toISOString(),
-        userName: m.userName,
-        userEmail: m.userEmail,
-        currentPeriodCost: m.currentPeriodCost ?? '0',
-        currentUsageLimit: m.currentUsageLimit,
-        lastActive: m.lastActive?.toISOString() ?? null,
-        billingBlocked: m.billingBlocked ?? false,
-      }))
+      const membersData = await db
+        .select({
+          id: member.id,
+          userId: member.userId,
+          organizationId: member.organizationId,
+          role: member.role,
+          createdAt: member.createdAt,
+          userName: user.name,
+          userEmail: user.email,
+          currentPeriodCost: userStats.currentPeriodCost,
+          currentUsageLimit: userStats.currentUsageLimit,
+          lastActive: userStats.lastActive,
+          billingBlocked: userStats.billingBlocked,
+        })
+        .from(member)
+        .innerJoin(user, eq(member.userId, user.id))
+        .leftJoin(userStats, eq(member.userId, userStats.userId))
+        .where(eq(member.organizationId, organizationId))
+        .orderBy(member.createdAt)
+
+      const memberUserIds = membersData.map((row) => row.userId)
+      const externalMembers =
+        orgWorkspaceIds.length > 0
+          ? await db
+              .select({
+                id: user.id,
+                userId: user.id,
+                organizationId: member.organizationId,
+                role: 'external' as const,
+                createdAt: permissions.createdAt,
+                userName: user.name,
+                userEmail: user.email,
+                currentPeriodCost: userStats.currentPeriodCost,
+                currentUsageLimit: userStats.currentUsageLimit,
+                lastActive: userStats.lastActive,
+                billingBlocked: userStats.billingBlocked,
+              })
+              .from(permissions)
+              .innerJoin(user, eq(permissions.userId, user.id))
+              .leftJoin(userStats, eq(user.id, userStats.userId))
+              .leftJoin(
+                member,
+                and(eq(member.userId, user.id), eq(member.organizationId, organizationId))
+              )
+              .where(
+                and(
+                  eq(permissions.entityType, 'workspace'),
+                  inArray(permissions.entityId, orgWorkspaceIds),
+                  isNull(member.id)
+                )
+              )
+          : []
+      const externalOwnerIds = [...new Set(orgWorkspaces.map((row) => row.ownerId))].filter(
+        (ownerId) => !memberUserIds.includes(ownerId)
+      )
+      const externalOwners =
+        externalOwnerIds.length > 0
+          ? await db
+              .select({
+                id: user.id,
+                userId: user.id,
+                organizationId: workspace.organizationId,
+                role: 'external' as const,
+                createdAt: workspace.createdAt,
+                userName: user.name,
+                userEmail: user.email,
+                currentPeriodCost: userStats.currentPeriodCost,
+                currentUsageLimit: userStats.currentUsageLimit,
+                lastActive: userStats.lastActive,
+                billingBlocked: userStats.billingBlocked,
+              })
+              .from(workspace)
+              .innerJoin(user, eq(workspace.ownerId, user.id))
+              .leftJoin(userStats, eq(user.id, userStats.userId))
+              .where(inArray(workspace.ownerId, externalOwnerIds))
+          : []
+
+      const externalByUserId = new Map<string, (typeof externalMembers)[number]>()
+      for (const row of externalMembers) {
+        const existing = externalByUserId.get(row.userId)
+        if (!existing || row.createdAt < existing.createdAt) {
+          externalByUserId.set(row.userId, row)
+        }
+      }
+      for (const row of externalOwners) {
+        const existing = externalByUserId.get(row.userId)
+        if (!existing || row.createdAt < existing.createdAt) {
+          externalByUserId.set(row.userId, row as (typeof externalMembers)[number])
+        }
+      }
+
+      const allMembers = [...membersData, ...externalByUserId.values()]
+        .map((m) => ({
+          id: toOrganizationMemberId(m.userId, m.role),
+          userId: m.userId,
+          organizationId: m.organizationId ?? organizationId,
+          role: m.role,
+          createdAt: m.createdAt.toISOString(),
+          userName: m.userName,
+          userEmail: m.userEmail,
+          currentPeriodCost: m.currentPeriodCost ?? '0',
+          currentUsageLimit: m.currentUsageLimit,
+          lastActive: m.lastActive?.toISOString() ?? null,
+          billingBlocked: m.billingBlocked ?? false,
+        }))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+      const total = allMembers.length
+      const data: AdminMemberDetail[] = allMembers.slice(offset, offset + limit)
 
       const pagination = createPaginationMeta(total, limit, offset)
 
