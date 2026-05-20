@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { permissions, workspace as workspaceTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 
 const logger = createLogger('WorkspaceUtils')
 
@@ -51,20 +51,25 @@ export async function listUserWorkspaces(userId: string, scope: WorkspaceScope =
       ownerId: workspaceTable.ownerId,
       permissionType: permissions.permissionType,
     })
-    .from(permissions)
-    .innerJoin(workspaceTable, eq(permissions.entityId, workspaceTable.id))
+    .from(workspaceTable)
+    .leftJoin(
+      permissions,
+      and(
+        eq(permissions.entityId, workspaceTable.id),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.userId, userId)
+      )
+    )
     .where(
       scope === 'all'
-        ? and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace'))
+        ? or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id))
         : scope === 'archived'
           ? and(
-              eq(permissions.userId, userId),
-              eq(permissions.entityType, 'workspace'),
+              or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id)),
               sql`${workspaceTable.archivedAt} IS NOT NULL`
             )
           : and(
-              eq(permissions.userId, userId),
-              eq(permissions.entityType, 'workspace'),
+              or(eq(workspaceTable.ownerId, userId), isNotNull(permissions.id)),
               isNull(workspaceTable.archivedAt)
             )
     )

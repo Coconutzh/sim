@@ -3,7 +3,7 @@ import { db } from '@sim/db'
 import { permissions, settings, type WorkspaceMode, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { listWorkspacesQuerySchema } from '@/lib/api/contracts'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
@@ -65,20 +65,25 @@ export const GET = withRouteHandler(async (request: Request) => {
         workspace: workspace,
         permissionType: permissions.permissionType,
       })
-      .from(permissions)
-      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+      .from(workspace)
+      .leftJoin(
+        permissions,
+        and(
+          eq(permissions.entityId, workspace.id),
+          eq(permissions.entityType, 'workspace'),
+          eq(permissions.userId, session.user.id)
+        )
+      )
       .where(
         scope === 'all'
-          ? and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace'))
+          ? or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id))
           : scope === 'archived'
             ? and(
-                eq(permissions.userId, session.user.id),
-                eq(permissions.entityType, 'workspace'),
+                or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id)),
                 sql`${workspace.archivedAt} IS NOT NULL`
               )
             : and(
-                eq(permissions.userId, session.user.id),
-                eq(permissions.entityType, 'workspace'),
+                or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id)),
                 isNull(workspace.archivedAt)
               )
       )
