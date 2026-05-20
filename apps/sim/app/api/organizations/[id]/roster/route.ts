@@ -65,7 +65,7 @@ export const GET = withRouteHandler(
       await expireStalePendingInvitationsForOrganization(organizationId)
 
       const orgWorkspaces = await db
-        .select({ id: workspace.id, name: workspace.name })
+        .select({ id: workspace.id, name: workspace.name, ownerId: workspace.ownerId })
         .from(workspace)
         .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
 
@@ -115,6 +115,28 @@ export const GET = withRouteHandler(
           permission: row.permission,
         })
         permissionsByUser.set(row.userId, list)
+      }
+
+      for (const orgWorkspace of orgWorkspaces) {
+        if (!memberUserIds.includes(orgWorkspace.ownerId)) {
+          continue
+        }
+
+        const list = permissionsByUser.get(orgWorkspace.ownerId) ?? []
+        const existingIndex = list.findIndex((entry) => entry.workspaceId === orgWorkspace.id)
+        const ownerAccess: RosterWorkspaceAccess = {
+          workspaceId: orgWorkspace.id,
+          workspaceName: orgWorkspace.name,
+          permission: 'admin',
+        }
+
+        if (existingIndex >= 0) {
+          list[existingIndex] = ownerAccess
+        } else {
+          list.push(ownerAccess)
+        }
+
+        permissionsByUser.set(orgWorkspace.ownerId, list)
       }
 
       const members = memberRows.map((row) => ({
