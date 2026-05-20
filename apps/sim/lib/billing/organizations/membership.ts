@@ -308,7 +308,7 @@ async function reassignOwnedOrganizationWorkspacesTx({
     .limit(1)
 
   const ownerId = ownerMembership?.userId
-  if (!ownerId || ownerId === userId || workspaceIds.length === 0) return 0
+  if (!ownerId || ownerId === userId || workspaceIds.length === 0) return [] as string[]
 
   const reassignedWorkspaces = await tx
     .update(workspace)
@@ -322,7 +322,7 @@ async function reassignOwnedOrganizationWorkspacesTx({
     )
     .returning({ id: workspace.id })
 
-  if (reassignedWorkspaces.length === 0) return 0
+  if (reassignedWorkspaces.length === 0) return [] as string[]
 
   const now = new Date()
   await tx
@@ -354,7 +354,7 @@ async function reassignOwnedOrganizationWorkspacesTx({
     )
     .onConflictDoNothing()
 
-  return reassignedWorkspaces.length
+  return reassignedWorkspaces.map((row) => row.id)
 }
 
 async function revokeWorkspaceCredentialMembershipsTx({
@@ -990,7 +990,7 @@ export async function removeUserFromOrganization(
 
       const workspaceIds = orgWorkspaces.map((w) => w.id)
 
-      await reassignOwnedOrganizationWorkspacesTx({
+      const reassignedWorkspaceIds = await reassignOwnedOrganizationWorkspacesTx({
         tx,
         userId,
         organizationId,
@@ -1024,7 +1024,9 @@ export async function removeUserFromOrganization(
       })
 
       return {
-        workspaceIdsToRevoke: deletedPerms.map((row) => row.entityId),
+        workspaceIdsToRevoke: [
+          ...new Set([...deletedPerms.map((row) => row.entityId), ...reassignedWorkspaceIds]),
+        ],
         usageCaptured: capturedUsage,
         credentialMembershipsRevoked,
         pendingInvitationsCancelled: cancelledInvitations.length,
@@ -1158,7 +1160,7 @@ export async function removeExternalUserFromOrganizationWorkspaces(params: {
         .where(eq(user.id, userId))
         .limit(1)
 
-      await reassignOwnedOrganizationWorkspacesTx({
+      const reassignedWorkspaceIds = await reassignOwnedOrganizationWorkspacesTx({
         tx,
         userId,
         organizationId,
@@ -1208,7 +1210,10 @@ export async function removeExternalUserFromOrganizationWorkspaces(params: {
         : []
 
       return {
-        workspaceAccessRevoked: deletedPermissions.length,
+        workspaceAccessRevoked: new Set([
+          ...deletedPermissions.map((row) => row.entityId),
+          ...reassignedWorkspaceIds,
+        ]).size,
         permissionGroupsRevoked: deletedPermissionGroups.length,
         credentialMembershipsRevoked,
         pendingInvitationsCancelled: cancelledInvitations.length,
