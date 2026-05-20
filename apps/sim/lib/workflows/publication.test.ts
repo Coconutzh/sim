@@ -199,4 +199,15 @@ describe('workflow publication access', () => {
 
     expect(result).toEqual([])
   })
+
+  it('does not list published workflows from personal workspaces in a workgroup', async () => {
+    mockResultsQueue.push([{ id: 'ws-in-wg' }], [{ organizationId: 'org-1' }], [], [])
+
+    const result = await listPublishedWorkflowsForWorkgroup({
+      workgroupId: 'wg-1',
+      userId: 'owner-1',
+    })
+
+    expect(result).toEqual([])
+  })
 })

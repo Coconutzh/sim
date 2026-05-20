@@ -196,9 +196,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    if (visibility !== 'workspace' && !workspaceDetails.workgroupId) {
+    if (
+      visibility !== 'workspace' &&
+      (workspaceDetails.workspaceMode !== 'organization' || !workspaceDetails.workgroupId)
+    ) {
       return NextResponse.json(
-        { error: 'Only workgroup-backed team workspaces can create cross-team workflows' },
+        {
+          error:
+            'Only organization team workspaces with a workgroup can create cross-team workflows',
+        },
         { status: 400 }
       )
     }

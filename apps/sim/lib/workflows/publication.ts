@@ -241,8 +241,11 @@ export async function publishWorkflowToMainline(params: {
     throw new Error('Draft workflow must belong to a workspace')
   }
 
-  if (params.visibility !== 'workspace' && !authorization.workspaceWorkgroupId) {
-    throw new Error('Only workgroup-backed team workspaces can publish across teams')
+  if (
+    params.visibility !== 'workspace' &&
+    (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId)
+  ) {
+    throw new Error('Only organization team workspaces with a workgroup can publish across teams')
   }
 
   const state = await loadSourceWorkflowState(sourceWorkflow.id)
@@ -455,8 +458,11 @@ export async function updateWorkflowPublicationDetails(params: {
     throw new Error('Publication settings can only be updated on published workflows')
   }
 
-  if (params.visibility !== 'workspace' && !authorization.workspaceWorkgroupId) {
-    throw new Error('Only workgroup-backed team workspaces can publish across teams')
+  if (
+    params.visibility !== 'workspace' &&
+    (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId)
+  ) {
+    throw new Error('Only organization team workspaces with a workgroup can publish across teams')
   }
 
   await db
@@ -530,6 +536,7 @@ export async function listPublishedWorkflowsForWorkgroup(params: {
         eq(workflow.track, 'published'),
         isNull(workflow.archivedAt),
         isNull(workspace.archivedAt),
+        eq(workspace.workspaceMode, 'organization'),
         isNotNull(workspace.workgroupId),
         eq(workspace.organizationId, workgroupRow.organizationId),
         or(

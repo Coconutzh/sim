@@ -614,7 +614,44 @@ describe('Workflow By ID API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Only workgroup-backed team workspaces can publish across teams')
+      expect(data.error).toBe(
+        'Only organization team workspaces with a workgroup can publish across teams'
+      )
+    })
+
+    it('should reject cross-team visibility updates for personal workspaces even with a workgroup', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'user-123',
+        name: 'Test Workflow',
+        workspaceId: 'workspace-456',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'write',
+        workspaceWorkgroupId: 'wg-1',
+        workspaceMode: 'personal',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        method: 'PUT',
+        body: JSON.stringify({ visibility: 'organization' }),
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await PUT(req, { params })
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      expect(data.error).toBe(
+        'Only organization team workspaces with a workgroup can publish across teams'
+      )
     })
 
     it.concurrent('should validate request data', async () => {

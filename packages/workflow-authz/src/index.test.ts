@@ -114,6 +114,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceId: 'ws-published',
           workspaceOrganizationId: 'org-1',
           workspaceWorkgroupId: 'publisher-wg',
+          workspaceMode: 'organization',
         },
       ],
       [{ ownerId: 'other-user' }],
@@ -163,6 +164,39 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
     expect(result).toMatchObject({
       allowed: false,
       accessSource: null,
+    })
+  })
+
+  it('does not expose personal published workflows across teams even if they have a workgroup id', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-4',
+            workspaceId: 'ws-personal',
+            track: 'published',
+            visibility: 'selected_workgroups',
+          },
+          workspaceId: 'ws-personal',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'personal-wg',
+          workspaceMode: 'personal',
+        },
+      ],
+      [{ ownerId: 'other-user' }],
+      []
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-4',
+      userId: 'viewer-owner',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      accessSource: null,
+      workspaceMode: 'personal',
     })
   })
 })

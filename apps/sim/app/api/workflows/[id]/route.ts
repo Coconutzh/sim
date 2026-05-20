@@ -337,10 +337,10 @@ export const PUT = withRouteHandler(
       if (
         updates.visibility !== undefined &&
         updates.visibility !== 'workspace' &&
-        !authorization.workspaceWorkgroupId
+        (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId)
       ) {
         return NextResponse.json(
-          { error: 'Only workgroup-backed team workspaces can publish across teams' },
+          { error: 'Only organization team workspaces with a workgroup can publish across teams' },
           { status: 400 }
         )
       }

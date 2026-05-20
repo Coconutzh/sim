@@ -198,7 +198,38 @@ describe('Workflows API Route - POST ordering', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data.error).toBe('Only workgroup-backed team workspaces can create cross-team workflows')
+    expect(data.error).toBe(
+      'Only organization team workspaces with a workgroup can create cross-team workflows'
+    )
+  })
+
+  it('rejects cross-team workflow creation for personal workspaces even with a workgroup', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-123',
+      name: 'Workspace',
+      ownerId: 'user-123',
+      organizationId: 'org-1',
+      workgroupId: 'wg-1',
+      workspaceMode: 'personal',
+      billedAccountUserId: 'user-123',
+      archivedAt: null,
+    })
+
+    const req = createMockRequest('POST', {
+      name: 'Shared Workflow',
+      description: 'desc',
+      color: '#3972F6',
+      workspaceId: 'workspace-123',
+      visibility: 'organization',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe(
+      'Only organization team workspaces with a workgroup can create cross-team workflows'
+    )
   })
 })
 

@@ -3,6 +3,7 @@ import {
   member,
   permissions,
   type permissionTypeEnum,
+  type WorkspaceMode,
   workflow,
   workflowFolder,
   workflowPublicationScope,
@@ -17,6 +18,7 @@ export interface ActiveWorkflowContext {
   workspaceId: string
   workspaceOrganizationId: string | null
   workspaceWorkgroupId: string | null
+  workspaceMode: WorkspaceMode
 }
 
 export async function getActiveWorkflowContext(
@@ -28,6 +30,7 @@ export async function getActiveWorkflowContext(
       workspaceId: workspace.id,
       workspaceOrganizationId: workspace.organizationId,
       workspaceWorkgroupId: workspace.workgroupId,
+      workspaceMode: workspace.workspaceMode,
     })
     .from(workflow)
     .innerJoin(workspace, eq(workflow.workspaceId, workspace.id))
@@ -45,6 +48,7 @@ export async function getActiveWorkflowContext(
     workspaceId: rows[0].workspaceId,
     workspaceOrganizationId: rows[0].workspaceOrganizationId,
     workspaceWorkgroupId: rows[0].workspaceWorkgroupId,
+    workspaceMode: rows[0].workspaceMode,
   }
 }
 
@@ -208,6 +212,7 @@ export interface WorkflowWorkspaceAuthorizationResult {
   workspacePermission: PermissionType | null
   accessSource: WorkflowAccessSource | null
   workspaceWorkgroupId?: string | null
+  workspaceMode?: WorkspaceMode | null
 }
 
 function isPermissionSatisfied(
@@ -369,6 +374,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workspacePermission,
       accessSource: 'workspace',
       workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
     }
   }
 
@@ -381,11 +387,12 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workspacePermission,
       accessSource: null,
       workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
     }
   }
 
-  // Cross-team publication visibility only applies to workgroup-backed team canvases.
-  if (!activeContext.workspaceWorkgroupId) {
+  // Cross-team publication visibility only applies to organization team canvases.
+  if (activeContext.workspaceMode !== 'organization' || !activeContext.workspaceWorkgroupId) {
     return {
       allowed: false,
       status: 403,
@@ -394,6 +401,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workspacePermission,
       accessSource: null,
       workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
     }
   }
 
@@ -410,6 +418,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         workspacePermission: 'read',
         accessSource: 'organization',
         workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+        workspaceMode: activeContext.workspaceMode,
       }
     }
   }
@@ -428,6 +437,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         workspacePermission: 'read',
         accessSource: 'selected_workgroups',
         workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+        workspaceMode: activeContext.workspaceMode,
       }
     }
   }
@@ -440,5 +450,6 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
     workspacePermission,
     accessSource: null,
     workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+    workspaceMode: activeContext.workspaceMode,
   }
 }
