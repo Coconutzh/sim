@@ -111,6 +111,16 @@ export const POST = withRouteHandler(
           return NextResponse.json({ error: 'Access denied' }, { status: 403 })
         }
 
+        if (error.message === 'Workspace access required for source workflow duplication') {
+          logger.warn(
+            `[${requestId}] User ${userId} attempted workflow duplication through cross-team published access for ${sourceWorkflowId}`
+          )
+          return NextResponse.json(
+            { error: 'Cross-team published workflow access does not include workflow duplication' },
+            { status: 403 }
+          )
+        }
+
         if (error.message === 'Cross-workspace workflow duplication is not supported') {
           logger.warn(
             `[${requestId}] User ${userId} attempted cross-workspace workflow duplication for ${sourceWorkflowId}`
