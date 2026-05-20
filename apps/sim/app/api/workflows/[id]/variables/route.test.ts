@@ -149,6 +149,39 @@ describe('Workflow Variables API Route', () => {
       })
     })
 
+    it('should reject variable reads via cross-team published access', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'other-user',
+        workspaceId: 'workspace-456',
+        variables: {
+          'var-1': { id: 'var-1', name: 'test', type: 'string', value: 'hello' },
+        },
+      }
+
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'session',
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'read',
+        accessSource: 'selected_workgroups',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123/variables')
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(403)
+      const data = await response.json()
+      expect(data.error).toBe('Cross-team published workflow access does not include variables')
+    })
+
     it('should deny access when user has no workspace permissions', async () => {
       const mockWorkflow = {
         id: 'workflow-123',

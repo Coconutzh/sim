@@ -42,6 +42,7 @@ export const GET = withRouteHandler(
 
       const isInternalCall = auth.authType === AuthType.INTERNAL_JWT
       const userId = auth.userId || null
+      let accessSource: string | null = null
 
       let workflowData = await getWorkflowById(workflowId)
 
@@ -76,6 +77,7 @@ export const GET = withRouteHandler(
         }
 
         workflowData = authorization.workflow
+        accessSource = authorization.accessSource
         if (!authorization.allowed) {
           logger.warn(`[${requestId}] User ${userId} denied access to workflow ${workflowId}`)
           return NextResponse.json(
@@ -101,7 +103,9 @@ export const GET = withRouteHandler(
       // The persisted blob may or may not include `workflowId` depending on
       // when the variable was last written; the path param is authoritative.
       const persistedVariables =
-        (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
+        accessSource && accessSource !== 'workspace'
+          ? {}
+          : (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
       const stampedVariables: Record<string, Record<string, unknown>> = {}
       for (const [variableId, variable] of Object.entries(persistedVariables)) {
         if (variable && typeof variable === 'object') {

@@ -271,6 +271,46 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.state.blocks).toEqual(mockNormalizedData.blocks)
       expect(data.data.state.edges).toEqual(mockNormalizedData.edges)
     })
+
+    it('redacts variables for cross-team published readers', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'owner-123',
+        name: 'Published Workflow',
+        workspaceId: 'workspace-456',
+        variables: {
+          'var-1': { id: 'var-1', name: 'secret', type: 'string', value: 'hidden' },
+        },
+      }
+
+      const mockNormalizedData = {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        isFromNormalizedTables: true,
+      }
+
+      mockGetSession({ user: { id: 'viewer-123' } })
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'read',
+        accessSource: 'selected_workgroups',
+      })
+      mockLoadWorkflowFromNormalizedTables.mockResolvedValue(mockNormalizedData)
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123')
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(200)
+      const data = await response.json()
+      expect(data.data.variables).toEqual({})
+    })
   })
 
   describe('DELETE /api/workflows/[id]', () => {

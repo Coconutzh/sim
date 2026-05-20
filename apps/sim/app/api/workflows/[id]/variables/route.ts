@@ -140,6 +140,16 @@ export const GET = withRouteHandler(
         )
       }
 
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        logger.warn(
+          `[${requestId}] User ${userId} attempted to access variables for workflow ${workflowId} via ${authorization.accessSource} publication access`
+        )
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include variables' },
+          { status: 403 }
+        )
+      }
+
       // Return variables if they exist. Stamp `workflowId` from the path
       // param on each entry so the global client-side variables store can
       // filter by workflow; the read contract requires this stamped field.
