@@ -237,8 +237,8 @@ export const POST = withRouteHandler(async (req: Request) => {
   }
 })
 
-async function isSenderAllowed(email: string, workspaceId: string): Promise<boolean> {
-  const [allowedSenderResult, memberResult] = await Promise.all([
+export async function isSenderAllowed(email: string, workspaceId: string): Promise<boolean> {
+  const [allowedSenderResult, memberResult, ownerResult] = await Promise.all([
     db
       .select({ id: mothershipInboxAllowedSender.id })
       .from(mothershipInboxAllowedSender)
@@ -261,9 +261,15 @@ async function isSenderAllowed(email: string, workspaceId: string): Promise<bool
         )
       )
       .limit(1),
+    db
+      .select({ ownerId: workspace.ownerId })
+      .from(workspace)
+      .innerJoin(user, eq(workspace.ownerId, user.id))
+      .where(and(eq(workspace.id, workspaceId), sql`lower(${user.email}) = ${email}`))
+      .limit(1),
   ])
 
-  return !!(allowedSenderResult[0] || memberResult[0])
+  return !!(allowedSenderResult[0] || memberResult[0] || ownerResult[0])
 }
 
 async function getRecentTaskCount(workspaceId: string): Promise<number> {
