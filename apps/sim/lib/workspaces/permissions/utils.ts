@@ -7,7 +7,7 @@ import {
   type WorkspaceMode,
   workspace,
 } from '@sim/db/schema'
-import { and, eq, isNotNull, isNull, or } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
 
 export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 export interface WorkspaceBasic {
@@ -272,7 +272,25 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
     isExternal: boolean
   }>
 > {
-  const usersWithPermissions = await db
+  const ownerRows = await db
+    .select({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.image,
+      permissionType: sql<PermissionType>`'admin'`,
+      workspaceOrganizationId: workspace.organizationId,
+      organizationMemberId: member.id,
+    })
+    .from(workspace)
+    .innerJoin(user, eq(workspace.ownerId, user.id))
+    .leftJoin(
+      member,
+      and(eq(member.userId, user.id), eq(member.organizationId, workspace.organizationId))
+    )
+    .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+
+  const permissionRows = await db
     .select({
       userId: user.id,
       email: user.email,
@@ -298,14 +316,39 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
     )
     .orderBy(user.email)
 
-  return usersWithPermissions.map((row) => ({
-    userId: row.userId,
-    email: row.email,
-    name: row.name,
-    image: row.image ?? null,
-    permissionType: row.permissionType,
-    isExternal: Boolean(row.workspaceOrganizationId && !row.organizationMemberId),
-  }))
+  const usersById = new Map<
+    string,
+    {
+      userId: string
+      email: string
+      name: string
+      image: string | null
+      permissionType: PermissionType
+      isExternal: boolean
+    }
+  >()
+  const permissionOrder: Record<PermissionType, number> = { admin: 3, write: 2, read: 1 }
+
+  for (const row of [...ownerRows, ...permissionRows]) {
+    const nextUser = {
+      userId: row.userId,
+      email: row.email,
+      name: row.name,
+      image: row.image ?? null,
+      permissionType: row.permissionType,
+      isExternal: Boolean(row.workspaceOrganizationId && !row.organizationMemberId),
+    }
+
+    const existing = usersById.get(row.userId)
+    if (
+      !existing ||
+      permissionOrder[nextUser.permissionType] > permissionOrder[existing.permissionType]
+    ) {
+      usersById.set(row.userId, nextUser)
+    }
+  }
+
+  return [...usersById.values()].sort((a, b) => a.email.localeCompare(b.email))
 }
 
 /** Lightweight profile data for workspace member display (avatars, owner cells). */

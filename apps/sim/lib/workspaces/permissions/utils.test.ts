@@ -35,6 +35,7 @@ function createMockChain(finalResult: any) {
 describe('Permission Utils', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDb.select.mockReset()
   })
 
   describe('getUserEntityPermissions', () => {
@@ -231,8 +232,9 @@ describe('Permission Utils', () => {
 
   describe('getUsersWithPermissions', () => {
     it('should return empty array when no users have permissions for workspace', async () => {
-      const usersChain = createMockChain([])
-      mockDb.select.mockReturnValue(usersChain)
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([]))
 
       const result = await getUsersWithPermissions('workspace123')
 
@@ -250,8 +252,9 @@ describe('Permission Utils', () => {
         },
       ]
 
-      const usersChain = createMockChain(mockUsersResults)
-      mockDb.select.mockReturnValue(usersChain)
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain(mockUsersResults))
 
       const result = await getUsersWithPermissions('workspace456')
 
@@ -289,15 +292,18 @@ describe('Permission Utils', () => {
         },
       ]
 
-      const usersChain = createMockChain(mockUsersResults)
-      mockDb.select.mockReturnValue(usersChain)
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain(mockUsersResults))
 
       const result = await getUsersWithPermissions('workspace456')
 
-      expect(result.map((u) => ({ email: u.email, isExternal: u.isExternal }))).toEqual([
-        { email: 'internal@example.com', isExternal: false },
-        { email: 'external@example.com', isExternal: true },
-      ])
+      expect(
+        Object.fromEntries(result.map((permission) => [permission.email, permission.isExternal]))
+      ).toEqual({
+        'external@example.com': true,
+        'internal@example.com': false,
+      })
     })
 
     it('should return multiple users with different permission levels', async () => {
@@ -322,15 +328,22 @@ describe('Permission Utils', () => {
         },
       ]
 
-      const usersChain = createMockChain(mockUsersResults)
-      mockDb.select.mockReturnValue(usersChain)
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain(mockUsersResults))
 
       const result = await getUsersWithPermissions('workspace456')
 
       expect(result).toHaveLength(3)
-      expect(result[0].permissionType).toBe('admin')
-      expect(result[1].permissionType).toBe('write')
-      expect(result[2].permissionType).toBe('read')
+      expect(
+        Object.fromEntries(
+          result.map((permission) => [permission.email, permission.permissionType])
+        )
+      ).toEqual({
+        'admin@example.com': 'admin',
+        'reader@example.com': 'read',
+        'writer@example.com': 'write',
+      })
     })
 
     it('should handle users with empty names', async () => {
@@ -343,12 +356,104 @@ describe('Permission Utils', () => {
         },
       ]
 
-      const usersChain = createMockChain(mockUsersResults)
-      mockDb.select.mockReturnValue(usersChain)
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain(mockUsersResults))
 
       const result = await getUsersWithPermissions('workspace123')
 
       expect(result[0].name).toBe('')
+    })
+
+    it('includes the workspace owner as an admin without a permission row', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              email: 'owner@example.com',
+              name: 'Owner User',
+              image: null,
+              permissionType: 'admin' as PermissionType,
+              workspaceOrganizationId: null,
+              organizationMemberId: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await getUsersWithPermissions('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'owner-1',
+          email: 'owner@example.com',
+          name: 'Owner User',
+          image: null,
+          permissionType: 'admin',
+          isExternal: false,
+        },
+      ])
+    })
+
+    it('deduplicates the owner when they also have a permission row', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              email: 'owner@example.com',
+              name: 'Owner User',
+              image: null,
+              permissionType: 'admin' as PermissionType,
+              workspaceOrganizationId: null,
+              organizationMemberId: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              email: 'owner@example.com',
+              name: 'Owner User',
+              image: null,
+              permissionType: 'read' as PermissionType,
+              workspaceOrganizationId: null,
+              organizationMemberId: null,
+            },
+            {
+              userId: 'member-1',
+              email: 'member@example.com',
+              name: 'Member User',
+              image: null,
+              permissionType: 'write' as PermissionType,
+              workspaceOrganizationId: null,
+              organizationMemberId: null,
+            },
+          ])
+        )
+
+      const result = await getUsersWithPermissions('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'member-1',
+          email: 'member@example.com',
+          name: 'Member User',
+          image: null,
+          permissionType: 'write',
+          isExternal: false,
+        },
+        {
+          userId: 'owner-1',
+          email: 'owner@example.com',
+          name: 'Owner User',
+          image: null,
+          permissionType: 'admin',
+          isExternal: false,
+        },
+      ])
     })
   })
 
