@@ -50,6 +50,7 @@ vi.mock('@sim/db', () => {
   const selectImpl = vi.fn().mockImplementation(() => {
     const chain: any = {}
     chain.from = vi.fn().mockReturnValue(chain)
+    chain.innerJoin = vi.fn().mockReturnValue(chain)
     chain.where = vi.fn().mockReturnValue(chain)
     chain.limit = vi
       .fn()
@@ -223,6 +224,45 @@ describe('organization workspace helpers', () => {
 
     expect(result.attachedWorkspaceIds).toEqual(['ws-1'])
     expect(result.addedMemberIds).toEqual(['user-1'])
+    expect(mockEnsureUserInOrganization).toHaveBeenCalledWith({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      role: 'member',
+      skipSeatValidation: true,
+    })
+  })
+
+  it('ignores stale non-owner permission rows on personal workspaces during attachment', async () => {
+    mockDbResults.value = [
+      [{ id: 'ws-1' }],
+      [{ userId: 'owner-1' }],
+      [{ userId: 'user-1' }],
+      [
+        {
+          userId: 'member-2',
+          workspaceMode: 'personal',
+          workspaceOwnerId: 'user-1',
+        },
+      ],
+      [{ userId: 'user-1', organizationId: 'org-1' }],
+    ]
+    mockEnsureUserInOrganization.mockResolvedValueOnce({
+      success: true,
+      alreadyMember: false,
+      memberId: 'user-1',
+      billingActions: {
+        proUsageSnapshotted: false,
+        proCancelledAtPeriodEnd: false,
+      },
+    })
+
+    const result = await attachOwnedWorkspacesToOrganization({
+      ownerUserId: 'user-1',
+      organizationId: 'org-1',
+    })
+
+    expect(result.attachedWorkspaceIds).toEqual(['ws-1'])
+    expect(mockEnsureUserInOrganization).toHaveBeenCalledTimes(1)
     expect(mockEnsureUserInOrganization).toHaveBeenCalledWith({
       userId: 'user-1',
       organizationId: 'org-1',

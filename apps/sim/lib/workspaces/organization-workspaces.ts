@@ -261,12 +261,30 @@ async function getWorkspaceMemberIds(workspaceIds: string[]): Promise<string[]> 
       .from(workspace)
       .where(inArray(workspace.id, workspaceIds)),
     db
-      .select({ userId: permissions.userId })
+      .select({
+        userId: permissions.userId,
+        workspaceMode: workspace.workspaceMode,
+        workspaceOwnerId: workspace.ownerId,
+      })
       .from(permissions)
+      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
       .where(
-        and(eq(permissions.entityType, 'workspace'), inArray(permissions.entityId, workspaceIds))
+        and(
+          eq(permissions.entityType, 'workspace'),
+          inArray(permissions.entityId, workspaceIds),
+          isNull(workspace.archivedAt)
+        )
       ),
   ])
 
-  return [...new Set([...ownerRows, ...permissionRows].map((row) => row.userId))]
+  return [
+    ...new Set([
+      ...ownerRows.map((row) => row.userId),
+      ...permissionRows
+        .filter(
+          (row) => row.workspaceMode !== WORKSPACE_MODE.PERSONAL || row.workspaceOwnerId === row.userId
+        )
+        .map((row) => row.userId),
+    ]),
+  ]
 }
