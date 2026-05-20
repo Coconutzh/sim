@@ -378,6 +378,17 @@ export async function validateWorkflowPermissions(
     }
   }
 
+  if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+    return {
+      error: {
+        message: 'Cross-team published workflow access does not include deployment operations',
+        status: 403,
+      },
+      session: null,
+      workflow: null,
+    }
+  }
+
   return {
     error: null,
     session,

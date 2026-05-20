@@ -41,6 +41,7 @@ const allowed = (workspacePermission: 'read' | 'write' | 'admin') => ({
   status: 200,
   workflow: mockWorkflow,
   workspacePermission,
+  accessSource: 'workspace',
 })
 
 const denied = (status: number, message: string, workspacePermission: string | null = null) => ({
@@ -178,6 +179,20 @@ describe('validateWorkflowPermissions', () => {
 
       const result = await validateWorkflowPermissions('wf-1', 'req-1', 'admin')
       expectWorkflowAccessGranted(result)
+    })
+
+    it('should reject published workflow readers even when auth resolves allowed', async () => {
+      mockAuthorizeWorkflow.mockResolvedValue({
+        ...allowed('read'),
+        accessSource: 'selected_workgroups',
+      })
+
+      const result = await validateWorkflowPermissions('wf-1', 'req-1', 'read')
+
+      expectWorkflowAccessDenied(result, 403)
+      expect(result.error?.message).toBe(
+        'Cross-team published workflow access does not include deployment operations'
+      )
     })
   })
 
