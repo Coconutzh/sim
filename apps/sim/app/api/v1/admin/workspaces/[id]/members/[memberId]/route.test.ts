@@ -48,7 +48,7 @@ vi.mock('@/lib/credentials/access', () => ({
   revokeWorkspaceCredentialMemberships: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { GET } from './route'
+import { DELETE, GET, PATCH } from './route'
 
 describe('GET /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
   beforeEach(() => {
@@ -105,5 +105,146 @@ describe('GET /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
         userEmail: 'owner@example.com',
       })
     )
+  })
+
+  it('canonicalizes owner permission rows to the synthetic owner member id', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-owner-1' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-owner-1',
+          userId: 'owner-1',
+          permissionType: 'admin',
+          createdAt: new Date('2026-05-21T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+          userName: 'Owner',
+          userEmail: 'owner@example.com',
+          userImage: null,
+        },
+      ])
+    )
+
+    const response = await GET(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-owner-1') as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-owner-1' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data).toEqual(
+      expect.objectContaining({
+        id: 'owner:ws-owner:owner-1',
+        workspaceId: 'ws-owner',
+        userId: 'owner-1',
+        permissions: 'admin',
+      })
+    )
+  })
+})
+
+describe('PATCH /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
+      id: 'ws-owner',
+      name: 'Owner Workspace',
+      ownerId: 'owner-1',
+      organizationId: null,
+      workspaceMode: 'personal',
+      billedAccountUserId: 'owner-1',
+      archivedAt: null,
+    })
+  })
+
+  it('rejects owner permission-row updates', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-owner-1' },
+        body: { permissions: 'read' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-owner-1',
+          userId: 'owner-1',
+          permissionType: 'admin',
+          createdAt: new Date('2026-05-21T00:00:00.000Z'),
+        },
+      ])
+    )
+
+    const response = await PATCH(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-owner-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ permissions: 'read' }),
+      }) as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-owner-1' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toEqual({
+      code: 'BAD_REQUEST',
+      message: 'Cannot modify the workspace owner from this endpoint',
+    })
+  })
+})
+
+describe('DELETE /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
+      id: 'ws-owner',
+      name: 'Owner Workspace',
+      ownerId: 'owner-1',
+      organizationId: null,
+      workspaceMode: 'personal',
+      billedAccountUserId: 'owner-1',
+      archivedAt: null,
+    })
+  })
+
+  it('rejects owner permission-row removals', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'ws-owner', memberId: 'perm-owner-1' },
+      },
+    })
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'perm-owner-1',
+          userId: 'owner-1',
+        },
+      ])
+    )
+
+    const response = await DELETE(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members/perm-owner-1', {
+        method: 'DELETE',
+      }) as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner', memberId: 'perm-owner-1' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toEqual({
+      code: 'BAD_REQUEST',
+      message: 'Cannot remove the workspace owner from this endpoint',
+    })
   })
 })

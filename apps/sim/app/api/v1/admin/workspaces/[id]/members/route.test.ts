@@ -114,4 +114,52 @@ describe('GET /api/v1/admin/workspaces/[id]/members', () => {
     ])
     expect(data.pagination.total).toBe(1)
   })
+
+  it('canonicalizes owner permission rows to the synthetic owner member id', async () => {
+    mockDbSelect
+      .mockReturnValueOnce(
+        createSelectChain([
+          {
+            userId: 'owner-1',
+            userName: 'Owner',
+            userEmail: 'owner@example.com',
+            userImage: null,
+            userCreatedAt: new Date('2026-05-21T00:00:00.000Z'),
+            userUpdatedAt: new Date('2026-05-21T00:00:00.000Z'),
+          },
+        ])
+      )
+      .mockReturnValueOnce(
+        createSelectChain([
+          {
+            id: 'perm-owner-1',
+            userId: 'owner-1',
+            permissionType: 'admin',
+            createdAt: new Date('2026-05-21T00:00:00.000Z'),
+            updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+            userName: 'Owner',
+            userEmail: 'owner@example.com',
+            userImage: null,
+          },
+        ])
+      )
+
+    const response = await GET(
+      new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members') as any,
+      {
+        params: Promise.resolve({ id: 'ws-owner' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data).toEqual([
+      expect.objectContaining({
+        id: 'owner:ws-owner:owner-1',
+        workspaceId: 'ws-owner',
+        userId: 'owner-1',
+        permissions: 'admin',
+      }),
+    ])
+  })
 })

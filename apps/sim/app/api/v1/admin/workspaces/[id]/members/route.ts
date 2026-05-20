@@ -132,9 +132,7 @@ export const GET = withRouteHandler(
       const owner = ownerData[0]
       if (owner) {
         membersByUserId.set(workspaceData.ownerId, {
-          id:
-            membersByUserId.get(workspaceData.ownerId)?.id ??
-            ownerMemberId(workspaceId, workspaceData.ownerId),
+          id: ownerMemberId(workspaceId, workspaceData.ownerId),
           workspaceId,
           userId: workspaceData.ownerId,
           permissions: 'admin',

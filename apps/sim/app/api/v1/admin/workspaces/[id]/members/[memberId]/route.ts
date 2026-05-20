@@ -54,6 +54,36 @@ function ownerMemberId(workspaceId: string, ownerId: string): string {
   return `owner:${workspaceId}:${ownerId}`
 }
 
+function ownerMemberResponse({
+  workspaceId,
+  ownerId,
+  createdAt,
+  updatedAt,
+  userName,
+  userEmail,
+  userImage,
+}: {
+  workspaceId: string
+  ownerId: string
+  createdAt: Date
+  updatedAt: Date
+  userName: string | null
+  userEmail: string | null
+  userImage: string | null
+}): AdminWorkspaceMember {
+  return {
+    id: ownerMemberId(workspaceId, ownerId),
+    workspaceId,
+    userId: ownerId,
+    permissions: 'admin',
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
+    userName,
+    userEmail,
+    userImage,
+  }
+}
+
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
     const parsed = await parseRequest(adminV1GetWorkspaceMemberContract, request, context)
@@ -86,17 +116,17 @@ export const GET = withRouteHandler(
           return notFoundResponse('Workspace member')
         }
 
-        return singleResponse({
-          id: memberId,
-          workspaceId,
-          userId: ownerData.id,
-          permissions: 'admin',
-          createdAt: ownerData.createdAt.toISOString(),
-          updatedAt: ownerData.updatedAt.toISOString(),
-          userName: ownerData.userName,
-          userEmail: ownerData.userEmail,
-          userImage: ownerData.userImage,
-        } satisfies AdminWorkspaceMember)
+        return singleResponse(
+          ownerMemberResponse({
+            workspaceId,
+            ownerId: ownerData.id,
+            createdAt: ownerData.createdAt,
+            updatedAt: ownerData.updatedAt,
+            userName: ownerData.userName,
+            userEmail: ownerData.userEmail,
+            userImage: ownerData.userImage,
+          })
+        )
       }
 
       const [memberData] = await db
@@ -123,6 +153,20 @@ export const GET = withRouteHandler(
 
       if (!memberData) {
         return notFoundResponse('Workspace member')
+      }
+
+      if (memberData.userId === workspaceData.ownerId) {
+        return singleResponse(
+          ownerMemberResponse({
+            workspaceId,
+            ownerId: memberData.userId,
+            createdAt: memberData.createdAt,
+            updatedAt: memberData.updatedAt,
+            userName: memberData.userName,
+            userEmail: memberData.userEmail,
+            userImage: memberData.userImage,
+          })
+        )
       }
 
       const data: AdminWorkspaceMember = {
@@ -185,6 +229,10 @@ export const PATCH = withRouteHandler(
 
       if (!existingMember) {
         return notFoundResponse('Workspace member')
+      }
+
+      if (existingMember.userId === workspaceData.ownerId) {
+        return badRequestResponse('Cannot modify the workspace owner from this endpoint')
       }
 
       const now = new Date()
@@ -260,6 +308,10 @@ export const DELETE = withRouteHandler(
 
       if (!existingMember) {
         return notFoundResponse('Workspace member')
+      }
+
+      if (existingMember.userId === workspaceData.ownerId) {
+        return badRequestResponse('Cannot remove the workspace owner from this endpoint')
       }
 
       await db.delete(permissions).where(eq(permissions.id, memberId))
