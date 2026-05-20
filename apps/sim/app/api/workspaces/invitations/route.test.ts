@@ -151,7 +151,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
     mockFindPendingGrantForWorkspaceEmail.mockResolvedValue(null)
   })
 
-  it('blocks invites for personal workspaces with an upgrade prompt', async () => {
+  it('blocks invites for personal workspaces with an explicit shared-member error', async () => {
     mockGetWorkspaceWithOwner.mockResolvedValueOnce({
       id: 'workspace-1',
       name: 'Personal Workspace',
@@ -159,13 +159,6 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: null,
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
-    })
-    mockGetWorkspaceInvitePolicy.mockResolvedValueOnce({
-      allowed: false,
-      reason: UPGRADE_TO_INVITE_REASON,
-      requiresSeat: false,
-      organizationId: null,
-      upgradeRequired: true,
     })
     mockDbResults.value = [[{ permissionType: 'admin' }]]
 
@@ -178,8 +171,9 @@ describe('POST /api/workspaces/invitations/batch', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data.error).toBe(UPGRADE_TO_INVITE_REASON)
-    expect(data.upgradeRequired).toBe(true)
+    expect(data.error).toBe('Personal workspaces do not support shared members')
+    expect(data.upgradeRequired).toBeUndefined()
+    expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
   })
 
   it('blocks invites for grandfathered workspaces without a team plan', async () => {

@@ -102,6 +102,13 @@ export async function prepareWorkspaceInvitationContext({
     })
   }
 
+  if (workspaceDetails.workspaceMode === 'personal') {
+    throw new WorkspaceInvitationError({
+      message: 'Personal workspaces do not support shared members',
+      status: 403,
+    })
+  }
+
   const invitePolicy = await getWorkspaceInvitePolicy(workspaceDetails)
   if (!invitePolicy.allowed) {
     throw new WorkspaceInvitationError({
