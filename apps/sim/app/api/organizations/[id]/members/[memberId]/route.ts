@@ -186,6 +186,13 @@ export const PUT = withRouteHandler(
       const { id: organizationId, memberId } = parsed.data.params
       const { role } = parsed.data.body
 
+      if (memberId.startsWith('external-')) {
+        return NextResponse.json(
+          { error: 'Cannot update external workspace member role' },
+          { status: 400 }
+        )
+      }
+
       const userMember = await db
         .select()
         .from(member)

@@ -102,6 +102,7 @@ vi.mock('@/lib/core/utils/with-route-handler', () => ({
   withRouteHandler: vi.fn((handler) => handler),
 }))
 
+import { parseRequest } from '@/lib/api/server'
 import { DELETE, GET } from './route'
 
 describe('GET /api/organizations/[id]/members/[memberId]', () => {
@@ -195,5 +196,34 @@ describe('DELETE /api/organizations/[id]/members/[memberId]', () => {
     })
     expect(data.success).toBe(true)
     expect(recordAuditMock).toHaveBeenCalled()
+  })
+})
+
+describe('PUT /api/organizations/[id]/members/[memberId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbResults.value = []
+    getSessionMock.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    vi.mocked(parseRequest).mockResolvedValue({
+      success: true,
+      data: {
+        params: { id: 'org-1', memberId: 'external-external-1' },
+        body: { role: 'member' },
+      },
+    } as never)
+  })
+
+  it('rejects role updates for synthetic external workspace members', async () => {
+    const { PUT } = await import('./route')
+
+    const response = await PUT(createMockRequest('PUT'), {
+      params: Promise.resolve({ id: 'org-1', memberId: 'external-external-1' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data).toEqual({ error: 'Cannot update external workspace member role' })
   })
 })
