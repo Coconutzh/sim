@@ -152,6 +152,7 @@ export async function createWorkspaceInvitation({
     .then((rows) => rows[0])
 
   if (existingUser) {
+    const isWorkspaceOwner = context.workspaceDetails.ownerId === existingUser.id
     const existingPermission = await db
       .select()
       .from(permissions)
@@ -164,7 +165,7 @@ export async function createWorkspaceInvitation({
       )
       .then((rows) => rows[0])
 
-    if (existingPermission) {
+    if (isWorkspaceOwner || existingPermission) {
       throw new WorkspaceInvitationError({
         message: `${normalizedEmail} already has access to this workspace`,
         status: 400,
