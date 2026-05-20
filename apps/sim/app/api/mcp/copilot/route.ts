@@ -491,7 +491,7 @@ async function handleDirectToolCall(
  * this helper simply uses the full headless lifecycle so build requests behave like
  * the primary MCP chat flow.
  */
-async function handleBuildToolCall(
+export async function handleBuildToolCall(
   args: Record<string, unknown>,
   userId: string,
   abortSignal?: AbortSignal
@@ -511,7 +511,7 @@ async function handleBuildToolCall(
           })
           resolvedWorkflowName = authorization.workflow?.name || undefined
           resolvedWorkspaceId = authorization.workflow?.workspaceId || undefined
-          return authorization.allowed
+          return authorization.allowed && authorization.accessSource === 'workspace'
             ? {
                 status: 'resolved' as const,
                 workflowId,
