@@ -9,7 +9,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import type {
   PublishedWorkflowListItem,
   WorkflowPublication,
@@ -20,6 +20,7 @@ import {
   saveWorkflowToNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowPublication')
@@ -81,19 +82,8 @@ function mapWorkflowListRow(row: {
 }
 
 async function assertWorkspaceReadAccess(userId: string, workspaceId: string): Promise<void> {
-  const [permission] = await db
-    .select({ id: permissions.id })
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.userId, userId),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, workspaceId)
-      )
-    )
-    .limit(1)
-
-  if (!permission) {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
     throw new Error('Access denied to workspace')
   }
 }
@@ -101,14 +91,20 @@ async function assertWorkspaceReadAccess(userId: string, workspaceId: string): P
 async function assertWorkgroupMembership(userId: string, workgroupId: string): Promise<void> {
   const [membership] = await db
     .select({ id: workspace.id })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+    .from(workspace)
+    .leftJoin(
+      permissions,
+      and(
+        eq(permissions.entityId, workspace.id),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.userId, userId)
+      )
+    )
     .where(
       and(
-        eq(permissions.userId, userId),
-        eq(permissions.entityType, 'workspace'),
         eq(workspace.workgroupId, workgroupId),
-        isNull(workspace.archivedAt)
+        isNull(workspace.archivedAt),
+        or(eq(workspace.ownerId, userId), isNotNull(permissions.id))
       )
     )
     .limit(1)

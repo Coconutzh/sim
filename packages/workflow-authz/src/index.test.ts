@@ -1,0 +1,137 @@
+/**
+ * @vitest-environment node
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const {
+  mockDb,
+  mockResultsQueue,
+  memberTable,
+  permissionsTable,
+  workflowFolderTable,
+  workflowPublicationScopeTable,
+  workflowTable,
+  workspaceTable,
+} = vi.hoisted(() => {
+  const resultsQueue: unknown[] = []
+
+  function createChain() {
+    const chain: Record<string, unknown> = {}
+    const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
+
+    ;(chain as any).from = vi.fn(() => chain)
+    ;(chain as any).innerJoin = vi.fn(() => chain)
+    ;(chain as any).leftJoin = vi.fn(() => chain)
+    ;(chain as any).where = vi.fn(() => chain)
+    ;(chain as any).limit = vi.fn(() => Promise.resolve(resolveNext()))
+    ;(chain as any).then = (resolve: (value: unknown) => unknown) => resolve(resolveNext())
+
+    return chain
+  }
+
+  return {
+    mockResultsQueue: resultsQueue,
+    workflowTable: { name: 'workflow' },
+    workspaceTable: { name: 'workspace' },
+    permissionsTable: { name: 'permissions' },
+    memberTable: { name: 'member' },
+    workflowPublicationScopeTable: { name: 'workflowPublicationScope' },
+    workflowFolderTable: { name: 'workflowFolder' },
+    mockDb: {
+      select: vi.fn(() => createChain()),
+    },
+  }
+})
+
+vi.mock('@sim/db', () => ({
+  db: mockDb,
+  workflow: workflowTable,
+  workspace: workspaceTable,
+  permissions: permissionsTable,
+  member: memberTable,
+  workflowPublicationScope: workflowPublicationScopeTable,
+  workflowFolder: workflowFolderTable,
+}))
+
+vi.mock('drizzle-orm', () => ({
+  and: vi.fn((...args: unknown[]) => ({ kind: 'and', args })),
+  eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
+  inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
+  isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
+  isNotNull: vi.fn((value: unknown) => ({ kind: 'isNotNull', value })),
+  or: vi.fn((...args: unknown[]) => ({ kind: 'or', args })),
+}))
+
+import { authorizeWorkflowByWorkspacePermission } from './index'
+
+describe('authorizeWorkflowByWorkspacePermission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResultsQueue.length = 0
+  })
+
+  it('treats the workspace owner as admin without requiring a permission row', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-1',
+            workspaceId: 'ws-1',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-1',
+          workspaceOrganizationId: null,
+          workspaceWorkgroupId: 'wg-1',
+        },
+      ],
+      [{ ownerId: 'owner-1' }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-1',
+      userId: 'owner-1',
+      action: 'admin',
+    })
+
+    expect(result).toMatchObject({
+      allowed: true,
+      workspacePermission: 'admin',
+      accessSource: 'workspace',
+    })
+  })
+
+  it('includes owner-owned workgroups when evaluating selected workgroup visibility', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-2',
+            workspaceId: 'ws-published',
+            track: 'published',
+            visibility: 'selected_workgroups',
+          },
+          workspaceId: 'ws-published',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'publisher-wg',
+        },
+      ],
+      [{ ownerId: 'other-user' }],
+      [],
+      [{ workgroupId: 'viewer-wg' }],
+      [{ id: 'scope-1' }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-2',
+      userId: 'viewer-owner',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: true,
+      workspacePermission: 'read',
+      accessSource: 'selected_workgroups',
+    })
+  })
+})

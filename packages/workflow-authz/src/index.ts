@@ -4,11 +4,11 @@ import {
   permissions,
   type permissionTypeEnum,
   workflow,
-  workflowPublicationScope,
   workflowFolder,
+  workflowPublicationScope,
   workspace,
 } from '@sim/db'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 
 export type ActiveWorkflowRecord = typeof workflow.$inferSelect
 
@@ -232,6 +232,20 @@ async function getWorkspacePermission(
   userId: string,
   workspaceId: string
 ): Promise<PermissionType | null> {
+  const [workspaceRow] = await db
+    .select({ ownerId: workspace.ownerId })
+    .from(workspace)
+    .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+    .limit(1)
+
+  if (!workspaceRow) {
+    return null
+  }
+
+  if (workspaceRow.ownerId === userId) {
+    return 'admin'
+  }
+
   const [permissionRow] = await db
     .select({ permissionType: permissions.permissionType })
     .from(permissions)
@@ -263,14 +277,22 @@ async function getUserAccessibleWorkgroupIds(
 ): Promise<string[]> {
   const rows = await db
     .select({ workgroupId: workspace.workgroupId })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+    .from(workspace)
+    .leftJoin(
+      permissions,
+      and(
+        eq(permissions.entityId, workspace.id),
+        eq(permissions.entityType, 'workspace'),
+        eq(permissions.userId, userId)
+      )
+    )
     .where(
       and(
-        eq(permissions.userId, userId),
-        eq(permissions.entityType, 'workspace'),
         isNull(workspace.archivedAt),
-        organizationId ? eq(workspace.organizationId, organizationId) : isNull(workspace.organizationId)
+        organizationId
+          ? eq(workspace.organizationId, organizationId)
+          : isNull(workspace.organizationId),
+        or(eq(workspace.ownerId, userId), isNotNull(permissions.id))
       )
     )
 
@@ -282,7 +304,10 @@ async function hasSelectedWorkgroupReadAccess(params: {
   userId: string
   organizationId: string | null
 }): Promise<boolean> {
-  const viewerWorkgroupIds = await getUserAccessibleWorkgroupIds(params.userId, params.organizationId)
+  const viewerWorkgroupIds = await getUserAccessibleWorkgroupIds(
+    params.userId,
+    params.organizationId
+  )
   if (viewerWorkgroupIds.length === 0) {
     return false
   }
