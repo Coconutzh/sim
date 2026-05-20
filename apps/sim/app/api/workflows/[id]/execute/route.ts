@@ -535,6 +535,13 @@ async function handleExecutePost(
       )
     }
 
+    if (workflowAuthorization.accessSource && workflowAuthorization.accessSource !== 'workspace') {
+      return NextResponse.json(
+        { error: 'Cross-team published workflow access does not include workflow execution' },
+        { status: 403 }
+      )
+    }
+
     // Pass the pre-fetched workflow record to skip the redundant Step 1 DB query in preprocessing.
     const preprocessResult = await preprocessExecution({
       workflowId,

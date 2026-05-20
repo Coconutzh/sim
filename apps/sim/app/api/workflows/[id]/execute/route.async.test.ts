@@ -143,4 +143,37 @@ describe('workflow execute async route', () => {
       })
     )
   })
+
+  it('rejects cross-team published readers before execution starts', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: {
+        id: 'workflow-1',
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+      },
+      workspacePermission: 'read',
+      accessSource: 'selected_workgroups',
+    })
+
+    const req = createMockRequest(
+      'POST',
+      { input: { hello: 'world' } },
+      {
+        'Content-Type': 'application/json',
+        'X-Execution-Mode': 'async',
+      }
+    )
+    const params = Promise.resolve({ id: 'workflow-1' })
+
+    const response = await POST(req as any, { params })
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Cross-team published workflow access does not include workflow execution',
+    })
+    expect(mockPreprocessExecution).not.toHaveBeenCalled()
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
 })
