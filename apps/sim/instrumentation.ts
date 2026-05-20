@@ -6,6 +6,13 @@
  */
 
 export async function register() {
+  if (
+    process.env.SIM_LOW_MEMORY_DEV === 'true' ||
+    process.env.SIM_DISABLE_INSTRUMENTATION === '1'
+  ) {
+    return
+  }
+
   // Load Node.js-specific instrumentation
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const nodeInstrumentation = await import('./instrumentation-node')

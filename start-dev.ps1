@@ -20,6 +20,8 @@ function Resolve-BunPath {
 
   Add-PathIfExists "C:\Program Files\nodejs"
   Add-PathIfExists "C:\Program Files\Git\cmd"
+  Add-PathIfExists "$env:USERPROFILE\miniconda3\envs\sim-pg\Library\bin"
+  Add-PathIfExists "$env:USERPROFILE\miniconda3\condabin"
   Add-PathIfExists "$env:USERPROFILE\anaconda3\envs\sim-pg\Library\bin"
   Add-PathIfExists "$env:USERPROFILE\anaconda3\condabin"
 
@@ -41,25 +43,6 @@ function Resolve-BunPath {
   }
 
   return $bunCommand.Source
-}
-
-function Resolve-NodePath {
-  $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if ($nodeCommand) {
-    return $nodeCommand.Source
-  }
-
-  Add-PathIfExists "C:\Program Files\nodejs"
-  Add-PathIfExists "C:\Program Files\Git\cmd"
-  Add-PathIfExists "$env:USERPROFILE\anaconda3\envs\sim-pg\Library\bin"
-  Add-PathIfExists "$env:USERPROFILE\anaconda3\condabin"
-
-  $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if (-not $nodeCommand) {
-    throw 'node was not found. Install Node.js or add it to PATH first.'
-  }
-
-  return $nodeCommand.Source
 }
 
 function Stop-RepoProcesses {
@@ -96,7 +79,7 @@ function Wait-ForUrl {
   param(
     [Parameter(Mandatory = $true)]
     [string]$Url,
-    [int]$TimeoutSeconds = 90
+    [int]$TimeoutSeconds = 240
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -116,7 +99,6 @@ function Wait-ForUrl {
 
 $repoRoot = $PSScriptRoot
 $bunExe = Resolve-BunPath
-$nodeExe = Resolve-NodePath
 
 Stop-RepoProcesses -RepoRoot $repoRoot
 
@@ -125,10 +107,9 @@ $appOut = Join-Path $env:TEMP "sim-canonical-app-$runId.stdout.log"
 $appErr = Join-Path $env:TEMP "sim-canonical-app-$runId.stderr.log"
 $rtOut = Join-Path $env:TEMP "sim-canonical-rt-$runId.stdout.log"
 $rtErr = Join-Path $env:TEMP "sim-canonical-rt-$runId.stderr.log"
-$nextCli = Join-Path $repoRoot 'node_modules\next\dist\bin\next'
 
-$appProcess = Start-Process -FilePath $nodeExe `
-  -ArgumentList $nextCli, 'dev', '--port', '3000' `
+$appProcess = Start-Process -FilePath $bunExe `
+  -ArgumentList 'run', 'dev:local' `
   -WorkingDirectory (Join-Path $repoRoot 'apps\sim') `
   -WindowStyle Hidden `
   -RedirectStandardOutput $appOut `
