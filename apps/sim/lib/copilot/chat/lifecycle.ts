@@ -50,16 +50,38 @@ export async function getAccessibleMothershipChat(chatId: string, userId: string
   return chat
 }
 
-export async function getAccessibleCopilotChat(chatId: string, userId: string) {
+export async function getAccessibleCopilotChat(
+  chatId: string,
+  userId: string,
+  options?: { allowWorkspaceMembers?: boolean }
+) {
+  const allowWorkspaceMembers = options?.allowWorkspaceMembers ?? false
   const [chat] = await db
     .select()
     .from(copilotChats)
-    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+    .where(
+      allowWorkspaceMembers
+        ? eq(copilotChats.id, chatId)
+        : and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId))
+    )
     .limit(1)
 
   if (!chat) {
     logger.warn('Copilot chat not found or not owned by user', { chatId, userId })
     return null
+  }
+
+  const isOwner = chat.userId === userId
+
+  if (!isOwner) {
+    if (!allowWorkspaceMembers || chat.workflowId || !chat.workspaceId) {
+      logger.warn('Copilot chat not owned by user', {
+        chatId,
+        userId,
+        ownerUserId: chat.userId,
+      })
+      return null
+    }
   }
 
   if (chat.workflowId) {

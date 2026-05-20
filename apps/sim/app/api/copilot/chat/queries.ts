@@ -54,6 +54,7 @@ function transformChat(chat: {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
+    const isMothershipAliasPath = req.nextUrl.pathname.startsWith('/api/mothership/chat')
     const workflowId = searchParams.get('workflowId')
     const workspaceId = searchParams.get('workspaceId')
     const chatId = searchParams.get('chatId')
@@ -65,7 +66,9 @@ export async function GET(req: NextRequest) {
     }
 
     if (chatId) {
-      const chat = await getAccessibleCopilotChat(chatId, authenticatedUserId)
+      const chat = await getAccessibleCopilotChat(chatId, authenticatedUserId, {
+        allowWorkspaceMembers: isMothershipAliasPath,
+      })
       if (!chat) {
         return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
       }

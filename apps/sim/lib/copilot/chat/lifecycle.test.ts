@@ -49,7 +49,7 @@ vi.mock('@sim/workflow-authz', () => ({
   getActiveWorkflowRecord: vi.fn(),
 }))
 
-import { getAccessibleMothershipChat } from './lifecycle'
+import { getAccessibleCopilotChat, getAccessibleMothershipChat } from './lifecycle'
 
 describe('getAccessibleMothershipChat', () => {
   beforeEach(() => {
@@ -107,5 +107,62 @@ describe('getAccessibleMothershipChat', () => {
     const result = await getAccessibleMothershipChat('chat-1', 'viewer-1')
 
     expect(result).toBeNull()
+  })
+})
+
+describe('getAccessibleCopilotChat', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('allows workspace members to access a legacy workspace-scoped chat when requested through mothership sharing semantics', async () => {
+    mockSelectLimit.mockResolvedValueOnce([
+      {
+        id: 'chat-legacy',
+        userId: 'creator-1',
+        workspaceId: 'ws-1',
+        workflowId: null,
+        type: 'copilot',
+        messages: [],
+      },
+    ])
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1' },
+    })
+
+    const result = await getAccessibleCopilotChat('chat-legacy', 'viewer-1', {
+      allowWorkspaceMembers: true,
+    })
+
+    expect(result).toMatchObject({
+      id: 'chat-legacy',
+      userId: 'creator-1',
+      workspaceId: 'ws-1',
+    })
+    expect(mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'viewer-1')
+  })
+
+  it('keeps workflow-scoped copilot chats owner-only for non-owners', async () => {
+    mockSelectLimit.mockResolvedValueOnce([
+      {
+        id: 'chat-workflow',
+        userId: 'creator-1',
+        workspaceId: 'ws-1',
+        workflowId: 'wf-1',
+        type: 'copilot',
+        messages: [],
+      },
+    ])
+
+    const result = await getAccessibleCopilotChat('chat-workflow', 'viewer-1', {
+      allowWorkspaceMembers: true,
+    })
+
+    expect(result).toBeNull()
+    expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockAuthorizeWorkflow).not.toHaveBeenCalled()
   })
 })
