@@ -239,7 +239,7 @@ async function getWorkspacePermission(
   workspaceId: string
 ): Promise<PermissionType | null> {
   const [workspaceRow] = await db
-    .select({ ownerId: workspace.ownerId })
+    .select({ ownerId: workspace.ownerId, workspaceMode: workspace.workspaceMode })
     .from(workspace)
     .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
     .limit(1)
@@ -250,6 +250,10 @@ async function getWorkspacePermission(
 
   if (workspaceRow.ownerId === userId) {
     return 'admin'
+  }
+
+  if (workspaceRow.workspaceMode === 'personal') {
+    return null
   }
 
   const [permissionRow] = await db
@@ -282,7 +286,11 @@ async function getUserAccessibleWorkgroupIds(
   organizationId: string | null
 ): Promise<string[]> {
   const rows = await db
-    .select({ workgroupId: workspace.workgroupId })
+    .select({
+      workgroupId: workspace.workgroupId,
+      ownerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
+    })
     .from(workspace)
     .leftJoin(
       permissions,
@@ -302,7 +310,14 @@ async function getUserAccessibleWorkgroupIds(
       )
     )
 
-  return [...new Set(rows.map((row) => row.workgroupId).filter((id): id is string => Boolean(id)))]
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.ownerId === userId || row.workspaceMode !== 'personal')
+        .map((row) => row.workgroupId)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ]
 }
 
 async function hasSelectedWorkgroupReadAccess(params: {

@@ -83,9 +83,10 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceId: 'ws-1',
           workspaceOrganizationId: null,
           workspaceWorkgroupId: 'wg-1',
+          workspaceMode: 'organization',
         },
       ],
-      [{ ownerId: 'owner-1' }]
+      [{ ownerId: 'owner-1', workspaceMode: 'organization' }]
     )
 
     const result = await authorizeWorkflowByWorkspacePermission({
@@ -117,7 +118,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'organization',
         },
       ],
-      [{ ownerId: 'other-user' }],
+      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
       [],
       [{ workgroupId: 'viewer-wg' }],
       [{ id: 'scope-1' }]
@@ -151,7 +152,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceWorkgroupId: null,
         },
       ],
-      [{ ownerId: 'other-user' }],
+      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
       []
     )
 
@@ -183,7 +184,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'personal',
         },
       ],
-      [{ ownerId: 'other-user' }],
+      [{ ownerId: 'other-user', workspaceMode: 'personal' }],
       []
     )
 
@@ -197,6 +198,74 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
       allowed: false,
       accessSource: null,
       workspaceMode: 'personal',
+    })
+  })
+
+  it('ignores direct permission rows for personal workspaces owned by another user', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-5',
+            workspaceId: 'ws-foreign-personal',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-foreign-personal',
+          workspaceOrganizationId: null,
+          workspaceWorkgroupId: 'wg-foreign',
+          workspaceMode: 'personal',
+        },
+      ],
+      [{ ownerId: 'other-user', workspaceMode: 'personal' }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-5',
+      userId: 'viewer-user',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      accessSource: null,
+      workspacePermission: null,
+      workspaceMode: 'personal',
+    })
+  })
+
+  it('does not derive selected-workgroup visibility from foreign personal workspaces', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-6',
+            workspaceId: 'ws-published',
+            track: 'published',
+            visibility: 'selected_workgroups',
+          },
+          workspaceId: 'ws-published',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'publisher-wg',
+          workspaceMode: 'organization',
+        },
+      ],
+      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
+      [],
+      [{ workgroupId: 'viewer-wg', ownerId: 'other-user', workspaceMode: 'personal' }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-6',
+      userId: 'viewer-user',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      accessSource: null,
+      workspacePermission: null,
+      workspaceMode: 'organization',
     })
   })
 })
