@@ -272,22 +272,59 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.state.edges).toEqual(mockNormalizedData.edges)
     })
 
-    it('redacts variables for cross-team published readers', async () => {
+    it('returns a sanitized summary for cross-team published readers', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
         userId: 'owner-123',
         name: 'Published Workflow',
         workspaceId: 'workspace-456',
+        folderId: 'folder-1',
+        sortOrder: 9,
+        description: 'Internal notes',
+        color: '#334455',
+        track: 'published',
+        visibility: 'selected_workgroups',
+        sourceWorkflowId: 'draft-1',
+        publishedAt: new Date('2026-05-21T00:00:00Z'),
+        publishedBy: 'owner-123',
+        lastSynced: new Date('2026-05-22T00:00:00Z'),
+        createdAt: new Date('2026-05-10T00:00:00Z'),
+        updatedAt: new Date('2026-05-23T00:00:00Z'),
+        isDeployed: true,
+        deployedAt: new Date('2026-05-20T00:00:00Z'),
+        isPublicApi: true,
+        locked: true,
+        runCount: 42,
+        lastRunAt: new Date('2026-05-23T08:00:00Z'),
+        archivedAt: null,
         variables: {
           'var-1': { id: 'var-1', name: 'secret', type: 'string', value: 'hidden' },
         },
       }
 
       const mockNormalizedData = {
-        blocks: {},
-        edges: [],
-        loops: {},
-        parallels: {},
+        blocks: {
+          'block-1': {
+            id: 'block-1',
+            type: 'http',
+            name: 'Fetch leads',
+            position: { x: 120, y: 240 },
+            subBlocks: {
+              token: { id: 'token', type: 'short-input', value: 'secret-token' },
+            },
+            outputs: {
+              body: { ok: true },
+            },
+            enabled: true,
+          },
+        },
+        edges: [{ id: 'edge-1', source: 'block-1', target: 'block-2' }],
+        loops: {
+          'loop-1': { id: 'loop-1', nodes: ['block-1'], iterations: 2, loopType: 'for' },
+        },
+        parallels: {
+          'parallel-1': { id: 'parallel-1', nodes: ['block-1'], count: 3, parallelType: 'count' },
+        },
         isFromNormalizedTables: true,
       }
 
@@ -309,7 +346,32 @@ describe('Workflow By ID API Route', () => {
 
       expect(response.status).toBe(200)
       const data = await response.json()
+      expect(data.data.workspaceId).toBeNull()
+      expect(data.data.userId).toBe('')
+      expect(data.data.folderId).toBeNull()
+      expect(data.data.sourceWorkflowId).toBeNull()
+      expect(data.data.publishedBy).toBeNull()
+      expect(data.data.isPublicApi).toBe(false)
+      expect(data.data.runCount).toBe(0)
       expect(data.data.variables).toEqual({})
+      expect(data.data.state.blocks).toEqual({
+        'published-block-1': {
+          id: 'published-block-1',
+          type: 'http',
+          name: 'Fetch leads',
+          position: { x: 120, y: 240 },
+          subBlocks: {},
+          outputs: {},
+          enabled: true,
+        },
+      })
+      expect(data.data.state.edges).toEqual([
+        { id: 'published-edge-1', source: 'published', target: 'workflow-123' },
+      ])
+      expect(data.data.state.metadata).toEqual({
+        name: 'Published Workflow',
+        description: 'Internal notes',
+      })
     })
   })
 

@@ -18,6 +18,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { performDeleteWorkflow } from '@/lib/workflows/orchestration'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { buildPublishedWorkflowReadSummary } from '@/lib/workflows/published-summary'
 import { getWorkflowById } from '@/lib/workflows/utils'
 
 const logger = createLogger('WorkflowByIdAPI')
@@ -97,23 +98,33 @@ export const GET = withRouteHandler(
       })
       const responseWorkflowData = snapshot.workflowRecord ?? workflowData
 
-      // Stamp `workflowId` from the path param on each variable so the
-      // global client-side variables store can filter by workflow without
-      // requiring persisted variables to carry a redundant `workflowId`.
-      // The persisted blob may or may not include `workflowId` depending on
-      // when the variable was last written; the path param is authoritative.
-      const persistedVariables =
-        accessSource && accessSource !== 'workspace'
-          ? {}
-          : (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
-      const stampedVariables: Record<string, Record<string, unknown>> = {}
-      for (const [variableId, variable] of Object.entries(persistedVariables)) {
-        if (variable && typeof variable === 'object') {
-          stampedVariables[variableId] = { ...variable, workflowId }
-        }
-      }
-
       if (snapshot.normalizedData) {
+        if (accessSource && accessSource !== 'workspace') {
+          return NextResponse.json(
+            {
+              data: buildPublishedWorkflowReadSummary(
+                responseWorkflowData,
+                snapshot.normalizedData
+              ),
+            },
+            { status: 200 }
+          )
+        }
+
+        // Stamp `workflowId` from the path param on each variable so the
+        // global client-side variables store can filter by workflow without
+        // requiring persisted variables to carry a redundant `workflowId`.
+        // The persisted blob may or may not include `workflowId` depending on
+        // when the variable was last written; the path param is authoritative.
+        const persistedVariables =
+          (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
+        const stampedVariables: Record<string, Record<string, unknown>> = {}
+        for (const [variableId, variable] of Object.entries(persistedVariables)) {
+          if (variable && typeof variable === 'object') {
+            stampedVariables[variableId] = { ...variable, workflowId }
+          }
+        }
+
         const finalWorkflowData = {
           ...responseWorkflowData,
           state: {
@@ -139,6 +150,20 @@ export const GET = withRouteHandler(
         return NextResponse.json({ data: finalWorkflowData }, { status: 200 })
       }
 
+      if (accessSource && accessSource !== 'workspace') {
+        return NextResponse.json(
+          {
+            data: buildPublishedWorkflowReadSummary(responseWorkflowData, {
+              blocks: {},
+              edges: [],
+              loops: {},
+              parallels: {},
+            }),
+          },
+          { status: 200 }
+        )
+      }
+
       const emptyWorkflowData = {
         ...responseWorkflowData,
         state: {
@@ -154,7 +179,14 @@ export const GET = withRouteHandler(
             description: responseWorkflowData.description,
           },
         },
-        variables: stampedVariables,
+        variables: Object.entries(
+          (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
+        ).reduce<Record<string, Record<string, unknown>>>((acc, [variableId, variable]) => {
+          if (variable && typeof variable === 'object') {
+            acc[variableId] = { ...variable, workflowId }
+          }
+          return acc
+        }, {}),
       }
 
       return NextResponse.json({ data: emptyWorkflowData }, { status: 200 })
