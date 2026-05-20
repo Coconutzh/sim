@@ -85,7 +85,10 @@ describe('duplicateWorkflow ordering', () => {
       randomUUID: vi.fn().mockReturnValue('new-workflow-id'),
     })
 
-    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({ allowed: true })
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      accessSource: 'workspace',
+    })
     workflowsUtilsMockFns.mockDeduplicateWorkflowName.mockImplementation(
       async (name: string) => name
     )
@@ -132,6 +135,42 @@ describe('duplicateWorkflow ordering', () => {
 
     expect(result.sortOrder).toBe(1)
     expect(insertedWorkflowValues?.sortOrder).toBe(1)
+  })
+
+  it('rejects duplication from published workflow sharing access', async () => {
+    const tx = createMockTx([
+      [
+        {
+          id: 'source-workflow-id',
+          workspaceId: 'workspace-123',
+          folderId: null,
+          description: 'source',
+          color: '#000000',
+          variables: {},
+        },
+      ],
+    ])
+
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      accessSource: 'selected_workgroups',
+      workflow: { id: 'source-workflow-id', workspaceId: 'workspace-123' },
+    })
+
+    mockDb.transaction.mockImplementation(async (callback: (txArg: unknown) => Promise<unknown>) =>
+      callback(tx)
+    )
+
+    await expect(
+      duplicateWorkflow({
+        sourceWorkflowId: 'source-workflow-id',
+        userId: 'user-123',
+        name: 'Duplicated',
+        workspaceId: 'workspace-123',
+        folderId: null,
+        requestId: 'req-published-dup',
+      })
+    ).rejects.toThrow('Workspace access required for source workflow duplication')
   })
 
   it('defaults to sortOrder 0 when target has no siblings', async () => {

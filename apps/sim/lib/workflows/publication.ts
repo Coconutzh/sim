@@ -231,6 +231,9 @@ export async function publishWorkflowToMainline(params: {
   if (!authorization.allowed || !authorization.workflow) {
     throw new Error(authorization.message || 'Access denied')
   }
+  if (authorization.accessSource !== 'workspace') {
+    throw new Error('Workspace access required')
+  }
 
   const sourceWorkflow = authorization.workflow
   if (sourceWorkflow.track !== 'draft') {
@@ -457,6 +460,9 @@ export async function updateWorkflowPublicationDetails(params: {
 
   if (!authorization.allowed || !authorization.workflow) {
     throw new Error(authorization.message || 'Access denied')
+  }
+  if (authorization.accessSource !== 'workspace') {
+    throw new Error('Workspace access required')
   }
 
   if (authorization.workflow.track !== 'published') {

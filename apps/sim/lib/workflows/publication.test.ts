@@ -116,6 +116,8 @@ import {
   getWorkflowPublicationDetails,
   listPublishedWorkflowsForWorkgroup,
   listWorkflowTracksForWorkspace,
+  publishWorkflowToMainline,
+  updateWorkflowPublicationDetails,
 } from './publication'
 
 describe('workflow publication access', () => {
@@ -248,5 +250,52 @@ describe('workflow publication access', () => {
       publishedBy: null,
       viewerScopes: [],
     })
+  })
+
+  it('rejects publishing from cross-team shared access', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: {
+        id: 'draft-1',
+        track: 'draft',
+        name: 'Draft canvas',
+        workspaceId: 'ws-1',
+        folderId: null,
+      },
+      accessSource: 'selected_workgroups',
+    })
+
+    await expect(
+      publishWorkflowToMainline({
+        workflowId: 'draft-1',
+        userId: 'viewer-1',
+        visibility: 'workspace',
+        viewerWorkgroupIds: [],
+      })
+    ).rejects.toThrow('Workspace access required')
+  })
+
+  it('rejects publication updates from cross-team shared access', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: {
+        id: 'published-1',
+        track: 'published',
+        name: 'Team canvas',
+        workspaceId: 'ws-1',
+      },
+      accessSource: 'organization',
+    })
+
+    await expect(
+      updateWorkflowPublicationDetails({
+        workflowId: 'published-1',
+        userId: 'viewer-1',
+        visibility: 'organization',
+        viewerWorkgroupIds: [],
+      })
+    ).rejects.toThrow('Workspace access required')
   })
 })

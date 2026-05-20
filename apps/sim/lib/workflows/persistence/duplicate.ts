@@ -311,6 +311,9 @@ export async function duplicateWorkflow(
     if (!sourceAuthorization.allowed) {
       throw new Error('Source workflow not found or access denied')
     }
+    if (sourceAuthorization.accessSource !== 'workspace') {
+      throw new Error('Workspace access required for source workflow duplication')
+    }
 
     const targetWorkspaceId = workspaceId || source.workspaceId
     if (targetWorkspaceId !== source.workspaceId) {
