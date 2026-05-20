@@ -91,7 +91,7 @@ describe('Workflow State API Route', () => {
     })
   })
 
-  it('redacts variables for cross-team published readers', async () => {
+  it('rejects workflow state reads via cross-team published access', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,
       userId: 'viewer-123',
@@ -116,9 +116,11 @@ describe('Workflow State API Route', () => {
 
     const response = await GET(req, { params })
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(403)
     const data = await response.json()
-    expect(data.variables).toEqual({})
+    expect(data.error).toBe(
+      'Cross-team published workflow access does not include workflow state reads'
+    )
   })
 
   it('rejects workflow state writes via cross-team published access', async () => {

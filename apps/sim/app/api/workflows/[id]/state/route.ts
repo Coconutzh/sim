@@ -51,6 +51,12 @@ export const GET = withRouteHandler(
       if (!authorization.allowed) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
+      if (authorization.accessSource && authorization.accessSource !== 'workspace') {
+        return NextResponse.json(
+          { error: 'Cross-team published workflow access does not include workflow state reads' },
+          { status: 403 }
+        )
+      }
 
       const snapshot = await db.transaction(async (tx) => {
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
@@ -74,9 +80,7 @@ export const GET = withRouteHandler(
       // requiring clients to thread the path param through. The read
       // contract requires this server-stamped field.
       const persistedVariables =
-        authorization.accessSource && authorization.accessSource !== 'workspace'
-          ? {}
-          : (snapshot.variables as Record<string, Record<string, unknown>>) || {}
+        (snapshot.variables as Record<string, Record<string, unknown>>) || {}
       const variables: Record<string, Record<string, unknown>> = {}
       for (const [variableId, variable] of Object.entries(persistedVariables)) {
         if (variable && typeof variable === 'object') {
