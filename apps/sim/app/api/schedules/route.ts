@@ -67,6 +67,9 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
         { status: authorization.status }
       )
     }
+    if (authorization.accessSource !== 'workspace') {
+      return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+    }
 
     logger.info(`[${requestId}] Getting schedule for workflow ${workflowId}`)
 

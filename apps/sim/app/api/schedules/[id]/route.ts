@@ -94,6 +94,10 @@ async function fetchAndAuthorize(
       { status: authorization.status }
     )
   }
+  if (authorization.accessSource !== 'workspace') {
+    logger.warn(`[${requestId}] Published workflow access cannot manage schedule: ${scheduleId}`)
+    return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+  }
 
   return { schedule, workspaceId: authorization.workflow.workspaceId ?? null }
 }

@@ -47,6 +47,7 @@ describe('Schedule GET API', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
+      accessSource: 'workspace',
       workflow: { id: 'wf-1', workspaceId: 'ws-1' },
       workspacePermission: 'read',
     })
@@ -130,6 +131,22 @@ describe('Schedule GET API', () => {
     const res = await GET(createRequest('http://test/api/schedules?workflowId=wf-1'))
 
     expect(res.status).toBe(403)
+  })
+
+  it('rejects published workflow readers from viewing schedule details', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      accessSource: 'published',
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+      workspacePermission: 'read',
+    })
+
+    const res = await GET(createRequest('http://test/api/schedules?workflowId=wf-1'))
+    const data = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(data.error).toBe('Workspace access required')
   })
 
   it('allows workspace members to view', async () => {

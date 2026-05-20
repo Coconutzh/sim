@@ -64,6 +64,7 @@ describe('Schedule PUT API (Reactivate)', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
+      accessSource: 'workspace',
       workflow: { id: 'wf-1', workspaceId: 'ws-1' },
       workspacePermission: 'write',
     })
@@ -180,6 +181,33 @@ describe('Schedule PUT API (Reactivate)', () => {
       const res = await PUT(createRequest({ action: 'reactivate' }), createParams('sched-1'))
 
       expect(res.status).toBe(403)
+    })
+
+    it('rejects published workflow readers from reactivating a schedule', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        accessSource: 'published',
+        workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+        workspacePermission: 'read',
+      })
+      mockDbChain([
+        [
+          {
+            id: 'sched-1',
+            workflowId: 'wf-1',
+            status: 'disabled',
+            cronExpression: '*/5 * * * *',
+            timezone: 'UTC',
+          },
+        ],
+      ])
+
+      const res = await PUT(createRequest({ action: 'reactivate' }), createParams('sched-1'))
+      const data = await res.json()
+
+      expect(res.status).toBe(403)
+      expect(data.error).toBe('Workspace access required')
     })
 
     it('allows workflow owner to reactivate', async () => {
