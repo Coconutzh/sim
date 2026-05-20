@@ -152,6 +152,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         })
       }
 
+      if (authorization.accessSource !== 'workspace') {
+        return NextResponse.json({
+          success: true,
+          output: {
+            passed: false,
+            validationType,
+            input: input || '',
+            error: 'Workspace access is required for hallucination validation.',
+          },
+        })
+      }
+
       resolvedWorkspaceId = authorization.workflow.workspaceId
 
       try {
