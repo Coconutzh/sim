@@ -322,7 +322,17 @@ export interface WorkspaceMemberProfile {
 export async function getWorkspaceMemberProfiles(
   workspaceId: string
 ): Promise<WorkspaceMemberProfile[]> {
-  const rows = await db
+  const ownerRows = await db
+    .select({
+      userId: user.id,
+      name: user.name,
+      image: user.image,
+    })
+    .from(workspace)
+    .innerJoin(user, eq(workspace.ownerId, user.id))
+    .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+
+  const permissionRows = await db
     .select({
       userId: user.id,
       name: user.name,
@@ -339,7 +349,17 @@ export async function getWorkspaceMemberProfiles(
       )
     )
 
-  return rows
+  const profilesByUserId = new Map<string, WorkspaceMemberProfile>()
+
+  for (const row of [...ownerRows, ...permissionRows]) {
+    profilesByUserId.set(row.userId, {
+      userId: row.userId,
+      name: row.name,
+      image: row.image ?? null,
+    })
+  }
+
+  return [...profilesByUserId.values()]
 }
 
 /**

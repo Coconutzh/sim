@@ -6,6 +6,7 @@ import {
   getUserEntityPermissions,
   getUsersWithPermissions,
   getWorkspaceById,
+  getWorkspaceMemberProfiles,
   getWorkspaceWithOwner,
   hasAdminPermission,
   hasWorkspaceAdminAccess,
@@ -348,6 +349,74 @@ describe('Permission Utils', () => {
       const result = await getUsersWithPermissions('workspace123')
 
       expect(result[0].name).toBe('')
+    })
+  })
+
+  describe('getWorkspaceMemberProfiles', () => {
+    it('includes the workspace owner even without an explicit permission row', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              name: 'Owner User',
+              image: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await getWorkspaceMemberProfiles('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'owner-1',
+          name: 'Owner User',
+          image: null,
+        },
+      ])
+    })
+
+    it('deduplicates the owner when they also have a permission row', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              name: 'Owner User',
+              image: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              name: 'Owner User',
+              image: null,
+            },
+            {
+              userId: 'member-1',
+              name: 'Member User',
+              image: 'https://example.com/member.png',
+            },
+          ])
+        )
+
+      const result = await getWorkspaceMemberProfiles('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'owner-1',
+          name: 'Owner User',
+          image: null,
+        },
+        {
+          userId: 'member-1',
+          name: 'Member User',
+          image: 'https://example.com/member.png',
+        },
+      ])
     })
   })
 
