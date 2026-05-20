@@ -43,7 +43,7 @@ import { SubBlock } from '@/app/workspace/[workspaceId]/w/[workflowId]/component
 import { PreviewContextMenu } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-context-menu'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import type { BlockConfig, BlockIcon, SubBlockConfig, SubBlockType } from '@/blocks/types'
 import { normalizeName } from '@/executor/constants'
 import { navigatePath } from '@/executor/variables/resolvers/reference'
@@ -352,7 +352,7 @@ function ConnectionsSection({
       {/* Content - styled like ConnectionBlocks */}
       <div className='flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-1.5 pb-2'>
         {connections.map((connection) => {
-          const blockConfig = getBlock(connection.blockType)
+          const blockConfig = getBlockConfigFromCatalog(connection.blockType)
           const Icon = blockConfig?.icon
           const bgColor = blockConfig?.bgColor || '#6B7280'
           const isExpanded = expandedBlocks.has(connection.blockId)
@@ -758,7 +758,7 @@ function PreviewEditorContent({
     return Object.values(workflowVariables)
   }, [workflowVariables])
 
-  const blockConfig = getBlock(block.type) as BlockConfig | undefined
+  const blockConfig = getBlockConfigFromCatalog(block.type) as BlockConfig | undefined
   const subBlockValues = block.subBlocks || {}
 
   const params = useParams()

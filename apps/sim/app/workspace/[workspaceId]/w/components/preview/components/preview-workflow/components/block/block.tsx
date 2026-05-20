@@ -12,7 +12,7 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { DELETED_WORKFLOW_LABEL } from '@/app/workspace/[workspaceId]/logs/utils'
 import { getDisplayValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/workflow-block'
-import { getBlock } from '@/blocks'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
 import { useVariablesStore } from '@/stores/variables/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
@@ -206,7 +206,7 @@ function resolveToolsDisplay(
         t.type !== 'workflow' &&
         t.type !== 'workflow_input'
       ) {
-        const blockConfig = getBlock(t.type)
+        const blockConfig = getBlockConfigFromCatalog(t.type)
         if (blockConfig?.name) return blockConfig.name
       }
 
@@ -292,7 +292,7 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
     lightweight = false,
   } = data
 
-  const blockConfig = getBlock(type)
+  const blockConfig = getBlockConfigFromCatalog(type)
 
   const canonicalIndex = useMemo(
     () => buildCanonicalIndex(blockConfig?.subBlocks || []),
