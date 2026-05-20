@@ -82,7 +82,7 @@ export async function getKnowledgeBases(
               // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
               and(
                 eq(knowledgeBase.workspaceId, workspaceId),
-                isNotNull(permissions.userId),
+                or(eq(workspace.ownerId, userId), isNotNull(permissions.userId)),
                 isNull(workspace.archivedAt)
               ),
               // Fallback: User-owned knowledge bases without workspace (legacy)
@@ -93,7 +93,10 @@ export async function getKnowledgeBases(
               // User owns the knowledge base directly
               eq(knowledgeBase.userId, userId),
               // User has permissions on the knowledge base's workspace
-              and(isNotNull(permissions.userId), isNull(workspace.archivedAt))
+              and(
+                or(eq(workspace.ownerId, userId), isNotNull(permissions.userId)),
+                isNull(workspace.archivedAt)
+              )
             )
       )
     )
