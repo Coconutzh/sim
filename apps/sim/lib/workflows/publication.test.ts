@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockDb,
+  mockAuthorizeWorkflowByWorkspacePermission,
   mockResultsQueue,
   mockCheckWorkspaceAccess,
   permissionsTable,
@@ -32,6 +33,7 @@ const {
 
   return {
     mockResultsQueue: resultsQueue,
+    mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
     mockCheckWorkspaceAccess: vi.fn(),
     permissionsTable: {
       id: 'permissions.id',
@@ -106,12 +108,21 @@ vi.mock('@/lib/workflows/utils', () => ({
   deduplicateWorkflowName: vi.fn(),
 }))
 
-import { listPublishedWorkflowsForWorkgroup, listWorkflowTracksForWorkspace } from './publication'
+vi.mock('@sim/workflow-authz', () => ({
+  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
+}))
+
+import {
+  getWorkflowPublicationDetails,
+  listPublishedWorkflowsForWorkgroup,
+  listWorkflowTracksForWorkspace,
+} from './publication'
 
 describe('workflow publication access', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockResultsQueue.length = 0
+    mockAuthorizeWorkflowByWorkspacePermission.mockReset()
   })
 
   it('lets a workspace owner load workflow tracks without an explicit permission row', async () => {
@@ -209,5 +220,33 @@ describe('workflow publication access', () => {
     })
 
     expect(result).toEqual([])
+  })
+
+  it('redacts workspace-only publication metadata for cross-team readers', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      workflow: {
+        id: 'published-1',
+        track: 'published',
+        visibility: 'organization',
+        sourceWorkflowId: 'draft-1',
+        publishedAt: new Date('2026-05-20T00:00:00Z'),
+        publishedBy: 'owner-1',
+      },
+      accessSource: 'organization',
+    })
+
+    const result = await getWorkflowPublicationDetails({
+      workflowId: 'published-1',
+      userId: 'viewer-1',
+    })
+
+    expect(result).toMatchObject({
+      workflowId: 'published-1',
+      sourceWorkflowId: null,
+      publishedBy: null,
+      viewerScopes: [],
+    })
   })
 })

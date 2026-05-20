@@ -381,6 +381,7 @@ export async function getWorkflowPublicationDetails(params: {
   }
 
   const currentWorkflow = authorization.workflow
+  const includeWorkspaceOnlyFields = authorization.accessSource === 'workspace'
   const publishedWorkflowId =
     currentWorkflow.track === 'published'
       ? currentWorkflow.id
@@ -400,15 +401,18 @@ export async function getWorkflowPublicationDetails(params: {
 
   const publicationWorkflowId =
     currentWorkflow.track === 'published' ? currentWorkflow.id : publishedWorkflowId
-  const viewerWorkgroupIds = publicationWorkflowId
-    ? await getWorkflowPublicationScopeIds(publicationWorkflowId)
-    : []
+  const viewerWorkgroupIds =
+    includeWorkspaceOnlyFields && publicationWorkflowId
+      ? await getWorkflowPublicationScopeIds(publicationWorkflowId)
+      : []
 
   return {
     workflowId: currentWorkflow.id,
     track: currentWorkflow.track,
     visibility: currentWorkflow.track === 'published' ? currentWorkflow.visibility : 'workspace',
-    sourceWorkflowId: currentWorkflow.sourceWorkflowId ?? null,
+    sourceWorkflowId: includeWorkspaceOnlyFields
+      ? (currentWorkflow.sourceWorkflowId ?? null)
+      : null,
     publishedWorkflowId,
     publishedAt:
       currentWorkflow.track === 'published'
@@ -422,8 +426,8 @@ export async function getWorkflowPublicationDetails(params: {
                 .limit(1)
             )[0]?.publishedAt?.toISOString() ?? null)
           : null,
-    publishedBy:
-      currentWorkflow.track === 'published'
+    publishedBy: includeWorkspaceOnlyFields
+      ? currentWorkflow.track === 'published'
         ? (currentWorkflow.publishedBy ?? null)
         : publicationWorkflowId
           ? ((
@@ -433,7 +437,8 @@ export async function getWorkflowPublicationDetails(params: {
                 .where(eq(workflow.id, publicationWorkflowId))
                 .limit(1)
             )[0]?.publishedBy ?? null)
-          : null,
+          : null
+      : null,
     viewerScopes: viewerWorkgroupIds.map((workgroupId) => ({ workgroupId })),
   }
 }
