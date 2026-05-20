@@ -270,6 +270,11 @@ describe('Workflow By ID API Route', () => {
       const data = await response.json()
       expect(data.data.state.blocks).toEqual(mockNormalizedData.blocks)
       expect(data.data.state.edges).toEqual(mockNormalizedData.edges)
+      expect(data.data.state.metadata).toEqual({
+        name: 'Test Workflow',
+        description: undefined,
+        accessScope: 'workspace',
+      })
     })
 
     it('returns a sanitized summary for cross-team published readers', async () => {
@@ -371,6 +376,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.state.metadata).toEqual({
         name: 'Published Workflow',
         description: 'Internal notes',
+        accessScope: 'published_summary',
       })
     })
   })

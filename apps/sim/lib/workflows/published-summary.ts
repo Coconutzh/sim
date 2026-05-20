@@ -103,6 +103,7 @@ export function buildPublishedWorkflowStateSummary(
     metadata: {
       name: metadata?.name ?? undefined,
       description: metadata?.description ?? undefined,
+      accessScope: 'published_summary' as const,
     },
   }
 }

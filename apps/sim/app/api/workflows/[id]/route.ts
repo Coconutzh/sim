@@ -138,6 +138,7 @@ export const GET = withRouteHandler(
             metadata: {
               name: responseWorkflowData.name,
               description: responseWorkflowData.description,
+              accessScope: 'workspace',
             },
           },
           variables: stampedVariables,
@@ -177,6 +178,7 @@ export const GET = withRouteHandler(
           metadata: {
             name: responseWorkflowData.name,
             description: responseWorkflowData.description,
+            accessScope: 'workspace',
           },
         },
         variables: Object.entries(

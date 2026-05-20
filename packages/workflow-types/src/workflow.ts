@@ -209,6 +209,7 @@ export interface WorkflowState {
     name?: string
     description?: string
     exportedAt?: string
+    accessScope?: 'workspace' | 'published_summary'
   }
   variables?: Record<string, Variable>
   dragStartPosition?: DragStartPosition | null

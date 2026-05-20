@@ -161,6 +161,7 @@ export const workflowStateSchema = z.object({
     .object({
       name: z.string().optional(),
       description: z.string().optional(),
+      accessScope: z.enum(['workspace', 'published_summary']).optional(),
     })
     .optional(),
 })
