@@ -48,7 +48,12 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  listAccessibleWorkspaceIds: vi.fn(),
+}))
+
 import { GET } from './route'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 describe('GET /api/workspaces', () => {
   beforeEach(() => {
@@ -64,6 +69,7 @@ describe('GET /api/workspaces', () => {
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
     })
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValue(['ws-owner'])
     mockDbSelect
       .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: 'ws-owner' }]))
       .mockReturnValueOnce(
@@ -104,23 +110,11 @@ describe('GET /api/workspaces', () => {
 
   it('filters out personal workspaces owned by other users even if a permission row exists', async () => {
     mockDbSelect.mockReset()
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-team'])
     mockDbSelect
       .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: 'ws-team' }]))
       .mockReturnValueOnce(
         createChain([
-          {
-            workspace: {
-              id: 'ws-foreign-personal',
-              name: 'Foreign Personal',
-              ownerId: 'other-user',
-              workspaceMode: 'personal',
-              billedAccountUserId: 'other-user',
-              archivedAt: null,
-              createdAt: new Date('2026-05-20T00:00:00Z'),
-              updatedAt: new Date('2026-05-20T00:00:00Z'),
-            },
-            permissionType: 'admin',
-          },
           {
             workspace: {
               id: 'ws-team',
@@ -140,6 +134,7 @@ describe('GET /api/workspaces', () => {
     const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
 
     expect(response.status).toBe(200)
+    expect(listAccessibleWorkspaceIds).toHaveBeenCalledWith('user-1')
     await expect(response.json()).resolves.toMatchObject({
       lastActiveWorkspaceId: 'ws-team',
       workspaces: [
@@ -150,6 +145,34 @@ describe('GET /api/workspaces', () => {
           permissions: 'read',
         },
       ],
+    })
+  })
+
+  it('returns an empty list when no workspace is accessible and creation is blocked', async () => {
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce([])
+    mockGetWorkspaceCreationPolicy.mockResolvedValueOnce({
+      canCreate: false,
+      status: 403,
+      reason: 'Upgrade required',
+      maxWorkspaces: 1,
+      organizationId: null,
+      workspaceMode: 'personal',
+      billedAccountUserId: 'user-1',
+    })
+    mockDbSelect.mockReset()
+    mockDbSelect
+      .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: null }]))
+      .mockReturnValueOnce(createChain([]))
+
+    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=active'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      lastActiveWorkspaceId: null,
+      workspaces: [],
+      creationPolicy: expect.objectContaining({
+        canCreate: false,
+      }),
     })
   })
 })

@@ -3,7 +3,7 @@ import { db } from '@sim/db'
 import { permissions, settings, type WorkspaceMode, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, desc, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { listWorkspacesQuerySchema } from '@/lib/api/contracts'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
@@ -15,6 +15,7 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
+import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import {
   CONTACT_OWNER_TO_UPGRADE_REASON,
   evaluateWorkspaceInvitePolicy,
@@ -53,6 +54,8 @@ export const GET = withRouteHandler(async (request: Request) => {
   }
   const { scope } = scopeResult.data
 
+  const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(session.user.id)
+
   const settingsQuery = db
     .select({ lastActiveWorkspaceId: settings.lastActiveWorkspaceId })
     .from(settings)
@@ -76,25 +79,27 @@ export const GET = withRouteHandler(async (request: Request) => {
       )
       .where(
         scope === 'all'
-          ? or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id))
+          ? accessibleWorkspaceIds.length > 0
+            ? inArray(workspace.id, accessibleWorkspaceIds)
+            : sql`false`
           : scope === 'archived'
             ? and(
-                or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id)),
+                accessibleWorkspaceIds.length > 0
+                  ? inArray(workspace.id, accessibleWorkspaceIds)
+                  : sql`false`,
                 sql`${workspace.archivedAt} IS NOT NULL`
               )
             : and(
-                or(eq(workspace.ownerId, session.user.id), isNotNull(permissions.id)),
+                accessibleWorkspaceIds.length > 0
+                  ? inArray(workspace.id, accessibleWorkspaceIds)
+                  : sql`false`,
                 isNull(workspace.archivedAt)
               )
       )
       .orderBy(desc(workspace.createdAt)),
     settingsQuery,
   ])
-
-  const userWorkspaces = userWorkspacesRaw.filter(
-    ({ workspace: workspaceDetails }) =>
-      workspaceDetails.ownerId === session.user.id || workspaceDetails.workspaceMode !== 'personal'
-  )
+  const userWorkspaces = userWorkspacesRaw
 
   const lastActiveWorkspaceId = userSettings[0]?.lastActiveWorkspaceId ?? null
 
