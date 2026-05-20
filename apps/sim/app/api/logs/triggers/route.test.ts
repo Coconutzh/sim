@@ -1,0 +1,69 @@
+/**
+ * @vitest-environment node
+ */
+import { permissionsMock, permissionsMockFns } from '@sim/testing'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockGetSession, mockSelectDistinct } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+  mockSelectDistinct: vi.fn(),
+}))
+
+function createChain<T>(result: T) {
+  const chain: Record<string, unknown> = {}
+  ;(chain as any).from = vi.fn(() => chain)
+  ;(chain as any).where = vi.fn(() => chain)
+  ;(chain as any).then = (resolve: (value: T) => unknown) => resolve(result)
+  return chain
+}
+
+vi.mock('@/lib/auth', () => ({
+  auth: { api: { getSession: vi.fn() } },
+  getSession: mockGetSession,
+}))
+
+vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+
+vi.mock('@sim/db', () => ({
+  db: {
+    selectDistinct: mockSelectDistinct,
+  },
+}))
+
+import { GET } from './route'
+
+describe('GET /api/logs/triggers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetSession.mockResolvedValue({ user: { id: 'owner-1' } })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'ws-owner',
+        name: 'Owner Workspace',
+        ownerId: 'owner-1',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-1',
+      },
+    })
+    mockSelectDistinct.mockReturnValueOnce(
+      createChain([{ trigger: 'slack' }, { trigger: 'github' }])
+    )
+  })
+
+  it('allows workspace owners to fetch triggers without a permission row', async () => {
+    const response = await GET(
+      new Request('http://localhost:3000/api/logs/triggers?workspaceId=ws-owner') as any
+    )
+
+    expect(response.status).toBe(200)
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+    await expect(response.json()).resolves.toEqual({
+      triggers: ['github', 'slack'],
+      count: 2,
+    })
+  })
+})
