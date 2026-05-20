@@ -29,6 +29,7 @@
       "!**/apps/sim/blocks/catalog.generated.ts",
       "!**/apps/sim/blocks/catalog.generated.json",
       "!**/apps/sim/tools/catalog.generated.json",
+      "!**/apps/sim/tools/outputs.generated.json",
       "!**/apps/docs/.source",
       "!**/venv",
       "!**/.venv",

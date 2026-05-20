@@ -26,6 +26,8 @@ interface GeneratedToolEntry {
   hosting?: ToolConfig['hosting']
 }
 
+type GeneratedToolOutputs = Record<string, ToolConfig['outputs']>
+
 const TOOLS_DIR = new URL('../tools', import.meta.url)
 const TOOLS_DIR_PATH = fileURLToPath(TOOLS_DIR)
 const GENERATED_HEADER = `/**
@@ -118,9 +120,17 @@ function renderCatalog(entries: GeneratedToolEntry[]): string {
   return JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.id, entry])))
 }
 
+function renderOutputs(entries: GeneratedToolEntry[]): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      entries.map((entry) => [entry.id, entry.outputs ?? {}])
+    ) satisfies GeneratedToolOutputs
+  )
+}
+
 function renderLoaders(moduleNames: string[]): string {
   const entries = moduleNames
-    .map((moduleName) => `  ${JSON.stringify(moduleName)}: () => import('@/tools/${moduleName}'),`)
+    .map((moduleName) => `  ${moduleName}: () => import('@/tools/${moduleName}'),`)
     .join('\n')
 
   return `${GENERATED_HEADER}
@@ -139,6 +149,10 @@ async function main(): Promise<void> {
   await writeFile(
     new URL('../tools/catalog.generated.json', import.meta.url),
     renderCatalog(entries)
+  )
+  await writeFile(
+    new URL('../tools/outputs.generated.json', import.meta.url),
+    renderOutputs(entries)
   )
   await writeFile(
     new URL('../tools/loaders.generated.ts', import.meta.url),

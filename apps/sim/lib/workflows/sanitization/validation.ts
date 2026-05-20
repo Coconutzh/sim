@@ -3,7 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
-import { getTool, getToolUnavailableErrorMessage } from '@/tools/utils'
+import { hasToolOutputEntry } from '@/tools/outputs'
 
 const logger = createLogger('WorkflowValidation')
 
@@ -307,12 +307,8 @@ export function validateToolReference(
   if (!toolId) return null
 
   if (!isCustomTool(toolId) && !isMcpTool(toolId)) {
-    // For built-in tools, verify they exist
-    const tool = getTool(toolId)
-    if (!tool) {
-      const unavailableMessage =
-        getToolUnavailableErrorMessage(toolId) ?? `references non-existent tool '${toolId}'`
-      return `Block ${blockName || 'unknown'} (${blockType}): ${unavailableMessage}`
+    if (!hasToolOutputEntry(toolId)) {
+      return `Block ${blockName || 'unknown'} (${blockType}): references non-existent tool '${toolId}'`
     }
   }
 
