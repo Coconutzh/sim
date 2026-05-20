@@ -330,6 +330,17 @@ export const PUT = withRouteHandler(
         )
       }
 
+      if (
+        updates.visibility !== undefined &&
+        updates.visibility !== 'workspace' &&
+        !authorization.workspaceWorkgroupId
+      ) {
+        return NextResponse.json(
+          { error: 'Only workgroup-backed team workspaces can publish across teams' },
+          { status: 400 }
+        )
+      }
+
       const hasNonLockUpdate = Object.keys(updates).some((key) => key !== 'locked')
       if (hasNonLockUpdate) {
         await assertWorkflowMutable(workflowId)

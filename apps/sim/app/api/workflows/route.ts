@@ -16,6 +16,7 @@ import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/util
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import {
   getUserEntityPermissions,
+  getWorkspaceWithOwner,
   listAccessibleWorkspaceIds,
   workspaceExists,
 } from '@/lib/workspaces/permissions/utils'
@@ -187,6 +188,18 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json(
         { error: 'Write or Admin access required to create workflows in this workspace' },
         { status: 403 }
+      )
+    }
+
+    const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
+    if (!workspaceDetails) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    if (visibility !== 'workspace' && !workspaceDetails.workgroupId) {
+      return NextResponse.json(
+        { error: 'Only workgroup-backed team workspaces can create cross-team workflows' },
+        { status: 400 }
       )
     }
 

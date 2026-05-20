@@ -22,6 +22,7 @@ const { mockWorkflowCreated, mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 const mockListAccessibleWorkspaceIds = permissionsMockFns.mockListAccessibleWorkspaceIds
+const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
 
 vi.mock('drizzle-orm', () => ({
   ...drizzleOrmMock,
@@ -81,6 +82,16 @@ describe('Workflows API Route - POST ordering', () => {
       userEmail: 'test@example.com',
     })
     mockGetUserEntityPermissions.mockResolvedValue('write')
+    mockGetWorkspaceWithOwner.mockResolvedValue({
+      id: 'workspace-123',
+      name: 'Workspace',
+      ownerId: 'user-123',
+      organizationId: 'org-1',
+      workgroupId: 'wg-1',
+      workspaceMode: 'organization',
+      billedAccountUserId: 'user-123',
+      archivedAt: null,
+    })
     workflowsPersistenceUtilsMockFns.mockSaveWorkflowToNormalizedTables.mockResolvedValue({
       success: true,
     })
@@ -161,6 +172,33 @@ describe('Workflows API Route - POST ordering', () => {
     expect(response.status).toBe(200)
     expect(data.sortOrder).toBe(0)
     expect(insertedValues?.sortOrder).toBe(0)
+  })
+
+  it('rejects cross-team workflow creation for workspaces without a workgroup', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-123',
+      name: 'Workspace',
+      ownerId: 'user-123',
+      organizationId: 'org-1',
+      workgroupId: null,
+      workspaceMode: 'organization',
+      billedAccountUserId: 'user-123',
+      archivedAt: null,
+    })
+
+    const req = createMockRequest('POST', {
+      name: 'Shared Workflow',
+      description: 'desc',
+      color: '#3972F6',
+      workspaceId: 'workspace-123',
+      visibility: 'organization',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data.error).toBe('Only workgroup-backed team workspaces can create cross-team workflows')
   })
 })
 

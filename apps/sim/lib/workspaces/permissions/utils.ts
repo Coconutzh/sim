@@ -19,6 +19,7 @@ export interface WorkspaceWithOwner {
   name: string
   ownerId: string
   organizationId: string | null
+  workgroupId?: string | null
   workspaceMode: WorkspaceMode
   billedAccountUserId: string
   archivedAt?: Date | null
@@ -86,6 +87,7 @@ export async function getWorkspaceWithOwner(
       name: workspace.name,
       ownerId: workspace.ownerId,
       organizationId: workspace.organizationId,
+      workgroupId: workspace.workgroupId,
       workspaceMode: workspace.workspaceMode,
       billedAccountUserId: workspace.billedAccountUserId,
       archivedAt: workspace.archivedAt,
