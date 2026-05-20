@@ -45,6 +45,11 @@ import type { CredentialRequirement } from '@/lib/workflows/credentials/credenti
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
+import {
+  canOpenWorkflowInWorkspace,
+  getWorkflowProbeWorkspaceId,
+  hasWorkflowWorkspaceAccess,
+} from './workflow-access'
 
 const logger = createLogger('TemplateDetails')
 
@@ -266,7 +271,8 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
         if (checkResponse.status === 403) {
           setHasWorkspaceAccess(false)
         } else if (checkResponse.ok) {
-          setHasWorkspaceAccess(true)
+          const result = await checkResponse.json()
+          setHasWorkspaceAccess(hasWorkflowWorkspaceAccess(result))
         } else {
           setHasWorkspaceAccess(null)
         }
@@ -391,12 +397,15 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
     if (isWorkspaceContext && workspaceId && template.workflowId) {
       setIsEditing(true)
       try {
-        // boundary-raw-fetch: workflow access probe needs HTTP status check (200 vs not-ok) without parsing the body
+        // boundary-raw-fetch: workflow access probe needs HTTP status plus workspaceId from the route payload
         const checkResponse = await fetch(`/api/workflows/${template.workflowId}`)
 
         if (checkResponse.ok) {
-          router.push(`/workspace/${workspaceId}/w/${template.workflowId}`)
-          return
+          const result = await checkResponse.json()
+          if (canOpenWorkflowInWorkspace(result, workspaceId)) {
+            router.push(`/workspace/${workspaceId}/w/${template.workflowId}`)
+            return
+          }
         }
       } catch (error) {
         logger.error('Error checking workflow:', error)
@@ -418,7 +427,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
 
         if (checkResponse.ok) {
           const result = await checkResponse.json()
-          const templateWorkspaceId = result.data?.workspaceId
+          const templateWorkspaceId = getWorkflowProbeWorkspaceId(result)
           if (templateWorkspaceId) {
             window.location.href = `/workspace/${templateWorkspaceId}/w/${template.workflowId}`
             return
