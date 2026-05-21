@@ -63,6 +63,22 @@ export const listWorkspaceFilesContract = defineRouteContract({
   },
 })
 
+const uploadWorkspaceFileResponseSchema = workspaceFileSuccessSchema.extend({
+  file: workspaceFileRecordSchema,
+})
+
+export type UploadWorkspaceFileResponse = z.output<typeof uploadWorkspaceFileResponseSchema>
+
+export const uploadWorkspaceFileContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workspaces/[id]/files',
+  params: workspaceFilesParamsSchema,
+  response: {
+    mode: 'json',
+    schema: uploadWorkspaceFileResponseSchema,
+  },
+})
+
 export const renameWorkspaceFileContract = defineRouteContract({
   method: 'PATCH',
   path: '/api/workspaces/[id]/files/[fileId]',

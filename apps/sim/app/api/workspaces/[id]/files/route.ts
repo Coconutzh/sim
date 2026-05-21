@@ -2,10 +2,10 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
-  listWorkspaceFilesQuerySchema,
-  workspaceFilesParamsSchema,
+  listWorkspaceFilesContract,
+  uploadWorkspaceFileContract,
 } from '@/lib/api/contracts/workspace-files'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -111,24 +111,19 @@ async function parseWorkspaceUploadRequest(request: NextRequest): Promise<Parsed
  * List all files for a workspace (requires read permission)
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        {
-          error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters'),
-        },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId } = paramsResult.data
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(listWorkspaceFilesContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId } = parsed.data.params
+      const { scope } = parsed.data.query
 
       // Check workspace permissions (requires read)
       const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
@@ -138,19 +133,6 @@ export const GET = withRouteHandler(
         )
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
-
-      const queryResult = listWorkspaceFilesQuerySchema.safeParse(
-        Object.fromEntries(request.nextUrl.searchParams.entries())
-      )
-      if (!queryResult.success) {
-        return NextResponse.json(
-          {
-            error: getValidationErrorMessage(queryResult.error, 'Invalid scope'),
-          },
-          { status: 400 }
-        )
-      }
-      const { scope } = queryResult.data
 
       const files = await listWorkspaceFiles(workspaceId, { scope })
 
@@ -178,18 +160,8 @@ export const GET = withRouteHandler(
  * Upload a new file to workspace storage (requires write permission)
  */
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        {
-          error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters'),
-        },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId } = paramsResult.data
 
     try {
       const session = await getSession()
@@ -197,11 +169,13 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
+      const parsed = await parseRequest(uploadWorkspaceFileContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId } = parsed.data.params
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        logger.warn(
-          `[${requestId}] User ${session.user.id} cannot access workspace ${workspaceId}`
-        )
+        logger.warn(`[${requestId}] User ${session.user.id} cannot access workspace ${workspaceId}`)
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
