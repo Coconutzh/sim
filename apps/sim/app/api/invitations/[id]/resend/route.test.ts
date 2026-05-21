@@ -1,0 +1,183 @@
+/**
+ * @vitest-environment node
+ */
+import { auditMock, authMock, authMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const {
+  mockGetInvitationById,
+  mockIsOrganizationOwnerOrAdmin,
+  mockGetOrganizationSubscription,
+  mockPrepareInvitationResend,
+  mockPersistInvitationResend,
+  mockSendInvitationEmail,
+  mockGetWorkspaceInvitePolicy,
+  mockDbSelect,
+} = vi.hoisted(() => ({
+  mockGetInvitationById: vi.fn(),
+  mockIsOrganizationOwnerOrAdmin: vi.fn(),
+  mockGetOrganizationSubscription: vi.fn(),
+  mockPrepareInvitationResend: vi.fn(),
+  mockPersistInvitationResend: vi.fn(),
+  mockSendInvitationEmail: vi.fn(),
+  mockGetWorkspaceInvitePolicy: vi.fn(),
+  mockDbSelect: vi.fn(),
+}))
+
+function createSelectChain<T>(result: T) {
+  const chain: Record<string, unknown> = {}
+  ;(chain as any).from = vi.fn(() => chain)
+  ;(chain as any).where = vi.fn(() => chain)
+  ;(chain as any).limit = vi.fn(() => Promise.resolve(result))
+  return chain
+}
+
+vi.mock('@sim/db', () => ({
+  db: {
+    select: mockDbSelect,
+  },
+}))
+
+vi.mock('@sim/audit', () => auditMock)
+vi.mock('@/lib/auth', () => authMock)
+vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+
+vi.mock('@/lib/invitations/core', () => ({
+  getInvitationById: mockGetInvitationById,
+}))
+
+vi.mock('@/lib/billing/core/organization', () => ({
+  isOrganizationOwnerOrAdmin: mockIsOrganizationOwnerOrAdmin,
+}))
+
+vi.mock('@/lib/billing/core/billing', () => ({
+  getOrganizationSubscription: mockGetOrganizationSubscription,
+}))
+
+vi.mock('@/lib/invitations/send', () => ({
+  prepareInvitationResend: mockPrepareInvitationResend,
+  persistInvitationResend: mockPersistInvitationResend,
+  sendInvitationEmail: mockSendInvitationEmail,
+}))
+
+vi.mock('@/lib/workspaces/policy', () => ({
+  getWorkspaceInvitePolicy: mockGetWorkspaceInvitePolicy,
+}))
+
+import { POST } from './route'
+
+describe('POST /api/invitations/[id]/resend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
+    mockIsOrganizationOwnerOrAdmin.mockResolvedValue(true)
+    permissionsMockFns.mockHasWorkspaceAdminAccess.mockResolvedValue(false)
+    permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
+      id: 'workspace-1',
+      name: 'Shared Workspace',
+      ownerId: 'owner-1',
+      organizationId: 'org-1',
+      workspaceMode: 'organization',
+      billedAccountUserId: 'owner-1',
+      archivedAt: null,
+    })
+    mockGetWorkspaceInvitePolicy.mockResolvedValue({
+      allowed: true,
+      reason: null,
+      requiresSeat: false,
+      organizationId: 'org-1',
+      upgradeRequired: false,
+    })
+    mockPrepareInvitationResend.mockResolvedValue({
+      tokenForEmail: 'tok-2',
+      nextToken: 'tok-next',
+      nextExpiresAt: new Date('2026-06-01T00:00:00.000Z'),
+    })
+    mockSendInvitationEmail.mockResolvedValue({ success: true })
+    mockDbSelect.mockReturnValue(
+      createSelectChain([{ name: 'Admin', email: 'admin@example.com' }])
+    )
+  })
+
+  it('rejects resending invitations that reference a personal workspace grant', async () => {
+    mockGetInvitationById.mockResolvedValue({
+      id: 'inv-1',
+      kind: 'workspace',
+      email: 'invitee@example.com',
+      organizationId: 'org-1',
+      organizationName: 'Acme',
+      membershipIntent: 'internal',
+      inviterId: 'inviter-1',
+      inviterName: 'Inviter',
+      inviterEmail: 'inviter@example.com',
+      role: 'member',
+      status: 'pending',
+      token: 'tok-1',
+      expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+      createdAt: new Date('2026-05-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Personal' }],
+    })
+    permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Personal',
+      ownerId: 'owner-2',
+      organizationId: null,
+      workspaceMode: 'personal',
+      billedAccountUserId: 'owner-2',
+      archivedAt: null,
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: 'inv-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(data).toEqual({
+      error: 'Invitation references a personal workspace that can no longer be shared',
+    })
+    expect(mockPrepareInvitationResend).not.toHaveBeenCalled()
+    expect(mockSendInvitationEmail).not.toHaveBeenCalled()
+  })
+
+  it('resends an invitation for a valid shared workspace target', async () => {
+    mockGetInvitationById.mockResolvedValue({
+      id: 'inv-1',
+      kind: 'workspace',
+      email: 'invitee@example.com',
+      organizationId: 'org-1',
+      organizationName: 'Acme',
+      membershipIntent: 'internal',
+      inviterId: 'inviter-1',
+      inviterName: 'Inviter',
+      inviterEmail: 'inviter@example.com',
+      role: 'member',
+      status: 'pending',
+      token: 'tok-1',
+      expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+      createdAt: new Date('2026-05-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Shared' }],
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: 'inv-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data).toEqual({ success: true })
+    expect(mockPrepareInvitationResend).toHaveBeenCalledWith({
+      invitationId: 'inv-1',
+      rotateToken: true,
+      currentToken: 'tok-1',
+    })
+    expect(mockPersistInvitationResend).toHaveBeenCalled()
+    expect(mockSendInvitationEmail).toHaveBeenCalled()
+  })
+})

@@ -73,6 +73,14 @@ export const POST = withRouteHandler(
             { status: 409 }
           )
         }
+        if (workspaceDetails.workspaceMode === 'personal') {
+          return NextResponse.json(
+            {
+              error: 'Invitation references a personal workspace that can no longer be shared',
+            },
+            { status: 409 }
+          )
+        }
         const policy = await getWorkspaceInvitePolicy(workspaceDetails)
         if (!policy.allowed) {
           return NextResponse.json(
