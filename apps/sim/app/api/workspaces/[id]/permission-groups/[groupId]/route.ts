@@ -234,6 +234,20 @@ export const DELETE = withRouteHandler(
     const { id: workspaceId, groupId: id } = await params
 
     try {
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+      if (!access.hasAccess) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      if (access.workspace?.workspaceMode === 'personal') {
+        return NextResponse.json(
+          { error: 'Personal workspaces do not support permission groups' },
+          { status: 403 }
+        )
+      }
+
       const isWorkspaceAdmin = await hasWorkspaceAdminAccess(session.user.id, workspaceId)
       if (!isWorkspaceAdmin) {
         return NextResponse.json({ error: 'Admin permissions required' }, { status: 403 })

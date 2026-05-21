@@ -134,7 +134,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { POST } from './route'
+import { DELETE, POST } from './route'
 
 describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => {
   beforeEach(() => {
@@ -238,5 +238,26 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects permission-group member removals for personal workspaces before admin checks', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'personal' },
+    })
+
+    const response = await DELETE(
+      createMockRequest('DELETE', undefined, undefined, 'http://localhost?memberId=member-1'),
+      {
+        params: Promise.resolve({ id: 'ws-1', groupId: 'group-1' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
   })
 })
