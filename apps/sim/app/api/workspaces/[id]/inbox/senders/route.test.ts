@@ -51,6 +51,12 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
     })
     mockHasInboxAccess.mockResolvedValue(true)
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
     permissionsMockFns.mockGetUsersWithPermissions.mockResolvedValue([
       {
@@ -94,5 +100,24 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
       { email: 'member@example.com', name: 'Member', isAutoAllowed: true },
     ])
     expect(permissionsMockFns.mockGetUsersWithPermissions).toHaveBeenCalledWith('ws-owner')
+  })
+
+  it('hides foreign personal workspaces when stale permission rows no longer grant access', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('admin')
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Not found' })
+    expect(permissionsMockFns.mockGetUsersWithPermissions).not.toHaveBeenCalled()
   })
 })

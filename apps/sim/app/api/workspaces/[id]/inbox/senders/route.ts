@@ -9,8 +9,10 @@ import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
+  checkWorkspaceAccess,
   getUserEntityPermissions,
   getUsersWithPermissions,
+  hasWorkspaceAdminAccess,
 } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InboxSendersAPI')
@@ -23,12 +25,16 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, permission] = await Promise.all([
+    const [hasAccess, access, permission] = await Promise.all([
       hasInboxAccess(session.user.id),
+      checkWorkspaceAccess(workspaceId, session.user.id),
       getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
     ])
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+    }
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
     if (!permission) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -72,14 +78,18 @@ export const POST = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, permission] = await Promise.all([
+    const [hasAccess, access, isAdmin] = await Promise.all([
       hasInboxAccess(session.user.id),
-      getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
+      checkWorkspaceAccess(workspaceId, session.user.id),
+      hasWorkspaceAdminAccess(session.user.id, workspaceId),
     ])
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
     }
-    if (permission !== 'admin') {
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -131,14 +141,18 @@ export const DELETE = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, permission] = await Promise.all([
+    const [hasAccess, access, isAdmin] = await Promise.all([
       hasInboxAccess(session.user.id),
-      getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
+      checkWorkspaceAccess(workspaceId, session.user.id),
+      hasWorkspaceAdminAccess(session.user.id, workspaceId),
     ])
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
     }
-    if (permission !== 'admin') {
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
