@@ -51,13 +51,19 @@ vi.mock('@/lib/workspaces/lifecycle', () => ({
   archiveWorkspace: mockArchiveWorkspace,
 }))
 
-import { DELETE, PATCH } from './route'
+import { DELETE, GET, PATCH } from './route'
 
 describe('DELETE /api/workspaces/[id]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
     })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
     mockArchiveWorkspace.mockResolvedValue({ archived: true })
@@ -95,6 +101,24 @@ describe('DELETE /api/workspaces/[id]', () => {
       requestId: 'workspace-ws-owner',
     })
   })
+
+  it('returns 404 when stale personal rows no longer grant delete visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await DELETE(createMockRequest('DELETE', { deleteTemplates: false }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
+  })
 })
 
 describe('PATCH /api/workspaces/[id]', () => {
@@ -102,6 +126,12 @@ describe('PATCH /api/workspaces/[id]', () => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
     })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
     permissionsMockFns.mockHasAdminPermission.mockResolvedValue(false)
@@ -134,5 +164,39 @@ describe('PATCH /api/workspaces/[id]', () => {
       'member-2',
       'ws-shared'
     )
+  })
+})
+
+describe('GET /api/workspaces/[id]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+  })
+
+  it('returns 404 when stale personal rows no longer grant workspace visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

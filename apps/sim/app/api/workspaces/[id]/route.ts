@@ -15,6 +15,7 @@ import { db } from '@sim/db'
 import { templates, workspace } from '@sim/db/schema'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
+  checkWorkspaceAccess,
   getUserEntityPermissions,
   hasAdminPermission,
   listAccessibleWorkspaceIds,
@@ -34,6 +35,11 @@ export const GET = withRouteHandler(
     const checkTemplates = url.searchParams.get('check-templates') === 'true'
 
     // Check if user has any access to this workspace
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+    }
+
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!userPermission) {
       return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
@@ -111,6 +117,11 @@ export const PATCH = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     const workspaceId = parsed.data.params.id
+
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+    }
 
     // Check if user has admin permissions to update workspace
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
@@ -275,6 +286,11 @@ export const DELETE = withRouteHandler(
     const bodyValidation = deleteWorkspaceBodySchema.safeParse(rawBody)
     if (!bodyValidation.success) return validationErrorResponse(bodyValidation.error)
     const { deleteTemplates } = bodyValidation.data // User's choice: false = keep templates (recommended), true = delete templates
+
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+    }
 
     // Check if user has admin permissions to delete workspace
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
