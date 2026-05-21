@@ -280,4 +280,47 @@ describe('MCP Serve Route', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Server not found' })
   })
+
+  it('hides private personal workspace server from POST access when stale permission rows exist', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([
+      {
+        id: 'server-1',
+        name: 'Personal Server',
+        workspaceId: 'ws-personal',
+        isPublic: false,
+        createdBy: 'owner-1',
+        workspaceOwnerId: 'owner-1',
+        workspaceMode: 'personal',
+      },
+    ])
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-2',
+      authType: 'session',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-personal',
+        name: 'Personal Workspace',
+        ownerId: 'owner-1',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-1',
+      },
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/mcp/serve/server-1', {
+        method: 'POST',
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      }),
+      { params: Promise.resolve({ serverId: 'server-1' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Server not found' })
+  })
 })

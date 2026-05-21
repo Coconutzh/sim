@@ -55,7 +55,7 @@ vi.mock('@sim/db/schema', () => ({
 vi.mock('@/lib/auth', () => authMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
-import { GET, POST } from '@/app/api/credentials/[id]/members/route'
+import { DELETE, GET, POST } from '@/app/api/credentials/[id]/members/route'
 
 describe('/api/credentials/[id]/members', () => {
   beforeEach(() => {
@@ -111,6 +111,47 @@ describe('/api/credentials/[id]/members', () => {
     const response = await POST(createMockRequest('POST', { userId: 'user-2', role: 'viewer' }), {
       params: Promise.resolve({ id: 'cred-1' }),
     })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when stale personal rows no longer grant credential-member read visibility', async () => {
+    mockDbSelect.mockReturnValueOnce(createSelectChain([{ id: 'cred-1', workspaceId: 'ws-1' }]))
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'cred-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when stale personal rows no longer grant credential-member revoke visibility', async () => {
+    mockDbSelect.mockReturnValueOnce(createSelectChain([{ id: 'cred-1', workspaceId: 'ws-1' }]))
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await DELETE(
+      createMockRequest('DELETE', undefined, undefined, 'http://localhost/api/credentials/cred-1/members?userId=user-2'),
+      {
+        params: Promise.resolve({ id: 'cred-1' }),
+      }
+    )
     const data = await response.json()
 
     expect(response.status).toBe(404)
