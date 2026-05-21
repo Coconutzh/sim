@@ -184,6 +184,26 @@ describe('/api/workspaces/[id]/permissions', () => {
     expect(getUsersWithPermissionsMock).not.toHaveBeenCalled()
   })
 
+  it('returns 404 when stale personal rows no longer grant workspace permission visibility', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+    hasWorkspaceAdminAccessMock.mockResolvedValueOnce(false)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-1' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(getUsersWithPermissionsMock).not.toHaveBeenCalled()
+    expect(getUserEntityPermissionsMock).not.toHaveBeenCalled()
+  })
+
   describe('PATCH', () => {
     it('rejects permission updates that target the workspace owner', async () => {
       const response = await PATCH(createMockRequest('PATCH'), {
@@ -240,7 +260,7 @@ describe('/api/workspaces/[id]/permissions', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found or access denied' })
+      expect(data).toEqual({ error: 'Workspace not found' })
       expect(parseRequestMock).not.toHaveBeenCalled()
       expect(getWorkspaceWithOwnerMock).not.toHaveBeenCalled()
     })

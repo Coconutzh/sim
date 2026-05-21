@@ -46,11 +46,11 @@ export const GET = withRouteHandler(
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
 
       if (!access.exists) {
-        return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       if (!isAdmin && !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(
@@ -108,7 +108,7 @@ export const PATCH = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, workspaceId)

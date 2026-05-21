@@ -67,7 +67,7 @@ describe('GET /api/workspaces/[id]/members', () => {
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).toHaveBeenCalledWith('ws-owner')
   })
 
-  it('returns 404 when the user cannot access the workspace', async () => {
+  it('returns 404 when stale personal rows no longer grant workspace member visibility', async () => {
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
       hasAccess: false,
@@ -75,8 +75,8 @@ describe('GET /api/workspaces/[id]/members', () => {
       workspace: {
         id: 'ws-owner',
         name: 'Owner Workspace',
-        ownerId: 'owner-1',
-        workspaceMode: 'organization',
+        ownerId: 'owner-2',
+        workspaceMode: 'personal',
       },
     })
 
@@ -86,7 +86,7 @@ describe('GET /api/workspaces/[id]/members', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
   })
 
