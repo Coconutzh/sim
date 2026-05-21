@@ -12,6 +12,7 @@ const {
   workflowTable,
   workflowPublicationScopeTable,
   workgroupTable,
+  workgroupMemberTable,
   workspaceTable,
 } = vi.hoisted(() => {
   const resultsQueue: unknown[] = []
@@ -66,6 +67,11 @@ const {
       id: 'workgroup.id',
       organizationId: 'workgroup.organizationId',
     },
+    workgroupMemberTable: {
+      id: 'workgroupMember.id',
+      userId: 'workgroupMember.userId',
+      workgroupId: 'workgroupMember.workgroupId',
+    },
     workspaceTable: {
       id: 'workspace.id',
       name: 'workspace.name',
@@ -93,6 +99,7 @@ vi.mock('@sim/db/schema', () => ({
   workflow: workflowTable,
   workflowPublicationScope: workflowPublicationScopeTable,
   workgroup: workgroupTable,
+  workgroupMember: workgroupMemberTable,
   workspace: workspaceTable,
 }))
 
@@ -162,9 +169,9 @@ describe('workflow publication access', () => {
     expect(mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'owner-1')
   })
 
-  it('lets a workspace owner browse published workflows for their workgroup', async () => {
+  it('lets a workgroup member browse published workflows for their workgroup', async () => {
     mockResultsQueue.push(
-      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
+      [{ id: 'membership-1' }],
       [{ organizationId: 'org-1' }],
       [],
       [
@@ -212,12 +219,7 @@ describe('workflow publication access', () => {
   })
 
   it('does not list organization-visible workflows from workspaces without a workgroup', async () => {
-    mockResultsQueue.push(
-      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
-      [{ organizationId: 'org-1' }],
-      [],
-      []
-    )
+    mockResultsQueue.push([{ id: 'membership-1' }], [{ organizationId: 'org-1' }], [], [])
 
     const result = await listPublishedWorkflowsForWorkgroup({
       workgroupId: 'wg-1',
@@ -228,12 +230,7 @@ describe('workflow publication access', () => {
   })
 
   it('does not list published workflows from personal workspaces in a workgroup', async () => {
-    mockResultsQueue.push(
-      [{ id: 'ws-in-wg', ownerId: 'owner-1', workspaceMode: 'organization' }],
-      [{ organizationId: 'org-1' }],
-      [],
-      []
-    )
+    mockResultsQueue.push([{ id: 'membership-1' }], [{ organizationId: 'org-1' }], [], [])
 
     const result = await listPublishedWorkflowsForWorkgroup({
       workgroupId: 'wg-1',
@@ -243,14 +240,8 @@ describe('workflow publication access', () => {
     expect(result).toEqual([])
   })
 
-  it('rejects workgroup browsing through foreign personal workspace permissions', async () => {
-    mockResultsQueue.push([
-      {
-        id: 'ws-foreign-personal',
-        ownerId: 'other-user',
-        workspaceMode: 'personal',
-      },
-    ])
+  it('rejects workgroup browsing without an active membership row', async () => {
+    mockResultsQueue.push([])
 
     await expect(
       listPublishedWorkflowsForWorkgroup({

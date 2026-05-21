@@ -1,9 +1,9 @@
 import { db } from '@sim/db'
 import {
-  permissions,
   workflow,
   workflowPublicationScope,
   workgroup,
+  workgroupMember,
   workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -113,29 +113,13 @@ async function assertWorkspaceReadAccess(userId: string, workspaceId: string): P
 async function assertWorkgroupMembership(userId: string, workgroupId: string): Promise<void> {
   const [membership] = await db
     .select({
-      id: workspace.id,
-      ownerId: workspace.ownerId,
-      workspaceMode: workspace.workspaceMode,
+      id: workgroupMember.id,
     })
-    .from(workspace)
-    .leftJoin(
-      permissions,
-      and(
-        eq(permissions.entityId, workspace.id),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.userId, userId)
-      )
-    )
-    .where(
-      and(
-        eq(workspace.workgroupId, workgroupId),
-        isNull(workspace.archivedAt),
-        or(eq(workspace.ownerId, userId), isNotNull(permissions.id))
-      )
-    )
+    .from(workgroupMember)
+    .where(and(eq(workgroupMember.userId, userId), eq(workgroupMember.workgroupId, workgroupId)))
     .limit(1)
 
-  if (!membership || (membership.workspaceMode === 'personal' && membership.ownerId !== userId)) {
+  if (!membership) {
     throw new Error('Access denied to workgroup')
   }
 }
