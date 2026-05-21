@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   checkWorkspaceAccessMock,
+  getSessionMock,
   getUsersWithPermissionsMock,
   hasWorkspaceAdminAccessMock,
   insertValuesMock,
@@ -21,6 +22,7 @@ const {
 
   return {
     checkWorkspaceAccessMock: vi.fn(),
+    getSessionMock: vi.fn(),
     getUsersWithPermissionsMock: vi.fn(),
     hasWorkspaceAdminAccessMock: vi.fn(),
     insertValuesMock,
@@ -111,9 +113,7 @@ vi.mock('@/lib/api/server', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  getSession: vi.fn().mockResolvedValue({
-    user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
-  }),
+  getSession: getSessionMock,
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -134,11 +134,18 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { DELETE, POST } from './route'
+import {
+  DELETE,
+  GET,
+  POST,
+} from '@/app/api/workspaces/[id]/permission-groups/[groupId]/members/route'
 
 describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getSessionMock.mockResolvedValue({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
     selectGroupLimitMock.mockResolvedValue([
       { id: 'group-1', workspaceId: 'ws-1', name: 'Team Members' },
     ])
@@ -146,7 +153,11 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     isWorkspaceOnEnterprisePlanMock.mockResolvedValue(true)
     parseRequestMock.mockResolvedValue({
       success: true,
-      data: { body: { userId: 'owner-1' } },
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { userId: 'owner-1' },
+        query: { memberId: 'member-1' },
+      },
     })
     getUsersWithPermissionsMock.mockResolvedValue([
       { userId: 'owner-1', email: 'owner@example.com', permissionType: 'admin' },
@@ -208,7 +219,11 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
   it('rejects users who are not workspace members', async () => {
     parseRequestMock.mockResolvedValueOnce({
       success: true,
-      data: { body: { userId: 'missing-user' } },
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { userId: 'missing-user' },
+        query: { memberId: 'member-1' },
+      },
     })
 
     const response = await POST(createMockRequest('POST'), {
@@ -278,5 +293,47 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates member list requests before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates member additions before validating route params or body', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await POST(createMockRequest('POST', {}), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates member removals before validating route params or query', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
   })
 })

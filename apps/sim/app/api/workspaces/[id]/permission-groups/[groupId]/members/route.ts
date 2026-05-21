@@ -6,7 +6,11 @@ import { getPostgresConstraintName, getPostgresErrorCode } from '@sim/utils/erro
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { addPermissionGroupMemberContract } from '@/lib/api/contracts/permission-groups'
+import {
+  addPermissionGroupMemberContract,
+  listPermissionGroupMembersContract,
+  removePermissionGroupMemberContract,
+} from '@/lib/api/contracts/permission-groups'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing'
@@ -35,13 +39,16 @@ async function loadGroupInWorkspace(groupId: string, workspaceId: string) {
 }
 
 export const GET = withRouteHandler(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; groupId: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await params
+    const parsed = await parseRequest(listPermissionGroupMembersContract, req, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId, groupId: id } = parsed.data.params
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
@@ -91,9 +98,16 @@ export const POST = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await context.params
-
     try {
+      const parsed = await parseRequest(addPermissionGroupMemberContract, req, context, {
+        validationErrorResponse: (error) =>
+          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId, groupId: id } = parsed.data.params
+      const { userId } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -122,13 +136,6 @@ export const POST = withRouteHandler(
       if (!group) {
         return NextResponse.json({ error: 'Permission group not found' }, { status: 404 })
       }
-
-      const parsed = await parseRequest(addPermissionGroupMemberContract, req, context, {
-        validationErrorResponse: (error) =>
-          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
-      })
-      if (!parsed.success) return parsed.response
-      const { userId } = parsed.data.body
 
       const workspaceMembers = await getUsersWithPermissions(workspaceId)
       const workspaceMember = workspaceMembers.find((member) => member.userId === userId)
@@ -242,21 +249,22 @@ export const POST = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; groupId: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await params
-    const { searchParams } = new URL(req.url)
-    const memberId = searchParams.get('memberId')
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId is required' }, { status: 400 })
-    }
-
     try {
+      const parsed = await parseRequest(removePermissionGroupMemberContract, req, context, {
+        validationErrorResponse: (error) =>
+          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId, groupId: id } = parsed.data.params
+      const { memberId } = parsed.data.query
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
