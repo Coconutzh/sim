@@ -32,14 +32,19 @@ describe('Workflow Variables API Route', () => {
         error: 'Authentication required',
       })
 
-      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123/variables')
-      const params = Promise.resolve({ id: 'workflow-123' })
+      const req = new NextRequest('http://localhost:3000/api/workflows//variables')
+      const params = {
+        then: () => {
+          throw new Error('Route params should not be read before auth')
+        },
+      } as unknown as Promise<{ id: string }>
 
       const response = await GET(req, { params })
 
       expect(response.status).toBe(401)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized')
+      expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
 
     it('should return 404 when workflow does not exist', async () => {
@@ -278,6 +283,30 @@ describe('Workflow Variables API Route', () => {
   })
 
   describe('POST /api/workflows/[id]/variables', () => {
+    it('should return 401 before reading route params when user is not authenticated', async () => {
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: false,
+        error: 'Authentication required',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows//variables', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      const params = {
+        then: () => {
+          throw new Error('Route params should not be read before auth')
+        },
+      } as unknown as Promise<{ id: string }>
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    })
+
     it('should allow user with write permission to update variables', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -434,23 +463,10 @@ describe('Workflow Variables API Route', () => {
     })
 
     it('should validate request data schema', async () => {
-      const mockWorkflow = {
-        id: 'workflow-123',
-        userId: 'user-123',
-        workspaceId: 'workspace-456',
-        variables: {},
-      }
-
       hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
         success: true,
         userId: 'user-123',
         authType: 'session',
-      })
-      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
-        allowed: true,
-        status: 200,
-        workflow: mockWorkflow,
-        workspacePermission: 'write',
       })
 
       const invalidData = { variables: [{ name: 'test' }] }
@@ -466,6 +482,7 @@ describe('Workflow Variables API Route', () => {
       expect(response.status).toBe(400)
       const data = await response.json()
       expect(data.error).toBe('Validation error')
+      expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
   })
 

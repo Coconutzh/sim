@@ -9,7 +9,10 @@ import {
 } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { workflowVariablesContract } from '@/lib/api/contracts/workflows'
+import {
+  getWorkflowVariablesContract,
+  workflowVariablesContract,
+} from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -21,7 +24,7 @@ const logger = createLogger('WorkflowVariablesAPI')
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workflowId = (await context.params).id
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
@@ -30,6 +33,13 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(workflowVariablesContract, req, context)
+      if (!parsed.success) return parsed.response
+
+      const workflowId = parsed.data.params.id
+      workflowIdForLog = workflowId
+      const { variables } = parsed.data.body
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -65,10 +75,6 @@ export const POST = withRouteHandler(
       }
 
       await assertWorkflowMutable(workflowId)
-
-      const parsed = await parseRequest(workflowVariablesContract, req, context)
-      if (!parsed.success) return parsed.response
-      const { variables } = parsed.data.body
       // Note: prior versions cross-checked that each variable's `workflowId`
       // equalled the path param. The write contract does not carry `workflowId`
       // per variable (the path param is the source of truth), so the check
@@ -108,16 +114,19 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: error.message }, { status: error.status })
       }
 
-      logger.error(`[${requestId}] Error updating workflow variables`, error)
+      logger.error(
+        `[${requestId}] Error updating workflow variables for workflow: ${workflowIdForLog}`,
+        error
+      )
       return NextResponse.json({ error: 'Failed to update workflow variables' }, { status: 500 })
     }
   }
 )
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workflowId = (await params).id
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
@@ -126,6 +135,12 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(getWorkflowVariablesContract, req, context)
+      if (!parsed.success) return parsed.response
+
+      const workflowId = parsed.data.params.id
+      workflowIdForLog = workflowId
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -187,7 +202,7 @@ export const GET = withRouteHandler(
         }
       )
     } catch (error) {
-      logger.error(`[${requestId}] Workflow variables fetch error`, error)
+      logger.error(`[${requestId}] Workflow variables fetch error for ${workflowIdForLog}`, error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
