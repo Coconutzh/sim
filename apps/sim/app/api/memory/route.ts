@@ -46,16 +46,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
-    if (!access.exists) {
+    if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
         { success: false, error: { message: 'Workspace not found' } },
         { status: 404 }
-      )
-    }
-    if (!access.hasAccess) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Access denied to this workspace' } },
-        { status: 403 }
       )
     }
 
@@ -132,16 +126,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
-    if (!access.exists) {
+    if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
         { success: false, error: { message: 'Workspace not found' } },
         { status: 404 }
-      )
-    }
-    if (!access.hasAccess) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Access denied to this workspace' } },
-        { status: 403 }
       )
     }
 
@@ -271,16 +259,10 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
     }
 
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
-    if (!access.exists) {
+    if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
         { success: false, error: { message: 'Workspace not found' } },
         { status: 404 }
-      )
-    }
-    if (!access.hasAccess) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Access denied to this workspace' } },
-        { status: 403 }
       )
     }
 
