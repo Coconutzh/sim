@@ -10,6 +10,7 @@ import { getSession } from '@/lib/auth'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { refreshAccessTokenIfNeeded, resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
@@ -50,14 +51,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       }
 
       if (resolved.workspaceId) {
-        const { getUserEntityPermissions } = await import('@/lib/workspaces/permissions/utils')
-        const perm = await getUserEntityPermissions(
-          session!.user!.id,
-          'workspace',
-          resolved.workspaceId
-        )
-        if (perm === null) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        const workspaceAccess = await checkWorkspaceAccess(resolved.workspaceId, session.user.id)
+        if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+          return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
         }
       }
 

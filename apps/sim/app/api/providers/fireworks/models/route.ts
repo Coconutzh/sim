@@ -10,7 +10,10 @@ import { getBYOKKey } from '@/lib/api-key/byok'
 import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import { filterBlacklistedModels, isProviderBlacklisted } from '@/providers/utils'
 
 const logger = createLogger('FireworksModelsAPI')
@@ -43,6 +46,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (workspaceId) {
     const session = await getSession()
     if (session?.user?.id) {
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ models: [] })
+      }
+
       const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
       if (permission) {
         const byokResult = await getBYOKKey(workspaceId, 'fireworks')
