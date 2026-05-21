@@ -20,7 +20,7 @@ vi.mock('@/lib/environment/utils', () => ({
   getPersonalAndWorkspaceEnv: mockGetPersonalAndWorkspaceEnv,
 }))
 
-import { GET, PUT } from './route'
+import { DELETE, GET, PUT } from './route'
 
 describe('/api/workspaces/[id]/environment', () => {
   beforeEach(() => {
@@ -81,7 +81,43 @@ describe('/api/workspaces/[id]/environment', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Not found' })
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for stale foreign personal workspace environment reads', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockGetPersonalAndWorkspaceEnv).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for stale foreign personal workspace environment deletes', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await DELETE(createMockRequest('DELETE', { keys: ['OPENAI_API_KEY'] }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })
