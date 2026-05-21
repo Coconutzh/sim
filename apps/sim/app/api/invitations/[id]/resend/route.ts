@@ -4,8 +4,8 @@ import { user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { invitationParamsSchema } from '@/lib/api/contracts/invitations'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { resendInvitationContract } from '@/lib/api/contracts/invitations'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
@@ -24,20 +24,17 @@ import { getWorkspaceInvitePolicy } from '@/lib/workspaces/policy'
 const logger = createLogger('InvitationResendAPI')
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const parsedParams = invitationParamsSchema.safeParse(await params)
-    if (!parsedParams.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(parsedParams.error) },
-        { status: 400 }
-      )
-    }
-    const { id } = parsedParams.data
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(resendInvitationContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id } = parsed.data.params
 
     try {
       const inv = await getInvitationById(id)

@@ -1,7 +1,14 @@
 /**
  * @vitest-environment node
  */
-import { auditMock, authMock, authMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import {
+  auditMock,
+  authMock,
+  authMockFns,
+  createMockRequest,
+  permissionsMock,
+  permissionsMockFns,
+} from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -103,9 +110,22 @@ describe('POST /api/invitations/[id]/resend', () => {
       nextExpiresAt: new Date('2026-06-01T00:00:00.000Z'),
     })
     mockSendInvitationEmail.mockResolvedValue({ success: true })
-    mockDbSelect.mockReturnValue(
-      createSelectChain([{ name: 'Admin', email: 'admin@example.com' }])
+    mockDbSelect.mockReturnValue(createSelectChain([{ name: 'Admin', email: 'admin@example.com' }]))
+  })
+
+  it('authenticates before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await POST(
+      createMockRequest('POST', undefined, undefined, 'http://localhost/api/invitations//resend'),
+      { params: Promise.resolve({ id: '' }) }
     )
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(mockGetInvitationById).not.toHaveBeenCalled()
+    expect(mockPrepareInvitationResend).not.toHaveBeenCalled()
   })
 
   it('rejects resending invitations that reference a personal workspace grant', async () => {
@@ -125,7 +145,14 @@ describe('POST /api/invitations/[id]/resend', () => {
       expiresAt: new Date('2026-06-01T00:00:00.000Z'),
       createdAt: new Date('2026-05-21T00:00:00.000Z'),
       updatedAt: new Date('2026-05-21T00:00:00.000Z'),
-      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Personal' }],
+      grants: [
+        {
+          id: 'grant-1',
+          workspaceId: 'workspace-1',
+          permission: 'read',
+          workspaceName: 'Personal',
+        },
+      ],
     })
     permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValueOnce({
       id: 'workspace-1',
@@ -138,7 +165,12 @@ describe('POST /api/invitations/[id]/resend', () => {
     })
 
     const response = await POST(
-      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      createMockRequest(
+        'POST',
+        undefined,
+        undefined,
+        'http://localhost/api/invitations/inv-1/resend'
+      ),
       { params: Promise.resolve({ id: 'inv-1' }) }
     )
     const data = await response.json()
@@ -172,7 +204,14 @@ describe('POST /api/invitations/[id]/resend', () => {
       expiresAt: new Date('2026-06-01T00:00:00.000Z'),
       createdAt: new Date('2026-05-21T00:00:00.000Z'),
       updatedAt: new Date('2026-05-21T00:00:00.000Z'),
-      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Personal' }],
+      grants: [
+        {
+          id: 'grant-1',
+          workspaceId: 'workspace-1',
+          permission: 'read',
+          workspaceName: 'Personal',
+        },
+      ],
     })
     mockSummarizeInvitationGrantVisibility.mockResolvedValueOnce({
       hasUnavailableGrant: false,
@@ -180,7 +219,12 @@ describe('POST /api/invitations/[id]/resend', () => {
     })
 
     const response = await POST(
-      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      createMockRequest(
+        'POST',
+        undefined,
+        undefined,
+        'http://localhost/api/invitations/inv-1/resend'
+      ),
       { params: Promise.resolve({ id: 'inv-1' }) }
     )
     const data = await response.json()
@@ -208,12 +252,19 @@ describe('POST /api/invitations/[id]/resend', () => {
       expiresAt: new Date('2026-06-01T00:00:00.000Z'),
       createdAt: new Date('2026-05-21T00:00:00.000Z'),
       updatedAt: new Date('2026-05-21T00:00:00.000Z'),
-      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Shared' }],
+      grants: [
+        { id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Shared' },
+      ],
     })
     permissionsMockFns.mockHasWorkspaceAdminAccess.mockResolvedValueOnce(true)
 
     const response = await POST(
-      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      createMockRequest(
+        'POST',
+        undefined,
+        undefined,
+        'http://localhost/api/invitations/inv-1/resend'
+      ),
       { params: Promise.resolve({ id: 'inv-1' }) }
     )
     const data = await response.json()
