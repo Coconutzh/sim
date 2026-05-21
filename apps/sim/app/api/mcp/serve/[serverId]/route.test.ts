@@ -19,7 +19,7 @@ const { mockGenerateInternalToken, fetchMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
 }))
 
-const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 
 vi.mock('@sim/db', () => dbChainMock)
 vi.mock('drizzle-orm', () => ({
@@ -50,6 +50,19 @@ describe('MCP Serve Route', () => {
     vi.clearAllMocks()
     resetDbChainMock()
     vi.stubGlobal('fetch', fetchMock)
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: {
+        id: 'ws-1',
+        name: 'Workspace One',
+        ownerId: 'owner-1',
+        organizationId: 'org-1',
+        workspaceMode: 'organization',
+        billedAccountUserId: 'owner-1',
+      },
+    })
   })
 
   afterEach(() => {
@@ -64,6 +77,8 @@ describe('MCP Serve Route', () => {
         workspaceId: 'ws-1',
         isPublic: false,
         createdBy: 'owner-1',
+        workspaceOwnerId: 'owner-1',
+        workspaceMode: 'organization',
       },
     ])
     hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
@@ -88,6 +103,8 @@ describe('MCP Serve Route', () => {
         workspaceId: 'ws-1',
         isPublic: false,
         createdBy: 'owner-1',
+        workspaceOwnerId: 'owner-1',
+        workspaceMode: 'organization',
       },
     ])
     hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
@@ -110,6 +127,8 @@ describe('MCP Serve Route', () => {
           workspaceId: 'ws-1',
           isPublic: false,
           createdBy: 'owner-1',
+          workspaceOwnerId: 'owner-1',
+          workspaceMode: 'organization',
         },
       ])
       .mockResolvedValueOnce([{ toolName: 'tool_a', workflowId: 'wf-1' }])
@@ -121,7 +140,6 @@ describe('MCP Serve Route', () => {
       authType: 'api_key',
       apiKeyType: 'personal',
     })
-    mockGetUserEntityPermissions.mockResolvedValueOnce('write')
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ output: { ok: true } }), {
         status: 200,
@@ -159,6 +177,8 @@ describe('MCP Serve Route', () => {
           workspaceId: 'ws-1',
           isPublic: false,
           createdBy: 'owner-1',
+          workspaceOwnerId: 'owner-1',
+          workspaceMode: 'organization',
         },
       ])
       .mockResolvedValueOnce([{ toolName: 'tool_a', workflowId: 'wf-1' }])
@@ -169,7 +189,6 @@ describe('MCP Serve Route', () => {
       userId: 'user-1',
       authType: 'session',
     })
-    mockGetUserEntityPermissions.mockResolvedValueOnce('read')
     mockGenerateInternalToken.mockResolvedValueOnce('internal-token-user-1')
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ output: { ok: true } }), {
@@ -196,5 +215,69 @@ describe('MCP Serve Route', () => {
     expect(headers.Authorization).toBe('Bearer internal-token-user-1')
     expect(headers['X-API-Key']).toBeUndefined()
     expect(mockGenerateInternalToken).toHaveBeenCalledWith('user-1')
+  })
+
+  it('hides personal workspace server from unauthenticated GET access even when public', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([
+      {
+        id: 'server-1',
+        name: 'Personal Server',
+        workspaceId: 'ws-personal',
+        isPublic: true,
+        createdBy: 'owner-1',
+        workspaceOwnerId: 'owner-1',
+        workspaceMode: 'personal',
+      },
+    ])
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+    })
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/mcp/serve/server-1'), {
+      params: Promise.resolve({ serverId: 'server-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Server not found' })
+  })
+
+  it('hides private personal workspace server when stale permission rows exist', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([
+      {
+        id: 'server-1',
+        name: 'Personal Server',
+        workspaceId: 'ws-personal',
+        isPublic: false,
+        createdBy: 'owner-1',
+        workspaceOwnerId: 'owner-1',
+        workspaceMode: 'personal',
+      },
+    ])
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-2',
+      authType: 'session',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-personal',
+        name: 'Personal Workspace',
+        ownerId: 'owner-1',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-1',
+      },
+    })
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/mcp/serve/server-1'), {
+      params: Promise.resolve({ serverId: 'server-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Server not found' })
   })
 })

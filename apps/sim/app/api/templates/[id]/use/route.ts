@@ -16,7 +16,10 @@ import {
   regenerateWorkflowStateIds,
 } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
-import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -51,8 +54,8 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 })
       }
 
-      const workspace = await getWorkspaceById(workspaceId)
-      if (!workspace) {
+      const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 

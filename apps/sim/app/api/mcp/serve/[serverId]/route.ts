@@ -32,7 +32,7 @@ import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { SIM_VIA_HEADER } from '@/lib/execution/call-chain'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkflowMcpServeAPI')
 
@@ -72,6 +72,8 @@ async function getServer(serverId: string) {
       workspaceId: workflowMcpServer.workspaceId,
       isPublic: workflowMcpServer.isPublic,
       createdBy: workflowMcpServer.createdBy,
+      workspaceOwnerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
     })
     .from(workflowMcpServer)
     .innerJoin(workspace, eq(workflowMcpServer.workspaceId, workspace.id))
@@ -87,6 +89,58 @@ async function getServer(serverId: string) {
   return server
 }
 
+async function authenticateServerAccess(
+  request: NextRequest,
+  server: NonNullable<Awaited<ReturnType<typeof getServer>>>
+): Promise<
+  | { ok: true; auth: AuthResult | null }
+  | { ok: false; response: NextResponse }
+> {
+  const requiresWorkspaceAuth = server.workspaceMode === 'personal' || !server.isPublic
+
+  if (!requiresWorkspaceAuth) {
+    return { ok: true, auth: null }
+  }
+
+  const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+  if (!auth.success || !auth.userId) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: server.workspaceMode === 'personal' ? 'Server not found' : 'Unauthorized' },
+        { status: server.workspaceMode === 'personal' ? 404 : 401 }
+      ),
+    }
+  }
+
+  if (auth.apiKeyType === 'workspace' && auth.workspaceId !== server.workspaceId) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+    }
+  }
+
+  const workspaceAccess = await checkWorkspaceAccess(server.workspaceId, auth.userId)
+  if (!workspaceAccess.exists) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Server not found' }, { status: 404 }),
+    }
+  }
+
+  if (!workspaceAccess.hasAccess) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: server.workspaceMode === 'personal' ? 'Server not found' : 'Forbidden' },
+        { status: server.workspaceMode === 'personal' ? 404 : 403 }
+      ),
+    }
+  }
+
+  return { ok: true, auth }
+}
+
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<RouteParams> }) => {
     try {
@@ -96,25 +150,8 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Server not found' }, { status: 404 })
       }
 
-      if (!server.isPublic) {
-        const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-        if (!auth.success || !auth.userId) {
-          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        if (auth.apiKeyType === 'workspace' && auth.workspaceId !== server.workspaceId) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-
-        const workspacePermission = await getUserEntityPermissions(
-          auth.userId,
-          'workspace',
-          server.workspaceId
-        )
-        if (workspacePermission === null) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-      }
+      const access = await authenticateServerAccess(request, server)
+      if (!access.ok) return access.response
 
       return NextResponse.json({
         name: server.name,
@@ -139,29 +176,15 @@ export const POST = withRouteHandler(
       }
 
       let executeAuthContext: ExecuteAuthContext | null = null
-      if (!server.isPublic) {
-        const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-        if (!auth.success || !auth.userId) {
-          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+      const access = await authenticateServerAccess(request, server)
+      if (!access.ok) return access.response
 
-        if (auth.apiKeyType === 'workspace' && auth.workspaceId !== server.workspaceId) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-
-        const workspacePermission = await getUserEntityPermissions(
-          auth.userId,
-          'workspace',
-          server.workspaceId
-        )
-        if (workspacePermission === null) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-
+      if (access.auth?.userId) {
         executeAuthContext = {
-          authType: auth.authType,
-          userId: auth.userId,
-          apiKey: auth.authType === AuthType.API_KEY ? request.headers.get('X-API-Key') : null,
+          authType: access.auth.authType,
+          userId: access.auth.userId,
+          apiKey:
+            access.auth.authType === AuthType.API_KEY ? request.headers.get('X-API-Key') : null,
         }
       }
 
@@ -421,17 +444,23 @@ export const DELETE = withRouteHandler(
 
       const auth = await checkHybridAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return NextResponse.json(
+          { error: server.workspaceMode === 'personal' ? 'Server not found' : 'Unauthorized' },
+          { status: server.workspaceMode === 'personal' ? 404 : 401 }
+        )
       }
 
-      if (!server.isPublic) {
-        const workspacePermission = await getUserEntityPermissions(
-          auth.userId,
-          'workspace',
-          server.workspaceId
-        )
-        if (workspacePermission === null) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (auth.apiKeyType === 'workspace' && auth.workspaceId !== server.workspaceId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      if (server.workspaceMode === 'personal' || !server.isPublic) {
+        const workspaceAccess = await checkWorkspaceAccess(server.workspaceId, auth.userId)
+        if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+          return NextResponse.json(
+            { error: server.workspaceMode === 'personal' ? 'Server not found' : 'Forbidden' },
+            { status: server.workspaceMode === 'personal' ? 404 : 403 }
+          )
         }
       }
 
