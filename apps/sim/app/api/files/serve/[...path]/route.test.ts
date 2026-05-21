@@ -196,6 +196,32 @@ describe('File Serve API Route', () => {
     })
   })
 
+  it('authenticates private file requests before contract validation', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/files/serve')
+    const response = await GET(req, { params: Promise.resolve({ path: [] }) })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(mockCreateErrorResponse).not.toHaveBeenCalled()
+  })
+
+  it('continues to serve public file prefixes without auth', async () => {
+    const req = new NextRequest('http://localhost:3000/api/files/serve/profile-pictures/avatar.png')
+    const response = await GET(req, {
+      params: Promise.resolve({ path: ['profile-pictures', 'avatar.png'] }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(hybridAuthMockFns.mockCheckSessionOrInternalAuth).not.toHaveBeenCalled()
+    expect(mockReadFile).toHaveBeenCalled()
+  })
+
   describe('content type detection', () => {
     const contentTypeTests = [
       { ext: 'pdf', contentType: 'application/pdf' },

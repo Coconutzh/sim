@@ -3,7 +3,8 @@ import { createLogger } from '@sim/logger'
 import { sha256Hex } from '@sim/security/hash'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { fileServeParamsSchema, fileServeQuerySchema } from '@/lib/api/contracts/storage-transfer'
+import { fileServeContract } from '@/lib/api/contracts/storage-transfer'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { runSandboxTask } from '@/lib/execution/sandbox/run-task'
@@ -106,26 +107,25 @@ function getWorkspaceIdForCompile(key: string): string | undefined {
   return parseWorkspaceFileKey(key) ?? undefined
 }
 
+function getRawPathSegments(rawParams: unknown): string[] | null {
+  if (!rawParams || typeof rawParams !== 'object') return null
+  const path = (rawParams as { path?: unknown }).path
+  if (!Array.isArray(path) || !path.every((segment) => typeof segment === 'string')) {
+    return null
+  }
+  return path
+}
+
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ path: string[] }> }) => {
     try {
-      const paramsResult = fileServeParamsSchema.safeParse(await params)
-      if (!paramsResult.success) {
-        throw new FileNotFoundError('No file path provided')
-      }
-      const { path } = paramsResult.data
-
-      if (!path || path.length === 0) {
-        throw new FileNotFoundError('No file path provided')
-      }
-
-      logger.info('File serve request:', { path })
-
-      const fullPath = path.join('/')
-      const isS3Path = path[0] === 's3'
-      const isBlobPath = path[0] === 'blob'
+      const rawParams = await context.params
+      const rawPath = getRawPathSegments(rawParams)
+      const fullPath = rawPath?.join('/') ?? ''
+      const isS3Path = rawPath?.[0] === 's3'
+      const isBlobPath = rawPath?.[0] === 'blob'
       const isCloudPath = isS3Path || isBlobPath
-      const cloudKey = isCloudPath ? path.slice(1).join('/') : fullPath
+      const cloudKey = isCloudPath && rawPath ? rawPath.slice(1).join('/') : fullPath
 
       const isPublicByKeyPrefix =
         cloudKey.startsWith('profile-pictures/') ||
@@ -141,20 +141,24 @@ export const GET = withRouteHandler(
         return await handleLocalFilePublic(fullPath)
       }
 
-      const query = fileServeQuerySchema.parse({
-        raw: request.nextUrl.searchParams.get('raw'),
-      })
-      const raw = query.raw === '1'
-
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 
       if (!authResult.success || !authResult.userId) {
         logger.warn('Unauthorized file access attempt', {
-          path,
+          path: rawPath,
           error: authResult.error || 'Missing userId',
         })
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(fileServeContract, request, context)
+      if (!parsed.success) {
+        throw new FileNotFoundError('No file path provided')
+      }
+      const { path } = parsed.data.params
+      const raw = parsed.data.query.raw === '1'
+
+      logger.info('File serve request:', { path })
 
       const userId = authResult.userId
 
