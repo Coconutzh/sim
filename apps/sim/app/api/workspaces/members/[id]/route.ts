@@ -11,7 +11,10 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { revokeWorkspaceCredentialMembershipsTx } from '@/lib/credentials/access'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  getWorkspaceWithOwner,
+  hasWorkspaceAdminAccess,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceMemberAPI')
 
@@ -30,28 +33,20 @@ export const DELETE = withRouteHandler(
       const { id: userId } = parsed.data.params
       const { workspaceId } = parsed.data.body
 
-      const workspaceRow = await db
-        .select({
-          ownerId: workspace.ownerId,
-          billedAccountUserId: workspace.billedAccountUserId,
-          workspaceMode: workspace.workspaceMode,
-        })
-        .from(workspace)
-        .where(eq(workspace.id, workspaceId))
-        .limit(1)
+      const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 
-      if (!workspaceRow.length) {
+      if (!workspaceRow) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      if (workspaceRow[0].workspaceMode === 'personal') {
+      if (workspaceRow.workspaceMode === 'personal') {
         return NextResponse.json(
           { error: 'Personal workspaces do not support shared members' },
           { status: 403 }
         )
       }
 
-      if (workspaceRow[0].billedAccountUserId === userId) {
+      if (workspaceRow.billedAccountUserId === userId) {
         return NextResponse.json(
           { error: 'Cannot remove the workspace billing account. Please reassign billing first.' },
           { status: 400 }
@@ -71,7 +66,7 @@ export const DELETE = withRouteHandler(
         )
         .then((rows) => rows[0])
 
-      const isRemovingWorkspaceOwner = workspaceRow[0].ownerId === userId
+      const isRemovingWorkspaceOwner = workspaceRow.ownerId === userId
       const isOwnerOnlyRemoval = isRemovingWorkspaceOwner && !userPermission
 
       if (!userPermission && !isOwnerOnlyRemoval) {
@@ -89,7 +84,7 @@ export const DELETE = withRouteHandler(
       if (
         isRemovingWorkspaceOwner &&
         !isSelf &&
-        session.user.id !== workspaceRow[0].billedAccountUserId
+        session.user.id !== workspaceRow.billedAccountUserId
       ) {
         return NextResponse.json(
           { error: 'Only the workspace owner or billing account can remove the workspace owner' },
@@ -111,7 +106,7 @@ export const DELETE = withRouteHandler(
           )
           .then((rows) => rows.filter((row) => row.userId !== session.user.id))
 
-        const hasOtherOwnerAdmin = workspaceRow[0].ownerId !== session.user.id
+        const hasOtherOwnerAdmin = workspaceRow.ownerId !== session.user.id
 
         if (otherAdmins.length === 0 && !hasOtherOwnerAdmin) {
           return NextResponse.json(
@@ -130,7 +125,7 @@ export const DELETE = withRouteHandler(
            * the owner for personal workspaces, and a workspace admin for
            * grandfathered shared workspaces.
            */
-          const newOwnerId = workspaceRow[0].billedAccountUserId
+          const newOwnerId = workspaceRow.billedAccountUserId
 
           await tx
             .update(workspace)

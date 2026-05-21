@@ -9,6 +9,7 @@ const {
   captureServerEventMock,
   deleteWhereMock,
   getSessionMock,
+  getWorkspaceWithOwnerMock,
   hasWorkspaceAdminAccessMock,
   parseRequestMock,
   recordAuditMock,
@@ -18,6 +19,7 @@ const {
   captureServerEventMock: vi.fn(),
   deleteWhereMock: vi.fn().mockResolvedValue(undefined),
   getSessionMock: vi.fn(),
+  getWorkspaceWithOwnerMock: vi.fn(),
   hasWorkspaceAdminAccessMock: vi.fn(),
   parseRequestMock: vi.fn(),
   recordAuditMock: vi.fn(),
@@ -105,6 +107,7 @@ vi.mock('@/lib/posthog/server', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  getWorkspaceWithOwner: getWorkspaceWithOwnerMock,
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
@@ -124,6 +127,16 @@ describe('DELETE /api/workspaces/members/[id]', () => {
         body: { workspaceId: 'ws-1' },
       },
     })
+    getWorkspaceWithOwnerMock.mockResolvedValue({
+      id: 'ws-1',
+      ownerId: 'owner-1',
+      billedAccountUserId: 'owner-1',
+      workspaceMode: 'organization',
+      organizationId: 'org-1',
+      archivedAt: null,
+      name: 'Workspace',
+      workgroupId: null,
+    })
     hasWorkspaceAdminAccessMock.mockResolvedValue(true)
     transactionMock.mockImplementation(async (callback) =>
       callback({
@@ -139,7 +152,6 @@ describe('DELETE /api/workspaces/members/[id]', () => {
 
   it('allows an admin to leave when the only other admin is an owner-only workspace owner', async () => {
     mockDbResults.value = [
-      [{ ownerId: 'owner-1', billedAccountUserId: 'owner-1', workspaceMode: 'organization' }],
       [{ permissionType: 'admin' }],
       [],
     ]
@@ -156,9 +168,16 @@ describe('DELETE /api/workspaces/members/[id]', () => {
   })
 
   it('rejects member removal for personal workspaces', async () => {
-    mockDbResults.value = [
-      [{ ownerId: 'owner-1', billedAccountUserId: 'owner-1', workspaceMode: 'personal' }],
-    ]
+    getWorkspaceWithOwnerMock.mockResolvedValueOnce({
+      id: 'ws-1',
+      ownerId: 'owner-1',
+      billedAccountUserId: 'owner-1',
+      workspaceMode: 'personal',
+      organizationId: null,
+      archivedAt: null,
+      name: 'Personal Workspace',
+      workgroupId: null,
+    })
 
     const response = await DELETE(createMockRequest('DELETE'), {
       params: Promise.resolve({ id: 'member-1' }),
@@ -167,6 +186,20 @@ describe('DELETE /api/workspaces/members/[id]', () => {
 
     expect(response.status).toBe(403)
     expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+    expect(transactionMock).not.toHaveBeenCalled()
+    expect(recordAuditMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects member removal for archived workspaces', async () => {
+    getWorkspaceWithOwnerMock.mockResolvedValueOnce(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: 'member-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(transactionMock).not.toHaveBeenCalled()
     expect(recordAuditMock).not.toHaveBeenCalled()
   })
