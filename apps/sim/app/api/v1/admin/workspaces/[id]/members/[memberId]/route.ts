@@ -248,7 +248,7 @@ export const PATCH = withRouteHandler(
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode)) {
-        return forbiddenResponse('Personal workspaces do not support shared members')
+        return notFoundResponse('Workspace member')
       }
 
       const now = new Date()
@@ -331,7 +331,7 @@ export const DELETE = withRouteHandler(
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode)) {
-        return forbiddenResponse('Personal workspaces do not support shared members')
+        return notFoundResponse('Workspace member')
       }
 
       await db.delete(permissions).where(eq(permissions.id, memberId))

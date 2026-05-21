@@ -241,7 +241,7 @@ describe('PATCH /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
     })
   })
 
-  it('rejects non-owner updates on personal workspaces', async () => {
+  it('hides stale non-owner updates on personal workspaces', async () => {
     mockParseRequest.mockResolvedValueOnce({
       success: true,
       data: {
@@ -271,10 +271,10 @@ describe('PATCH /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
     )
     const data = await response.json()
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(404)
     expect(data.error).toEqual({
-      code: 'FORBIDDEN',
-      message: 'Personal workspaces do not support shared members',
+      code: 'NOT_FOUND',
+      message: 'Workspace member not found',
     })
   })
 })
@@ -328,7 +328,7 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
     })
   })
 
-  it('rejects non-owner removals on personal workspaces', async () => {
+  it('hides stale non-owner removals on personal workspaces', async () => {
     mockParseRequest.mockResolvedValueOnce({
       success: true,
       data: {
@@ -354,10 +354,10 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members/[memberId]', () => {
     )
     const data = await response.json()
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(404)
     expect(data.error).toEqual({
-      code: 'FORBIDDEN',
-      message: 'Personal workspaces do not support shared members',
+      code: 'NOT_FOUND',
+      message: 'Workspace member not found',
     })
   })
 })
