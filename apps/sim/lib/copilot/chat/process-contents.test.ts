@@ -12,6 +12,7 @@ const {
   mockDbInnerJoin,
   mockDbWhere,
   mockDbLimit,
+  mockAssertActiveWorkspaceAccess,
 } = vi.hoisted(() => ({
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockGetActiveWorkflowRecord: vi.fn(),
@@ -21,6 +22,7 @@ const {
   mockDbInnerJoin: vi.fn(),
   mockDbWhere: vi.fn(),
   mockDbLimit: vi.fn(),
+  mockAssertActiveWorkspaceAccess: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
@@ -68,6 +70,13 @@ vi.mock('@/lib/workflows/sanitization/json-sanitizer', () => ({
   sanitizeForCopilot: vi.fn((value: unknown) => value),
 }))
 
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  assertActiveWorkspaceAccess: mockAssertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError: vi.fn(
+    (error: unknown) => error instanceof Error && error.name === 'ActiveWorkspaceAccessError'
+  ),
+}))
+
 vi.mock('@/app/api/knowledge/utils', () => ({
   checkKnowledgeBaseAccess: vi.fn(),
 }))
@@ -84,7 +93,8 @@ vi.mock('@/executor/constants', () => ({
   escapeRegExp: vi.fn((value: string) => value),
 }))
 
-import { processContextsServer } from './process-contents'
+import { getTableById } from '@/lib/table/service'
+import { processContextsServer, resolveActiveResourceContext } from './process-contents'
 
 describe('processContextsServer', () => {
   beforeEach(() => {
@@ -94,6 +104,7 @@ describe('processContextsServer', () => {
     mockDbInnerJoin.mockReturnValue({ where: mockDbWhere })
     mockDbWhere.mockReturnValue({ limit: mockDbLimit })
     mockDbLimit.mockResolvedValue([])
+    mockAssertActiveWorkspaceAccess.mockResolvedValue(undefined)
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
@@ -178,5 +189,34 @@ describe('processContextsServer', () => {
     const result = await processContextsServer(contexts, 'user-1', undefined, 'ws-1')
 
     expect(result).toEqual([])
+  })
+
+  it('does not process server contexts when the active workspace is hidden', async () => {
+    const accessError = new Error('Workspace not found')
+    accessError.name = 'ActiveWorkspaceAccessError'
+    mockAssertActiveWorkspaceAccess.mockRejectedValueOnce(accessError)
+    const contexts = [
+      {
+        kind: 'table' as const,
+        tableId: 'table-1',
+        label: 'Table',
+      },
+    ]
+
+    const result = await processContextsServer(contexts, 'user-1', undefined, 'ws-hidden')
+
+    expect(result).toEqual([])
+    expect(getTableById).not.toHaveBeenCalled()
+  })
+
+  it('does not resolve active resource context when the workspace is hidden', async () => {
+    const accessError = new Error('Workspace not found')
+    accessError.name = 'ActiveWorkspaceAccessError'
+    mockAssertActiveWorkspaceAccess.mockRejectedValueOnce(accessError)
+
+    const result = await resolveActiveResourceContext('table', 'table-1', 'ws-hidden', 'user-1')
+
+    expect(result).toBeNull()
+    expect(getTableById).not.toHaveBeenCalled()
   })
 })

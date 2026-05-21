@@ -17,6 +17,10 @@ import { canAccessTemplate } from '@/lib/templates/permissions'
 import { getWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
+import {
+  assertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError,
+} from '@/lib/workspaces/permissions/utils'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
 import { isHiddenFromDisplay } from '@/blocks/types'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
@@ -46,6 +50,19 @@ interface AgentContext {
 
 const logger = createLogger('ProcessContents')
 
+async function canUseWorkspaceContext(workspaceId: string, userId: string): Promise<boolean> {
+  try {
+    await assertActiveWorkspaceAccess(workspaceId, userId)
+    return true
+  } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Copilot workspace context denied', { workspaceId, userId })
+      return false
+    }
+    throw error
+  }
+}
+
 // Server-side variant (recommended for use in API routes)
 export async function processContextsServer(
   contexts: ChatContext[] | undefined,
@@ -55,6 +72,10 @@ export async function processContextsServer(
   chatId?: string
 ): Promise<AgentContext[]> {
   if (!Array.isArray(contexts) || contexts.length === 0) return []
+  if (currentWorkspaceId && !(await canUseWorkspaceContext(currentWorkspaceId, userId))) {
+    return []
+  }
+
   const tasks = contexts.map(async (ctx) => {
     try {
       if (ctx.kind === 'past_chat' && ctx.chatId) {
@@ -710,6 +731,10 @@ export async function resolveActiveResourceContext(
   chatId?: string
 ): Promise<AgentContext | null> {
   try {
+    if (!(await canUseWorkspaceContext(workspaceId, userId))) {
+      return null
+    }
+
     switch (resourceType) {
       case 'workflow': {
         const ctx = await processWorkflowFromDb(

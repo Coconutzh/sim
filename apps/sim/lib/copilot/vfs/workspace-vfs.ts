@@ -356,6 +356,8 @@ export class WorkspaceVFS {
    */
   async materialize(workspaceId: string, userId: string): Promise<void> {
     const start = Date.now()
+    await assertActiveWorkspaceAccess(workspaceId, userId)
+
     this.files = new Map()
     this._workspaceId = workspaceId
 
@@ -1499,7 +1501,6 @@ export async function getOrMaterializeVFS(
   workspaceId: string,
   userId: string
 ): Promise<WorkspaceVFS> {
-  await assertActiveWorkspaceAccess(workspaceId, userId)
   const vfs = new WorkspaceVFS()
   await vfs.materialize(workspaceId, userId)
   return vfs
