@@ -49,6 +49,11 @@ export default function WorkbenchPage() {
             <Link className='rounded-xl px-4 py-3 hover:bg-[#f0e7d9]' href='/workbench/showcase'>展示画布</Link>
             <span className='rounded-xl px-4 py-3 text-[#8a7b6d]'>我的任务</span>
             <span className='rounded-xl px-4 py-3 text-[#8a7b6d]'>文件资料</span>
+            {activeWorkgroup?.role === 'admin' && (
+              <Link className='rounded-xl px-4 py-3 font-semibold text-[#9b5b2e] hover:bg-[#f0e7d9]' href='/workbench/team-management'>
+                团队管理
+              </Link>
+            )}
           </nav>
         </aside>
 
