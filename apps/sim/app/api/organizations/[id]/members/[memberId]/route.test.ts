@@ -103,7 +103,7 @@ vi.mock('@/lib/core/utils/with-route-handler', () => ({
 }))
 
 import { parseRequest } from '@/lib/api/server'
-import { DELETE, GET } from '@/app/api/organizations/[id]/members/[memberId]/route'
+import { DELETE, GET, PUT } from '@/app/api/organizations/[id]/members/[memberId]/route'
 
 describe('GET /api/organizations/[id]/members/[memberId]', () => {
   beforeEach(() => {
@@ -112,6 +112,13 @@ describe('GET /api/organizations/[id]/members/[memberId]', () => {
     getSessionMock.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
     })
+    vi.mocked(parseRequest).mockResolvedValue({
+      success: true,
+      data: {
+        params: { id: 'org-1', memberId: 'external-external-1' },
+        query: { include: undefined },
+      },
+    } as never)
   })
 
   it('returns details for synthetic external roster members', async () => {
@@ -152,6 +159,19 @@ describe('GET /api/organizations/[id]/members/[memberId]', () => {
       userRole: 'owner',
       hasAdminAccess: true,
     })
+  })
+
+  it('authenticates before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '', memberId: '' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequest).not.toHaveBeenCalled()
   })
 })
 
@@ -236,8 +256,6 @@ describe('PUT /api/organizations/[id]/members/[memberId]', () => {
   })
 
   it('rejects role updates for synthetic external workspace members', async () => {
-    const { PUT } = await import('@/app/api/organizations/[id]/members/[memberId]/route')
-
     const response = await PUT(createMockRequest('PUT'), {
       params: Promise.resolve({ id: 'org-1', memberId: 'external-external-1' }),
     } as any)
@@ -245,5 +263,18 @@ describe('PUT /api/organizations/[id]/members/[memberId]', () => {
 
     expect(response.status).toBe(400)
     expect(data).toEqual({ error: 'Cannot update external workspace member role' })
+  })
+
+  it('authenticates before validating route params or body', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await PUT(createMockRequest('PUT', {}), {
+      params: Promise.resolve({ id: '', memberId: '' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequest).not.toHaveBeenCalled()
   })
 })

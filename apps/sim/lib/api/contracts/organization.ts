@@ -248,6 +248,21 @@ export const organizationMemberUsageSchema = z
   })
   .passthrough()
 
+const organizationMemberDetailUsageSchema = z
+  .object({
+    currentPeriodCost: numericResponseSchema.nullable().optional(),
+    currentUsageLimit: numericResponseSchema.nullable().optional(),
+    usageLimitUpdatedAt: z.string().nullable().optional(),
+    lastPeriodCost: numericResponseSchema.nullable().optional(),
+    billingPeriodStart: z.string().nullable().optional(),
+    billingPeriodEnd: z.string().nullable().optional(),
+  })
+  .passthrough()
+
+const organizationMemberDetailSchema = organizationMemberUsageSchema.extend({
+  usage: organizationMemberDetailUsageSchema.optional(),
+})
+
 export const listOrganizationMembersResponseSchema = z
   .object({
     success: z.boolean(),
@@ -379,6 +394,24 @@ export const inviteOrganizationMembersContract = defineRouteContract({
           .optional(),
       }),
     ]),
+  },
+})
+
+export const getOrganizationMemberContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/members/[memberId]',
+  params: organizationMemberParamsSchema,
+  query: organizationMemberQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z
+      .object({
+        success: z.boolean(),
+        data: organizationMemberDetailSchema,
+        userRole: organizationRoleSchema,
+        hasAdminAccess: z.boolean(),
+      })
+      .passthrough(),
   },
 })
 
@@ -636,3 +669,4 @@ export type RosterWorkspaceAccess = z.infer<typeof rosterWorkspaceAccessSchema>
 export type RosterMember = z.infer<typeof rosterMemberSchema>
 export type RosterPendingInvitation = z.infer<typeof rosterPendingInvitationSchema>
 export type OrganizationMembersResponse = z.infer<typeof listOrganizationMembersResponseSchema>
+export type OrganizationMemberDetail = z.output<typeof organizationMemberDetailSchema>

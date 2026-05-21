@@ -5,6 +5,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
+  getOrganizationMemberContract,
   removeOrganizationMemberContract,
   updateOrganizationMemberRoleContract,
 } from '@/lib/api/contracts/organization'
@@ -30,10 +31,10 @@ function resolveOrganizationMemberUserId(memberId: string): string {
  * Get individual organization member details
  */
 export const GET = withRouteHandler(
-  async (
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string; memberId: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; memberId: string }> }) => {
+    let organizationIdForLog: string | undefined
+    let memberIdForLog: string | undefined
+
     try {
       const session = await getSession()
 
@@ -41,10 +42,14 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId, memberId } = await params
+      const parsed = await parseRequest(getOrganizationMemberContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: organizationId, memberId } = parsed.data.params
+      organizationIdForLog = organizationId
+      memberIdForLog = memberId
       const targetUserId = resolveOrganizationMemberUserId(memberId)
-      const url = new URL(request.url)
-      const includeUsage = url.searchParams.get('include') === 'usage'
+      const includeUsage = parsed.data.query.include === 'usage'
 
       const userMember = await db
         .select()
@@ -157,8 +162,8 @@ export const GET = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to get organization member', {
-        organizationId: (await params).id,
-        memberId: (await params).memberId,
+        organizationId: organizationIdForLog,
+        memberId: memberIdForLog,
         error,
       })
 
@@ -173,6 +178,9 @@ export const GET = withRouteHandler(
  */
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string; memberId: string }> }) => {
+    let organizationIdForLog: string | undefined
+    let memberIdForLog: string | undefined
+
     try {
       const session = await getSession()
 
@@ -184,6 +192,8 @@ export const PUT = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id: organizationId, memberId } = parsed.data.params
+      organizationIdForLog = organizationId
+      memberIdForLog = memberId
       const { role } = parsed.data.body
 
       if (memberId.startsWith('external-')) {
@@ -288,8 +298,8 @@ export const PUT = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to update organization member role', {
-        organizationId: (await context.params).id,
-        memberId: (await context.params).memberId,
+        organizationId: organizationIdForLog,
+        memberId: memberIdForLog,
         error,
       })
 
