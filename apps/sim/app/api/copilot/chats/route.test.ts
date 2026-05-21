@@ -349,5 +349,31 @@ describe('Copilot Chats List API Route', () => {
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
       expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
     })
+
+    it('hides foreign personal workflow copilot chat creation behind 404', async () => {
+      copilotHttpMockFns.mockAuthenticateCopilotRequestSessionOnly.mockResolvedValueOnce({
+        userId: 'user-123',
+        isAuthenticated: true,
+      })
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+      })
+
+      const request = new NextRequest('http://localhost:3000/api/copilot/chats', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: 'ws-1',
+          workflowId: 'wf-hidden',
+        }),
+      })
+      const response = await POST(request as any)
+
+      expect(response.status).toBe(404)
+      await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+      expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
+    })
   })
 })

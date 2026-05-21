@@ -11,6 +11,7 @@ import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
   createInternalServerErrorResponse,
+  createNotFoundResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
 import { taskPubSub } from '@/lib/copilot/tasks'
@@ -111,11 +112,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId,
       action: 'read',
     })
-    if (!authorization.allowed || !authorization.workflow) {
+    if (!authorization.allowed) {
+      if (authorization.status === 404) {
+        return createNotFoundResponse(authorization.message || 'Workflow not found')
+      }
+
       return NextResponse.json(
         { success: false, error: authorization.message ?? 'Forbidden' },
         { status: authorization.status }
       )
+    }
+
+    if (!authorization.workflow) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
     }
     if (authorization.accessSource !== 'workspace') {
       return NextResponse.json(
