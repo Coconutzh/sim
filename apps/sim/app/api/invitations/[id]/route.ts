@@ -122,6 +122,20 @@ export const PATCH = withRouteHandler(
         return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
       }
 
+      const hasOrganizationAdminAccess = inv.organizationId
+        ? await isOrganizationOwnerOrAdmin(session.user.id, inv.organizationId)
+        : false
+
+      if (!hasOrganizationAdminAccess && inv.grants.length > 0) {
+        const { hasHiddenPersonalGrant } = await summarizeInvitationGrantVisibility(
+          inv.grants,
+          session.user.id
+        )
+        if (hasHiddenPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+        }
+      }
+
       if (inv.status !== 'pending') {
         return NextResponse.json({ error: 'Can only modify pending invitations' }, { status: 400 })
       }
@@ -139,7 +153,7 @@ export const PATCH = withRouteHandler(
             { status: 400 }
           )
         }
-        if (!(await isOrganizationOwnerOrAdmin(session.user.id, inv.organizationId))) {
+        if (!hasOrganizationAdminAccess) {
           return NextResponse.json(
             { error: 'Only an organization owner or admin can change invitation roles' },
             { status: 403 }

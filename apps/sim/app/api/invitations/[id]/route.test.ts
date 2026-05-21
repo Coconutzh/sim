@@ -256,6 +256,46 @@ describe('GET /api/invitations/[id]', () => {
     expect(data).toEqual({ error: 'Invitation not found' })
   })
 
+  it('hides hidden personal workspace role updates behind not found semantics for stale workspace admins', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
+    mockGetInvitationById.mockResolvedValue({
+      id: 'inv-1',
+      kind: 'organization',
+      email: 'invitee@example.com',
+      organizationId: 'org-1',
+      organizationName: 'Acme',
+      membershipIntent: 'internal',
+      inviterId: 'inviter-1',
+      inviterName: 'Inviter',
+      inviterEmail: 'inviter@example.com',
+      role: 'member',
+      status: 'pending',
+      token: 'tok-1',
+      expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+      createdAt: new Date('2026-05-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Personal' }],
+    })
+    mockIsOrganizationOwnerOrAdmin.mockResolvedValueOnce(false)
+    mockSummarizeInvitationGrantVisibility.mockResolvedValueOnce({
+      hasUnavailableGrant: false,
+      hasHiddenPersonalGrant: true,
+    })
+
+    const response = await PATCH(
+      createMockRequest('PATCH', {
+        role: 'admin',
+      }),
+      { params: Promise.resolve({ id: 'inv-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Invitation not found' })
+  })
+
   it('hides hidden personal workspace invitation cancellation behind not found semantics', async () => {
     authMockFns.mockGetSession.mockResolvedValueOnce({
       user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
