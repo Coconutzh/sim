@@ -141,7 +141,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     let finalApiKey: string | undefined = apiKey
     try {
       if (provider === 'vertex' && vertexCredential) {
-        finalApiKey = await resolveVertexCredential(requestId, vertexCredential)
+        finalApiKey = await resolveVertexCredential(requestId, vertexCredential, auth.userId)
       }
     } catch (error) {
       logger.error(`[${requestId}] Failed to resolve Vertex credential:`, {
@@ -393,12 +393,23 @@ function sanitizeObject(obj: any): any {
 /**
  * Resolves a Vertex AI OAuth credential to an access token
  */
-async function resolveVertexCredential(requestId: string, credentialId: string): Promise<string> {
+async function resolveVertexCredential(
+  requestId: string,
+  credentialId: string,
+  userId: string
+): Promise<string> {
   logger.info(`[${requestId}] Resolving Vertex AI credential: ${credentialId}`)
 
   const resolved = await resolveOAuthAccountId(credentialId)
   if (!resolved) {
     throw new Error(`Vertex AI credential not found: ${credentialId}`)
+  }
+
+  if (resolved.workspaceId) {
+    const workspaceAccess = await checkWorkspaceAccess(resolved.workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      throw new Error(`Vertex AI credential not found: ${credentialId}`)
+    }
   }
 
   if (resolved.credentialType === 'service_account' && resolved.credentialId) {
