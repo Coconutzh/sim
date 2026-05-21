@@ -31,14 +31,14 @@ const logger = createLogger('WorkspaceFileCompiledCheckAPI')
  */
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string; fileId: string }> }) => {
-    const parsed = await parseRequest(workspaceFileCompiledCheckContract, request, context)
-    if (!parsed.success) return parsed.response
-    const { id: workspaceId, fileId } = parsed.data.params
-
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(workspaceFileCompiledCheckContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId, fileId } = parsed.data.params
 
     const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
     if (!membership.exists || !membership.hasAccess) {
