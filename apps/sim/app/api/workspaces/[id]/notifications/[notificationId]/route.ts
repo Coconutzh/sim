@@ -10,7 +10,7 @@ import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceNotificationAPI')
 
@@ -19,10 +19,14 @@ type RouteParams = { params: Promise<{ id: string; notificationId: string }> }
 async function checkWorkspaceWriteAccess(
   userId: string,
   workspaceId: string
-): Promise<{ hasAccess: boolean; permission: string | null }> {
+) {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return { access, hasAccess: false, permission: null }
+  }
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   const hasAccess = permission === 'write' || permission === 'admin'
-  return { hasAccess, permission }
+  return { access, hasAccess, permission }
 }
 
 async function getSubscription(notificationId: string, workspaceId: string) {
@@ -47,10 +51,14 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Rou
     }
 
     const { id: workspaceId, notificationId } = await params
-    const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
+    const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!permission) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const subscription = await getSubscription(notificationId, workspaceId)
@@ -94,7 +102,11 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: RouteP
     }
 
     const { id: workspaceId, notificationId } = await context.params
-    const { hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+    const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     if (!hasAccess) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -222,7 +234,11 @@ export const DELETE = withRouteHandler(async (request: NextRequest, { params }: 
     }
 
     const { id: workspaceId, notificationId } = await params
-    const { hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+    const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     if (!hasAccess) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

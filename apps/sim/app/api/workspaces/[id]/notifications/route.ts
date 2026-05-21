@@ -11,7 +11,7 @@ import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { MAX_NOTIFICATIONS_PER_TYPE } from './constants'
 
 const logger = createLogger('WorkspaceNotificationsAPI')
@@ -19,10 +19,14 @@ const logger = createLogger('WorkspaceNotificationsAPI')
 async function checkWorkspaceWriteAccess(
   userId: string,
   workspaceId: string
-): Promise<{ hasAccess: boolean; permission: string | null }> {
+) {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return { access, hasAccess: false, permission: null }
+  }
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   const hasAccess = permission === 'write' || permission === 'admin'
-  return { hasAccess, permission }
+  return { access, hasAccess, permission }
 }
 
 export const GET = withRouteHandler(
@@ -34,10 +38,14 @@ export const GET = withRouteHandler(
       }
 
       const { id: workspaceId } = await params
-      const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
 
+      const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
       if (!permission) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
       const subscriptions = await db
@@ -81,7 +89,11 @@ export const POST = withRouteHandler(
       }
 
       const { id: workspaceId } = await context.params
-      const { hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+      const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
+
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
 
       if (!hasAccess) {
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
