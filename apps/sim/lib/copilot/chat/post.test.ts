@@ -16,6 +16,7 @@ const resolveWorkflowIdForUser = workflowsUtilsMockFns.mockResolveWorkflowIdForU
 const getWorkflowById = workflowsUtilsMockFns.mockGetWorkflowById
 const getUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 const assertActiveWorkspaceAccess = permissionsMockFns.mockAssertActiveWorkspaceAccess
+const isActiveWorkspaceAccessError = permissionsMockFns.mockIsActiveWorkspaceAccessError
 
 const {
   getEffectiveDecryptedEnv,
@@ -121,6 +122,7 @@ describe('handleUnifiedChatPost', () => {
       workflowId: 'wf-1',
       workflowName: 'Workflow One',
     })
+    isActiveWorkspaceAccessError.mockReturnValue(false)
     assertActiveWorkspaceAccess.mockResolvedValue({
       exists: true,
       hasAccess: true,
@@ -292,5 +294,25 @@ describe('handleUnifiedChatPost', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: 'workspaceId is required when workflowId is not provided',
     })
+  })
+
+  it('hides foreign personal workspace chat requests behind 404', async () => {
+    const hiddenError = new Error('hidden workspace')
+    assertActiveWorkspaceAccess.mockRejectedValueOnce(hiddenError)
+    isActiveWorkspaceAccessError.mockReturnValueOnce(true)
+
+    const response = await handleUnifiedChatPost(
+      new NextRequest('http://localhost/api/copilot/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Hello',
+          workspaceId: 'ws-hidden',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(createSSEStream).not.toHaveBeenCalled()
   })
 })

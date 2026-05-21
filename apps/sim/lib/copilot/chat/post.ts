@@ -44,6 +44,7 @@ import { getWorkflowById, resolveWorkflowIdForUser } from '@/lib/workflows/utils
 import {
   assertActiveWorkspaceAccess,
   getUserEntityPermissions,
+  isActiveWorkspaceAccessError,
 } from '@/lib/workspaces/permissions/utils'
 import type { ChatContext } from '@/stores/panel'
 
@@ -575,8 +576,11 @@ async function resolveBranch(params: {
 
   try {
     await assertActiveWorkspaceAccess(requestedWorkspaceId, authenticatedUserId)
-  } catch {
-    return createBadRequestResponse('Workspace not found or access denied')
+  } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+    throw error
   }
 
   return {

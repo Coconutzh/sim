@@ -13,6 +13,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   assertActiveWorkspaceAccess,
   getUserEntityPermissions,
+  isActiveWorkspaceAccessError,
 } from '@/lib/workspaces/permissions/utils'
 
 export const maxDuration = 3600
@@ -186,6 +187,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
 
       return NextResponse.json({ error: 'Mothership execution aborted' }, { status: 499 })
+    }
+
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Hidden workspace mothership execute access attempt', {
+        requestId,
+        workspaceId: error.workspaceId,
+      })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     logger.error(

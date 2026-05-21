@@ -17,6 +17,7 @@ import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   assertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError,
   listAccessibleWorkspaceIds,
 } from '@/lib/workspaces/permissions/utils'
 
@@ -143,6 +144,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true, id: result.chatId })
   } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Hidden workspace copilot chat creation attempt')
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     logger.error('Error creating workflow copilot chat:', error)
     return createInternalServerErrorResponse('Failed to create chat')
   }

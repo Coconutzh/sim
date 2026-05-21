@@ -18,7 +18,10 @@ import {
 import { readFilePreviewSessions } from '@/lib/copilot/request/session'
 import { readEvents } from '@/lib/copilot/request/session/buffer'
 import { toStreamBatchEvent } from '@/lib/copilot/request/session/types'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CopilotChatAPI')
 
@@ -187,6 +190,13 @@ export async function GET(req: NextRequest) {
       chats: chats.map(transformChat),
     })
   } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Hidden workspace copilot chat query attempt', {
+        workspaceId: error.workspaceId,
+      })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     logger.error('Error fetching copilot chats:', error)
     return createInternalServerErrorResponse('Failed to fetch chats')
   }

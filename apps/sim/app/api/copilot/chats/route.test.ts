@@ -17,6 +17,7 @@ const {
   mockInArray,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockAssertActiveWorkspaceAccess,
+  mockIsActiveWorkspaceAccessError,
   mockListAccessibleWorkspaceIds,
   mockResolveOrCreateChat,
   mockPublishStatusChanged,
@@ -30,6 +31,7 @@ const {
   mockInArray: vi.fn((field: unknown, value: unknown[]) => ({ field, value, type: 'inArray' })),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockAssertActiveWorkspaceAccess: vi.fn(),
+  mockIsActiveWorkspaceAccessError: vi.fn(),
   mockListAccessibleWorkspaceIds: vi.fn(),
   mockResolveOrCreateChat: vi.fn(),
   mockPublishStatusChanged: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock('@sim/workflow-authz', () => ({
 }))
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
   assertActiveWorkspaceAccess: mockAssertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError: mockIsActiveWorkspaceAccessError,
   listAccessibleWorkspaceIds: mockListAccessibleWorkspaceIds,
 }))
 vi.mock('@/lib/copilot/chat/lifecycle', () => ({
@@ -86,6 +89,7 @@ describe('Copilot Chats List API Route', () => {
       workflow: { workspaceId: 'ws-1' },
     })
     mockAssertActiveWorkspaceAccess.mockResolvedValue(undefined)
+    mockIsActiveWorkspaceAccessError.mockReturnValue(false)
     mockListAccessibleWorkspaceIds.mockResolvedValue(['ws-1'])
     mockResolveOrCreateChat.mockResolvedValue({ chatId: 'chat-new' })
   })
@@ -318,6 +322,31 @@ describe('Copilot Chats List API Route', () => {
         success: false,
         error: 'Workspace access required',
       })
+      expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
+    })
+
+    it('hides foreign personal workspace copilot chat creation behind 404', async () => {
+      copilotHttpMockFns.mockAuthenticateCopilotRequestSessionOnly.mockResolvedValueOnce({
+        userId: 'user-123',
+        isAuthenticated: true,
+      })
+      const hiddenError = new Error('hidden workspace')
+      mockAssertActiveWorkspaceAccess.mockRejectedValueOnce(hiddenError)
+      mockIsActiveWorkspaceAccessError.mockReturnValueOnce(true)
+
+      const request = new NextRequest('http://localhost:3000/api/copilot/chats', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: 'ws-hidden',
+          workflowId: 'wf-1',
+        }),
+      })
+      const response = await POST(request as any)
+
+      expect(response.status).toBe(404)
+      await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
       expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
     })
   })

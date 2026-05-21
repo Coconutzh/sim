@@ -16,7 +16,10 @@ import {
 import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MothershipChatsAPI')
 
@@ -51,6 +54,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true, data: chats })
   } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Hidden workspace mothership chats access attempt')
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     logger.error('Error fetching mothership chats:', error)
     return createInternalServerErrorResponse('Failed to fetch chats')
   }
@@ -101,6 +109,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true, id: chat.id })
   } catch (error) {
+    if (isActiveWorkspaceAccessError(error)) {
+      logger.warn('Hidden workspace mothership chat creation attempt')
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     logger.error('Error creating mothership chat:', error)
     return createInternalServerErrorResponse('Failed to create chat')
   }

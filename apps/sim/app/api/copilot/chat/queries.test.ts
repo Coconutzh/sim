@@ -13,6 +13,8 @@ const {
   mockBuildEffectiveChatTranscript,
   mockNormalizeMessage,
   mockAuthorizeWorkflowByWorkspacePermission,
+  mockIsActiveWorkspaceAccessError,
+  mockAssertActiveWorkspaceAccess,
   mockSelect,
   mockFrom,
   mockWhere,
@@ -26,6 +28,8 @@ const {
   mockBuildEffectiveChatTranscript: vi.fn(),
   mockNormalizeMessage: vi.fn((message: unknown) => message),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
+  mockIsActiveWorkspaceAccessError: vi.fn(),
+  mockAssertActiveWorkspaceAccess: vi.fn(),
   mockSelect: vi.fn(),
   mockFrom: vi.fn(),
   mockWhere: vi.fn(),
@@ -83,7 +87,8 @@ vi.mock('@sim/workflow-authz', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
-  assertActiveWorkspaceAccess: vi.fn(),
+  assertActiveWorkspaceAccess: mockAssertActiveWorkspaceAccess,
+  isActiveWorkspaceAccessError: mockIsActiveWorkspaceAccessError,
 }))
 
 import { GET } from './queries'
@@ -101,6 +106,8 @@ describe('copilot chat queries GET', () => {
     mockReadEvents.mockResolvedValue([])
     mockReadFilePreviewSessions.mockResolvedValue([])
     mockGetLatestRunForStream.mockResolvedValue(null)
+    mockAssertActiveWorkspaceAccess.mockResolvedValue(undefined)
+    mockIsActiveWorkspaceAccessError.mockReturnValue(false)
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
@@ -170,6 +177,20 @@ describe('copilot chat queries GET', () => {
     )
 
     expect(response.status).toBe(401)
+    expect(mockOrderBy).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workspace chat queries behind 404', async () => {
+    const hiddenError = new Error('hidden workspace')
+    mockAssertActiveWorkspaceAccess.mockRejectedValueOnce(hiddenError)
+    mockIsActiveWorkspaceAccessError.mockReturnValueOnce(true)
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/copilot/chat?workspaceId=ws-hidden')
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
     expect(mockOrderBy).not.toHaveBeenCalled()
   })
 })

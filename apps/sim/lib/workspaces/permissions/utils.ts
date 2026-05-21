@@ -32,6 +32,13 @@ export interface WorkspaceAccess {
   workspace: WorkspaceWithOwner | null
 }
 
+export class ActiveWorkspaceAccessError extends Error {
+  constructor(public readonly workspaceId: string) {
+    super(`Active workspace access denied: ${workspaceId}`)
+    this.name = 'ActiveWorkspaceAccessError'
+  }
+}
+
 function isPersonalWorkspaceRestricted(
   workspaceRecord: WorkspaceWithOwner,
   userId: string
@@ -166,9 +173,15 @@ export async function assertActiveWorkspaceAccess(
 ): Promise<WorkspaceAccess> {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
-    throw new Error(`Active workspace access denied: ${workspaceId}`)
+    throw new ActiveWorkspaceAccessError(workspaceId)
   }
   return access
+}
+
+export function isActiveWorkspaceAccessError(
+  error: unknown
+): error is ActiveWorkspaceAccessError {
+  return error instanceof ActiveWorkspaceAccessError
 }
 
 /**
