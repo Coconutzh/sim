@@ -1,0 +1,87 @@
+/**
+ * @vitest-environment node
+ */
+import {
+  authMock,
+  authMockFns,
+  createMockRequest,
+  permissionsMock,
+  permissionsMockFns,
+} from '@sim/testing'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockGetPersonalAndWorkspaceEnv } = vi.hoisted(() => ({
+  mockGetPersonalAndWorkspaceEnv: vi.fn(),
+}))
+
+vi.mock('@/lib/auth', () => authMock)
+vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+vi.mock('@/lib/environment/utils', () => ({
+  getPersonalAndWorkspaceEnv: mockGetPersonalAndWorkspaceEnv,
+}))
+
+import { GET, PUT } from './route'
+
+describe('/api/workspaces/[id]/environment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+    mockGetPersonalAndWorkspaceEnv.mockResolvedValue({
+      workspaceDecrypted: { OPENAI_API_KEY: 'workspace-secret' },
+      personalDecrypted: { OPENAI_API_KEY: 'personal-secret' },
+      conflicts: ['OPENAI_API_KEY'],
+    })
+  })
+
+  it('returns environment data for an accessible workspace', async () => {
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data).toEqual({
+      data: {
+        workspace: { OPENAI_API_KEY: 'workspace-secret' },
+        personal: { OPENAI_API_KEY: 'personal-secret' },
+        conflicts: ['OPENAI_API_KEY'],
+      },
+    })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
+      'ws-owner',
+      'owner-1'
+    )
+    expect(mockGetPersonalAndWorkspaceEnv).toHaveBeenCalledWith('owner-1', 'ws-owner')
+  })
+
+  it('returns 404 for stale foreign personal workspaces before write checks', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('write')
+
+    const response = await PUT(
+      createMockRequest('PUT', { variables: { OPENAI_API_KEY: 'next-secret' } }),
+      {
+        params: Promise.resolve({ id: 'ws-owner' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+})

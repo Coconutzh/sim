@@ -19,7 +19,7 @@ import {
   deleteWorkspaceEnvCredentials,
 } from '@/lib/credentials/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
-import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceEnvironmentAPI')
 
@@ -37,16 +37,14 @@ export const GET = withRouteHandler(
 
       const userId = session.user.id
 
-      // Validate workspace exists
-      const ws = await getWorkspaceById(workspaceId)
-      if (!ws) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
-      // Require any permission to read
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (!permission) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
       const { workspaceDecrypted, personalDecrypted, conflicts } = await getPersonalAndWorkspaceEnv(
@@ -87,6 +85,11 @@ export const PUT = withRouteHandler(
       }
 
       const userId = session.user.id
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (!permission || (permission !== 'admin' && permission !== 'write')) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -174,6 +177,11 @@ export const DELETE = withRouteHandler(
       }
 
       const userId = session.user.id
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (!permission || (permission !== 'admin' && permission !== 'write')) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
