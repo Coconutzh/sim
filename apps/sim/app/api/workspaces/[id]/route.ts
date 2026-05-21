@@ -6,11 +6,11 @@ import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   checkWorkspacePublishedTemplatesContract,
-  deleteWorkspaceBodySchema,
+  deleteWorkspaceContract,
   getWorkspaceContract,
   updateWorkspaceContract,
 } from '@/lib/api/contracts/workspaces'
-import { parseRequest, validationErrorResponse } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -281,19 +281,18 @@ export const PATCH = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id } = await params
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const workspaceId = id
-    const rawBody = await request.json().catch(() => ({}))
-    const bodyValidation = deleteWorkspaceBodySchema.safeParse(rawBody)
-    if (!bodyValidation.success) return validationErrorResponse(bodyValidation.error)
-    const { deleteTemplates } = bodyValidation.data // User's choice: false = keep templates (recommended), true = delete templates
+    const parsed = await parseRequest(deleteWorkspaceContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const workspaceId = parsed.data.params.id
+    const { deleteTemplates } = parsed.data.body
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {

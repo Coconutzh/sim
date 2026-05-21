@@ -119,6 +119,24 @@ describe('DELETE /api/workspaces/[id]', () => {
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
   })
+
+  it('authenticates before reading delete workspace params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+    const params = {
+      then: () => {
+        throw new Error('params should not be parsed before auth')
+      },
+    } as Promise<{ id: string }>
+
+    const response = await DELETE(createMockRequest('DELETE', { deleteTemplates: false }), {
+      params,
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
 })
 
 describe('PATCH /api/workspaces/[id]', () => {
