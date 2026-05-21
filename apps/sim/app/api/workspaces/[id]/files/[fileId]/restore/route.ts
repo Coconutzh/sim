@@ -7,7 +7,7 @@ import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { FileConflictError, restoreWorkspaceFile } from '@/lib/uploads/contexts/workspace'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreWorkspaceFileAPI')
 
@@ -27,6 +27,11 @@ export const POST = withRouteHandler(
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
       const userPermission = await getUserEntityPermissions(

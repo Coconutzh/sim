@@ -14,7 +14,7 @@ import {
   FileConflictError,
   renameWorkspaceFile,
 } from '@/lib/uploads/contexts/workspace'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +38,11 @@ export const PATCH = withRouteHandler(
       if (!parsed.success) return parsed.response
       const { id: workspaceId, fileId } = parsed.data.params
       const { name } = parsed.data.body
+
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
 
       const userPermission = await getUserEntityPermissions(
         session.user.id,
@@ -105,6 +110,11 @@ export const DELETE = withRouteHandler(
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
       // Check workspace permissions (requires write)
