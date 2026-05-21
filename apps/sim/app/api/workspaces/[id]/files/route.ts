@@ -16,7 +16,7 @@ import {
   uploadWorkspaceFile,
 } from '@/lib/uploads/contexts/workspace'
 import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 
 export const dynamic = 'force-dynamic'
@@ -195,6 +195,14 @@ export const POST = withRouteHandler(
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        logger.warn(
+          `[${requestId}] User ${session.user.id} cannot access workspace ${workspaceId}`
+        )
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
       // Check workspace permissions (requires write)

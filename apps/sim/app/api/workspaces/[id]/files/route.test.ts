@@ -49,6 +49,12 @@ describe('POST /api/workspaces/[id]/files', () => {
     authMockFns.mockGetSession.mockResolvedValue({
       user: { id: 'user-1', name: 'User One', email: 'u@example.com' },
     })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: WS, ownerId: 'user-1', workspaceMode: 'organization' },
+    })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
     mockUploadWorkspaceFile.mockResolvedValue({
       id: 'wf_123',
@@ -119,6 +125,34 @@ describe('POST /api/workspaces/[id]/files', () => {
     expect(response.status).toBe(413)
     expect(body.success).toBe(false)
     expect(body.error).toContain('truncated')
+    expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when stale personal access no longer grants workspace visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: WS, ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('write')
+
+    const payload = new Uint8Array([0, 1, 2, 3])
+    const request = new NextRequest(`http://localhost/api/workspaces/${WS}/files`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'video/mp4',
+        'X-Upload-File-Name': encodeURIComponent('clip.mp4'),
+        'X-Upload-File-Size': String(payload.byteLength),
+      },
+      body: payload,
+    })
+
+    const response = await POST(request, params())
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.error).toBe('Not found')
     expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
   })
 })

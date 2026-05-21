@@ -64,6 +64,12 @@ describe('POST /api/workspaces/[id]/files/register', () => {
     authMockFns.mockGetSession.mockResolvedValue({
       user: { id: 'user-1', name: 'User One', email: 'u@example.com' },
     })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: WS, ownerId: 'user-1', workspaceMode: 'organization' },
+    })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
     mockParseWorkspaceFileKey.mockImplementation((key: string) => {
       const match = key.match(/^workspace\/([^/]+)\//)
@@ -93,6 +99,23 @@ describe('POST /api/workspaces/[id]/files/register', () => {
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
     const res = await POST(makeRequest(validBody), params())
     expect(res.status).toBe(403)
+  })
+
+  it('returns 404 when stale personal access no longer grants workspace visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: WS, ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('write')
+
+    const res = await POST(makeRequest(validBody), params())
+    const body = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(body.error).toBe('Not found')
+    expect(mockRegisterUploadedWorkspaceFile).not.toHaveBeenCalled()
   })
 
   it('rejects keys belonging to a different workspace', async () => {

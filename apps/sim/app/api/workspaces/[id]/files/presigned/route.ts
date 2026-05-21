@@ -9,7 +9,7 @@ import { USE_BLOB_STORAGE } from '@/lib/uploads/config'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { MAX_WORKSPACE_FILE_SIZE } from '@/lib/uploads/shared/types'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspacePresignedAPI')
 
@@ -32,6 +32,12 @@ export const POST = withRouteHandler(
     const { params, body } = parsed.data
     const workspaceId = params.id
     const { fileName, contentType, fileSize } = body
+
+    const access = await checkWorkspaceAccess(workspaceId, userId)
+    if (!access.exists || !access.hasAccess) {
+      logger.warn(`User ${userId} cannot access workspace ${workspaceId}`)
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (permission !== 'admin' && permission !== 'write') {
