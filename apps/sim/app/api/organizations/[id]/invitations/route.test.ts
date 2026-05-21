@@ -135,7 +135,25 @@ vi.mock('@/ee/access-control/utils/permission-check', () => ({
   validateInvitationsAllowed: mockValidateInvitationsAllowed,
 }))
 
-import { POST } from '@/app/api/organizations/[id]/invitations/route'
+import { GET, POST } from '@/app/api/organizations/[id]/invitations/route'
+
+describe('GET /api/organizations/[id]/invitations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbState.selectResults = []
+    mockGetSession.mockResolvedValue(null)
+  })
+
+  it('authenticates before validating route params', async () => {
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockDbState.selectResults).toEqual([])
+  })
+})
 
 describe('POST /api/organizations/[id]/invitations', () => {
   beforeEach(() => {

@@ -10,14 +10,13 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   inviteOrganizationMemberContract,
-  organizationMemberQuerySchema,
-  organizationParamsSchema,
+  listOrganizationMembersContract,
 } from '@/lib/api/contracts/organization'
-import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { ENTITLED_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
@@ -35,7 +34,7 @@ import {
 
 const logger = createLogger('OrganizationMembersAPI')
 
-function toOrganizationMemberId(userId: string, role: 'owner' | 'admin' | 'member' | 'external') {
+function toOrganizationMemberId(userId: string, role: string) {
   return role === 'external' ? `external-${userId}` : userId
 }
 
@@ -44,7 +43,9 @@ function toOrganizationMemberId(userId: string, role: 'owner' | 'admin' | 'membe
  * Get organization members with optional usage data
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationId = 'unknown'
+
     try {
       const session = await getSession()
 
@@ -52,25 +53,11 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const paramsResult = organizationParamsSchema.safeParse(await params)
-      if (!paramsResult.success) {
-        return NextResponse.json(
-          { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-          { status: 400 }
-        )
-      }
+      const parsed = await parseRequest(listOrganizationMembersContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const { id: organizationId } = paramsResult.data
-      const queryResult = organizationMemberQuerySchema.safeParse(
-        Object.fromEntries(request.nextUrl.searchParams.entries())
-      )
-      if (!queryResult.success) {
-        return NextResponse.json(
-          { error: getValidationErrorMessage(queryResult.error, 'Invalid query parameters') },
-          { status: 400 }
-        )
-      }
-      const includeUsage = queryResult.data.include === 'usage'
+      organizationId = parsed.data.params.id
+      const includeUsage = parsed.data.query.include === 'usage'
 
       // Verify user has access to this organization
       const memberEntry = await db
@@ -128,7 +115,7 @@ export const GET = withRouteHandler(
                 id: user.id,
                 userId: user.id,
                 organizationId: member.organizationId,
-                role: 'external' as const,
+                role: sql<'external'>`'external'`,
                 createdAt: permissions.createdAt,
                 userName: user.name,
                 userEmail: user.email,
@@ -224,7 +211,7 @@ export const GET = withRouteHandler(
                   id: user.id,
                   userId: user.id,
                   organizationId: member.organizationId,
-                  role: 'external' as const,
+                  role: sql<'external'>`'external'`,
                   createdAt: permissions.createdAt,
                   userName: user.name,
                   userEmail: user.email,
@@ -352,7 +339,7 @@ export const GET = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to get organization members', {
-        organizationId: (await params).id,
+        organizationId,
         error,
       })
 

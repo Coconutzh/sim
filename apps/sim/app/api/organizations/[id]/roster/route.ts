@@ -10,8 +10,8 @@ import {
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { organizationParamsSchema } from '@/lib/api/contracts/organization'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { getOrganizationRosterContract } from '@/lib/api/contracts/organization'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { expireStalePendingInvitationsForOrganization } from '@/lib/invitations/core'
@@ -25,22 +25,17 @@ interface RosterWorkspaceAccess {
 }
 
 export const GET = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const paramsResult = organizationParamsSchema.safeParse(await params)
-      if (!paramsResult.success) {
-        return NextResponse.json(
-          { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-          { status: 400 }
-        )
-      }
+      const parsed = await parseRequest(getOrganizationRosterContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const { id: organizationId } = paramsResult.data
+      const { id: organizationId } = parsed.data.params
 
       const [callerMembership] = await db
         .select({ role: member.role })

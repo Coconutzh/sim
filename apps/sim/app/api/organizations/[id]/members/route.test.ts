@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 
-import { authMock, authMockFns, schemaMock } from '@sim/testing'
+import { authMock, authMockFns, createMockRequest, schemaMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDbSelect } = vi.hoisted(() => ({
@@ -64,7 +64,7 @@ describe('GET /api/organizations/[id]/members', () => {
       { nextUrl: new URL('http://localhost:3000/api/organizations/org-1/members') }
     )
 
-    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) } as any)
+    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) })
     const data = await response.json()
 
     expect(response.status).toBe(200)
@@ -130,7 +130,7 @@ describe('GET /api/organizations/[id]/members', () => {
       { nextUrl: new URL('http://localhost:3000/api/organizations/org-1/members?include=usage') }
     )
 
-    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) } as any)
+    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) })
     const data = await response.json()
 
     expect(response.status).toBe(200)
@@ -173,7 +173,7 @@ describe('GET /api/organizations/[id]/members', () => {
       { nextUrl: new URL('http://localhost:3000/api/organizations/org-1/members') }
     )
 
-    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) } as any)
+    const response = await GET(request as any, { params: Promise.resolve({ id: 'org-1' }) })
     const data = await response.json()
 
     expect(response.status).toBe(200)
@@ -184,5 +184,18 @@ describe('GET /api/organizations/[id]/members', () => {
       userRole: 'owner',
       hasAdminAccess: true,
     })
+  })
+
+  it('authenticates before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

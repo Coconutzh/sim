@@ -6,21 +6,21 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   inviteOrganizationMembersContract,
-  organizationParamsSchema,
+  listOrganizationInvitationsContract,
 } from '@/lib/api/contracts/organization'
-import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import {
   validateBulkInvitations,
   validateSeatAvailability,
 } from '@/lib/billing/validation/seat-management'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
 import {
   cancelPendingInvitation,
   createPendingInvitation,
   sendInvitationEmail,
 } from '@/lib/invitations/send'
-import { summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 import { isOrganizationWorkspace } from '@/lib/workspaces/policy'
@@ -37,22 +37,17 @@ interface WorkspaceGrantPayload {
 }
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const paramsResult = organizationParamsSchema.safeParse(await params)
-      if (!paramsResult.success) {
-        return NextResponse.json(
-          { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-          { status: 400 }
-        )
-      }
+      const parsed = await parseRequest(listOrganizationInvitationsContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const { id: organizationId } = paramsResult.data
+      const { id: organizationId } = parsed.data.params
 
       const [memberEntry] = await db
         .select()

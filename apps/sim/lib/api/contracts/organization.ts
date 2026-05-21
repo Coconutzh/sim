@@ -257,6 +257,18 @@ const organizationInvitationValidationResponseSchema = z
   })
   .passthrough()
 
+const organizationInvitationListItemSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  kind: z.enum(['organization', 'workspace']),
+  role: z.string().nullable(),
+  status: z.string(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+  inviterName: z.string().nullable(),
+  inviterEmail: z.string().nullable(),
+})
+
 export const getOrganizationRosterContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/roster',
@@ -297,6 +309,22 @@ export const inviteOrganizationMemberContract = defineRouteContract({
         })
         .passthrough()
         .optional(),
+    }),
+  },
+})
+
+export const listOrganizationInvitationsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/invitations',
+  params: organizationParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.boolean(),
+      data: z.object({
+        invitations: z.array(organizationInvitationListItemSchema),
+        userRole: organizationRoleSchema,
+      }),
     }),
   },
 })

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { authMock, authMockFns, schemaMock } from '@sim/testing'
+import { authMock, authMockFns, createMockRequest, schemaMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDbSelect, mockExpireStalePendingInvitationsForOrganization } = vi.hoisted(() => ({
@@ -68,10 +68,13 @@ describe('GET /api/organizations/[id]/roster', () => {
     ]
 
     const response = await GET(
-      new Request('http://localhost:3000/api/organizations/org-1/roster'),
-      {
-        params: Promise.resolve({ id: 'org-1' }),
-      } as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/organizations/org-1/roster'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) } as any
     )
     const data = await response.json()
 
@@ -115,10 +118,13 @@ describe('GET /api/organizations/[id]/roster', () => {
     ]
 
     const response = await GET(
-      new Request('http://localhost:3000/api/organizations/org-1/roster'),
-      {
-        params: Promise.resolve({ id: 'org-1' }),
-      } as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/organizations/org-1/roster'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) } as any
     )
     const data = await response.json()
 
@@ -155,10 +161,13 @@ describe('GET /api/organizations/[id]/roster', () => {
     ]
 
     const response = await GET(
-      new Request('http://localhost:3000/api/organizations/org-1/roster'),
-      {
-        params: Promise.resolve({ id: 'org-1' }),
-      } as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/organizations/org-1/roster'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) } as any
     )
     const data = await response.json()
 
@@ -203,10 +212,13 @@ describe('GET /api/organizations/[id]/roster', () => {
     ]
 
     const response = await GET(
-      new Request('http://localhost:3000/api/organizations/org-1/roster'),
-      {
-        params: Promise.resolve({ id: 'org-1' }),
-      } as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/organizations/org-1/roster'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) } as any
     )
     const data = await response.json()
 
@@ -231,5 +243,19 @@ describe('GET /api/organizations/[id]/roster', () => {
         ],
       },
     ])
+  })
+
+  it('authenticates before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockExpireStalePendingInvitationsForOrganization).not.toHaveBeenCalled()
   })
 })
