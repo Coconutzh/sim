@@ -8,7 +8,7 @@ import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { disableInbox, enableInbox, updateInboxAddress } from '@/lib/mothership/inbox/lifecycle'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InboxConfigAPI')
 
@@ -20,12 +20,16 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, permission] = await Promise.all([
+    const [hasAccess, access, permission] = await Promise.all([
       hasInboxAccess(session.user.id),
+      checkWorkspaceAccess(workspaceId, session.user.id),
       getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
     ])
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+    }
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
     if (!permission) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -85,12 +89,16 @@ export const PATCH = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, permission] = await Promise.all([
+    const [hasAccess, access, permission] = await Promise.all([
       hasInboxAccess(session.user.id),
+      checkWorkspaceAccess(workspaceId, session.user.id),
       getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
     ])
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+    }
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
     if (permission !== 'admin') {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
