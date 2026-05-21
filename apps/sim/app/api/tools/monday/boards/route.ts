@@ -2,7 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { mondayBoardsSelectorContract } from '@/lib/api/contracts/selectors'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -29,6 +33,9 @@ interface MondayBoardsResponse {
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const requestId = generateRequestId()
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(mondayBoardsSelectorContract, request, {})
     if (!parsed.success) return parsed.response
     const { credential, workflowId } = parsed.data.body

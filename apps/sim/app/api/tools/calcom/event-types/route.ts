@@ -2,7 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { calcomEventTypesSelectorContract } from '@/lib/api/contracts/selectors'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -20,6 +24,9 @@ interface CalcomEventType {
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(calcomEventTypesSelectorContract, request, {})
     if (!parsed.success) return parsed.response
     const { credential, workflowId } = parsed.data.body

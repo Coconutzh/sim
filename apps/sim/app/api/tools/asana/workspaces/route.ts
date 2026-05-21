@@ -2,8 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { asanaWorkspacesSelectorContract } from '@/lib/api/contracts/selectors'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -15,10 +18,8 @@ export const dynamic = 'force-dynamic'
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   try {
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
-    if (!auth.success || !auth.userId) {
-      return NextResponse.json({ error: auth.error || 'Authentication required' }, { status: 401 })
-    }
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
 
     const parsed = await parseRequest(asanaWorkspacesSelectorContract, request, {})
     if (!parsed.success) return parsed.response

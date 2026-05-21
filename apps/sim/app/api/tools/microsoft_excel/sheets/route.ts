@@ -2,7 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftExcelSheetsSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -31,6 +35,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   logger.info(`[${requestId}] Microsoft Excel sheets request received`)
 
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(microsoftExcelSheetsSelectorContract, request, {})
     if (!parsed.success) return parsed.response
     const { credentialId, spreadsheetId, driveId, workflowId } = parsed.data.query

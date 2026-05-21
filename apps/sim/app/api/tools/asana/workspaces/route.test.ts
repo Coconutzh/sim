@@ -25,6 +25,14 @@ vi.mock('@/lib/api/server', () => ({
 }))
 
 vi.mock('@/lib/auth/credential-access', () => ({
+  authenticateCredentialSelectorRequest: async (request: NextRequest) => {
+    const auth = await mockCheckSessionOrInternalAuth(request, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
+      return Response.json({ error: auth.error || 'Authentication required' }, { status: 401 })
+    }
+
+    return null
+  },
   authorizeCredentialUse: mockAuthorizeCredentialUse,
   credentialAccessErrorResponse: (result: { error?: string; status?: number }) =>
     Response.json({ error: result.error || 'Unauthorized' }, { status: result.status ?? 403 }),

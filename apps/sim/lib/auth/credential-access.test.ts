@@ -75,9 +75,45 @@ vi.mock('drizzle-orm', () => ({
 }))
 
 import {
+  authenticateCredentialSelectorRequest,
   authorizeCredentialUse,
   credentialAccessErrorResponse,
 } from '@/lib/auth/credential-access'
+
+describe('authenticateCredentialSelectorRequest', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCheckSessionOrInternalAuth.mockResolvedValue({
+      success: true,
+      authType: 'session',
+      userId: 'user-1',
+    })
+  })
+
+  it('returns null for authenticated selector requests', async () => {
+    await expect(
+      authenticateCredentialSelectorRequest(new NextRequest('http://localhost'))
+    ).resolves.toBeNull()
+
+    expect(mockCheckSessionOrInternalAuth).toHaveBeenCalledWith(expect.any(NextRequest), {
+      requireWorkflowId: false,
+    })
+  })
+
+  it('returns a 401 response before selector validation for unauthenticated requests', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+    })
+
+    const response = await authenticateCredentialSelectorRequest(
+      new NextRequest('http://localhost')
+    )
+
+    expect(response?.status).toBe(401)
+    await expect(response?.json()).resolves.toEqual({ error: 'Unauthorized' })
+  })
+})
 
 describe('authorizeCredentialUse', () => {
   beforeEach(() => {

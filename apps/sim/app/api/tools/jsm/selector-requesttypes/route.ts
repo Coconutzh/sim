@@ -2,7 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { jsmRequestTypesSelectorContract } from '@/lib/api/contracts/selectors/jsm'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { validateAlphanumericId, validateJiraCloudId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -17,6 +21,9 @@ export const dynamic = 'force-dynamic'
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(jsmRequestTypesSelectorContract, request, {})
     if (!parsed.success) return parsed.response
 

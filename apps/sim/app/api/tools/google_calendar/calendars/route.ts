@@ -2,7 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { googleCalendarSelectorContract } from '@/lib/api/contracts/selectors/google'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getScopesForService } from '@/lib/oauth/utils'
@@ -29,6 +33,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   logger.info(`[${requestId}] Google Calendar calendars request received`)
 
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(
       googleCalendarSelectorContract,
       request,

@@ -3,7 +3,11 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftTeamsSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
@@ -13,6 +17,9 @@ const logger = createLogger('TeamsTeamsAPI')
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(microsoftTeamsSelectorContract, request, {})
     if (!parsed.success) return parsed.response
     const { credential, workflowId } = parsed.data.body

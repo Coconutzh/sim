@@ -1,13 +1,10 @@
 import { db } from '@sim/db'
-import { account, credential, credentialMember, workflow as workflowTable } from '@sim/db/schema'
+import { account, credential, credentialMember } from '@sim/db/schema'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
-import { NextResponse, type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export interface CredentialAccessResult {
   ok: boolean
@@ -20,10 +17,7 @@ export interface CredentialAccessResult {
   resolvedCredentialId?: string
 }
 
-function errorResult(
-  status: 401 | 403 | 404,
-  error: string
-): CredentialAccessResult {
+function errorResult(status: 401 | 403 | 404, error: string): CredentialAccessResult {
   return { ok: false, status, error }
 }
 
@@ -44,6 +38,17 @@ export function credentialAccessErrorResponse(result: CredentialAccessResult): N
     { error: result.error || 'Unauthorized' },
     { status: result.status ?? 403 }
   )
+}
+
+export async function authenticateCredentialSelectorRequest(
+  request: NextRequest
+): Promise<NextResponse | null> {
+  const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+  if (!auth.success || !auth.userId) {
+    return NextResponse.json({ error: auth.error || 'Authentication required' }, { status: 401 })
+  }
+
+  return null
 }
 
 /**
@@ -273,7 +278,10 @@ export async function authorizeCredentialUse(
       }
     }
 
-    const ownerPerm = await getVisibleWorkspacePermission(accountRow.userId, workflowContext.workspaceId)
+    const ownerPerm = await getVisibleWorkspacePermission(
+      accountRow.userId,
+      workflowContext.workspaceId
+    )
     if (ownerPerm === null) {
       return errorResult(404, 'Credential not found')
     }

@@ -2,8 +2,11 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { googleDriveFileSelectorContract } from '@/lib/api/contracts/selectors/google'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -20,12 +23,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   logger.info(`[${requestId}] Google Drive file request received`)
 
-  const auth = await checkSessionOrInternalAuth(request)
-  if (!auth.success || !auth.userId) {
-    return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
-  }
-
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(
       googleDriveFileSelectorContract,
       request,

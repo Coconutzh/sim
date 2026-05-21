@@ -3,7 +3,11 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftChannelsSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
+import {
+  authenticateCredentialSelectorRequest,
+  authorizeCredentialUse,
+  credentialAccessErrorResponse,
+} from '@/lib/auth/credential-access'
 import { validateMicrosoftGraphId } from '@/lib/core/security/input-validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -14,6 +18,9 @@ const logger = createLogger('TeamsChannelsAPI')
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
+    const authError = await authenticateCredentialSelectorRequest(request)
+    if (authError) return authError
+
     const parsed = await parseRequest(microsoftChannelsSelectorContract, request, {})
     if (!parsed.success) return parsed.response
     const { credential, teamId, workflowId } = parsed.data.body
