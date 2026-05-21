@@ -51,7 +51,7 @@ vi.mock('@/lib/workspaces/lifecycle', () => ({
   archiveWorkspace: mockArchiveWorkspace,
 }))
 
-import { DELETE } from './route'
+import { DELETE, PATCH } from './route'
 
 describe('DELETE /api/workspaces/[id]', () => {
   beforeEach(() => {
@@ -94,5 +94,45 @@ describe('DELETE /api/workspaces/[id]', () => {
     expect(mockArchiveWorkspace).toHaveBeenCalledWith('ws-owner', {
       requestId: 'workspace-ws-owner',
     })
+  })
+})
+
+describe('PATCH /api/workspaces/[id]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+    permissionsMockFns.mockHasAdminPermission.mockResolvedValue(false)
+  })
+
+  it('rejects billed-account reassignment when helper denies admin access for a shared workspace member', async () => {
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'ws-shared',
+          ownerId: 'owner-1',
+          organizationId: null,
+          workspaceMode: 'grandfathered_shared',
+          archivedAt: null,
+        },
+      ])
+    )
+
+    const response = await PATCH(
+      createMockRequest('PATCH', { billedAccountUserId: 'member-2' }),
+      {
+        params: Promise.resolve({ id: 'ws-shared' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data).toEqual({ error: 'Billed account must be a workspace admin' })
+    expect(permissionsMockFns.mockHasAdminPermission).toHaveBeenCalledWith(
+      'member-2',
+      'ws-shared'
+    )
   })
 })

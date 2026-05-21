@@ -12,10 +12,11 @@ import { archiveWorkspace } from '@/lib/workspaces/lifecycle'
 const logger = createLogger('WorkspaceByIdAPI')
 
 import { db } from '@sim/db'
-import { permissions, templates, workspace } from '@sim/db/schema'
+import { templates, workspace } from '@sim/db/schema'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   getUserEntityPermissions,
+  hasAdminPermission,
   listAccessibleWorkspaceIds,
 } from '@/lib/workspaces/permissions/utils'
 
@@ -187,24 +188,7 @@ export const PATCH = withRouteHandler(
 
         const isOwner = candidateId === existingWorkspace.ownerId
 
-        let hasAdminAccess = isOwner
-
-        if (!hasAdminAccess) {
-          const adminPermission = await db
-            .select({ id: permissions.id })
-            .from(permissions)
-            .where(
-              and(
-                eq(permissions.entityType, 'workspace'),
-                eq(permissions.entityId, workspaceId),
-                eq(permissions.userId, candidateId),
-                eq(permissions.permissionType, 'admin')
-              )
-            )
-            .limit(1)
-
-          hasAdminAccess = adminPermission.length > 0
-        }
+        const hasAdminAccess = isOwner || (await hasAdminPermission(candidateId, workspaceId))
 
         if (!hasAdminAccess) {
           return NextResponse.json(
