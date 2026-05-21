@@ -423,6 +423,45 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
   }
 
   const workspacePermission = await getWorkspacePermission(userId, wf.workspaceId)
+  if (activeContext.workspaceMode === 'personal' && workspacePermission === null) {
+    return {
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
+    }
+  }
+
+  if (action === 'publish' && activeContext.workspaceMode === 'personal') {
+    return {
+      allowed: false,
+      status: 403,
+      message: 'Personal canvases cannot be published directly',
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
+    }
+  }
+
+  if ((action === 'write' || action === 'admin') && wf.track === 'published') {
+    return {
+      allowed: false,
+      status: 403,
+      message: 'Published workflows are read-only',
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
+    }
+  }
+
   if (isPermissionSatisfied(workspacePermission, action)) {
     return {
       allowed: true,
@@ -455,19 +494,6 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
         workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
         workspaceMode: activeContext.workspaceMode,
       }
-    }
-  }
-
-  if (activeContext.workspaceMode === 'personal') {
-    return {
-      allowed: false,
-      status: 404,
-      message: 'Workflow not found',
-      workflow: wf,
-      workspacePermission,
-      accessSource: null,
-      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
-      workspaceMode: activeContext.workspaceMode,
     }
   }
 
