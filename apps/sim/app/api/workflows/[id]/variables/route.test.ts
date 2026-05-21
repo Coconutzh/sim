@@ -213,6 +213,37 @@ describe('Workflow Variables API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to read this workflow')
     })
 
+    it('hides foreign personal workflows behind 404 on variable reads', async () => {
+      const mockWorkflow = {
+        id: 'workflow-hidden',
+        userId: 'owner-2',
+        workspaceId: 'workspace-hidden',
+        variables: {},
+      }
+
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'session',
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+        workflow: mockWorkflow,
+        workspacePermission: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden/variables')
+      const params = Promise.resolve({ id: 'workflow-hidden' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
+    })
+
     it('should include proper cache headers', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -332,6 +363,40 @@ describe('Workflow Variables API Route', () => {
       expect(response.status).toBe(403)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized: Access denied to write this workflow')
+    })
+
+    it('hides foreign personal workflows behind 404 on variable writes', async () => {
+      const mockWorkflow = {
+        id: 'workflow-hidden',
+        userId: 'owner-2',
+        workspaceId: 'workspace-hidden',
+        variables: {},
+      }
+
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'session',
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+        workflow: mockWorkflow,
+        workspacePermission: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden/variables', {
+        method: 'POST',
+        body: JSON.stringify({ variables: {} }),
+      })
+      const params = Promise.resolve({ id: 'workflow-hidden' })
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
     })
 
     it('should reject variable writes via cross-team published access', async () => {

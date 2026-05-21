@@ -233,6 +233,35 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to read this workflow')
     })
 
+    it('hides foreign personal workflows behind 404 on read', async () => {
+      const mockWorkflow = {
+        id: 'workflow-hidden',
+        userId: 'owner-2',
+        name: 'Hidden Workflow',
+        workspaceId: 'workspace-hidden',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+        workflow: mockWorkflow,
+        workspacePermission: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden')
+      const params = Promise.resolve({ id: 'workflow-hidden' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
+    })
+
     it.concurrent('should use normalized tables when available', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -519,6 +548,38 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to admin this workflow')
     })
 
+    it('hides foreign personal workflows behind 404 on delete', async () => {
+      const mockWorkflow = {
+        id: 'workflow-hidden',
+        userId: 'owner-2',
+        name: 'Hidden Workflow',
+        workspaceId: 'workspace-hidden',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+        workflow: mockWorkflow,
+        workspacePermission: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden', {
+        method: 'DELETE',
+      })
+      const params = Promise.resolve({ id: 'workflow-hidden' })
+
+      const response = await DELETE(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
+      expect(mockPerformDeleteWorkflow).not.toHaveBeenCalled()
+    })
+
     it('should reject deletion via cross-team published access', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -685,6 +746,39 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(403)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized: Access denied to write this workflow')
+    })
+
+    it('hides foreign personal workflows behind 404 on update', async () => {
+      const mockWorkflow = {
+        id: 'workflow-hidden',
+        userId: 'owner-2',
+        name: 'Hidden Workflow',
+        workspaceId: 'workspace-hidden',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+        workflow: mockWorkflow,
+        workspacePermission: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden', {
+        method: 'PUT',
+        body: JSON.stringify({ name: 'Updated Workflow' }),
+      })
+      const params = Promise.resolve({ id: 'workflow-hidden' })
+
+      const response = await PUT(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
+      expect(mockDbUpdate).not.toHaveBeenCalled()
     })
 
     it('should reject updates via cross-team published access', async () => {
