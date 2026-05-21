@@ -16,7 +16,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { validateCronExpression } from '@/lib/workflows/schedules/utils'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ScheduleAPI')
 
@@ -63,9 +63,11 @@ async function fetchAndAuthorize(
     if (!schedule.sourceWorkspaceId) {
       return NextResponse.json({ error: 'Job has no workspace' }, { status: 400 })
     }
-    const permission = await verifyWorkspaceMembership(userId, schedule.sourceWorkspaceId)
-    const canWrite = permission === 'admin' || permission === 'write'
-    if (!permission || (action === 'write' && !canWrite)) {
+    const membership = await getWorkspaceMembershipAccess(userId, schedule.sourceWorkspaceId)
+    if (!membership.exists || !membership.hasAccess) {
+      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+    }
+    if (action === 'write' && !membership.canWrite) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
     return { schedule, workspaceId: schedule.sourceWorkspaceId }

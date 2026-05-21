@@ -3,11 +3,17 @@
  *
  * @vitest-environment node
  */
-import { authMockFns, databaseMock, workflowAuthzMockFns, workflowsUtilsMock } from '@sim/testing'
+import { authMockFns, databaseMock, workflowAuthzMockFns } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
+const { mockGetWorkspaceMembershipAccess } = vi.hoisted(() => ({
+  mockGetWorkspaceMembershipAccess: vi.fn(),
+}))
+
+vi.mock('@/app/api/workflows/utils', () => ({
+  getWorkspaceMembershipAccess: mockGetWorkspaceMembershipAccess,
+}))
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
@@ -44,6 +50,12 @@ describe('Schedule GET API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    mockGetWorkspaceMembershipAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      permission: 'write',
+      canWrite: true,
+    })
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
@@ -166,5 +178,20 @@ describe('Schedule GET API', () => {
     expect(res.status).toBe(200)
     expect(data.isDisabled).toBe(true)
     expect(data.hasFailures).toBe(true)
+  })
+
+  it('hides foreign personal workspace schedule listing behind 404', async () => {
+    mockGetWorkspaceMembershipAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      permission: null,
+      canWrite: false,
+    })
+
+    const res = await GET(createRequest('http://test/api/schedules?workspaceId=ws-hidden'))
+    const data = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(data.error).toBe('Workspace not found')
   })
 })

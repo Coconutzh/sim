@@ -8,12 +8,17 @@ import {
   authMockFns,
   databaseMock,
   workflowAuthzMockFns,
-  workflowsUtilsMock,
 } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
+const { mockGetWorkspaceMembershipAccess } = vi.hoisted(() => ({
+  mockGetWorkspaceMembershipAccess: vi.fn(),
+}))
+
+vi.mock('@/app/api/workflows/utils', () => ({
+  getWorkspaceMembershipAccess: mockGetWorkspaceMembershipAccess,
+}))
 
 vi.mock('drizzle-orm', () => ({
   and: vi.fn(),
@@ -61,6 +66,12 @@ describe('Schedule PUT API (Reactivate)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    mockGetWorkspaceMembershipAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      permission: 'write',
+      canWrite: true,
+    })
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
       status: 200,
@@ -144,6 +155,34 @@ describe('Schedule PUT API (Reactivate)', () => {
   })
 
   describe('Authorization', () => {
+    it('hides foreign personal workspace job schedules behind 404', async () => {
+      mockGetWorkspaceMembershipAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        permission: null,
+        canWrite: false,
+      })
+      mockDbChain([
+        [
+          {
+            id: 'sched-1',
+            workflowId: null,
+            sourceType: 'job',
+            sourceWorkspaceId: 'ws-hidden',
+            status: 'disabled',
+            cronExpression: '*/5 * * * *',
+            timezone: 'UTC',
+          },
+        ],
+      ])
+
+      const res = await PUT(createRequest({ action: 'reactivate' }), createParams('sched-1'))
+      const data = await res.json()
+
+      expect(res.status).toBe(404)
+      expect(data.error).toBe('Schedule not found')
+    })
+
     it('returns 403 when user is not workflow owner', async () => {
       workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
         allowed: false,

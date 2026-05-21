@@ -4,10 +4,20 @@ import { and, desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { hasWorkflowChanged } from '@/lib/workflows/comparison'
 import { loadWorkflowDeploymentSnapshot } from '@/lib/workflows/persistence/utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowUtils')
+
+export interface WorkspaceMembershipAccess {
+  exists: boolean
+  hasAccess: boolean
+  permission: string | null
+  canWrite: boolean
+}
 
 export function createErrorResponse(error: string, status: number, code?: string) {
   return NextResponse.json(
@@ -63,11 +73,34 @@ export async function verifyWorkspaceMembership(
   workspaceId: string
 ): Promise<string | null> {
   try {
-    const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-
-    return permission
+    const membership = await getWorkspaceMembershipAccess(userId, workspaceId)
+    return membership.hasAccess ? membership.permission : null
   } catch (error) {
     logger.error(`Error verifying workspace permissions for ${userId} in ${workspaceId}:`, error)
     return null
+  }
+}
+
+export async function getWorkspaceMembershipAccess(
+  userId: string,
+  workspaceId: string
+): Promise<WorkspaceMembershipAccess> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return {
+      exists: access.exists,
+      hasAccess: false,
+      permission: null,
+      canWrite: false,
+    }
+  }
+
+  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+
+  return {
+    exists: true,
+    hasAccess: permission !== null,
+    permission,
+    canWrite: permission === 'admin' || permission === 'write',
   }
 }

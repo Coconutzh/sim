@@ -13,7 +13,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { validateCronExpression } from '@/lib/workflows/schedules/utils'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ScheduledAPI')
 
@@ -127,9 +127,9 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
 })
 
 async function handleWorkspaceSchedules(requestId: string, userId: string, workspaceId: string) {
-  const hasPermission = await verifyWorkspaceMembership(userId, workspaceId)
-  if (!hasPermission) {
-    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  const membership = await getWorkspaceMembershipAccess(userId, workspaceId)
+  if (!membership.exists || !membership.hasAccess) {
+    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
   }
 
   logger.info(`[${requestId}] Getting all schedules for workspace ${workspaceId}`)
@@ -226,8 +226,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const { workspaceId, title, prompt, cronExpression, timezone, lifecycle, maxRuns, startDate } =
       parsed.data.body
 
-    const hasPermission = await verifyWorkspaceMembership(session.user.id, workspaceId)
-    if (!hasPermission) {
+    const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
+    if (!membership.exists || !membership.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    if (!membership.canWrite) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
 
