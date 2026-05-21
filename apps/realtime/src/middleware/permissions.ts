@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import {
   BLOCK_OPERATIONS,
@@ -11,8 +9,6 @@ import {
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, eq, isNull } from 'drizzle-orm'
 
 const logger = createLogger('SocketPermissions')
 
@@ -84,6 +80,14 @@ export async function verifyWorkflowAccess(
   workflowId: string
 ): Promise<{ hasAccess: boolean; role?: string; workspaceId?: string }> {
   try {
+    const [{ db }, { workflow }, { authorizeWorkflowByWorkspacePermission }, { and, eq, isNull }] =
+      await Promise.all([
+        import('@sim/db'),
+        import('@sim/db/schema'),
+        import('@sim/workflow-authz'),
+        import('drizzle-orm'),
+      ])
+
     const workflowData = await db
       .select({
         workspaceId: workflow.workspaceId,

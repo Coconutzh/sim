@@ -18,7 +18,14 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import { and, asc, desc, eq, inArray, isNull, max, or, sql } from 'drizzle-orm'
-import { AGENT_PROFILES, DISCIPLINES, getAgentProfile, workspacePermissionForWorkgroupRole } from '@/lib/collaboration/definitions'
+import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
+import {
+  AGENT_PROFILES,
+  DISCIPLINES,
+  getAgentProfile,
+  workspacePermissionForWorkgroupRole,
+} from '@/lib/collaboration/definitions'
+import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('Collaboration')
@@ -327,7 +334,10 @@ export async function createWorkgroup(params: {
   return { id: workgroupId, name: params.name, disciplineId: params.disciplineId, teamWorkspaceId }
 }
 
-export async function listOrganizationWorkgroups(params: { userId: string; organizationId: string }) {
+export async function listOrganizationWorkgroups(params: {
+  userId: string
+  organizationId: string
+}) {
   const orgRole = await getOrganizationRole(params.userId, params.organizationId)
   const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin'
 
@@ -350,7 +360,10 @@ export async function listOrganizationWorkgroups(params: { userId: string; organ
     .where(
       isOrgAdmin
         ? eq(workgroup.organizationId, params.organizationId)
-        : and(eq(workgroup.organizationId, params.organizationId), eq(workgroupMember.userId, params.userId))
+        : and(
+            eq(workgroup.organizationId, params.organizationId),
+            eq(workgroupMember.userId, params.userId)
+          )
     )
     .orderBy(asc(workgroup.name))
 
@@ -406,7 +419,11 @@ export async function addWorkgroupMember(params: {
   role: WorkgroupRole
 }) {
   await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
-  const [wg] = await db.select().from(workgroup).where(eq(workgroup.id, params.workgroupId)).limit(1)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
   if (!wg) throw new Error('Workgroup not found')
   const now = new Date()
   await db
@@ -440,12 +457,21 @@ export async function updateWorkgroupMemberRole(params: {
   role: WorkgroupRole
 }) {
   await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
-  const [wg] = await db.select().from(workgroup).where(eq(workgroup.id, params.workgroupId)).limit(1)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
   if (!wg) throw new Error('Workgroup not found')
   await db
     .update(workgroupMember)
     .set({ role: params.role, updatedAt: new Date() })
-    .where(and(eq(workgroupMember.workgroupId, params.workgroupId), eq(workgroupMember.userId, params.userId)))
+    .where(
+      and(
+        eq(workgroupMember.workgroupId, params.workgroupId),
+        eq(workgroupMember.userId, params.userId)
+      )
+    )
   if (wg.teamWorkspaceId) {
     await upsertWorkspacePermission({
       userId: params.userId,
@@ -461,18 +487,29 @@ export async function removeWorkgroupMember(params: {
   userId: string
 }) {
   await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
-  const [wg] = await db.select().from(workgroup).where(eq(workgroup.id, params.workgroupId)).limit(1)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
   if (!wg) throw new Error('Workgroup not found')
   const adminRows = await db
     .select({ userId: workgroupMember.userId })
     .from(workgroupMember)
-    .where(and(eq(workgroupMember.workgroupId, params.workgroupId), eq(workgroupMember.role, 'admin')))
+    .where(
+      and(eq(workgroupMember.workgroupId, params.workgroupId), eq(workgroupMember.role, 'admin'))
+    )
   if (adminRows.length === 1 && adminRows[0].userId === params.userId) {
     throw new Error('Cannot remove the last workgroup admin')
   }
   await db
     .delete(workgroupMember)
-    .where(and(eq(workgroupMember.workgroupId, params.workgroupId), eq(workgroupMember.userId, params.userId)))
+    .where(
+      and(
+        eq(workgroupMember.workgroupId, params.workgroupId),
+        eq(workgroupMember.userId, params.userId)
+      )
+    )
   if (wg.teamWorkspaceId) {
     await db
       .delete(permissions)
@@ -486,7 +523,10 @@ export async function removeWorkgroupMember(params: {
   }
 }
 
-export async function getOrCreatePersonalWorkspace(params: { userId: string; workgroupId: string }) {
+export async function getOrCreatePersonalWorkspace(params: {
+  userId: string
+  workgroupId: string
+}) {
   const membership = await assertWorkgroupMember(params.userId, params.workgroupId)
   const existing = await db
     .select({ workspace })
@@ -502,7 +542,11 @@ export async function getOrCreatePersonalWorkspace(params: { userId: string; wor
     .limit(1)
   if (existing[0]?.workspace) return workspaceDto(existing[0].workspace)
 
-  const [wg] = await db.select().from(workgroup).where(eq(workgroup.id, params.workgroupId)).limit(1)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
   if (!wg) throw new Error('Workgroup not found')
   try {
     const ws = await insertWorkspace({
@@ -529,7 +573,10 @@ export async function getOrCreatePersonalWorkspace(params: { userId: string; wor
       .from(personalCanvasWorkspace)
       .innerJoin(workspace, eq(personalCanvasWorkspace.workspaceId, workspace.id))
       .where(
-        and(eq(personalCanvasWorkspace.userId, params.userId), eq(personalCanvasWorkspace.workgroupId, params.workgroupId))
+        and(
+          eq(personalCanvasWorkspace.userId, params.userId),
+          eq(personalCanvasWorkspace.workgroupId, params.workgroupId)
+        )
       )
       .limit(1)
     if (fallback?.workspace) return workspaceDto(fallback.workspace)
@@ -539,10 +586,18 @@ export async function getOrCreatePersonalWorkspace(params: { userId: string; wor
 
 export async function getTeamWorkspace(params: { userId: string; workgroupId: string }) {
   await assertWorkgroupMember(params.userId, params.workgroupId)
-  const [wg] = await db.select().from(workgroup).where(eq(workgroup.id, params.workgroupId)).limit(1)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
   if (!wg) throw new Error('Workgroup not found')
   if (wg.teamWorkspaceId) {
-    const [ws] = await db.select().from(workspace).where(eq(workspace.id, wg.teamWorkspaceId)).limit(1)
+    const [ws] = await db
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, wg.teamWorkspaceId))
+      .limit(1)
     if (ws) return workspaceDto(ws)
   }
   const ws = await insertWorkspace({
@@ -552,8 +607,14 @@ export async function getTeamWorkspace(params: { userId: string; workgroupId: st
     workgroupId: wg.id,
     mode: 'organization',
   })
-  await db.update(workgroup).set({ teamWorkspaceId: ws.id, updatedAt: new Date() }).where(eq(workgroup.id, wg.id))
-  const members = await db.select().from(workgroupMember).where(eq(workgroupMember.workgroupId, wg.id))
+  await db
+    .update(workgroup)
+    .set({ teamWorkspaceId: ws.id, updatedAt: new Date() })
+    .where(eq(workgroup.id, wg.id))
+  const members = await db
+    .select()
+    .from(workgroupMember)
+    .where(eq(workgroupMember.workgroupId, wg.id))
   await Promise.all(
     members.map((row) =>
       upsertWorkspacePermission({
@@ -564,30 +625,6 @@ export async function getTeamWorkspace(params: { userId: string; workgroupId: st
     )
   )
   return workspaceDto(ws)
-}
-
-export function sanitizeWorkflowSnapshot(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => sanitizeWorkflowSnapshot(item))
-  if (!value || typeof value !== 'object') return value
-  const sanitized: Record<string, unknown> = {}
-  for (const [key, nestedValue] of Object.entries(value)) {
-    const normalized = key.toLowerCase()
-    if (normalized.includes('credential')) {
-      sanitized[key] = { type: 'credential', label: '已配置凭证' }
-      continue
-    }
-    if (
-      ['apikey', 'accesstoken', 'refreshtoken', 'token', 'secret', 'password', 'authorization', 'privatekey', 'clientsecret', 'bearer', 'oauth'].some((needle) =>
-        normalized.includes(needle)
-      )
-    ) {
-      sanitized[key] = { type: 'redacted', label: '已隐藏' }
-      continue
-    }
-    if (normalized.includes('log') || normalized.includes('debug')) continue
-    sanitized[key] = sanitizeWorkflowSnapshot(nestedValue)
-  }
-  return sanitized
 }
 
 export async function getNextPublicationVersionNumber(sourceWorkflowId: string): Promise<number> {
@@ -622,6 +659,8 @@ export async function createPublicationVersion(params: {
     .where(eq(workflow.id, params.sourceWorkflowId))
     .limit(1)
   if (!source?.organizationId || !source.workgroupId) throw new Error('Team workflow required')
+  const canPublish = await canPublishTeamCanvas(params.publishedBy, source.workgroupId)
+  if (!canPublish) throw new Error('Publication access denied')
   const state = await loadWorkflowFromNormalizedTables(params.sourceWorkflowId)
   const versionNumber = await getNextPublicationVersionNumber(params.sourceWorkflowId)
   const [inserted] = await db
@@ -639,7 +678,9 @@ export async function createPublicationVersion(params: {
       title: params.title,
       description: params.description,
       visibility: params.visibility,
-      snapshotState: sanitizeWorkflowSnapshot(state ?? { blocks: {}, edges: [], loops: {}, parallels: {} }),
+      snapshotState: sanitizeWorkflowSnapshot(
+        state ?? { blocks: {}, edges: [], loops: {}, parallels: {} }
+      ),
       snapshotMetadata: {
         sourceWorkflowName: source.workflow.name,
         sourceWorkflowDescription: source.workflow.description,
@@ -728,6 +769,9 @@ export async function listVisiblePublications(params: {
 }
 
 export async function getPublication(params: { userId: string; publicationVersionId: string }) {
+  const canRead = await canReadPublication(params.userId, params.publicationVersionId)
+  if (!canRead) throw new Error('Publication access denied')
+
   const [row] = await db
     .select({
       publication: workflowPublicationVersion,
@@ -741,29 +785,6 @@ export async function getPublication(params: { userId: string; publicationVersio
     .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
     .limit(1)
   if (!row) throw new Error('Publication not found')
-  const userWorkgroups = await listUserWorkgroups(params.userId)
-  const inOrg = userWorkgroups.some((item) => item.organizationId === row.publication.organizationId)
-  const sourceMember = userWorkgroups.some((item) => item.id === row.publication.sourceWorkgroupId)
-  let scoped = false
-  if (row.publication.visibility === 'selected_workgroups' && row.publication.publishedWorkflowId) {
-    const workgroupIds = userWorkgroups.map((item) => item.id)
-    if (workgroupIds.length > 0) {
-      const [scopeRow] = await db
-        .select({ id: workflowPublicationScope.id })
-        .from(workflowPublicationScope)
-        .where(
-          and(
-            eq(workflowPublicationScope.workflowId, row.publication.publishedWorkflowId),
-            inArray(workflowPublicationScope.viewerWorkgroupId, workgroupIds)
-          )
-        )
-        .limit(1)
-      scoped = Boolean(scopeRow)
-    }
-  }
-  if (!sourceMember && !(row.publication.visibility === 'organization' && inOrg) && !scoped) {
-    throw new Error('Publication access denied')
-  }
 
   return {
     id: row.publication.id,
@@ -792,7 +813,11 @@ export async function getPublicationTree(params: { userId: string; publicationVe
     .limit(1)
   if (!root) throw new Error('Publication not found')
   const rows = await db
-    .select({ publication: workflowPublicationVersion, sourceWorkgroupName: workgroup.name, sourceDisciplineName: discipline.name })
+    .select({
+      publication: workflowPublicationVersion,
+      sourceWorkgroupName: workgroup.name,
+      sourceDisciplineName: discipline.name,
+    })
     .from(workflowPublicationVersion)
     .innerJoin(workgroup, eq(workflowPublicationVersion.sourceWorkgroupId, workgroup.id))
     .leftJoin(discipline, eq(workflowPublicationVersion.sourceDisciplineId, discipline.id))
@@ -816,7 +841,12 @@ export async function resolveAgentForWorkspace(params: { userId: string; workspa
   const [personalRow] = await db
     .select({ workgroupId: personalCanvasWorkspace.workgroupId })
     .from(personalCanvasWorkspace)
-    .where(and(eq(personalCanvasWorkspace.workspaceId, params.workspaceId), eq(personalCanvasWorkspace.userId, params.userId)))
+    .where(
+      and(
+        eq(personalCanvasWorkspace.workspaceId, params.workspaceId),
+        eq(personalCanvasWorkspace.userId, params.userId)
+      )
+    )
     .limit(1)
 
   const [workspaceRow] = await db
@@ -846,7 +876,12 @@ export async function resolveAgentForWorkspace(params: { userId: string; workspa
   if (!row) throw new Error('Workgroup not found')
   const agent = getAgentProfile(row.agentCode ?? 'chief_director')
   const skillRows = await db
-    .select({ id: skill.id, name: skill.name, description: skill.description, enabled: agentSkillBinding.enabled })
+    .select({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      enabled: agentSkillBinding.enabled,
+    })
     .from(skill)
     .leftJoin(agentSkillBinding, eq(agentSkillBinding.skillId, skill.id))
     .where(

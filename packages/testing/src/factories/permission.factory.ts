@@ -310,8 +310,10 @@ export type SocketOperation = (typeof SOCKET_OPERATIONS)[number]
  */
 export const ROLE_ALLOWED_OPERATIONS: Record<PermissionType, readonly SocketOperation[]> = {
   admin: SOCKET_OPERATIONS,
-  write: SOCKET_OPERATIONS,
-  read: [BLOCK_OPERATIONS.UPDATE_POSITION, BLOCKS_OPERATIONS.BATCH_UPDATE_POSITIONS],
+  write: SOCKET_OPERATIONS.filter(
+    (operation) => operation !== BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED
+  ),
+  read: [],
 }
 
 /**

@@ -8,13 +8,42 @@
  */
 
 import {
-  expectPermissionAllowed,
-  expectPermissionDenied,
-  ROLE_ALLOWED_OPERATIONS,
-  SOCKET_OPERATIONS,
-} from '@sim/testing'
+  BLOCK_OPERATIONS,
+  BLOCKS_OPERATIONS,
+  EDGE_OPERATIONS,
+  EDGES_OPERATIONS,
+  SUBBLOCK_OPERATIONS,
+  SUBFLOW_OPERATIONS,
+  VARIABLE_OPERATIONS,
+  WORKFLOW_OPERATIONS,
+} from '@sim/realtime-protocol/constants'
 import { describe, expect, it } from 'vitest'
 import { checkRolePermission } from '@/middleware/permissions'
+
+const SOCKET_OPERATIONS = [
+  ...Object.values(BLOCK_OPERATIONS),
+  ...Object.values(BLOCKS_OPERATIONS),
+  ...Object.values(EDGE_OPERATIONS),
+  ...Object.values(EDGES_OPERATIONS),
+  ...Object.values(SUBFLOW_OPERATIONS),
+  ...Object.values(WORKFLOW_OPERATIONS),
+  ...Object.values(SUBBLOCK_OPERATIONS),
+  VARIABLE_OPERATIONS.UPDATE,
+] as const
+
+const WRITE_ALLOWED_OPERATIONS = SOCKET_OPERATIONS.filter(
+  (operation) => operation !== BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED
+)
+
+function expectPermissionAllowed(result: { allowed: boolean; reason?: string }) {
+  expect(result.allowed).toBe(true)
+  expect(result.reason).toBeUndefined()
+}
+
+function expectPermissionDenied(result: { allowed: boolean; reason?: string }, message?: string) {
+  expect(result.allowed).toBe(false)
+  if (message) expect(result.reason).toContain(message)
+}
 
 describe('checkRolePermission', () => {
   describe('admin role', () => {
@@ -59,8 +88,8 @@ describe('checkRolePermission', () => {
   })
 
   describe('write role', () => {
-    it('should allow all operations for write role (same as admin)', () => {
-      const operations = SOCKET_OPERATIONS
+    it('should allow write operations except admin-only operations', () => {
+      const operations = WRITE_ALLOWED_OPERATIONS
 
       for (const operation of operations) {
         const result = checkRolePermission('write', operation)
@@ -90,9 +119,9 @@ describe('checkRolePermission', () => {
   })
 
   describe('read role', () => {
-    it('should only allow update-position for read role', () => {
+    it('should deny update-position for read role', () => {
       const result = checkRolePermission('read', 'update-position')
-      expectPermissionAllowed(result)
+      expectPermissionDenied(result, 'read')
     })
 
     it('should deny batch-add-blocks operation for read role', () => {
@@ -111,9 +140,9 @@ describe('checkRolePermission', () => {
       expectPermissionDenied(result, 'read')
     })
 
-    it('should allow batch-update-positions operation for read role', () => {
+    it('should deny batch-update-positions operation for read role', () => {
       const result = checkRolePermission('read', 'batch-update-positions')
-      expectPermissionAllowed(result)
+      expectPermissionDenied(result, 'read')
     })
 
     it('should deny replace-state operation for read role', () => {
@@ -132,10 +161,7 @@ describe('checkRolePermission', () => {
     })
 
     it('should deny all write operations for read role', () => {
-      const readAllowedOps = ['update-position', 'batch-update-positions']
-      const writeOperations = SOCKET_OPERATIONS.filter((op) => !readAllowedOps.includes(op))
-
-      for (const operation of writeOperations) {
+      for (const operation of SOCKET_OPERATIONS) {
         const result = checkRolePermission('read', operation)
         expect(result.allowed).toBe(false)
         expect(result.reason).toContain('read')
@@ -183,28 +209,26 @@ describe('checkRolePermission', () => {
   })
 
   describe('permission hierarchy verification', () => {
-    it('should verify admin has same permissions as write', () => {
-      const adminOps = ROLE_ALLOWED_OPERATIONS.admin
-      const writeOps = ROLE_ALLOWED_OPERATIONS.write
-
-      // Admin and write should have same operations
-      expect(adminOps).toEqual(writeOps)
+    it('should verify admin has one additional lock-management permission over write', () => {
+      for (const operation of WRITE_ALLOWED_OPERATIONS) {
+        expect(checkRolePermission('admin', operation).allowed).toBe(true)
+        expect(checkRolePermission('write', operation).allowed).toBe(true)
+      }
+      expect(checkRolePermission('admin', BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED).allowed).toBe(true)
+      expect(checkRolePermission('write', BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED).allowed).toBe(
+        false
+      )
     })
 
-    it('should verify read is a subset of write permissions', () => {
-      const readOps = ROLE_ALLOWED_OPERATIONS.read
-      const writeOps = ROLE_ALLOWED_OPERATIONS.write
-
-      for (const op of readOps) {
-        expect(writeOps).toContain(op)
+    it('should verify read has no mutation permissions', () => {
+      for (const operation of SOCKET_OPERATIONS) {
+        expect(checkRolePermission('read', operation).allowed).toBe(false)
       }
     })
 
     it('should verify read has minimal permissions', () => {
-      const readOps = ROLE_ALLOWED_OPERATIONS.read
-      expect(readOps).toHaveLength(2)
-      expect(readOps).toContain('update-position')
-      expect(readOps).toContain('batch-update-positions')
+      expect(checkRolePermission('read', 'update-position').allowed).toBe(false)
+      expect(checkRolePermission('read', 'batch-update-positions').allowed).toBe(false)
     })
   })
 
@@ -218,7 +242,7 @@ describe('checkRolePermission', () => {
         readAllowed: false,
       },
       { operation: 'update', adminAllowed: true, writeAllowed: true, readAllowed: false },
-      { operation: 'update-position', adminAllowed: true, writeAllowed: true, readAllowed: true },
+      { operation: 'update-position', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'update-name', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'toggle-enabled', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'update-parent', adminAllowed: true, writeAllowed: true, readAllowed: false },
@@ -239,7 +263,7 @@ describe('checkRolePermission', () => {
         operation: 'batch-update-positions',
         adminAllowed: true,
         writeAllowed: true,
-        readAllowed: true,
+        readAllowed: false,
       },
       { operation: 'replace-state', adminAllowed: true, writeAllowed: true, readAllowed: false },
     ]
