@@ -88,10 +88,35 @@ describe('GET /api/workspaces/[id]/inbox', () => {
         failed: 0,
       },
     })
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+  })
+
+  it('returns 401 before validating invalid params for unauthenticated inbox reads', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 before validating invalid params or body for unauthenticated inbox updates', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await PATCH(createMockRequest('PATCH', {}), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 
   it('returns 404 when stale personal rows no longer grant inbox visibility', async () => {

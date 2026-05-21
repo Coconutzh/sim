@@ -1,9 +1,13 @@
 import { db, mothershipInboxAllowedSender } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { addInboxSenderContract, removeInboxSenderContract } from '@/lib/api/contracts/inbox'
+import {
+  addInboxSenderContract,
+  listInboxSendersContract,
+  removeInboxSenderContract,
+} from '@/lib/api/contracts/inbox'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
@@ -18,12 +22,15 @@ import {
 const logger = createLogger('InboxSendersAPI')
 
 export const GET = withRouteHandler(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id: workspaceId } = await params
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(listInboxSendersContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId } = parsed.data.params
 
     const [access, hasAccess, permission] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
@@ -72,11 +79,15 @@ export const GET = withRouteHandler(
 
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { id: workspaceId } = await context.params
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(addInboxSenderContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId } = parsed.data.params
+    const { email, label } = parsed.data.body
 
     const [access, hasAccess, isAdmin] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
@@ -94,9 +105,6 @@ export const POST = withRouteHandler(
     }
 
     try {
-      const parsed = await parseRequest(addInboxSenderContract, req, context)
-      if (!parsed.success) return parsed.response
-      const { email, label } = parsed.data.body
       const normalizedEmail = email.toLowerCase()
 
       const [existing] = await db
@@ -135,11 +143,15 @@ export const POST = withRouteHandler(
 
 export const DELETE = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { id: workspaceId } = await context.params
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(removeInboxSenderContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId } = parsed.data.params
+    const { senderId } = parsed.data.body
 
     const [access, hasAccess, isAdmin] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
@@ -157,10 +169,6 @@ export const DELETE = withRouteHandler(
     }
 
     try {
-      const parsed = await parseRequest(removeInboxSenderContract, req, context)
-      if (!parsed.success) return parsed.response
-      const { senderId } = parsed.data.body
-
       await db
         .delete(mothershipInboxAllowedSender)
         .where(

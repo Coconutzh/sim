@@ -2,7 +2,7 @@ import { db, mothershipInboxTask, workspace } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateInboxConfigContract } from '@/lib/api/contracts/inbox'
+import { getInboxConfigContract, updateInboxConfigContract } from '@/lib/api/contracts/inbox'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
@@ -13,12 +13,15 @@ import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces
 const logger = createLogger('InboxConfigAPI')
 
 export const GET = withRouteHandler(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id: workspaceId } = await params
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(getInboxConfigContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId } = parsed.data.params
 
     const [access, hasAccess, permission] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
@@ -83,11 +86,15 @@ export const GET = withRouteHandler(
 
 export const PATCH = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { id: workspaceId } = await context.params
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(updateInboxConfigContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId } = parsed.data.params
+    const body = parsed.data.body
 
     const [access, hasAccess, permission] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
@@ -108,10 +115,6 @@ export const PATCH = withRouteHandler(
     }
 
     try {
-      const parsed = await parseRequest(updateInboxConfigContract, req, context)
-      if (!parsed.success) return parsed.response
-      const body = parsed.data.body
-
       if (body.enabled === true) {
         const [current] = await db
           .select({ inboxEnabled: workspace.inboxEnabled })
