@@ -76,6 +76,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
         triggerType: triggerType,
         executionId: executionId,
         requestId: requestId,
+        workspaceId: payload.workspaceId,
         checkRateLimit: true,
         checkDeployment: true,
         loggingSession: loggingSession,

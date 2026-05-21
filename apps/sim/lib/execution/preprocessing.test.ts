@@ -3,7 +3,7 @@
  */
 
 import { loggingSessionMock } from '@sim/testing'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetWorkspaceBilledAccountUserId } = vi.hoisted(() => ({
   mockGetWorkspaceBilledAccountUserId: vi.fn(),
@@ -39,6 +39,31 @@ vi.mock('@sim/workflow-authz', () => ({
 import { preprocessExecution } from './preprocessing'
 
 describe('preprocessExecution correlation logging', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('rejects a provided workspace id that does not match the workflow record', async () => {
+    const result = await preprocessExecution({
+      workflowId: 'workflow-1',
+      userId: 'user-1',
+      triggerType: 'api',
+      executionId: 'execution-1',
+      requestId: 'request-1',
+      workspaceId: 'workspace-spoofed',
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: {
+        message: 'Workflow not found',
+        statusCode: 404,
+        logCreated: false,
+      },
+    })
+    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
+  })
+
   it('preserves trigger correlation when logging preprocessing failures', async () => {
     mockGetWorkspaceBilledAccountUserId.mockResolvedValueOnce(null)
 

@@ -203,6 +203,26 @@ export async function preprocessExecution(
     }
   }
 
+  if (
+    providedWorkspaceId &&
+    workflowRecord.workspaceId &&
+    providedWorkspaceId !== workflowRecord.workspaceId
+  ) {
+    logger.warn(`[${requestId}] Workflow workspace context mismatch; execution blocked`, {
+      workflowId,
+      expectedWorkspaceId: workflowRecord.workspaceId,
+      providedWorkspaceId,
+    })
+    return {
+      success: false,
+      error: {
+        message: 'Workflow not found',
+        statusCode: 404,
+        logCreated: false,
+      },
+    }
+  }
+
   // ========== STEP 2: Check Deployment Status ==========
   // If workflow is not deployed and deployment is required, reject without logging.
   // No log entry or cost should be created for calls to undeployed workflows
