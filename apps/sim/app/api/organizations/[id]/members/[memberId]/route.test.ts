@@ -103,7 +103,7 @@ vi.mock('@/lib/core/utils/with-route-handler', () => ({
 }))
 
 import { parseRequest } from '@/lib/api/server'
-import { DELETE, GET } from './route'
+import { DELETE, GET } from '@/app/api/organizations/[id]/members/[memberId]/route'
 
 describe('GET /api/organizations/[id]/members/[memberId]', () => {
   beforeEach(() => {
@@ -162,6 +162,13 @@ describe('DELETE /api/organizations/[id]/members/[memberId]', () => {
     getSessionMock.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
     })
+    vi.mocked(parseRequest).mockResolvedValue({
+      success: true,
+      data: {
+        params: { id: 'org-1', memberId: 'external-external-1' },
+        query: { shouldReduceSeats: undefined },
+      },
+    } as never)
     removeExternalUserFromOrganizationWorkspacesMock.mockResolvedValue({
       success: true,
       workspaceAccessRevoked: 1,
@@ -197,6 +204,19 @@ describe('DELETE /api/organizations/[id]/members/[memberId]', () => {
     expect(data.success).toBe(true)
     expect(recordAuditMock).toHaveBeenCalled()
   })
+
+  it('authenticates before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: '', memberId: '' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequest).not.toHaveBeenCalled()
+  })
 })
 
 describe('PUT /api/organizations/[id]/members/[memberId]', () => {
@@ -216,7 +236,7 @@ describe('PUT /api/organizations/[id]/members/[memberId]', () => {
   })
 
   it('rejects role updates for synthetic external workspace members', async () => {
-    const { PUT } = await import('./route')
+    const { PUT } = await import('@/app/api/organizations/[id]/members/[memberId]/route')
 
     const response = await PUT(createMockRequest('PUT'), {
       params: Promise.resolve({ id: 'org-1', memberId: 'external-external-1' }),

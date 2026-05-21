@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
-  removeOrganizationMemberQuerySchema,
+  removeOrganizationMemberContract,
   updateOrganizationMemberRoleContract,
 } from '@/lib/api/contracts/organization'
 import { parseRequest } from '@/lib/api/server'
@@ -303,10 +303,10 @@ export const PUT = withRouteHandler(
  * Remove member from organization
  */
 export const DELETE = withRouteHandler(
-  async (
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string; memberId: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; memberId: string }> }) => {
+    let organizationId = 'unknown'
+    let memberId = 'unknown'
+
     try {
       const session = await getSession()
 
@@ -314,14 +314,14 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId, memberId } = await params
+      const parsed = await parseRequest(removeOrganizationMemberContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const parsedParams = parsed.data.params
+      organizationId = parsedParams.id
+      memberId = parsedParams.memberId
       const targetUserId = resolveOrganizationMemberUserId(memberId)
-      const queryResult = removeOrganizationMemberQuerySchema.safeParse(
-        Object.fromEntries(request.nextUrl.searchParams.entries())
-      )
-      const shouldReduceSeats = queryResult.success
-        ? queryResult.data.shouldReduceSeats === true
-        : false
+      const shouldReduceSeats = parsed.data.query.shouldReduceSeats === true
 
       const userMember = await db
         .select()
@@ -522,8 +522,8 @@ export const DELETE = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to remove organization member', {
-        organizationId: (await params).id,
-        memberId: (await params).memberId,
+        organizationId,
+        memberId,
         error,
       })
 
