@@ -15,6 +15,7 @@ import {
 } from '@/lib/invitations/send'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
+  hasWorkspaceAdminAccess,
   getWorkspaceWithOwner,
   type PermissionType,
   type WorkspaceWithOwner,
@@ -77,25 +78,13 @@ export async function prepareWorkspaceInvitationContext({
 }): Promise<WorkspaceInvitationContext> {
   await validateInvitationsAllowed(inviterId, workspaceId)
 
-  const userPermission = await db
-    .select()
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.entityId, workspaceId),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.userId, inviterId),
-        eq(permissions.permissionType, 'admin')
-      )
-    )
-    .then((rows) => rows[0])
-
   const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
   if (!workspaceDetails) {
     throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
   }
 
-  if (!userPermission && workspaceDetails.ownerId !== inviterId) {
+  const hasAdminAccess = await hasWorkspaceAdminAccess(inviterId, workspaceId)
+  if (!hasAdminAccess && workspaceDetails.ownerId !== inviterId) {
     throw new WorkspaceInvitationError({
       message: 'You need admin permissions to invite users',
       status: 403,

@@ -107,6 +107,7 @@ vi.mock('@/lib/core/telemetry', () => ({
 
 const mockGetSession = authMockFns.mockGetSession
 const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
+const mockHasWorkspaceAdminAccess = permissionsMockFns.mockHasWorkspaceAdminAccess
 
 import { UPGRADE_TO_INVITE_REASON } from '@/lib/workspaces/policy-constants'
 import { POST } from '@/app/api/workspaces/invitations/batch/route'
@@ -127,6 +128,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'grandfathered_shared',
       billedAccountUserId: 'user-1',
     })
+    mockHasWorkspaceAdminAccess.mockResolvedValue(true)
     mockValidateInvitationsAllowed.mockResolvedValue(undefined)
     mockGetWorkspaceInvitePolicy.mockResolvedValue({
       allowed: true,
@@ -160,7 +162,6 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
     })
-    mockDbResults.value = [[{ permissionType: 'admin' }]]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -173,6 +174,30 @@ describe('POST /api/workspaces/invitations/batch', () => {
     expect(response.status).toBe(403)
     expect(data.error).toBe('Personal workspaces do not support shared members')
     expect(data.upgradeRequired).toBeUndefined()
+    expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal foreign personal workspace details through stale admin rows', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Personal Workspace',
+      ownerId: 'owner-2',
+      organizationId: null,
+      workspaceMode: 'personal',
+      billedAccountUserId: 'owner-2',
+    })
+    mockHasWorkspaceAdminAccess.mockResolvedValueOnce(false)
+
+    const request = createMockRequest('POST', {
+      workspaceId: 'workspace-1',
+      invitations: [{ email: 'new@example.com', permission: 'read' }],
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data.error).toBe('You need admin permissions to invite users')
     expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
   })
 
@@ -192,7 +217,6 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: null,
       upgradeRequired: true,
     })
-    mockDbResults.value = [[{ permissionType: 'admin' }]]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -230,7 +254,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       maxSeats: 5,
       availableSeats: 0,
     })
-    mockDbResults.value = [[{ permissionType: 'admin' }], []]
+    mockDbResults.value = [[]]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -273,10 +297,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       role: 'member',
       memberId: 'member-1',
     })
-    mockDbResults.value = [
-      [{ permissionType: 'admin' }],
-      [{ id: 'existing-user', email: 'new@example.com' }],
-    ]
+    mockDbResults.value = [[{ id: 'existing-user', email: 'new@example.com' }], []]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -310,7 +331,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'grandfathered_shared',
       billedAccountUserId: 'user-1',
     })
-    mockDbResults.value = [[{ permissionType: 'admin' }], []]
+    mockDbResults.value = [[]]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -373,11 +394,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'grandfathered_shared',
       billedAccountUserId: 'user-1',
     })
-    mockDbResults.value = [
-      [{ permissionType: 'admin' }],
-      [{ id: 'user-1', email: 'owner@test.com' }],
-      [],
-    ]
+    mockDbResults.value = [[{ id: 'user-1', email: 'owner@test.com' }], []]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -399,7 +416,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
   })
 
   it('creates multiple workspace invitations in one batch request', async () => {
-    mockDbResults.value = [[{ permissionType: 'admin' }], [], []]
+    mockDbResults.value = [[], []]
     mockCreatePendingInvitation
       .mockResolvedValueOnce({
         invitationId: 'inv-1',
@@ -445,7 +462,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
       success: false,
       error: 'mailer unavailable',
     })
-    mockDbResults.value = [[{ permissionType: 'admin' }], []]
+    mockDbResults.value = [[]]
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
