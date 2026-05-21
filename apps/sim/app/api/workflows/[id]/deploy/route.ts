@@ -3,8 +3,14 @@ import { createLogger } from '@sim/logger'
 import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { updatePublicApiContract } from '@/lib/api/contracts/deployments'
+import {
+  deployWorkflowContract,
+  getDeploymentInfoContract,
+  undeployWorkflowContract,
+  updatePublicApiContract,
+} from '@/lib/api/contracts/deployments'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -27,11 +33,22 @@ export const runtime = 'nodejs'
 export const maxDuration = 120
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
+    let workflowIdForLog = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(getDeploymentInfoContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      workflowIdForLog = id
+
       const { error, workflow: workflowData } = await validateWorkflowPermissions(
         id,
         requestId,
@@ -68,18 +85,29 @@ export const GET = withRouteHandler(
         isPublicApi: workflowData.isPublicApi ?? false,
       })
     } catch (error: any) {
-      logger.error(`[${requestId}] Error fetching deployment info: ${id}`, error)
+      logger.error(`[${requestId}] Error fetching deployment info: ${workflowIdForLog}`, error)
       return createErrorResponse(error.message || 'Failed to fetch deployment information', 500)
     }
   }
 )
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
+    let workflowIdForLog = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(deployWorkflowContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      workflowIdForLog = id
+
       const {
         error,
         session,
@@ -137,7 +165,7 @@ export const POST = withRouteHandler(
         return createErrorResponse(error.message, error.status)
       }
       const message = error instanceof Error ? error.message : 'Failed to deploy workflow'
-      logger.error(`[${requestId}] Error deploying workflow: ${id}`, { error })
+      logger.error(`[${requestId}] Error deploying workflow: ${workflowIdForLog}`, { error })
       return createErrorResponse(message, 500)
     }
   }
@@ -146,8 +174,14 @@ export const POST = withRouteHandler(
 export const PATCH = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
+    let workflowIdForLog = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
       const parsed = await parseRequest(updatePublicApiContract, request, context, {
         validationErrorResponse: () =>
           createErrorResponse('Invalid request body: isPublicApi must be a boolean', 400),
@@ -155,6 +189,7 @@ export const PATCH = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id } = parsed.data.params
+      workflowIdForLog = id
       const { isPublicApi } = parsed.data.body
 
       const {
@@ -197,18 +232,31 @@ export const PATCH = withRouteHandler(
       }
       const message =
         error instanceof Error ? error.message : 'Failed to update deployment settings'
-      logger.error(`[${requestId}] Error updating deployment settings`, { error })
+      logger.error(`[${requestId}] Error updating deployment settings: ${workflowIdForLog}`, {
+        error,
+      })
       return createErrorResponse(message, 500)
     }
   }
 )
 
 export const DELETE = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
+    let workflowIdForLog = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(undeployWorkflowContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      workflowIdForLog = id
+
       const {
         error,
         session,
@@ -248,7 +296,7 @@ export const DELETE = withRouteHandler(
         return createErrorResponse(error.message, error.status)
       }
       const message = error instanceof Error ? error.message : 'Failed to undeploy workflow'
-      logger.error(`[${requestId}] Error undeploying workflow: ${id}`, { error })
+      logger.error(`[${requestId}] Error undeploying workflow: ${workflowIdForLog}`, { error })
       return createErrorResponse(message, 500)
     }
   }
