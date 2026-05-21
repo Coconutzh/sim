@@ -5,7 +5,11 @@ import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { deleteByokKeyContract, upsertByokKeyContract } from '@/lib/api/contracts/byok-keys'
+import {
+  deleteByokKeyContract,
+  listByokKeysContract,
+  upsertByokKeyContract,
+} from '@/lib/api/contracts/byok-keys'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
@@ -27,9 +31,8 @@ function maskApiKey(key: string): string {
 }
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await params).id
 
     try {
       const session = await getSession()
@@ -39,6 +42,10 @@ export const GET = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(listByokKeysContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
@@ -108,7 +115,6 @@ export const GET = withRouteHandler(
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -118,6 +124,12 @@ export const POST = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(upsertByokKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { providerId, apiKey } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -130,10 +142,6 @@ export const POST = withRouteHandler(
           { status: 403 }
         )
       }
-
-      const parsed = await parseRequest(upsertByokKeyContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { providerId, apiKey } = parsed.data.body
 
       const { encrypted } = await encryptSecret(apiKey)
 
@@ -247,7 +255,6 @@ export const POST = withRouteHandler(
 export const DELETE = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -257,6 +264,12 @@ export const DELETE = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(deleteByokKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { providerId } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -269,10 +282,6 @@ export const DELETE = withRouteHandler(
           { status: 403 }
         )
       }
-
-      const parsed = await parseRequest(deleteByokKeyContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { providerId } = parsed.data.body
 
       const result = await db
         .delete(workspaceBYOKKeys)
