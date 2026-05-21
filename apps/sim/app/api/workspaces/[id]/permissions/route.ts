@@ -1,11 +1,14 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, user, workspace, workspaceEnvironment } from '@sim/db/schema'
+import { permissions, user, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
+import {
+  getWorkspacePermissionsContract,
+  updateWorkspacePermissionsContract,
+} from '@/lib/api/contracts/workspaces'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -14,9 +17,9 @@ import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
-  getWorkspaceWithOwner,
   getUserEntityPermissions,
   getUsersWithPermissions,
+  getWorkspaceWithOwner,
   hasWorkspaceAdminAccess,
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
@@ -33,14 +36,18 @@ const logger = createLogger('WorkspacesPermissionsAPI')
  * @returns Array of users with their permissions for the workspace
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
-      const { id: workspaceId } = await params
       const session = await getSession()
 
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(getWorkspacePermissionsContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
 
       const isAdmin = await hasWorkspaceAdminAccess(session.user.id, workspaceId)
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
@@ -99,12 +106,17 @@ export const GET = withRouteHandler(
 export const PATCH = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
-      const { id: workspaceId } = await context.params
       const session = await getSession()
 
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(updateWorkspacePermissionsContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const body = parsed.data.body
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
@@ -119,10 +131,6 @@ export const PATCH = withRouteHandler(
           { status: 403 }
         )
       }
-
-      const parsed = await parseRequest(updateWorkspacePermissionsContract, request, context)
-      if (!parsed.success) return parsed.response
-      const body = parsed.data.body
 
       const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 

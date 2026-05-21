@@ -118,7 +118,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { GET, PATCH } from './route'
+import { GET, PATCH } from '@/app/api/workspaces/[id]/permissions/route'
 
 describe('/api/workspaces/[id]/permissions', () => {
   beforeEach(() => {
@@ -204,7 +204,33 @@ describe('/api/workspaces/[id]/permissions', () => {
     expect(getUserEntityPermissionsMock).not.toHaveBeenCalled()
   })
 
+  it('authenticates reads before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    } as any)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Authentication required' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+  })
+
   describe('PATCH', () => {
+    it('authenticates writes before validating route params', async () => {
+      getSessionMock.mockResolvedValue(null)
+
+      const response = await PATCH(createMockRequest('PATCH'), {
+        params: Promise.resolve({ id: '' }),
+      } as any)
+      const data = await response.json()
+
+      expect(response.status).toBe(401)
+      expect(data).toEqual({ error: 'Authentication required' })
+      expect(parseRequestMock).not.toHaveBeenCalled()
+    })
+
     it('rejects permission updates that target the workspace owner', async () => {
       const response = await PATCH(createMockRequest('PATCH'), {
         params: Promise.resolve({ id: 'ws-1' }),
@@ -261,7 +287,7 @@ describe('/api/workspaces/[id]/permissions', () => {
 
       expect(response.status).toBe(404)
       expect(data).toEqual({ error: 'Workspace not found' })
-      expect(parseRequestMock).not.toHaveBeenCalled()
+      expect(parseRequestMock).toHaveBeenCalled()
       expect(getWorkspaceWithOwnerMock).not.toHaveBeenCalled()
     })
   })
