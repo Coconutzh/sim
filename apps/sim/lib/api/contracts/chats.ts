@@ -76,6 +76,18 @@ export const updateChatResponseSchema = z.object({
 })
 export type UpdateChatResponse = z.output<typeof updateChatResponseSchema>
 
+export const getManagedChatResponseSchema = z
+  .object({
+    id: z.string(),
+    identifier: z.string(),
+    title: z.string(),
+    description: z.string().nullable().optional(),
+    chatUrl: z.string(),
+    hasPassword: z.boolean(),
+  })
+  .passthrough()
+export type GetManagedChatResponse = z.output<typeof getManagedChatResponseSchema>
+
 export const deleteChatResponseSchema = z.object({
   message: z.string(),
 })
@@ -243,6 +255,16 @@ export const validateChatIdentifierContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: identifierValidationResponseSchema,
+  },
+})
+
+export const getManagedChatContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/chat/manage/[id]',
+  params: chatIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: getManagedChatResponseSchema,
   },
 })
 

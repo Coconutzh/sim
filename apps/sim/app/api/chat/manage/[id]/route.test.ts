@@ -88,6 +88,18 @@ describe('Chat Edit API Route', () => {
       expect(data.error).toBe('Unauthorized')
     })
 
+    it('authenticates before validating route params', async () => {
+      authMockFns.mockGetSession.mockResolvedValue(null)
+
+      const req = new NextRequest('http://localhost:3000/api/chat/manage/')
+      const response = await GET(req, { params: Promise.resolve({ id: '' }) })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(mockCheckChatAccess).not.toHaveBeenCalled()
+    })
+
     it('should return 404 when chat not found or access denied', async () => {
       authMockFns.mockGetSession.mockResolvedValue({
         user: { id: 'user-id' },
@@ -338,6 +350,21 @@ describe('Chat Edit API Route', () => {
       expect(response.status).toBe(401)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized')
+    })
+
+    it('authenticates before validating route params', async () => {
+      authMockFns.mockGetSession.mockResolvedValue(null)
+
+      const req = new NextRequest('http://localhost:3000/api/chat/manage/', {
+        method: 'DELETE',
+      })
+      const response = await DELETE(req, { params: Promise.resolve({ id: '' }) })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(mockCheckChatAccess).not.toHaveBeenCalled()
+      expect(mockPerformChatUndeploy).not.toHaveBeenCalled()
     })
 
     it('should return 404 when chat not found or access denied', async () => {

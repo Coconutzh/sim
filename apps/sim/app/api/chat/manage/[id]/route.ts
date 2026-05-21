@@ -4,7 +4,11 @@ import { chat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { chatIdParamsSchema, updateChatContract } from '@/lib/api/contracts/chats'
+import {
+  deleteChatContract,
+  getManagedChatContract,
+  updateChatContract,
+} from '@/lib/api/contracts/chats'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/feature-flags'
@@ -28,16 +32,21 @@ function getErrorMessage(error: unknown, fallback: string): string {
  * GET endpoint to fetch a specific chat deployment by ID
  */
 export const GET = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id } = chatIdParamsSchema.parse(await params)
-    const chatId = id
-
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
       if (!session) {
         return createErrorResponse('Unauthorized', 401)
       }
+
+      const parsed = await parseRequest(getManagedChatContract, request, context, {
+        validationErrorResponse: (error) =>
+          createErrorResponse(getValidationErrorMessage(error), 400, 'VALIDATION_ERROR'),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: chatId } = parsed.data.params
 
       const { hasAccess, chat: chatRecord } = await checkChatAccess(chatId, session.user.id)
 
@@ -254,16 +263,21 @@ export const PATCH = withRouteHandler(
  * DELETE endpoint to remove a chat deployment
  */
 export const DELETE = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id } = chatIdParamsSchema.parse(await params)
-    const chatId = id
-
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
       if (!session) {
         return createErrorResponse('Unauthorized', 401)
       }
+
+      const parsed = await parseRequest(deleteChatContract, request, context, {
+        validationErrorResponse: (error) =>
+          createErrorResponse(getValidationErrorMessage(error), 400, 'VALIDATION_ERROR'),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: chatId } = parsed.data.params
 
       const { hasAccess, workspaceId: chatWorkspaceId } = await checkChatAccess(
         chatId,
