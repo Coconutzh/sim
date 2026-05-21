@@ -7,6 +7,7 @@ import { leaveCredentialQuerySchema } from '@/lib/api/contracts/credentials'
 import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CredentialMembershipsAPI')
 
@@ -33,7 +34,19 @@ export const GET = withRouteHandler(async () => {
       .innerJoin(credential, eq(credentialMember.credentialId, credential.id))
       .where(eq(credentialMember.userId, session.user.id))
 
-    return NextResponse.json({ memberships }, { status: 200 })
+    const visibleMemberships = (
+      await Promise.all(
+        memberships.map(async (membership) => {
+          const access = await checkWorkspaceAccess(membership.workspaceId, session.user.id)
+          if (!access.exists || !access.hasAccess) {
+            return null
+          }
+          return membership
+        })
+      )
+    ).filter((membership): membership is (typeof memberships)[number] => membership !== null)
+
+    return NextResponse.json({ memberships: visibleMemberships }, { status: 200 })
   } catch (error) {
     logger.error('Failed to list credential memberships', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -59,8 +72,14 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
 
     const { credentialId } = parseResult.data
     const [membership] = await db
-      .select()
+      .select({
+        id: credentialMember.id,
+        role: credentialMember.role,
+        status: credentialMember.status,
+        workspaceId: credential.workspaceId,
+      })
       .from(credentialMember)
+      .innerJoin(credential, eq(credentialMember.credentialId, credential.id))
       .where(
         and(
           eq(credentialMember.credentialId, credentialId),
@@ -70,6 +89,11 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
       .limit(1)
 
     if (!membership) {
+      return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    }
+
+    const workspaceAccess = await checkWorkspaceAccess(membership.workspaceId, session.user.id)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
       return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
     }
 
