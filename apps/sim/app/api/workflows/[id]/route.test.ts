@@ -54,6 +54,14 @@ function mockGetSession(session: { user: { id: string } } | null) {
   }
 }
 
+function createThrowingWorkflowParams(): Promise<{ id: string }> {
+  return {
+    then: () => {
+      throw new Error('Route params should not be read before auth')
+    },
+  } as unknown as Promise<{ id: string }>
+}
+
 vi.mock('@/lib/core/config/env', () => envMock)
 
 vi.mock('@/lib/core/telemetry', () => telemetryMock)
@@ -109,14 +117,16 @@ describe('Workflow By ID API Route', () => {
     it('should return 401 when user is not authenticated', async () => {
       mockGetSession(null)
 
-      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123')
-      const params = Promise.resolve({ id: 'workflow-123' })
+      const req = new NextRequest('http://localhost:3000/api/workflows/')
+      const params = createThrowingWorkflowParams()
 
       const response = await GET(req, { params })
 
       expect(response.status).toBe(401)
       const data = await response.json()
       expect(data.error).toBe('Unauthorized')
+      expect(mockGetWorkflowById).not.toHaveBeenCalled()
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
 
     it('should return 404 when workflow does not exist', async () => {
@@ -417,6 +427,23 @@ describe('Workflow By ID API Route', () => {
   })
 
   describe('DELETE /api/workflows/[id]', () => {
+    it('should return 401 before reading route params when user is not authenticated', async () => {
+      mockGetSession(null)
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/', {
+        method: 'DELETE',
+      })
+      const params = createThrowingWorkflowParams()
+
+      const response = await DELETE(req, { params })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+      expect(mockPerformDeleteWorkflow).not.toHaveBeenCalled()
+    })
+
     it('should allow admin to delete workflow', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -631,6 +658,24 @@ describe('Workflow By ID API Route', () => {
         }),
       })
     }
+
+    it('should return 401 before reading route params when user is not authenticated', async () => {
+      mockGetSession(null)
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/', {
+        method: 'PUT',
+        body: JSON.stringify({ name: 'Updated Workflow' }),
+      })
+      const params = createThrowingWorkflowParams()
+
+      const response = await PUT(req, { params })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+      expect(mockDbUpdate).not.toHaveBeenCalled()
+    })
 
     it('should allow user with write permission to update workflow', async () => {
       const mockWorkflow = {

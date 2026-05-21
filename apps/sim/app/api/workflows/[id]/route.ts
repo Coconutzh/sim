@@ -10,7 +10,11 @@ import {
 } from '@sim/workflow-authz'
 import { and, eq, isNull, ne, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateWorkflowContract } from '@/lib/api/contracts/workflows'
+import {
+  deleteWorkflowContract,
+  getWorkflowStateContract,
+  updateWorkflowContract,
+} from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { AuthType, checkHybridAuth, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -29,17 +33,23 @@ const logger = createLogger('WorkflowByIdAPI')
  * Uses hybrid approach: try normalized tables first, fallback to JSON blob
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await params
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkHybridAuth(request, { requireWorkflowId: false })
       if (!auth.success) {
-        logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
+        logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowIdForLog}`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(getWorkflowStateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const workflowId = parsed.data.params.id
+      workflowIdForLog = workflowId
 
       const isInternalCall = auth.authType === AuthType.INTERNAL_JWT
       const userId = auth.userId || null
@@ -194,7 +204,10 @@ export const GET = withRouteHandler(
       return NextResponse.json({ data: emptyWorkflowData }, { status: 200 })
     } catch (error: any) {
       const elapsed = Date.now() - startTime
-      logger.error(`[${requestId}] Error fetching workflow ${workflowId} after ${elapsed}ms`, error)
+      logger.error(
+        `[${requestId}] Error fetching workflow ${workflowIdForLog} after ${elapsed}ms`,
+        error
+      )
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -205,19 +218,25 @@ export const GET = withRouteHandler(
  * Delete a workflow by ID
  */
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await params
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
-        logger.warn(`[${requestId}] Unauthorized deletion attempt for workflow ${workflowId}`)
+        logger.warn(`[${requestId}] Unauthorized deletion attempt for workflow ${workflowIdForLog}`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
       const userId = auth.userId
+
+      const parsed = await parseRequest(deleteWorkflowContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const workflowId = parsed.data.params.id
+      workflowIdForLog = workflowId
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -311,7 +330,10 @@ export const DELETE = withRouteHandler(
       }
 
       const elapsed = Date.now() - startTime
-      logger.error(`[${requestId}] Error deleting workflow ${workflowId} after ${elapsed}ms`, error)
+      logger.error(
+        `[${requestId}] Error deleting workflow ${workflowIdForLog} after ${elapsed}ms`,
+        error
+      )
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -325,12 +347,12 @@ export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await context.params
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
-        logger.warn(`[${requestId}] Unauthorized update attempt for workflow ${workflowId}`)
+        logger.warn(`[${requestId}] Unauthorized update attempt for workflow ${workflowIdForLog}`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
@@ -338,6 +360,8 @@ export const PUT = withRouteHandler(
 
       const parsed = await parseRequest(updateWorkflowContract, request, context)
       if (!parsed.success) return parsed.response
+      const workflowId = parsed.data.params.id
+      workflowIdForLog = workflowId
       const updates = parsed.data.body
 
       // Fetch the workflow to check ownership/access
@@ -497,7 +521,10 @@ export const PUT = withRouteHandler(
       }
 
       const elapsed = Date.now() - startTime
-      logger.error(`[${requestId}] Error updating workflow ${workflowId} after ${elapsed}ms`, error)
+      logger.error(
+        `[${requestId}] Error updating workflow ${workflowIdForLog} after ${elapsed}ms`,
+        error
+      )
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
