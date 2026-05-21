@@ -13,7 +13,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { DbOrTx } from '@/lib/db/types'
 import { duplicateWorkflow } from '@/lib/workflows/persistence/duplicate'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FolderDuplicateAPI')
 
@@ -44,6 +44,11 @@ export const POST = withRouteHandler(
         .then((rows) => rows[0])
 
       if (!sourceFolder) {
+        throw new Error('Source folder not found')
+      }
+
+      const access = await checkWorkspaceAccess(sourceFolder.workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
         throw new Error('Source folder not found')
       }
 
