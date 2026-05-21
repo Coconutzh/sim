@@ -2,8 +2,8 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
-  deleteSkillQuerySchema,
-  listSkillsQuerySchema,
+  deleteSkillContract,
+  listSkillsContract,
   upsertSkillsContract,
 } from '@/lib/api/contracts'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
@@ -31,17 +31,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const query = listSkillsQuerySchema.safeParse(
-      Object.fromEntries(request.nextUrl.searchParams.entries())
-    )
-    if (!query.success) {
-      logger.warn(`[${requestId}] Invalid skills query`, { errors: query.error.issues })
-      return NextResponse.json(
-        { error: 'Invalid request data', details: query.error.issues },
-        { status: 400 }
-      )
-    }
-    const { workspaceId } = query.data
+    const parsed = await parseRequest(listSkillsContract, request, {}, {
+      validationErrorResponse: (error) => {
+        logger.warn(`[${requestId}] Invalid skills query`, { errors: error.issues })
+        return validationErrorResponse(error, 'Invalid request data')
+      },
+    })
+    if (!parsed.success) return parsed.response
+    const { workspaceId } = parsed.data.query
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
@@ -160,17 +157,14 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const query = deleteSkillQuerySchema.safeParse(
-      Object.fromEntries(request.nextUrl.searchParams.entries())
-    )
-    if (!query.success) {
-      logger.warn(`[${requestId}] Invalid skill deletion query`, { errors: query.error.issues })
-      return NextResponse.json(
-        { error: 'Invalid request data', details: query.error.issues },
-        { status: 400 }
-      )
-    }
-    const { id: skillId, workspaceId, source } = query.data
+    const parsed = await parseRequest(deleteSkillContract, request, {}, {
+      validationErrorResponse: (error) => {
+        logger.warn(`[${requestId}] Invalid skill deletion query`, { errors: error.issues })
+        return validationErrorResponse(error, 'Invalid request data')
+      },
+    })
+    if (!parsed.success) return parsed.response
+    const { id: skillId, workspaceId, source } = parsed.data.query
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
