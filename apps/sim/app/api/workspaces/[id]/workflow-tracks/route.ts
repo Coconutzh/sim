@@ -32,6 +32,9 @@ export const GET = withRouteHandler(
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to list workflow tracks'
       logger.error(`[${requestId}] Failed to list workflow tracks`, { error })
+      if (message.includes('Access denied to workspace')) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
       return NextResponse.json(
         { error: message },
         { status: message.includes('Access denied') ? 403 : 400 }

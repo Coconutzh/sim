@@ -11,7 +11,7 @@ function createNextRequest(url: string): NextRequest {
   return new NextRequest(new URL(url))
 }
 
-const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
@@ -27,13 +27,9 @@ vi.mock('@/lib/events/sse-endpoint', () => ({
       if (!workspaceId) {
         return new Response('Missing workspaceId query parameter', { status: 400 })
       }
-      const permissions = await mockGetUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
-      )
-      if (!permissions) {
-        return new Response('Access denied to workspace', { status: 403 })
+      const access = await mockCheckWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return new Response('Workspace not found', { status: 404 })
       }
       return new Response(new ReadableStream({ start() {} }), {
         headers: {
@@ -91,23 +87,33 @@ describe('MCP Events SSE Endpoint', () => {
     expect(text).toBe('Missing workspaceId query parameter')
   })
 
-  it('returns 403 when user lacks workspace access', async () => {
+  it('returns 404 when user lacks workspace access', async () => {
     authMockFns.mockGetSession.mockResolvedValue({ user: defaultMockUser })
-    mockGetUserEntityPermissions.mockResolvedValue(null)
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-123' },
+    })
 
     const request = createNextRequest('http://localhost:3000/api/mcp/events?workspaceId=ws-123')
 
     const response = await GET(request)
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(404)
     const text = await response.text()
-    expect(text).toBe('Access denied to workspace')
-    expect(mockGetUserEntityPermissions).toHaveBeenCalledWith('user-123', 'workspace', 'ws-123')
+    expect(text).toBe('Workspace not found')
+    expect(mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-123', 'user-123')
   })
 
   it('returns SSE stream when authorized', async () => {
     authMockFns.mockGetSession.mockResolvedValue({ user: defaultMockUser })
-    mockGetUserEntityPermissions.mockResolvedValue({ read: true })
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-123' },
+    })
 
     const request = createNextRequest('http://localhost:3000/api/mcp/events?workspaceId=ws-123')
 

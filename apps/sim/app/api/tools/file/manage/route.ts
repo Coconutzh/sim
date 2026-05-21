@@ -13,6 +13,7 @@ import {
   uploadWorkspaceFile,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const workspaceId = body.workspaceId || query.workspaceId
   if (!workspaceId) {
     return NextResponse.json({ success: false, error: 'workspaceId is required' }, { status: 400 })
+  }
+
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ success: false, error: 'Workspace not found' }, { status: 404 })
+  }
+
+  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+  if (permission !== 'admin' && permission !== 'write') {
+    return NextResponse.json(
+      { success: false, error: 'Write or Admin access required for workspace files' },
+      { status: 403 }
+    )
   }
 
   try {

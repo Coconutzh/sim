@@ -9,7 +9,7 @@ import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 export interface SSESubscription {
   subscribe(
@@ -40,9 +40,9 @@ export function createWorkspaceSSE(config: WorkspaceSSEConfig) {
       return new Response('Missing workspaceId query parameter', { status: 400 })
     }
 
-    const permissions = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
-    if (!permissions) {
-      return new Response('Access denied to workspace', { status: 403 })
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return new Response('Workspace not found', { status: 404 })
     }
 
     const encoder = new TextEncoder()
