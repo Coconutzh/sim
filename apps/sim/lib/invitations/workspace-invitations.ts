@@ -15,6 +15,7 @@ import {
 } from '@/lib/invitations/send'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
+  checkWorkspaceAccess,
   hasWorkspaceAdminAccess,
   getWorkspaceWithOwner,
   type PermissionType,
@@ -78,7 +79,12 @@ export async function prepareWorkspaceInvitationContext({
 }): Promise<WorkspaceInvitationContext> {
   await validateInvitationsAllowed(inviterId, workspaceId)
 
-  const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
+  const access = await checkWorkspaceAccess(workspaceId, inviterId)
+  if (!access.exists || !access.hasAccess) {
+    throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
+  }
+
+  const workspaceDetails = access.workspace ?? (await getWorkspaceWithOwner(workspaceId))
   if (!workspaceDetails) {
     throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
   }

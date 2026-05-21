@@ -106,6 +106,7 @@ vi.mock('@/lib/core/telemetry', () => ({
 }))
 
 const mockGetSession = authMockFns.mockGetSession
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
 const mockHasWorkspaceAdminAccess = permissionsMockFns.mockHasWorkspaceAdminAccess
 
@@ -127,6 +128,19 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: null,
       workspaceMode: 'grandfathered_shared',
       billedAccountUserId: 'user-1',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-1',
+        name: 'Workspace',
+        ownerId: 'user-1',
+        organizationId: null,
+        workspaceMode: 'grandfathered_shared',
+        billedAccountUserId: 'user-1',
+      },
     })
     mockHasWorkspaceAdminAccess.mockResolvedValue(true)
     mockValidateInvitationsAllowed.mockResolvedValue(undefined)
@@ -162,6 +176,19 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
     })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-1',
+        name: 'Personal Workspace',
+        ownerId: 'user-1',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'user-1',
+      },
+    })
 
     const request = createMockRequest('POST', {
       workspaceId: 'workspace-1',
@@ -186,6 +213,19 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'personal',
       billedAccountUserId: 'owner-2',
     })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'workspace-1',
+        name: 'Personal Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
     mockHasWorkspaceAdminAccess.mockResolvedValueOnce(false)
 
     const request = createMockRequest('POST', {
@@ -196,8 +236,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
     const response = await POST(request)
     const data = await response.json()
 
-    expect(response.status).toBe(403)
-    expect(data.error).toBe('You need admin permissions to invite users')
+    expect(response.status).toBe(404)
+    expect(data.error).toBe('Workspace not found')
     expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
   })
 
@@ -284,6 +324,19 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: 'org-1',
       workspaceMode: 'organization',
       billedAccountUserId: 'owner-1',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-1',
+        name: 'Org Workspace',
+        ownerId: 'user-1',
+        organizationId: 'org-1',
+        workspaceMode: 'organization',
+        billedAccountUserId: 'owner-1',
+      },
     })
     mockGetWorkspaceInvitePolicy.mockResolvedValueOnce({
       allowed: true,
