@@ -165,4 +165,71 @@ describe('GET /api/organizations/[id]/roster', () => {
     expect(response.status).toBe(200)
     expect(data.data.members).toEqual([])
   })
+
+  it('filters pending invitation grants to active organization workspaces only', async () => {
+    const createdAt = new Date('2026-05-21T00:00:00.000Z')
+    const expiresAt = new Date('2026-06-01T00:00:00.000Z')
+    mockDbResults.value = [
+      [{ role: 'owner' }],
+      [{ id: 'ws-org', name: 'Org Workspace', ownerId: 'user-1', createdAt }],
+      [],
+      [],
+      [],
+      [
+        {
+          id: 'inv-1',
+          email: 'invitee@example.com',
+          role: 'member',
+          kind: 'workspace',
+          membershipIntent: 'external',
+          createdAt,
+          expiresAt,
+          inviteeName: null,
+          inviteeImage: null,
+        },
+      ],
+      [
+        {
+          invitationId: 'inv-1',
+          workspaceId: 'ws-org',
+          permission: 'read',
+        },
+        {
+          invitationId: 'inv-1',
+          workspaceId: 'ws-archived',
+          permission: 'write',
+        },
+      ],
+    ]
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/organizations/org-1/roster'),
+      {
+        params: Promise.resolve({ id: 'org-1' }),
+      } as any
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.data.pendingInvitations).toEqual([
+      {
+        id: 'inv-1',
+        email: 'invitee@example.com',
+        role: 'external',
+        kind: 'workspace',
+        membershipIntent: 'external',
+        createdAt: createdAt.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        inviteeName: null,
+        inviteeImage: null,
+        workspaces: [
+          {
+            workspaceId: 'ws-org',
+            workspaceName: 'Org Workspace',
+            permission: 'read',
+          },
+        ],
+      },
+    ])
+  })
 })

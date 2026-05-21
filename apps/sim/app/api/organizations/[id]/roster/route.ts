@@ -319,6 +319,9 @@ export const GET = withRouteHandler(
 
       const grantsByInvitation = new Map<string, RosterWorkspaceAccess[]>()
       for (const row of pendingGrants) {
+        if (!workspaceNameById.has(row.workspaceId)) {
+          continue
+        }
         const list = grantsByInvitation.get(row.invitationId) ?? []
         list.push({
           workspaceId: row.workspaceId,
