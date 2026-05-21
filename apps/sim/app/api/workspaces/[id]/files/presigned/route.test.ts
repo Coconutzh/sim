@@ -101,7 +101,7 @@ describe('POST /api/workspaces/[id]/files/presigned', () => {
     const res = await POST(makeRequest(validBody), params())
     const body = await res.json()
     expect(res.status).toBe(404)
-    expect(body.error).toBe('Not found')
+    expect(body.error).toBe('Workspace not found')
   })
 
   it('returns 400 for missing fileName', async () => {

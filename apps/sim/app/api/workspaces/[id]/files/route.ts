@@ -202,7 +202,7 @@ export const POST = withRouteHandler(
         logger.warn(
           `[${requestId}] User ${session.user.id} cannot access workspace ${workspaceId}`
         )
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       // Check workspace permissions (requires write)

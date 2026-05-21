@@ -69,7 +69,7 @@ describe('/api/workspaces/[id]/files/[fileId]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Not found' })
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockDeleteWorkspaceFile).not.toHaveBeenCalled()
   })

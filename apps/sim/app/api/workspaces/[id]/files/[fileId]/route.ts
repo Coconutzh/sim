@@ -41,7 +41,7 @@ export const PATCH = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const userPermission = await getUserEntityPermissions(
@@ -114,7 +114,7 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       // Check workspace permissions (requires write)
