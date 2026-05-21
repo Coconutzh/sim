@@ -112,4 +112,18 @@ describe('GET /api/workspaces/[id]/members', () => {
     expect(data).toEqual({ error: 'Personal workspaces do not expose shared member lists' })
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
   })
+
+  it('authenticates before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Authentication required' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
+  })
 })
