@@ -112,6 +112,7 @@ export async function reassignBilledAccountForUser(
     .select({
       id: workspaceTable.id,
       ownerId: workspaceTable.ownerId,
+      workspaceMode: workspaceTable.workspaceMode,
     })
     .from(workspaceTable)
     .where(eq(workspaceTable.billedAccountUserId, departingUserId))
@@ -128,8 +129,13 @@ export async function reassignBilledAccountForUser(
 
     if (!replacement) {
       const [admin] = await db
-        .select({ userId: permissions.userId })
+        .select({
+          userId: permissions.userId,
+          workspaceMode: workspaceTable.workspaceMode,
+          workspaceOwnerId: workspaceTable.ownerId,
+        })
         .from(permissions)
+        .innerJoin(workspaceTable, eq(permissions.entityId, workspaceTable.id))
         .where(
           and(
             eq(permissions.entityType, 'workspace'),
@@ -140,7 +146,11 @@ export async function reassignBilledAccountForUser(
         )
         .limit(1)
 
-      replacement = admin?.userId ?? null
+      replacement =
+        admin &&
+        (admin.workspaceMode !== 'personal' || admin.workspaceOwnerId === admin.userId)
+          ? admin.userId
+          : null
     }
 
     if (!replacement) {
