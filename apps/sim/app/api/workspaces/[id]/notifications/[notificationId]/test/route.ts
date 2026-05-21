@@ -11,8 +11,8 @@ import {
   type EmailUsageData,
   renderWorkflowNotificationEmail,
 } from '@/components/emails'
-import { notificationParamsSchema } from '@/lib/api/contracts/notifications'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { testNotificationContract } from '@/lib/api/contracts/notifications'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
@@ -288,14 +288,11 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const paramsResult = notificationParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId, notificationId } = paramsResult.data
+    const context = { params }
+    const parsed = await parseRequest(testNotificationContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id: workspaceId, notificationId } = parsed.data.params
+
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })

@@ -56,7 +56,7 @@ vi.mock('@sim/db/schema', () => ({
 vi.mock('@/lib/auth', () => authMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
-import { DELETE, GET } from './route'
+import { DELETE, GET, PUT } from './route'
 
 describe('/api/workspaces/[id]/notifications/[notificationId]', () => {
   beforeEach(() => {
@@ -109,10 +109,49 @@ describe('/api/workspaces/[id]/notifications/[notificationId]', () => {
         notificationType: 'email',
       })
     )
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+  })
+
+  it('returns 401 before validating invalid params for unauthenticated notification reads', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '', notificationId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 before validating invalid params or body for unauthenticated notification updates', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await PUT(createMockRequest('PUT', {}), {
+      params: Promise.resolve({ id: '', notificationId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 before validating invalid params for unauthenticated notification deletes', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: '', notificationId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 
   it('returns 404 for stale foreign personal workspaces before delete checks', async () => {

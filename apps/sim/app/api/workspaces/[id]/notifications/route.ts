@@ -5,7 +5,10 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createNotificationServerContract } from '@/lib/api/contracts/notifications'
+import {
+  createNotificationServerContract,
+  listNotificationsContract,
+} from '@/lib/api/contracts/notifications'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -16,10 +19,7 @@ import { MAX_NOTIFICATIONS_PER_TYPE } from './constants'
 
 const logger = createLogger('WorkspaceNotificationsAPI')
 
-async function checkWorkspaceWriteAccess(
-  userId: string,
-  workspaceId: string
-) {
+async function checkWorkspaceWriteAccess(userId: string, workspaceId: string) {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
     return { access, hasAccess: false, permission: null }
@@ -30,14 +30,17 @@ async function checkWorkspaceWriteAccess(
 }
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: workspaceId } = await params
+      const parsed = await parseRequest(listNotificationsContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId } = parsed.data.params
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -88,7 +91,13 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: workspaceId } = await context.params
+      const parsed = await parseRequest(createNotificationServerContract, request, context, {
+        validationErrorResponse: (error) => validationErrorResponse(error, 'Invalid request'),
+      })
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId } = parsed.data.params
+      const data = parsed.data.body
+
       const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
 
       if (!access.exists || !access.hasAccess) {
@@ -98,12 +107,6 @@ export const POST = withRouteHandler(
       if (!hasAccess) {
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
       }
-
-      const parsed = await parseRequest(createNotificationServerContract, request, context, {
-        validationErrorResponse: (error) => validationErrorResponse(error, 'Invalid request'),
-      })
-      if (!parsed.success) return parsed.response
-      const data = parsed.data.body
 
       const existingCount = await db
         .select({ id: workspaceNotificationSubscription.id })

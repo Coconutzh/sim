@@ -8,7 +8,7 @@ import {
   permissionsMock,
   permissionsMockFns,
 } from '@sim/testing'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@sim/db', () => ({
   db: {
@@ -27,6 +27,23 @@ vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 import { POST } from './route'
 
 describe('POST /api/workspaces/[id]/notifications/[notificationId]/test', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns 401 before validating invalid params for unauthenticated notification tests', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await POST(createMockRequest('POST'), {
+      params: Promise.resolve({ id: '', notificationId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
+
   it('returns 404 when stale personal rows no longer grant notification-test visibility', async () => {
     authMockFns.mockGetSession.mockResolvedValue({
       user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },

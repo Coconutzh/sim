@@ -244,6 +244,18 @@ export const createNotificationServerContract = defineRouteContract({
   },
 })
 
+export const getNotificationContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/notifications/[notificationId]',
+  params: notificationParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      data: notificationSubscriptionSchema,
+    }),
+  },
+})
+
 export const updateNotificationContract = defineRouteContract({
   method: 'PUT',
   path: '/api/workspaces/[id]/notifications/[notificationId]',
