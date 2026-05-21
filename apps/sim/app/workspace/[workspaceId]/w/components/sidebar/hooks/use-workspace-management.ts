@@ -12,6 +12,7 @@ import {
   useWorkspaceCreationPolicy,
   useWorkspacesQuery,
   type Workspace,
+  type WorkspaceCreationPolicy,
 } from '@/hooks/queries/workspace'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
@@ -53,6 +54,7 @@ export function useWorkspaceManagement({
 
   const workspaceIdRef = useRef<string>(workspaceId)
   const workspacesRef = useRef<Workspace[]>(workspaces)
+  const workspaceCreationPolicyRef = useRef<WorkspaceCreationPolicy | null>(workspaceCreationPolicy)
   const routerRef = useRef<ReturnType<typeof useRouter>>(router)
   const hasValidatedRef = useRef<boolean>(false)
   const lastTouchedRef = useRef<string | null>(null)
@@ -60,6 +62,7 @@ export function useWorkspaceManagement({
 
   workspaceIdRef.current = workspaceId
   workspacesRef.current = workspaces
+  workspaceCreationPolicyRef.current = workspaceCreationPolicy
   routerRef.current = router
 
   const [recencySortKey, setRecencySortKey] = useState(0)
@@ -168,6 +171,16 @@ export function useWorkspaceManagement({
   const handleCreateWorkspace = useCallback(
     async (name: string) => {
       try {
+        const creationPolicy = workspaceCreationPolicyRef.current
+        if (creationPolicy?.canCreate !== true) {
+          logger.warn('Workspace creation blocked by server-derived policy', {
+            reason: creationPolicy?.reason ?? 'Workspace creation policy is unavailable',
+            workspaceMode: creationPolicy?.workspaceMode ?? null,
+            organizationId: creationPolicy?.organizationId ?? null,
+          })
+          return
+        }
+
         logger.info(`Creating new workspace: ${name}`)
 
         const newWorkspace = await createWorkspaceMutation.mutateAsync({ name })
