@@ -51,7 +51,7 @@ vi.mock('@/lib/posthog/server', () => ({
   captureServerEvent: vi.fn(),
 }))
 
-import { DELETE, PUT } from './route'
+import { DELETE, PUT } from '@/app/api/workspaces/[id]/api-keys/[keyId]/route'
 
 describe('/api/workspaces/[id]/api-keys/[keyId]', () => {
   beforeEach(() => {
@@ -100,10 +100,33 @@ describe('/api/workspaces/[id]/api-keys/[keyId]', () => {
         name: 'New Name',
       })
     )
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+  })
+
+  it('authenticates update requests before validating route params or body', async () => {
+    authMockFns.mockGetSession.mockResolvedValue(null)
+
+    const response = await PUT(createMockRequest('PUT', {}), {
+      params: Promise.resolve({ id: '', keyId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
+
+  it('authenticates delete requests before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValue(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: '', keyId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
   })
 
   it('returns 404 for stale foreign personal workspaces before admin checks', async () => {
