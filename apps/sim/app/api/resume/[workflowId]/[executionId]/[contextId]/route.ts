@@ -51,15 +51,22 @@ export const POST = withRouteHandler(
     if (!parsed.success) return parsed.response
     const { workflowId, executionId, contextId } = parsed.data.params
 
-    const access = await validateWorkflowAccess(request, workflowId, false)
+    const access = await validateWorkflowAccess(request, workflowId, false, 'write')
     if (access.error) {
       return NextResponse.json({ error: access.error.message }, { status: access.error.status })
     }
 
     const workflow = access.workflow
+    if (!workflow?.workspaceId) {
+      logger.error('Resume access validation returned a workflow without workspace context', {
+        workflowId,
+      })
+      return NextResponse.json({ error: 'Workflow workspace not found' }, { status: 500 })
+    }
 
     let payload: unknown = {}
     try {
+      // boundary-raw-json: resume input is an arbitrary payload forwarded to the paused block
       payload = await request.json()
     } catch {
       payload = {}

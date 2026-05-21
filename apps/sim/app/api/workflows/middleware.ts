@@ -1,3 +1,4 @@
+import type { workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import type { NextRequest } from 'next/server'
@@ -13,14 +14,17 @@ const logger = createLogger('WorkflowMiddleware')
 
 export interface ValidationResult {
   error?: { message: string; status: number }
-  workflow?: any
+  workflow?: typeof workflowTable.$inferSelect
   auth?: AuthResult
 }
+
+type WorkflowAccessAction = 'read' | 'write' | 'admin'
 
 export async function validateWorkflowAccess(
   request: NextRequest,
   workflowId: string,
-  requireDeployment = true
+  requireDeployment = true,
+  action: WorkflowAccessAction = 'read'
 ): Promise<ValidationResult> {
   try {
     const workflow = await getWorkflowById(workflowId)
@@ -66,7 +70,7 @@ export async function validateWorkflowAccess(
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
         userId: auth.userId,
-        action: 'read',
+        action,
       })
       if (!authorization.allowed) {
         return {

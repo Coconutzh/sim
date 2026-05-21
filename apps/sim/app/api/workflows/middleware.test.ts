@@ -82,6 +82,23 @@ describe('validateWorkflowAccess (requireDeployment=false)', () => {
     })
   })
 
+  it('passes the requested action into workflow authorization', async () => {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-1',
+      authType: 'session',
+    })
+
+    const result = await validateWorkflowAccess(makeRequest(), 'wf-1', false, 'write')
+
+    expect(result.error).toBeUndefined()
+    expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      userId: 'user-1',
+      action: 'write',
+    })
+  })
+
   it('allows a personal API key regardless of workspaceId on the auth result', async () => {
     hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
       success: true,
