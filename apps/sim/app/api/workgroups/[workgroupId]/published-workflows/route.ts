@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { listPublishedWorkflowsForWorkgroupContract } from '@/lib/api/contracts/workflows'
+import { listShowcasePublicationsContract } from '@/lib/api/contracts/collaboration'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { listVisiblePublications } from '@/lib/collaboration/service'
@@ -20,23 +20,23 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const parsed = await parseRequest(listPublishedWorkflowsForWorkgroupContract, request, context)
+    const parsed = await parseRequest(listShowcasePublicationsContract, request, context)
     if (!parsed.success) return parsed.response
+    const { workgroupId } = parsed.data.params
+    const { disciplineCode, sourceWorkgroupId, agentCode, limit } = parsed.data.query
 
     try {
       const data = await listPublishedWorkflowsForWorkgroup({
-        workgroupId: parsed.data.params.workgroupId,
+        workgroupId,
         userId: auth.userId,
       })
       const publications = await listVisiblePublications({
-        workgroupId: parsed.data.params.workgroupId,
+        workgroupId,
         userId: auth.userId,
-        disciplineCode: request.nextUrl.searchParams.get('disciplineCode') ?? undefined,
-        sourceWorkgroupId: request.nextUrl.searchParams.get('sourceWorkgroupId') ?? undefined,
-        agentCode: request.nextUrl.searchParams.get('agentCode') ?? undefined,
-        limit: request.nextUrl.searchParams.get('limit')
-          ? Number(request.nextUrl.searchParams.get('limit'))
-          : undefined,
+        disciplineCode,
+        sourceWorkgroupId,
+        agentCode,
+        limit,
       })
 
       return NextResponse.json({ data, publications, nextCursor: null }, { status: 200 })
