@@ -56,7 +56,12 @@ const { mockGetUserEntityPermissions } = vi.hoisted(() => ({
   mockGetUserEntityPermissions: vi.fn(),
 }))
 
+const { mockCheckWorkspaceAccess } = vi.hoisted(() => ({
+  mockCheckWorkspaceAccess: vi.fn(),
+}))
+
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: mockCheckWorkspaceAccess,
   getUserEntityPermissions: mockGetUserEntityPermissions,
 }))
 
@@ -83,6 +88,13 @@ describe('authenticateApiKeyFromHeader', () => {
     mockAuthenticateApiKey.mockReset()
     mockGetWorkspaceBillingSettings.mockReset()
     mockGetUserEntityPermissions.mockReset()
+    mockCheckWorkspaceAccess.mockReset()
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
+    })
   })
 
   it('returns error when no header is provided', async () => {
@@ -185,5 +197,26 @@ describe('authenticateApiKeyFromHeader', () => {
     const [filter] = dbChainMockFns.where.mock.calls[0]
     const expected = hashApiKey('sk-sim-plain-key')
     expect(JSON.stringify(filter)).toContain(expected)
+  })
+
+  it('rejects personal keys for hidden foreign personal workspaces before permission lookup', async () => {
+    dbChainMockFns.where.mockResolvedValueOnce([
+      personalKeyRecord({ workspaceId: null, userId: 'owner-2' }),
+    ])
+    mockGetWorkspaceBillingSettings.mockResolvedValueOnce({ allowPersonalApiKeys: true })
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const result = await authenticateApiKeyFromHeader('sk-sim-plain-key', {
+      workspaceId: 'ws-hidden',
+      keyTypes: ['personal'],
+    })
+
+    expect(result).toEqual({ success: false, error: 'Invalid API key' })
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })

@@ -4,7 +4,10 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { authenticateApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBillingSettings, type WorkspaceBillingSettings } from '@/lib/workspaces/utils'
 
 const logger = createLogger('ApiKeyService')
@@ -48,6 +51,16 @@ interface HashCandidate {
   workspaceId: string | null
   type: string
   expiresAt: Date | null
+}
+
+async function hasVisibleWorkspacePermission(userId: string, workspaceId: string): Promise<boolean> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return false
+  }
+
+  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+  return permission !== null
 }
 
 /**
@@ -150,12 +163,10 @@ export async function authenticateApiKeyFromHeader(
         }
 
         if (!permissionCache.has(storedKey.userId)) {
-          const permission = await getUserEntityPermissions(
+          permissionCache.set(
             storedKey.userId,
-            'workspace',
-            options.workspaceId
+            await hasVisibleWorkspacePermission(storedKey.userId, options.workspaceId)
           )
-          permissionCache.set(storedKey.userId, permission !== null)
         }
 
         if (!permissionCache.get(storedKey.userId)) {
@@ -232,12 +243,8 @@ async function authenticateApiKeyByHash(
     if (!workspaceSettings?.allowPersonalApiKeys) return INVALID
     if (!record.userId) return INVALID
 
-    const permission = await getUserEntityPermissions(
-      record.userId,
-      'workspace',
-      options.workspaceId
-    )
-    if (permission === null) return INVALID
+    const hasPermission = await hasVisibleWorkspacePermission(record.userId, options.workspaceId)
+    if (!hasPermission) return INVALID
   }
 
   logger.debug('API key matched via hash lookup', { keyId: record.id, keyType })
