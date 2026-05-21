@@ -6,6 +6,7 @@ import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
+  getWorkspaceEnvironmentContract,
   removeWorkspaceEnvironmentContract,
   upsertWorkspaceEnvironmentContract,
 } from '@/lib/api/contracts/environment'
@@ -24,9 +25,8 @@ import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces
 const logger = createLogger('WorkspaceEnvironmentAPI')
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await params).id
 
     try {
       const session = await getSession()
@@ -36,6 +36,10 @@ export const GET = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(getWorkspaceEnvironmentContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
@@ -75,7 +79,6 @@ export const GET = withRouteHandler(
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -85,6 +88,12 @@ export const PUT = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(upsertWorkspaceEnvironmentContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { variables } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -94,10 +103,6 @@ export const PUT = withRouteHandler(
       if (!permission || (permission !== 'admin' && permission !== 'write')) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-
-      const parsed = await parseRequest(upsertWorkspaceEnvironmentContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { variables } = parsed.data.body
 
       // Read existing encrypted ws vars
       const existingRows = await db
@@ -167,7 +172,6 @@ export const PUT = withRouteHandler(
 export const DELETE = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -177,6 +181,12 @@ export const DELETE = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(removeWorkspaceEnvironmentContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { keys } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -186,10 +196,6 @@ export const DELETE = withRouteHandler(
       if (!permission || (permission !== 'admin' && permission !== 'write')) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-
-      const parsed = await parseRequest(removeWorkspaceEnvironmentContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { keys } = parsed.data.body
 
       const wsRows = await db
         .select()
