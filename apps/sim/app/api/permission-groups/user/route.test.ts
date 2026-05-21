@@ -111,4 +111,22 @@ describe('GET /api/permission-groups/user', () => {
     expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workspaces from user permission-group config lookup', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(
+      new Request('http://localhost/api/permission-groups/user?workspaceId=ws-hidden')
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
+  })
 })
