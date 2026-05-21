@@ -3,7 +3,7 @@ import { usageLog, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, desc, eq, gte, lte, type SQL, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNull, lte, or, type SQL, sql } from 'drizzle-orm'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 
 const logger = createLogger('UsageLog')
@@ -172,6 +172,8 @@ export interface GetUsageLogsOptions {
   source?: UsageLogSource
   /** Filter by workspace */
   workspaceId?: string
+  /** Visible workspace IDs for current viewer; null workspace logs stay visible */
+  visibleWorkspaceIds?: string[]
   /** Start date (inclusive) */
   startDate?: Date
   /** End date (inclusive) */
@@ -220,7 +222,8 @@ export async function getUserUsageLogs(
   userId: string,
   options: GetUsageLogsOptions = {}
 ): Promise<UsageLogsResult> {
-  const { source, workspaceId, startDate, endDate, limit = 50, cursor } = options
+  const { source, workspaceId, visibleWorkspaceIds, startDate, endDate, limit = 50, cursor } =
+    options
 
   try {
     const conditions = [eq(usageLog.userId, userId)]
@@ -231,6 +234,14 @@ export async function getUserUsageLogs(
 
     if (workspaceId) {
       conditions.push(eq(usageLog.workspaceId, workspaceId))
+    }
+
+    if (visibleWorkspaceIds) {
+      conditions.push(
+        visibleWorkspaceIds.length > 0
+          ? or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))
+          : isNull(usageLog.workspaceId)
+      )
     }
 
     if (startDate) {
@@ -281,6 +292,13 @@ export async function getUserUsageLogs(
     const summaryConditions = [eq(usageLog.userId, userId)]
     if (source) summaryConditions.push(eq(usageLog.source, source))
     if (workspaceId) summaryConditions.push(eq(usageLog.workspaceId, workspaceId))
+    if (visibleWorkspaceIds) {
+      summaryConditions.push(
+        visibleWorkspaceIds.length > 0
+          ? or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))
+          : isNull(usageLog.workspaceId)
+      )
+    }
     if (startDate) summaryConditions.push(gte(usageLog.createdAt, startDate))
     if (endDate) summaryConditions.push(lte(usageLog.createdAt, endDate))
 

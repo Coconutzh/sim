@@ -6,6 +6,7 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { getUserUsageLogs, type UsageLogSource } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { checkWorkspaceAccess, listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('UsageLogsAPI')
 
@@ -46,6 +47,15 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
 
     const { source, workspaceId, period, limit, cursor } = validation.data
 
+    if (workspaceId) {
+      const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+    }
+
+    const visibleWorkspaceIds = await listAccessibleWorkspaceIds(userId)
+
     let startDate: Date | undefined
     const endDate = new Date()
 
@@ -67,6 +77,7 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
     const result = await getUserUsageLogs(userId, {
       source: source as UsageLogSource | undefined,
       workspaceId,
+      visibleWorkspaceIds,
       startDate,
       endDate,
       limit,
