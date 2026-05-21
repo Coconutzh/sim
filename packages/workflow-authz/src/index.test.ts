@@ -11,6 +11,7 @@ const {
   workflowFolderTable,
   workflowPublicationScopeTable,
   workflowTable,
+  workgroupMemberTable,
   workspaceTable,
 } = vi.hoisted(() => {
   const resultsQueue: unknown[] = []
@@ -35,6 +36,7 @@ const {
     workspaceTable: { name: 'workspace' },
     permissionsTable: { name: 'permissions' },
     memberTable: { name: 'member' },
+    workgroupMemberTable: { name: 'workgroupMember' },
     workflowPublicationScopeTable: { name: 'workflowPublicationScope' },
     workflowFolderTable: { name: 'workflowFolder' },
     mockDb: {
@@ -50,6 +52,7 @@ vi.mock('@sim/db', () => ({
   permissions: permissionsTable,
   member: memberTable,
   workflowPublicationScope: workflowPublicationScopeTable,
+  workgroupMember: workgroupMemberTable,
   workflowFolder: workflowFolderTable,
 }))
 
@@ -58,11 +61,9 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
   inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
-  isNotNull: vi.fn((value: unknown) => ({ kind: 'isNotNull', value })),
-  or: vi.fn((...args: unknown[]) => ({ kind: 'or', args })),
 }))
 
-import { authorizeWorkflowByWorkspacePermission } from './index'
+import { authorizeWorkflowByWorkspacePermission, resolveCanvasScope } from './index'
 
 describe('authorizeWorkflowByWorkspacePermission', () => {
   beforeEach(() => {
@@ -70,7 +71,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
     mockResultsQueue.length = 0
   })
 
-  it('treats the workspace owner as admin without requiring a permission row', async () => {
+  it('treats a team admin member as admin for team canvas workflows', async () => {
     mockResultsQueue.push(
       [
         {
@@ -86,7 +87,8 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'organization',
         },
       ],
-      [{ ownerId: 'owner-1', workspaceMode: 'organization' }]
+      [{ ownerId: 'owner-1', workspaceMode: 'organization', workgroupId: 'wg-1' }],
+      [{ role: 'admin' }]
     )
 
     const result = await authorizeWorkflowByWorkspacePermission({
@@ -102,7 +104,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
     })
   })
 
-  it('includes owner-owned workgroups when evaluating selected workgroup visibility', async () => {
+  it('includes team memberships when evaluating selected workgroup visibility', async () => {
     mockResultsQueue.push(
       [
         {
@@ -118,7 +120,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'organization',
         },
       ],
-      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
+      [{ ownerId: 'other-user', workspaceMode: 'organization', workgroupId: 'publisher-wg' }],
       [],
       [{ workgroupId: 'viewer-wg' }],
       [{ id: 'scope-1' }]
@@ -152,7 +154,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceWorkgroupId: null,
         },
       ],
-      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
+      [{ ownerId: 'other-user', workspaceMode: 'organization', workgroupId: null }],
       []
     )
 
@@ -184,7 +186,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'personal',
         },
       ],
-      [{ ownerId: 'other-user', workspaceMode: 'personal' }],
+      [{ ownerId: 'other-user', workspaceMode: 'personal', workgroupId: 'personal-wg' }],
       []
     )
 
@@ -217,7 +219,7 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'personal',
         },
       ],
-      [{ ownerId: 'other-user', workspaceMode: 'personal' }]
+      [{ ownerId: 'other-user', workspaceMode: 'personal', workgroupId: 'wg-foreign' }]
     )
 
     const result = await authorizeWorkflowByWorkspacePermission({
@@ -252,9 +254,10 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
           workspaceMode: 'organization',
         },
       ],
-      [{ ownerId: 'other-user', workspaceMode: 'organization' }],
+      [{ ownerId: 'other-user', workspaceMode: 'organization', workgroupId: 'publisher-wg' }],
       [],
-      [{ workgroupId: 'viewer-wg', ownerId: 'other-user', workspaceMode: 'personal' }]
+      [],
+      []
     )
 
     const result = await authorizeWorkflowByWorkspacePermission({
@@ -269,5 +272,68 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
       workspacePermission: null,
       workspaceMode: 'organization',
     })
+  })
+
+  it('ignores stale workspace permission rows when the user is not a team member', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-7',
+            workspaceId: 'ws-team',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-team',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'team-wg',
+          workspaceMode: 'organization',
+        },
+      ],
+      [{ ownerId: 'creator-1', workspaceMode: 'organization', workgroupId: 'team-wg' }],
+      []
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-7',
+      userId: 'removed-user',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      status: 403,
+      workspacePermission: null,
+      accessSource: null,
+      workspaceMode: 'organization',
+    })
+  })
+})
+
+describe('resolveCanvasScope', () => {
+  it('resolves personal workspaces to personal scope', () => {
+    expect(resolveCanvasScope({ workspaceMode: 'personal', accessSource: 'workspace' })).toBe(
+      'personal'
+    )
+  })
+
+  it('resolves organization workgroup workspaces to team scope', () => {
+    expect(
+      resolveCanvasScope({
+        workspaceMode: 'organization',
+        workspaceWorkgroupId: 'workgroup-1',
+        accessSource: 'workspace',
+      })
+    ).toBe('team')
+  })
+
+  it('resolves cross-team publication access to showcase scope', () => {
+    expect(
+      resolveCanvasScope({
+        workspaceMode: 'organization',
+        workspaceWorkgroupId: 'workgroup-1',
+        accessSource: 'selected_workgroups',
+      })
+    ).toBe('showcase')
   })
 })

@@ -7,9 +7,10 @@ import {
   workflow,
   workflowFolder,
   workflowPublicationScope,
+  workgroupMember,
   workspace,
 } from '@sim/db'
-import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 export type ActiveWorkflowRecord = typeof workflow.$inferSelect
 
@@ -71,8 +72,30 @@ export async function assertActiveWorkflowContext(
 
 export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 export type WorkflowAccessSource = 'workspace' | 'organization' | 'selected_workgroups'
+export type CanvasScope = 'personal' | 'team' | 'showcase'
+export type CanvasPermission = 'read' | 'write' | 'publish' | 'admin'
 
 type WorkflowRecord = typeof workflow.$inferSelect
+
+export function resolveCanvasScope(params: {
+  workspaceMode?: WorkspaceMode | null
+  workspaceWorkgroupId?: string | null
+  accessSource?: WorkflowAccessSource | null
+}): CanvasScope | null {
+  if (params.accessSource === 'organization' || params.accessSource === 'selected_workgroups') {
+    return 'showcase'
+  }
+
+  if (params.workspaceMode === 'personal') {
+    return 'personal'
+  }
+
+  if (params.workspaceMode === 'organization' && params.workspaceWorkgroupId) {
+    return 'team'
+  }
+
+  return null
+}
 
 export class WorkflowLockedError extends Error {
   readonly status = 423
@@ -239,7 +262,11 @@ async function getWorkspacePermission(
   workspaceId: string
 ): Promise<PermissionType | null> {
   const [workspaceRow] = await db
-    .select({ ownerId: workspace.ownerId, workspaceMode: workspace.workspaceMode })
+    .select({
+      ownerId: workspace.ownerId,
+      workspaceMode: workspace.workspaceMode,
+      workgroupId: workspace.workgroupId,
+    })
     .from(workspace)
     .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
     .limit(1)
@@ -248,12 +275,29 @@ async function getWorkspacePermission(
     return null
   }
 
-  if (workspaceRow.ownerId === userId) {
+  if (workspaceRow.workspaceMode === 'personal') {
+    if (workspaceRow.ownerId !== userId) return null
     return 'admin'
   }
 
-  if (workspaceRow.workspaceMode === 'personal') {
-    return null
+  if (workspaceRow.workspaceMode === 'organization' && workspaceRow.workgroupId) {
+    const [membership] = await db
+      .select({ role: workgroupMember.role })
+      .from(workgroupMember)
+      .where(
+        and(
+          eq(workgroupMember.userId, userId),
+          eq(workgroupMember.workgroupId, workspaceRow.workgroupId)
+        )
+      )
+      .limit(1)
+
+    if (!membership) return null
+    return membership.role === 'admin' ? 'admin' : 'write'
+  }
+
+  if (workspaceRow.ownerId === userId) {
+    return 'admin'
   }
 
   const [permissionRow] = await db
@@ -286,38 +330,18 @@ async function getUserAccessibleWorkgroupIds(
   organizationId: string | null
 ): Promise<string[]> {
   const rows = await db
-    .select({
-      workgroupId: workspace.workgroupId,
-      ownerId: workspace.ownerId,
-      workspaceMode: workspace.workspaceMode,
-    })
-    .from(workspace)
-    .leftJoin(
-      permissions,
-      and(
-        eq(permissions.entityId, workspace.id),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.userId, userId)
-      )
-    )
+    .select({ workgroupId: workgroupMember.workgroupId })
+    .from(workgroupMember)
     .where(
       and(
-        isNull(workspace.archivedAt),
         organizationId
-          ? eq(workspace.organizationId, organizationId)
-          : isNull(workspace.organizationId),
-        or(eq(workspace.ownerId, userId), isNotNull(permissions.id))
+          ? eq(workgroupMember.organizationId, organizationId)
+          : isNull(workgroupMember.organizationId),
+        eq(workgroupMember.userId, userId)
       )
     )
 
-  return [
-    ...new Set(
-      rows
-        .filter((row) => row.ownerId === userId || row.workspaceMode !== 'personal')
-        .map((row) => row.workgroupId)
-        .filter((id): id is string => Boolean(id))
-    ),
-  ]
+  return [...new Set(rows.map((row) => row.workgroupId).filter((id): id is string => Boolean(id)))]
 }
 
 async function hasSelectedWorkgroupReadAccess(params: {

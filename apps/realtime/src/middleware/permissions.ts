@@ -78,15 +78,19 @@ export function checkRolePermission(
 export async function verifyWorkflowAccess(
   userId: string,
   workflowId: string
-): Promise<{ hasAccess: boolean; role?: string; workspaceId?: string }> {
+): Promise<{ hasAccess: boolean; role?: string; workspaceId?: string; canvasScope?: string }> {
   try {
-    const [{ db }, { workflow }, { authorizeWorkflowByWorkspacePermission }, { and, eq, isNull }] =
-      await Promise.all([
-        import('@sim/db'),
-        import('@sim/db/schema'),
-        import('@sim/workflow-authz'),
-        import('drizzle-orm'),
-      ])
+    const [
+      { db },
+      { workflow },
+      { authorizeWorkflowByWorkspacePermission, resolveCanvasScope },
+      { and, eq, isNull },
+    ] = await Promise.all([
+      import('@sim/db'),
+      import('@sim/db/schema'),
+      import('@sim/workflow-authz'),
+      import('drizzle-orm'),
+    ])
 
     const workflowData = await db
       .select({
@@ -116,20 +120,24 @@ export async function verifyWorkflowAccess(
       return { hasAccess: false }
     }
 
-    if (authorization.accessSource !== 'workspace') {
-      logger.warn(
-        `User ${userId} cannot join realtime for workflow ${workflowId} via ${authorization.accessSource} access`
-      )
-      return { hasAccess: false }
-    }
+    const canvasScope = resolveCanvasScope({
+      accessSource: authorization.accessSource,
+      workspaceMode: authorization.workspaceMode,
+      workspaceWorkgroupId: authorization.workspaceWorkgroupId,
+    })
+    const role =
+      authorization.accessSource === 'workspace'
+        ? (authorization.workspacePermission ?? 'read')
+        : 'read'
 
     logger.debug(
-      `User ${userId} has ${authorization.workspacePermission} access to workflow ${workflowId} (${workflowName}) via workspace ${workspaceId}`
+      `User ${userId} has ${role} access to workflow ${workflowId} (${workflowName}) via ${canvasScope ?? 'unknown'} canvas`
     )
     return {
       hasAccess: true,
-      role: authorization.workspacePermission,
+      role,
       workspaceId: workspaceId || undefined,
+      canvasScope: canvasScope ?? undefined,
     }
   } catch (error) {
     logger.error(
