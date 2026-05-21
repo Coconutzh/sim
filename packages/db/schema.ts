@@ -231,6 +231,74 @@ export const workflowPublicationScope = pgTable(
   })
 )
 
+export const workflowPublicationVersionVisibilityEnum = pgEnum(
+  'workflow_publication_version_visibility',
+  ['organization', 'selected_workgroups']
+)
+
+export type WorkflowPublicationVersionVisibility =
+  (typeof workflowPublicationVersionVisibilityEnum.enumValues)[number]
+
+export const workflowPublicationVersion = pgTable(
+  'workflow_publication_version',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    sourceWorkgroupId: text('source_workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    sourceDisciplineId: text('source_discipline_id').references(() => discipline.id, {
+      onDelete: 'set null',
+    }),
+    agentCode: text('agent_code').notNull(),
+    sourceWorkflowId: text('source_workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    publishedWorkflowId: text('published_workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
+    parentVersionId: text('parent_version_id'),
+    versionNumber: integer('version_number').notNull().default(1),
+    title: text('title').notNull(),
+    description: text('description'),
+    visibility: workflowPublicationVersionVisibilityEnum('visibility')
+      .notNull()
+      .default('organization'),
+    snapshotState: jsonb('snapshot_state').notNull(),
+    snapshotMetadata: jsonb('snapshot_metadata').notNull().default('{}'),
+    publishedBy: text('published_by').references(() => user.id, { onDelete: 'set null' }),
+    publishedAt: timestamp('published_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIdIdx: index('workflow_publication_version_organization_id_idx').on(
+      table.organizationId
+    ),
+    sourceWorkgroupIdIdx: index('workflow_publication_version_source_workgroup_id_idx').on(
+      table.sourceWorkgroupId
+    ),
+    sourceDisciplineIdIdx: index('workflow_publication_version_source_discipline_id_idx').on(
+      table.sourceDisciplineId
+    ),
+    agentCodeIdx: index('workflow_publication_version_agent_code_idx').on(table.agentCode),
+    sourceWorkflowIdIdx: index('workflow_publication_version_source_workflow_id_idx').on(
+      table.sourceWorkflowId
+    ),
+    publishedWorkflowIdIdx: index('workflow_publication_version_published_workflow_id_idx').on(
+      table.publishedWorkflowId
+    ),
+    parentVersionIdIdx: index('workflow_publication_version_parent_version_id_idx').on(
+      table.parentVersionId
+    ),
+    sourceWorkflowVersionUnique: uniqueIndex(
+      'workflow_publication_version_source_workflow_version_unique'
+    ).on(table.sourceWorkflowId, table.versionNumber),
+  })
+)
+
 export const workflowBlocks = pgTable(
   'workflow_blocks',
   {
@@ -555,6 +623,9 @@ export const settings = pgTable('settings', {
 
   // Workspace navigation
   lastActiveWorkspaceId: text('last_active_workspace_id'),
+  activeWorkgroupId: text('active_workgroup_id').references(() => workgroup.id, {
+    onDelete: 'set null',
+  }),
 
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
@@ -1054,6 +1125,41 @@ export const organization = pgTable('organization', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const agentProfile = pgTable(
+  'agent_profile',
+  {
+    id: text('id').primaryKey(),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    defaultSystemPrompt: text('default_system_prompt').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    codeUnique: uniqueIndex('agent_profile_code_unique').on(table.code),
+  })
+)
+
+export const discipline = pgTable(
+  'discipline',
+  {
+    id: text('id').primaryKey(),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    agentCode: text('agent_code').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    codeUnique: uniqueIndex('discipline_code_unique').on(table.code),
+    agentCodeIdx: index('discipline_agent_code_idx').on(table.agentCode),
+    sortOrderIdx: index('discipline_sort_order_idx').on(table.sortOrder),
+  })
+)
+
 export const workgroup = pgTable(
   'workgroup',
   {
@@ -1064,11 +1170,19 @@ export const workgroup = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
+    disciplineId: text('discipline_id').references(() => discipline.id, {
+      onDelete: 'set null',
+    }),
+    teamWorkspaceId: text('team_workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     organizationIdIdx: index('workgroup_organization_id_idx').on(table.organizationId),
+    disciplineIdIdx: index('workgroup_discipline_id_idx').on(table.disciplineId),
+    teamWorkspaceUnique: uniqueIndex('workgroup_team_workspace_unique').on(table.teamWorkspaceId),
     organizationSlugUnique: uniqueIndex('workgroup_org_slug_unique').on(
       table.organizationId,
       table.slug
@@ -1076,6 +1190,38 @@ export const workgroup = pgTable(
     organizationNameUnique: uniqueIndex('workgroup_org_name_unique').on(
       table.organizationId,
       table.name
+    ),
+  })
+)
+
+export const workgroupMemberRoleEnum = pgEnum('workgroup_member_role', ['admin', 'member'])
+
+export type WorkgroupMemberRole = (typeof workgroupMemberRoleEnum.enumValues)[number]
+
+export const workgroupMember = pgTable(
+  'workgroup_member',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workgroupId: text('workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    role: workgroupMemberRoleEnum('role').notNull().default('member'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIdIdx: index('workgroup_member_organization_id_idx').on(table.organizationId),
+    workgroupIdIdx: index('workgroup_member_workgroup_id_idx').on(table.workgroupId),
+    userIdIdx: index('workgroup_member_user_id_idx').on(table.userId),
+    workgroupUserUnique: uniqueIndex('workgroup_member_workgroup_user_unique').on(
+      table.workgroupId,
+      table.userId
     ),
   })
 )
@@ -1193,6 +1339,41 @@ export const workspace = pgTable(
     organizationIdIdx: index('workspace_organization_id_idx').on(table.organizationId),
     workgroupIdIdx: index('workspace_workgroup_id_idx').on(table.workgroupId),
     workspaceModeIdx: index('workspace_mode_idx').on(table.workspaceMode),
+  })
+)
+
+export const personalCanvasWorkspace = pgTable(
+  'personal_canvas_workspace',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workgroupId: text('workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('personal_canvas_workspace_user_id_idx').on(table.userId),
+    organizationIdIdx: index('personal_canvas_workspace_organization_id_idx').on(
+      table.organizationId
+    ),
+    workgroupIdIdx: index('personal_canvas_workspace_workgroup_id_idx').on(table.workgroupId),
+    userWorkgroupUnique: uniqueIndex('personal_canvas_workspace_user_workgroup_unique').on(
+      table.userId,
+      table.workgroupId
+    ),
+    workspaceUnique: uniqueIndex('personal_canvas_workspace_workspace_unique').on(
+      table.workspaceId
+    ),
   })
 )
 
@@ -1351,6 +1532,47 @@ export const permissions = pgTable(
       table.userId,
       table.entityType,
       table.entityId
+    ),
+  })
+)
+
+export const agentSkillBindingScopeEnum = pgEnum('agent_skill_binding_scope', [
+  'agent_template',
+  'team_override',
+])
+
+export type AgentSkillBindingScope = (typeof agentSkillBindingScopeEnum.enumValues)[number]
+
+export const agentSkillBinding = pgTable(
+  'agent_skill_binding',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    agentCode: text('agent_code').notNull(),
+    workgroupId: text('workgroup_id').references(() => workgroup.id, {
+      onDelete: 'cascade',
+    }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(true),
+    scope: agentSkillBindingScopeEnum('scope').notNull().default('agent_template'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationIdIdx: index('agent_skill_binding_organization_id_idx').on(table.organizationId),
+    agentCodeIdx: index('agent_skill_binding_agent_code_idx').on(table.agentCode),
+    workgroupIdIdx: index('agent_skill_binding_workgroup_id_idx').on(table.workgroupId),
+    skillIdIdx: index('agent_skill_binding_skill_id_idx').on(table.skillId),
+    bindingUnique: uniqueIndex('agent_skill_binding_unique').on(
+      table.organizationId,
+      table.agentCode,
+      table.workgroupId,
+      table.skillId,
+      table.scope
     ),
   })
 )

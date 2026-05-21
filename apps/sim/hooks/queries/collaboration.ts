@@ -1,0 +1,245 @@
+﻿import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  addWorkgroupMemberContract,
+  copySelectionContract,
+  createOrganizationWorkgroupContract,
+  getCopilotAgentProfileContract,
+  getPersonalWorkspaceContract,
+  getPublicationContract,
+  getPublicationTreeContract,
+  getTeamWorkspaceContract,
+  getWorkgroupMembersContract,
+  listAgentProfilesContract,
+  listDisciplinesContract,
+  listMyWorkgroupsContract,
+  listOrganizationWorkgroupsContract,
+  listShowcasePublicationsContract,
+  removeWorkgroupMemberContract,
+  setActiveWorkgroupContract,
+  updateWorkgroupMemberContract,
+  type CopySelectionBody,
+  type PublicationSummary,
+} from '@/lib/api/contracts/collaboration'
+
+export const collaborationKeys = {
+  all: ['collaboration'] as const,
+  disciplines: () => [...collaborationKeys.all, 'disciplines'] as const,
+  agents: () => [...collaborationKeys.all, 'agents'] as const,
+  me: () => [...collaborationKeys.all, 'me'] as const,
+  myWorkgroups: () => [...collaborationKeys.me(), 'workgroups'] as const,
+  organizations: () => [...collaborationKeys.all, 'organizations'] as const,
+  organizationWorkgroups: (organizationId?: string) =>
+    [...collaborationKeys.organizations(), organizationId ?? '', 'workgroups'] as const,
+  workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
+  workgroup: (workgroupId?: string) => [...collaborationKeys.workgroups(), workgroupId ?? ''] as const,
+  members: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
+  personalWorkspace: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'personal-workspace'] as const,
+  teamWorkspace: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'team-workspace'] as const,
+  publications: () => [...collaborationKeys.all, 'publications'] as const,
+  publicationList: (workgroupId?: string, filters?: PublicationFilters) =>
+    [...collaborationKeys.publications(), 'list', workgroupId ?? '', filters ?? {}] as const,
+  publication: (publicationVersionId?: string) =>
+    [...collaborationKeys.publications(), 'detail', publicationVersionId ?? ''] as const,
+  publicationTree: (publicationVersionId?: string) =>
+    [...collaborationKeys.publication(publicationVersionId), 'tree'] as const,
+  agentProfile: (workspaceId?: string) => [...collaborationKeys.agents(), 'workspace', workspaceId ?? ''] as const,
+}
+
+export interface PublicationFilters {
+  disciplineCode?: string
+  sourceWorkgroupId?: string
+  agentCode?:
+    | 'chief_director'
+    | 'show_director'
+    | 'stage_design'
+    | 'visual'
+    | 'broadcast_camera'
+    | 'lighting_sound'
+    | 'special_effects'
+    | 'music'
+    | 'props_costume'
+    | 'production'
+  limit?: number
+}
+
+export function useDisciplines() {
+  return useQuery({
+    queryKey: collaborationKeys.disciplines(),
+    queryFn: ({ signal }) => requestJson(listDisciplinesContract, { signal }),
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useAgentProfiles() {
+  return useQuery({
+    queryKey: collaborationKeys.agents(),
+    queryFn: ({ signal }) => requestJson(listAgentProfilesContract, { signal }),
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useMyWorkgroups(enabled = true) {
+  return useQuery({
+    queryKey: collaborationKeys.myWorkgroups(),
+    queryFn: ({ signal }) => requestJson(listMyWorkgroupsContract, { signal }),
+    enabled,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useSetActiveWorkgroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (workgroupId: string) => requestJson(setActiveWorkgroupContract, { body: { workgroupId } }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.me() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroups() })
+    },
+  })
+}
+
+export function useOrganizationWorkgroups(organizationId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationWorkgroups(organizationId),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationWorkgroupsContract, { params: { organizationId: organizationId as string }, signal }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useCreateWorkgroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string; name: string; disciplineId: string }) =>
+      requestJson(createOrganizationWorkgroupContract, {
+        params: { organizationId: variables.organizationId },
+        body: { name: variables.name, disciplineId: variables.disciplineId },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function useWorkgroupMembers(workgroupId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.members(workgroupId),
+    queryFn: ({ signal }) => requestJson(getWorkgroupMembersContract, { params: { workgroupId: workgroupId as string }, signal }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useAddWorkgroupMember() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; userId: string; role: 'admin' | 'member' }) =>
+      requestJson(addWorkgroupMemberContract, {
+        params: { workgroupId: variables.workgroupId },
+        body: { userId: variables.userId, role: variables.role },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function useUpdateWorkgroupMember() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; userId: string; role: 'admin' | 'member' }) =>
+      requestJson(updateWorkgroupMemberContract, {
+        params: { workgroupId: variables.workgroupId, userId: variables.userId },
+        body: { role: variables.role },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+    },
+  })
+}
+
+export function useRemoveWorkgroupMember() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; userId: string }) =>
+      requestJson(removeWorkgroupMemberContract, { params: { workgroupId: variables.workgroupId, userId: variables.userId } }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function usePersonalWorkspace(workgroupId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.personalWorkspace(workgroupId),
+    queryFn: ({ signal }) => requestJson(getPersonalWorkspaceContract, { params: { workgroupId: workgroupId as string }, signal }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useTeamWorkspace(workgroupId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.teamWorkspace(workgroupId),
+    queryFn: ({ signal }) => requestJson(getTeamWorkspaceContract, { params: { workgroupId: workgroupId as string }, signal }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useShowcasePublications(workgroupId?: string, filters?: PublicationFilters) {
+  return useQuery({
+    queryKey: collaborationKeys.publicationList(workgroupId, filters),
+    queryFn: ({ signal }) =>
+      requestJson(listShowcasePublicationsContract, {
+        params: { workgroupId: workgroupId as string },
+        query: filters ?? {},
+        signal,
+      }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePublication(publicationVersionId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.publication(publicationVersionId),
+    queryFn: ({ signal }) => requestJson(getPublicationContract, { params: { publicationVersionId: publicationVersionId as string }, signal }),
+    enabled: Boolean(publicationVersionId),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function usePublicationTree(publicationVersionId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.publicationTree(publicationVersionId),
+    queryFn: ({ signal }) => requestJson(getPublicationTreeContract, { params: { publicationVersionId: publicationVersionId as string }, signal }),
+    enabled: Boolean(publicationVersionId),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useCopilotAgentProfile(workspaceId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.agentProfile(workspaceId),
+    queryFn: ({ signal }) => requestJson(getCopilotAgentProfileContract, { query: { workspaceId: workspaceId as string }, signal }),
+    enabled: Boolean(workspaceId),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useCopySelection() {
+  return useMutation({
+    mutationFn: (variables: { workflowId: string; body: CopySelectionBody }) =>
+      requestJson(copySelectionContract, { params: { id: variables.workflowId }, body: variables.body }),
+  })
+}
+
+export type { PublicationSummary }

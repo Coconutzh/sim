@@ -6,6 +6,7 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { createPublicationVersion } from '@/lib/collaboration/service'
 import { publishWorkflowToMainline } from '@/lib/workflows/publication'
 
 const logger = createLogger('WorkflowPublishAPI')
@@ -34,12 +35,39 @@ export const POST = withRouteHandler(
       const publishedWorkflow = await publishWorkflowToMainline({
         workflowId: parsed.data.params.id,
         userId: auth.userId,
-        name: parsed.data.body.name,
+        name: parsed.data.body.name ?? parsed.data.body.title,
         visibility: parsed.data.body.visibility,
-        viewerWorkgroupIds: parsed.data.body.viewerWorkgroupIds,
+        viewerWorkgroupIds:
+          parsed.data.body.targetWorkgroupIds.length > 0
+            ? parsed.data.body.targetWorkgroupIds
+            : parsed.data.body.viewerWorkgroupIds,
+      })
+      const publicationVersion = await createPublicationVersion({
+        sourceWorkflowId: parsed.data.params.id,
+        publishedWorkflowId: publishedWorkflow.id,
+        title: parsed.data.body.title ?? parsed.data.body.name ?? publishedWorkflow.name,
+        description: parsed.data.body.description ?? null,
+        visibility:
+          parsed.data.body.visibility === 'selected_workgroups'
+            ? 'selected_workgroups'
+            : 'organization',
+        parentVersionId: parsed.data.body.parentVersionId ?? null,
+        publishedBy: auth.userId,
       })
 
-      return NextResponse.json({ publishedWorkflow }, { status: 200 })
+      return NextResponse.json(
+        {
+          publishedWorkflow,
+          publicationVersion: {
+            id: publicationVersion.id,
+            title: publicationVersion.title,
+            versionNumber: publicationVersion.versionNumber,
+            parentVersionId: publicationVersion.parentVersionId,
+            publishedAt: publicationVersion.publishedAt.toISOString(),
+          },
+        },
+        { status: 200 }
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to publish workflow'
       logger.error(`[${requestId}] Failed to publish workflow`, { error })

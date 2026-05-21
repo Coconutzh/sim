@@ -321,8 +321,12 @@ export type WorkflowTracksResponse = z.output<typeof workflowTracksResponseSchem
 
 export const publishWorkflowBodySchema = z.object({
   name: z.string().min(1).optional(),
+  title: z.string().trim().min(1).max(160).optional(),
+  description: z.string().trim().max(2000).optional(),
   visibility: workflowVisibilitySchema.optional().default('organization'),
   viewerWorkgroupIds: z.array(nonEmptyIdSchema).optional().default([]),
+  targetWorkgroupIds: z.array(nonEmptyIdSchema).optional().default([]),
+  parentVersionId: z.string().nullable().optional(),
 })
 
 export type PublishWorkflowBody = z.input<typeof publishWorkflowBodySchema>
@@ -801,6 +805,15 @@ export const publishWorkflowContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       publishedWorkflow: workflowListItemSchema,
+      publicationVersion: z
+        .object({
+          id: z.string(),
+          title: z.string(),
+          versionNumber: z.number(),
+          parentVersionId: z.string().nullable(),
+          publishedAt: z.string(),
+        })
+        .optional(),
     }),
   },
 })

@@ -22,6 +22,7 @@ import {
   getUsersWithPermissions,
   getWorkspaceWithOwner,
 } from '@/lib/workspaces/permissions/utils'
+import { resolveAgentForWorkspace } from '@/lib/collaboration/service'
 
 const logger = createLogger('WorkspaceContext')
 
@@ -276,6 +277,7 @@ export async function generateWorkspaceContext(
       mcpServerRows,
       skillRows,
       jobRows,
+      agentContext,
     ] = await Promise.all([
       getUsersWithPermissions(workspaceId),
 
@@ -359,6 +361,8 @@ export async function generateWorkspaceContext(
             isNull(workflowSchedule.archivedAt)
           )
         ),
+
+      resolveAgentForWorkspace({ workspaceId, userId }).catch(() => null),
     ])
 
     const rowCounts =
@@ -414,7 +418,7 @@ export async function generateWorkspaceContext(
       return path
     }
 
-    return buildWorkspaceMd({
+    const workspaceMd = buildWorkspaceMd({
       workspace: wsRow,
       members,
       workflows: workflows.map((wf) => ({
@@ -444,6 +448,11 @@ export async function generateWorkspaceContext(
           sourceTaskName: j.sourceTaskName,
         })),
     })
+    if (!agentContext) return workspaceMd
+    return [
+      `## Current Agent\n- **Agent**: ${agentContext.agent.name} (${agentContext.agent.code})\n- **Discipline**: ${agentContext.discipline.name}\n- **Team**: ${agentContext.workgroup.name}\n- **Instruction**: ${agentContext.agent.defaultSystemPrompt}`,
+      workspaceMd,
+    ].join('\n\n')
   } catch (err) {
     logger.error('Failed to generate workspace context', {
       workspaceId,

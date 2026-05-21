@@ -9,6 +9,7 @@ import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { getWorkflowRedirectPath } from '@/app/workspace/redirect-workflow'
+import { useMyWorkgroups } from '@/hooks/queries/collaboration'
 import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')
@@ -20,6 +21,7 @@ export default function WorkspacePage() {
   const hasRedirectedRef = useRef(false)
 
   const { data, isLoading: isWorkspacesLoading } = useWorkspacesWithMetadata(isAuthenticated)
+  const { data: workgroupData, isLoading: isWorkgroupsLoading } = useMyWorkgroups(isAuthenticated)
 
   useEffect(() => {
     if (isSessionPending || hasRedirectedRef.current) return
@@ -30,9 +32,21 @@ export default function WorkspacePage() {
       return
     }
 
-    if (isWorkspacesLoading || !data) return
+    if (isWorkspacesLoading || isWorkgroupsLoading || !data || !workgroupData) return
 
     hasRedirectedRef.current = true
+
+    if (workgroupData.workgroups.length > 0) {
+      logger.info('Redirecting to workbench for team-based canvas navigation')
+      router.replace('/workbench')
+      return
+    }
+
+    if (workgroupData.workgroups.length === 0) {
+      logger.info('Redirecting to workbench empty state because user has no team assignment')
+      router.replace('/workbench')
+      return
+    }
 
     const urlParams = new URLSearchParams(window.location.search)
     const redirectWorkflowId = urlParams.get('redirect_workflow')
@@ -58,9 +72,9 @@ export default function WorkspacePage() {
 
     logger.info(`Redirecting to workspace: ${targetWorkspace.id}`)
     router.replace(`/workspace/${targetWorkspace.id}/home`)
-  }, [session, isSessionPending, isWorkspacesLoading, data, router])
+  }, [session, isSessionPending, isWorkspacesLoading, isWorkgroupsLoading, data, workgroupData, router])
 
-  if (isSessionPending || isWorkspacesLoading) {
+  if (isSessionPending || isWorkspacesLoading || isWorkgroupsLoading) {
     return (
       <div className='flex h-screen w-full items-center justify-center'>
         <div

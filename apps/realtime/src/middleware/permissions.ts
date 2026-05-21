@@ -53,11 +53,7 @@ const WRITE_OPERATIONS: string[] = [
   WORKFLOW_OPERATIONS.REPLACE_STATE,
 ]
 
-// Read role can only update positions (for cursor sync, etc.)
-const READ_OPERATIONS: string[] = [
-  BLOCK_OPERATIONS.UPDATE_POSITION,
-  BLOCKS_OPERATIONS.BATCH_UPDATE_POSITIONS,
-]
+const READ_OPERATIONS: string[] = []
 
 // Define operation permissions based on role
 const ROLE_PERMISSIONS: Record<string, string[]> = {

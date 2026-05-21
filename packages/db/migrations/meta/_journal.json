@@ -1436,6 +1436,13 @@
       "when": 1778731238809,
       "tag": "0205_fast_sleeper",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1779369954327,
+      "tag": "0206_cheerful_lilandra",
+      "breakpoints": true
     }
   ]
 }

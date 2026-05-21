@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { listPublishedWorkflowsForWorkgroupContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { listVisiblePublications } from '@/lib/collaboration/service'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { listPublishedWorkflowsForWorkgroup } from '@/lib/workflows/publication'
@@ -27,8 +28,18 @@ export const GET = withRouteHandler(
         workgroupId: parsed.data.params.workgroupId,
         userId: auth.userId,
       })
+      const publications = await listVisiblePublications({
+        workgroupId: parsed.data.params.workgroupId,
+        userId: auth.userId,
+        disciplineCode: request.nextUrl.searchParams.get('disciplineCode') ?? undefined,
+        sourceWorkgroupId: request.nextUrl.searchParams.get('sourceWorkgroupId') ?? undefined,
+        agentCode: request.nextUrl.searchParams.get('agentCode') ?? undefined,
+        limit: request.nextUrl.searchParams.get('limit')
+          ? Number(request.nextUrl.searchParams.get('limit'))
+          : undefined,
+      })
 
-      return NextResponse.json({ data }, { status: 200 })
+      return NextResponse.json({ data, publications, nextCursor: null }, { status: 200 })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to list published workflows'
       logger.error(`[${requestId}] Failed to list published workflows`, { error })
