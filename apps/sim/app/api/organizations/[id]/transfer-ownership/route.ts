@@ -18,6 +18,8 @@ const logger = createLogger('TransferOwnershipAPI')
 
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationIdForLog: string | undefined
+
     try {
       const session = await getSession()
       if (!session?.user?.id) {
@@ -28,6 +30,7 @@ export const POST = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id: organizationId } = parsed.data.params
+      organizationIdForLog = organizationId
       const { newOwnerUserId, alsoLeave } = parsed.data.body
 
       if (newOwnerUserId === session.user.id) {
@@ -208,7 +211,7 @@ export const POST = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to transfer organization ownership', {
-        organizationId: (await context.params).id,
+        organizationId: organizationIdForLog,
         error,
       })
       return NextResponse.json({ error: 'Failed to transfer ownership' }, { status: 500 })
