@@ -13,7 +13,7 @@ vi.mock('@/lib/workflows/publication', () => ({
   updateWorkflowPublicationDetails: mockUpdateWorkflowPublicationDetails,
 }))
 
-import { PATCH } from '@/app/api/workflows/[id]/publication/route'
+import { GET, PATCH } from '@/app/api/workflows/[id]/publication/route'
 
 describe('Workflow Publication API Route', () => {
   beforeEach(() => {
@@ -45,6 +45,39 @@ describe('Workflow Publication API Route', () => {
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({
       error: 'Workspace access required',
+    })
+  })
+
+  it('hides foreign personal workflows from publication reads', async () => {
+    mockGetWorkflowPublicationDetails.mockRejectedValueOnce(new Error('Workflow not found'))
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/hidden-1/publication')
+
+    const response = await GET(request, { params: Promise.resolve({ id: 'hidden-1' }) })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+  })
+
+  it('hides foreign personal workflows from publication updates', async () => {
+    mockUpdateWorkflowPublicationDetails.mockRejectedValueOnce(new Error('Workflow not found'))
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/hidden-1/publication', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        visibility: 'workspace',
+        viewerWorkgroupIds: [],
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await PATCH(request, { params: Promise.resolve({ id: 'hidden-1' }) })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
     })
   })
 })

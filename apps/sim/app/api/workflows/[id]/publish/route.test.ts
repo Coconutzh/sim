@@ -43,4 +43,24 @@ describe('Workflow Publish API Route', () => {
       error: 'Workspace access required',
     })
   })
+
+  it('hides foreign personal workflows from publish attempts', async () => {
+    mockPublishWorkflowToMainline.mockRejectedValueOnce(new Error('Workflow not found'))
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/hidden-1/publish', {
+      method: 'POST',
+      body: JSON.stringify({
+        visibility: 'workspace',
+        viewerWorkgroupIds: [],
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await POST(request, { params: Promise.resolve({ id: 'hidden-1' }) })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+  })
 })

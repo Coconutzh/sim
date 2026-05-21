@@ -176,4 +176,36 @@ describe('workflow execute async route', () => {
     expect(mockPreprocessExecution).not.toHaveBeenCalled()
     expect(mockEnqueue).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflows before execution starts', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: {
+        id: 'workflow-hidden',
+        userId: 'owner-1',
+        workspaceId: 'workspace-hidden',
+      },
+    })
+
+    const req = createMockRequest(
+      'POST',
+      { input: { hello: 'world' } },
+      {
+        'Content-Type': 'application/json',
+        'X-Execution-Mode': 'async',
+      }
+    )
+    const params = Promise.resolve({ id: 'workflow-hidden' })
+
+    const response = await POST(req as any, { params })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+    expect(mockPreprocessExecution).not.toHaveBeenCalled()
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
 })

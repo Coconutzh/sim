@@ -98,4 +98,29 @@ describe('POST /api/workflows/[id]/autolayout', () => {
     expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflows from autolayout', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'workflow-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/workflows/workflow-hidden/autolayout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: Promise.resolve({ id: 'workflow-hidden' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+    expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
+    expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
 })
