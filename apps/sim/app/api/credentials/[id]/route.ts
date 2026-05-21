@@ -63,7 +63,10 @@ export const GET = withRouteHandler(
       if (!access.credential) {
         return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
       }
-      if (!access.hasWorkspaceAccess || !access.member) {
+      if (!access.workspaceExists || !access.hasWorkspaceAccess) {
+        return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
+      }
+      if (!access.member) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
@@ -97,7 +100,10 @@ export const PUT = withRouteHandler(
       if (!access.credential) {
         return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
       }
-      if (!access.hasWorkspaceAccess || !access.isAdmin) {
+      if (!access.workspaceExists || !access.hasWorkspaceAccess) {
+        return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
+      }
+      if (!access.isAdmin) {
         return NextResponse.json({ error: 'Credential admin permission required' }, { status: 403 })
       }
 
@@ -200,7 +206,10 @@ export const DELETE = withRouteHandler(
       if (!access.credential) {
         return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
       }
-      if (!access.hasWorkspaceAccess || !access.isAdmin) {
+      if (!access.workspaceExists || !access.hasWorkspaceAccess) {
+        return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
+      }
+      if (!access.isAdmin) {
         return NextResponse.json({ error: 'Credential admin permission required' }, { status: 403 })
       }
 

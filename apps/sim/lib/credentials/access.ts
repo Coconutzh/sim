@@ -14,6 +14,7 @@ type CredentialRecord = typeof credential.$inferSelect
 export interface CredentialActorContext {
   credential: CredentialRecord | null
   member: ActiveCredentialMember | null
+  workspaceExists: boolean
   hasWorkspaceAccess: boolean
   canWriteWorkspace: boolean
   isAdmin: boolean
@@ -36,6 +37,7 @@ export async function getCredentialActorContext(
     return {
       credential: null,
       member: null,
+      workspaceExists: false,
       hasWorkspaceAccess: false,
       canWriteWorkspace: false,
       isAdmin: false,
@@ -60,6 +62,7 @@ export async function getCredentialActorContext(
   return {
     credential: credentialRow,
     member: memberRow ?? null,
+    workspaceExists: workspaceAccess.exists,
     hasWorkspaceAccess: workspaceAccess.hasAccess,
     canWriteWorkspace: workspaceAccess.canWrite,
     isAdmin,

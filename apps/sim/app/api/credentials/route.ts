@@ -178,8 +178,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const { workspaceId, type, providerId, credentialId: lookupCredentialId } = parseResult.data
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
 
-    if (!workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     if (lookupCredentialId) {
@@ -297,6 +297,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     } = parsed.data.body
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
     if (!workspaceAccess.canWrite) {
       return NextResponse.json({ error: 'Write permission required' }, { status: 403 })
     }
