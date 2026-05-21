@@ -28,6 +28,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const userId = session.user.id
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
     if (!workspaceAccess.canWrite) {
       return NextResponse.json({ error: 'Write permission required' }, { status: 403 })
     }
