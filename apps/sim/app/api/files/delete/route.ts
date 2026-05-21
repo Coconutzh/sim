@@ -9,7 +9,7 @@ import type { StorageContext } from '@/lib/uploads/config'
 import { deleteFile, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { deleteFileMetadata } from '@/lib/uploads/server/metadata'
 import { extractStorageKey, inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { verifyFileAccess } from '@/app/api/files/authorization'
+import { verifyFileWriteAccess } from '@/app/api/files/authorization'
 import {
   createErrorResponse,
   createOptionsResponse,
@@ -65,7 +65,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       const storageContext: StorageContext = context || inferContextFromKey(key)
 
-      const hasAccess = await verifyFileAccess(
+      const hasAccess = await verifyFileWriteAccess(
         key,
         userId,
         undefined, // customConfig

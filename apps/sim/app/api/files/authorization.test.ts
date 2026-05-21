@@ -41,7 +41,7 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-import { verifyFileAccess } from '@/app/api/files/authorization'
+import { verifyFileAccess, verifyFileWriteAccess } from '@/app/api/files/authorization'
 
 describe('verifyFileAccess', () => {
   beforeEach(() => {
@@ -123,5 +123,28 @@ describe('verifyFileAccess', () => {
 
     expect(granted).toBe(false)
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('denies workspace file writes for read-only workspace members', async () => {
+    mockGetFileMetadata.mockResolvedValueOnce({ workspaceId: 'ws-1' })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const granted = await verifyFileWriteAccess('ws-1/file.txt', 'user-1')
+
+    expect(granted).toBe(false)
+  })
+
+  it('allows writes for owner-scoped regular uploads without workspace metadata', async () => {
+    mockGetFileMetadata.mockResolvedValueOnce({ userId: 'user-1' })
+
+    const granted = await verifyFileWriteAccess('legacy-upload.txt', 'user-1', {}, 'general')
+
+    expect(granted).toBe(true)
   })
 })

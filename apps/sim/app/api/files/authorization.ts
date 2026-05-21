@@ -19,9 +19,12 @@ export interface AuthorizationResult {
   workspaceId?: string
 }
 
-async function hasVisibleWorkspacePermission(
+type FileAccessMode = 'read' | 'write'
+
+async function hasWorkspacePermission(
   userId: string,
-  workspaceId: string
+  workspaceId: string,
+  accessMode: FileAccessMode
 ): Promise<boolean> {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
@@ -29,7 +32,11 @@ async function hasVisibleWorkspacePermission(
   }
 
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-  return permission !== null
+  if (accessMode === 'read') {
+    return permission !== null
+  }
+
+  return permission === 'write' || permission === 'admin'
 }
 
 /**
@@ -123,9 +130,30 @@ export async function verifyFileAccess(
   context?: StorageContext | 'general',
   isLocal?: boolean
 ): Promise<boolean> {
+  return verifyFileAccessWithMode(cloudKey, userId, 'read', customConfig, context, isLocal)
+}
+
+export async function verifyFileWriteAccess(
+  cloudKey: string,
+  userId: string,
+  customConfig?: StorageConfig,
+  context?: StorageContext | 'general',
+  isLocal?: boolean
+): Promise<boolean> {
+  return verifyFileAccessWithMode(cloudKey, userId, 'write', customConfig, context, isLocal)
+}
+
+async function verifyFileAccessWithMode(
+  cloudKey: string,
+  userId: string,
+  accessMode: FileAccessMode,
+  customConfig?: StorageConfig,
+  context?: StorageContext | 'general',
+  isLocal?: boolean
+): Promise<boolean> {
   try {
     if (context === 'general') {
-      return await verifyRegularFileAccess(cloudKey, userId, customConfig, isLocal)
+      return await verifyRegularFileAccess(cloudKey, userId, accessMode, customConfig, isLocal)
     }
 
     // Infer context from key if not explicitly provided
@@ -137,18 +165,22 @@ export async function verifyFileAccess(
       inferredContext === 'og-images' ||
       inferredContext === 'workspace-logos'
     ) {
+      if (accessMode === 'write') {
+        logger.warn('Public file write access denied', { cloudKey, context: inferredContext })
+        return false
+      }
       logger.info('Public file access allowed', { cloudKey, context: inferredContext })
       return true
     }
 
     // 1. Workspace / mothership files: Check database first (most reliable for both local and cloud)
     if (inferredContext === 'workspace' || inferredContext === 'mothership') {
-      return await verifyWorkspaceFileAccess(cloudKey, userId, customConfig, isLocal)
+      return await verifyWorkspaceFileAccess(cloudKey, userId, accessMode, customConfig, isLocal)
     }
 
     // 2. Execution files: workspace_id/workflow_id/execution_id/filename
     if (inferredContext === 'execution') {
-      return await verifyExecutionFileAccess(cloudKey, userId, customConfig)
+      return await verifyExecutionFileAccess(cloudKey, userId, accessMode, customConfig)
     }
 
     // 3. Copilot files: Check database first, then metadata, then path pattern (legacy)
@@ -158,17 +190,17 @@ export async function verifyFileAccess(
 
     // 4. KB files: kb/filename
     if (inferredContext === 'knowledge-base') {
-      return await verifyKBFileAccess(cloudKey, userId, customConfig)
+      return await verifyKBFileAccess(cloudKey, userId, accessMode, customConfig)
     }
 
     // 5. Chat files: chat/filename
     if (inferredContext === 'chat') {
-      return await verifyChatFileAccess(cloudKey, userId, customConfig)
+      return await verifyChatFileAccess(cloudKey, userId, accessMode, customConfig)
     }
 
     // 6. Regular uploads: UUID-filename or timestamp-filename
     // Check metadata for userId/workspaceId, or database for workspace files
-    return await verifyRegularFileAccess(cloudKey, userId, customConfig, isLocal)
+    return await verifyRegularFileAccess(cloudKey, userId, accessMode, customConfig, isLocal)
   } catch (error) {
     logger.error('Error verifying file access:', { cloudKey, userId, error })
     // Deny access on error to be safe
@@ -183,6 +215,7 @@ export async function verifyFileAccess(
 async function verifyWorkspaceFileAccess(
   cloudKey: string,
   userId: string,
+  accessMode: FileAccessMode,
   customConfig?: StorageConfig,
   isLocal?: boolean
 ): Promise<boolean> {
@@ -201,9 +234,10 @@ async function verifyWorkspaceFileAccess(
     // Priority 1: Check database (most reliable, works for both local and cloud)
     const workspaceFileRecord = await lookupWorkspaceFileByKey(cloudKey)
     if (workspaceFileRecord) {
-      const hasPermission = await hasVisibleWorkspacePermission(
+      const hasPermission = await hasWorkspacePermission(
         userId,
-        workspaceFileRecord.workspaceId
+        workspaceFileRecord.workspaceId,
+        accessMode
       )
       if (hasPermission) {
         logger.debug('Workspace file access granted (database lookup)', {
@@ -227,7 +261,7 @@ async function verifyWorkspaceFileAccess(
     const workspaceId = metadata.workspaceId
 
     if (workspaceId) {
-      const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+      const hasPermission = await hasWorkspacePermission(userId, workspaceId, accessMode)
       if (hasPermission) {
         logger.debug('Workspace file access granted (metadata)', {
           userId,
@@ -260,6 +294,7 @@ async function verifyWorkspaceFileAccess(
 async function verifyExecutionFileAccess(
   cloudKey: string,
   userId: string,
+  accessMode: FileAccessMode,
   customConfig?: StorageConfig
 ): Promise<boolean> {
   const parts = cloudKey.split('/')
@@ -287,7 +322,7 @@ async function verifyExecutionFileAccess(
     return false
   }
 
-  const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+  const hasPermission = await hasWorkspacePermission(userId, workspaceId, accessMode)
   if (!hasPermission) {
     logger.warn('User does not have workspace access for execution file', {
       userId,
@@ -380,6 +415,7 @@ async function verifyCopilotFileAccess(
 async function verifyKBFileAccess(
   cloudKey: string,
   userId: string,
+  accessMode: FileAccessMode,
   customConfig?: StorageConfig
 ): Promise<boolean> {
   try {
@@ -408,7 +444,7 @@ async function verifyKBFileAccess(
         continue
       }
 
-      const hasPermission = await hasVisibleWorkspacePermission(userId, doc.workspaceId)
+      const hasPermission = await hasWorkspacePermission(userId, doc.workspaceId, accessMode)
       if (hasPermission) {
         logger.debug('KB file access granted (active document lookup)', {
           userId,
@@ -448,6 +484,7 @@ async function verifyKBFileAccess(
 async function verifyChatFileAccess(
   cloudKey: string,
   userId: string,
+  accessMode: FileAccessMode,
   customConfig?: StorageConfig
 ): Promise<boolean> {
   try {
@@ -461,7 +498,7 @@ async function verifyChatFileAccess(
       return false
     }
 
-    const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+    const hasPermission = await hasWorkspacePermission(userId, workspaceId, accessMode)
     if (!hasPermission) {
       logger.warn('User does not have workspace access for chat file', {
         userId,
@@ -487,6 +524,7 @@ async function verifyChatFileAccess(
 async function verifyRegularFileAccess(
   cloudKey: string,
   userId: string,
+  accessMode: FileAccessMode,
   customConfig?: StorageConfig,
   isLocal?: boolean
 ): Promise<boolean> {
@@ -495,9 +533,10 @@ async function verifyRegularFileAccess(
     // This handles legacy files that might not have metadata
     const workspaceFileRecord = await lookupWorkspaceFileByKey(cloudKey)
     if (workspaceFileRecord) {
-      const hasPermission = await hasVisibleWorkspacePermission(
+      const hasPermission = await hasWorkspacePermission(
         userId,
-        workspaceFileRecord.workspaceId
+        workspaceFileRecord.workspaceId,
+        accessMode
       )
       if (hasPermission) {
         logger.debug('Regular file access granted (workspace file from database)', {
@@ -522,7 +561,7 @@ async function verifyRegularFileAccess(
     const workspaceId = metadata.workspaceId
 
     if (workspaceId) {
-      const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+      const hasPermission = await hasWorkspacePermission(userId, workspaceId, accessMode)
       if (hasPermission) {
         logger.debug('Regular file access granted (workspace membership)', {
           userId,

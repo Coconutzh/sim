@@ -11,12 +11,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const mockVerifyFileAccess = vi.fn()
+  const mockVerifyFileWriteAccess = vi.fn()
   const mockVerifyWorkspaceFileAccess = vi.fn()
   const mockGetStorageProvider = vi.fn()
   const mockIsUsingCloudStorage = vi.fn()
 
   return {
     mockVerifyFileAccess,
+    mockVerifyFileWriteAccess,
     mockVerifyWorkspaceFileAccess,
     mockGetStorageProvider,
     mockIsUsingCloudStorage,
@@ -58,6 +60,7 @@ vi.mock('@sim/utils/id', () => ({
 
 vi.mock('@/app/api/files/authorization', () => ({
   verifyFileAccess: mocks.mockVerifyFileAccess,
+  verifyFileWriteAccess: mocks.mockVerifyFileWriteAccess,
   verifyWorkspaceFileAccess: mocks.mockVerifyWorkspaceFileAccess,
 }))
 
@@ -108,6 +111,7 @@ describe('File Delete API Route', () => {
       error: undefined,
     })
     mocks.mockVerifyFileAccess.mockResolvedValue(true)
+    mocks.mockVerifyFileWriteAccess.mockResolvedValue(true)
     mocks.mockVerifyWorkspaceFileAccess.mockResolvedValue(true)
     storageServiceMockFns.mockDeleteFile.mockResolvedValue(undefined)
     storageServiceMockFns.mockHasCloudStorage.mockReturnValue(true)
@@ -197,6 +201,22 @@ describe('File Delete API Route', () => {
     expect(response.status).toBe(400)
     expect(data).toHaveProperty('error', 'InvalidRequestError')
     expect(data).toHaveProperty('message', 'No file path provided')
+  })
+
+  it('should reject deletion when the user only has read access to the file', async () => {
+    mocks.mockVerifyFileWriteAccess.mockResolvedValueOnce(false)
+
+    const req = createMockRequest('POST', {
+      filePath: '/api/files/serve/workspace/test-workspace-id/read-only.txt',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toHaveProperty('error', 'FileNotFoundError')
+    expect(storageServiceMockFns.mockDeleteFile).not.toHaveBeenCalled()
+    expect(mocks.mockVerifyFileWriteAccess).toHaveBeenCalled()
   })
 
   it('should handle CORS preflight requests', async () => {
