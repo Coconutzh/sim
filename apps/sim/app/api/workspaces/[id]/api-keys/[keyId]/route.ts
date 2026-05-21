@@ -10,7 +10,7 @@ import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceApiKeyAPI')
 
@@ -27,6 +27,10 @@ export const PUT = withRouteHandler(
       }
 
       const userId = session.user.id
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission !== 'admin') {
@@ -136,6 +140,10 @@ export const DELETE = withRouteHandler(
       }
 
       const userId = session.user.id
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission !== 'admin') {
