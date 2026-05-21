@@ -240,6 +240,15 @@ export type WebhookExecutionPayload = {
   credentialId?: string
 }
 
+export function assertWebhookExecutionRecordMatchesPayload(
+  webhookRecord: Pick<typeof webhook.$inferSelect, 'id' | 'workflowId'>,
+  payload: Pick<WebhookExecutionPayload, 'webhookId' | 'workflowId'>
+) {
+  if (webhookRecord.id !== payload.webhookId || webhookRecord.workflowId !== payload.workflowId) {
+    throw new Error('Webhook record does not match execution payload')
+  }
+}
+
 export async function executeWebhookJob(payload: WebhookExecutionPayload) {
   const correlation = buildWebhookCorrelation(payload)
   const executionId = correlation.executionId
@@ -422,6 +431,7 @@ async function executeWebhookJobInternal(
     if (!webhookRecord) {
       throw new Error(`Webhook record not found: ${payload.webhookId}`)
     }
+    assertWebhookExecutionRecordMatchesPayload(webhookRecord, payload)
 
     const resolvedWebhookRecord = await resolveWebhookExecutionProviderConfig(
       webhookRecord,
