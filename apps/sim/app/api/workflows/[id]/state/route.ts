@@ -50,7 +50,9 @@ export const GET = withRouteHandler(
         action: 'read',
       })
       if (!authorization.allowed) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        const status = authorization.status || 403
+        const message = status === 404 ? 'Workflow not found' : authorization.message || 'Forbidden'
+        return NextResponse.json({ error: message }, { status })
       }
 
       const snapshot = await db.transaction(async (tx) => {

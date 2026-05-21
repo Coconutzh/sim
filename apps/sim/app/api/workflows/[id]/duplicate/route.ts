@@ -104,7 +104,12 @@ export const POST = withRouteHandler(
           return NextResponse.json({ error: 'Source workflow not found' }, { status: 404 })
         }
 
-        if (error.message === 'Source workflow not found or access denied') {
+        if (error.message === 'Workflow not found') {
+          logger.warn(`[${requestId}] User ${userId} cannot see source workflow ${sourceWorkflowId}`)
+          return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+        }
+
+        if (error.message === 'Source workflow access denied') {
           logger.warn(
             `[${requestId}] User ${userId} denied access to source workflow ${sourceWorkflowId}`
           )

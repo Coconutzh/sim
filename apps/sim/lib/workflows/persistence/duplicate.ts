@@ -309,7 +309,10 @@ export async function duplicateWorkflow(
       action: 'read',
     })
     if (!sourceAuthorization.allowed) {
-      throw new Error('Source workflow not found or access denied')
+      if (sourceAuthorization.status === 404) {
+        throw new Error('Workflow not found')
+      }
+      throw new Error('Source workflow access denied')
     }
     if (sourceAuthorization.accessSource !== 'workspace') {
       throw new Error('Workspace access required for source workflow duplication')

@@ -50,4 +50,25 @@ describe('Workflow Duplicate API Route', () => {
       error: 'Cross-team published workflow access does not include workflow duplication',
     })
   })
+
+  it('hides foreign personal source workflows behind 404', async () => {
+    mockDuplicateWorkflow.mockRejectedValueOnce(new Error('Workflow not found'))
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/hidden-1/duplicate', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: 'workspace-1',
+        name: 'Copy of workflow',
+        color: '#3972F6',
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await POST(request, { params: Promise.resolve({ id: 'hidden-1' }) })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+  })
 })

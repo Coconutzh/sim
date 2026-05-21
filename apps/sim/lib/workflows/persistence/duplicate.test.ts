@@ -173,6 +173,43 @@ describe('duplicateWorkflow ordering', () => {
     ).rejects.toThrow('Workspace access required for source workflow duplication')
   })
 
+  it('hides foreign personal source workflows during duplication', async () => {
+    const tx = createMockTx([
+      [
+        {
+          id: 'source-workflow-id',
+          workspaceId: 'workspace-123',
+          folderId: null,
+          description: 'source',
+          color: '#000000',
+          variables: {},
+        },
+      ],
+    ])
+
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'source-workflow-id', workspaceId: 'workspace-123' },
+    })
+
+    mockDb.transaction.mockImplementation(async (callback: (txArg: unknown) => Promise<unknown>) =>
+      callback(tx)
+    )
+
+    await expect(
+      duplicateWorkflow({
+        sourceWorkflowId: 'source-workflow-id',
+        userId: 'user-123',
+        name: 'Duplicated',
+        workspaceId: 'workspace-123',
+        folderId: null,
+        requestId: 'req-hidden-dup',
+      })
+    ).rejects.toThrow('Workflow not found')
+  })
+
   it('defaults to sortOrder 0 when target has no siblings', async () => {
     let insertedWorkflowValues: Record<string, unknown> | null = null
     const tx = createMockTx(

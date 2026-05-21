@@ -91,6 +91,30 @@ describe('Workflow State API Route', () => {
     })
   })
 
+  it('hides foreign personal workflow state reads behind 404', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'workflow-hidden', workspaceId: 'workspace-hidden' },
+      workspacePermission: null,
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden/state')
+    const params = Promise.resolve({ id: 'workflow-hidden' })
+
+    const response = await GET(req, { params })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockDbTransaction).not.toHaveBeenCalled()
+  })
+
   it('returns a sanitized workflow summary for cross-team published readers', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,
@@ -189,6 +213,40 @@ describe('Workflow State API Route', () => {
     expect(data.error).toBe(
       'Cross-team published workflow access does not include workflow state writes'
     )
+    expect(mockSaveWorkflowToNormalizedTables).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workflow state writes behind 404', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'workflow-hidden', workspaceId: 'workspace-hidden' },
+      workspacePermission: null,
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/workflow-hidden/state', {
+      method: 'PUT',
+      body: JSON.stringify({
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        variables: {},
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+    const params = Promise.resolve({ id: 'workflow-hidden' })
+
+    const response = await PUT(req, { params })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
     expect(mockSaveWorkflowToNormalizedTables).not.toHaveBeenCalled()
   })
 })
