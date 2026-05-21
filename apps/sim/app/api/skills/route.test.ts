@@ -56,7 +56,7 @@ vi.mock('@/lib/posthog/server', () => ({
   captureServerEvent: vi.fn(),
 }))
 
-import { GET } from '@/app/api/skills/route'
+import { DELETE, GET, POST } from '@/app/api/skills/route'
 
 describe('SkillsAPI GET', () => {
   beforeEach(() => {
@@ -106,5 +106,72 @@ describe('SkillsAPI GET', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockListSkills).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workspace skill writes behind 404', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-hidden',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/skills', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: 'ws-hidden',
+          source: 'settings',
+          skills: [
+            {
+              name: 'hidden-skill',
+              description: 'secret',
+              content: '# hidden skill',
+            },
+          ],
+        }),
+      })
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockUpsertSkills).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workspace skill deletes behind 404', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-hidden',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const response = await DELETE(
+      new NextRequest(
+        'http://localhost:3000/api/skills?id=skill-hidden&workspaceId=ws-hidden&source=settings',
+        {
+          method: 'DELETE',
+        }
+      )
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Skill not found' })
+    expect(mockDeleteSkill).not.toHaveBeenCalled()
   })
 })
