@@ -110,6 +110,24 @@ describe('/api/credentials/[id]', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Credential not found' })
   })
 
+  it('hides foreign personal workspace credential deletes behind 404', async () => {
+    mockGetCredentialActorContext.mockResolvedValueOnce({
+      credential: { id: 'cred-1', workspaceId: 'ws-hidden', type: 'oauth' },
+      member: { role: 'admin', status: 'active' },
+      workspaceExists: true,
+      hasWorkspaceAccess: false,
+      canWriteWorkspace: false,
+      isAdmin: true,
+    })
+
+    const response = await DELETE(createRequest('DELETE'), {
+      params: Promise.resolve({ id: 'cred-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Credential not found' })
+  })
+
   it('keeps visible non-admin credential deletes at 403', async () => {
     mockGetCredentialActorContext.mockResolvedValueOnce({
       credential: { id: 'cred-1', workspaceId: 'ws-1', type: 'oauth' },
