@@ -7,6 +7,7 @@
 import {
   hybridAuthMockFns,
   permissionsMock,
+  permissionsMockFns,
   workflowAuthzMockFns,
   workflowsUtilsMock,
 } from '@sim/testing'
@@ -125,5 +126,37 @@ describe('OAuth Credentials API Route', () => {
 
     expect(response.status).toBe(403)
     expect(data.error).toBe('Workspace access required')
+  })
+
+  it('hides foreign personal workspace OAuth credential listings behind 404', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const req = createMockRequestWithQuery(
+      'GET',
+      '?provider=google&workspaceId=11111111-1111-4111-8111-111111111111'
+    )
+
+    const response = await GET(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
   })
 })

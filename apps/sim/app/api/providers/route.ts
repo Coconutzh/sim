@@ -120,8 +120,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     if (workspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
-      if (!workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       try {

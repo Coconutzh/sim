@@ -125,8 +125,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     if (effectiveWorkspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(effectiveWorkspaceId, requesterUserId)
-      if (!workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
     }
 
@@ -150,6 +150,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         .limit(1)
 
       if (platformCredential) {
+        const platformWorkspaceAccess = await checkWorkspaceAccess(
+          platformCredential.workspaceId,
+          requesterUserId
+        )
+        if (!platformWorkspaceAccess.exists || !platformWorkspaceAccess.hasAccess) {
+          return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
+        }
+
         if (platformCredential.type === 'service_account') {
           if (
             workflowId &&
