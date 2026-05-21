@@ -258,7 +258,7 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members', () => {
     })
   })
 
-  it('rejects removing non-owner members from personal workspaces', async () => {
+  it('hides stale non-owner members on personal workspaces during removal', async () => {
     mockParseRequest.mockResolvedValueOnce({
       success: true,
       data: {
@@ -266,6 +266,7 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members', () => {
         query: { userId: 'user-2' },
       },
     })
+    mockDbSelect.mockReturnValueOnce(createSelectChain([{ id: 'perm-user-2' }]))
 
     const response = await DELETE(
       new Request('http://localhost/api/v1/admin/workspaces/ws-owner/members?userId=user-2', {
@@ -277,10 +278,10 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members', () => {
     )
     const data = await response.json()
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(404)
     expect(data.error).toEqual({
-      code: 'FORBIDDEN',
-      message: 'Personal workspaces do not support shared members',
+      code: 'NOT_FOUND',
+      message: 'Workspace member not found',
     })
   })
 })

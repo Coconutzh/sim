@@ -364,10 +364,6 @@ export const DELETE = withRouteHandler(
         return badRequestResponse('Cannot remove the workspace owner from this endpoint')
       }
 
-      if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
-        return forbiddenResponse('Personal workspaces do not support shared members')
-      }
-
       const [existingPermission] = await db
         .select({ id: permissions.id })
         .from(permissions)
@@ -381,6 +377,10 @@ export const DELETE = withRouteHandler(
         .limit(1)
 
       if (!existingPermission) {
+        return notFoundResponse('Workspace member')
+      }
+
+      if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
         return notFoundResponse('Workspace member')
       }
 
