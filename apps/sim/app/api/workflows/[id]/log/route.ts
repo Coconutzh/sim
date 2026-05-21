@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { workflowLogContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -18,9 +19,20 @@ export const dynamic = 'force-dynamic'
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await context.params
+    let workflowIdForLog = 'unknown'
 
     try {
+      const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+      if (!auth.success || !auth.userId) {
+        return createErrorResponse(auth.error || 'Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(workflowLogContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      workflowIdForLog = id
+
       const accessValidation = await validateWorkflowAccess(request, id, false)
       if (accessValidation.error) {
         logger.warn(
@@ -28,9 +40,6 @@ export const POST = withRouteHandler(
         )
         return createErrorResponse(accessValidation.error.message, accessValidation.error.status)
       }
-
-      const parsed = await parseRequest(workflowLogContract, request, context)
-      if (!parsed.success) return parsed.response
 
       const { logs, executionId, result } = parsed.data.body
 
@@ -50,7 +59,13 @@ export const POST = withRouteHandler(
         const triggerType = isChatExecution ? 'chat' : 'manual'
         const loggingSession = new LoggingSession(id, executionId, triggerType, requestId)
 
-        const workspaceId = accessValidation.workflow.workspaceId
+        const workflow = accessValidation.workflow
+        if (!workflow) {
+          logger.error(`[${requestId}] Workflow ${id} access validation returned no workflow`)
+          return createErrorResponse('Workflow not found', 404)
+        }
+
+        const workspaceId = workflow.workspaceId
         if (!workspaceId) {
           logger.error(`[${requestId}] Workflow ${id} has no workspaceId`)
           return createErrorResponse('Workflow has no associated workspace', 500)
@@ -108,9 +123,12 @@ export const POST = withRouteHandler(
       })
 
       return createSuccessResponse({ message: 'Logs persisted successfully' })
-    } catch (error: any) {
-      logger.error(`[${requestId}] Error persisting logs for workflow: ${id}`, error)
-      return createErrorResponse(error.message || 'Failed to persist logs', 500)
+    } catch (error) {
+      logger.error(`[${requestId}] Error persisting logs for workflow: ${workflowIdForLog}`, error)
+      return createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to persist logs',
+        500
+      )
     }
   }
 )
