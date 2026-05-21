@@ -9,6 +9,7 @@ const {
   mockDbState,
   mockGetSession,
   mockIsOrganizationWorkspace,
+  mockSummarizeInvitationGrantVisibility,
   mockValidateInvitationsAllowed,
   mockValidateSeatAvailability,
   mockCreatePendingInvitation,
@@ -21,6 +22,7 @@ const {
   },
   mockGetSession: vi.fn(),
   mockIsOrganizationWorkspace: vi.fn(),
+  mockSummarizeInvitationGrantVisibility: vi.fn(),
   mockValidateInvitationsAllowed: vi.fn(),
   mockValidateSeatAvailability: vi.fn(),
   mockCreatePendingInvitation: vi.fn(),
@@ -112,6 +114,10 @@ vi.mock('@/lib/invitations/send', () => ({
   cancelPendingInvitation: mockCancelPendingInvitation,
 }))
 
+vi.mock('@/lib/invitations/core', () => ({
+  summarizeInvitationGrantVisibility: mockSummarizeInvitationGrantVisibility,
+}))
+
 vi.mock('@/lib/messaging/email/validation', () => ({
   quickValidateEmail: vi.fn((email: string) => ({ isValid: email.includes('@') })),
 }))
@@ -137,6 +143,10 @@ describe('POST /api/organizations/[id]/invitations', () => {
     mockDbState.selectResults = []
     mockHasWorkspaceAdminAccess.mockResolvedValue(true)
     mockIsOrganizationWorkspace.mockReturnValue(true)
+    mockSummarizeInvitationGrantVisibility.mockResolvedValue({
+      hasUnavailableGrant: false,
+      hasHiddenPersonalGrant: false,
+    })
     mockValidateInvitationsAllowed.mockResolvedValue(undefined)
     mockValidateSeatAvailability.mockResolvedValue({
       canInvite: true,
@@ -249,10 +259,42 @@ describe('POST /api/organizations/[id]/invitations', () => {
     expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
   })
 
+  it('hides foreign personal workspace batch grants behind not found semantics', async () => {
+    mockGetSession.mockResolvedValue(
+      createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
+    )
+    mockHasWorkspaceAdminAccess.mockResolvedValueOnce(false)
+    mockSummarizeInvitationGrantVisibility.mockResolvedValueOnce({
+      hasUnavailableGrant: false,
+      hasHiddenPersonalGrant: true,
+    })
+    mockDbState.selectResults = [[{ role: 'owner' }], [{ name: 'Org One' }]]
+
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        {
+          emails: ['invitee@example.com'],
+          workspaceInvitations: [{ workspaceId: 'ws-hidden-personal', permission: 'read' }],
+        },
+        { batch: 'true' },
+        'http://localhost/api/organizations/org-1/invitations?batch=true'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
+  })
+
   it('rejects batch grants for archived organization workspaces', async () => {
     mockGetSession.mockResolvedValue(
       createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
     )
+    mockHasWorkspaceAdminAccess.mockReset()
+    mockHasWorkspaceAdminAccess.mockResolvedValue(true)
     mockDbState.selectResults = [[{ role: 'owner' }], [{ name: 'Org One' }], []]
 
     const response = await POST(

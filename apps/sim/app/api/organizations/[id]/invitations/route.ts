@@ -20,6 +20,7 @@ import {
   createPendingInvitation,
   sendInvitationEmail,
 } from '@/lib/invitations/send'
+import { summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 import { isOrganizationWorkspace } from '@/lib/workspaces/policy'
@@ -186,6 +187,14 @@ export const POST = withRouteHandler(
         }
 
         for (const wsInvitation of workspaceInvitations) {
+          const { hasHiddenPersonalGrant } = await summarizeInvitationGrantVisibility(
+            [{ workspaceId: wsInvitation.workspaceId }],
+            session.user.id
+          )
+          if (hasHiddenPersonalGrant) {
+            return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+          }
+
           const canInvite = await hasWorkspaceAdminAccess(session.user.id, wsInvitation.workspaceId)
           if (!canInvite) {
             return NextResponse.json(
