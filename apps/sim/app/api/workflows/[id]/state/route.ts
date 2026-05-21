@@ -9,7 +9,10 @@ import {
 } from '@sim/workflow-authz'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { putWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
+import {
+  getWorkflowNormalizedStateContract,
+  putWorkflowNormalizedStateContract,
+} from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
@@ -35,14 +38,19 @@ const logger = createLogger('WorkflowStateAPI')
  * Used by the client after server-side edits (edit_workflow) to stay in sync.
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id: workflowId } = await params
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(getWorkflowNormalizedStateContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workflowId } = parsed.data.params
+      workflowIdForLog = workflowId
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -100,7 +108,7 @@ export const GET = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to fetch workflow state', {
-        workflowId,
+        workflowId: workflowIdForLog,
         error: toError(error).message,
       })
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -116,18 +124,20 @@ export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await context.params
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
-        logger.warn(`[${requestId}] Unauthorized state update attempt for workflow ${workflowId}`)
+        logger.warn(`[${requestId}] Unauthorized state update attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
 
       const parsed = await parseRequest(putWorkflowNormalizedStateContract, request, context)
       if (!parsed.success) return parsed.response
+      const { id: workflowId } = parsed.data.params
+      workflowIdForLog = workflowId
       const state = parsed.data.body
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -330,7 +340,7 @@ export const PUT = withRouteHandler(
 
       const elapsed = Date.now() - startTime
       logger.error(
-        `[${requestId}] Error saving workflow ${workflowId} state after ${elapsed}ms`,
+        `[${requestId}] Error saving workflow ${workflowIdForLog} state after ${elapsed}ms`,
         error
       )
 

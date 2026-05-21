@@ -115,6 +115,29 @@ describe('Workflow State API Route', () => {
     expect(mockDbTransaction).not.toHaveBeenCalled()
   })
 
+  it('authenticates before reading route params for state reads', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+      authType: 'session',
+    })
+
+    const params = {
+      then: () => {
+        throw new Error('Route params should not be read before auth')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const req = new NextRequest('http://localhost:3000/api/workflows//state')
+
+    const response = await GET(req, { params })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    expect(mockDbTransaction).not.toHaveBeenCalled()
+  })
+
   it('returns a sanitized workflow summary for cross-team published readers', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,
@@ -247,6 +270,33 @@ describe('Workflow State API Route', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockSaveWorkflowToNormalizedTables).not.toHaveBeenCalled()
+  })
+
+  it('authenticates before reading route params or validating body for state writes', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+      authType: 'session',
+    })
+
+    const params = {
+      then: () => {
+        throw new Error('Route params should not be read before auth')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const req = new NextRequest('http://localhost:3000/api/workflows//state', {
+      method: 'PUT',
+      body: JSON.stringify({}),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await PUT(req, { params })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     expect(mockSaveWorkflowToNormalizedTables).not.toHaveBeenCalled()
   })
 })
