@@ -5,8 +5,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { listWorkspacesQuerySchema } from '@/lib/api/contracts'
-import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
+import { createWorkspaceContract, listWorkspacesContract } from '@/lib/api/contracts/workspaces'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
@@ -29,12 +28,15 @@ import {
 const logger = createLogger('Workspaces')
 
 // Get all workspaces for the current user
-export const GET = withRouteHandler(async (request: Request) => {
+export const GET = withRouteHandler(async (request: NextRequest) => {
   const session = await getSession()
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const parsed = await parseRequest(listWorkspacesContract, request, {})
+  if (!parsed.success) return parsed.response
 
   const activeOrganizationId =
     (session.session as { activeOrganizationId?: string } | null)?.activeOrganizationId ?? null
@@ -43,16 +45,7 @@ export const GET = withRouteHandler(async (request: Request) => {
     activeOrganizationId,
   })
 
-  const scopeResult = listWorkspacesQuerySchema.safeParse(
-    Object.fromEntries(new URL(request.url).searchParams.entries())
-  )
-  if (!scopeResult.success) {
-    return NextResponse.json(
-      { error: 'Invalid query parameters', details: scopeResult.error.issues },
-      { status: 400 }
-    )
-  }
-  const { scope } = scopeResult.data
+  const { scope } = parsed.data.query
 
   const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(session.user.id)
 

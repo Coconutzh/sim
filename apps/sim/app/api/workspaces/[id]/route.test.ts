@@ -150,20 +150,14 @@ describe('PATCH /api/workspaces/[id]', () => {
       ])
     )
 
-    const response = await PATCH(
-      createMockRequest('PATCH', { billedAccountUserId: 'member-2' }),
-      {
-        params: Promise.resolve({ id: 'ws-shared' }),
-      }
-    )
+    const response = await PATCH(createMockRequest('PATCH', { billedAccountUserId: 'member-2' }), {
+      params: Promise.resolve({ id: 'ws-shared' }),
+    })
     const data = await response.json()
 
     expect(response.status).toBe(400)
     expect(data).toEqual({ error: 'Billed account must be a workspace admin' })
-    expect(permissionsMockFns.mockHasAdminPermission).toHaveBeenCalledWith(
-      'member-2',
-      'ws-shared'
-    )
+    expect(permissionsMockFns.mockHasAdminPermission).toHaveBeenCalledWith('member-2', 'ws-shared')
   })
 
   it('returns 404 when stale personal rows no longer grant workspace update visibility', async () => {
@@ -216,5 +210,21 @@ describe('GET /api/workspaces/[id]', () => {
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('authenticates before reading workspace params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+    const params = {
+      then: () => {
+        throw new Error('params should not be parsed before auth')
+      },
+    } as Promise<{ id: string }>
+
+    const response = await GET(createMockRequest('GET'), { params })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetSession, mockGetWorkspaceCreationPolicy, mockDbSelect } = vi.hoisted(() => ({
@@ -52,8 +53,8 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   listAccessibleWorkspaceIds: vi.fn(),
 }))
 
-import { GET } from './route'
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
+import { GET } from './route'
 
 describe('GET /api/workspaces', () => {
   beforeEach(() => {
@@ -92,7 +93,9 @@ describe('GET /api/workspaces', () => {
   })
 
   it('includes owner-only workspaces in the list response', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=all')
+    )
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
@@ -131,7 +134,9 @@ describe('GET /api/workspaces', () => {
         ])
       )
 
-    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=all')
+    )
 
     expect(response.status).toBe(200)
     expect(listAccessibleWorkspaceIds).toHaveBeenCalledWith('user-1')
@@ -171,7 +176,9 @@ describe('GET /api/workspaces', () => {
         ])
       )
 
-    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=all')
+    )
     const data = await response.json()
 
     expect(response.status).toBe(200)
@@ -199,7 +206,9 @@ describe('GET /api/workspaces', () => {
       .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: null }]))
       .mockReturnValueOnce(createChain([]))
 
-    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=active'))
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=active')
+    )
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({

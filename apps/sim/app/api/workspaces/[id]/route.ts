@@ -1,19 +1,20 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
-import { workflow } from '@sim/db/schema'
+import { db } from '@sim/db'
+import { templates, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { deleteWorkspaceBodySchema, updateWorkspaceContract } from '@/lib/api/contracts'
+import {
+  checkWorkspacePublishedTemplatesContract,
+  deleteWorkspaceBodySchema,
+  getWorkspaceContract,
+  updateWorkspaceContract,
+} from '@/lib/api/contracts/workspaces'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { archiveWorkspace } from '@/lib/workspaces/lifecycle'
-
-const logger = createLogger('WorkspaceByIdAPI')
-
-import { db } from '@sim/db'
-import { templates, workspace } from '@sim/db/schema'
-import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   checkWorkspaceAccess,
   getUserEntityPermissions,
@@ -21,18 +22,25 @@ import {
   listAccessibleWorkspaceIds,
 } from '@/lib/workspaces/permissions/utils'
 
+const logger = createLogger('WorkspaceByIdAPI')
+
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id } = await params
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const workspaceId = id
     const url = new URL(request.url)
     const checkTemplates = url.searchParams.get('check-templates') === 'true'
+    const contract = checkTemplates
+      ? checkWorkspacePublishedTemplatesContract
+      : getWorkspaceContract
+    const parsed = await parseRequest(contract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const workspaceId = parsed.data.params.id
 
     // Check if user has any access to this workspace
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
