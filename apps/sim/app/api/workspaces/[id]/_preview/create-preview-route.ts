@@ -53,20 +53,21 @@ export function createDocumentPreviewRoute(config: DocumentPreviewRouteConfig) {
   })
 
   return async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-    const paramsResult = config.routeParamsSchema.safeParse(await context.params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId } = paramsResult.data
-
+    let workspaceId: string | undefined
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const paramsResult = config.routeParamsSchema.safeParse(await context.params)
+      if (!paramsResult.success) {
+        return NextResponse.json(
+          { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
+          { status: 400 }
+        )
+      }
+      workspaceId = paramsResult.data.id
 
       const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
       if (!membership.exists || !membership.hasAccess) {
