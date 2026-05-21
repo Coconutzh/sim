@@ -16,7 +16,10 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { upsertCustomTools } from '@/lib/workflows/custom-tools/operations'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CustomToolsAPI')
 
@@ -70,6 +73,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     if (resolvedWorkspaceId && !resolvedFromWorkflowAuthorization) {
+      const workspaceAccess = await checkWorkspaceAccess(resolvedWorkspaceId, userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        logger.warn(
+          `[${requestId}] User ${userId} attempted to access hidden workspace ${resolvedWorkspaceId}`
+        )
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+
       const userPermission = await getUserEntityPermissions(
         userId,
         'workspace',
@@ -140,6 +151,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     if (!workspaceId) {
       logger.warn(`[${requestId}] Missing workspaceId in request body`)
       return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
+    }
+
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      logger.warn(`[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`)
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -241,22 +258,30 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
     const tool = existingTool[0]
 
     if (tool.workspaceId) {
+      const workspaceAccess = await checkWorkspaceAccess(tool.workspaceId, userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        logger.warn(
+          `[${requestId}] User ${userId} attempted to delete tool in hidden workspace ${tool.workspaceId}`
+        )
+        return NextResponse.json({ error: 'Tool not found' }, { status: 404 })
+      }
+
       if (!workspaceId) {
         logger.warn(`[${requestId}] Missing workspaceId for workspace-scoped tool`)
         return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
       }
 
-      const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+      const userPermission = await getUserEntityPermissions(userId, 'workspace', tool.workspaceId)
       if (!userPermission) {
         logger.warn(
-          `[${requestId}] User ${userId} does not have access to workspace ${workspaceId}`
+          `[${requestId}] User ${userId} does not have access to workspace ${tool.workspaceId}`
         )
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
 
       if (userPermission !== 'admin' && userPermission !== 'write') {
         logger.warn(
-          `[${requestId}] User ${userId} does not have write permission for workspace ${workspaceId}`
+          `[${requestId}] User ${userId} does not have write permission for workspace ${tool.workspaceId}`
         )
         return NextResponse.json({ error: 'Write permission required' }, { status: 403 })
       }

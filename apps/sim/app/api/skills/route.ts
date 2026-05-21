@@ -12,7 +12,10 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { deleteSkill, listSkills, upsertSkills } from '@/lib/workflows/skills/operations'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('SkillsAPI')
 
@@ -39,6 +42,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       )
     }
     const { workspaceId } = query.data
+
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      logger.warn(`[${requestId}] User ${userId} attempted to access hidden workspace ${workspaceId}`)
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (!userPermission) {
@@ -82,6 +91,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     if (!parsed.success) return parsed.response
 
     const { skills, workspaceId, source } = parsed.data.body
+
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      logger.warn(`[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`)
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (!userPermission || (userPermission !== 'admin' && userPermission !== 'write')) {
@@ -156,6 +171,12 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
       )
     }
     const { id: skillId, workspaceId, source } = query.data
+
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      logger.warn(`[${requestId}] User ${userId} attempted to delete skill in hidden workspace ${workspaceId}`)
+      return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
+    }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (!userPermission || (userPermission !== 'admin' && userPermission !== 'write')) {

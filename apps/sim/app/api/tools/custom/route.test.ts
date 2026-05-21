@@ -43,6 +43,7 @@ const {
   }
 })
 
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 
 const sampleTools = [
@@ -231,6 +232,19 @@ describe('Custom Tools API Routes', () => {
       userId: 'user-123',
       authType: 'session',
     })
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-123',
+        name: 'Workspace One',
+        ownerId: 'user-123',
+        organizationId: 'org-1',
+        workspaceMode: 'organization',
+        billedAccountUserId: 'user-123',
+      },
+    })
     mockGetUserEntityPermissions.mockResolvedValue('admin')
     mockUpsertCustomTools.mockResolvedValue(sampleTools)
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
@@ -312,6 +326,33 @@ describe('Custom Tools API Routes', () => {
       expect(response.status).toBe(403)
       expect(data).toEqual({ error: 'Workspace access required' })
       expect(mockWhere).not.toHaveBeenCalled()
+    })
+
+    it('hides foreign personal workspace custom tools behind 404', async () => {
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace-hidden',
+          name: 'Hidden Workspace',
+          ownerId: 'owner-2',
+          organizationId: null,
+          workspaceMode: 'personal',
+          billedAccountUserId: 'owner-2',
+        },
+      })
+
+      const req = new NextRequest(
+        'http://localhost:3000/api/tools/custom?workspaceId=workspace-hidden'
+      )
+
+      const response = await GET(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
     })
   })
 
