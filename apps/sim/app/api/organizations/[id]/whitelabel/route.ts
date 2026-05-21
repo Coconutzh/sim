@@ -4,7 +4,10 @@ import { member, organization } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateOrganizationWhitelabelContract } from '@/lib/api/contracts/organization'
+import {
+  getOrganizationWhitelabelContract,
+  updateOrganizationWhitelabelContract,
+} from '@/lib/api/contracts/organization'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
@@ -19,7 +22,7 @@ const logger = createLogger('WhitelabelAPI')
  * Accessible by any member of the organization.
  */
 export const GET = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
@@ -27,7 +30,9 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId } = await params
+      const parsed = await parseRequest(getOrganizationWhitelabelContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: organizationId } = parsed.data.params
 
       const [memberEntry] = await db
         .select({ id: member.id })

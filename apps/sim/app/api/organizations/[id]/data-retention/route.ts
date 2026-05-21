@@ -4,7 +4,10 @@ import { member, organization } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateOrganizationDataRetentionContract } from '@/lib/api/contracts/organization'
+import {
+  getOrganizationDataRetentionContract,
+  updateOrganizationDataRetentionContract,
+} from '@/lib/api/contracts/organization'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import {
@@ -41,13 +44,15 @@ function normalizeConfigured(
  * Accessible by any member of the organization.
  */
 export const GET = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: organizationId } = await params
+    const parsed = await parseRequest(getOrganizationDataRetentionContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id: organizationId } = parsed.data.params
 
     const [memberEntry] = await db
       .select({ id: member.id })
