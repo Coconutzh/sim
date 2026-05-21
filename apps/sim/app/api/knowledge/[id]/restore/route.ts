@@ -10,7 +10,7 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { KnowledgeBaseConflictError, restoreKnowledgeBase } from '@/lib/knowledge/service'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreKnowledgeBaseAPI')
 
@@ -43,6 +43,11 @@ export const POST = withRouteHandler(
       }
 
       if (kb.workspaceId) {
+        const access = await checkWorkspaceAccess(kb.workspaceId, auth.userId)
+        if (!access.exists || !access.hasAccess) {
+          return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
+        }
+
         const permission = await getUserEntityPermissions(auth.userId, 'workspace', kb.workspaceId)
         if (permission !== 'admin' && permission !== 'write') {
           return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

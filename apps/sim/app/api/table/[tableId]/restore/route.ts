@@ -6,7 +6,7 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getTableById, restoreTable, TableConflictError } from '@/lib/table'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreTableAPI')
 
@@ -23,6 +23,11 @@ export const POST = withRouteHandler(
 
       const table = await getTableById(tableId, { includeArchived: true })
       if (!table) {
+        return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      }
+
+      const access = await checkWorkspaceAccess(table.workspaceId, auth.userId)
+      if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Table not found' }, { status: 404 })
       }
 

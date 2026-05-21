@@ -20,7 +20,7 @@ import {
   TABLE_LIMITS,
   type TableSchema,
 } from '@/lib/table'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { normalizeColumn } from '@/app/api/table/utils'
 
 const logger = createLogger('TableImportCSV')
@@ -48,6 +48,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const { file, workspaceId } = validation.data
+
+    const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const permission = await getUserEntityPermissions(authResult.userId, 'workspace', workspaceId)
     if (permission !== 'write' && permission !== 'admin') {
