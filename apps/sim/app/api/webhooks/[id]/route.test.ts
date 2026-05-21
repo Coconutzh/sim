@@ -198,4 +198,63 @@ describe('Webhook [id] API route', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Access denied' })
     expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflow webhook fetches behind 404', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await GET(
+      new NextRequest('http://localhost/api/webhooks/wh-1'),
+      params()
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+  })
+
+  it('hides foreign personal workflow webhook updates behind 404', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await PATCH(
+      new NextRequest('http://localhost/api/webhooks/wh-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: false }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      params()
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workflow webhook deletions behind 404', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await DELETE(
+      new NextRequest('http://localhost/api/webhooks/wh-1', {
+        method: 'DELETE',
+      }),
+      params()
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
+  })
 })

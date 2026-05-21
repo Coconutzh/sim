@@ -70,10 +70,16 @@ export const GET = withRouteHandler(
         userId,
         action: 'read',
       })
-      const hasAccess = authorization.allowed && authorization.accessSource === 'workspace'
-
-      if (!hasAccess) {
+      if (!authorization.allowed) {
         logger.warn(`[${requestId}] User ${userId} denied access to webhook: ${id}`)
+        return NextResponse.json(
+          { error: authorization.message || 'Access denied' },
+          { status: authorization.status || 403 }
+        )
+      }
+
+      if (authorization.accessSource !== 'workspace') {
+        logger.warn(`[${requestId}] Published workflow access cannot read webhook: ${id}`)
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
 
@@ -129,10 +135,16 @@ export const PATCH = withRouteHandler(
         userId,
         action: 'write',
       })
-      const canModify = authorization.allowed && authorization.accessSource === 'workspace'
-
-      if (!canModify) {
+      if (!authorization.allowed) {
         logger.warn(`[${requestId}] User ${userId} denied permission to modify webhook: ${id}`)
+        return NextResponse.json(
+          { error: authorization.message || 'Access denied' },
+          { status: authorization.status || 403 }
+        )
+      }
+
+      if (authorization.accessSource !== 'workspace') {
+        logger.warn(`[${requestId}] Published workflow access cannot modify webhook: ${id}`)
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
       await assertWorkflowMutable(webhookData.workflow.id)
@@ -204,10 +216,16 @@ export const DELETE = withRouteHandler(
         userId,
         action: 'write',
       })
-      const canDelete = authorization.allowed && authorization.accessSource === 'workspace'
-
-      if (!canDelete) {
+      if (!authorization.allowed) {
         logger.warn(`[${requestId}] User ${userId} denied permission to delete webhook: ${id}`)
+        return NextResponse.json(
+          { error: authorization.message || 'Access denied' },
+          { status: authorization.status || 403 }
+        )
+      }
+
+      if (authorization.accessSource !== 'workspace') {
+        logger.warn(`[${requestId}] Published workflow access cannot delete webhook: ${id}`)
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
       await assertWorkflowMutable(webhookData.workflow.id)
