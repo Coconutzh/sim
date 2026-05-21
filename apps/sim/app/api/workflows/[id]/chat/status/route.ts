@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { chat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
@@ -18,9 +19,6 @@ const logger = createLogger('ChatStatusAPI')
  */
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const parsed = await parseRequest(getChatDeploymentStatusContract, request, context)
-    if (!parsed.success) return parsed.response
-    const { id } = parsed.data.params
     const requestId = generateRequestId()
 
     try {
@@ -28,6 +26,10 @@ export const GET = withRouteHandler(
       if (!auth.success || !auth.userId) {
         return createErrorResponse('Unauthorized', 401)
       }
+
+      const parsed = await parseRequest(getChatDeploymentStatusContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id } = parsed.data.params
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId: id,
@@ -86,9 +88,13 @@ export const GET = withRouteHandler(
         isDeployed,
         deployment: deploymentInfo,
       })
-    } catch (error: any) {
-      logger.error(`[${requestId}] Error checking chat deployment status:`, error)
-      return createErrorResponse(error.message || 'Failed to check chat deployment status', 500)
+    } catch (error) {
+      const normalizedError = toError(error)
+      logger.error(`[${requestId}] Error checking chat deployment status:`, normalizedError)
+      return createErrorResponse(
+        normalizedError.message || 'Failed to check chat deployment status',
+        500
+      )
     }
   }
 )

@@ -14,6 +14,13 @@ import {
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { mockParseRequest } = vi.hoisted(() => ({
+  mockParseRequest: vi.fn(async (_contract, _request, context) => ({
+    success: true,
+    data: { params: await context.params },
+  })),
+}))
+
 vi.mock('@sim/db', () => dbChainMock)
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
@@ -22,6 +29,9 @@ vi.mock('drizzle-orm', () => ({
 }))
 
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
+vi.mock('@/lib/api/server', () => ({
+  parseRequest: mockParseRequest,
+}))
 
 import { GET } from '@/app/api/workflows/[id]/chat/status/route'
 
@@ -29,6 +39,10 @@ describe('Workflow Chat Status Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    mockParseRequest.mockImplementation(async (_contract, _request, context) => ({
+      success: true,
+      data: { params: await context.params },
+    }))
   })
 
   it('returns 401 when unauthenticated', async () => {
@@ -38,6 +52,23 @@ describe('Workflow Chat Status Route', () => {
     const response = await GET(req, { params: Promise.resolve({ id: 'wf-1' }) })
 
     expect(response.status).toBe(401)
+  })
+
+  it('authenticates before validating route params', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({ success: false })
+    const unreadableParams = {
+      then: () => {
+        throw new Error('params should not be read')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/chat/status')
+    const response = await GET(req, {
+      params: unreadableParams,
+    })
+
+    expect(response.status).toBe(401)
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 
   it('returns 403 when user lacks workspace access', async () => {

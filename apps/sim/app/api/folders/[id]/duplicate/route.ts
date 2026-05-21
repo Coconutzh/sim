@@ -20,19 +20,21 @@ const logger = createLogger('FolderDuplicateAPI')
 // POST /api/folders/[id]/duplicate - Duplicate a folder with all its child folders and workflows
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { id: sourceFolderId } = await context.params
     const requestId = generateRequestId()
     const startTime = Date.now()
 
     const session = await getSession()
     if (!session?.user?.id) {
-      logger.warn(`[${requestId}] Unauthorized folder duplication attempt for ${sourceFolderId}`)
+      logger.warn(`[${requestId}] Unauthorized folder duplication attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    let sourceFolderId = 'unknown'
 
     try {
       const parsed = await parseRequest(duplicateFolderContract, req, context)
       if (!parsed.success) return parsed.response
+      sourceFolderId = parsed.data.params.id
       const { name, workspaceId, parentId, color, newId: clientNewId } = parsed.data.body
 
       logger.info(`[${requestId}] Duplicating folder ${sourceFolderId} for user ${session.user.id}`)
