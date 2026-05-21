@@ -106,4 +106,31 @@ describe('TemplateByIdAPI PUT', () => {
     })
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflow template state sync behind 404', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'workflow-hidden', workspaceId: 'ws-hidden' },
+      workspacePermission: null,
+      accessSource: null,
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/templates/template-1', {
+      method: 'PUT',
+      body: JSON.stringify({ updateState: true }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const response = await PUT(request, {
+      params: Promise.resolve({ id: 'template-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+    expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
 })

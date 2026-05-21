@@ -196,7 +196,10 @@ export const PUT = withRouteHandler(
 
         if (!authorization.allowed) {
           logger.warn(`[${requestId}] User denied workflow access for state sync on template ${id}`)
-          return NextResponse.json({ error: 'Access denied to workflow' }, { status: 403 })
+          return NextResponse.json(
+            { error: authorization.message || 'Access denied to workflow' },
+            { status: authorization.status || 403 }
+          )
         }
 
         if (authorization.accessSource && authorization.accessSource !== 'workspace') {
