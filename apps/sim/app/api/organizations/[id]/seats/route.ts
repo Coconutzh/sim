@@ -28,6 +28,7 @@ const logger = createLogger('OrganizationSeatsAPI')
  */
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationIdForLog: string | undefined
     try {
       const session = await getSession()
 
@@ -43,6 +44,7 @@ export const PUT = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id: organizationId } = parsed.data.params
+      organizationIdForLog = organizationId
       const { seats: newSeatCount } = parsed.data.body
 
       const memberEntry = await db
@@ -245,12 +247,10 @@ export const PUT = withRouteHandler(
         },
       })
     } catch (error) {
-      const { id: organizationId } = await context.params
-
       if (error instanceof Error && 'type' in error) {
         const stripeError = error as Error & { type?: unknown; code?: unknown }
         logger.error('Stripe error updating seats', {
-          organizationId,
+          organizationId: organizationIdForLog,
           type: stripeError.type,
           code: stripeError.code,
           message: stripeError.message,
@@ -266,7 +266,7 @@ export const PUT = withRouteHandler(
       }
 
       logger.error('Failed to update organization seats', {
-        organizationId,
+        organizationId: organizationIdForLog,
         error,
       })
 
