@@ -51,6 +51,12 @@ describe('Knowledge Base API Route', () => {
     })
 
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'test-workspace-id', ownerId: 'user-123', workspaceMode: 'organization' },
+    })
 
     vi.stubGlobal('crypto', {
       randomUUID: vi.fn().mockReturnValue('mock-uuid-1234-5678'),
@@ -86,6 +92,31 @@ describe('Knowledge Base API Route', () => {
       expect(response.status).toBe(500)
       expect(data.error).toBe('Failed to fetch knowledge bases')
     })
+
+    it('should hide foreign personal workspace knowledge base queries behind 404', async () => {
+      authMockFns.mockGetSession.mockResolvedValue({
+        user: { id: 'user-123', email: 'test@example.com' },
+      })
+      permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const req = createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost/api/knowledge?workspaceId=ws-hidden'
+      )
+      const response = await GET(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(mockDbChain.select).not.toHaveBeenCalled()
+    })
   })
 
   describe('POST /api/knowledge', () => {
@@ -114,6 +145,29 @@ describe('Knowledge Base API Route', () => {
       expect(data.data.name).toBe(validKnowledgeBaseData.name)
       expect(data.data.description).toBe(validKnowledgeBaseData.description)
       expect(mockDbChain.insert).toHaveBeenCalled()
+    })
+
+    it('should hide foreign personal workspace creation attempts behind 404', async () => {
+      authMockFns.mockGetSession.mockResolvedValue({
+        user: { id: 'user-123', email: 'test@example.com' },
+      })
+      permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const req = createMockRequest('POST', {
+        ...validKnowledgeBaseData,
+        workspaceId: 'ws-hidden',
+      })
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(mockDbChain.insert).not.toHaveBeenCalled()
     })
 
     it('should return unauthorized for unauthenticated user', async () => {

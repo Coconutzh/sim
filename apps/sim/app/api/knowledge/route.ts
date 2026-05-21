@@ -18,6 +18,7 @@ import {
   type KnowledgeBaseScope,
 } from '@/lib/knowledge/service'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('KnowledgeBaseAPI')
 
@@ -43,6 +44,13 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
       )
     }
     const { workspaceId, scope } = query.data
+
+    if (workspaceId) {
+      const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+    }
 
     const knowledgeBasesWithCounts = await getKnowledgeBases(
       session.user.id,
@@ -87,6 +95,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     if (!parsed.success) return parsed.response
 
     const validatedData = parsed.data.body
+
+    const workspaceAccess = await checkWorkspaceAccess(validatedData.workspaceId, session.user.id)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+    if (!workspaceAccess.canWrite) {
+      return NextResponse.json(
+        { error: 'Write or Admin access required to create knowledge bases in this workspace' },
+        { status: 403 }
+      )
+    }
 
     try {
       const embeddingModel = getConfiguredEmbeddingModel()
