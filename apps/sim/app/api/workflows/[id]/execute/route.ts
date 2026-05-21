@@ -6,7 +6,11 @@ import { generateId, isValidUuid } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { executeWorkflowBodySchema } from '@/lib/api/contracts/workflows'
+import {
+  executeWorkflowBodySchema,
+  executeWorkflowParamsContract,
+} from '@/lib/api/contracts/workflows'
+import { parseRequest } from '@/lib/api/server'
 import { AuthType, checkHybridAuth, hasExternalApiCredentials } from '@/lib/auth/hybrid'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
@@ -227,10 +231,10 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextR
  * Supports both SSE streaming (for interactive/manual runs) and direct JSON responses (for background jobs).
  */
 export const POST = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const isSessionRequest = req.headers.has('cookie') && !hasExternalApiCredentials(req.headers)
     if (isSessionRequest) {
-      return handleExecutePost(req, params)
+      return handleExecutePost(req, context)
     }
 
     const ticket = tryAdmit()
@@ -239,7 +243,7 @@ export const POST = withRouteHandler(
     }
 
     try {
-      return await handleExecutePost(req, params)
+      return await handleExecutePost(req, context)
     } finally {
       ticket.release()
     }
@@ -248,11 +252,11 @@ export const POST = withRouteHandler(
 
 async function handleExecutePost(
   req: NextRequest,
-  params: Promise<{ id: string }>
+  context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse | Response> {
   const requestId = generateRequestId()
-  const { id: workflowId } = await params
-  let reqLogger = logger.withMetadata({ requestId, workflowId })
+  let workflowIdForLog = 'unknown'
+  let reqLogger = logger.withMetadata({ requestId })
 
   const incomingCallChain = parseCallChain(req.headers.get(SIM_VIA_HEADER))
   const callChainError = validateCallChain(incomingCallChain)
@@ -260,21 +264,28 @@ async function handleExecutePost(
     reqLogger.warn(`Call chain rejected: ${callChainError}`)
     return NextResponse.json({ error: callChainError }, { status: 409 })
   }
-  const callChain = buildNextCallChain(incomingCallChain, workflowId)
 
   try {
     const auth = await checkHybridAuth(req, { requireWorkflowId: false })
+    const hasExplicitCredentials =
+      req.headers.has('x-api-key') || req.headers.get('authorization')?.startsWith('Bearer ')
+
+    if ((!auth.success || !auth.userId) && hasExplicitCredentials) {
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
+    }
+
+    const parsedParams = await parseRequest(executeWorkflowParamsContract, req, context)
+    if (!parsedParams.success) return parsedParams.response
+
+    const { id: workflowId } = parsedParams.data.params
+    workflowIdForLog = workflowId
+    reqLogger = logger.withMetadata({ requestId, workflowId })
+    const callChain = buildNextCallChain(incomingCallChain, workflowId)
 
     let userId: string
     let isPublicApiAccess = false
 
     if (!auth.success || !auth.userId) {
-      const hasExplicitCredentials =
-        req.headers.has('x-api-key') || req.headers.get('authorization')?.startsWith('Bearer ')
-      if (hasExplicitCredentials) {
-        return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
-      }
-
       const [wf] = await db
         .select({
           isPublicApi: workflowTable.isPublicApi,
@@ -1357,7 +1368,9 @@ async function handleExecutePost(
       },
     })
   } catch (error: any) {
-    reqLogger.error('Failed to start workflow execution:', error)
+    logger
+      .withMetadata({ requestId, workflowId: workflowIdForLog })
+      .error('Failed to start workflow execution:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to start workflow execution' },
       { status: 500 }

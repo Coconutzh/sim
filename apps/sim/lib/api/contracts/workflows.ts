@@ -432,6 +432,15 @@ export const executeWorkflowBodySchema = z.object({
 })
 export type ExecuteWorkflowBody = z.input<typeof executeWorkflowBodySchema>
 
+export const executeWorkflowParamsContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workflows/[id]/execute',
+  params: workflowIdParamsSchema,
+  response: {
+    mode: 'stream',
+  },
+})
+
 export const workflowVariablesBodySchema = z.object({
   variables: z.record(z.string(), workflowVariableSchema),
 })
