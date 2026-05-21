@@ -112,6 +112,21 @@ describe('OAuth Credentials API Route', () => {
     expect(data.error).toBe('User not authenticated')
   })
 
+  it('authenticates before validating query parameters', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const req = createMockRequestWithQuery('GET')
+
+    const response = await GET(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data.error).toBe('User not authenticated')
+  })
+
   it('should handle missing provider parameter', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,

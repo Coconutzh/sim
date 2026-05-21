@@ -4,8 +4,8 @@ import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { oauthCredentialsQuerySchema } from '@/lib/api/contracts/credentials'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { listOAuthCredentialsContract } from '@/lib/api/contracts/credentials'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -56,42 +56,40 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
-    const { searchParams } = new URL(request.url)
-    const rawQuery = {
-      provider: searchParams.get('provider'),
-      workflowId: searchParams.get('workflowId'),
-      workspaceId: searchParams.get('workspaceId'),
-      credentialId: searchParams.get('credentialId'),
-    }
-
-    const parseResult = oauthCredentialsQuerySchema.safeParse(rawQuery)
-
-    if (!parseResult.success) {
-      const refinementError = parseResult.error.issues.find((err) => err.code === 'custom')
-      if (refinementError) {
-        logger.warn(`[${requestId}] Invalid query parameters: ${refinementError.message}`)
-        return NextResponse.json({ error: refinementError.message }, { status: 400 })
-      }
-
-      logger.warn(`[${requestId}] Invalid query parameters`, {
-        errors: parseResult.error.issues,
-      })
-
-      return NextResponse.json(
-        { error: getValidationErrorMessage(parseResult.error, 'Validation failed') },
-        { status: 400 }
-      )
-    }
-
-    const { provider: providerParam, workflowId, workspaceId, credentialId } = parseResult.data
-
-    // Authenticate requester (supports session and internal JWT)
     const authResult = await checkSessionOrInternalAuth(request)
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthenticated credentials request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
     const requesterUserId = authResult.userId
+
+    const parsed = await parseRequest(
+      listOAuthCredentialsContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          const refinementError = error.issues.find((err) => err.code === 'custom')
+          if (refinementError) {
+            logger.warn(`[${requestId}] Invalid query parameters: ${refinementError.message}`)
+            return NextResponse.json({ error: refinementError.message }, { status: 400 })
+          }
+
+          logger.warn(`[${requestId}] Invalid query parameters`, {
+            errors: error.issues,
+          })
+
+          return NextResponse.json(
+            { error: getValidationErrorMessage(error, 'Validation failed') },
+            { status: 400 }
+          )
+        },
+      }
+    )
+
+    if (!parsed.success) return parsed.response
+
+    const { provider: providerParam, workflowId, workspaceId, credentialId } = parsed.data.query
 
     let effectiveWorkspaceId = workspaceId ?? undefined
     if (workflowId) {
