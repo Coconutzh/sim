@@ -8,7 +8,8 @@ import {
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { executionIdParamsSchema } from '@/lib/api/contracts/logs'
+import { getExecutionSnapshotContract } from '@/lib/api/contracts/logs'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -22,17 +23,19 @@ export const GET = withRouteHandler(
     const requestId = generateRequestId()
 
     try {
-      const { executionId } = executionIdParamsSchema.parse(await params)
-
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!authResult.success || !authResult.userId) {
-        logger.warn(`[${requestId}] Unauthorized execution data access attempt for: ${executionId}`)
+        logger.warn(`[${requestId}] Unauthorized execution data access attempt`)
         return NextResponse.json(
           { error: authResult.error || 'Authentication required' },
           { status: 401 }
         )
       }
 
+      const parsed = await parseRequest(getExecutionSnapshotContract, request, { params })
+      if (!parsed.success) return parsed.response
+
+      const { executionId } = parsed.data.params
       const authenticatedUserId = authResult.userId
       const accessibleWorkspaceIds = await listAccessibleWorkspaceIds(authenticatedUserId)
 

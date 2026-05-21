@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { permissionsMock, permissionsMockFns } from '@sim/testing'
+import { createMockRequest, permissionsMock, permissionsMockFns } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetSession, mockSelectDistinct } = vi.hoisted(() => ({
@@ -56,7 +56,12 @@ describe('GET /api/logs/triggers', () => {
 
   it('allows workspace owners to fetch triggers without a permission row', async () => {
     const response = await GET(
-      new Request('http://localhost:3000/api/logs/triggers?workspaceId=ws-owner') as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/logs/triggers?workspaceId=ws-owner'
+      )
     )
 
     expect(response.status).toBe(200)
@@ -83,7 +88,12 @@ describe('GET /api/logs/triggers', () => {
     })
 
     const response = await GET(
-      new Request('http://localhost:3000/api/logs/triggers?workspaceId=ws-hidden') as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/logs/triggers?workspaceId=ws-hidden'
+      )
     )
 
     expect(response.status).toBe(404)

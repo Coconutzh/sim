@@ -294,6 +294,13 @@ export const triggersQuerySchema = z.object({
 })
 export type TriggersQuery = z.output<typeof triggersQuerySchema>
 
+export const logTriggersResponseSchema = z.object({
+  triggers: z.array(z.string()),
+  count: z.number(),
+})
+
+export type LogTriggersResponse = z.output<typeof logTriggersResponseSchema>
+
 export const cancelWorkflowExecutionResponseSchema = z.object({
   success: z.boolean(),
   executionId: z.string(),
@@ -353,6 +360,25 @@ export const getDashboardStatsContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: dashboardStatsResponseSchema,
+  },
+})
+
+export const getLogTriggersContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/logs/triggers',
+  query: triggersQuerySchema,
+  response: {
+    mode: 'json',
+    schema: logTriggersResponseSchema,
+  },
+})
+
+export const exportLogsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/logs/export',
+  query: logFilterQuerySchema,
+  response: {
+    mode: 'stream',
   },
 })
 

@@ -3,9 +3,11 @@ import { workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { exportLogsContract } from '@/lib/api/contracts/logs'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { buildFilterConditions, LogFilterParamsSchema } from '@/lib/logs/filters'
+import { buildFilterConditions } from '@/lib/logs/filters'
 import { expandFolderIdsWithDescendants } from '@/lib/logs/folder-expansion'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -13,13 +15,51 @@ const logger = createLogger('LogsExportAPI')
 
 export const revalidate = 0
 
-function escapeCsv(value: any): string {
+interface ExportExecutionData {
+  finalOutput?: unknown
+  message?: string
+  traceSpans?: unknown
+}
+
+interface LogExportRow {
+  startedAt: Date | string | null
+  level: string
+  workflowName: string
+  trigger: string | null
+  totalDurationMs: number | null
+  cost: unknown
+  workflowId: string | null
+  executionId: string | null
+  executionData: ExportExecutionData | null
+}
+
+function escapeCsv(value: unknown): string {
   if (value === null || value === undefined) return ''
   const str = String(value)
   if (/[",\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`
   }
   return str
+}
+
+function getTotalCost(cost: unknown): unknown {
+  if (!cost || typeof cost !== 'object') return ''
+  const record = cost as Record<string, unknown>
+  if (record.total !== undefined) return record.total
+  const value = record.value
+  if (value && typeof value === 'object' && 'total' in value) {
+    return (value as Record<string, unknown>).total
+  }
+  return ''
+}
+
+function formatDate(value: Date | string | null): string {
+  if (value instanceof Date) return value.toISOString()
+  return value ?? ''
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
 }
 
 export const GET = withRouteHandler(async (request: NextRequest) => {
@@ -30,8 +70,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = session.user.id
-    const { searchParams } = new URL(request.url)
-    const params = LogFilterParamsSchema.parse(Object.fromEntries(searchParams.entries()))
+    const parsed = await parseRequest(exportLogsContract, request, {})
+    if (!parsed.success) return parsed.response
+
+    const params = parsed.data.query
     const access = await checkWorkspaceAccess(params.workspaceId, userId)
     if (!access.exists || !access.hasAccess) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -93,30 +135,31 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
             if (!rows.length) break
 
-            for (const r of rows as any[]) {
+            for (const row of rows as LogExportRow[]) {
               let message = ''
-              let traces: any = null
+              let traces: unknown = null
               try {
-                const ed = (r as any).executionData
-                if (ed) {
-                  if (ed.finalOutput)
+                const executionData = row.executionData
+                if (executionData) {
+                  if (executionData.finalOutput) {
                     message =
-                      typeof ed.finalOutput === 'string'
-                        ? ed.finalOutput
-                        : JSON.stringify(ed.finalOutput)
-                  if (ed.message) message = ed.message
-                  if (ed.traceSpans) traces = ed.traceSpans
+                      typeof executionData.finalOutput === 'string'
+                        ? executionData.finalOutput
+                        : JSON.stringify(executionData.finalOutput)
+                  }
+                  if (executionData.message) message = executionData.message
+                  if (executionData.traceSpans) traces = executionData.traceSpans
                 }
               } catch {}
               const line = [
-                escapeCsv(r.startedAt?.toISOString?.() || r.startedAt),
-                escapeCsv(r.level),
-                escapeCsv(r.workflowName),
-                escapeCsv(r.trigger),
-                escapeCsv(r.totalDurationMs ?? ''),
-                escapeCsv(r.cost?.total ?? r.cost?.value?.total ?? ''),
-                escapeCsv(r.workflowId ?? ''),
-                escapeCsv(r.executionId ?? ''),
+                escapeCsv(formatDate(row.startedAt)),
+                escapeCsv(row.level),
+                escapeCsv(row.workflowName),
+                escapeCsv(row.trigger),
+                escapeCsv(row.totalDurationMs ?? ''),
+                escapeCsv(getTotalCost(row.cost)),
+                escapeCsv(row.workflowId ?? ''),
+                escapeCsv(row.executionId ?? ''),
                 escapeCsv(message),
                 escapeCsv(traces ? JSON.stringify(traces) : ''),
               ].join(',')
@@ -126,10 +169,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             offset += pageSize
           }
           controller.close()
-        } catch (e: any) {
-          logger.error('Export stream error', { error: e?.message })
+        } catch (error) {
+          logger.error('Export stream error', { error: getErrorMessage(error) })
           try {
-            controller.error(e)
+            controller.error(error)
           } catch {}
         }
       },
@@ -138,7 +181,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const ts = new Date().toISOString().replace(/[:.]/g, '-')
     const filename = `logs-${ts}.csv`
 
-    return new NextResponse(stream as any, {
+    return new NextResponse(stream, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
@@ -146,8 +189,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         'Cache-Control': 'no-cache',
       },
     })
-  } catch (error: any) {
-    logger.error('Export error', { error: error?.message })
+  } catch (error) {
+    logger.error('Export error', { error: getErrorMessage(error) })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 })

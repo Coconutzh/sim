@@ -3,8 +3,8 @@ import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { triggersQuerySchema } from '@/lib/api/contracts/logs'
-import { searchParamsToObject, validationErrorResponse } from '@/lib/api/server'
+import { getLogTriggersContract } from '@/lib/api/contracts/logs'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -32,14 +32,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     const userId = session.user.id
 
-    const { searchParams } = new URL(request.url)
-    const validation = triggersQuerySchema.safeParse(searchParamsToObject(searchParams))
-    if (!validation.success) {
-      logger.error(`[${requestId}] Invalid query parameters`, { error: validation.error })
-      return validationErrorResponse(validation.error)
-    }
+    const parsed = await parseRequest(getLogTriggersContract, request, {})
+    if (!parsed.success) return parsed.response
 
-    const params = validation.data
+    const params = parsed.data.query
     const access = await checkWorkspaceAccess(params.workspaceId, userId)
     if (!access.exists || !access.hasAccess) {
       logger.warn(`[${requestId}] Hidden workspace triggers access attempt`, {

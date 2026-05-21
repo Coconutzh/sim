@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { permissionsMock, permissionsMockFns } from '@sim/testing'
+import { createMockRequest, permissionsMock, permissionsMockFns } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetSession, mockDbSelect } = vi.hoisted(() => ({
@@ -87,7 +87,12 @@ describe('GET /api/logs/stats', () => {
       )
 
     const response = await GET(
-      new Request('http://localhost:3000/api/logs/stats?workspaceId=ws-owner&segmentCount=2') as any
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/logs/stats?workspaceId=ws-owner&segmentCount=2'
+      )
     )
 
     expect(response.status).toBe(200)
@@ -134,9 +139,12 @@ describe('GET /api/logs/stats', () => {
     })
 
     const response = await GET(
-      new Request(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
         'http://localhost:3000/api/logs/stats?workspaceId=ws-owner&segmentCount=2'
-      ) as any
+      )
     )
 
     expect(response.status).toBe(404)

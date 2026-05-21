@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import {
+  createMockRequest,
   hybridAuthMock,
   hybridAuthMockFns,
   permissionsMock,
@@ -74,7 +75,7 @@ describe('GET /api/logs/execution/[executionId]', () => {
       )
 
     const response = await GET(
-      new Request('http://localhost:3000/api/logs/execution/exec-1') as any,
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/logs/execution/exec-1'),
       { params: Promise.resolve({ executionId: 'exec-1' }) }
     )
 
@@ -97,12 +98,34 @@ describe('GET /api/logs/execution/[executionId]', () => {
     permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValueOnce([])
 
     const response = await GET(
-      new Request('http://localhost:3000/api/logs/execution/exec-hidden') as any,
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/logs/execution/exec-hidden'
+      ),
       { params: Promise.resolve({ executionId: 'exec-hidden' }) }
     )
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Workflow execution not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('authenticates before validating route params', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/logs/execution/'),
+      { params: Promise.resolve({ executionId: '' }) }
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Authentication required' })
+    expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })
