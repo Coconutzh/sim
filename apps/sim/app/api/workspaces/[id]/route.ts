@@ -37,12 +37,12 @@ export const GET = withRouteHandler(
     // Check if user has any access to this workspace
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!userPermission) {
-      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     // If checking for published templates before deletion
@@ -120,7 +120,7 @@ export const PATCH = withRouteHandler(
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     // Check if user has admin permissions to update workspace
@@ -289,7 +289,7 @@ export const DELETE = withRouteHandler(
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     // Check if user has admin permissions to delete workspace

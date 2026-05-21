@@ -116,7 +116,7 @@ describe('DELETE /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
   })
 })
@@ -165,6 +165,24 @@ describe('PATCH /api/workspaces/[id]', () => {
       'ws-shared'
     )
   })
+
+  it('returns 404 when stale personal rows no longer grant workspace update visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await PATCH(createMockRequest('PATCH', { name: 'Renamed' }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })
 
 describe('GET /api/workspaces/[id]', () => {
@@ -196,7 +214,7 @@ describe('GET /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found or access denied' })
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })
