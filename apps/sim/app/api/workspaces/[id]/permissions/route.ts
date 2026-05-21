@@ -14,6 +14,7 @@ import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
+  getWorkspaceWithOwner,
   getUserEntityPermissions,
   getUsersWithPermissions,
   hasWorkspaceAdminAccess,
@@ -105,6 +106,11 @@ export const PATCH = withRouteHandler(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
 
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
+      }
+
       const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, workspaceId)
 
       if (!hasAdminAccess) {
@@ -118,24 +124,16 @@ export const PATCH = withRouteHandler(
       if (!parsed.success) return parsed.response
       const body = parsed.data.body
 
-      const workspaceRow = await db
-        .select({
-          billedAccountUserId: workspace.billedAccountUserId,
-          ownerId: workspace.ownerId,
-          workspaceMode: workspace.workspaceMode,
-        })
-        .from(workspace)
-        .where(eq(workspace.id, workspaceId))
-        .limit(1)
+      const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 
-      if (!workspaceRow.length) {
+      if (!workspaceRow) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      const billedAccountUserId = workspaceRow[0].billedAccountUserId
-      const ownerId = workspaceRow[0].ownerId
+      const billedAccountUserId = workspaceRow.billedAccountUserId
+      const ownerId = workspaceRow.ownerId
 
-      if (workspaceRow[0].workspaceMode === 'personal') {
+      if (workspaceRow.workspaceMode === 'personal') {
         return NextResponse.json(
           { error: 'Personal workspaces do not support shared members' },
           { status: 403 }
