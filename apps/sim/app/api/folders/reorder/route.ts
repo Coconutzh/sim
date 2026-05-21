@@ -56,9 +56,34 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ error: 'No valid folders to update' }, { status: 400 })
     }
 
+    const referencedParentIds = Array.from(
+      new Set(
+        validUpdates
+          .map((update) => update.parentId)
+          .filter((parentId): parentId is string => typeof parentId === 'string')
+      )
+    )
+
+    if (referencedParentIds.length > 0) {
+      const parentFolders = await db
+        .select({ id: workflowFolder.id, workspaceId: workflowFolder.workspaceId })
+        .from(workflowFolder)
+        .where(inArray(workflowFolder.id, referencedParentIds))
+
+      const validParentIds = new Set(
+        parentFolders
+          .filter((folder) => folder.workspaceId === workspaceId)
+          .map((folder) => folder.id)
+      )
+
+      if (validParentIds.size !== referencedParentIds.length) {
+        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+      }
+    }
+
     for (const update of validUpdates) {
       await assertFolderMutable(update.id)
-      if (update.parentId !== undefined) {
+      if (typeof update.parentId === 'string') {
         await assertFolderMutable(update.parentId)
       }
     }

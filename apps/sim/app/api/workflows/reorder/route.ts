@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
+import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import {
   assertFolderMutable,
@@ -61,9 +61,32 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ error: 'No valid workflows to update' }, { status: 400 })
     }
 
+    const referencedFolderIds = Array.from(
+      new Set(
+        validUpdates
+          .map((update) => update.folderId)
+          .filter((folderId): folderId is string => typeof folderId === 'string')
+      )
+    )
+
+    if (referencedFolderIds.length > 0) {
+      const existingFolders = await db
+        .select({ id: workflowFolder.id, workspaceId: workflowFolder.workspaceId })
+        .from(workflowFolder)
+        .where(inArray(workflowFolder.id, referencedFolderIds))
+
+      const validFolderIds = new Set(
+        existingFolders.filter((folder) => folder.workspaceId === workspaceId).map((folder) => folder.id)
+      )
+
+      if (validFolderIds.size !== referencedFolderIds.length) {
+        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+      }
+    }
+
     for (const update of validUpdates) {
       await assertWorkflowMutable(update.id)
-      if (update.folderId !== undefined) {
+      if (typeof update.folderId === 'string') {
         await assertFolderMutable(update.folderId)
       }
     }

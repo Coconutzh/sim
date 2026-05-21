@@ -99,4 +99,22 @@ describe('PUT /api/folders/reorder', () => {
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
+
+  it('returns 404 when moving a folder under a parent from another hidden workspace', async () => {
+    mockDbSelect
+      .mockReturnValueOnce(createSelectChain([{ id: 'folder-1', workspaceId: 'ws-1' }]))
+      .mockReturnValueOnce(createSelectChain([{ id: 'folder-hidden', workspaceId: 'ws-hidden' }]))
+
+    const response = await PUT(
+      createMockRequest('PUT', {
+        workspaceId: 'ws-1',
+        updates: [{ id: 'folder-1', sortOrder: 0, parentId: 'folder-hidden' }],
+      })
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Folder not found' })
+    expect(mockDbTransaction).not.toHaveBeenCalled()
+  })
 })
