@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { confluenceSpacesSelectorContract } from '@/lib/api/contracts/selectors/confluence'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
+import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
 import { validateJiraCloudId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -61,7 +61,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       workflowId,
     })
     if (!authz.ok || !authz.credentialOwnerUserId) {
-      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
+      return credentialAccessErrorResponse(authz)
     }
 
     const resolved = await resolveOAuthAccountId(credential)

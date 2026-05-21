@@ -20,6 +20,12 @@ vi.mock('@/app/api/auth/oauth/utils', () => authOAuthUtilsMock)
 
 vi.mock('@/lib/auth/credential-access', () => ({
   authorizeCredentialUse: mockAuthorizeCredentialUse,
+  credentialAccessErrorResponse: (result: { error?: string; status?: number }) => {
+    return Response.json(
+      { error: result.error || 'Unauthorized' },
+      { status: result.status ?? 403 }
+    )
+  },
 }))
 
 import { GET, POST } from '@/app/api/auth/oauth/token/route'
@@ -119,6 +125,7 @@ describe('OAuth Token API Routes', () => {
       mockAuthorizeCredentialUse.mockResolvedValueOnce({
         ok: false,
         error: 'Authentication required',
+        status: 401,
       })
 
       const req = createMockRequest('POST', {
@@ -128,12 +135,16 @@ describe('OAuth Token API Routes', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(401)
       expect(data).toHaveProperty('error')
     })
 
     it('should handle workflow not found', async () => {
-      mockAuthorizeCredentialUse.mockResolvedValueOnce({ ok: false, error: 'Workflow not found' })
+      mockAuthorizeCredentialUse.mockResolvedValueOnce({
+        ok: false,
+        error: 'Workflow not found',
+        status: 404,
+      })
 
       const req = createMockRequest('POST', {
         credentialId: 'credential-id',
@@ -143,7 +154,7 @@ describe('OAuth Token API Routes', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(404)
     })
 
     it('should handle credential not found', async () => {
@@ -353,6 +364,7 @@ describe('OAuth Token API Routes', () => {
       mockAuthorizeCredentialUse.mockResolvedValueOnce({
         ok: false,
         error: 'Authentication required',
+        status: 401,
       })
 
       const req = new NextRequest(
@@ -362,7 +374,7 @@ describe('OAuth Token API Routes', () => {
       const response = await GET(req as any)
       const data = await response.json()
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(401)
       expect(data).toHaveProperty('error')
     })
 

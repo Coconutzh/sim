@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftFileQuerySchema } from '@/lib/api/contracts/selectors/microsoft'
 import { getValidationErrorMessage } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
+import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
 import { validateMicrosoftGraphId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -44,8 +44,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     })
 
     if (!authz.ok || !authz.credentialOwnerUserId) {
-      const status = authz.error === 'Credential not found' ? 404 : 403
-      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status })
+      return credentialAccessErrorResponse(authz)
     }
 
     const resolvedCredentialId = authz.resolvedCredentialId || credentialId

@@ -5,7 +5,7 @@ import {
   oauthTokenPostContract,
 } from '@/lib/api/contracts/oauth-connections'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
+import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -116,7 +116,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         callerUserId,
       })
       if (!authz.ok) {
-        return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
+        return credentialAccessErrorResponse(authz)
       }
 
       try {
@@ -150,7 +150,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       callerUserId,
     })
     if (!authz.ok || !authz.credentialOwnerUserId) {
-      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
+      return credentialAccessErrorResponse(authz)
     }
 
     const resolvedCredentialId = authz.resolvedCredentialId || credentialId
@@ -227,7 +227,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       requireWorkflowIdForInternal: false,
     })
     if (!authz.ok || authz.authType !== AuthType.SESSION || !authz.credentialOwnerUserId) {
-      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
+      return credentialAccessErrorResponse(authz)
     }
 
     const resolvedCredentialId = authz.resolvedCredentialId || credentialId

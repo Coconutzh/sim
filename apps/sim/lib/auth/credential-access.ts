@@ -1,18 +1,49 @@
 import { db } from '@sim/db'
 import { account, credential, credentialMember, workflow as workflowTable } from '@sim/db/schema'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 export interface CredentialAccessResult {
   ok: boolean
   error?: string
+  status?: 401 | 403 | 404
   authType?: typeof AuthType.SESSION | typeof AuthType.INTERNAL_JWT
   requesterUserId?: string
   credentialOwnerUserId?: string
   workspaceId?: string
   resolvedCredentialId?: string
+}
+
+function errorResult(
+  status: 401 | 403 | 404,
+  error: string
+): CredentialAccessResult {
+  return { ok: false, status, error }
+}
+
+async function getVisibleWorkspacePermission(
+  userId: string,
+  workspaceId: string
+): Promise<Awaited<ReturnType<typeof getUserEntityPermissions>>> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return null
+  }
+
+  return getUserEntityPermissions(userId, 'workspace', workspaceId)
+}
+
+export function credentialAccessErrorResponse(result: CredentialAccessResult): NextResponse {
+  return NextResponse.json(
+    { error: result.error || 'Unauthorized' },
+    { status: result.status ?? 403 }
+  )
 }
 
 /**
@@ -36,7 +67,7 @@ export async function authorizeCredentialUse(
     requireWorkflowId: requireWorkflowIdForInternal,
   })
   if (!auth.success || !auth.userId) {
-    return { ok: false, error: auth.error || 'Authentication required' }
+    return errorResult(401, auth.error || 'Authentication required')
   }
 
   if (
@@ -44,21 +75,27 @@ export async function authorizeCredentialUse(
     callerUserId !== undefined &&
     callerUserId !== auth.userId
   ) {
-    return { ok: false, error: 'Caller user does not match internal token subject' }
+    return errorResult(403, 'Caller user does not match internal token subject')
   }
 
   const actingUserId = auth.userId
 
-  const [workflowContext] = workflowId
-    ? await db
-        .select({ workspaceId: workflowTable.workspaceId })
-        .from(workflowTable)
-        .where(eq(workflowTable.id, workflowId))
-        .limit(1)
-    : [null]
+  let workflowContext: { workspaceId: string } | null = null
+  if (workflowId) {
+    const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId,
+      userId: actingUserId,
+      action: 'read',
+    })
 
-  if (workflowId && (!workflowContext || !workflowContext.workspaceId)) {
-    return { ok: false, error: 'Workflow not found' }
+    if (!workflowAuthorization.allowed || !workflowAuthorization.workflow?.workspaceId) {
+      return errorResult(
+        workflowAuthorization.status === 404 ? 404 : 403,
+        workflowAuthorization.message || 'Workflow not found'
+      )
+    }
+
+    workflowContext = { workspaceId: workflowAuthorization.workflow.workspaceId }
   }
 
   const [platformCredential] = await db
@@ -75,13 +112,12 @@ export async function authorizeCredentialUse(
   if (platformCredential) {
     if (platformCredential.type === 'service_account') {
       if (workflowContext && workflowContext.workspaceId !== platformCredential.workspaceId) {
-        return { ok: false, error: 'Credential is not accessible from this workflow workspace' }
+        return errorResult(404, 'Credential not found')
       }
 
       if (actingUserId) {
-        const requesterPerm = await getUserEntityPermissions(
+        const requesterPerm = await getVisibleWorkspacePermission(
           actingUserId,
-          'workspace',
           platformCredential.workspaceId
         )
 
@@ -98,17 +134,16 @@ export async function authorizeCredentialUse(
           .limit(1)
 
         if (!membership) {
-          return {
-            ok: false,
-            error:
-              'You do not have access to this credential. Ask the credential admin to add you as a member.',
-          }
+          return errorResult(
+            403,
+            'You do not have access to this credential. Ask the credential admin to add you as a member.'
+          )
         }
         if (requesterPerm === null) {
-          return { ok: false, error: 'You do not have access to this workspace.' }
+          return errorResult(404, 'Credential not found')
         }
       } else if (!workflowContext) {
-        return { ok: false, error: 'workflowId is required' }
+        return errorResult(403, 'workflowId is required')
       }
 
       return {
@@ -122,11 +157,11 @@ export async function authorizeCredentialUse(
     }
 
     if (platformCredential.type !== 'oauth' || !platformCredential.accountId) {
-      return { ok: false, error: 'Unsupported credential type for OAuth access' }
+      return errorResult(403, 'Unsupported credential type for OAuth access')
     }
 
     if (workflowContext && workflowContext.workspaceId !== platformCredential.workspaceId) {
-      return { ok: false, error: 'Credential is not accessible from this workflow workspace' }
+      return errorResult(404, 'Credential not found')
     }
 
     const [accountRow] = await db
@@ -136,13 +171,12 @@ export async function authorizeCredentialUse(
       .limit(1)
 
     if (!accountRow) {
-      return { ok: false, error: 'Credential account not found' }
+      return errorResult(404, 'Credential account not found')
     }
 
     if (actingUserId) {
-      const requesterPerm = await getUserEntityPermissions(
+      const requesterPerm = await getVisibleWorkspacePermission(
         actingUserId,
-        'workspace',
         platformCredential.workspaceId
       )
 
@@ -159,26 +193,22 @@ export async function authorizeCredentialUse(
         .limit(1)
 
       if (!membership) {
-        return {
-          ok: false,
-          error: `You do not have access to this credential. Ask the credential admin to add you as a member.`,
-        }
+        return errorResult(
+          403,
+          'You do not have access to this credential. Ask the credential admin to add you as a member.'
+        )
       }
       if (requesterPerm === null) {
-        return {
-          ok: false,
-          error: 'You do not have access to this workspace.',
-        }
+        return errorResult(404, 'Credential not found')
       }
     }
 
-    const ownerPerm = await getUserEntityPermissions(
+    const ownerPerm = await getVisibleWorkspacePermission(
       accountRow.userId,
-      'workspace',
       platformCredential.workspaceId
     )
     if (ownerPerm === null) {
-      return { ok: false, error: 'Unauthorized' }
+      return errorResult(404, 'Credential not found')
     }
 
     return {
@@ -209,7 +239,7 @@ export async function authorizeCredentialUse(
       .limit(1)
 
     if (!workspaceCredential?.accountId) {
-      return { ok: false, error: 'Credential not found' }
+      return errorResult(404, 'Credential not found')
     }
 
     const [accountRow] = await db
@@ -219,7 +249,7 @@ export async function authorizeCredentialUse(
       .limit(1)
 
     if (!accountRow) {
-      return { ok: false, error: 'Credential account not found' }
+      return errorResult(404, 'Credential account not found')
     }
 
     if (actingUserId) {
@@ -236,21 +266,16 @@ export async function authorizeCredentialUse(
         .limit(1)
 
       if (!membership) {
-        return {
-          ok: false,
-          error:
-            'You do not have access to this credential. Ask the credential admin to add you as a member.',
-        }
+        return errorResult(
+          403,
+          'You do not have access to this credential. Ask the credential admin to add you as a member.'
+        )
       }
     }
 
-    const ownerPerm = await getUserEntityPermissions(
-      accountRow.userId,
-      'workspace',
-      workflowContext.workspaceId
-    )
+    const ownerPerm = await getVisibleWorkspacePermission(accountRow.userId, workflowContext.workspaceId)
     if (ownerPerm === null) {
-      return { ok: false, error: 'Unauthorized' }
+      return errorResult(404, 'Credential not found')
     }
 
     return {
@@ -270,15 +295,15 @@ export async function authorizeCredentialUse(
     .limit(1)
 
   if (!legacyAccount) {
-    return { ok: false, error: 'Credential not found' }
+    return errorResult(404, 'Credential not found')
   }
 
   if (auth.authType === AuthType.INTERNAL_JWT) {
-    return { ok: false, error: 'workflowId is required' }
+    return errorResult(403, 'workflowId is required')
   }
 
   if (auth.userId !== legacyAccount.userId) {
-    return { ok: false, error: 'Unauthorized' }
+    return errorResult(403, 'Unauthorized')
   }
 
   return {

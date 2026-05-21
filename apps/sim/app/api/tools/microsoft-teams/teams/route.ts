@@ -3,7 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftTeamsSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
+import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/auth/credential-access'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
@@ -23,7 +23,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         workflowId,
       })
       if (!authz.ok || !authz.credentialOwnerUserId) {
-        return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
+        return credentialAccessErrorResponse(authz)
       }
 
       const accessToken = await refreshAccessTokenIfNeeded(
