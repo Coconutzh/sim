@@ -23,6 +23,7 @@ const { mockWorkflowCreated, mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 const mockListAccessibleWorkspaceIds = permissionsMockFns.mockListAccessibleWorkspaceIds
 const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 
 vi.mock('drizzle-orm', () => ({
   ...drizzleOrmMock,
@@ -80,6 +81,16 @@ describe('Workflows API Route - POST ordering', () => {
       userId: 'user-123',
       userName: 'Test User',
       userEmail: 'test@example.com',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-123',
+        ownerId: 'user-123',
+        workspaceMode: 'organization',
+      },
     })
     mockGetUserEntityPermissions.mockResolvedValue('write')
     mockGetWorkspaceWithOwner.mockResolvedValue({
@@ -253,6 +264,33 @@ describe('Workflows API Route - POST ordering', () => {
       workflowsPersistenceUtilsMockFns.mockSaveWorkflowToNormalizedTables
     ).not.toHaveBeenCalled()
   })
+
+  it('returns 404 when stale personal rows no longer grant workflow creation visibility', async () => {
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'workspace-123',
+        ownerId: 'owner-2',
+        workspaceMode: 'personal',
+      },
+    })
+
+    const req = createMockRequest('POST', {
+      name: 'Hidden Workflow',
+      description: 'desc',
+      color: '#3972F6',
+      workspaceId: 'workspace-123',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data.error).toBe('Workspace not found')
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
 })
 
 describe('Workflows API Route - GET access', () => {
@@ -264,6 +302,16 @@ describe('Workflows API Route - GET access', () => {
       userId: 'user-123',
       userName: 'Test User',
       userEmail: 'test@example.com',
+    })
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-owned',
+        ownerId: 'user-123',
+        workspaceMode: 'organization',
+      },
     })
   })
 
@@ -305,5 +353,35 @@ describe('Workflows API Route - GET access', () => {
       id: 'workflow-1',
       workspaceId: 'workspace-owned',
     })
+  })
+
+  it('returns 404 when filtering a stale foreign personal workspace', async () => {
+    mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'workspace-hidden',
+        ownerId: 'owner-2',
+        workspaceMode: 'personal',
+      },
+    })
+
+    const response = await GET(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/workflows?workspaceId=workspace-hidden'
+      )
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({
+      error: 'Workspace not found',
+      code: 'WORKSPACE_NOT_FOUND',
+    })
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

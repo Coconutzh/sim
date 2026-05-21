@@ -15,12 +15,11 @@ import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import {
+  checkWorkspaceAccess,
   getUserEntityPermissions,
   getWorkspaceWithOwner,
   listAccessibleWorkspaceIds,
-  workspaceExists,
 } from '@/lib/workspaces/permissions/utils'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 
 const logger = createLogger('WorkflowAPI')
 
@@ -47,9 +46,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const userId = auth.userId
 
     if (workspaceId) {
-      const wsExists = await workspaceExists(workspaceId)
+      const access = await checkWorkspaceAccess(workspaceId, userId)
 
-      if (!wsExists) {
+      if (!access.exists) {
         logger.warn(
           `[${requestId}] Attempt to fetch workflows for non-existent workspace: ${workspaceId}`
         )
@@ -59,15 +58,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      const userRole = await verifyWorkspaceMembership(userId, workspaceId)
-
-      if (!userRole) {
+      if (!access.hasAccess) {
         logger.warn(
-          `[${requestId}] User ${userId} attempted to access workspace ${workspaceId} without membership`
+          `[${requestId}] User ${userId} attempted to access workspace ${workspaceId} without visibility`
         )
         return NextResponse.json(
-          { error: 'Access denied to this workspace', code: 'WORKSPACE_ACCESS_DENIED' },
-          { status: 403 }
+          { error: 'Workspace not found', code: 'WORKSPACE_NOT_FOUND' },
+          { status: 404 }
         )
       }
     }
@@ -177,6 +174,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         },
         { status: 400 }
       )
+    }
+
+    const access = await checkWorkspaceAccess(workspaceId, userId)
+    if (!access.exists || !access.hasAccess) {
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to create workflow in hidden workspace ${workspaceId}`
+      )
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const workspacePermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
