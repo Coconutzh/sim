@@ -159,15 +159,11 @@ export const GET = withRouteHandler(
       const externalOwnerIds = [...new Set(orgWorkspaces.map((row) => row.ownerId))].filter(
         (ownerId) => !memberUserIds.includes(ownerId)
       )
-      const externalOwners =
+      const externalOwnerRows =
         externalOwnerIds.length > 0
           ? await db
               .select({
-                id: user.id,
                 userId: user.id,
-                organizationId: workspace.organizationId,
-                role: 'external' as const,
-                createdAt: workspace.createdAt,
                 userName: user.name,
                 userEmail: user.email,
                 currentPeriodCost: userStats.currentPeriodCost,
@@ -175,10 +171,9 @@ export const GET = withRouteHandler(
                 lastActive: userStats.lastActive,
                 billingBlocked: userStats.billingBlocked,
               })
-              .from(workspace)
-              .innerJoin(user, eq(workspace.ownerId, user.id))
+              .from(user)
               .leftJoin(userStats, eq(user.id, userStats.userId))
-              .where(inArray(workspace.ownerId, externalOwnerIds))
+              .where(inArray(user.id, externalOwnerIds))
           : []
 
       const externalByUserId = new Map<string, (typeof externalMembers)[number]>()
@@ -188,10 +183,32 @@ export const GET = withRouteHandler(
           externalByUserId.set(row.userId, row)
         }
       }
-      for (const row of externalOwners) {
-        const existing = externalByUserId.get(row.userId)
-        if (!existing || row.createdAt < existing.createdAt) {
-          externalByUserId.set(row.userId, row as (typeof externalMembers)[number])
+      const externalOwnerById = new Map(externalOwnerRows.map((row) => [row.userId, row]))
+      for (const orgWorkspace of orgWorkspaces) {
+        if (memberUserIds.includes(orgWorkspace.ownerId)) {
+          continue
+        }
+
+        const ownerRow = externalOwnerById.get(orgWorkspace.ownerId)
+        if (!ownerRow) {
+          continue
+        }
+
+        const externalOwner = {
+          userId: ownerRow.userId,
+          organizationId,
+          role: 'external' as const,
+          createdAt: orgWorkspace.createdAt,
+          userName: ownerRow.userName,
+          userEmail: ownerRow.userEmail,
+          currentPeriodCost: ownerRow.currentPeriodCost,
+          currentUsageLimit: ownerRow.currentUsageLimit,
+          lastActive: ownerRow.lastActive,
+          billingBlocked: ownerRow.billingBlocked,
+        }
+        const existing = externalByUserId.get(ownerRow.userId)
+        if (!existing || externalOwner.createdAt < existing.createdAt) {
+          externalByUserId.set(ownerRow.userId, externalOwner as (typeof externalMembers)[number])
         }
       }
 

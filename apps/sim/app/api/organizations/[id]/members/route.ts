@@ -150,21 +150,16 @@ export const GET = withRouteHandler(
       const externalOwnerIds = [...new Set(orgWorkspaces.map((row) => row.ownerId))].filter(
         (ownerId) => !memberUserIds.includes(ownerId)
       )
-      const externalOwners =
+      const externalOwnerRows =
         externalOwnerIds.length > 0
           ? await db
               .select({
-                id: user.id,
                 userId: user.id,
-                organizationId: workspace.organizationId,
-                role: 'external' as const,
-                createdAt: workspace.createdAt,
                 userName: user.name,
                 userEmail: user.email,
               })
-              .from(workspace)
-              .innerJoin(user, eq(workspace.ownerId, user.id))
-              .where(inArray(workspace.ownerId, externalOwnerIds))
+              .from(user)
+              .where(inArray(user.id, externalOwnerIds))
           : []
       const externalByUserId = new Map<string, (typeof externalMembers)[number]>()
       for (const row of externalMembers) {
@@ -173,10 +168,28 @@ export const GET = withRouteHandler(
           externalByUserId.set(row.userId, row)
         }
       }
-      for (const row of externalOwners) {
-        const existing = externalByUserId.get(row.userId)
-        if (!existing || row.createdAt < existing.createdAt) {
-          externalByUserId.set(row.userId, row as (typeof externalMembers)[number])
+      const externalOwnerById = new Map(externalOwnerRows.map((row) => [row.userId, row]))
+      for (const orgWorkspace of orgWorkspaces) {
+        if (memberUserIds.includes(orgWorkspace.ownerId)) {
+          continue
+        }
+
+        const ownerRow = externalOwnerById.get(orgWorkspace.ownerId)
+        if (!ownerRow) {
+          continue
+        }
+
+        const externalOwner = {
+          userId: ownerRow.userId,
+          organizationId,
+          role: 'external' as const,
+          createdAt: orgWorkspace.createdAt,
+          userName: ownerRow.userName,
+          userEmail: ownerRow.userEmail,
+        }
+        const existing = externalByUserId.get(ownerRow.userId)
+        if (!existing || externalOwner.createdAt < existing.createdAt) {
+          externalByUserId.set(ownerRow.userId, externalOwner as (typeof externalMembers)[number])
         }
       }
       const combinedMembers = [...members, ...externalByUserId.values()].map((row) => ({
@@ -234,25 +247,20 @@ export const GET = withRouteHandler(
                   )
                 )
             : []
-        const externalOwnersWithUsage =
+        const externalOwnerUsageRows =
           externalOwnerIds.length > 0
             ? await db
                 .select({
-                  id: user.id,
                   userId: user.id,
-                  organizationId: workspace.organizationId,
-                  role: 'external' as const,
-                  createdAt: workspace.createdAt,
                   userName: user.name,
                   userEmail: user.email,
                   currentPeriodCost: userStats.currentPeriodCost,
                   currentUsageLimit: userStats.currentUsageLimit,
                   usageLimitUpdatedAt: userStats.usageLimitUpdatedAt,
                 })
-                .from(workspace)
-                .innerJoin(user, eq(workspace.ownerId, user.id))
+                .from(user)
                 .leftJoin(userStats, eq(user.id, userStats.userId))
-                .where(inArray(workspace.ownerId, externalOwnerIds))
+                .where(inArray(user.id, externalOwnerIds))
             : []
         const externalUsageByUserId = new Map<string, (typeof externalWithUsage)[number]>()
         for (const row of externalWithUsage) {
@@ -261,10 +269,36 @@ export const GET = withRouteHandler(
             externalUsageByUserId.set(row.userId, row)
           }
         }
-        for (const row of externalOwnersWithUsage) {
-          const existing = externalUsageByUserId.get(row.userId)
-          if (!existing || row.createdAt < existing.createdAt) {
-            externalUsageByUserId.set(row.userId, row as (typeof externalWithUsage)[number])
+        const externalOwnerUsageById = new Map(
+          externalOwnerUsageRows.map((row) => [row.userId, row])
+        )
+        for (const orgWorkspace of orgWorkspaces) {
+          if (memberUserIds.includes(orgWorkspace.ownerId)) {
+            continue
+          }
+
+          const ownerRow = externalOwnerUsageById.get(orgWorkspace.ownerId)
+          if (!ownerRow) {
+            continue
+          }
+
+          const externalOwner = {
+            userId: ownerRow.userId,
+            organizationId,
+            role: 'external' as const,
+            createdAt: orgWorkspace.createdAt,
+            userName: ownerRow.userName,
+            userEmail: ownerRow.userEmail,
+            currentPeriodCost: ownerRow.currentPeriodCost,
+            currentUsageLimit: ownerRow.currentUsageLimit,
+            usageLimitUpdatedAt: ownerRow.usageLimitUpdatedAt,
+          }
+          const existing = externalUsageByUserId.get(ownerRow.userId)
+          if (!existing || externalOwner.createdAt < existing.createdAt) {
+            externalUsageByUserId.set(
+              ownerRow.userId,
+              externalOwner as (typeof externalWithUsage)[number]
+            )
           }
         }
         const combinedWithUsage = [...base, ...externalUsageByUserId.values()].map((row) => ({

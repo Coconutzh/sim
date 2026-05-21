@@ -105,11 +105,7 @@ describe('GET /api/v1/admin/organizations/[id]/members', () => {
       .mockReturnValueOnce(
         createSelectChain([
           {
-            id: 'external-1',
             userId: 'external-1',
-            organizationId: 'org-1',
-            role: 'external',
-            createdAt,
             userName: 'External Owner',
             userEmail: 'external@example.com',
             currentPeriodCost: '12.34',

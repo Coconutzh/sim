@@ -52,11 +52,7 @@ describe('GET /api/organizations/[id]/members', () => {
       [],
       [
         {
-          id: 'external-1',
           userId: 'external-1',
-          organizationId: 'org-1',
-          role: 'external',
-          createdAt,
           userName: 'External Owner',
           userEmail: 'external@example.com',
         },
@@ -102,11 +98,7 @@ describe('GET /api/organizations/[id]/members', () => {
       [],
       [
         {
-          id: 'external-1',
           userId: 'external-1',
-          organizationId: 'org-1',
-          role: 'external',
-          createdAt,
           userName: 'External Owner',
           userEmail: 'external@example.com',
           currentPeriodCost: 12.34,
