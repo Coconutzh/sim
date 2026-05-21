@@ -2,10 +2,10 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
+  deleteWorkspaceFileContract,
   renameWorkspaceFileContract,
-  workspaceFileParamsSchema,
 } from '@/lib/api/contracts/workspace-files'
-import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -95,22 +95,18 @@ export const PATCH = withRouteHandler(
  * Archive a workspace file (requires write permission)
  */
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string; fileId: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; fileId: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = workspaceFileParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId, fileId } = paramsResult.data
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(deleteWorkspaceFileContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId, fileId } = parsed.data.params
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
