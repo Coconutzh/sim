@@ -7,11 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   checkWorkspaceAccessMock,
+  getSessionMock,
   hasWorkspaceAdminAccessMock,
   isWorkspaceOnEnterprisePlanMock,
   parseRequestMock,
 } = vi.hoisted(() => ({
   checkWorkspaceAccessMock: vi.fn(),
+  getSessionMock: vi.fn(),
   hasWorkspaceAdminAccessMock: vi.fn(),
   isWorkspaceOnEnterprisePlanMock: vi.fn(),
   parseRequestMock: vi.fn(),
@@ -76,9 +78,7 @@ vi.mock('@/lib/api/server', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  getSession: vi.fn().mockResolvedValue({
-    user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
-  }),
+  getSession: getSessionMock,
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -94,11 +94,14 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { GET, POST } from './route'
+import { GET, POST } from '@/app/api/workspaces/[id]/permission-groups/route'
 
 describe('/api/workspaces/[id]/permission-groups', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getSessionMock.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
     checkWorkspaceAccessMock.mockResolvedValue({
       exists: true,
       hasAccess: true,
@@ -110,6 +113,7 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     parseRequestMock.mockResolvedValue({
       success: true,
       data: {
+        params: { id: 'ws-1' },
         body: {
           name: 'Team Members',
           description: '',
@@ -173,5 +177,33 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates list requests before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates create requests before validating route params or body', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await POST(createMockRequest('POST', {}), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
   })
 })
