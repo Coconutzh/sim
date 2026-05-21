@@ -41,7 +41,7 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 describe('GET /api/webhooks', () => {
   beforeEach(() => {
@@ -126,5 +126,52 @@ describe('GET /api/webhooks', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ webhooks: [] })
+  })
+
+  it('hides foreign personal workflow webhook writes behind 404', async () => {
+    mockDbSelect.mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi
+            .fn()
+            .mockResolvedValue([{ id: 'wf-hidden', userId: 'owner-2', workspaceId: 'ws-hidden' }]),
+        })),
+      })),
+    })
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        body: {
+          workflowId: 'wf-hidden',
+          path: 'test-path',
+          provider: 'generic',
+          providerConfig: {},
+          blockId: 'block-1',
+        },
+      },
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await POST(
+      new Request('http://localhost:3000/api/webhooks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workflowId: 'wf-hidden',
+          path: 'test-path',
+          provider: 'generic',
+          providerConfig: {},
+          blockId: 'block-1',
+        }),
+      }) as any
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
   })
 })

@@ -285,11 +285,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId,
       action: 'write',
     })
-    const canModify = authorization.allowed && authorization.accessSource === 'workspace'
-
-    if (!canModify) {
+    if (!authorization.allowed) {
       logger.warn(
         `[${requestId}] User ${userId} denied permission to modify webhook for workflow ${workflowId}`
+      )
+      return NextResponse.json(
+        { error: authorization.message || 'Access denied' },
+        { status: authorization.status || 403 }
+      )
+    }
+
+    if (authorization.accessSource !== 'workspace') {
+      logger.warn(
+        `[${requestId}] Published workflow access cannot modify webhook for workflow ${workflowId}`
       )
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
