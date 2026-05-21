@@ -15,6 +15,10 @@ const { mockDbSelect, mockDbTransaction } = vi.hoisted(() => ({
   mockDbTransaction: vi.fn(),
 }))
 
+const { mockParseRequest } = vi.hoisted(() => ({
+  mockParseRequest: vi.fn(),
+}))
+
 function createSelectChain<T>(result: T) {
   const chain: Record<string, unknown> = {}
   ;(chain as any).from = vi.fn(() => chain)
@@ -60,6 +64,13 @@ vi.mock('@sim/db/schema', () => ({
 
 vi.mock('@/lib/auth', () => authMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+vi.mock('@/lib/api/server', () => ({
+  parseRequest: mockParseRequest,
+  getValidationErrorMessage: vi.fn(() => 'Invalid request'),
+}))
+vi.mock('@/lib/api/contracts/credentials', () => ({
+  leaveCredentialMembershipContract: {},
+}))
 
 import { DELETE, GET } from '@/app/api/credentials/memberships/route'
 
@@ -74,6 +85,10 @@ describe('/api/credentials/memberships', () => {
       hasAccess: true,
       canWrite: true,
       workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
+    })
+    mockParseRequest.mockResolvedValue({
+      success: true,
+      data: { query: { credentialId: 'cred-hidden' } },
     })
   })
 

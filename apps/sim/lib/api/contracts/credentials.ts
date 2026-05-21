@@ -217,6 +217,20 @@ export const leaveCredentialQuerySchema = z.object({
   credentialId: z.string().min(1),
 })
 
+export const credentialMembershipSchema = z.object({
+  membershipId: z.string(),
+  credentialId: z.string(),
+  workspaceId: z.string(),
+  type: workspaceCredentialTypeSchema,
+  displayName: z.string(),
+  providerId: z.string().nullable(),
+  role: workspaceCredentialRoleSchema,
+  status: workspaceCredentialMemberStatusSchema,
+  joinedAt: z.string().nullable(),
+})
+
+export type CredentialMembership = z.output<typeof credentialMembershipSchema>
+
 export const workspaceCredentialMemberSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -341,6 +355,29 @@ export const listWorkspaceCredentialMembersContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       members: z.array(workspaceCredentialMemberSchema).optional(),
+    }),
+  },
+})
+
+export const listCredentialMembershipsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/credentials/memberships',
+  response: {
+    mode: 'json',
+    schema: z.object({
+      memberships: z.array(credentialMembershipSchema),
+    }),
+  },
+})
+
+export const leaveCredentialMembershipContract = defineRouteContract({
+  method: 'DELETE',
+  path: '/api/credentials/memberships',
+  query: leaveCredentialQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
     }),
   },
 })

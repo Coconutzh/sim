@@ -3,8 +3,8 @@ import { credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { leaveCredentialQuerySchema } from '@/lib/api/contracts/credentials'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { leaveCredentialMembershipContract } from '@/lib/api/contracts/credentials'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
@@ -60,17 +60,13 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
   }
 
   try {
-    const parseResult = leaveCredentialQuerySchema.safeParse({
-      credentialId: new URL(request.url).searchParams.get('credentialId'),
+    const parsed = await parseRequest(leaveCredentialMembershipContract, request, {}, {
+      validationErrorResponse: (error) =>
+        NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
     })
-    if (!parseResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(parseResult.error) },
-        { status: 400 }
-      )
-    }
+    if (!parsed.success) return parsed.response
 
-    const { credentialId } = parseResult.data
+    const { credentialId } = parsed.data.query
     const [membership] = await db
       .select({
         id: credentialMember.id,
