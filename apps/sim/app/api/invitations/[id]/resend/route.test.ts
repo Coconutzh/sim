@@ -10,6 +10,7 @@ const {
   mockGetOrganizationSubscription,
   mockPrepareInvitationResend,
   mockPersistInvitationResend,
+  mockSummarizeInvitationGrantVisibility,
   mockSendInvitationEmail,
   mockGetWorkspaceInvitePolicy,
   mockDbSelect,
@@ -19,6 +20,7 @@ const {
   mockGetOrganizationSubscription: vi.fn(),
   mockPrepareInvitationResend: vi.fn(),
   mockPersistInvitationResend: vi.fn(),
+  mockSummarizeInvitationGrantVisibility: vi.fn(),
   mockSendInvitationEmail: vi.fn(),
   mockGetWorkspaceInvitePolicy: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
 vi.mock('@/lib/invitations/core', () => ({
   getInvitationById: mockGetInvitationById,
+  summarizeInvitationGrantVisibility: mockSummarizeInvitationGrantVisibility,
 }))
 
 vi.mock('@/lib/billing/core/organization', () => ({
@@ -74,6 +77,10 @@ describe('POST /api/invitations/[id]/resend', () => {
     })
     mockIsOrganizationOwnerOrAdmin.mockResolvedValue(true)
     permissionsMockFns.mockHasWorkspaceAdminAccess.mockResolvedValue(false)
+    mockSummarizeInvitationGrantVisibility.mockResolvedValue({
+      hasUnavailableGrant: false,
+      hasHiddenPersonalGrant: false,
+    })
     permissionsMockFns.mockGetWorkspaceWithOwner.mockResolvedValue({
       id: 'workspace-1',
       name: 'Shared Workspace',
@@ -144,6 +151,46 @@ describe('POST /api/invitations/[id]/resend', () => {
     expect(mockSendInvitationEmail).not.toHaveBeenCalled()
   })
 
+  it('hides hidden personal workspace invitations from stale workspace admins', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
+    mockIsOrganizationOwnerOrAdmin.mockResolvedValueOnce(false)
+    mockGetInvitationById.mockResolvedValue({
+      id: 'inv-1',
+      kind: 'workspace',
+      email: 'invitee@example.com',
+      organizationId: null,
+      organizationName: null,
+      membershipIntent: 'external',
+      inviterId: 'inviter-1',
+      inviterName: 'Inviter',
+      inviterEmail: 'inviter@example.com',
+      role: 'member',
+      status: 'pending',
+      token: 'tok-1',
+      expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+      createdAt: new Date('2026-05-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-21T00:00:00.000Z'),
+      grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Personal' }],
+    })
+    mockSummarizeInvitationGrantVisibility.mockResolvedValueOnce({
+      hasUnavailableGrant: false,
+      hasHiddenPersonalGrant: true,
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,
+      { params: Promise.resolve({ id: 'inv-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Invitation not found' })
+    expect(mockPrepareInvitationResend).not.toHaveBeenCalled()
+    expect(mockSendInvitationEmail).not.toHaveBeenCalled()
+  })
+
   it('resends an invitation for a valid shared workspace target', async () => {
     mockGetInvitationById.mockResolvedValue({
       id: 'inv-1',
@@ -163,6 +210,7 @@ describe('POST /api/invitations/[id]/resend', () => {
       updatedAt: new Date('2026-05-21T00:00:00.000Z'),
       grants: [{ id: 'grant-1', workspaceId: 'workspace-1', permission: 'read', workspaceName: 'Shared' }],
     })
+    permissionsMockFns.mockHasWorkspaceAdminAccess.mockResolvedValueOnce(true)
 
     const response = await POST(
       new Request('http://localhost/api/invitations/inv-1/resend', { method: 'POST' }) as any,

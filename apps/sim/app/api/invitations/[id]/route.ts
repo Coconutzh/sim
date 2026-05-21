@@ -13,9 +13,13 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { cancelInvitation, getInvitationById, normalizeEmail } from '@/lib/invitations/core'
 import {
-  getWorkspaceWithOwner,
+  cancelInvitation,
+  getInvitationById,
+  normalizeEmail,
+  summarizeInvitationGrantVisibility,
+} from '@/lib/invitations/core'
+import {
   hasWorkspaceAdminAccess,
 } from '@/lib/workspaces/permissions/utils'
 
@@ -55,24 +59,19 @@ export const GET = withRouteHandler(
         hasAdminView = adminChecks.some(Boolean)
       }
 
-      if (!isInvitee && !tokenMatches && !hasAdminView) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-
       if (!hasAdminView && inv.grants.length > 0) {
-        const grantWorkspaces = await Promise.all(
-          inv.grants.map((grant) => getWorkspaceWithOwner(grant.workspaceId))
-        )
-        const hasUnavailableGrant = grantWorkspaces.some((workspaceDetails) => !workspaceDetails)
-        const hasForeignPersonalGrant = grantWorkspaces.some(
-          (workspaceDetails) =>
-            workspaceDetails?.workspaceMode === 'personal' &&
-            workspaceDetails.ownerId !== session.user.id
-        )
-
-        if (hasUnavailableGrant || hasForeignPersonalGrant) {
+        const { hasUnavailableGrant, hasHiddenPersonalGrant } =
+          await summarizeInvitationGrantVisibility(inv.grants, session.user.id)
+        if (!isInvitee && !tokenMatches && hasHiddenPersonalGrant) {
           return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
         }
+        if (hasUnavailableGrant || hasHiddenPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+        }
+      }
+
+      if (!isInvitee && !tokenMatches && !hasAdminView) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
       return NextResponse.json({
@@ -156,6 +155,13 @@ export const PATCH = withRouteHandler(
             { error: `Invitation does not grant access to workspace ${update.workspaceId}` },
             { status: 400 }
           )
+        }
+        const { hasHiddenPersonalGrant } = await summarizeInvitationGrantVisibility(
+          [{ workspaceId: update.workspaceId }],
+          session.user.id
+        )
+        if (hasHiddenPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
         }
         if (!(await hasWorkspaceAdminAccess(session.user.id, update.workspaceId))) {
           return NextResponse.json(
@@ -249,6 +255,13 @@ export const DELETE = withRouteHandler(
       }
 
       if (!canCancel) {
+        const { hasHiddenPersonalGrant } = await summarizeInvitationGrantVisibility(
+          inv.grants,
+          session.user.id
+        )
+        if (hasHiddenPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+        }
         return NextResponse.json(
           { error: 'Only an organization or workspace admin can cancel this invitation' },
           { status: 403 }

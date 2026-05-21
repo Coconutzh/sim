@@ -18,6 +18,7 @@ import { setActiveOrganizationForCurrentSession } from '@/lib/auth/active-organi
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { ensureUserInOrganization } from '@/lib/billing/organizations/membership'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 
 const logger = createLogger('InvitationCore')
@@ -196,6 +197,26 @@ export async function expireStalePendingInvitationsForWorkspaces(
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
+}
+
+export async function summarizeInvitationGrantVisibility(
+  grants: Array<Pick<InvitationWithGrants['grants'][number], 'workspaceId'>>,
+  userId: string
+): Promise<{ hasUnavailableGrant: boolean; hasHiddenPersonalGrant: boolean }> {
+  const accessResults = await Promise.all(
+    grants.map((grant) => checkWorkspaceAccess(grant.workspaceId, userId))
+  )
+
+  return {
+    hasUnavailableGrant: accessResults.some((access) => !access.exists),
+    hasHiddenPersonalGrant: accessResults.some(
+      (access) =>
+        access.exists &&
+        !access.hasAccess &&
+        access.workspace?.workspaceMode === 'personal' &&
+        access.workspace.ownerId !== userId
+    ),
+  }
 }
 
 export type AcceptInvitationFailure =

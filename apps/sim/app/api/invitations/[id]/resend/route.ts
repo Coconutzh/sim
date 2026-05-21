@@ -12,7 +12,7 @@ import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
 import { isEnterprise, isTeam } from '@/lib/billing/plan-helpers'
 import { hasUsableSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getInvitationById } from '@/lib/invitations/core'
+import { getInvitationById, summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
 import {
   persistInvitationResend,
   prepareInvitationResend,
@@ -59,6 +59,13 @@ export const POST = withRouteHandler(
         canResend = adminChecks.some(Boolean)
       }
       if (!canResend) {
+        const { hasHiddenPersonalGrant } = await summarizeInvitationGrantVisibility(
+          inv.grants,
+          session.user.id
+        )
+        if (hasHiddenPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+        }
         return NextResponse.json(
           { error: 'Only an organization or workspace admin can resend this invitation' },
           { status: 403 }
