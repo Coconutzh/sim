@@ -39,6 +39,7 @@ const {
 vi.mock('@/lib/copilot/request/http', () => ({
   authenticateCopilotRequestSessionOnly: mockAuthenticateCopilotRequestSessionOnly,
   createBadRequestResponse: (message: string) => Response.json({ error: message }, { status: 400 }),
+  createNotFoundResponse: (message: string) => Response.json({ error: message }, { status: 404 }),
   createInternalServerErrorResponse: (message: string) =>
     Response.json({ error: message }, { status: 500 }),
   createUnauthorizedResponse: () => Response.json({ error: 'Unauthorized' }, { status: 401 }),
@@ -177,6 +178,22 @@ describe('copilot chat queries GET', () => {
     )
 
     expect(response.status).toBe(401)
+    expect(mockOrderBy).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workflow chat listings behind 404', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+    })
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/copilot/chat?workflowId=wf-hidden')
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
     expect(mockOrderBy).not.toHaveBeenCalled()
   })
 

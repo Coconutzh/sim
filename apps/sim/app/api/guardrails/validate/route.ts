@@ -140,7 +140,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         action: 'read',
       })
 
-      if (!authorization.allowed || !authorization.workflow?.workspaceId) {
+      if (!authorization.allowed) {
+        if (authorization.status === 404) {
+          return NextResponse.json({ error: authorization.message || 'Workflow not found' }, { status: 404 })
+        }
+
         return NextResponse.json({
           success: true,
           output: {
@@ -148,6 +152,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             validationType,
             input: input || '',
             error: authorization.message || 'Workflow not found or access denied.',
+          },
+        })
+      }
+
+      if (!authorization.workflow?.workspaceId) {
+        return NextResponse.json({
+          success: true,
+          output: {
+            passed: false,
+            validationType,
+            input: input || '',
+            error: 'Workflow not found or access denied.',
           },
         })
       }

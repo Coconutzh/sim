@@ -96,4 +96,23 @@ describe('POST /api/guardrails/validate', () => {
       },
     })
   })
+
+  it('hides foreign personal workflows behind not found for hallucination validation', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/guardrails/validate', {
+        method: 'POST',
+        body: JSON.stringify({ validationType: 'hallucination' }),
+        headers: { 'content-type': 'application/json' },
+      })
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+  })
 })

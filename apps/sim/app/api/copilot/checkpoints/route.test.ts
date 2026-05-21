@@ -287,6 +287,33 @@ describe('Copilot Checkpoints API Route', () => {
       expect(responseData).toEqual({ error: 'Unauthorized' })
       expect(mockInsert).not.toHaveBeenCalled()
     })
+
+    it('should hide foreign personal workflows behind not found when creating a checkpoint', async () => {
+      authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
+      mockGetAccessibleCopilotChat.mockResolvedValueOnce({
+        id: 'chat-123',
+        userId: 'user-123',
+        workflowId: 'workflow-foreign',
+      })
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+      })
+
+      const req = createMockRequest('POST', {
+        workflowId: 'workflow-foreign',
+        chatId: 'chat-123',
+        workflowState: '{"blocks": []}',
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(404)
+      const responseData = await response.json()
+      expect(responseData).toEqual({ error: 'Workflow not found' })
+      expect(mockInsert).not.toHaveBeenCalled()
+    })
   })
 
   describe('GET', () => {

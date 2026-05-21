@@ -92,4 +92,28 @@ describe('POST /api/knowledge/[id]/documents/[documentId]/chunks', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Access denied' })
     expect(mockCheckDocumentWriteAccess).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflows behind not found during chunk creation', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/knowledge/kb-1/documents/doc-1/chunks', {
+        method: 'POST',
+        body: JSON.stringify({
+          workflowId: 'workflow-foreign',
+          content: 'Chunk content',
+        }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: Promise.resolve({ id: 'kb-1', documentId: 'doc-1' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockCheckDocumentWriteAccess).not.toHaveBeenCalled()
+  })
 })

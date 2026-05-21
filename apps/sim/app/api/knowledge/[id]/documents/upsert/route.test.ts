@@ -120,4 +120,26 @@ describe('POST /api/knowledge/[id]/documents/upsert', () => {
     expect(mockCheckKnowledgeBaseWriteAccess).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workflows behind not found during document upsert', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/knowledge/kb-1/documents/upsert', {
+        method: 'POST',
+        body: JSON.stringify({ workflowId: 'workflow-foreign' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params: Promise.resolve({ id: 'kb-1' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })
+    expect(mockCheckKnowledgeBaseWriteAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

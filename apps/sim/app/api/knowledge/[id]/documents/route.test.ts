@@ -601,6 +601,26 @@ describe('Knowledge Base Documents API Route', () => {
       expect(vi.mocked(checkKnowledgeBaseWriteAccess)).not.toHaveBeenCalled()
     })
 
+    it('should hide foreign personal workflows behind not found during document creation', async () => {
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+      })
+
+      const req = createMockRequest('POST', {
+        ...validDocumentData,
+        workflowId: 'workflow-foreign',
+      })
+      const response = await POST(req, { params: mockParams })
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data.error).toBe('Workflow not found')
+      expect(vi.mocked(createSingleDocument)).not.toHaveBeenCalled()
+      expect(vi.mocked(checkKnowledgeBaseWriteAccess)).not.toHaveBeenCalled()
+    })
+
     it('should handle database errors during creation', async () => {
       authMockFns.mockGetSession.mockResolvedValue({
         user: { id: 'user-123', email: 'test@example.com' },

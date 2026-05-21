@@ -77,7 +77,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId,
       action: 'write',
     })
-    if (!authorization.allowed || authorization.accessSource !== 'workspace') {
+    if (!authorization.allowed) {
+      if (authorization.status === 404) {
+        return createNotFoundResponse(authorization.message || 'Workflow not found')
+      }
+      return createUnauthorizedResponse()
+    }
+
+    if (authorization.accessSource !== 'workspace') {
       return createUnauthorizedResponse()
     }
 

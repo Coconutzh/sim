@@ -308,6 +308,44 @@ describe('Copilot Checkpoints Revert API Route', () => {
       expect(global.fetch).not.toHaveBeenCalled()
     })
 
+    it('should hide foreign personal workflows behind not found when reverting a checkpoint', async () => {
+      setAuthenticated()
+
+      const mockCheckpoint = {
+        id: 'checkpoint-foreign',
+        chatId: 'chat-123',
+        workflowId: '0f82bc90-8d0c-4312-b3d1-6118a32139be',
+        userId: 'user-123',
+        workflowState: { blocks: {}, edges: [] },
+      }
+
+      const mockWorkflow = {
+        id: '0f82bc90-8d0c-4312-b3d1-6118a32139be',
+        userId: 'user-123',
+      }
+
+      thenResults.push(mockCheckpoint)
+      thenResults.push(mockWorkflow)
+      workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+        allowed: false,
+        status: 404,
+        message: 'Workflow not found',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpointId: 'checkpoint-foreign' }),
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(404)
+      const responseData = await response.json()
+      expect(responseData).toEqual({ error: 'Workflow not found' })
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
     it('should successfully revert checkpoint with basic workflow state', async () => {
       setAuthenticated()
 

@@ -13,6 +13,7 @@ import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
   createInternalServerErrorResponse,
+  createNotFoundResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
 import { readFilePreviewSessions } from '@/lib/copilot/request/session'
@@ -158,7 +159,14 @@ export async function GET(req: NextRequest) {
         userId: authenticatedUserId,
         action: 'read',
       })
-      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
+      if (!authorization.allowed) {
+        if (authorization.status === 404) {
+          return createNotFoundResponse(authorization.message || 'Workflow not found')
+        }
+        return createUnauthorizedResponse()
+      }
+
+      if (authorization.accessSource !== 'workspace') {
         return createUnauthorizedResponse()
       }
     }
