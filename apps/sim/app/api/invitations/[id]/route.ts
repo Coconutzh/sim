@@ -14,7 +14,10 @@ import { getSession } from '@/lib/auth'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { cancelInvitation, getInvitationById, normalizeEmail } from '@/lib/invitations/core'
-import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  getWorkspaceWithOwner,
+  hasWorkspaceAdminAccess,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InvitationsAPI')
 
@@ -54,6 +57,22 @@ export const GET = withRouteHandler(
 
       if (!isInvitee && !tokenMatches && !hasAdminView) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      if (!hasAdminView && inv.grants.length > 0) {
+        const grantWorkspaces = await Promise.all(
+          inv.grants.map((grant) => getWorkspaceWithOwner(grant.workspaceId))
+        )
+        const hasUnavailableGrant = grantWorkspaces.some((workspaceDetails) => !workspaceDetails)
+        const hasForeignPersonalGrant = grantWorkspaces.some(
+          (workspaceDetails) =>
+            workspaceDetails?.workspaceMode === 'personal' &&
+            workspaceDetails.ownerId !== session.user.id
+        )
+
+        if (hasUnavailableGrant || hasForeignPersonalGrant) {
+          return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+        }
       }
 
       return NextResponse.json({
