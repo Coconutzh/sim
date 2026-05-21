@@ -4,7 +4,8 @@ import { createLogger } from '@sim/logger'
 import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
-  creatorProfileParamsSchema,
+  deleteCreatorProfileContract,
+  getCreatorProfileContract,
   updateCreatorProfileContract,
 } from '@/lib/api/contracts/creator-profile'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
@@ -45,13 +46,15 @@ async function hasPermission(userId: string, profile: CreatorProfileRow): Promis
 
 // GET /api/creators/[id] - Get a specific creator profile
 export const GET = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = creatorProfileParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json({ error: 'Invalid route parameters' }, { status: 400 })
-    }
-    const { id } = paramsResult.data
+    const parsed = await parseRequest(getCreatorProfileContract, request, context, {
+      validationErrorResponse: () =>
+        NextResponse.json({ error: 'Invalid route parameters' }, { status: 400 }),
+    })
+    if (!parsed.success) return parsed.response
+
+    const { id } = parsed.data.params
 
     try {
       const profile = await db
@@ -164,20 +167,25 @@ export const PUT = withRouteHandler(
 
 // DELETE /api/creators/[id] - Delete a creator profile
 export const DELETE = withRouteHandler(
-  async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = creatorProfileParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json({ error: 'Invalid route parameters' }, { status: 400 })
-    }
-    const { id } = paramsResult.data
+    let creatorProfileId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized delete attempt for profile: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized delete attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(deleteCreatorProfileContract, request, context, {
+        validationErrorResponse: () =>
+          NextResponse.json({ error: 'Invalid route parameters' }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      creatorProfileId = id
 
       // Check if profile exists
       const existing = await db
@@ -204,7 +212,7 @@ export const DELETE = withRouteHandler(
       logger.info(`[${requestId}] Successfully deleted creator profile: ${id}`)
       return NextResponse.json({ success: true })
     } catch (error) {
-      logger.error(`[${requestId}] Error deleting creator profile: ${id}`, error)
+      logger.error(`[${requestId}] Error deleting creator profile: ${creatorProfileId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
