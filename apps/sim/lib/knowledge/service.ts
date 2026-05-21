@@ -11,6 +11,7 @@ import type {
   KnowledgeBaseWithCounts,
 } from '@/lib/knowledge/types'
 import {
+  checkWorkspaceAccess,
   getUserEntityPermissions,
   listAccessibleWorkspaceIds,
 } from '@/lib/workspaces/permissions/utils'
@@ -153,6 +154,11 @@ export async function createKnowledgeBase(
 ): Promise<KnowledgeBaseWithCounts> {
   const kbId = generateId()
   const now = new Date()
+
+  const workspaceAccess = await checkWorkspaceAccess(data.workspaceId, data.userId)
+  if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+    throw new Error('Workspace not found')
+  }
 
   const hasPermission = await getUserEntityPermissions(data.userId, 'workspace', data.workspaceId)
   if (hasPermission !== 'admin' && hasPermission !== 'write') {
