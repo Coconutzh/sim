@@ -108,10 +108,22 @@ describe('GET /api/workspaces/[id]/inbox/tasks', () => {
       nextCursor: null,
     })
     expect(data.tasks).toHaveLength(1)
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+  })
+
+  it('authenticates before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockHasInboxAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 
   it('returns 404 when stale personal rows no longer grant task visibility', async () => {
@@ -129,6 +141,7 @@ describe('GET /api/workspaces/[id]/inbox/tasks', () => {
 
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockHasInboxAccess).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 
@@ -148,6 +161,7 @@ describe('GET /api/workspaces/[id]/inbox/tasks', () => {
 
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockHasInboxAccess).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

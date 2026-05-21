@@ -1,31 +1,26 @@
 import { db, mothershipInboxTask } from '@sim/db'
 import { and, desc, eq, lt } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { inboxTasksQuerySchema, inboxWorkspaceParamsSchema } from '@/lib/api/contracts/inbox'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { listInboxTasksContract } from '@/lib/api/contracts/inbox'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasInboxAccess } from '@/lib/billing/core/subscription'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const paramsResult = inboxWorkspaceParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId } = paramsResult.data
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [access, hasAccess, permission] = await Promise.all([
+    const parsed = await parseRequest(listInboxTasksContract, req, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const [access, permission] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
-      hasInboxAccess(session.user.id),
       getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
     ])
     if (!access.exists || !access.hasAccess) {
@@ -34,23 +29,15 @@ export const GET = withRouteHandler(
     if (!permission) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
+
+    const hasAccess = await hasInboxAccess(session.user.id)
     if (!hasAccess) {
       return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
     }
 
-    const queryResult = inboxTasksQuerySchema.safeParse(
-      Object.fromEntries(req.nextUrl.searchParams.entries())
-    )
-    if (!queryResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(queryResult.error, 'Invalid query parameters') },
-        { status: 400 }
-      )
-    }
-
-    const { cursor } = queryResult.data
-    const status = queryResult.data.status ?? 'all'
-    const limit = queryResult.data.limit ?? 20
+    const { cursor } = parsed.data.query
+    const status = parsed.data.query.status ?? 'all'
+    const limit = parsed.data.query.limit ?? 20
 
     const conditions = [eq(mothershipInboxTask.workspaceId, workspaceId)]
 
