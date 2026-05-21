@@ -2,8 +2,12 @@ import { db, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { updateDeploymentVersionMetadataContract } from '@/lib/api/contracts/deployments'
+import {
+  getDeploymentVersionStateContract,
+  updateDeploymentVersionMetadataContract,
+} from '@/lib/api/contracts/deployments'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -18,22 +22,27 @@ export const runtime = 'nodejs'
 export const maxDuration = 120
 
 export const GET = withRouteHandler(
-  async (
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string; version: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; version: string }> }) => {
     const requestId = generateRequestId()
-    const { id, version } = await params
+    let workflowIdForLog = 'unknown'
+    let versionForLog: string | number = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(getDeploymentVersionStateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id, version } = parsed.data.params
+      workflowIdForLog = id
+      versionForLog = version
+
       const { error } = await validateWorkflowPermissions(id, requestId, 'read')
       if (error) {
         return createErrorResponse(error.message, error.status)
-      }
-
-      const versionNum = Number(version)
-      if (!Number.isFinite(versionNum)) {
-        return createErrorResponse('Invalid version', 400)
       }
 
       const [row] = await db
@@ -42,7 +51,7 @@ export const GET = withRouteHandler(
         .where(
           and(
             eq(workflowDeploymentVersion.workflowId, id),
-            eq(workflowDeploymentVersion.version, versionNum)
+            eq(workflowDeploymentVersion.version, version)
           )
         )
         .limit(1)
@@ -54,7 +63,7 @@ export const GET = withRouteHandler(
       return createSuccessResponse({ deployedState: row.state })
     } catch (error: any) {
       logger.error(
-        `[${requestId}] Error fetching deployment version ${version} for workflow ${id}`,
+        `[${requestId}] Error fetching deployment version ${versionForLog} for workflow ${workflowIdForLog}`,
         error
       )
       return createErrorResponse(error.message || 'Failed to fetch deployment version', 500)
@@ -65,8 +74,15 @@ export const GET = withRouteHandler(
 export const PATCH = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string; version: string }> }) => {
     const requestId = generateRequestId()
+    let workflowIdForLog = 'unknown'
+    let versionForLog: string | number = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
       const parsed = await parseRequest(updateDeploymentVersionMetadataContract, request, context, {
         validationErrorResponse: (error) =>
           createErrorResponse(getValidationErrorMessage(error, 'Invalid request body'), 400),
@@ -74,6 +90,8 @@ export const PATCH = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id, version } = parsed.data.params
+      workflowIdForLog = id
+      versionForLog = version
       const { name, description, isActive } = parsed.data.body
 
       // Activation requires admin permission, other updates require write
@@ -208,7 +226,10 @@ export const PATCH = withRouteHandler(
 
       return createSuccessResponse({ name: updated.name, description: updated.description })
     } catch (error: any) {
-      logger.error(`[${requestId}] Error updating deployment version`, error)
+      logger.error(
+        `[${requestId}] Error updating deployment version ${versionForLog} for workflow ${workflowIdForLog}`,
+        error
+      )
       return createErrorResponse(error.message || 'Failed to update deployment version', 500)
     }
   }

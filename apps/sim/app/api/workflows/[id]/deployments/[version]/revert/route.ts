@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import type { NextRequest } from 'next/server'
-import { workflowDeploymentVersionParamSchema } from '@/lib/api/contracts/workflows'
+import { revertToDeploymentVersionContract } from '@/lib/api/contracts/deployments'
+import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { performRevertToVersion } from '@/lib/workflows/orchestration'
@@ -14,14 +16,24 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const POST = withRouteHandler(
-  async (
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string; version: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; version: string }> }) => {
     const requestId = generateRequestId()
-    const { id, version } = await params
+    let workflowIdForLog = 'unknown'
+    let versionForLog: string | number = 'unknown'
 
     try {
+      const authSession = await getSession()
+      if (!authSession?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(revertToDeploymentVersionContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id, version } = parsed.data.params
+      workflowIdForLog = id
+      versionForLog = version
+
       const {
         error,
         session,
@@ -32,14 +44,9 @@ export const POST = withRouteHandler(
       }
       await assertWorkflowMutable(id)
 
-      const versionValidation = workflowDeploymentVersionParamSchema.safeParse(version)
-      if (!versionValidation.success) {
-        return createErrorResponse('Invalid version', 400)
-      }
-
       const result = await performRevertToVersion({
         workflowId: id,
-        version: versionValidation.data,
+        version,
         userId: session!.user.id,
         workflow: (workflowRecord ?? {}) as Record<string, unknown>,
         request,
@@ -63,7 +70,10 @@ export const POST = withRouteHandler(
         return createErrorResponse(error.message, error.status)
       }
 
-      logger.error('Error reverting to deployment version', error)
+      logger.error(
+        `Error reverting workflow ${workflowIdForLog} to deployment version ${versionForLog}`,
+        error
+      )
       return createErrorResponse(error.message || 'Failed to revert', 500)
     }
   }
