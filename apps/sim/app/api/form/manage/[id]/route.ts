@@ -4,7 +4,11 @@ import { form } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { formIdParamsSchema, updateFormContract } from '@/lib/api/contracts/forms'
+import {
+  deleteFormContract,
+  getFormDetailContract,
+  updateFormContract,
+} from '@/lib/api/contracts/forms'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -19,7 +23,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
@@ -27,7 +31,13 @@ export const GET = withRouteHandler(
         return createErrorResponse('Unauthorized', 401)
       }
 
-      const { id } = formIdParamsSchema.parse(await params)
+      const parsed = await parseRequest(getFormDetailContract, request, context, {
+        validationErrorResponse: (error) =>
+          createErrorResponse(getValidationErrorMessage(error), 400, 'VALIDATION_ERROR'),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
 
       const { hasAccess, form: formRecord } = await checkFormAccess(id, session.user.id)
 
@@ -177,7 +187,7 @@ export const PATCH = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
@@ -185,7 +195,13 @@ export const DELETE = withRouteHandler(
         return createErrorResponse('Unauthorized', 401)
       }
 
-      const { id } = formIdParamsSchema.parse(await params)
+      const parsed = await parseRequest(deleteFormContract, request, context, {
+        validationErrorResponse: (error) =>
+          createErrorResponse(getValidationErrorMessage(error), 400, 'VALIDATION_ERROR'),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
 
       const {
         hasAccess,
