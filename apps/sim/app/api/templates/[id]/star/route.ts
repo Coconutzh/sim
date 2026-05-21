@@ -4,7 +4,12 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { templateIdParamsSchema } from '@/lib/api/contracts/templates'
+import {
+  getTemplateStarContract,
+  starTemplateContract,
+  unstarTemplateContract,
+} from '@/lib/api/contracts/templates'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -23,16 +28,22 @@ function getErrorCode(error: unknown): string | undefined {
 
 // GET /api/templates/[id]/star - Check if user has starred this template
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = templateIdParamsSchema.parse(await params)
+    let templateId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized star check attempt for template: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized star check attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(getTemplateStarContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      templateId = id
 
       logger.debug(
         `[${requestId}] Checking star status for template: ${id}, user: ${session.user.id}`
@@ -51,7 +62,7 @@ export const GET = withRouteHandler(
 
       return NextResponse.json({ data: { isStarred } })
     } catch (error) {
-      logger.error(`[${requestId}] Error checking star status for template: ${id}`, error)
+      logger.error(`[${requestId}] Error checking star status for template: ${templateId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -59,16 +70,22 @@ export const GET = withRouteHandler(
 
 // POST /api/templates/[id]/star - Add a star to the template
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = templateIdParamsSchema.parse(await params)
+    let templateId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized star attempt for template: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized star attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(starTemplateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      templateId = id
 
       // Verify the template exists
       const templateExists = await db
@@ -119,11 +136,11 @@ export const POST = withRouteHandler(
     } catch (error) {
       // Handle unique constraint violations gracefully
       if (getErrorCode(error) === '23505') {
-        logger.info(`[${requestId}] Duplicate star attempt for template: ${id}`)
+        logger.info(`[${requestId}] Duplicate star attempt for template: ${templateId}`)
         return NextResponse.json({ message: 'Template already starred' }, { status: 200 })
       }
 
-      logger.error(`[${requestId}] Error starring template: ${id}`, error)
+      logger.error(`[${requestId}] Error starring template: ${templateId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -131,16 +148,22 @@ export const POST = withRouteHandler(
 
 // DELETE /api/templates/[id]/star - Remove a star from the template
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = templateIdParamsSchema.parse(await params)
+    let templateId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized unstar attempt for template: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized unstar attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(unstarTemplateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      templateId = id
 
       // Check if the star exists
       const existingStar = await db
@@ -173,7 +196,7 @@ export const DELETE = withRouteHandler(
       logger.info(`[${requestId}] Successfully unstarred template: ${id}`)
       return NextResponse.json({ message: 'Template unstarred successfully' }, { status: 200 })
     } catch (error) {
-      logger.error(`[${requestId}] Error unstarring template: ${id}`, error)
+      logger.error(`[${requestId}] Error unstarring template: ${templateId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }

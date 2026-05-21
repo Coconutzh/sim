@@ -120,6 +120,12 @@ export const templateStarResponseSchema = z.object({
   message: z.string(),
 })
 
+export const templateStarStatusResponseSchema = z.object({
+  data: z.object({
+    isStarred: z.boolean(),
+  }),
+})
+
 export const listTemplatesContract = defineRouteContract({
   method: 'GET',
   path: '/api/templates',
@@ -178,6 +184,16 @@ export const starTemplateContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: templateStarResponseSchema,
+  },
+})
+
+export const getTemplateStarContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/templates/[id]/star',
+  params: templateIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: templateStarStatusResponseSchema,
   },
 })
 

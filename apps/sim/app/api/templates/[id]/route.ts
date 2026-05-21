@@ -4,7 +4,11 @@ import { templateCreators, templates, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { templateIdParamsSchema, updateTemplateContract } from '@/lib/api/contracts/templates'
+import {
+  deleteTemplateContract,
+  getTemplateContract,
+  updateTemplateContract,
+} from '@/lib/api/contracts/templates'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -21,11 +25,16 @@ const logger = createLogger('TemplateByIdAPI')
 export const revalidate = 0
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = templateIdParamsSchema.parse(await params)
+    let templateId = 'unknown'
 
     try {
+      const parsed = await parseRequest(getTemplateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      templateId = id
       const session = await getSession()
 
       const access = await canAccessTemplate(id, session?.user?.id)
@@ -91,7 +100,7 @@ export const GET = withRouteHandler(
         },
       })
     } catch (error) {
-      logger.error(`[${requestId}] Error fetching template: ${id}`, error)
+      logger.error(`[${requestId}] Error fetching template: ${templateId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -101,6 +110,7 @@ export const GET = withRouteHandler(
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
+    const templateId = 'unknown'
 
     try {
       const session = await getSession()
@@ -290,17 +300,22 @@ export const PUT = withRouteHandler(
 
 // DELETE /api/templates/[id] - Delete a template
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = templateIdParamsSchema.parse(await params)
+    let templateId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized template delete attempt for ID: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized template delete attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
+      const parsed = await parseRequest(deleteTemplateContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      templateId = id
       const existing = await db.select().from(templates).where(eq(templates.id, id)).limit(1)
       if (existing.length === 0) {
         logger.warn(`[${requestId}] Template not found for delete: ${id}`)
@@ -351,7 +366,7 @@ export const DELETE = withRouteHandler(
 
       return NextResponse.json({ success: true })
     } catch (error) {
-      logger.error(`[${requestId}] Error deleting template: ${id}`, error)
+      logger.error(`[${requestId}] Error deleting template: ${templateId}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }

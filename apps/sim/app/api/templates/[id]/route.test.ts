@@ -49,7 +49,7 @@ vi.mock('@/lib/workflows/credentials/credential-extractor', () => ({
   sanitizeCredentials: vi.fn((value: unknown) => value),
 }))
 
-import { PUT } from '@/app/api/templates/[id]/route'
+import { DELETE, PUT } from '@/app/api/templates/[id]/route'
 
 describe('TemplateByIdAPI PUT', () => {
   beforeEach(() => {
@@ -132,5 +132,26 @@ describe('TemplateByIdAPI PUT', () => {
       error: 'Workflow not found',
     })
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
+})
+
+describe('TemplateByIdAPI DELETE', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetSession.mockResolvedValue(null)
+  })
+
+  it('authenticates before validating route params', async () => {
+    const request = new NextRequest('http://localhost:3000/api/templates/', {
+      method: 'DELETE',
+    })
+
+    const response = await DELETE(request, {
+      params: Promise.resolve({ id: '' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })
