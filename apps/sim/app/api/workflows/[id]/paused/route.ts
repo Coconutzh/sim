@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { pausedWorkflowExecutionsContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
@@ -10,6 +11,11 @@ export const dynamic = 'force-dynamic'
 
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
+    }
+
     const parsed = await parseRequest(pausedWorkflowExecutionsContract, request, context)
     if (!parsed.success) return parsed.response
     const { id: workflowId } = parsed.data.params

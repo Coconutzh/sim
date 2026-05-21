@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { listDeploymentVersionsContract } from '@/lib/api/contracts/deployments'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
@@ -17,11 +18,18 @@ export const runtime = 'nodejs'
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const parsed = await parseRequest(listDeploymentVersionsContract, request, context)
-    if (!parsed.success) return parsed.response
-    const { id } = parsed.data.params
+    let id = 'unknown'
 
     try {
+      const session = await getSession()
+      if (!session?.user?.id) {
+        return createErrorResponse('Unauthorized', 401)
+      }
+
+      const parsed = await parseRequest(listDeploymentVersionsContract, request, context)
+      if (!parsed.success) return parsed.response
+      id = parsed.data.params.id
+
       const { error } = await validateWorkflowPermissions(id, requestId, 'read')
       if (error) {
         return createErrorResponse(error.message, error.status)
