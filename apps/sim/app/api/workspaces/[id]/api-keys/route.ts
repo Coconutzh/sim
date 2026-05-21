@@ -8,6 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import {
   createWorkspaceApiKeyContract,
   deleteWorkspaceApiKeysContract,
+  listWorkspaceApiKeysContract,
 } from '@/lib/api/contracts/api-keys'
 import { parseRequest } from '@/lib/api/server'
 import { createApiKey, getApiKeyDisplayFormat } from '@/lib/api-key/auth'
@@ -22,9 +23,8 @@ import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces
 const logger = createLogger('WorkspaceApiKeysAPI')
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await params).id
 
     try {
       const session = await getSession()
@@ -34,6 +34,10 @@ export const GET = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(listWorkspaceApiKeysContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
@@ -86,7 +90,6 @@ export const GET = withRouteHandler(
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -96,6 +99,12 @@ export const POST = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(createWorkspaceApiKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { name, source } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -105,10 +114,6 @@ export const POST = withRouteHandler(
       if (permission !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-
-      const parsed = await parseRequest(createWorkspaceApiKeyContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { name, source } = parsed.data.body
 
       const existingKey = await db
         .select()
@@ -211,7 +216,6 @@ export const POST = withRouteHandler(
 export const DELETE = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -221,6 +225,12 @@ export const DELETE = withRouteHandler(
       }
 
       const userId = session.user.id
+      const parsed = await parseRequest(deleteWorkspaceApiKeysContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId } = parsed.data.params
+      const { keys } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -230,10 +240,6 @@ export const DELETE = withRouteHandler(
       if (permission !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-
-      const parsed = await parseRequest(deleteWorkspaceApiKeysContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { keys } = parsed.data.body
 
       const deletedCount = await db
         .delete(apiKey)

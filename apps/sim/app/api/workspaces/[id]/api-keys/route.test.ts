@@ -47,7 +47,7 @@ vi.mock('@/lib/api-key/auth', () => ({
   getApiKeyDisplayFormat: mockGetApiKeyDisplayFormat,
 }))
 
-import { GET, POST } from './route'
+import { DELETE, GET, POST } from '@/app/api/workspaces/[id]/api-keys/route'
 
 describe('/api/workspaces/[id]/api-keys', () => {
   beforeEach(() => {
@@ -92,11 +92,47 @@ describe('/api/workspaces/[id]/api-keys', () => {
         displayKey: 'sk-...1234',
       }),
     ])
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
     expect(mockGetApiKeyDisplayFormat).toHaveBeenCalledWith('encrypted-key')
+  })
+
+  it('authenticates list requests before validating route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
+
+  it('authenticates create requests before validating route params or body', async () => {
+    authMockFns.mockGetSession.mockResolvedValue(null)
+
+    const response = await POST(createMockRequest('POST', {}), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
+
+  it('authenticates bulk delete requests before validating route params or body', async () => {
+    authMockFns.mockGetSession.mockResolvedValue(null)
+
+    const response = await DELETE(createMockRequest('DELETE', {}), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
   })
 
   it('returns 404 for stale foreign personal workspaces before admin checks', async () => {
