@@ -73,8 +73,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
   const params = parsed.data.query
   const access = await checkWorkspaceAccess(params.workspaceId, userId)
-  if (!access.hasAccess) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
   }
   const sortBy = params.sortBy as SortBy
   const sortOrder = params.sortOrder as SortOrder

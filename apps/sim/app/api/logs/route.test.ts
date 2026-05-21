@@ -145,4 +145,26 @@ describe('GET /api/logs', () => {
       nextCursor: null,
     })
   })
+
+  it('hides foreign personal workspace logs behind 404', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-hidden',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const response = await GET(new Request('http://localhost:3000/api/logs') as any)
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

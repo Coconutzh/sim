@@ -94,7 +94,7 @@ describe('GET /api/workspaces/[id]/metrics/executions', () => {
     expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
   })
 
-  it('returns 403 when the user cannot access the workspace', async () => {
+  it('hides foreign personal workspace execution metrics behind 404', async () => {
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
       hasAccess: false,
@@ -119,8 +119,8 @@ describe('GET /api/workspaces/[id]/metrics/executions', () => {
     )
     const data = await response.json()
 
-    expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Forbidden' })
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

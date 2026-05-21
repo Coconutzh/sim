@@ -98,4 +98,28 @@ describe('GET /api/logs/export', () => {
       '2026-05-21T00:00:00.000Z,info,Owner Flow,manual,1200,1.5,wf-1,exec-1,done,"[{""id"":""span-1""}]"'
     )
   })
+
+  it('hides foreign personal workspace log exports behind 404', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-hidden',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/logs/export?workspaceId=ws-owner') as any
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

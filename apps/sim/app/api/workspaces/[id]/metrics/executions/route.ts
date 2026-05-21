@@ -39,7 +39,7 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
       const wfWhere = [eq(workflow.workspaceId, workspaceId)] as any[]
       if (qp.folderIds) {

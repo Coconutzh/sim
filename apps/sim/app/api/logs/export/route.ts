@@ -33,8 +33,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const { searchParams } = new URL(request.url)
     const params = LogFilterParamsSchema.parse(Object.fromEntries(searchParams.entries()))
     const access = await checkWorkspaceAccess(params.workspaceId, userId)
-    if (!access.hasAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const selectColumns = {
