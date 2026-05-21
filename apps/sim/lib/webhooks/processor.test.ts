@@ -10,19 +10,32 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGenerateId, mockEnqueue, mockGetJobQueue, mockShouldExecuteInline } = vi.hoisted(
-  () => ({
-    mockGenerateId: vi.fn(),
-    mockEnqueue: vi.fn(),
-    mockGetJobQueue: vi.fn(),
-    mockShouldExecuteInline: vi.fn(),
-  })
-)
+const {
+  mockGenerateId,
+  mockEnqueue,
+  mockGetJobQueue,
+  mockShouldExecuteInline,
+  mockDbSelect,
+  mockDbFrom,
+  mockDbInnerJoin,
+  mockDbLeftJoin,
+  mockDbWhere,
+} = vi.hoisted(() => ({
+  mockGenerateId: vi.fn(),
+  mockEnqueue: vi.fn(),
+  mockGetJobQueue: vi.fn(),
+  mockShouldExecuteInline: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbFrom: vi.fn(),
+  mockDbInnerJoin: vi.fn(),
+  mockDbLeftJoin: vi.fn(),
+  mockDbWhere: vi.fn(),
+}))
 
 const mockPreprocessExecution = executionPreprocessingMockFns.mockPreprocessExecution
 
 vi.mock('@sim/db', () => ({
-  db: {},
+  db: { select: mockDbSelect },
   webhook: {},
   workflow: {},
   workflowDeploymentVersion: {},
@@ -113,7 +126,11 @@ vi.mock('@/triggers/jira/utils', () => ({
   isJiraEventMatch: vi.fn().mockReturnValue(true),
 }))
 
-import { checkWebhookPreprocessing, queueWebhookExecution } from '@/lib/webhooks/processor'
+import {
+  checkWebhookPreprocessing,
+  findAllWebhooksForPath,
+  queueWebhookExecution,
+} from '@/lib/webhooks/processor'
 
 describe('webhook processor execution identity', () => {
   beforeEach(() => {
@@ -126,6 +143,24 @@ describe('webhook processor execution identity', () => {
     mockGetJobQueue.mockResolvedValue({ enqueue: mockEnqueue })
     mockShouldExecuteInline.mockReturnValue(false)
     mockGenerateId.mockReturnValue('generated-execution-id')
+    const dbChain = {
+      innerJoin: mockDbInnerJoin,
+      leftJoin: mockDbLeftJoin,
+      where: mockDbWhere,
+    }
+    mockDbSelect.mockReturnValue({ from: mockDbFrom })
+    mockDbFrom.mockReturnValue(dbChain)
+    mockDbInnerJoin.mockReturnValue(dbChain)
+    mockDbLeftJoin.mockReturnValue(dbChain)
+    mockDbWhere.mockResolvedValue([])
+  })
+
+  it('requires active workspace rows in webhook path lookup queries', async () => {
+    const results = await findAllWebhooksForPath({ requestId: 'request-1', path: 'incoming' })
+
+    expect(results).toEqual([])
+    expect(mockDbInnerJoin).toHaveBeenCalledTimes(2)
+    expect(mockDbLeftJoin).toHaveBeenCalledTimes(1)
   })
 
   it('reuses preprocessing execution identity when queueing a polling webhook', async () => {

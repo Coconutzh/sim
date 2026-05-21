@@ -1,5 +1,5 @@
 import { db, webhook, workflow, workflowDeploymentVersion } from '@sim/db'
-import { credentialSet } from '@sim/db/schema'
+import { credentialSet, workspace as workspaceTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -235,6 +235,7 @@ export async function findWebhookAndWorkflow(
       })
       .from(webhook)
       .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
+      .innerJoin(workspaceTable, eq(workflow.workspaceId, workspaceTable.id))
       .leftJoin(
         workflowDeploymentVersion,
         and(
@@ -248,6 +249,7 @@ export async function findWebhookAndWorkflow(
           eq(webhook.isActive, true),
           isNull(webhook.archivedAt),
           isNull(workflow.archivedAt),
+          isNull(workspaceTable.archivedAt),
           or(
             eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
             and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
@@ -272,6 +274,7 @@ export async function findWebhookAndWorkflow(
       })
       .from(webhook)
       .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
+      .innerJoin(workspaceTable, eq(workflow.workspaceId, workspaceTable.id))
       .leftJoin(
         workflowDeploymentVersion,
         and(
@@ -285,6 +288,7 @@ export async function findWebhookAndWorkflow(
           eq(webhook.isActive, true),
           isNull(webhook.archivedAt),
           isNull(workflow.archivedAt),
+          isNull(workspaceTable.archivedAt),
           or(
             eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
             and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
@@ -322,6 +326,7 @@ export async function findAllWebhooksForPath(
     })
     .from(webhook)
     .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
+    .innerJoin(workspaceTable, eq(workflow.workspaceId, workspaceTable.id))
     .leftJoin(
       workflowDeploymentVersion,
       and(
@@ -335,6 +340,7 @@ export async function findAllWebhooksForPath(
         eq(webhook.isActive, true),
         isNull(webhook.archivedAt),
         isNull(workflow.archivedAt),
+        isNull(workspaceTable.archivedAt),
         or(
           eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
           and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
