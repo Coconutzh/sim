@@ -4,7 +4,10 @@ import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter'
 import { getRateLimit, RateLimiter } from '@/lib/core/rate-limiter'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import { authenticateV1Request } from '@/app/api/v1/auth'
 
 const logger = createLogger('V1Middleware')
@@ -181,6 +184,11 @@ export async function validateWorkspaceAccess(
 ): Promise<NextResponse | null> {
   const scopeError = checkWorkspaceScope(rateLimit, workspaceId)
   if (scopeError) return scopeError
+
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+  }
 
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   if (permission === null) {

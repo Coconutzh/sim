@@ -7,7 +7,10 @@ import {
 } from '@/lib/api/contracts/tables'
 import type { ColumnDefinition, TableDefinition } from '@/lib/table'
 import { getTableById } from '@/lib/table'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('TableUtils')
 
@@ -31,6 +34,24 @@ export interface ApiErrorResponse {
   details?: unknown
 }
 
+async function getVisibleWorkspacePermission(
+  userId: string,
+  workspaceId: string
+): Promise<{
+  hidden: boolean
+  permission: Awaited<ReturnType<typeof getUserEntityPermissions>>
+}> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return { hidden: true, permission: null }
+  }
+
+  return {
+    hidden: false,
+    permission: await getUserEntityPermissions(userId, 'workspace', workspaceId),
+  }
+}
+
 /**
  * Check if a user has read access to a table.
  * Read access requires any workspace permission (read, write, or admin).
@@ -42,12 +63,14 @@ export async function checkTableAccess(tableId: string, userId: string): Promise
     return { hasAccess: false, notFound: true }
   }
 
-  const userPermission = await getUserEntityPermissions(userId, 'workspace', table.workspaceId)
-  if (userPermission !== null) {
+  const { hidden, permission } = await getVisibleWorkspacePermission(userId, table.workspaceId)
+  if (permission !== null) {
     return { hasAccess: true, table }
   }
 
-  return { hasAccess: false, reason: 'User does not have access to this table' }
+  return hidden
+    ? { hasAccess: false, notFound: true }
+    : { hasAccess: false, reason: 'User does not have access to this table' }
 }
 
 /**
@@ -64,12 +87,14 @@ export async function checkTableWriteAccess(
     return { hasAccess: false, notFound: true }
   }
 
-  const userPermission = await getUserEntityPermissions(userId, 'workspace', table.workspaceId)
-  if (userPermission === 'write' || userPermission === 'admin') {
+  const { hidden, permission } = await getVisibleWorkspacePermission(userId, table.workspaceId)
+  if (permission === 'write' || permission === 'admin') {
     return { hasAccess: true, table }
   }
 
-  return { hasAccess: false, reason: 'User does not have write access to this table' }
+  return hidden
+    ? { hasAccess: false, notFound: true }
+    : { hasAccess: false, reason: 'User does not have write access to this table' }
 }
 
 /**
@@ -87,14 +112,18 @@ export async function checkAccess(
     return { ok: false, status: 404 }
   }
 
-  const permission = await getUserEntityPermissions(userId, 'workspace', table.workspaceId)
+  const { hidden, permission } = await getVisibleWorkspacePermission(userId, table.workspaceId)
   const hasAccess =
     permission !== null &&
     (level === 'read' ||
       (level === 'write' && (permission === 'write' || permission === 'admin')) ||
       (level === 'admin' && permission === 'admin'))
 
-  return hasAccess ? { ok: true, table } : { ok: false, status: 403 }
+  if (hasAccess) {
+    return { ok: true, table }
+  }
+
+  return { ok: false, status: hidden ? 404 : 403 }
 }
 
 export function accessError(
