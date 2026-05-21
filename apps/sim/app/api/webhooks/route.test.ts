@@ -128,6 +128,37 @@ describe('GET /api/webhooks', () => {
     await expect(response.json()).resolves.toEqual({ webhooks: [] })
   })
 
+  it('hides foreign personal workflow block webhooks behind empty results', async () => {
+    mockDbSelect.mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi
+            .fn()
+            .mockResolvedValue([{ id: 'wf-hidden', userId: 'owner-2', workspaceId: 'ws-hidden' }]),
+        })),
+      })),
+    })
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        query: { workflowId: 'wf-hidden', blockId: 'block-1' },
+      },
+    })
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/webhooks?workflowId=wf-hidden&blockId=block-1') as any
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ webhooks: [] })
+  })
+
   it('hides foreign personal workflow webhook writes behind 404', async () => {
     mockDbSelect.mockReturnValueOnce({
       from: vi.fn(() => ({

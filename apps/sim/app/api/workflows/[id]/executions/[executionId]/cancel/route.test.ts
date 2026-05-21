@@ -288,6 +288,27 @@ describe('POST /api/workflows/[id]/executions/[executionId]/cancel', () => {
     expect(response.status).toBe(403)
   })
 
+  it('returns 404 for hidden personal workflow executions', async () => {
+    workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: false,
+      message: 'Workflow not found',
+      status: 404,
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/workflows/wf-hidden/executions/ex-1/cancel', {
+        method: 'POST',
+      }),
+      { params: Promise.resolve({ id: 'wf-hidden', executionId: 'ex-1' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+  })
+
   it('returns 403 when workflow access comes from published sharing', async () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,

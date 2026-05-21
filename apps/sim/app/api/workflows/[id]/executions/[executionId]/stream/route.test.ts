@@ -222,6 +222,30 @@ describe('execution stream reconnect route', () => {
     })
   })
 
+  it('returns 404 for hidden personal workflow execution streams', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
+    })
+
+    const req = createMockRequest(
+      'GET',
+      undefined,
+      undefined,
+      'http://localhost/api/workflows/wf-hidden/executions/exec-1/stream?from=3'
+    )
+    const response = await GET(req, {
+      params: Promise.resolve({ id: 'wf-hidden', executionId: 'exec-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workflow not found',
+    })
+  })
+
   it('stops after replaying a terminal event even when metadata is still active', async () => {
     mockReadExecutionEventsState.mockResolvedValueOnce({
       status: 'ok',
