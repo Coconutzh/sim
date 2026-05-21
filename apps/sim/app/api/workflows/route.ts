@@ -6,7 +6,7 @@ import { generateId } from '@sim/utils/id'
 import { assertFolderMutable, FolderLockedError } from '@sim/workflow-authz'
 import { and, asc, eq, inArray, isNull, min, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createWorkflowContract, workflowListQuerySchema } from '@/lib/api/contracts/workflows'
+import { createWorkflowContract, listWorkflowsContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -28,15 +28,6 @@ const logger = createLogger('WorkflowAPI')
 export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   const startTime = Date.now()
-  const url = new URL(request.url)
-  const query = workflowListQuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()))
-  if (!query.success) {
-    return NextResponse.json(
-      { error: 'Invalid query parameters', details: query.error.issues },
-      { status: 400 }
-    )
-  }
-  const { workspaceId, scope } = query.data
 
   try {
     const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -45,6 +36,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = auth.userId
+
+    const parsed = await parseRequest(listWorkflowsContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { workspaceId, scope } = parsed.data.query
 
     if (workspaceId) {
       const access = await checkWorkspaceAccess(workspaceId, userId)
@@ -132,7 +127,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     return NextResponse.json({ data: workflows }, { status: 200 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     const elapsed = Date.now() - startTime
     logger.error(`[${requestId}] Workflow fetch error after ${elapsed}ms`, error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
