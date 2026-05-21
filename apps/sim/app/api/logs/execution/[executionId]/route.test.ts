@@ -92,4 +92,17 @@ describe('GET /api/logs/execution/[executionId]', () => {
       },
     })
   })
+
+  it('returns 404 when no accessible workspaces remain after hidden personal filtering', async () => {
+    permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValueOnce([])
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/logs/execution/exec-hidden') as any,
+      { params: Promise.resolve({ executionId: 'exec-hidden' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workflow execution not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

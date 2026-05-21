@@ -91,4 +91,17 @@ describe('GET /api/mcp/discover', () => {
       ],
     })
   })
+
+  it('returns an empty list when hidden personal workspace filtering leaves no accessible workspaces', async () => {
+    permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValueOnce([])
+
+    const response = await GET(new Request('http://localhost:3000/api/mcp/discover') as any)
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      servers: [],
+    })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

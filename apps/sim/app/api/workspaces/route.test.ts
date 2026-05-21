@@ -148,6 +148,41 @@ describe('GET /api/workspaces', () => {
     })
   })
 
+  it('does not leak hidden personal workspaces into the workspace list', async () => {
+    mockDbSelect.mockReset()
+    vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce(['ws-team'])
+    mockDbSelect
+      .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: 'ws-team' }]))
+      .mockReturnValueOnce(
+        createChain([
+          {
+            workspace: {
+              id: 'ws-team',
+              name: 'Team Workspace',
+              ownerId: 'team-owner',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'team-owner',
+              archivedAt: null,
+              createdAt: new Date('2026-05-21T00:00:00Z'),
+              updatedAt: new Date('2026-05-21T00:00:00Z'),
+            },
+            permissionType: 'read',
+          },
+        ])
+      )
+
+    const response = await GET(new Request('http://localhost:3000/api/workspaces?scope=all'))
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.workspaces).toHaveLength(1)
+    expect(data.workspaces[0].id).toBe('ws-team')
+    expect(data.workspaces.find((workspace: { id: string }) => workspace.id === 'ws-hidden')).toBe(
+      undefined
+    )
+    expect(listAccessibleWorkspaceIds).toHaveBeenCalledWith('user-1')
+  })
+
   it('returns an empty list when no workspace is accessible and creation is blocked', async () => {
     vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce([])
     mockGetWorkspaceCreationPolicy.mockResolvedValueOnce({
