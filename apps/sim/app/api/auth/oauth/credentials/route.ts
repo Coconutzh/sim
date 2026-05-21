@@ -163,7 +163,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             workflowId &&
             (!effectiveWorkspaceId || platformCredential.workspaceId !== effectiveWorkspaceId)
           ) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+            return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
           }
 
           if (!workflowId) {
@@ -180,7 +180,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
               .limit(1)
 
             if (!membership) {
-              return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+              return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
             }
           }
 
@@ -207,7 +207,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
         if (workflowId) {
           if (!effectiveWorkspaceId || platformCredential.workspaceId !== effectiveWorkspaceId) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+            return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
           }
         } else {
           const [membership] = await db
@@ -223,7 +223,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             .limit(1)
 
           if (!membership) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+            return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
           }
         }
 
