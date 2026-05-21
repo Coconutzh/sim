@@ -19,7 +19,7 @@ import { secureFetchWithValidation } from '@/lib/core/security/input-validation.
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceNotificationTestAPI')
 
@@ -296,6 +296,11 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
       )
     }
     const { id: workspaceId, notificationId } = paramsResult.data
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
 
     if (permission !== 'write' && permission !== 'admin') {
