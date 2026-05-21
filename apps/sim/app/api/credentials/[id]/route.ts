@@ -5,7 +5,11 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateWorkspaceCredentialContract } from '@/lib/api/contracts/credentials'
+import {
+  deleteWorkspaceCredentialContract,
+  getWorkspaceCredentialContract,
+  updateWorkspaceCredentialContract,
+} from '@/lib/api/contracts/credentials'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -50,13 +54,15 @@ async function getCredentialResponse(credentialId: string, userId: string) {
 }
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(getWorkspaceCredentialContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
 
     try {
       const access = await getCredentialActorContext(id, session.user.id)
@@ -193,13 +199,15 @@ export const PUT = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(deleteWorkspaceCredentialContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
 
     try {
       const access = await getCredentialActorContext(id, session.user.id)

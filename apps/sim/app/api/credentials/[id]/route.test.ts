@@ -27,7 +27,12 @@ vi.mock('@sim/db/schema', () => ({
     userId: 'userId',
   },
   environment: { variables: 'variables', userId: 'userId' },
-  workspaceEnvironment: { id: 'id', createdAt: 'createdAt', variables: 'variables', workspaceId: 'workspaceId' },
+  workspaceEnvironment: {
+    id: 'id',
+    createdAt: 'createdAt',
+    variables: 'variables',
+    workspaceId: 'workspaceId',
+  },
 }))
 
 vi.mock('@/lib/auth', () => authMock)
@@ -52,12 +57,19 @@ vi.mock('@/lib/credentials/environment', () => ({
 }))
 vi.mock('@/lib/posthog/server', () => ({ captureServerEvent: vi.fn() }))
 vi.mock('@sim/audit', () => ({
-  AuditAction: { CREDENTIAL_UPDATED: 'credential_updated', CREDENTIAL_DELETED: 'credential_deleted' },
+  AuditAction: {
+    CREDENTIAL_UPDATED: 'credential_updated',
+    CREDENTIAL_DELETED: 'credential_deleted',
+  },
   AuditResourceType: { CREDENTIAL: 'credential' },
   recordAudit: vi.fn(),
 }))
 vi.mock('@sim/utils/id', () => ({ generateId: vi.fn(() => 'generated-id') }))
-vi.mock('@/lib/api/contracts/credentials', () => ({ updateWorkspaceCredentialContract: {} }))
+vi.mock('@/lib/api/contracts/credentials', () => ({
+  deleteWorkspaceCredentialContract: {},
+  getWorkspaceCredentialContract: {},
+  updateWorkspaceCredentialContract: {},
+}))
 
 import { DELETE, GET, PUT } from '@/app/api/credentials/[id]/route'
 
@@ -90,6 +102,19 @@ describe('/api/credentials/[id]', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Credential not found' })
+  })
+
+  it('authenticates credential detail before parsing route params', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(createRequest('GET'), {
+      params: Promise.resolve({ id: 'cred-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
+    expect(mockGetCredentialActorContext).not.toHaveBeenCalled()
   })
 
   it('hides foreign personal workspace credential updates behind 404', async () => {
