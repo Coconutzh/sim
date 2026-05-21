@@ -10,7 +10,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { restoreWorkflow } from '@/lib/workflows/lifecycle'
 import { getWorkflowById } from '@/lib/workflows/utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreWorkflowAPI')
 
@@ -33,6 +33,11 @@ export const POST = withRouteHandler(
       }
 
       if (workflowData.workspaceId) {
+        const access = await checkWorkspaceAccess(workflowData.workspaceId, auth.userId)
+        if (!access.exists || !access.hasAccess) {
+          return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+        }
+
         const permission = await getUserEntityPermissions(
           auth.userId,
           'workspace',

@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { performRestoreFolder } from '@/lib/workflows/orchestration/folder-lifecycle'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreFolderAPI')
 
@@ -23,6 +23,11 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Route
     if (!parsed.success) return parsed.response
     const { id: folderId } = parsed.data.params
     const { workspaceId } = parsed.data.body
+
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (permission !== 'admin' && permission !== 'write') {

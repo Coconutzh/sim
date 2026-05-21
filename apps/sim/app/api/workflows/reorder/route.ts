@@ -14,7 +14,7 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkflowReorderAPI')
 
@@ -31,6 +31,11 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
     const parsed = await parseRequest(reorderWorkflowsContract, req, {})
     if (!parsed.success) return parsed.response
     const { workspaceId, updates } = parsed.data.body
+
+    const access = await checkWorkspaceAccess(workspaceId, userId)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (!permission || permission === 'read') {

@@ -9,7 +9,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FolderReorderAPI')
 
@@ -26,6 +26,11 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
     const parsed = await parseRequest(reorderFoldersContract, req, {})
     if (!parsed.success) return parsed.response
     const { workspaceId, updates } = parsed.data.body
+
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!permission || permission === 'read') {
