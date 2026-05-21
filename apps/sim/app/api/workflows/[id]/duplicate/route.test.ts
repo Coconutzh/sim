@@ -71,4 +71,30 @@ describe('Workflow Duplicate API Route', () => {
       error: 'Workflow not found',
     })
   })
+
+  it('authenticates before reading route params or validating body', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+      authType: 'session',
+    })
+
+    const params = {
+      then: () => {
+        throw new Error('Route params should not be read before auth')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const request = new NextRequest('http://localhost:3000/api/workflows//duplicate', {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await POST(request, { params })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockDuplicateWorkflow).not.toHaveBeenCalled()
+  })
 })

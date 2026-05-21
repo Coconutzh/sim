@@ -16,15 +16,13 @@ const logger = createLogger('WorkflowDuplicateAPI')
 // POST /api/workflows/[id]/duplicate - Duplicate a workflow with all its blocks, edges, and subflows
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { id: sourceWorkflowId } = await context.params
     const requestId = generateRequestId()
     const startTime = Date.now()
+    let sourceWorkflowIdForLog = 'unknown'
 
     const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
-      logger.warn(
-        `[${requestId}] Unauthorized workflow duplication attempt for ${sourceWorkflowId}`
-      )
+      logger.warn(`[${requestId}] Unauthorized workflow duplication attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = auth.userId
@@ -32,6 +30,8 @@ export const POST = withRouteHandler(
     try {
       const parsed = await parseRequest(duplicateWorkflowContract, req, context)
       if (!parsed.success) return parsed.response
+      const { id: sourceWorkflowId } = parsed.data.params
+      sourceWorkflowIdForLog = sourceWorkflowId
       const { name, description, color, workspaceId, folderId, newId } = parsed.data.body
 
       logger.info(`[${requestId}] Duplicating workflow ${sourceWorkflowId} for user ${userId}`)
@@ -100,25 +100,27 @@ export const POST = withRouteHandler(
         }
 
         if (error.message === 'Source workflow not found') {
-          logger.warn(`[${requestId}] Source workflow ${sourceWorkflowId} not found`)
+          logger.warn(`[${requestId}] Source workflow ${sourceWorkflowIdForLog} not found`)
           return NextResponse.json({ error: 'Source workflow not found' }, { status: 404 })
         }
 
         if (error.message === 'Workflow not found') {
-          logger.warn(`[${requestId}] User ${userId} cannot see source workflow ${sourceWorkflowId}`)
+          logger.warn(
+            `[${requestId}] User ${userId} cannot see source workflow ${sourceWorkflowIdForLog}`
+          )
           return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
         }
 
         if (error.message === 'Source workflow access denied') {
           logger.warn(
-            `[${requestId}] User ${userId} denied access to source workflow ${sourceWorkflowId}`
+            `[${requestId}] User ${userId} denied access to source workflow ${sourceWorkflowIdForLog}`
           )
           return NextResponse.json({ error: 'Access denied' }, { status: 403 })
         }
 
         if (error.message === 'Workspace access required for source workflow duplication') {
           logger.warn(
-            `[${requestId}] User ${userId} attempted workflow duplication through cross-team published access for ${sourceWorkflowId}`
+            `[${requestId}] User ${userId} attempted workflow duplication through cross-team published access for ${sourceWorkflowIdForLog}`
           )
           return NextResponse.json(
             { error: 'Cross-team published workflow access does not include workflow duplication' },
@@ -128,7 +130,7 @@ export const POST = withRouteHandler(
 
         if (error.message === 'Cross-workspace workflow duplication is not supported') {
           logger.warn(
-            `[${requestId}] User ${userId} attempted cross-workspace workflow duplication for ${sourceWorkflowId}`
+            `[${requestId}] User ${userId} attempted cross-workspace workflow duplication for ${sourceWorkflowIdForLog}`
           )
           return NextResponse.json({ error: error.message }, { status: 400 })
         }
@@ -144,7 +146,7 @@ export const POST = withRouteHandler(
 
       const elapsed = Date.now() - startTime
       logger.error(
-        `[${requestId}] Error duplicating workflow ${sourceWorkflowId} after ${elapsed}ms:`,
+        `[${requestId}] Error duplicating workflow ${sourceWorkflowIdForLog} after ${elapsed}ms:`,
         error
       )
       return NextResponse.json({ error: 'Failed to duplicate workflow' }, { status: 500 })
