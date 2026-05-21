@@ -298,7 +298,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
     const { id: workspaceId, notificationId } = paramsResult.data
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
