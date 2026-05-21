@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { permissionsMock, permissionsMockFns, schemaMock } from '@sim/testing'
+import { createMockRequest, permissionsMock, permissionsMockFns, schemaMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetSession, mockDbSelect } = vi.hoisted(() => ({
@@ -75,9 +75,12 @@ describe('GET /api/workspaces/[id]/metrics/executions', () => {
     mockDbSelect.mockReturnValueOnce(createChain([]))
 
     const response = await GET(
-      new Request(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
         'http://localhost:3000/api/workspaces/ws-owner/metrics/executions?segments=24'
-      ) as any,
+      ),
       {
         params: Promise.resolve({ id: 'ws-owner' }),
       }
@@ -92,6 +95,28 @@ describe('GET /api/workspaces/[id]/metrics/executions', () => {
       segmentMs: 0,
     })
     expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
+  })
+
+  it('returns 401 before validating invalid params or query for unauthenticated metric reads', async () => {
+    mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await GET(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/workspaces//metrics/executions?segments=0'
+      ),
+      {
+        params: Promise.resolve({ id: '' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
   })
 
   it('hides foreign personal workspace execution metrics behind 404', async () => {
@@ -110,9 +135,12 @@ describe('GET /api/workspaces/[id]/metrics/executions', () => {
     })
 
     const response = await GET(
-      new Request(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
         'http://localhost:3000/api/workspaces/ws-owner/metrics/executions?segments=24'
-      ) as any,
+      ),
       {
         params: Promise.resolve({ id: 'ws-owner' }),
       }

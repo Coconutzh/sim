@@ -3,7 +3,8 @@ import { pausedExecutions, workflow, workflowExecutionLogs } from '@sim/db/schem
 import { createLogger } from '@sim/logger'
 import { and, eq, gte, inArray, isNotNull, isNull, lte, or, type SQL, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { workspaceMetricsExecutionsQuerySchema } from '@/lib/api/contracts/workspaces'
+import { getWorkspaceMetricsExecutionsContract } from '@/lib/api/contracts/workspaces'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
@@ -11,17 +12,18 @@ import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 const logger = createLogger('MetricsExecutionsAPI')
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    const session = await getSession()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const parsed = await parseRequest(getWorkspaceMetricsExecutionsContract, request, context)
+    if (!parsed.success) return parsed.response
+
     try {
-      const { id: workspaceId } = await params
-      const { searchParams } = new URL(request.url)
-      const qp = workspaceMetricsExecutionsQuerySchema.parse(
-        Object.fromEntries(searchParams.entries())
-      )
-      const session = await getSession()
-      if (!session?.user?.id) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+      const { id: workspaceId } = parsed.data.params
+      const qp = parsed.data.query
       const userId = session.user.id
 
       let end = qp.endTime ? new Date(qp.endTime) : new Date()

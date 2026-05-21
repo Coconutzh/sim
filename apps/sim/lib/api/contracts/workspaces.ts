@@ -145,6 +145,33 @@ export const workspaceMetricsExecutionsQuerySchema = z.object({
     .transform((value) => value === 'true'),
 })
 
+export const workspaceMetricsExecutionSegmentSchema = z.object({
+  timestamp: z.string(),
+  totalExecutions: z.number(),
+  successfulExecutions: z.number(),
+  avgDurationMs: z.number(),
+  p50Ms: z.number(),
+  p90Ms: z.number(),
+  p99Ms: z.number(),
+})
+
+export const workspaceMetricsExecutionWorkflowSchema = z.object({
+  workflowId: z.string(),
+  workflowName: z.string(),
+  segments: z.array(workspaceMetricsExecutionSegmentSchema),
+})
+
+export const workspaceMetricsExecutionsResponseSchema = z.object({
+  workflows: z.array(workspaceMetricsExecutionWorkflowSchema),
+  startTime: z.string(),
+  endTime: z.string(),
+  segmentMs: z.number(),
+})
+
+export type WorkspaceMetricsExecutionsResponse = z.output<
+  typeof workspaceMetricsExecutionsResponseSchema
+>
+
 export const listWorkspacesContract = defineRouteContract({
   method: 'GET',
   path: '/api/workspaces',
@@ -229,6 +256,17 @@ export const deleteWorkspaceContract = defineRouteContract({
     schema: z.object({
       success: z.literal(true),
     }),
+  },
+})
+
+export const getWorkspaceMetricsExecutionsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/metrics/executions',
+  params: workspaceParamsSchema,
+  query: workspaceMetricsExecutionsQuerySchema,
+  response: {
+    mode: 'json',
+    schema: workspaceMetricsExecutionsResponseSchema,
   },
 })
 
