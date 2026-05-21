@@ -76,14 +76,14 @@ export const GET = withRouteHandler(
 
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ token: string }> }) => {
-    const parsed = await parseRequest(acceptCredentialSetInvitationContract, req, context)
-    if (!parsed.success) return parsed.response
-    const { token } = parsed.data.params
-
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(acceptCredentialSetInvitationContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { token } = parsed.data.params
 
     try {
       const [invitationData] = await db
