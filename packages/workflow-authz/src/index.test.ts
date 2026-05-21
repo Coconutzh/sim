@@ -104,6 +104,110 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
     })
   })
 
+  it('allows organization admins to publish team canvas workflows', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-publish-1',
+            workspaceId: 'ws-team',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-team',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'team-wg',
+          workspaceMode: 'organization',
+        },
+      ],
+      [{ ownerId: 'creator-1', workspaceMode: 'organization', workgroupId: 'team-wg' }],
+      [],
+      [{ role: 'admin' }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-publish-1',
+      userId: 'org-admin-1',
+      action: 'publish',
+    })
+
+    expect(result).toMatchObject({
+      allowed: true,
+      workspacePermission: 'admin',
+      accessSource: 'workspace',
+      workspaceMode: 'organization',
+    })
+  })
+
+  it('does not treat regular team write access as publish permission', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-publish-2',
+            workspaceId: 'ws-team',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-team',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: 'team-wg',
+          workspaceMode: 'organization',
+        },
+      ],
+      [{ ownerId: 'creator-1', workspaceMode: 'organization', workgroupId: 'team-wg' }],
+      [{ role: 'member' }],
+      []
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-publish-2',
+      userId: 'team-member-1',
+      action: 'publish',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      status: 403,
+      workspacePermission: 'write',
+      accessSource: null,
+      workspaceMode: 'organization',
+    })
+  })
+
+  it('does not let organization admins publish personal drafts by default', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          workflow: {
+            id: 'wf-personal-publish',
+            workspaceId: 'ws-personal',
+            track: 'draft',
+            visibility: 'workspace',
+          },
+          workspaceId: 'ws-personal',
+          workspaceOrganizationId: 'org-1',
+          workspaceWorkgroupId: null,
+          workspaceMode: 'personal',
+        },
+      ],
+      [{ ownerId: 'other-user', workspaceMode: 'personal', workgroupId: null }]
+    )
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-personal-publish',
+      userId: 'org-admin-1',
+      action: 'publish',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      status: 404,
+      accessSource: null,
+      workspaceMode: 'personal',
+    })
+  })
+
   it('includes team memberships when evaluating selected workgroup visibility', async () => {
     mockResultsQueue.push(
       [

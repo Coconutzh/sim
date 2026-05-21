@@ -251,7 +251,7 @@ export async function publishWorkflowToMainline(params: {
   const authorization = await authorizeWorkflowByWorkspacePermission({
     workflowId: params.workflowId,
     userId: params.userId,
-    action: 'admin',
+    action: 'publish',
   })
 
   if (!authorization.allowed || !authorization.workflow) {
@@ -481,7 +481,7 @@ export async function updateWorkflowPublicationDetails(params: {
   const authorization = await authorizeWorkflowByWorkspacePermission({
     workflowId: params.workflowId,
     userId: params.userId,
-    action: 'admin',
+    action: 'publish',
   })
 
   if (!authorization.allowed || !authorization.workflow) {

@@ -74,6 +74,7 @@ export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 export type WorkflowAccessSource = 'workspace' | 'organization' | 'selected_workgroups'
 export type CanvasScope = 'personal' | 'team' | 'showcase'
 export type CanvasPermission = 'read' | 'write' | 'publish' | 'admin'
+export type WorkflowWorkspaceAction = 'read' | 'write' | 'publish' | 'admin'
 
 type WorkflowRecord = typeof workflow.$inferSelect
 
@@ -240,7 +241,7 @@ export interface WorkflowWorkspaceAuthorizationResult {
 
 function isPermissionSatisfied(
   permission: PermissionType | null,
-  action: 'read' | 'write' | 'admin'
+  action: WorkflowWorkspaceAction
 ): boolean {
   if (permission === null) {
     return false
@@ -252,6 +253,10 @@ function isPermissionSatisfied(
 
   if (action === 'write') {
     return permission === 'write' || permission === 'admin'
+  }
+
+  if (action === 'publish') {
+    return permission === 'admin'
   }
 
   return permission === 'admin'
@@ -325,6 +330,19 @@ async function hasOrganizationReadAccess(userId: string, organizationId: string)
   return Boolean(membership)
 }
 
+async function hasOrganizationAdminAccess(
+  userId: string,
+  organizationId: string
+): Promise<boolean> {
+  const [membership] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
+    .limit(1)
+
+  return membership?.role === 'owner' || membership?.role === 'admin'
+}
+
 async function getUserAccessibleWorkgroupIds(
   userId: string,
   organizationId: string | null
@@ -374,7 +392,7 @@ async function hasSelectedWorkgroupReadAccess(params: {
 export async function authorizeWorkflowByWorkspacePermission(params: {
   workflowId: string
   userId: string
-  action?: 'read' | 'write' | 'admin'
+  action?: WorkflowWorkspaceAction
 }): Promise<WorkflowWorkspaceAuthorizationResult> {
   const { workflowId, userId, action = 'read' } = params
 
@@ -414,6 +432,29 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       accessSource: 'workspace',
       workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
       workspaceMode: activeContext.workspaceMode,
+    }
+  }
+
+  if (
+    action === 'publish' &&
+    activeContext.workspaceMode === 'organization' &&
+    activeContext.workspaceWorkgroupId &&
+    activeContext.workspaceOrganizationId
+  ) {
+    const organizationAdminAllowed = await hasOrganizationAdminAccess(
+      userId,
+      activeContext.workspaceOrganizationId
+    )
+    if (organizationAdminAllowed) {
+      return {
+        allowed: true,
+        status: 200,
+        workflow: wf,
+        workspacePermission: 'admin',
+        accessSource: 'workspace',
+        workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+        workspaceMode: activeContext.workspaceMode,
+      }
     }
   }
 
