@@ -114,6 +114,20 @@ describe('collaboration authz helpers', () => {
     await expect(canPublishTeamCanvas('member-1', 'workgroup-1')).resolves.toBe(false)
   })
 
+  it('denies publication for admins of a different team', async () => {
+    mockResultsQueue.push([{ organizationId: 'org-1' }], [], [{ role: 'member' }])
+
+    await expect(canPublishTeamCanvas('other-team-admin-1', 'workgroup-1')).resolves.toBe(false)
+  })
+
+  it('does not let project admins read personal canvases without owner mapping', async () => {
+    mockResultsQueue.push([])
+
+    await expect(canReadPersonalCanvas('project-admin-1', 'personal-workspace-1')).resolves.toBe(
+      false
+    )
+  })
+
   it('allows publication reads for source team members', async () => {
     mockResultsQueue.push(
       [

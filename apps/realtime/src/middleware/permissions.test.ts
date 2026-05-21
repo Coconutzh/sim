@@ -17,8 +17,53 @@ import {
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
-import { describe, expect, it } from 'vitest'
-import { checkRolePermission } from '@/middleware/permissions'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const {
+  mockAuthorizeWorkflowByWorkspacePermission,
+  mockDb,
+  mockResolveCanvasScope,
+  mockWorkflowRows,
+  schemaMock,
+} = vi.hoisted(() => {
+  const workflowRows: unknown[] = []
+  const chain: Record<string, unknown> = {}
+
+  chain.from = vi.fn(() => chain)
+  chain.where = vi.fn(() => chain)
+  chain.limit = vi.fn(() => Promise.resolve(workflowRows.shift() ?? []))
+
+  return {
+    mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
+    mockDb: {
+      select: vi.fn(() => chain),
+    },
+    mockResolveCanvasScope: vi.fn(),
+    mockWorkflowRows: workflowRows,
+    schemaMock: {
+      workflow: {
+        id: 'workflow.id',
+        archivedAt: 'workflow.archivedAt',
+        workspaceId: 'workflow.workspaceId',
+        name: 'workflow.name',
+      },
+    },
+  }
+})
+
+vi.mock('@sim/db', () => ({ db: mockDb }))
+vi.mock('@sim/db/schema', () => schemaMock)
+vi.mock('@sim/workflow-authz', () => ({
+  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
+  resolveCanvasScope: mockResolveCanvasScope,
+}))
+vi.mock('drizzle-orm', () => ({
+  and: vi.fn((...args: unknown[]) => ({ kind: 'and', args })),
+  eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
+  isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
+}))
+
+import { checkRolePermission, verifyWorkflowAccess } from '@/middleware/permissions'
 
 const SOCKET_OPERATIONS = [
   ...Object.values(BLOCK_OPERATIONS),
@@ -34,6 +79,10 @@ const SOCKET_OPERATIONS = [
 const WRITE_ALLOWED_OPERATIONS = SOCKET_OPERATIONS.filter(
   (operation) => operation !== BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED
 )
+
+function queueWorkflowRow(workflowId = 'workflow-1') {
+  mockWorkflowRows.push([{ workspaceId: 'workspace-1', name: workflowId }])
+}
 
 function expectPermissionAllowed(result: { allowed: boolean; reason?: string }) {
   expect(result.allowed).toBe(true)
@@ -300,6 +349,87 @@ describe('checkRolePermission', () => {
     it('should have descriptive denial message format', () => {
       const result = checkRolePermission('read', 'remove')
       expect(result.reason).toMatch(/Role '.*' not permitted to perform '.*'/)
+    })
+  })
+})
+
+describe('verifyWorkflowAccess', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWorkflowRows.length = 0
+    mockResolveCanvasScope.mockReturnValue('team')
+  })
+
+  it('denies personal draft room access when the caller is not the owner', async () => {
+    queueWorkflowRow('personal-workflow')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workspacePermission: null,
+      accessSource: null,
+      workspaceMode: 'personal',
+    })
+
+    await expect(verifyWorkflowAccess('other-user', 'personal-workflow')).resolves.toEqual({
+      hasAccess: false,
+    })
+    expect(mockResolveCanvasScope).not.toHaveBeenCalled()
+  })
+
+  it('denies team canvas room access when the caller is not a workgroup member', async () => {
+    queueWorkflowRow('team-workflow')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: false,
+      status: 403,
+      message: 'Unauthorized: Access denied to read this workflow',
+      workspacePermission: null,
+      accessSource: null,
+      workspaceMode: 'organization',
+      workspaceWorkgroupId: 'workgroup-1',
+    })
+
+    await expect(verifyWorkflowAccess('outsider-user', 'team-workflow')).resolves.toEqual({
+      hasAccess: false,
+    })
+  })
+
+  it('keeps showcase room joins read-only for visible cross-team publications', async () => {
+    queueWorkflowRow('showcase-workflow')
+    mockResolveCanvasScope.mockReturnValue('showcase')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      workspacePermission: 'write',
+      accessSource: 'selected_workgroups',
+      workspaceMode: 'organization',
+      workspaceWorkgroupId: 'publisher-workgroup',
+    })
+
+    await expect(verifyWorkflowAccess('viewer-user', 'showcase-workflow')).resolves.toEqual({
+      hasAccess: true,
+      role: 'read',
+      workspaceId: 'workspace-1',
+      canvasScope: 'showcase',
+    })
+    expect(checkRolePermission('read', BLOCK_OPERATIONS.UPDATE_POSITION).allowed).toBe(false)
+  })
+
+  it('returns the workspace write role for team canvas members', async () => {
+    queueWorkflowRow('team-workflow')
+    mockResolveCanvasScope.mockReturnValue('team')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      workspacePermission: 'write',
+      accessSource: 'workspace',
+      workspaceMode: 'organization',
+      workspaceWorkgroupId: 'workgroup-1',
+    })
+
+    await expect(verifyWorkflowAccess('member-user', 'team-workflow')).resolves.toEqual({
+      hasAccess: true,
+      role: 'write',
+      workspaceId: 'workspace-1',
+      canvasScope: 'team',
     })
   })
 })
