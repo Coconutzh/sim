@@ -5,13 +5,17 @@ import { hybridAuthMock, hybridAuthMockFns, permissionsMock, permissionsMockFns 
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockResolveOAuthAccountId, mockExecuteProviderRequest } = vi.hoisted(() => ({
+const { mockResolveOAuthAccountId, mockExecuteProviderRequest, mockResolveAccessibleWorkflowWorkspace } = vi.hoisted(() => ({
   mockResolveOAuthAccountId: vi.fn(),
   mockExecuteProviderRequest: vi.fn(),
+  mockResolveAccessibleWorkflowWorkspace: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/hybrid', () => hybridAuthMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mockResolveAccessibleWorkflowWorkspace,
+}))
 
 vi.mock('@/app/api/auth/oauth/utils', () => ({
   resolveOAuthAccountId: mockResolveOAuthAccountId,
@@ -68,10 +72,18 @@ describe('ProvidersAPI POST', () => {
         billedAccountUserId: 'user-1',
       },
     })
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({
+      workspaceId: 'ws-visible',
+    })
     mockResolveOAuthAccountId.mockResolvedValue({
       accountId: 'acct-1',
       workspaceId: 'ws-hidden',
       credentialType: 'oauth',
+    })
+    mockExecuteProviderRequest.mockResolvedValue({
+      output: {
+        content: 'hello',
+      },
     })
   })
 
@@ -158,5 +170,65 @@ describe('ProvidersAPI POST', () => {
       error: 'Workspace not found',
     })
     expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal workflow execution behind 404 even with a spoofed visible workspace', async () => {
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/providers', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'openai',
+        model: 'gpt-4.1',
+        workspaceId: 'ws-visible',
+        workflowId: 'wf-hidden',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Workspace not found',
+    })
+    expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+      userId: 'user-1',
+      workflowId: 'wf-hidden',
+      workspaceId: 'ws-visible',
+    })
+    expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+  })
+
+  it('normalizes provider execution to the workflow workspace', async () => {
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      workspaceId: 'ws-actual',
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/providers', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'openai',
+        model: 'gpt-4.1',
+        workspaceId: 'ws-spoofed',
+        workflowId: 'wf-1',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteProviderRequest).toHaveBeenCalledWith(
+      'openai',
+      expect.objectContaining({
+        workflowId: 'wf-1',
+        workspaceId: 'ws-actual',
+      })
+    )
   })
 })

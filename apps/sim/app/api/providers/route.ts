@@ -9,6 +9,7 @@ import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import {
   getServiceAccountToken,
@@ -118,8 +119,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       verbosity,
     })
 
-    if (workspaceId) {
-      const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
+    let resolvedWorkspaceId = workspaceId
+    if (workflowId) {
+      const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+        userId: auth.userId,
+        workflowId,
+        workspaceId,
+      })
+      if ('response' in workspaceResolution) {
+        return workspaceResolution.response
+      }
+      resolvedWorkspaceId = workspaceResolution.workspaceId
+    }
+
+    if (resolvedWorkspaceId) {
+      const workspaceAccess = await checkWorkspaceAccess(resolvedWorkspaceId, auth.userId)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
@@ -127,7 +141,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       try {
         await assertPermissionsAllowed({
           userId: auth.userId,
-          workspaceId,
+          workspaceId: resolvedWorkspaceId,
           model,
         })
       } catch (err) {
@@ -180,7 +194,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       bedrockRegion,
       responseFormat,
       workflowId,
-      workspaceId,
+      workspaceId: resolvedWorkspaceId,
       stream,
       messages,
       environmentVariables,
