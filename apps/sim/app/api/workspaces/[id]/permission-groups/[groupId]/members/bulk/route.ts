@@ -45,11 +45,8 @@ export const POST = withRouteHandler(
 
     try {
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
-      if (!access.exists) {
+      if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
-      }
-      if (!access.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(

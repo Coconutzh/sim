@@ -156,4 +156,22 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workspaces from permission group routes', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-hidden' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
+  })
 })

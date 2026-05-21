@@ -242,4 +242,23 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
   })
+
+  it('hides foreign personal workspaces from bulk permission-group assignment', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await POST(createMockRequest('POST'), {
+      params: Promise.resolve({ id: 'ws-hidden', groupId: 'group-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
+    expect(insertValuesMock).not.toHaveBeenCalled()
+  })
 })
