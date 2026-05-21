@@ -41,9 +41,16 @@ export const POST = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await context.params
-
     try {
+      const parsed = await parseRequest(bulkAddPermissionGroupMembersContract, req, context, {
+        validationErrorResponse: (error) =>
+          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId, groupId: id } = parsed.data.params
+      const { userIds, addAllWorkspaceMembers } = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -72,13 +79,6 @@ export const POST = withRouteHandler(
       if (!group) {
         return NextResponse.json({ error: 'Permission group not found' }, { status: 404 })
       }
-
-      const parsed = await parseRequest(bulkAddPermissionGroupMembersContract, req, context, {
-        validationErrorResponse: (error) =>
-          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
-      })
-      if (!parsed.success) return parsed.response
-      const { userIds, addAllWorkspaceMembers } = parsed.data.body
 
       let targetUserIds: string[] = []
       const workspaceMembers = await getUsersWithPermissions(workspaceId)

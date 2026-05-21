@@ -9,6 +9,7 @@ const {
   andMock,
   checkWorkspaceAccessMock,
   eqMock,
+  getSessionMock,
   getUsersWithPermissionsMock,
   hasWorkspaceAdminAccessMock,
   inArrayMock,
@@ -27,6 +28,7 @@ const {
     andMock: vi.fn((...args) => ({ kind: 'and', args })),
     checkWorkspaceAccessMock: vi.fn(),
     eqMock: vi.fn((left, right) => ({ kind: 'eq', left, right })),
+    getSessionMock: vi.fn(),
     getUsersWithPermissionsMock: vi.fn(),
     hasWorkspaceAdminAccessMock: vi.fn(),
     inArrayMock: vi.fn((left, right) => ({ kind: 'inArray', left, right })),
@@ -113,9 +115,7 @@ vi.mock('@/lib/api/server', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  getSession: vi.fn().mockResolvedValue({
-    user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
-  }),
+  getSession: getSessionMock,
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -136,17 +136,23 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { POST } from './route'
+import { POST } from '@/app/api/workspaces/[id]/permission-groups/[groupId]/members/bulk/route'
 
 describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getSessionMock.mockResolvedValue({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
     selectGroupLimitMock.mockResolvedValue([
       { id: 'group-1', workspaceId: 'ws-1', name: 'Team Members' },
     ])
     parseRequestMock.mockResolvedValue({
       success: true,
-      data: { body: { addAllWorkspaceMembers: false, userIds: [] } },
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { addAllWorkspaceMembers: false, userIds: [] },
+      },
     })
     hasWorkspaceAdminAccessMock.mockResolvedValue(true)
     isWorkspaceOnEnterprisePlanMock.mockResolvedValue(true)
@@ -189,7 +195,10 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
   it('includes owner-only workspace members when adding all members', async () => {
     parseRequestMock.mockResolvedValueOnce({
       success: true,
-      data: { body: { addAllWorkspaceMembers: true } },
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { addAllWorkspaceMembers: true },
+      },
     })
 
     const response = await POST(createMockRequest('POST'), {
@@ -209,7 +218,10 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
   it('accepts owner-only members in explicit user selections', async () => {
     parseRequestMock.mockResolvedValueOnce({
       success: true,
-      data: { body: { addAllWorkspaceMembers: false, userIds: ['owner-1', 'missing-user'] } },
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { addAllWorkspaceMembers: false, userIds: ['owner-1', 'missing-user'] },
+      },
     })
 
     const response = await POST(createMockRequest('POST'), {
@@ -260,5 +272,19 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members/bulk', (
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates bulk assignments before validating route params or body', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await POST(createMockRequest('POST', {}), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
   })
 })
