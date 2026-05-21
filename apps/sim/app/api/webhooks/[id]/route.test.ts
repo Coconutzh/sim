@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  mockParseRequest,
   mockCheckSessionOrInternalAuth,
   mockDbSelect,
   mockDbFrom,
@@ -19,6 +20,13 @@ const {
   mockDbDeleteWhere,
   mockAssertWorkflowMutable,
 } = vi.hoisted(() => ({
+  mockParseRequest: vi.fn(async (_contract, _request, context) => ({
+    success: true,
+    data: {
+      params: await context.params,
+      body: { isActive: false, failedCount: 0 },
+    },
+  })),
   mockCheckSessionOrInternalAuth: vi.fn(),
   mockDbSelect: vi.fn(),
   mockDbFrom: vi.fn(),
@@ -38,13 +46,7 @@ vi.mock('@/lib/auth/hybrid', () => ({
 }))
 
 vi.mock('@/lib/api/server', () => ({
-  parseRequest: vi.fn(async (_contract, _request, context) => ({
-    success: true,
-    data: {
-      params: await context.params,
-      body: { isActive: false, failedCount: 0 },
-    },
-  })),
+  parseRequest: mockParseRequest,
 }))
 
 vi.mock('@sim/db', () => ({
@@ -146,6 +148,55 @@ describe('Webhook [id] API route', () => {
     return { params: Promise.resolve({ id }) }
   }
 
+  it('authenticates webhook fetch before validating params', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await GET(new NextRequest('http://localhost/api/webhooks/wh-1'), params())
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
+  })
+
+  it('authenticates webhook updates before validating params or body', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await PATCH(
+      new NextRequest('http://localhost/api/webhooks/wh-1', {
+        method: 'PATCH',
+      }),
+      params()
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
+  })
+
+  it('authenticates webhook deletion before validating params', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await DELETE(
+      new NextRequest('http://localhost/api/webhooks/wh-1', {
+        method: 'DELETE',
+      }),
+      params()
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
+  })
+
   it('rejects published workflow readers from fetching a webhook by id', async () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
       allowed: true,
@@ -207,10 +258,7 @@ describe('Webhook [id] API route', () => {
       workflow: { id: 'wf-hidden', workspaceId: 'ws-hidden' },
     })
 
-    const response = await GET(
-      new NextRequest('http://localhost/api/webhooks/wh-1'),
-      params()
-    )
+    const response = await GET(new NextRequest('http://localhost/api/webhooks/wh-1'), params())
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Workflow not found' })

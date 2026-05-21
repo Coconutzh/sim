@@ -2,6 +2,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { webhook, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import {
   assertWorkflowMutable,
   authorizeWorkflowByWorkspacePermission,
@@ -32,16 +33,16 @@ export const GET = withRouteHandler(
     const requestId = generateRequestId()
 
     try {
-      const parsed = await parseRequest(getWebhookContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { id } = parsed.data.params
-
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         logger.warn(`[${requestId}] Unauthorized webhook access attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(getWebhookContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id } = parsed.data.params
 
       const webhooks = await db
         .select({
@@ -97,16 +98,16 @@ export const PATCH = withRouteHandler(
     const requestId = generateRequestId()
 
     try {
-      const parsed = await parseRequest(updateWebhookContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { id } = parsed.data.params
-
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         logger.warn(`[${requestId}] Unauthorized webhook update attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(updateWebhookContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id } = parsed.data.params
 
       const { isActive, failedCount } = parsed.data.body
 
@@ -178,16 +179,16 @@ export const DELETE = withRouteHandler(
     const requestId = generateRequestId()
 
     try {
-      const parsed = await parseRequest(deleteWebhookContract, request, context)
-      if (!parsed.success) return parsed.response
-      const { id } = parsed.data.params
-
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         logger.warn(`[${requestId}] Unauthorized webhook deletion attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(deleteWebhookContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id } = parsed.data.params
 
       // Find the webhook and check permissions
       const webhooks = await db
@@ -328,14 +329,15 @@ export const DELETE = withRouteHandler(
       )
 
       return NextResponse.json({ success: true }, { status: 200 })
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof WorkflowLockedError) {
         return NextResponse.json({ error: error.message }, { status: error.status })
       }
 
+      const normalizedError = toError(error)
       logger.error(`[${requestId}] Error deleting webhook`, {
-        error: error.message,
-        stack: error.stack,
+        error: normalizedError.message,
+        stack: normalizedError.stack,
       })
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
