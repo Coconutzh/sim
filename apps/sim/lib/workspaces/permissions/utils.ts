@@ -267,20 +267,34 @@ export async function listAccessibleWorkspaceIds(userId: string): Promise<string
  * @returns Promise<boolean> - True if the user has admin permission for the workspace, false otherwise
  */
 export async function hasAdminPermission(userId: string, workspaceId: string): Promise<boolean> {
-  const result = await db
-    .select({ id: permissions.id })
+  const [result] = await db
+    .select({
+      id: permissions.id,
+      workspaceMode: workspace.workspaceMode,
+      workspaceOwnerId: workspace.ownerId,
+    })
     .from(permissions)
+    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
     .where(
       and(
         eq(permissions.userId, userId),
         eq(permissions.entityType, 'workspace'),
         eq(permissions.entityId, workspaceId),
-        eq(permissions.permissionType, 'admin')
+        eq(permissions.permissionType, 'admin'),
+        isNull(workspace.archivedAt)
       )
     )
     .limit(1)
 
-  return result.length > 0
+  if (!result) {
+    return false
+  }
+
+  if (result.workspaceMode === 'personal' && result.workspaceOwnerId !== userId) {
+    return false
+  }
+
+  return true
 }
 
 /**

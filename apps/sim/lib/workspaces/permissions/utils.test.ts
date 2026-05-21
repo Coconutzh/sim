@@ -263,6 +263,21 @@ describe('Permission Utils', () => {
 
       expect(result).toBe(false)
     })
+
+    it('returns false for stale non-owner admin rows on personal workspaces', async () => {
+      const chain = createMockChain([
+        {
+          id: 'perm-1',
+          workspaceMode: 'personal',
+          workspaceOwnerId: 'owner-1',
+        },
+      ])
+      mockDb.select.mockReturnValue(chain)
+
+      const result = await hasAdminPermission('member-1', 'workspace123')
+
+      expect(result).toBe(false)
+    })
   })
 
   describe('getUsersWithPermissions', () => {
