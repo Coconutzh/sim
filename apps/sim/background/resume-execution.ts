@@ -34,6 +34,13 @@ export async function executeResumeJob(payload: ResumeExecutionPayload) {
       throw new Error(`Paused execution not found: ${pausedExecutionId}`)
     }
 
+    if (
+      pausedExecution.workflowId !== workflowId ||
+      pausedExecution.executionId !== parentExecutionId
+    ) {
+      throw new Error('Paused execution does not match resume payload')
+    }
+
     // If this paused execution belongs to a table cell, rehydrate the cell
     // context so post-resume block outputs land on the same row + group as
     // the original cell task. Without this, blocks that run after the human
