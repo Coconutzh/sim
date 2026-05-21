@@ -100,44 +100,34 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
       const users = await roomManager.getWorkflowUsers(workflowId)
       const userPresence = users.find((u) => u.socketId === socket.id)
 
-      // Skip permission checks for non-committed position updates (broadcasts only, no persistence)
-      if (isPositionUpdate && !commitPositionUpdate) {
-        // Update last activity
-        if (userPresence) {
-          await roomManager.updateUserActivity(workflowId, socket.id, { lastActivity: Date.now() })
-        }
-      } else {
-        // Check permissions from cached role for all other operations
-        if (!userPresence) {
-          logger.warn(`User presence not found for socket ${socket.id}`)
-          emitOperationError(
-            {
-              type: 'SESSION_ERROR',
-              message: 'User session not found',
-              operation,
-              target,
-            },
-            { error: 'User session not found' }
-          )
-          return
-        }
-
-        await roomManager.updateUserActivity(workflowId, socket.id, { lastActivity: Date.now() })
-
-        // Check permissions using cached role (no DB query)
-        const permissionCheck = checkRolePermission(userPresence.role, operation)
-        if (!permissionCheck.allowed) {
-          logger.warn(
-            `User ${session.userId} (role: ${userPresence.role}) forbidden from ${operation} on ${target}`
-          )
-          emitOperationError({
-            type: 'INSUFFICIENT_PERMISSIONS',
-            message: `${permissionCheck.reason} on '${target}'`,
+      if (!userPresence) {
+        logger.warn(`User presence not found for socket ${socket.id}`)
+        emitOperationError(
+          {
+            type: 'SESSION_ERROR',
+            message: 'User session not found',
             operation,
             target,
-          })
-          return
-        }
+          },
+          { error: 'User session not found' }
+        )
+        return
+      }
+
+      await roomManager.updateUserActivity(workflowId, socket.id, { lastActivity: Date.now() })
+
+      const permissionCheck = checkRolePermission(userPresence.role, operation)
+      if (!permissionCheck.allowed) {
+        logger.warn(
+          `User ${session.userId} (role: ${userPresence.role}) forbidden from ${operation} on ${target}`
+        )
+        emitOperationError({
+          type: 'INSUFFICIENT_PERMISSIONS',
+          message: `${permissionCheck.reason} on '${target}'`,
+          operation,
+          target,
+        })
+        return
       }
 
       try {
