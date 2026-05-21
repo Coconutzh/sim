@@ -32,7 +32,7 @@ export const GET = withRouteHandler(
     const hasAccess = await verifyFileAccess(record.key, authResult.userId)
     if (!hasAccess) {
       logger.warn('Unauthorized file view attempt', { id, userId: authResult.userId })
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const storagePrefix = USE_BLOB_STORAGE ? 'blob' : 's3'

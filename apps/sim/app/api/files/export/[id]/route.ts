@@ -66,7 +66,7 @@ export const GET = withRouteHandler(
     const hasAccess = await verifyFileAccess(record.key, userId)
     if (!hasAccess) {
       logger.warn('Unauthorized file export attempt', { id, userId })
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     if (!isMarkdown(record.originalName, record.contentType)) {
