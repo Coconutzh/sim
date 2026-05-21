@@ -3,8 +3,6 @@ import {
   mothershipInboxAllowedSender,
   mothershipInboxTask,
   mothershipInboxWebhook,
-  permissions,
-  user,
   workspace,
 } from '@sim/db'
 import { createLogger } from '@sim/logger'
@@ -21,6 +19,7 @@ import {
 import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { executeInboxTask } from '@/lib/mothership/inbox/executor'
+import { findWorkspaceUserIdByEmail } from '@/lib/mothership/inbox/member-resolution'
 import type { AgentMailWebhookPayload, RejectionReason } from '@/lib/mothership/inbox/types'
 
 const logger = createLogger('AgentMailWebhook')
@@ -238,7 +237,7 @@ export const POST = withRouteHandler(async (req: Request) => {
 })
 
 export async function isSenderAllowed(email: string, workspaceId: string): Promise<boolean> {
-  const [allowedSenderResult, memberResult, ownerResult] = await Promise.all([
+  const [allowedSenderResult, memberUserId] = await Promise.all([
     db
       .select({ id: mothershipInboxAllowedSender.id })
       .from(mothershipInboxAllowedSender)
@@ -249,27 +248,10 @@ export async function isSenderAllowed(email: string, workspaceId: string): Promi
         )
       )
       .limit(1),
-    db
-      .select({ userId: permissions.userId })
-      .from(permissions)
-      .innerJoin(user, eq(permissions.userId, user.id))
-      .where(
-        and(
-          eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, workspaceId),
-          sql`lower(${user.email}) = ${email}`
-        )
-      )
-      .limit(1),
-    db
-      .select({ ownerId: workspace.ownerId })
-      .from(workspace)
-      .innerJoin(user, eq(workspace.ownerId, user.id))
-      .where(and(eq(workspace.id, workspaceId), sql`lower(${user.email}) = ${email}`))
-      .limit(1),
+    findWorkspaceUserIdByEmail(workspaceId, email),
   ])
 
-  return !!(allowedSenderResult[0] || memberResult[0] || ownerResult[0])
+  return !!(allowedSenderResult[0] || memberUserId)
 }
 
 async function getRecentTaskCount(workspaceId: string): Promise<number> {

@@ -5,6 +5,7 @@ import { schemaMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockDbResults = vi.hoisted(() => ({ value: [] as any[] }))
+const mockFindWorkspaceUserIdByEmail = vi.hoisted(() => vi.fn())
 
 function createSelectChain() {
   const chain: Record<string, unknown> = {}
@@ -64,6 +65,9 @@ vi.mock('@/lib/core/config/feature-flags', () => ({
 vi.mock('@/lib/mothership/inbox/executor', () => ({
   executeInboxTask: vi.fn(),
 }))
+vi.mock('@/lib/mothership/inbox/member-resolution', () => ({
+  findWorkspaceUserIdByEmail: mockFindWorkspaceUserIdByEmail,
+}))
 
 import { isSenderAllowed } from './route'
 
@@ -71,16 +75,25 @@ describe('isSenderAllowed', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDbResults.value = []
+    mockFindWorkspaceUserIdByEmail.mockResolvedValue(null)
   })
 
   it('allows owner-only workspace owners without an explicit permission row', async () => {
-    mockDbResults.value = [[], [], [{ ownerId: 'owner-1' }]]
+    mockDbResults.value = [[]]
+    mockFindWorkspaceUserIdByEmail.mockResolvedValue('owner-1')
 
     await expect(isSenderAllowed('owner@example.com', 'ws-owner')).resolves.toBe(true)
   })
 
+  it('rejects stale personal-workspace permission rows', async () => {
+    mockDbResults.value = [[]]
+    mockFindWorkspaceUserIdByEmail.mockResolvedValue(null)
+
+    await expect(isSenderAllowed('member@example.com', 'ws-owner')).resolves.toBe(false)
+  })
+
   it('rejects senders when they are neither allowed senders, members, nor owners', async () => {
-    mockDbResults.value = [[], [], []]
+    mockDbResults.value = [[]]
 
     await expect(isSenderAllowed('stranger@example.com', 'ws-owner')).resolves.toBe(false)
   })

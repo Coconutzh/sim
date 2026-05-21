@@ -1,4 +1,4 @@
-import { copilotChats, db, mothershipInboxTask, permissions, user, workspace } from '@sim/db'
+import { copilotChats, db, mothershipInboxTask, workspace } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
@@ -16,6 +16,7 @@ import { taskPubSub } from '@/lib/copilot/tasks'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import * as agentmail from '@/lib/mothership/inbox/agentmail-client'
 import { formatEmailAsMessage } from '@/lib/mothership/inbox/format'
+import { findWorkspaceUserIdByEmail } from '@/lib/mothership/inbox/member-resolution'
 import { sendInboxResponse } from '@/lib/mothership/inbox/response'
 import type { AgentMailAttachment } from '@/lib/mothership/inbox/types'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
@@ -285,20 +286,8 @@ async function resolveUserId(
   senderEmail: string,
   ws: { id: string; ownerId: string }
 ): Promise<string> {
-  const [member] = await db
-    .select({ userId: permissions.userId })
-    .from(permissions)
-    .innerJoin(user, eq(permissions.userId, user.id))
-    .where(
-      and(
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, ws.id),
-        sql`lower(${user.email}) = ${senderEmail.toLowerCase()}`
-      )
-    )
-    .limit(1)
-
-  return member?.userId ?? ws.ownerId
+  const memberUserId = await findWorkspaceUserIdByEmail(ws.id, senderEmail)
+  return memberUserId ?? ws.ownerId
 }
 
 /**
