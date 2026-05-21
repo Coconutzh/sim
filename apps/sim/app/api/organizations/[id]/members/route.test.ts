@@ -32,7 +32,7 @@ vi.mock('@sim/db', () => ({
 vi.mock('@sim/db/schema', () => schemaMock)
 vi.mock('@/lib/auth', () => authMock)
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 describe('GET /api/organizations/[id]/members', () => {
   beforeEach(() => {
@@ -190,6 +190,29 @@ describe('GET /api/organizations/[id]/members', () => {
     authMockFns.mockGetSession.mockResolvedValueOnce(null)
 
     const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/organizations/[id]/members', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDbResults.value = []
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner' },
+    })
+  })
+
+  it('authenticates before validating route params or body', async () => {
+    authMockFns.mockGetSession.mockResolvedValueOnce(null)
+
+    const response = await POST(createMockRequest('POST', {}), {
       params: Promise.resolve({ id: '' }),
     })
     const data = await response.json()

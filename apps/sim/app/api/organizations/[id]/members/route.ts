@@ -354,6 +354,8 @@ export const GET = withRouteHandler(
  */
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationIdForLog: string | undefined
+
     try {
       const session = await getSession()
 
@@ -365,6 +367,7 @@ export const POST = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id: organizationId } = parsed.data.params
+      organizationIdForLog = organizationId
 
       await validateInvitationsAllowed(session.user.id, { organizationId })
 
@@ -528,7 +531,7 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: error.message }, { status: 403 })
       }
       logger.error('Failed to invite organization member', {
-        organizationId: (await context.params).id,
+        organizationId: organizationIdForLog,
         error,
       })
 
