@@ -51,6 +51,25 @@ async function ensureVisibleWorkspace(
   return null
 }
 
+async function ensureWritableWorkspace(
+  workspaceId: string,
+  userId: string,
+  notFoundMessage: string,
+  forbiddenMessage: string
+): Promise<NextResponse | null> {
+  const hiddenWorkspaceResponse = await ensureVisibleWorkspace(workspaceId, userId, notFoundMessage)
+  if (hiddenWorkspaceResponse) {
+    return hiddenWorkspaceResponse
+  }
+
+  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+  if (permission !== 'write' && permission !== 'admin') {
+    return NextResponse.json({ error: forbiddenMessage }, { status: 403 })
+  }
+
+  return null
+}
+
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const session = await getSession()
@@ -120,10 +139,20 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
           userId: session.user.id,
           workflowId,
-          workspaceId,
+          workspaceId: workspaceId ?? undefined,
         })
         if ('response' in workspaceResolution) {
           return workspaceResolution.response
+        }
+
+        const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
+          workspaceResolution.workspaceId,
+          session.user.id,
+          'Workspace not found',
+          'Write or Admin access required for execution uploads'
+        )
+        if (forbiddenWorkspaceResponse) {
+          return forbiddenWorkspaceResponse
         }
 
         const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
@@ -228,20 +257,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         if (!workspaceId) {
           throw new InvalidRequestError('Workspace context requires workspaceId parameter')
         }
-        const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+        const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
           workspaceId,
           session.user.id,
-          'Workspace not found'
+          'Workspace not found',
+          'Write or Admin access required for workspace uploads'
         )
-        if (hiddenWorkspaceResponse) {
-          return hiddenWorkspaceResponse
-        }
-        const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
-        if (permission !== 'admin' && permission !== 'write') {
-          return NextResponse.json(
-            { error: 'Write or Admin access required for workspace uploads' },
-            { status: 403 }
-          )
+        if (forbiddenWorkspaceResponse) {
+          return forbiddenWorkspaceResponse
         }
 
         try {
@@ -287,13 +310,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           throw new InvalidRequestError('Mothership context requires workspaceId parameter')
         }
 
-        const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+        const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
           workspaceId,
           session.user.id,
-          'Workspace not found'
+          'Workspace not found',
+          'Write or Admin access required for mothership uploads'
         )
-        if (hiddenWorkspaceResponse) {
-          return hiddenWorkspaceResponse
+        if (forbiddenWorkspaceResponse) {
+          return forbiddenWorkspaceResponse
         }
 
         logger.info(`Uploading mothership file: ${originalName}`)

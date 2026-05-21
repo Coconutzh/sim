@@ -413,6 +413,35 @@ describe('File Upload API Route', () => {
     expect(mocks.mockUploadExecutionFile).not.toHaveBeenCalled()
   })
 
+  it('should reject execution uploads when the resolved workspace is read-only', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const mockFile = createMockFile()
+    const formData = new FormData()
+    formData.append('context', 'execution')
+    formData.append('workspaceId', 'test-workspace-id')
+    formData.append('workflowId', 'wf-1')
+    formData.append('executionId', 'exec-1')
+    formData.append('file', mockFile)
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Write or Admin access required for execution uploads',
+    })
+    expect(mocks.mockUploadExecutionFile).not.toHaveBeenCalled()
+  })
+
   it('should normalize execution uploads to the workflow workspace', async () => {
     setupFileApiMocks({
       cloudEnabled: false,
@@ -454,6 +483,30 @@ describe('File Upload API Route', () => {
       'text/plain',
       'test-user-id'
     )
+  })
+
+  it('should reject mothership uploads when the workspace is read-only', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const mockFile = createMockFile()
+    const formData = createMockFormData([mockFile], 'mothership')
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Write or Admin access required for mothership uploads',
+    })
+    expect(storageServiceMockFns.mockUploadFile).not.toHaveBeenCalled()
   })
 })
 
