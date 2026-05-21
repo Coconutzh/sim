@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { workspaceFileParamsSchema } from '@/lib/api/contracts/workspace-files'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { downloadWorkspaceFileContract } from '@/lib/api/contracts/workspace-files'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -18,22 +18,18 @@ const logger = createLogger('WorkspaceFileDownloadAPI')
  * Uses /api/files/serve endpoint which enforces authentication and context
  */
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string; fileId: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; fileId: string }> }) => {
     const requestId = generateRequestId()
-    const paramsResult = workspaceFileParamsSchema.safeParse(await params)
-    if (!paramsResult.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
-        { status: 400 }
-      )
-    }
-    const { id: workspaceId, fileId } = paramsResult.data
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(downloadWorkspaceFileContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workspaceId, fileId } = parsed.data.params
 
       const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
       if (!membership.exists || !membership.hasAccess) {
