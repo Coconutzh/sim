@@ -1,4 +1,5 @@
-﻿import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+﻿import type { QueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   addWorkgroupMemberContract,
@@ -57,6 +58,15 @@ export const collaborationKeys = {
     [...collaborationKeys.agentProfiles(), workspaceId ?? ''] as const,
 }
 
+function invalidateActiveWorkgroupQueries(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() }),
+    queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroupDetails() }),
+    queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() }),
+    queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() }),
+  ])
+}
+
 export interface PublicationFilters {
   disciplineCode?: string
   sourceWorkgroupId?: string
@@ -105,7 +115,7 @@ export function useSetActiveWorkgroup() {
     mutationFn: (workgroupId: string) =>
       requestJson(setActiveWorkgroupContract, { body: { workgroupId } }),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: collaborationKeys.all })
+      return invalidateActiveWorkgroupQueries(queryClient)
     },
   })
 }
