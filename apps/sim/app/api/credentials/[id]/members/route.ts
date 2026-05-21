@@ -4,7 +4,10 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { upsertWorkspaceCredentialMemberContract } from '@/lib/api/contracts/credentials'
+import {
+  removeWorkspaceCredentialMemberContract,
+  upsertWorkspaceCredentialMemberContract,
+} from '@/lib/api/contracts/credentials'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -162,11 +165,11 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Rou
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: credentialId } = await context.params
-    const targetUserId = new URL(request.url).searchParams.get('userId')
-    if (!targetUserId) {
-      return NextResponse.json({ error: 'userId query parameter required' }, { status: 400 })
-    }
+    const parsed = await parseRequest(removeWorkspaceCredentialMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: credentialId } = parsed.data.params
+    const { userId: targetUserId } = parsed.data.query
 
     const admin = await requireWorkspaceAdminMembership(credentialId, session.user.id)
     if (!admin.ok) {
