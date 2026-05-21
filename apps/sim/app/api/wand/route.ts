@@ -15,7 +15,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { enrichTableSchema } from '@/lib/table/llm/wand'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 import { extractResponseText, parseResponsesUsage } from '@/providers/openai/utils'
 import { getModelPricing } from '@/providers/utils'
 
@@ -201,11 +201,21 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       workspaceId = workflowRecord.workspaceId
 
       if (workflowRecord.workspaceId) {
-        const permission = await verifyWorkspaceMembership(
+        const membership = await getWorkspaceMembershipAccess(
           session.user.id,
           workflowRecord.workspaceId
         )
-        if (!permission || (permission !== 'admin' && permission !== 'write')) {
+        if (!membership.exists || !membership.hasAccess) {
+          logger.warn(
+            `[${requestId}] User ${session.user.id} cannot see workspace for workflow ${workflowId}`
+          )
+          return NextResponse.json(
+            { success: false, error: 'Workflow not found' },
+            { status: 404 }
+          )
+        }
+
+        if (!membership.canWrite) {
           logger.warn(
             `[${requestId}] User ${session.user.id} does not have write access to workspace for workflow ${workflowId}`
           )
