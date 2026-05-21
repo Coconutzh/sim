@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { CanvasModeHeader } from '@/components/workbench/canvas-mode-header'
+import { ShowcaseReadOnlyCanvas } from '@/components/workbench/showcase-readonly-canvas'
 import { WorkbenchShell } from '@/components/workbench/workbench-shell'
 import { useSession } from '@/lib/auth/auth-client'
 import { useMyWorkgroups, usePublication, usePublicationTree } from '@/hooks/queries/collaboration'
@@ -35,8 +36,6 @@ export default function ShowcasePublicationPage() {
     )
   }
 
-  const blocks = countRecordItems(data.publication.snapshotState, 'blocks')
-  const edges = countArrayItems(data.publication.snapshotState, 'edges')
   const shellWorkgroup = activeWorkgroup ?? {
     id: data.publication.sourceWorkgroup.id,
     name: data.publication.sourceWorkgroup.name,
@@ -73,7 +72,7 @@ export default function ShowcasePublicationPage() {
             workgroupName={data.publication.sourceWorkgroup.name}
             actions={
               <Link
-                className='rounded-xl border border-[#d8cbb8] px-5 py-3 text-sm font-semibold text-[#9b5b2e]'
+                className='rounded-xl border border-[#d8cbb8] px-5 py-3 font-semibold text-[#9b5b2e] text-sm'
                 href='/workbench/showcase'
               >
                 返回展示列表
@@ -81,26 +80,15 @@ export default function ShowcasePublicationPage() {
             }
           />
 
-          <div className='min-h-[560px] rounded-[2rem] border border-[#e2d8c7] bg-[#fbf8f2] p-6 shadow-sm'>
-            <div className='rounded-2xl border border-dashed border-[#cdbfaa] bg-white p-8'>
-              <p className='text-sm font-semibold text-[#9b5b2e]'>只读展示画布</p>
-              <h2 className='mt-3 text-2xl font-semibold'>{data.publication.title}</h2>
-              <p className='mt-3 text-[#6f6256]'>
-                当前 v1 使用只读 snapshot 容器承载展示数据，不加入
-                realtime，不显示保存、运行、部署入口。
-              </p>
-              <div className='mt-6 grid gap-3 md:grid-cols-2'>
-                <Metric label='节点数' value={String(blocks)} />
-                <Metric label='连线数' value={String(edges)} />
-              </div>
-              <pre className='mt-6 max-h-[320px] overflow-auto rounded-xl bg-[#271f18] p-4 text-xs text-[#f7f4ed]'>
-                {JSON.stringify(data.publication.snapshotState, null, 2)}
-              </pre>
-            </div>
-          </div>
+          <ShowcaseReadOnlyCanvas
+            description={data.publication.description}
+            snapshotState={data.publication.snapshotState}
+            title={data.publication.title}
+            versionLabel={`v${data.publication.versionNumber}`}
+          />
         </div>
         <aside className='rounded-[2rem] border border-[#e2d8c7] bg-white p-5 shadow-sm'>
-          <h2 className='text-lg font-semibold'>版本树</h2>
+          <h2 className='font-semibold text-lg'>版本树</h2>
           <div className='mt-4 space-y-3'>
             {(tree?.versions ?? []).map((version) => (
               <Link
@@ -111,7 +99,7 @@ export default function ShowcasePublicationPage() {
                 <div className='font-medium'>
                   v{version.versionNumber} · {version.title}
                 </div>
-                <div className='mt-1 text-xs text-[#6f6256]'>
+                <div className='mt-1 text-[#6f6256] text-xs'>
                   {new Date(version.publishedAt).toLocaleString()}
                 </div>
               </Link>
@@ -121,26 +109,4 @@ export default function ShowcasePublicationPage() {
       </section>
     </WorkbenchShell>
   )
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className='rounded-xl bg-[#f7f4ed] p-4'>
-      <div className='text-sm text-[#6f6256]'>{label}</div>
-      <div className='mt-2 text-2xl font-semibold'>{value}</div>
-    </div>
-  )
-}
-
-function countRecordItems(value: unknown, key: string): number {
-  if (!value || typeof value !== 'object' || !(key in value)) return 0
-  const candidate = (value as Record<string, unknown>)[key]
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return 0
-  return Object.keys(candidate).length
-}
-
-function countArrayItems(value: unknown, key: string): number {
-  if (!value || typeof value !== 'object' || !(key in value)) return 0
-  const candidate = (value as Record<string, unknown>)[key]
-  return Array.isArray(candidate) ? candidate.length : 0
 }

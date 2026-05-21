@@ -1,6 +1,11 @@
 ﻿import { z } from 'zod'
-import { nonEmptyIdSchema, workflowIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import {
+  nonEmptyIdSchema,
+  workflowIdSchema,
+  workspaceIdSchema,
+} from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { workflowStateSchema } from '@/lib/api/contracts/workflows'
 
 export const workgroupRoleSchema = z.enum(['admin', 'member'])
 export const agentCodeSchema = z.enum([
@@ -148,10 +153,18 @@ export const publicationSummarySchema = z.object({
 })
 export type PublicationSummary = z.output<typeof publicationSummarySchema>
 
+export const publicationSnapshotMetadataSchema = z
+  .object({
+    sourceWorkflowName: z.string().nullable().optional(),
+    sourceWorkflowDescription: z.string().nullable().optional(),
+  })
+  .catchall(z.unknown())
+export type PublicationSnapshotMetadata = z.output<typeof publicationSnapshotMetadataSchema>
+
 export const publicationDetailSchema = publicationSummarySchema.omit({ publishedBy: true }).extend({
   parentVersionId: z.string().nullable(),
-  snapshotState: z.unknown(),
-  snapshotMetadata: z.unknown(),
+  snapshotState: workflowStateSchema,
+  snapshotMetadata: publicationSnapshotMetadataSchema,
 })
 export type PublicationDetail = z.output<typeof publicationDetailSchema>
 
@@ -182,7 +195,10 @@ export const copySelectionBodySchema = z.object({
     workspaceId: workspaceIdSchema,
     workflowId: workflowIdSchema,
   }),
-  selection: z.object({ blockIds: z.array(z.string()).default([]), edgeIds: z.array(z.string()).default([]) }),
+  selection: z.object({
+    blockIds: z.array(z.string()).default([]),
+    edgeIds: z.array(z.string()).default([]),
+  }),
 })
 export type CopySelectionBody = z.input<typeof copySelectionBodySchema>
 
@@ -214,7 +230,12 @@ export const getCopilotAgentProfileContract = defineRouteContract({
       discipline: z.object({ id: z.string(), code: z.string(), name: z.string() }),
       workgroup: z.object({ id: z.string(), name: z.string() }),
       skills: z.array(
-        z.object({ id: z.string(), name: z.string(), description: z.string().nullable(), enabled: z.boolean() })
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string().nullable(),
+          enabled: z.boolean(),
+        })
       ),
     }),
   },
@@ -225,7 +246,10 @@ export const listMyWorkgroupsContract = defineRouteContract({
   path: '/api/me/workgroups',
   response: {
     mode: 'json',
-    schema: z.object({ workgroups: z.array(workgroupSummarySchema), defaultWorkgroupId: z.string().nullable() }),
+    schema: z.object({
+      workgroups: z.array(workgroupSummarySchema),
+      defaultWorkgroupId: z.string().nullable(),
+    }),
   },
 })
 
@@ -240,7 +264,10 @@ export const listOrganizationWorkgroupsContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[organizationId]/workgroups',
   params: organizationParamsSchema,
-  response: { mode: 'json', schema: z.object({ workgroups: z.array(workgroupAdminSummarySchema) }) },
+  response: {
+    mode: 'json',
+    schema: z.object({ workgroups: z.array(workgroupAdminSummarySchema) }),
+  },
 })
 
 export const createOrganizationWorkgroupContract = defineRouteContract({
@@ -250,7 +277,14 @@ export const createOrganizationWorkgroupContract = defineRouteContract({
   body: createWorkgroupBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({ workgroup: z.object({ id: z.string(), name: z.string(), disciplineId: z.string(), teamWorkspaceId: z.string() }) }),
+    schema: z.object({
+      workgroup: z.object({
+        id: z.string(),
+        name: z.string(),
+        disciplineId: z.string(),
+        teamWorkspaceId: z.string(),
+      }),
+    }),
   },
 })
 
@@ -322,7 +356,13 @@ export const listShowcasePublicationsContract = defineRouteContract({
   path: '/api/workgroups/[workgroupId]/published-workflows',
   params: workgroupParamsSchema,
   query: publicationListQuerySchema,
-  response: { mode: 'json', schema: z.object({ publications: z.array(publicationSummarySchema), nextCursor: z.string().nullable() }) },
+  response: {
+    mode: 'json',
+    schema: z.object({
+      publications: z.array(publicationSummarySchema),
+      nextCursor: z.string().nullable(),
+    }),
+  },
 })
 
 export const getPublicationContract = defineRouteContract({
@@ -346,6 +386,8 @@ export const copySelectionContract = defineRouteContract({
   body: copySelectionBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({ inserted: z.object({ blockIds: z.array(z.string()), edgeIds: z.array(z.string()) }) }),
+    schema: z.object({
+      inserted: z.object({ blockIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
+    }),
   },
 })
