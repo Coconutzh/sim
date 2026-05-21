@@ -4,7 +4,10 @@ import { member, organization } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateOrganizationContract } from '@/lib/api/contracts/organization'
+import {
+  getOrganizationContract,
+  updateOrganizationContract,
+} from '@/lib/api/contracts/organization'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import {
@@ -37,7 +40,8 @@ type OrganizationDetailsResponse = {
  * Get organization details including settings and seat information
  */
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationIdForLog: string | undefined
     try {
       const session = await getSession()
 
@@ -45,9 +49,11 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId } = await params
-      const url = new URL(request.url)
-      const includeSeats = url.searchParams.get('include') === 'seats'
+      const parsed = await parseRequest(getOrganizationContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: organizationId } = parsed.data.params
+      organizationIdForLog = organizationId
+      const includeSeats = parsed.data.query.include === 'seats'
 
       const memberEntry = await db
         .select()
@@ -107,7 +113,7 @@ export const GET = withRouteHandler(
       return NextResponse.json(response)
     } catch (error) {
       logger.error('Failed to get organization', {
-        organizationId: (await params).id,
+        organizationId: organizationIdForLog,
         error,
       })
 
@@ -123,6 +129,7 @@ export const GET = withRouteHandler(
  */
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+    let organizationIdForLog: string | undefined
     try {
       const session = await getSession()
 
@@ -134,6 +141,7 @@ export const PUT = withRouteHandler(
       if (!parsed.success) return parsed.response
 
       const { id: organizationId } = parsed.data.params
+      organizationIdForLog = organizationId
       const { name, slug, logo } = parsed.data.body
 
       const memberEntry = await db
@@ -222,7 +230,7 @@ export const PUT = withRouteHandler(
       return NextResponse.json({ error: 'No valid fields provided for update' }, { status: 400 })
     } catch (error) {
       logger.error('Failed to update organization', {
-        organizationId: (await context.params).id,
+        organizationId: organizationIdForLog,
         error,
       })
 

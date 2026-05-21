@@ -18,6 +18,19 @@ const numericResponseSchema = z.preprocess((value) => {
   return Number.isFinite(parsed) ? parsed : value
 }, z.number())
 
+const jsonValueSchema: z.ZodType<
+  string | number | boolean | null | Array<unknown> | Record<string, unknown>
+> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ])
+)
+
 export const organizationRoleSchema = z.enum(['owner', 'admin', 'member'], {
   error: 'Invalid role',
 })
@@ -35,6 +48,10 @@ export const organizationMemberQuerySchema = z
     include: z.string().optional(),
   })
   .passthrough()
+
+export const organizationDetailsQuerySchema = z.object({
+  include: z.enum(['seats']).optional(),
+})
 
 export const removeOrganizationMemberQuerySchema = z.object({
   shouldReduceSeats: booleanQueryParamSchema,
@@ -435,6 +452,57 @@ export const updateSeatsContract = defineRouteContract({
         })
         .passthrough()
         .optional(),
+    }),
+  },
+})
+
+export const organizationSeatInfoSchema = z.object({
+  organizationId: z.string(),
+  organizationName: z.string(),
+  currentSeats: z.number(),
+  maxSeats: z.number(),
+  availableSeats: z.number(),
+  subscriptionPlan: z.string(),
+  canAddSeats: z.boolean(),
+})
+
+export const organizationSeatAnalyticsSchema = organizationSeatInfoSchema.extend({
+  utilizationRate: z.number(),
+  activeMembers: z.number(),
+  inactiveMembers: z.number(),
+  memberActivity: z.array(
+    z.object({
+      userId: z.string(),
+      userName: z.string().nullable(),
+      userEmail: z.string(),
+      role: organizationRoleSchema,
+      joinedAt: z.string(),
+      lastActive: z.string().nullable(),
+    })
+  ),
+})
+
+export const getOrganizationContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]',
+  params: organizationParamsSchema,
+  query: organizationDetailsQuerySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema.extend({
+      data: z.object({
+        id: z.string(),
+        name: z.string(),
+        slug: z.string().nullable(),
+        logo: z.string().nullable(),
+        metadata: jsonValueSchema,
+        createdAt: z.string(),
+        updatedAt: z.string(),
+        seats: organizationSeatInfoSchema.optional(),
+        seatAnalytics: organizationSeatAnalyticsSchema.optional(),
+      }),
+      userRole: organizationRoleSchema,
+      hasAdminAccess: z.boolean(),
     }),
   },
 })
