@@ -24,6 +24,7 @@ import {
   VertexIcon,
   VllmIcon,
   xAIIcon,
+  ZhipuIcon,
 } from '@/components/icons'
 import type { ModelPricing, ProviderId } from '@/providers/types'
 
@@ -1351,6 +1352,75 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2025-12-11',
+      },
+    ],
+  },
+  zhipu: {
+    id: 'zhipu',
+    name: 'Zhipu',
+    description: "Zhipu's GLM models",
+    defaultModel: 'glm-4.7-flash',
+    modelPatterns: [/^glm-/],
+    icon: ZhipuIcon,
+    color: '#2563EB',
+    capabilities: {
+      toolUsageControl: true,
+    },
+    models: [
+      {
+        id: 'glm-4.7-flash',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-05-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+        contextWindow: 128000,
+        releaseDate: '2026-01-30',
+        recommended: true,
+        speedOptimized: true,
+      },
+      {
+        id: 'glm-4.7',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-05-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+        contextWindow: 128000,
+        releaseDate: '2025-12-30',
+        recommended: true,
+      },
+      {
+        id: 'glm-4.6',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-05-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+        contextWindow: 128000,
+        releaseDate: '2025-08-29',
+      },
+      {
+        id: 'glm-4.5',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-05-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+        contextWindow: 128000,
+        releaseDate: '2025-07-28',
       },
     ],
   },

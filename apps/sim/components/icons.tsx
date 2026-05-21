@@ -2101,6 +2101,21 @@ export function BrainIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function ZhipuIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg' {...props}>
+      <rect x='3' y='3' width='18' height='18' rx='5' className='fill-current opacity-15' />
+      <path
+        d='M7 8H17L9 16H17'
+        stroke='currentColor'
+        strokeWidth='1.8'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
+  )
+}
+
 export function BrandfetchIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} viewBox='0 0 29 31' fill='none' xmlns='http://www.w3.org/2000/svg'>

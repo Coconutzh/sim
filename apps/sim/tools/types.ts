@@ -6,6 +6,7 @@ export type BYOKProviderId =
   | 'openai'
   | 'anthropic'
   | 'google'
+  | 'zhipu'
   | 'mistral'
   | 'fireworks'
   | 'firecrawl'

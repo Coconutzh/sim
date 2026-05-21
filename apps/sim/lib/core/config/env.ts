@@ -114,6 +114,10 @@ export const env = createEnv({
     GEMINI_API_KEY_1:                      z.string().min(1).optional(),           // Primary Gemini API key
     GEMINI_API_KEY_2:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
     GEMINI_API_KEY_3:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
+    ARK_API_KEY:                           z.string().min(1).optional(),           // Volcengine Ark API key for Seedream image generation
+    ARK_BASE_URL:                          z.string().url().optional(),            // Optional Volcengine Ark base URL override
+    ZHIPU_API_KEY:                         z.string().min(1).optional(),           // Zhipu API key for GLM models
+    CEREBRAS_API_KEY:                      z.string().min(1).optional(),           // Cerebras API key for Cerebras-hosted models such as GLM
     OLLAMA_URL:                            z.string().url().optional(),            // Ollama local LLM server URL
     VLLM_BASE_URL:                         z.string().url().optional(),            // vLLM self-hosted base URL (OpenAI-compatible)
     VLLM_API_KEY:                          z.string().optional(),                  // Optional bearer token for vLLM

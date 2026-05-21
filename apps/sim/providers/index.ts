@@ -138,6 +138,7 @@ export async function executeProviderRequest(
 
   let resolvedRequest = sanitizeRequest(request)
   let isBYOK = false
+  let apiKeySource: string | undefined
 
   if (request.workspaceId) {
     try {
@@ -149,12 +150,31 @@ export async function executeProviderRequest(
       )
       resolvedRequest = { ...resolvedRequest, apiKey: result.apiKey }
       isBYOK = result.isBYOK
+      apiKeySource = result.source
       logger.info('API key resolved', {
         provider: providerId,
         model: request.model,
         workspaceId: request.workspaceId,
         isBYOK,
+        source: apiKeySource,
       })
+
+      if (providerId === 'zhipu') {
+        const zhipuResolution =
+          apiKeySource === 'workspace-byok'
+            ? 'workspace-byok'
+            : apiKeySource === 'env-zhipu-api-key'
+              ? '.env:ZHIPU_API_KEY'
+              : apiKeySource === 'request-api-key'
+                ? 'request-api-key'
+                : apiKeySource
+        logger.info('Zhipu request key source', {
+          model: request.model,
+          workspaceId: request.workspaceId,
+          source: apiKeySource,
+          resolution: zhipuResolution,
+        })
+      }
     } catch (error) {
       logger.error('Failed to resolve API key:', {
         provider: providerId,

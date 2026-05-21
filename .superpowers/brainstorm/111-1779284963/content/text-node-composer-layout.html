@@ -1,0 +1,68 @@
+<h2>文本节点 AI 对话框布局</h2>
+<p class="subtitle">先只看结构和位置，不看具体实现。请选择更接近你想要的一种。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 A：贴近节点的紧凑对话框</div>
+        <div class="mockup-body">
+          <div style="display:flex;justify-content:center;padding:18px 12px 6px;">
+            <div style="width:320px;">
+              <div style="height:150px;border-radius:20px;border:1px solid #d7d1c5;background:#fff6b8;padding:18px;color:#2e2a24;">
+                <div style="font-size:22px;font-weight:700;margin-bottom:10px;">标题内容</div>
+                <div style="font-size:14px;line-height:1.5;">正文内容会显示在这里，AI 生成后直接写入文本节点。</div>
+              </div>
+              <div style="margin-top:10px;border-radius:22px;background:#1f1f23;color:#f5f5f5;padding:12px 14px;box-shadow:0 10px 25px rgba(0,0,0,0.18);">
+                <div style="min-height:54px;font-size:14px;line-height:1.45;color:#d8d8dd;">在这里输入提示词，比如：帮我写一个产品介绍...</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+                  <div style="display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#2b2b31;padding:6px 10px;font-size:12px;">Gemini 3.1 Flash Lite</div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:999px;background:#2b2b31;"></div>
+                    <div style="width:32px;height:32px;border-radius:999px;background:#f4b740;color:#1f1f23;display:flex;align-items:center;justify-content:center;font-weight:700;">↑</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 A</h3>
+      <p>对话框宽度略小于或等于文本卡片，像节点的附属输入区，视觉更轻。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 B：和节点同宽的一体式生成器</div>
+        <div class="mockup-body">
+          <div style="display:flex;justify-content:center;padding:18px 12px 6px;">
+            <div style="width:320px;">
+              <div style="height:150px;border-radius:20px;border:1px solid #d7d1c5;background:#fff6b8;padding:18px;color:#2e2a24;">
+                <div style="font-size:22px;font-weight:700;margin-bottom:10px;">标题内容</div>
+                <div style="font-size:14px;line-height:1.5;">正文内容会显示在这里，AI 生成后直接写入文本节点。</div>
+              </div>
+              <div style="margin-top:8px;border-radius:20px;background:#1f1f23;color:#f5f5f5;padding:14px 14px 12px;border:1px solid #34343a;">
+                <div style="min-height:64px;font-size:14px;line-height:1.45;color:#d8d8dd;">在这里输入提示词，比如：帮我写一个产品介绍...</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                  <div style="display:inline-flex;align-items:center;gap:6px;border-radius:10px;background:#2b2b31;padding:7px 10px;font-size:12px;">Gemini 3.1 Flash Lite</div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:999px;background:#2b2b31;"></div>
+                    <div style="width:36px;height:36px;border-radius:999px;background:#f4b740;color:#1f1f23;display:flex;align-items:center;justify-content:center;font-weight:700;">↑</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 B</h3>
+      <p>对话框和文本节点同宽，看起来更像一个完整的创作卡片，后续扩展按钮也更从容。</p>
+    </div>
+  </div>
+</div>

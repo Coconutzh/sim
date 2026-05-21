@@ -15,6 +15,7 @@ import {
 } from '@/components/emcn'
 import {
   AnthropicIcon,
+  BrainIcon,
   BrandfetchIcon,
   ExaAIIcon,
   FirecrawlIcon,
@@ -68,6 +69,13 @@ const PROVIDERS: {
     icon: GeminiIcon,
     description: 'LLM calls',
     placeholder: 'Enter your API key',
+  },
+  {
+    id: 'zhipu',
+    name: 'Zhipu',
+    icon: BrainIcon,
+    description: 'GLM text model calls',
+    placeholder: 'Enter your Zhipu API key',
   },
   {
     id: 'mistral',

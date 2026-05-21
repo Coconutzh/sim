@@ -16,6 +16,7 @@ import type { ProviderConfig, ProviderId } from '@/providers/types'
 import { vertexProvider } from '@/providers/vertex'
 import { vllmProvider } from '@/providers/vllm'
 import { xAIProvider } from '@/providers/xai'
+import { zhipuProvider } from '@/providers/zhipu'
 
 const logger = createLogger('ProviderRegistry')
 
@@ -24,6 +25,7 @@ const providerRegistry: Record<ProviderId, ProviderConfig> = {
   anthropic: anthropicProvider,
   'azure-anthropic': azureAnthropicProvider,
   google: googleProvider,
+  zhipu: zhipuProvider,
   vertex: vertexProvider,
   deepseek: deepseekProvider,
   xai: xAIProvider,

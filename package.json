@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:sockets": "cd apps/realtime && bun run dev",
-    "dev:full": "bunx concurrently -n \"App,Realtime\" -c \"cyan,magenta\" \"cd apps/sim && bun run dev\" \"cd apps/realtime && bun run dev\"",
+    "dev:full": "turbo run dev --parallel --filter=sim --filter=@sim/realtime",
     "test": "turbo run test",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
