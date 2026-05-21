@@ -8,7 +8,7 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   createWorkspaceCredentialContract,
-  credentialsListGetQuerySchema,
+  listWorkspaceCredentialsGetContract,
   normalizeCredentialEnvKey,
   serviceAccountJsonSchema,
 } from '@/lib/api/contracts/credentials'
@@ -150,32 +150,18 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   }
 
   try {
-    const { searchParams } = new URL(request.url)
-    const rawWorkspaceId = searchParams.get('workspaceId')
-    const rawType = searchParams.get('type')
-    const rawProviderId = searchParams.get('providerId')
-    const rawCredentialId = searchParams.get('credentialId')
-    const parseResult = credentialsListGetQuerySchema.safeParse({
-      workspaceId: rawWorkspaceId?.trim(),
-      type: rawType?.trim() || undefined,
-      providerId: rawProviderId?.trim() || undefined,
-      credentialId: rawCredentialId?.trim() || undefined,
-    })
+    const parsed = await parseRequest(
+      listWorkspaceCredentialsGetContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    if (!parseResult.success) {
-      logger.warn(`[${requestId}] Invalid credential list request`, {
-        workspaceId: rawWorkspaceId,
-        type: rawType,
-        providerId: rawProviderId,
-        errors: parseResult.error.issues,
-      })
-      return NextResponse.json(
-        { error: getValidationErrorMessage(parseResult.error) },
-        { status: 400 }
-      )
-    }
-
-    const { workspaceId, type, providerId, credentialId: lookupCredentialId } = parseResult.data
+    const { workspaceId, type, providerId, credentialId: lookupCredentialId } = parsed.data.query
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
 
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {

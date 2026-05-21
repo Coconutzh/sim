@@ -34,7 +34,13 @@ vi.mock('@sim/db/schema', () => ({
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
   },
-  credentialMember: { role: 'role', status: 'status', id: 'id', credentialId: 'credentialId', userId: 'userId' },
+  credentialMember: {
+    role: 'role',
+    status: 'status',
+    id: 'id',
+    credentialId: 'credentialId',
+    userId: 'userId',
+  },
   workspace: { ownerId: 'ownerId', id: 'id' },
 }))
 
@@ -46,17 +52,7 @@ vi.mock('@/lib/api/server', () => ({
 }))
 vi.mock('@/lib/api/contracts/credentials', () => ({
   createWorkspaceCredentialContract: {},
-  credentialsListGetQuerySchema: {
-    safeParse: vi.fn((value: Record<string, unknown>) => ({
-      success: true,
-      data: {
-        workspaceId: value.workspaceId,
-        type: value.type,
-        providerId: value.providerId,
-        credentialId: value.credentialId,
-      },
-    })),
-  },
+  listWorkspaceCredentialsGetContract: {},
   normalizeCredentialEnvKey: vi.fn((value: string) => value),
   serviceAccountJsonSchema: { safeParse: vi.fn() },
 }))
@@ -68,7 +64,10 @@ vi.mock('@sim/logger', () => ({
 }))
 vi.mock('@/lib/core/security/encryption', () => ({ encryptSecret: vi.fn() }))
 vi.mock('@/lib/core/utils/request', () => ({ generateRequestId: vi.fn(() => 'request-1') }))
-vi.mock('@/lib/credentials/environment', () => ({ getWorkspaceMemberUserIds: vi.fn(), syncWorkspaceOAuthCredentialsForUser: vi.fn() }))
+vi.mock('@/lib/credentials/environment', () => ({
+  getWorkspaceMemberUserIds: vi.fn(),
+  syncWorkspaceOAuthCredentialsForUser: vi.fn(),
+}))
 vi.mock('@/lib/credentials/oauth', () => ({ syncWorkspaceOAuthCredentialsForUser: vi.fn() }))
 vi.mock('@/lib/oauth', () => ({ getServiceConfigByProviderId: vi.fn() }))
 vi.mock('@/lib/oauth/types', () => ({
@@ -106,6 +105,12 @@ describe('/api/credentials', () => {
     mockParseRequest.mockResolvedValue({
       success: true,
       data: {
+        query: {
+          workspaceId: 'ws-1',
+          type: undefined,
+          providerId: undefined,
+          credentialId: undefined,
+        },
         body: {
           workspaceId: 'ws-1',
           type: 'env_workspace',
@@ -124,6 +129,17 @@ describe('/api/credentials', () => {
   })
 
   it('hides foreign personal workspace credential listings behind 404', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        query: {
+          workspaceId: 'ws-hidden',
+          type: undefined,
+          providerId: undefined,
+          credentialId: undefined,
+        },
+      },
+    })
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
       hasAccess: false,
@@ -151,7 +167,11 @@ describe('/api/credentials', () => {
       new NextRequest('http://localhost:3000/api/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId: 'ws-hidden', type: 'env_workspace', envKey: 'API_KEY' }),
+        body: JSON.stringify({
+          workspaceId: 'ws-hidden',
+          type: 'env_workspace',
+          envKey: 'API_KEY',
+        }),
       })
     )
 
@@ -171,7 +191,11 @@ describe('/api/credentials', () => {
       new NextRequest('http://localhost:3000/api/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId: 'ws-readonly', type: 'env_workspace', envKey: 'API_KEY' }),
+        body: JSON.stringify({
+          workspaceId: 'ws-readonly',
+          type: 'env_workspace',
+          envKey: 'API_KEY',
+        }),
       })
     )
 

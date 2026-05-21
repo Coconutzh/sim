@@ -285,6 +285,30 @@ export const listWorkspaceCredentialsContract = defineRouteContract({
   },
 })
 
+export const listWorkspaceCredentialsGetContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/credentials',
+  query: credentialsListGetQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.union([
+      z.object({
+        credentials: z.array(workspaceCredentialSchema),
+      }),
+      z.object({
+        credential: workspaceCredentialSchema
+          .pick({
+            id: true,
+            displayName: true,
+            type: true,
+            providerId: true,
+          })
+          .nullable(),
+      }),
+    ]),
+  },
+})
+
 export const getWorkspaceCredentialContract = defineRouteContract({
   method: 'GET',
   path: '/api/credentials/[id]',
