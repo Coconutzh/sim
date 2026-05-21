@@ -11,6 +11,7 @@ import {
   updateDataDrainContract,
 } from '@/lib/api/contracts/data-drains'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { authorizeDrainAccess, loadDrain } from '@/lib/data-drains/access'
 import { getDestination } from '@/lib/data-drains/destinations/registry'
@@ -22,12 +23,17 @@ const logger = createLogger('DataDrainAPI')
 type RouteContext = { params: Promise<{ id: string; drainId: string }> }
 
 export const GET = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId, drainId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: false })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(getDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
+  const { id: organizationId, drainId } = parsed.data.params
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: false })
+  if (!access.ok) return access.response
 
   const drain = await loadDrain(organizationId, drainId)
   if (!drain) {
@@ -37,14 +43,19 @@ export const GET = withRouteHandler(async (request: NextRequest, context: RouteC
 })
 
 export const PUT = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId, drainId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(updateDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
 
+  const { id: organizationId, drainId } = parsed.data.params
   const body = parsed.data.body
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
+  if (!access.ok) return access.response
 
   const drain = await loadDrain(organizationId, drainId)
   if (!drain) {
@@ -152,12 +163,17 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: RouteC
 })
 
 export const DELETE = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId, drainId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(deleteDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
+  const { id: organizationId, drainId } = parsed.data.params
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
+  if (!access.ok) return access.response
 
   const drain = await loadDrain(organizationId, drainId)
   if (!drain) {

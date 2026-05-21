@@ -8,6 +8,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createDataDrainContract, listDataDrainsContract } from '@/lib/api/contracts/data-drains'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { authorizeDrainAccess } from '@/lib/data-drains/access'
 import { getDestination } from '@/lib/data-drains/destinations/registry'
@@ -19,12 +20,17 @@ const logger = createLogger('DataDrainsAPI')
 type RouteContext = { params: Promise<{ id: string }> }
 
 export const GET = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: false })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(listDataDrainsContract, request, context)
   if (!parsed.success) return parsed.response
+  const { id: organizationId } = parsed.data.params
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: false })
+  if (!access.ok) return access.response
 
   const rows = await db
     .select()
@@ -36,14 +42,19 @@ export const GET = withRouteHandler(async (request: NextRequest, context: RouteC
 })
 
 export const POST = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(createDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
 
+  const { id: organizationId } = parsed.data.params
   const body = parsed.data.body
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
+  if (!access.ok) return access.response
 
   if (!body.destinationCredentials) {
     return NextResponse.json(

@@ -4,6 +4,7 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { testDataDrainContract } from '@/lib/api/contracts/data-drains'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { authorizeDrainAccess, loadDrain } from '@/lib/data-drains/access'
 import { getDestination } from '@/lib/data-drains/destinations/registry'
@@ -16,12 +17,17 @@ const TEST_TIMEOUT_MS = 10_000
 type RouteContext = { params: Promise<{ id: string; drainId: string }> }
 
 export const POST = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId, drainId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(testDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
+  const { id: organizationId, drainId } = parsed.data.params
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
+  if (!access.ok) return access.response
 
   const drain = await loadDrain(organizationId, drainId)
   if (!drain) {

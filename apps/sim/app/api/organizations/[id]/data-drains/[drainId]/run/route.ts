@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { runDataDrainContract } from '@/lib/api/contracts/data-drains'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { getJobQueue } from '@/lib/core/async-jobs'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { authorizeDrainAccess, loadDrain } from '@/lib/data-drains/access'
@@ -15,12 +16,17 @@ const logger = createLogger('DataDrainRunAPI')
 type RouteContext = { params: Promise<{ id: string; drainId: string }> }
 
 export const POST = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id: organizationId, drainId } = await context.params
-  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
-  if (!access.ok) return access.response
+  const authSession = await getSession()
+  if (!authSession?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const parsed = await parseRequest(runDataDrainContract, request, context)
   if (!parsed.success) return parsed.response
+  const { id: organizationId, drainId } = parsed.data.params
+
+  const access = await authorizeDrainAccess(organizationId, { requireMutating: true })
+  if (!access.ok) return access.response
 
   const drain = await loadDrain(organizationId, drainId)
   if (!drain) {
