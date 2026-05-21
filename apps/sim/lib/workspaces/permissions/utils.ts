@@ -5,6 +5,7 @@ import {
   type permissionTypeEnum,
   user,
   type WorkspaceMode,
+  workgroupMember,
   workspace,
 } from '@sim/db/schema'
 import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
@@ -39,11 +40,39 @@ export class ActiveWorkspaceAccessError extends Error {
   }
 }
 
-function isPersonalWorkspaceRestricted(
+function isCanvasBoundaryWorkspace(workspaceRecord: WorkspaceWithOwner): boolean {
+  return workspaceRecord.workspaceMode === 'personal' || Boolean(workspaceRecord.workgroupId)
+}
+
+async function getWorkspacePermissionFromCanvasBoundary(
   workspaceRecord: WorkspaceWithOwner,
   userId: string
-): boolean {
-  return workspaceRecord.workspaceMode === 'personal' && workspaceRecord.ownerId !== userId
+): Promise<PermissionType | null> {
+  if (workspaceRecord.workspaceMode === 'personal') {
+    return workspaceRecord.ownerId === userId ? 'admin' : null
+  }
+
+  if (workspaceRecord.workspaceMode === 'organization' && workspaceRecord.workgroupId) {
+    const [membership] = await db
+      .select({ role: workgroupMember.role })
+      .from(workgroupMember)
+      .where(
+        and(
+          eq(workgroupMember.userId, userId),
+          eq(workgroupMember.workgroupId, workspaceRecord.workgroupId)
+        )
+      )
+      .limit(1)
+
+    if (!membership) return null
+    return membership.role === 'admin' ? 'admin' : 'write'
+  }
+
+  if (workspaceRecord.ownerId === userId) {
+    return 'admin'
+  }
+
+  return null
 }
 
 /**
@@ -137,11 +166,17 @@ export async function checkWorkspaceAccess(
     return { exists: false, hasAccess: false, canWrite: false, workspace: null }
   }
 
-  if (ws.ownerId === userId) {
-    return { exists: true, hasAccess: true, canWrite: true, workspace: ws }
+  const canvasPermission = await getWorkspacePermissionFromCanvasBoundary(ws, userId)
+  if (canvasPermission) {
+    return {
+      exists: true,
+      hasAccess: true,
+      canWrite: canvasPermission === 'write' || canvasPermission === 'admin',
+      workspace: ws,
+    }
   }
 
-  if (isPersonalWorkspaceRestricted(ws, userId)) {
+  if (isCanvasBoundaryWorkspace(ws)) {
     return { exists: true, hasAccess: false, canWrite: false, workspace: ws }
   }
 
@@ -178,9 +213,7 @@ export async function assertActiveWorkspaceAccess(
   return access
 }
 
-export function isActiveWorkspaceAccessError(
-  error: unknown
-): error is ActiveWorkspaceAccessError {
+export function isActiveWorkspaceAccessError(error: unknown): error is ActiveWorkspaceAccessError {
   return error instanceof ActiveWorkspaceAccessError
 }
 
@@ -203,12 +236,9 @@ export async function getUserEntityPermissions(
       return null
     }
 
-    if (ws.ownerId === userId) {
-      return 'admin'
-    }
-
-    if (isPersonalWorkspaceRestricted(ws, userId)) {
-      return null
+    const canvasPermission = await getWorkspacePermissionFromCanvasBoundary(ws, userId)
+    if (canvasPermission || ws.workspaceMode === 'personal' || ws.workgroupId) {
+      return canvasPermission
     }
   }
 
@@ -241,11 +271,13 @@ export async function getUserEntityPermissions(
  * Returns the active workspace IDs a user can access, including owned workspaces.
  */
 export async function listAccessibleWorkspaceIds(userId: string): Promise<string[]> {
-  const rows = await db
+  const directRows = await db
     .select({
       id: workspace.id,
       ownerId: workspace.ownerId,
       workspaceMode: workspace.workspaceMode,
+      workgroupId: workspace.workgroupId,
+      permissionId: permissions.id,
     })
     .from(workspace)
     .leftJoin(
@@ -263,12 +295,23 @@ export async function listAccessibleWorkspaceIds(userId: string): Promise<string
       )
     )
 
+  const teamRows = await db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .innerJoin(workgroupMember, eq(workspace.workgroupId, workgroupMember.workgroupId))
+    .where(and(isNull(workspace.archivedAt), eq(workgroupMember.userId, userId)))
+
   return [
-    ...new Set(
-      rows
-        .filter((row) => row.ownerId === userId || row.workspaceMode !== 'personal')
-        .map((row) => row.id)
-    ),
+    ...new Set([
+      ...directRows
+        .filter(
+          (row) =>
+            (row.ownerId === userId && !row.workgroupId) ||
+            (row.workspaceMode !== 'personal' && !row.workgroupId && row.permissionId)
+        )
+        .map((row) => row.id),
+      ...teamRows.map((row) => row.id),
+    ]),
   ]
 }
 
@@ -280,6 +323,26 @@ export async function listAccessibleWorkspaceIds(userId: string): Promise<string
  * @returns Promise<boolean> - True if the user has admin permission for the workspace, false otherwise
  */
 export async function hasAdminPermission(userId: string, workspaceId: string): Promise<boolean> {
+  const ws = await getWorkspaceWithOwner(workspaceId)
+  if (!ws) return false
+
+  if (ws.workspaceMode === 'personal') {
+    return ws.ownerId === userId
+  }
+
+  if (ws.workspaceMode === 'organization' && ws.workgroupId) {
+    const [membership] = await db
+      .select({ role: workgroupMember.role })
+      .from(workgroupMember)
+      .where(
+        and(eq(workgroupMember.userId, userId), eq(workgroupMember.workgroupId, ws.workgroupId))
+      )
+      .limit(1)
+    return membership?.role === 'admin'
+  }
+
+  if (ws.ownerId === userId) return true
+
   const [result] = await db
     .select({
       id: permissions.id,
@@ -333,7 +396,11 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
       name: user.name,
       image: user.image,
       permissionType: sql<PermissionType>`'admin'`,
+      source: sql<'owner'>`'owner'`,
+      workspaceMode: workspace.workspaceMode,
       workspaceOrganizationId: workspace.organizationId,
+      workspaceOwnerId: workspace.ownerId,
+      workspaceWorkgroupId: workspace.workgroupId,
       organizationMemberId: member.id,
     })
     .from(workspace)
@@ -351,9 +418,11 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
       name: user.name,
       image: user.image,
       permissionType: permissions.permissionType,
+      source: sql<'permission'>`'permission'`,
       workspaceMode: workspace.workspaceMode,
       workspaceOrganizationId: workspace.organizationId,
       workspaceOwnerId: workspace.ownerId,
+      workspaceWorkgroupId: workspace.workgroupId,
       organizationMemberId: member.id,
     })
     .from(permissions)
@@ -372,6 +441,33 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
     )
     .orderBy(user.email)
 
+  const hasTeamWorkspace = [...ownerRows, ...permissionRows].some((row) => row.workspaceWorkgroupId)
+  const workgroupRows = hasTeamWorkspace
+    ? await db
+        .select({
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          permissionType: sql<PermissionType>`case when ${workgroupMember.role} = 'admin' then 'admin' else 'write' end`,
+          source: sql<'workgroup'>`'workgroup'`,
+          workspaceMode: workspace.workspaceMode,
+          workspaceOrganizationId: workspace.organizationId,
+          workspaceOwnerId: workspace.ownerId,
+          workspaceWorkgroupId: workspace.workgroupId,
+          organizationMemberId: member.id,
+        })
+        .from(workspace)
+        .innerJoin(workgroupMember, eq(workspace.workgroupId, workgroupMember.workgroupId))
+        .innerJoin(user, eq(workgroupMember.userId, user.id))
+        .leftJoin(
+          member,
+          and(eq(member.userId, user.id), eq(member.organizationId, workspace.organizationId))
+        )
+        .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+        .orderBy(user.email)
+    : []
+
   const usersById = new Map<
     string,
     {
@@ -385,7 +481,11 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
   >()
   const permissionOrder: Record<PermissionType, number> = { admin: 3, write: 2, read: 1 }
 
-  for (const row of [...ownerRows, ...permissionRows]) {
+  for (const row of [...ownerRows, ...permissionRows, ...workgroupRows]) {
+    if (row.workspaceWorkgroupId && row.source !== 'workgroup') {
+      continue
+    }
+
     if (row.workspaceMode === 'personal' && row.workspaceOwnerId !== row.userId) {
       continue
     }
@@ -430,6 +530,10 @@ export async function getWorkspaceMemberProfiles(
       userId: user.id,
       name: user.name,
       image: user.image,
+      source: sql<'owner'>`'owner'`,
+      workspaceMode: workspace.workspaceMode,
+      workspaceOwnerId: workspace.ownerId,
+      workspaceWorkgroupId: workspace.workgroupId,
     })
     .from(workspace)
     .innerJoin(user, eq(workspace.ownerId, user.id))
@@ -440,8 +544,10 @@ export async function getWorkspaceMemberProfiles(
       userId: user.id,
       name: user.name,
       image: user.image,
+      source: sql<'permission'>`'permission'`,
       workspaceMode: workspace.workspaceMode,
       workspaceOwnerId: workspace.ownerId,
+      workspaceWorkgroupId: workspace.workgroupId,
     })
     .from(permissions)
     .innerJoin(user, eq(permissions.userId, user.id))
@@ -454,9 +560,31 @@ export async function getWorkspaceMemberProfiles(
       )
     )
 
+  const hasTeamWorkspace = [...ownerRows, ...permissionRows].some((row) => row.workspaceWorkgroupId)
+  const workgroupRows = hasTeamWorkspace
+    ? await db
+        .select({
+          userId: user.id,
+          name: user.name,
+          image: user.image,
+          source: sql<'workgroup'>`'workgroup'`,
+          workspaceMode: workspace.workspaceMode,
+          workspaceOwnerId: workspace.ownerId,
+          workspaceWorkgroupId: workspace.workgroupId,
+        })
+        .from(workspace)
+        .innerJoin(workgroupMember, eq(workspace.workgroupId, workgroupMember.workgroupId))
+        .innerJoin(user, eq(workgroupMember.userId, user.id))
+        .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+    : []
+
   const profilesByUserId = new Map<string, WorkspaceMemberProfile>()
 
-  for (const row of [...ownerRows, ...permissionRows]) {
+  for (const row of [...ownerRows, ...permissionRows, ...workgroupRows]) {
+    if (row.workspaceWorkgroupId && row.source !== 'workgroup') {
+      continue
+    }
+
     if (row.workspaceMode === 'personal' && row.workspaceOwnerId !== row.userId) {
       continue
     }
@@ -488,15 +616,12 @@ export async function hasWorkspaceAdminAccess(
     return false
   }
 
-  if (ws.ownerId === userId) {
-    return true
+  const canvasPermission = await getWorkspacePermissionFromCanvasBoundary(ws, userId)
+  if (canvasPermission || isCanvasBoundaryWorkspace(ws)) {
+    return canvasPermission === 'admin'
   }
 
-  if (isPersonalWorkspaceRestricted(ws, userId)) {
-    return false
-  }
-
-  if (await hasAdminPermission(userId, workspaceId)) {
+  if (ws.ownerId === userId || (await hasAdminPermission(userId, workspaceId))) {
     return true
   }
 
@@ -540,6 +665,7 @@ export async function getManageableWorkspaces(userId: string): Promise<
       id: workspace.id,
       name: workspace.name,
       ownerId: workspace.ownerId,
+      workgroupId: workspace.workgroupId,
     })
     .from(workspace)
     .where(and(eq(workspace.ownerId, userId), isNull(workspace.archivedAt)))
@@ -550,6 +676,7 @@ export async function getManageableWorkspaces(userId: string): Promise<
       name: workspace.name,
       ownerId: workspace.ownerId,
       workspaceMode: workspace.workspaceMode,
+      workgroupId: workspace.workgroupId,
     })
     .from(workspace)
     .innerJoin(permissions, eq(permissions.entityId, workspace.id))
@@ -562,11 +689,36 @@ export async function getManageableWorkspaces(userId: string): Promise<
       )
     )
 
-  const ownedSet = new Set(ownedWorkspaces.map((w) => w.id))
+  const teamAdminWorkspaces = await db
+    .select({
+      id: workspace.id,
+      name: workspace.name,
+      ownerId: workspace.ownerId,
+    })
+    .from(workspace)
+    .innerJoin(workgroupMember, eq(workspace.workgroupId, workgroupMember.workgroupId))
+    .where(
+      and(
+        isNull(workspace.archivedAt),
+        eq(workgroupMember.userId, userId),
+        eq(workgroupMember.role, 'admin')
+      )
+    )
+
+  const ownedNonTeamWorkspaces = ownedWorkspaces.filter((ws) => !ws.workgroupId)
+  const ownedSet = new Set(ownedNonTeamWorkspaces.map((w) => w.id))
   const combined = [
-    ...ownedWorkspaces.map((ws) => ({ ...ws, accessType: 'owner' as const })),
+    ...ownedNonTeamWorkspaces.map(({ id, name, ownerId }) => ({
+      id,
+      name,
+      ownerId,
+      accessType: 'owner' as const,
+    })),
+    ...teamAdminWorkspaces
+      .filter((ws) => !ownedSet.has(ws.id))
+      .map(({ id, name, ownerId }) => ({ id, name, ownerId, accessType: 'direct' as const })),
     ...adminWorkspaces
-      .filter((ws) => ws.workspaceMode !== 'personal')
+      .filter((ws) => ws.workspaceMode !== 'personal' && !ws.workgroupId)
       .filter((ws) => !ownedSet.has(ws.id))
       .map(({ id, name, ownerId }) => ({ id, name, ownerId, accessType: 'direct' as const })),
   ]

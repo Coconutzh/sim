@@ -160,6 +160,53 @@ describe('Permission Utils', () => {
       expect(result).toBeNull()
     })
 
+    it('returns write for team workspace members through workgroup membership', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace456',
+              name: 'Team Workspace',
+              ownerId: 'owner-1',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'owner-1',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([{ role: 'member' }]))
+
+      const result = await getUserEntityPermissions('user123', 'workspace', 'workspace456')
+
+      expect(result).toBe('write')
+    })
+
+    it('ignores direct permission rows for team workspaces without workgroup membership', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace456',
+              name: 'Team Workspace',
+              ownerId: 'owner-1',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'owner-1',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([{ permissionType: 'admin' as PermissionType }]))
+
+      const result = await getUserEntityPermissions('user123', 'workspace', 'workspace456')
+
+      expect(result).toBeNull()
+    })
+
     it('should work with organization entity type', async () => {
       const mockResults = [{ permissionType: 'read' as PermissionType }]
       const chain = createMockChain(mockResults)
@@ -183,12 +230,33 @@ describe('Permission Utils', () => {
 
   describe('listAccessibleWorkspaceIds', () => {
     it('should include owned and permissioned workspaces without duplicates', async () => {
-      const chain = createMockChain([
-        { id: 'workspace-owned' },
-        { id: 'workspace-shared' },
-        { id: 'workspace-owned' },
-      ])
-      mockDb.select.mockReturnValue(chain)
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace-owned',
+              ownerId: 'user123',
+              workspaceMode: 'personal',
+              workgroupId: null,
+              permissionId: null,
+            },
+            {
+              id: 'workspace-shared',
+              ownerId: 'other-user',
+              workspaceMode: 'organization',
+              workgroupId: null,
+              permissionId: 'permission-1',
+            },
+            {
+              id: 'workspace-owned',
+              ownerId: 'user123',
+              workspaceMode: 'personal',
+              workgroupId: null,
+              permissionId: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
 
       const result = await listAccessibleWorkspaceIds('user123')
 
@@ -196,16 +264,87 @@ describe('Permission Utils', () => {
     })
 
     it('filters out personal workspaces the user does not own even when a permission row exists', async () => {
-      const chain = createMockChain([
-        { id: 'workspace-owned', ownerId: 'user123', workspaceMode: 'personal' },
-        { id: 'workspace-team', ownerId: 'other-user', workspaceMode: 'organization' },
-        { id: 'workspace-foreign-personal', ownerId: 'other-user', workspaceMode: 'personal' },
-      ])
-      mockDb.select.mockReturnValue(chain)
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace-owned',
+              ownerId: 'user123',
+              workspaceMode: 'personal',
+              workgroupId: null,
+              permissionId: null,
+            },
+            {
+              id: 'workspace-team',
+              ownerId: 'other-user',
+              workspaceMode: 'organization',
+              workgroupId: null,
+              permissionId: 'permission-1',
+            },
+            {
+              id: 'workspace-foreign-personal',
+              ownerId: 'other-user',
+              workspaceMode: 'personal',
+              workgroupId: null,
+              permissionId: 'permission-2',
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
 
       const result = await listAccessibleWorkspaceIds('user123')
 
       expect(result).toEqual(['workspace-owned', 'workspace-team'])
+    })
+
+    it('includes team workspaces through workgroup membership', async () => {
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([{ id: 'workspace-team' }]))
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual(['workspace-team'])
+    })
+
+    it('excludes team workspaces exposed only by stale permission rows', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace-team',
+              ownerId: 'other-user',
+              workspaceMode: 'organization',
+              workgroupId: 'workgroup-1',
+              permissionId: 'permission-1',
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual([])
+    })
+
+    it('excludes owned team workspaces when the user is not a workgroup member', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace-team',
+              ownerId: 'user123',
+              workspaceMode: 'organization',
+              workgroupId: 'workgroup-1',
+              permissionId: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual([])
     })
   })
 
@@ -550,6 +689,74 @@ describe('Permission Utils', () => {
         },
       ])
     })
+
+    it('uses workgroup membership instead of stale permission rows for team workspaces', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              email: 'owner@example.com',
+              name: 'Owner User',
+              image: null,
+              permissionType: 'admin' as PermissionType,
+              source: 'owner',
+              workspaceMode: 'organization',
+              workspaceOrganizationId: 'org-1',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+              organizationMemberId: 'member-owner',
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'stale-user',
+              email: 'stale@example.com',
+              name: 'Stale User',
+              image: null,
+              permissionType: 'admin' as PermissionType,
+              source: 'permission',
+              workspaceMode: 'organization',
+              workspaceOrganizationId: 'org-1',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+              organizationMemberId: 'member-stale',
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'team-user',
+              email: 'team@example.com',
+              name: 'Team User',
+              image: null,
+              permissionType: 'write' as PermissionType,
+              source: 'workgroup',
+              workspaceMode: 'organization',
+              workspaceOrganizationId: 'org-1',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+              organizationMemberId: 'member-team',
+            },
+          ])
+        )
+
+      const result = await getUsersWithPermissions('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'team-user',
+          email: 'team@example.com',
+          name: 'Team User',
+          image: null,
+          permissionType: 'write',
+          isExternal: false,
+        },
+      ])
+    })
   })
 
   describe('getWorkspaceMemberProfiles', () => {
@@ -652,6 +859,59 @@ describe('Permission Utils', () => {
         },
       ])
     })
+
+    it('uses workgroup profiles instead of stale permission rows for team workspaces', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'owner-1',
+              name: 'Owner User',
+              image: null,
+              source: 'owner',
+              workspaceMode: 'organization',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'stale-user',
+              name: 'Stale User',
+              image: null,
+              source: 'permission',
+              workspaceMode: 'organization',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+            },
+          ])
+        )
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              userId: 'team-user',
+              name: 'Team User',
+              image: null,
+              source: 'workgroup',
+              workspaceMode: 'organization',
+              workspaceOwnerId: 'owner-1',
+              workspaceWorkgroupId: 'workgroup-1',
+            },
+          ])
+        )
+
+      const result = await getWorkspaceMemberProfiles('workspace123')
+
+      expect(result).toEqual([
+        {
+          userId: 'team-user',
+          name: 'Team User',
+          image: null,
+        },
+      ])
+    })
   })
 
   describe('hasWorkspaceAdminAccess', () => {
@@ -701,6 +961,53 @@ describe('Permission Utils', () => {
         },
       ])
       mockDb.select.mockReturnValue(chain)
+
+      const result = await hasWorkspaceAdminAccess('user123', 'workspace456')
+
+      expect(result).toBe(false)
+    })
+
+    it('should return true for workgroup admins on team workspaces', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace456',
+              name: 'Team Workspace',
+              ownerId: 'other-user',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([{ role: 'admin' }]))
+
+      const result = await hasWorkspaceAdminAccess('user123', 'workspace456')
+
+      expect(result).toBe(true)
+    })
+
+    it('should return false for organization admins who are not team admins', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace456',
+              name: 'Team Workspace',
+              ownerId: 'other-user',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([{ role: 'admin' }]))
 
       const result = await hasWorkspaceAdminAccess('user123', 'workspace456')
 
@@ -889,9 +1196,12 @@ describe('Permission Utils', () => {
       mockDb.select.mockImplementation(() => {
         callCount++
         if (callCount === 1) {
-          return createMockChain([]) // No owned workspaces
+          return createMockChain([])
         }
-        return createMockChain(mockAdminWorkspaces) // Admin workspaces
+        if (callCount === 2) {
+          return createMockChain(mockAdminWorkspaces)
+        }
+        return createMockChain([])
       })
 
       const result = await getManageableWorkspaces('user123')
@@ -917,7 +1227,84 @@ describe('Permission Utils', () => {
         if (callCount === 1) {
           return createMockChain([])
         }
-        return createMockChain(mockAdminWorkspaces)
+        if (callCount === 2) {
+          return createMockChain(mockAdminWorkspaces)
+        }
+        return createMockChain([])
+      })
+
+      const result = await getManageableWorkspaces('user123')
+
+      expect(result).toEqual([])
+    })
+
+    it('should include team workspaces only when the user is a workgroup admin', async () => {
+      const mockTeamAdminWorkspaces = [
+        {
+          id: 'ws-team',
+          name: 'Team Workspace',
+          ownerId: 'other-user',
+        },
+      ]
+
+      let callCount = 0
+      mockDb.select.mockImplementation(() => {
+        callCount++
+        if (callCount === 3) {
+          return createMockChain(mockTeamAdminWorkspaces)
+        }
+        return createMockChain([])
+      })
+
+      const result = await getManageableWorkspaces('user123')
+
+      expect(result).toEqual([
+        { id: 'ws-team', name: 'Team Workspace', ownerId: 'other-user', accessType: 'direct' },
+      ])
+    })
+
+    it('should exclude team workspaces from stale direct admin permission rows', async () => {
+      const mockAdminWorkspaces = [
+        {
+          id: 'ws-team',
+          name: 'Team Workspace',
+          ownerId: 'other-user',
+          workspaceMode: 'organization',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+
+      let callCount = 0
+      mockDb.select.mockImplementation(() => {
+        callCount++
+        if (callCount === 2) {
+          return createMockChain(mockAdminWorkspaces)
+        }
+        return createMockChain([])
+      })
+
+      const result = await getManageableWorkspaces('user123')
+
+      expect(result).toEqual([])
+    })
+
+    it('should exclude owned team workspaces unless the user is a workgroup admin', async () => {
+      const mockOwnedWorkspaces = [
+        {
+          id: 'ws-team',
+          name: 'Team Workspace',
+          ownerId: 'user123',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+
+      let callCount = 0
+      mockDb.select.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) {
+          return createMockChain(mockOwnedWorkspaces)
+        }
+        return createMockChain([])
       })
 
       const result = await getManageableWorkspaces('user123')
@@ -939,9 +1326,12 @@ describe('Permission Utils', () => {
       mockDb.select.mockImplementation(() => {
         callCount++
         if (callCount === 1) {
-          return createMockChain(mockOwnedWorkspaces) // Owned workspaces
+          return createMockChain(mockOwnedWorkspaces)
         }
-        return createMockChain(mockAdminWorkspaces) // Admin workspaces
+        if (callCount === 2) {
+          return createMockChain(mockAdminWorkspaces)
+        }
+        return createMockChain([])
       })
 
       const result = await getManageableWorkspaces('user123')
@@ -981,9 +1371,12 @@ describe('Permission Utils', () => {
       mockDb.select.mockImplementation(() => {
         callCount++
         if (callCount === 1) {
-          return createMockChain([]) // No owned workspaces
+          return createMockChain([])
         }
-        return createMockChain(mockAdminWorkspaces) // Admin workspaces with duplicates
+        if (callCount === 2) {
+          return createMockChain(mockAdminWorkspaces)
+        }
+        return createMockChain([])
       })
 
       const result = await getManageableWorkspaces('user123')
@@ -1187,6 +1580,69 @@ describe('Permission Utils', () => {
           archivedAt: null,
         },
       })
+    })
+
+    it('denies access to team workspaces without workgroup membership even with permission rows', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace123',
+              name: 'Team Workspace',
+              ownerId: 'other-user',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([{ permissionType: 'admin' }]))
+
+      const result = await checkWorkspaceAccess('workspace123', 'user123')
+
+      expect(result).toEqual({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace123',
+          name: 'Team Workspace',
+          ownerId: 'other-user',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+          workspaceMode: 'organization',
+          billedAccountUserId: 'other-user',
+          archivedAt: null,
+        },
+      })
+    })
+
+    it('grants write access to team workspaces for workgroup members', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'workspace123',
+              name: 'Team Workspace',
+              ownerId: 'other-user',
+              organizationId: 'org-1',
+              workgroupId: 'workgroup-1',
+              workspaceMode: 'organization',
+              billedAccountUserId: 'other-user',
+              archivedAt: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([{ role: 'member' }]))
+
+      const result = await checkWorkspaceAccess('workspace123', 'user123')
+
+      expect(result.exists).toBe(true)
+      expect(result.hasAccess).toBe(true)
+      expect(result.canWrite).toBe(true)
     })
 
     it('should return canWrite=true when user has write permission', async () => {
