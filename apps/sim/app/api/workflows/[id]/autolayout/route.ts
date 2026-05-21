@@ -33,12 +33,12 @@ export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await context.params
+    let workflowIdForLog = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
-        logger.warn(`[${requestId}] Unauthorized autolayout attempt for workflow ${workflowId}`)
+        logger.warn(`[${requestId}] Unauthorized autolayout attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
@@ -46,6 +46,8 @@ export const POST = withRouteHandler(
 
       const parsed = await parseRequest(workflowAutoLayoutContract, request, context)
       if (!parsed.success) return parsed.response
+      const { id: workflowId } = parsed.data.params
+      workflowIdForLog = workflowId
       const layoutOptions = parsed.data.body
 
       logger.info(`[${requestId}] Processing autolayout request for workflow ${workflowId}`, {
@@ -160,7 +162,10 @@ export const POST = withRouteHandler(
 
       const elapsed = Date.now() - startTime
 
-      logger.error(`[${requestId}] Autolayout failed after ${elapsed}ms:`, error)
+      logger.error(
+        `[${requestId}] Autolayout failed for ${workflowIdForLog} after ${elapsed}ms:`,
+        error
+      )
       return NextResponse.json(
         {
           error: 'Autolayout failed',

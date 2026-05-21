@@ -70,6 +70,7 @@ describe('POST /api/workflows/[id]/autolayout', () => {
     mockParseRequest.mockResolvedValue({
       success: true,
       data: {
+        params: { id: 'workflow-1' },
         body: {},
       },
     })
@@ -122,5 +123,32 @@ describe('POST /api/workflows/[id]/autolayout', () => {
     })
     expect(mockAssertWorkflowMutable).not.toHaveBeenCalled()
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
+
+  it('authenticates before reading route params or validating body', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Unauthorized',
+    })
+
+    const params = {
+      then: () => {
+        throw new Error('Route params should not be read before auth')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/workflows//autolayout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'content-type': 'application/json' },
+      }),
+      { params }
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
   })
 })
