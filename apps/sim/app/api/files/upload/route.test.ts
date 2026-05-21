@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => {
   const mockVerifyKBFileAccess = vi.fn()
   const mockVerifyCopilotFileAccess = vi.fn()
   const mockUploadWorkspaceFile = vi.fn()
+  const mockUploadExecutionFile = vi.fn()
+  const mockResolveAccessibleWorkflowWorkspace = vi.fn()
   const mockGetStorageProvider = vi.fn()
   const mockIsUsingCloudStorage = vi.fn()
   const mockUploadFile = vi.fn()
@@ -30,6 +32,8 @@ const mocks = vi.hoisted(() => {
     mockVerifyKBFileAccess,
     mockVerifyCopilotFileAccess,
     mockUploadWorkspaceFile,
+    mockUploadExecutionFile,
+    mockResolveAccessibleWorkflowWorkspace,
     mockGetStorageProvider,
     mockIsUsingCloudStorage,
     mockUploadFile,
@@ -82,6 +86,10 @@ vi.mock('@/lib/uploads/contexts/workspace', () => ({
   uploadWorkspaceFile: mocks.mockUploadWorkspaceFile,
 }))
 
+vi.mock('@/lib/uploads/contexts/execution', () => ({
+  uploadExecutionFile: mocks.mockUploadExecutionFile,
+}))
+
 vi.mock('@/lib/uploads', () => ({
   getStorageProvider: mocks.mockGetStorageProvider,
   isUsingCloudStorage: mocks.mockIsUsingCloudStorage,
@@ -92,6 +100,10 @@ vi.mock('@/lib/uploads/core/storage-service', () => storageServiceMock)
 
 vi.mock('@/lib/uploads/setup.server', () => ({
   UPLOAD_DIR_SERVER: '/tmp/test-uploads',
+}))
+
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mocks.mockResolveAccessibleWorkflowWorkspace,
 }))
 
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace'
@@ -151,6 +163,20 @@ function setupFileApiMocks(
     key: 'workspace/test-workspace-id/1234567890-test.txt',
     uploadedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  })
+
+  mocks.mockUploadExecutionFile.mockResolvedValue({
+    id: 'execution-file-id',
+    name: 'test.txt',
+    url: '/api/files/serve/execution/test-workspace-id/test-file.txt',
+    size: 100,
+    type: 'text/plain',
+    key: 'execution/test-workspace-id/test-workflow-id/test-execution-id/test.txt',
+    context: 'execution',
+  })
+
+  mocks.mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({
+    workspaceId: 'test-workspace-id',
   })
 
   mocks.mockGetStorageProvider.mockReturnValue(storageProvider)
@@ -356,6 +382,78 @@ describe('File Upload API Route', () => {
     expect(response.status).toBe(204)
     expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, DELETE, OPTIONS')
     expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type')
+  })
+
+  it('should hide foreign personal execution workspaces during upload', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    mocks.mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+    })
+
+    const mockFile = createMockFile()
+    const formData = new FormData()
+    formData.append('context', 'execution')
+    formData.append('workspaceId', 'ws-hidden')
+    formData.append('workflowId', 'wf-hidden')
+    formData.append('executionId', 'exec-hidden')
+    formData.append('file', mockFile)
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mocks.mockUploadExecutionFile).not.toHaveBeenCalled()
+  })
+
+  it('should normalize execution uploads to the workflow workspace', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    mocks.mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      workspaceId: 'ws-actual',
+    })
+
+    const mockFile = createMockFile()
+    const formData = new FormData()
+    formData.append('context', 'execution')
+    formData.append('workspaceId', 'ws-spoofed')
+    formData.append('workflowId', 'wf-1')
+    formData.append('executionId', 'exec-1')
+    formData.append('file', mockFile)
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(200)
+    expect(mocks.mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+      userId: 'test-user-id',
+      workflowId: 'wf-1',
+      workspaceId: 'ws-spoofed',
+    })
+    expect(mocks.mockUploadExecutionFile).toHaveBeenCalledWith(
+      {
+        workspaceId: 'ws-actual',
+        workflowId: 'wf-1',
+        executionId: 'exec-1',
+      },
+      expect.any(Buffer),
+      'test.txt',
+      'text/plain',
+      'test-user-id'
+    )
   })
 })
 

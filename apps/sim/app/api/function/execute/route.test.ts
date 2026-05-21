@@ -17,6 +17,14 @@ const { mockExecuteInE2B, mockExecuteInIsolatedVM } = vi.hoisted(() => ({
   mockExecuteInIsolatedVM: vi.fn(),
 }))
 
+const { mockResolveAccessibleWorkflowWorkspace } = vi.hoisted(() => ({
+  mockResolveAccessibleWorkflowWorkspace: vi.fn(),
+}))
+
+const { mockUploadWorkspaceFile } = vi.hoisted(() => ({
+  mockUploadWorkspaceFile: vi.fn(),
+}))
+
 vi.mock('@/lib/execution/isolated-vm', () => ({
   executeInIsolatedVM: mockExecuteInIsolatedVM,
 }))
@@ -39,7 +47,11 @@ vi.mock('@/lib/copilot/request/tools/files', () => ({
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
-  uploadWorkspaceFile: vi.fn(),
+  uploadWorkspaceFile: mockUploadWorkspaceFile,
+}))
+
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mockResolveAccessibleWorkflowWorkspace,
 }))
 
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
@@ -136,11 +148,15 @@ function createIsolatedVmImplementation() {
 describe('Function Execute API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    featureFlagsMock.isE2bEnabled = false
 
     hybridAuthMockFns.mockCheckInternalAuth.mockResolvedValue({
       success: true,
       userId: 'user-123',
       authType: 'internal_jwt',
+    })
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({
+      workspaceId: 'ws-1',
     })
 
     mockExecuteInIsolatedVM.mockImplementation(createIsolatedVmImplementation())
@@ -490,6 +506,39 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
 
       expect(response.status).toBe(200)
+    })
+
+    it('hides foreign personal workspaces during sandbox file export', async () => {
+      featureFlagsMock.isE2bEnabled = true
+      mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+        response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      })
+
+      const req = createMockRequest('POST', {
+        code: 'print("hello")',
+        language: 'python',
+        workflowId: 'wf-hidden',
+        workspaceId: 'ws-hidden',
+        outputPath: 'files/result.txt',
+        outputSandboxPath: '/workspace/result.txt',
+      })
+
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toMatchObject({
+        success: false,
+        error: 'Workspace not found',
+      })
+      expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+        userId: 'user-123',
+        workflowId: 'wf-hidden',
+        workspaceId: 'ws-hidden',
+      })
+      expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
+
+      featureFlagsMock.isE2bEnabled = false
     })
   })
 

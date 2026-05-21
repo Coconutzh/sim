@@ -9,6 +9,7 @@ import { env } from '@/lib/core/config/env'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('VideoProxyAPI')
@@ -124,6 +125,27 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
+    const executionContext =
+      body.workspaceId && body.workflowId && body.executionId
+        ? {
+            workspaceId: body.workspaceId,
+            workflowId: body.workflowId,
+            executionId: body.executionId,
+          }
+        : null
+
+    if (executionContext) {
+      const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+        userId: authResult.userId,
+        workflowId: executionContext.workflowId,
+        workspaceId: executionContext.workspaceId,
+      })
+      if ('response' in workspaceResolution) {
+        return workspaceResolution.response
+      }
+      executionContext.workspaceId = workspaceResolution.workspaceId
+    }
+
     logger.info(`[${requestId}] Generating video with ${provider}, model: ${model || 'default'}`)
 
     let videoUrl: string
@@ -230,15 +252,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const errorMessage = error instanceof Error ? error.message : 'Video generation failed'
       return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
-
-    const executionContext =
-      body.workspaceId && body.workflowId && body.executionId
-        ? {
-            workspaceId: body.workspaceId,
-            workflowId: body.workflowId,
-            executionId: body.executionId,
-          }
-        : null
 
     logger.info(`[${requestId}] Storing video file, size: ${videoBuffer.length} bytes`)
 

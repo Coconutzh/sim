@@ -27,6 +27,7 @@ const {
   mockGenerateExecutionFileKey,
   mockInsertFileMetadata,
   mockCheckWorkspaceAccess,
+  mockResolveAccessibleWorkflowWorkspace,
 } = vi.hoisted(() => ({
   mockVerifyFileAccess: vi.fn().mockResolvedValue(true),
   mockVerifyWorkspaceFileAccess: vi.fn().mockResolvedValue(true),
@@ -59,6 +60,9 @@ const {
     canWrite: true,
     workspace: { id: 'workspace-1', ownerId: 'test-user-id', workspaceMode: 'organization' },
   }),
+  mockResolveAccessibleWorkflowWorkspace: vi.fn().mockResolvedValue({
+    workspaceId: 'ws-1',
+  }),
 }))
 
 vi.mock('@/app/api/files/authorization', () => ({
@@ -89,6 +93,10 @@ vi.mock('@/lib/uploads/utils/validation', () => ({
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
   checkWorkspaceAccess: mockCheckWorkspaceAccess,
   getUserEntityPermissions: mockGetUserEntityPermissions,
+}))
+
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mockResolveAccessibleWorkflowWorkspace,
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
@@ -788,6 +796,74 @@ describe('/api/files/presigned', () => {
 
       const response = await POST(request)
       expect(response.status).toBe(400)
+    })
+
+    it('hides foreign personal execution workspaces behind 404', async () => {
+      setupFileApiMocks({ cloudEnabled: true, storageProvider: 's3' })
+      mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+        response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/files/presigned?type=execution&workspaceId=ws-hidden&workflowId=wf-hidden&executionId=exec-hidden',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: 'output.mp4',
+            contentType: 'video/mp4',
+            fileSize: 4096,
+          }),
+        }
+      )
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(404)
+      await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+      expect(mockGenerateExecutionFileKey).not.toHaveBeenCalled()
+      expect(mockInsertFileMetadata).not.toHaveBeenCalled()
+    })
+
+    it('normalizes execution presigned uploads to the workflow workspace', async () => {
+      setupFileApiMocks({ cloudEnabled: true, storageProvider: 's3' })
+      mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+        workspaceId: 'ws-actual',
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/files/presigned?type=execution&workspaceId=ws-spoofed&workflowId=wf-1&executionId=exec-1',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: 'output.mp4',
+            contentType: 'video/mp4',
+            fileSize: 4096,
+          }),
+        }
+      )
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(200)
+      expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        workflowId: 'wf-1',
+        workspaceId: 'ws-spoofed',
+      })
+      expect(mockGenerateExecutionFileKey).toHaveBeenCalledWith(
+        {
+          workspaceId: 'ws-actual',
+          workflowId: 'wf-1',
+          executionId: 'exec-1',
+        },
+        'output.mp4'
+      )
+      expect(mockInsertFileMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'ws-actual',
+          context: 'execution',
+        })
+      )
     })
 
     it('inserts a workspaceFiles row with context=execution so previews authorize', async () => {

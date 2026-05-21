@@ -15,7 +15,7 @@ import { executeInE2B, executeShellInE2B } from '@/lib/execution/e2b'
 import { executeInIsolatedVM } from '@/lib/execution/isolated-vm'
 import { CodeLanguage, DEFAULT_CODE_LANGUAGE, isValidCodeLanguage } from '@/lib/execution/languages'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { getWorkflowById } from '@/lib/workflows/utils'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { escapeRegExp, normalizeName, REFERENCE } from '@/executor/constants'
 import { type OutputSchema, resolveBlockReference } from '@/executor/utils/block-reference'
 import { formatLiteralForCode } from '@/executor/utils/code-formatting'
@@ -723,19 +723,25 @@ async function maybeExportSandboxFileToWorkspace(args: {
     )
   }
 
-  const resolvedWorkspaceId =
-    workspaceId || (workflowId ? (await getWorkflowById(workflowId))?.workspaceId : undefined)
-
-  if (!resolvedWorkspaceId) {
+  const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+    userId: authUserId,
+    workflowId,
+    workspaceId,
+  })
+  if ('response' in workspaceResolution) {
+    const errorBody = await workspaceResolution.response.json().catch(() => ({
+      error: 'Workspace context required to save sandbox file to workspace',
+    }))
     return NextResponse.json(
       {
         success: false,
-        error: 'Workspace context required to save sandbox file to workspace',
+        error: errorBody.error || 'Workspace context required to save sandbox file to workspace',
         output: { result: null, stdout: cleanStdout(stdout), executionTime },
       },
-      { status: 400 }
+      { status: workspaceResolution.response.status }
     )
   }
+  const resolvedWorkspaceId = workspaceResolution.workspaceId
 
   if (exportedFileContent === undefined) {
     return NextResponse.json(

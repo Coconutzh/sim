@@ -31,6 +31,8 @@ const {
   mockFsWriteFile,
   mockJoin,
   actualPath,
+  mockUploadExecutionFile,
+  mockResolveAccessibleWorkflowWorkspace,
 } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const actualPath = require('path') as typeof import('path')
@@ -59,6 +61,8 @@ const {
       return actualPath.join(...args)
     }),
     actualPath,
+    mockUploadExecutionFile: vi.fn(),
+    mockResolveAccessibleWorkflowWorkspace: vi.fn(),
   }
 })
 
@@ -101,7 +105,7 @@ vi.mock('@/lib/core/utils/logging', () => ({
 }))
 
 vi.mock('@/lib/uploads/contexts/execution', () => ({
-  uploadExecutionFile: vi.fn(),
+  uploadExecutionFile: mockUploadExecutionFile,
 }))
 
 vi.mock('@/lib/uploads/server/metadata', () => ({
@@ -109,6 +113,10 @@ vi.mock('@/lib/uploads/server/metadata', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mockResolveAccessibleWorkflowWorkspace,
+}))
 
 vi.mock('fs/promises', () => ({
   default: {
@@ -190,6 +198,18 @@ describe('File Parse API Route', () => {
     storageServiceMockFns.mockHasCloudStorage.mockReturnValue(true)
     storageServiceMockFns.mockDownloadFile.mockResolvedValue(Buffer.from('test file content'))
     mockIsSupportedFileType.mockReturnValue(true)
+    mockUploadExecutionFile.mockResolvedValue({
+      id: 'execution-file-id',
+      name: 'test file.txt',
+      url: '/api/files/serve/execution/test-workspace-id/test-file.txt',
+      size: 100,
+      type: 'text/plain',
+      key: 'execution/test-workspace-id/test-workflow-id/test-execution-id/test file.txt',
+      context: 'execution',
+    })
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({
+      workspaceId: 'workspace-1',
+    })
     mockParseFile.mockResolvedValue({
       content: 'parsed content',
       metadata: { pageCount: 1 },
@@ -287,6 +307,52 @@ describe('File Parse API Route', () => {
     expect(data.success).toBe(false)
     expect(data.error).toBe('File not found')
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('should hide foreign personal execution contexts before parsing', async () => {
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+    })
+
+    const req = createMockRequest('POST', {
+      filePath: '/api/files/serve/test-file.txt',
+      workspaceId: 'workspace-hidden',
+      workflowId: 'wf-hidden',
+      executionId: 'exec-hidden',
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+  })
+
+  it('should normalize execution parsing to the workflow workspace', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+      authenticated: true,
+    })
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      workspaceId: 'workspace-actual',
+    })
+
+    const req = createMockRequest('POST', {
+      filePath: 'test-file.txt',
+      workspaceId: 'workspace-spoofed',
+      workflowId: 'wf-1',
+      executionId: 'exec-1',
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(200)
+    expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+      userId: 'test-user-id',
+      workflowId: 'wf-1',
+      workspaceId: 'workspace-spoofed',
+    })
   })
 
   it('should keep known binary extensions as binary even when the bytes are valid UTF-8', async () => {

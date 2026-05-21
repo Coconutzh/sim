@@ -27,6 +27,7 @@ import {
   inferContextFromKey,
   isInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
@@ -116,16 +117,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ success: false, error: 'No file path provided' }, { status: 400 })
     }
 
+    let resolvedWorkspaceId = workspaceId
+    if (workflowId && executionId) {
+      const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+        userId,
+        workflowId,
+        workspaceId,
+      })
+      if ('response' in workspaceResolution) {
+        return workspaceResolution.response
+      }
+      resolvedWorkspaceId = workspaceResolution.workspaceId
+    }
+
     // Build execution context if all required fields are present
     const executionContext: ExecutionContext | undefined =
-      workspaceId && workflowId && executionId
-        ? { workspaceId, workflowId, executionId }
+      resolvedWorkspaceId && workflowId && executionId
+        ? { workspaceId: resolvedWorkspaceId, workflowId, executionId }
         : undefined
 
-    logger.info('File parse request received:', {
+      logger.info('File parse request received:', {
       filePath,
       fileType,
-      workspaceId,
+      workspaceId: resolvedWorkspaceId,
       userId,
       hasExecutionContext: !!executionContext,
     })
@@ -145,7 +159,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const result = await parseFileSingle(
           singlePath,
           fileType,
-          workspaceId,
+          resolvedWorkspaceId,
           userId,
           executionContext
         )
@@ -180,7 +194,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
     }
 
-    const result = await parseFileSingle(filePath, fileType, workspaceId, userId, executionContext)
+    const result = await parseFileSingle(
+      filePath,
+      fileType,
+      resolvedWorkspaceId,
+      userId,
+      executionContext
+    )
 
     if (result.metadata) {
       result.metadata.processingTime = Date.now() - startTime

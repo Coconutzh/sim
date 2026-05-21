@@ -12,6 +12,7 @@ import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { StorageService } from '@/lib/uploads'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import type {
   AzureTtsParams,
   CartesiaTtsParams,
@@ -61,6 +62,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const executionContext =
       workspaceId && workflowId && executionId ? { workspaceId, workflowId, executionId } : null
+
+    if (executionContext) {
+      const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+        userId: authResult.userId,
+        workflowId: executionContext.workflowId,
+        workspaceId: executionContext.workspaceId,
+      })
+      if ('response' in workspaceResolution) {
+        return workspaceResolution.response
+      }
+      executionContext.workspaceId = workspaceResolution.workspaceId
+    }
+
     logger.info(`[${requestId}] Processing TTS with ${provider}`, {
       hasExecutionContext: Boolean(executionContext),
       textLength: text.length,

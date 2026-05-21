@@ -23,6 +23,7 @@ import {
   verifyUploadToken,
 } from '@/lib/uploads/core/upload-token'
 import type { StorageConfig } from '@/lib/uploads/shared/types'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MultipartUploadAPI')
@@ -127,13 +128,47 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           return NextResponse.json({ error: 'Invalid storage context' }, { status: 400 })
         }
         const storageContext = context as StorageContext
+        let resolvedWorkspaceId = workspaceId
+        let executionWorkflowId: string | null = null
+        let executionId: string | null = null
 
-        const access = await checkWorkspaceAccess(workspaceId, userId)
+        if (storageContext === 'execution') {
+          const rawWorkflowId = (data as { workflowId?: unknown }).workflowId
+          const rawExecutionId = (data as { executionId?: unknown }).executionId
+          if (typeof rawWorkflowId !== 'string' || !rawWorkflowId.trim()) {
+            return NextResponse.json(
+              { error: 'workflowId is required for execution uploads' },
+              { status: 400 }
+            )
+          }
+          if (typeof rawExecutionId !== 'string' || !rawExecutionId.trim()) {
+            return NextResponse.json(
+              { error: 'executionId is required for execution uploads' },
+              { status: 400 }
+            )
+          }
+
+          executionWorkflowId = rawWorkflowId
+          executionId = rawExecutionId
+
+          const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+            userId,
+            workflowId: rawWorkflowId,
+            workspaceId,
+          })
+          if ('response' in workspaceResolution) {
+            return workspaceResolution.response
+          }
+
+          resolvedWorkspaceId = workspaceResolution.workspaceId
+        }
+
+        const access = await checkWorkspaceAccess(resolvedWorkspaceId, userId)
         if (!access.exists || !access.hasAccess) {
           return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
         }
 
-        const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+        const permission = await getUserEntityPermissions(userId, 'workspace', resolvedWorkspaceId)
         if (permission !== 'write' && permission !== 'admin') {
           return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
@@ -153,7 +188,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           const { generateWorkspaceFileKey } = await import(
             '@/lib/uploads/contexts/workspace/workspace-file-manager'
           )
-          customKey = generateWorkspaceFileKey(workspaceId, fileName)
+          customKey = generateWorkspaceFileKey(resolvedWorkspaceId, fileName)
 
           const { checkStorageQuota } = await import('@/lib/billing/storage')
           const quotaCheck = await checkStorageQuota(userId, fileSize)
@@ -167,26 +202,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           const { generateWorkspaceFileKey } = await import(
             '@/lib/uploads/contexts/workspace/workspace-file-manager'
           )
-          customKey = generateWorkspaceFileKey(workspaceId, fileName)
+          customKey = generateWorkspaceFileKey(resolvedWorkspaceId, fileName)
         } else if (context === 'execution') {
-          const workflowId = (data as { workflowId?: unknown }).workflowId
-          const executionId = (data as { executionId?: unknown }).executionId
-          if (typeof workflowId !== 'string' || !workflowId.trim()) {
-            return NextResponse.json(
-              { error: 'workflowId is required for execution uploads' },
-              { status: 400 }
-            )
-          }
-          if (typeof executionId !== 'string' || !executionId.trim()) {
-            return NextResponse.json(
-              { error: 'executionId is required for execution uploads' },
-              { status: 400 }
-            )
-          }
           const { generateExecutionFileKey } = await import(
             '@/lib/uploads/contexts/execution/utils'
           )
-          customKey = generateExecutionFileKey({ workspaceId, workflowId, executionId }, fileName)
+          customKey = generateExecutionFileKey(
+            {
+              workspaceId: resolvedWorkspaceId,
+              workflowId: executionWorkflowId as string,
+              executionId: executionId as string,
+            },
+            fileName
+          )
         }
 
         let uploadId: string
@@ -226,12 +254,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           uploadId,
           key,
           userId,
-          workspaceId,
+          workspaceId: resolvedWorkspaceId,
           context: storageContext,
         })
 
         logger.info(
-          `Initiated ${storageProvider} multipart upload for ${fileName} (context: ${storageContext}, workspace: ${workspaceId}): ${uploadId}`
+          `Initiated ${storageProvider} multipart upload for ${fileName} (context: ${storageContext}, workspace: ${resolvedWorkspaceId}): ${uploadId}`
         )
 
         return NextResponse.json({ uploadId, key, uploadToken })

@@ -19,6 +19,7 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import {
   createErrorResponse,
@@ -116,10 +117,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           )
         }
 
+        const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+          userId: session.user.id,
+          workflowId,
+          workspaceId,
+        })
+        if ('response' in workspaceResolution) {
+          return workspaceResolution.response
+        }
+
         const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
         const userFile = await uploadExecutionFile(
           {
-            workspaceId: workspaceId || '',
+            workspaceId: workspaceResolution.workspaceId,
             workflowId,
             executionId,
           },

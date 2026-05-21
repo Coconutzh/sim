@@ -13,6 +13,7 @@ import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/
 import { insertFileMetadata } from '@/lib/uploads/server/metadata'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
+import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse } from '@/app/api/files/utils'
 
@@ -199,16 +200,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+      const workspaceResolution = await resolveAccessibleWorkflowWorkspace({
+        userId: sessionUserId,
+        workflowId,
         workspaceId,
-        sessionUserId,
-        'Workspace not found'
-      )
-      if (hiddenWorkspaceResponse) {
-        return hiddenWorkspaceResponse
+      })
+      if ('response' in workspaceResolution) {
+        return workspaceResolution.response
       }
+      const resolvedWorkspaceId = workspaceResolution.workspaceId
 
-      const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
+      const permission = await getUserEntityPermissions(
+        sessionUserId,
+        'workspace',
+        resolvedWorkspaceId
+      )
       if (permission !== 'write' && permission !== 'admin') {
         return NextResponse.json(
           { error: 'Write or Admin access required for execution uploads' },
@@ -221,7 +227,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         throw new ValidationError(fileValidationError.message)
       }
 
-      const customKey = generateExecutionFileKey({ workspaceId, workflowId, executionId }, fileName)
+      const customKey = generateExecutionFileKey(
+        { workspaceId: resolvedWorkspaceId, workflowId, executionId },
+        fileName
+      )
       presignedUrlResponse = await generatePresignedUploadUrl({
         fileName,
         contentType,
@@ -230,13 +239,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         userId: sessionUserId,
         customKey,
         expirationSeconds: 3600,
-        metadata: { workspaceId, workflowId, executionId },
+        metadata: { workspaceId: resolvedWorkspaceId, workflowId, executionId },
       })
 
       await insertFileMetadata({
         key: presignedUrlResponse.key,
         userId: sessionUserId,
-        workspaceId,
+        workspaceId: resolvedWorkspaceId,
         context: 'execution',
         originalName: fileName,
         contentType,

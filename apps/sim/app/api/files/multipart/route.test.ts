@@ -14,6 +14,8 @@ const {
   mockDeriveBlobBlockId,
   mockVerifyUploadToken,
   mockSignUploadToken,
+  mockInitiateS3MultipartUpload,
+  mockResolveAccessibleWorkflowWorkspace,
 } = vi.hoisted(() => ({
   mockIsUsingCloudStorage: vi.fn(),
   mockGetStorageProvider: vi.fn(),
@@ -23,6 +25,8 @@ const {
   mockDeriveBlobBlockId: vi.fn(),
   mockVerifyUploadToken: vi.fn(),
   mockSignUploadToken: vi.fn(),
+  mockInitiateS3MultipartUpload: vi.fn(),
+  mockResolveAccessibleWorkflowWorkspace: vi.fn(),
 }))
 
 vi.mock('@/lib/uploads', () => ({
@@ -38,7 +42,7 @@ vi.mock('@/lib/uploads/core/upload-token', () => ({
 
 vi.mock('@/lib/uploads/providers/s3/client', () => ({
   completeS3MultipartUpload: mockCompleteS3MultipartUpload,
-  initiateS3MultipartUpload: vi.fn(),
+  initiateS3MultipartUpload: mockInitiateS3MultipartUpload,
   getS3MultipartPartUrls: vi.fn(),
   abortS3MultipartUpload: vi.fn(),
 }))
@@ -52,6 +56,10 @@ vi.mock('@/lib/uploads/providers/blob/client', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+
+vi.mock('@/lib/workspaces/permissions/execution-context', () => ({
+  resolveAccessibleWorkflowWorkspace: mockResolveAccessibleWorkflowWorkspace,
+}))
 
 import { POST } from '@/app/api/files/multipart/route'
 
@@ -90,6 +98,10 @@ describe('POST /api/files/multipart action=complete', () => {
       path: '/api/files/serve/...',
       key: tokenPayload.key,
     })
+    mockInitiateS3MultipartUpload.mockResolvedValue({
+      uploadId: 'upload-1',
+      key: tokenPayload.key,
+    })
     mockCompleteBlobMultipartUpload.mockResolvedValue({
       location: 'loc',
       path: '/api/files/serve/...',
@@ -98,6 +110,7 @@ describe('POST /api/files/multipart action=complete', () => {
     mockDeriveBlobBlockId.mockImplementation(
       (n: number) => `block-${n.toString().padStart(6, '0')}`
     )
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({ workspaceId: 'ws-1' })
   })
 
   it('rejects parts without partNumber', async () => {
@@ -229,5 +242,69 @@ describe('POST /api/files/multipart action=complete', () => {
     expect(res.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('hides foreign personal execution multipart uploads behind 404', async () => {
+    mockGetStorageProvider.mockReturnValue('s3')
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
+      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+    })
+
+    const res = await POST(
+      makeRequest('initiate', {
+        fileName: 'large.bin',
+        contentType: 'application/octet-stream',
+        fileSize: 1024,
+        workspaceId: 'ws-hidden',
+        workflowId: 'wf-hidden',
+        executionId: 'exec-hidden',
+        context: 'execution',
+      })
+    )
+
+    expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockInitiateS3MultipartUpload).not.toHaveBeenCalled()
+  })
+
+  it('normalizes execution multipart uploads to the workflow workspace', async () => {
+    mockGetStorageProvider.mockReturnValue('s3')
+    mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({ workspaceId: 'ws-actual' })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-actual', ownerId: 'user-1', workspaceMode: 'organization' },
+    })
+
+    const res = await POST(
+      makeRequest('initiate', {
+        fileName: 'large.bin',
+        contentType: 'application/octet-stream',
+        fileSize: 1024,
+        workspaceId: 'ws-spoofed',
+        workflowId: 'wf-1',
+        executionId: 'exec-1',
+        context: 'execution',
+      })
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
+      userId: 'user-1',
+      workflowId: 'wf-1',
+      workspaceId: 'ws-spoofed',
+    })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).toHaveBeenCalledWith(
+      'user-1',
+      'workspace',
+      'ws-actual'
+    )
+    expect(mockSignUploadToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-actual',
+        context: 'execution',
+      })
+    )
   })
 })
