@@ -94,7 +94,7 @@ describe('acceptInvitation', () => {
       ],
       [{ name: 'Acme' }],
       [{ name: 'Inviter', email: 'inviter@example.com' }],
-      [{ ownerId: 'someone-else' }],
+      [{ ownerId: 'someone-else', workspaceMode: 'organization', archivedAt: null }],
       [],
       [],
       [{ variables: {} }],
@@ -166,7 +166,7 @@ describe('acceptInvitation', () => {
       ],
       [{ name: 'Acme' }],
       [{ name: 'Inviter', email: 'inviter@example.com' }],
-      [{ ownerId: 'someone-else' }],
+      [{ ownerId: 'someone-else', workspaceMode: 'organization', archivedAt: null }],
       [],
       [],
       [{ variables: {} }],
@@ -236,7 +236,7 @@ describe('acceptInvitation', () => {
         },
       ],
       [{ name: 'Inviter', email: 'inviter@example.com' }],
-      [{ ownerId: 'owner-user' }],
+      [{ ownerId: 'owner-user', workspaceMode: 'personal', archivedAt: null }],
       [],
       [{ variables: {} }],
     ])
@@ -264,5 +264,87 @@ describe('acceptInvitation', () => {
         entityId: 'workspace-1',
       })
     )
+  })
+
+  it('rejects invitations that target a foreign personal workspace', async () => {
+    queueWhereResponses([
+      [
+        {
+          id: 'inv-1',
+          kind: 'workspace',
+          email: 'invitee@example.com',
+          organizationId: null,
+          membershipIntent: 'external',
+          inviterId: 'inviter-1',
+          role: 'member',
+          status: 'pending',
+          token: 'tok-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'grant-1',
+          workspaceId: 'workspace-1',
+          permission: 'write',
+          workspaceName: 'Personal Workspace',
+        },
+      ],
+      [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [{ ownerId: 'owner-user', workspaceMode: 'personal', archivedAt: null }],
+    ])
+
+    const result = await acceptInvitation({
+      userId: 'invitee-user',
+      userEmail: 'invitee@example.com',
+      invitationId: 'inv-1',
+      token: 'tok-1',
+    })
+
+    expect(result).toEqual({ success: false, kind: 'workspace-unavailable' })
+    expect(dbChainMockFns.values).not.toHaveBeenCalled()
+  })
+
+  it('rejects invitations that target an archived workspace', async () => {
+    queueWhereResponses([
+      [
+        {
+          id: 'inv-1',
+          kind: 'workspace',
+          email: 'invitee@example.com',
+          organizationId: null,
+          membershipIntent: 'external',
+          inviterId: 'inviter-1',
+          role: 'member',
+          status: 'pending',
+          token: 'tok-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'grant-1',
+          workspaceId: 'workspace-1',
+          permission: 'read',
+          workspaceName: 'Archived Workspace',
+        },
+      ],
+      [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [{ ownerId: 'owner-user', workspaceMode: 'organization', archivedAt: new Date() }],
+    ])
+
+    const result = await acceptInvitation({
+      userId: 'invitee-user',
+      userEmail: 'invitee@example.com',
+      invitationId: 'inv-1',
+      token: 'tok-1',
+    })
+
+    expect(result).toEqual({ success: false, kind: 'workspace-unavailable' })
+    expect(dbChainMockFns.values).not.toHaveBeenCalled()
   })
 })

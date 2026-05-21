@@ -206,6 +206,7 @@ export type AcceptInvitationFailure =
   | { kind: 'invalid-token' }
   | { kind: 'already-in-organization' }
   | { kind: 'no-seats-available' }
+  | { kind: 'workspace-unavailable' }
   | { kind: 'server-error'; message?: string }
 
 export type AcceptInvitationSuccess = {
@@ -291,6 +292,31 @@ export async function acceptInvitation(
   }
 
   const acceptedWorkspaceIds: string[] = []
+  const workspaceOwners = new Map<string, string>()
+
+  for (const grant of inv.grants) {
+    const [workspaceRow] = await db
+      .select({
+        ownerId: workspace.ownerId,
+        workspaceMode: workspace.workspaceMode,
+        archivedAt: workspace.archivedAt,
+      })
+      .from(workspace)
+      .where(eq(workspace.id, grant.workspaceId))
+      .limit(1)
+
+    const isWorkspaceOwner = workspaceRow?.ownerId === input.userId
+    const isUnavailable =
+      !workspaceRow ||
+      workspaceRow.archivedAt !== null ||
+      (workspaceRow.workspaceMode === 'personal' && !isWorkspaceOwner)
+
+    if (isUnavailable) {
+      return { success: false, kind: 'workspace-unavailable' }
+    }
+
+    workspaceOwners.set(grant.workspaceId, workspaceRow.ownerId)
+  }
 
   await db.transaction(async (tx) => {
     await tx
@@ -303,13 +329,7 @@ export async function acceptInvitation(
       .where(eq(invitation.id, inv.id))
 
     for (const grant of inv.grants) {
-      const [workspaceRow] = await tx
-        .select({ ownerId: workspace.ownerId })
-        .from(workspace)
-        .where(eq(workspace.id, grant.workspaceId))
-        .limit(1)
-
-      const isWorkspaceOwner = workspaceRow?.ownerId === input.userId
+      const isWorkspaceOwner = workspaceOwners.get(grant.workspaceId) === input.userId
 
       const [existingPermission] = await tx
         .select({ id: permissions.id, permissionType: permissions.permissionType })
