@@ -89,10 +89,7 @@ describe('verifyFileAccess', () => {
       workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
     })
 
-    const granted = await verifyFileAccess(
-      'execution/ws-hidden/wf-1/exec-1/output.json',
-      'user-1'
-    )
+    const granted = await verifyFileAccess('execution/ws-hidden/wf-1/exec-1/output.json', 'user-1')
 
     expect(granted).toBe(false)
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
@@ -108,6 +105,21 @@ describe('verifyFileAccess', () => {
     })
 
     const granted = await verifyFileAccess('chat/file-1', 'user-1')
+
+    expect(granted).toBe(false)
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('prioritizes workspace visibility over uploader ownership for regular files', async () => {
+    mockGetFileMetadata.mockResolvedValueOnce({ userId: 'user-1', workspaceId: 'ws-hidden' })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const granted = await verifyFileAccess('legacy-upload.txt', 'user-1', {}, 'general')
 
     expect(granted).toBe(false)
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()

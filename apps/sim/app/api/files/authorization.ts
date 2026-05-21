@@ -8,10 +8,7 @@ import { BLOB_CHAT_CONFIG, S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
@@ -22,7 +19,10 @@ export interface AuthorizationResult {
   workspaceId?: string
 }
 
-async function hasVisibleWorkspacePermission(userId: string, workspaceId: string): Promise<boolean> {
+async function hasVisibleWorkspacePermission(
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
     return false
@@ -521,17 +521,6 @@ async function verifyRegularFileAccess(
     const fileUserId = metadata.userId
     const workspaceId = metadata.workspaceId
 
-    // If file has userId, verify ownership
-    if (fileUserId) {
-      if (fileUserId === userId) {
-        logger.debug('Regular file access granted (userId match)', { userId, cloudKey })
-        return true
-      }
-      logger.warn('User does not own file', { userId, fileUserId, cloudKey })
-      return false
-    }
-
-    // If file has workspaceId, verify workspace membership
     if (workspaceId) {
       const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
       if (hasPermission) {
@@ -547,6 +536,16 @@ async function verifyRegularFileAccess(
         workspaceId,
         cloudKey,
       })
+      return false
+    }
+
+    // If file has userId, verify ownership
+    if (fileUserId) {
+      if (fileUserId === userId) {
+        logger.debug('Regular file access granted (userId match)', { userId, cloudKey })
+        return true
+      }
+      logger.warn('User does not own file', { userId, fileUserId, cloudKey })
       return false
     }
 
