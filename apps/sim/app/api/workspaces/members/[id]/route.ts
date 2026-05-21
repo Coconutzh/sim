@@ -12,6 +12,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { revokeWorkspaceCredentialMembershipsTx } from '@/lib/credentials/access'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
+  checkWorkspaceAccess,
   getWorkspaceWithOwner,
   hasWorkspaceAdminAccess,
 } from '@/lib/workspaces/permissions/utils'
@@ -32,6 +33,11 @@ export const DELETE = withRouteHandler(
       if (!parsed.success) return parsed.response
       const { id: userId } = parsed.data.params
       const { workspaceId } = parsed.data.body
+
+      const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
 
       const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 
