@@ -9,6 +9,8 @@ import {
   permissionsMockFns,
   posthogServerMock,
   posthogServerMockFns,
+  workflowsApiUtilsMock,
+  workflowsApiUtilsMockFns,
 } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,11 +37,12 @@ vi.mock('@/lib/uploads/contexts/workspace', () => ({
 
 vi.mock('@/lib/posthog/server', () => posthogServerMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+vi.mock('@/app/api/workflows/utils', () => workflowsApiUtilsMock)
 vi.mock('@sim/audit', () => auditMock)
 
 const WS = '7727ef3f-8cf6-4686-b063-2bb006a10785'
 
-import { POST } from '@/app/api/workspaces/[id]/files/route'
+import { GET, POST } from '@/app/api/workspaces/[id]/files/route'
 
 const params = (id = WS) => ({ params: Promise.resolve({ id }) })
 
@@ -56,6 +59,12 @@ describe('POST /api/workspaces/[id]/files', () => {
       workspace: { id: WS, ownerId: 'user-1', workspaceMode: 'organization' },
     })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
+    workflowsApiUtilsMockFns.mockGetWorkspaceMembershipAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      permission: 'read',
+      canWrite: false,
+    })
     mockUploadWorkspaceFile.mockResolvedValue({
       id: 'wf_123',
       name: 'clip.mp4',
@@ -154,5 +163,24 @@ describe('POST /api/workspaces/[id]/files', () => {
     expect(response.status).toBe(404)
     expect(body.error).toBe('Not found')
     expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for hidden personal workspace file listing', async () => {
+    workflowsApiUtilsMockFns.mockGetWorkspaceMembershipAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      permission: null,
+      canWrite: false,
+    })
+
+    const request = new NextRequest(`http://localhost/api/workspaces/${WS}/files`, {
+      method: 'GET',
+    })
+
+    const response = await GET(request, params())
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.error).toBe('Workspace not found')
   })
 })

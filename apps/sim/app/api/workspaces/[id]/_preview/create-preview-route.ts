@@ -7,7 +7,7 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { MAX_DOCUMENT_PREVIEW_CODE_BYTES } from '@/lib/execution/constants'
 import { runSandboxTask, SandboxUserCodeError } from '@/lib/execution/sandbox/run-task'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 import type { SandboxTaskId } from '@/sandbox-tasks/registry'
 
 /**
@@ -68,9 +68,9 @@ export function createDocumentPreviewRoute(config: DocumentPreviewRouteConfig) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const membership = await verifyWorkspaceMembership(session.user.id, workspaceId)
-      if (!membership) {
-        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
+      if (!membership.exists || !membership.hasAccess) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const parsed = await parseRequest(previewContract, req, context, {

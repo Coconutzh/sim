@@ -17,7 +17,7 @@ import {
 } from '@/lib/uploads/contexts/workspace'
 import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,12 +131,12 @@ export const GET = withRouteHandler(
       }
 
       // Check workspace permissions (requires read)
-      const userPermission = await verifyWorkspaceMembership(session.user.id, workspaceId)
-      if (!userPermission) {
+      const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
+      if (!membership.exists || !membership.hasAccess) {
         logger.warn(
           `[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`
         )
-        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const queryResult = listWorkspaceFilesQuerySchema.safeParse(

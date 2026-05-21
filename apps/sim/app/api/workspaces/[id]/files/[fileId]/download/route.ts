@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getWorkspaceFile } from '@/lib/uploads/contexts/workspace'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,12 +35,12 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const userPermission = await verifyWorkspaceMembership(session.user.id, workspaceId)
-      if (!userPermission) {
+      const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
+      if (!membership.exists || !membership.hasAccess) {
         logger.warn(
           `[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`
         )
-        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const fileRecord = await getWorkspaceFile(workspaceId, fileId)

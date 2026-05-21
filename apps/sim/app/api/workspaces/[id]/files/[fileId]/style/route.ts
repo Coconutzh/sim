@@ -7,7 +7,7 @@ import { getSession } from '@/lib/auth'
 import { extractDocumentStyle } from '@/lib/copilot/vfs/document-style'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { fetchWorkspaceFileBuffer, getWorkspaceFile } from '@/lib/uploads/contexts/workspace'
-import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
+import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,9 +33,9 @@ export const GET = withRouteHandler(
     if (!parsed.success) return parsed.response
     const { id: workspaceId, fileId } = parsed.data.params
 
-    const membership = await verifyWorkspaceMembership(session.user.id, workspaceId)
-    if (!membership) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
+    if (!membership.exists || !membership.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const fileRecord = await getWorkspaceFile(workspaceId, fileId)

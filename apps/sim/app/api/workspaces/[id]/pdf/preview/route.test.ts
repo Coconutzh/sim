@@ -16,7 +16,7 @@ const { mockRunSandboxTask, SandboxUserCodeError } = vi.hoisted(() => {
   return { mockRunSandboxTask: vi.fn(), SandboxUserCodeError }
 })
 
-const mockVerifyWorkspaceMembership = workflowsApiUtilsMockFns.mockVerifyWorkspaceMembership
+const mockGetWorkspaceMembershipAccess = workflowsApiUtilsMockFns.mockGetWorkspaceMembershipAccess
 
 vi.mock('@/app/api/workflows/utils', () => workflowsApiUtilsMock)
 
@@ -31,7 +31,12 @@ describe('PDF preview API route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
-    mockVerifyWorkspaceMembership.mockResolvedValue(true)
+    mockGetWorkspaceMembershipAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      permission: 'read',
+      canWrite: false,
+    })
     mockRunSandboxTask.mockResolvedValue(Buffer.from('%PDF-test'))
   })
 
@@ -54,7 +59,7 @@ describe('PDF preview API route', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('application/pdf')
     expect(response.headers.get('Cache-Control')).toBe('private, no-store')
-    expect(mockVerifyWorkspaceMembership).toHaveBeenCalledWith('user-1', 'workspace-1')
+    expect(mockGetWorkspaceMembershipAccess).toHaveBeenCalledWith('user-1', 'workspace-1')
     expect(mockRunSandboxTask).toHaveBeenCalledWith(
       'pdf-generate',
       { code: 'return 1', workspaceId: 'workspace-1' },
@@ -125,12 +130,17 @@ describe('PDF preview API route', () => {
 
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
-    expect(mockVerifyWorkspaceMembership).not.toHaveBeenCalled()
+    expect(mockGetWorkspaceMembershipAccess).not.toHaveBeenCalled()
     expect(mockRunSandboxTask).not.toHaveBeenCalled()
   })
 
-  it('returns 403 when the user is not a workspace member', async () => {
-    mockVerifyWorkspaceMembership.mockResolvedValue(false)
+  it('hides foreign personal workspace preview access behind 404', async () => {
+    mockGetWorkspaceMembershipAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      permission: null,
+      canWrite: false,
+    })
 
     const request = new NextRequest(
       'http://localhost:3000/api/workspaces/workspace-1/pdf/preview',
@@ -147,8 +157,36 @@ describe('PDF preview API route', () => {
       params: Promise.resolve({ id: 'workspace-1' }),
     })
 
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ error: 'Insufficient permissions' })
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockRunSandboxTask).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the workspace does not exist', async () => {
+    mockGetWorkspaceMembershipAccess.mockResolvedValueOnce({
+      exists: false,
+      hasAccess: false,
+      permission: null,
+      canWrite: false,
+    })
+
+    const request = new NextRequest(
+      'http://localhost:3000/api/workspaces/workspace-1/pdf/preview',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: 'return 1' }),
+      }
+    )
+
+    const response = await POST(request, {
+      params: Promise.resolve({ id: 'workspace-1' }),
+    })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
     expect(mockRunSandboxTask).not.toHaveBeenCalled()
   })
 

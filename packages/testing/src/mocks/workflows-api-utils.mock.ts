@@ -31,6 +31,12 @@ export const workflowsApiUtilsMockFns = {
   })),
   mockCheckNeedsRedeployment: vi.fn().mockResolvedValue(false),
   mockVerifyWorkspaceMembership: vi.fn().mockResolvedValue('member'),
+  mockGetWorkspaceMembershipAccess: vi.fn().mockResolvedValue({
+    exists: true,
+    hasAccess: true,
+    permission: 'member',
+    canWrite: false,
+  }),
 }
 
 /**
@@ -46,4 +52,5 @@ export const workflowsApiUtilsMock = {
   createErrorResponse: workflowsApiUtilsMockFns.mockCreateErrorResponse,
   checkNeedsRedeployment: workflowsApiUtilsMockFns.mockCheckNeedsRedeployment,
   verifyWorkspaceMembership: workflowsApiUtilsMockFns.mockVerifyWorkspaceMembership,
+  getWorkspaceMembershipAccess: workflowsApiUtilsMockFns.mockGetWorkspaceMembershipAccess,
 }
