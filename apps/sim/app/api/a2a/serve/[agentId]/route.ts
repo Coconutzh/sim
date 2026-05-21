@@ -1,6 +1,6 @@
 import type { Artifact, Message, PushNotificationConfig, TaskState } from '@a2a-js/sdk'
 import { db } from '@sim/db'
-import { a2aAgent, a2aPushNotificationConfig, a2aTask, workflow } from '@sim/db/schema'
+import { a2aAgent, a2aPushNotificationConfig, a2aTask, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
@@ -114,8 +114,11 @@ export const GET = withRouteHandler(
           skills: a2aAgent.skills,
           authentication: a2aAgent.authentication,
           isPublished: a2aAgent.isPublished,
+          workspaceId: a2aAgent.workspaceId,
+          workspaceMode: workspace.workspaceMode,
         })
         .from(a2aAgent)
+        .innerJoin(workspace, eq(a2aAgent.workspaceId, workspace.id))
         .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
         .limit(1)
 
@@ -125,6 +128,18 @@ export const GET = withRouteHandler(
 
       if (!agent.isPublished) {
         return NextResponse.json({ error: 'Agent not published' }, { status: 404 })
+      }
+
+      if (agent.workspaceMode === 'personal') {
+        const auth = await checkHybridAuth(_request, { requireWorkflowId: false })
+        if (!auth.success || !auth.userId) {
+          return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+        }
+
+        const workspaceAccess = await checkWorkspaceAccess(agent.workspaceId, auth.userId)
+        if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+          return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+        }
       }
 
       const baseUrl = getBaseUrl()

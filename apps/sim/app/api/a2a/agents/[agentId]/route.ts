@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { a2aAgent, workflow } from '@sim/db/schema'
+import { a2aAgent, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -38,9 +38,14 @@ export const GET = withRouteHandler(
         .select({
           agent: a2aAgent,
           workflow: workflow,
+          workspace: {
+            id: workspace.id,
+            workspaceMode: workspace.workspaceMode,
+          },
         })
         .from(a2aAgent)
         .innerJoin(workflow, and(eq(a2aAgent.workflowId, workflow.id), isNull(workflow.archivedAt)))
+        .innerJoin(workspace, eq(a2aAgent.workspaceId, workspace.id))
         .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
         .limit(1)
 
@@ -48,7 +53,19 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
       }
 
-      if (!agent.agent.isPublished) {
+      const personalWorkspace = agent.workspace.workspaceMode === 'personal'
+
+      if (personalWorkspace) {
+        const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+        if (!auth.success || !auth.userId) {
+          return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+        }
+
+        const workspaceAccess = await checkWorkspaceAccess(agent.agent.workspaceId, auth.userId)
+        if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+          return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+        }
+      } else if (!agent.agent.isPublished) {
         const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
         if (!auth.success || !auth.userId) {
           return NextResponse.json({ error: 'Agent not published' }, { status: 404 })

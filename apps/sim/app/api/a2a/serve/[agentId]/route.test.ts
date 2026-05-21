@@ -13,13 +13,20 @@ const { mockDbSelect, mockCheckHybridAuth, mockCheckWorkspaceAccess } = vi.hoist
 function createSelectChain<T>(result: T) {
   const chain: Record<string, unknown> = {}
   ;(chain as any).from = vi.fn(() => chain)
+  ;(chain as any).innerJoin = vi.fn(() => chain)
   ;(chain as any).where = vi.fn(() => chain)
   ;(chain as any).limit = vi.fn(() => Promise.resolve(result))
   return chain
 }
 
 vi.mock('@sim/db', () => ({ db: { select: mockDbSelect } }))
-vi.mock('@sim/db/schema', () => ({ a2aAgent: { id: 'id', archivedAt: 'archivedAt' }, a2aPushNotificationConfig: {}, a2aTask: { $inferSelect: {} }, workflow: {} }))
+vi.mock('@sim/db/schema', () => ({
+  a2aAgent: { id: 'id', archivedAt: 'archivedAt', workspaceId: 'workspaceId' },
+  a2aPushNotificationConfig: {},
+  a2aTask: { $inferSelect: {} },
+  workflow: {},
+  workspace: { id: 'id', workspaceMode: 'workspaceMode' },
+}))
 vi.mock('@/lib/auth/hybrid', () => ({
   AuthType: { API_KEY: 'api_key' },
   checkHybridAuth: mockCheckHybridAuth,
@@ -64,6 +71,7 @@ vi.mock('@/ee/whitelabeling', () => ({ getBrandConfig: vi.fn(() => ({ name: 'Sim
 vi.mock('@sim/utils/id', () => ({ generateId: vi.fn(() => 'generated-id') }))
 
 import { POST } from '@/app/api/a2a/serve/[agentId]/route'
+import { GET } from '@/app/api/a2a/serve/[agentId]/route'
 
 describe('/api/a2a/serve/[agentId]', () => {
   beforeEach(() => {
@@ -75,6 +83,7 @@ describe('/api/a2a/serve/[agentId]', () => {
           name: 'Agent',
           workflowId: 'wf-1',
           workspaceId: 'ws-hidden',
+          workspaceMode: 'personal',
           isPublished: true,
           capabilities: {},
           authentication: { schemes: ['bearer'] },
@@ -113,5 +122,23 @@ describe('/api/a2a/serve/[agentId]', () => {
       id: null,
       error: { code: 'agent_unavailable', message: 'Agent not found' },
     })
+  })
+
+  it('hides foreign personal workspace published agent cards behind 404', async () => {
+    mockCheckHybridAuth.mockResolvedValueOnce({
+      success: false,
+      userId: null,
+      authType: null,
+      apiKeyType: null,
+      workspaceId: null,
+    })
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/a2a/serve/agent-1'),
+      { params: Promise.resolve({ agentId: 'agent-1' }) }
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Agent not found' })
   })
 })
