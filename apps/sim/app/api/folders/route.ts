@@ -10,7 +10,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersAPI')
 
@@ -26,7 +26,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     if (!parsed.success) return parsed.response
     const { workspaceId, scope } = parsed.data.query
 
-    // Check if user has workspace permissions
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     const workspacePermission = await getUserEntityPermissions(
       session.user.id,
       'workspace',
@@ -34,7 +38,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     )
 
     if (!workspacePermission) {
-      return NextResponse.json({ error: 'Access denied to this workspace' }, { status: 403 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const archivedFilter =
@@ -73,6 +77,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       color,
       sortOrder: providedSortOrder,
     } = parsed.data.body
+
+    const access = await checkWorkspaceAccess(workspaceId, session.user.id)
+    if (!access.exists || !access.hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
 
     const workspacePermission = await getUserEntityPermissions(
       session.user.id,

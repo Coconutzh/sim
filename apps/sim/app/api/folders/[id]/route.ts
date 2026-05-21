@@ -11,7 +11,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { performDeleteFolder } from '@/lib/workflows/orchestration'
 import { checkForCircularReference } from '@/lib/workflows/utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersIDAPI')
 
@@ -52,7 +52,11 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
       }
 
-      // Check if user has write permissions for the workspace
+      const access = await checkWorkspaceAccess(existingFolder.workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
+        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+      }
+
       const workspacePermission = await getUserEntityPermissions(
         session.user.id,
         'workspace',
@@ -144,6 +148,11 @@ export const DELETE = withRouteHandler(
         .then((rows) => rows[0])
 
       if (!existingFolder) {
+        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+      }
+
+      const access = await checkWorkspaceAccess(existingFolder.workspaceId, session.user.id)
+      if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
       }
 

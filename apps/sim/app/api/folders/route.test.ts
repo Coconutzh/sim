@@ -29,6 +29,7 @@ const { mockLogger } = vi.hoisted(() => {
 })
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 
 vi.mock('@sim/audit', () => auditMock)
 vi.mock('drizzle-orm', () => ({
@@ -157,6 +158,12 @@ describe('Folders API Route', () => {
     mockValues.mockReturnValue({ returning: mockReturning })
     mockReturning.mockReturnValue([mockFolders[0]])
 
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'workspace-123', ownerId: 'user-123', workspaceMode: 'organization' },
+    })
     mockGetUserEntityPermissions.mockResolvedValue('admin')
   })
 
@@ -222,7 +229,7 @@ describe('Folders API Route', () => {
       expect(data.details?.[0]?.message).toBe('Workspace ID is required')
     })
 
-    it('should return 403 when user has no workspace permissions', async () => {
+    it('should return 404 when user has no workspace permissions', async () => {
       mockAuthenticatedUser()
       mockGetUserEntityPermissions.mockResolvedValue(null)
 
@@ -235,10 +242,35 @@ describe('Folders API Route', () => {
 
       const response = await GET(mockRequest)
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(404)
 
       const data = await response.json()
-      expect(data).toHaveProperty('error', 'Access denied to this workspace')
+      expect(data).toHaveProperty('error', 'Workspace not found')
+    })
+
+    it('should hide foreign personal workspaces when stale permission rows no longer grant access', async () => {
+      mockAuthenticatedUser()
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'workspace-123', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const mockRequest = createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/folders?workspaceId=workspace-123'
+      )
+
+      const response = await GET(mockRequest)
+
+      expect(response.status).toBe(404)
+
+      const data = await response.json()
+      expect(data).toHaveProperty('error', 'Workspace not found')
+      expect(mockSelect).not.toHaveBeenCalled()
     })
 
     it('should return 403 when user has only read permissions', async () => {
@@ -403,6 +435,29 @@ describe('Folders API Route', () => {
 
       const data = await response.json()
       expect(data).toHaveProperty('error', 'Write or Admin access required to create folders')
+    })
+
+    it('should return 404 when stale personal rows no longer grant folder creation visibility', async () => {
+      mockAuthenticatedUser()
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'workspace-123', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const req = createMockRequest('POST', {
+        name: 'Test Folder',
+        workspaceId: 'workspace-123',
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(404)
+
+      const data = await response.json()
+      expect(data).toHaveProperty('error', 'Workspace not found')
+      expect(mockInsert).not.toHaveBeenCalled()
     })
 
     it('should allow folder creation for write permissions', async () => {

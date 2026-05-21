@@ -36,6 +36,7 @@ const { mockLogger, mockDbRef } = vi.hoisted(() => {
 const mockPerformDeleteFolder = workflowsOrchestrationMockFns.mockPerformDeleteFolder
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
+const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
 
 vi.mock('@sim/audit', () => auditMock)
 vi.mock('@sim/logger', () => ({
@@ -154,6 +155,12 @@ describe('Individual Folder API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'workspace-123', ownerId: 'user-123', workspaceMode: 'organization' },
+    })
     mockGetUserEntityPermissions.mockResolvedValue('admin')
     mockDbRef.current = createFolderDbMock()
     mockPerformDeleteFolder.mockResolvedValue({
@@ -229,6 +236,28 @@ describe('Individual Folder API Route', () => {
 
       const data = await response.json()
       expect(data).toHaveProperty('error', 'Write access required to update folders')
+    })
+
+    it('should return 404 when stale personal rows no longer grant folder visibility', async () => {
+      mockAuthenticatedUser()
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'workspace-123', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const req = createMockRequest('PUT', {
+        name: 'Updated Folder',
+      })
+      const params = Promise.resolve({ id: 'folder-1' })
+
+      const response = await PUT(req, { params })
+
+      expect(response.status).toBe(404)
+
+      const data = await response.json()
+      expect(data).toHaveProperty('error', 'Folder not found')
     })
 
     it('should allow folder update for write permissions', async () => {
@@ -484,6 +513,27 @@ describe('Individual Folder API Route', () => {
 
       const data = await response.json()
       expect(data).toHaveProperty('error', 'Admin access required to delete folders')
+    })
+
+    it('should return 404 when stale personal rows no longer grant folder delete visibility', async () => {
+      mockAuthenticatedUser()
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: { id: 'workspace-123', ownerId: 'owner-2', workspaceMode: 'personal' },
+      })
+
+      const req = createMockRequest('DELETE')
+      const params = Promise.resolve({ id: 'folder-1' })
+
+      const response = await DELETE(req, { params })
+
+      expect(response.status).toBe(404)
+
+      const data = await response.json()
+      expect(data).toHaveProperty('error', 'Folder not found')
+      expect(mockPerformDeleteFolder).not.toHaveBeenCalled()
     })
 
     it('should allow folder deletion for admin permissions', async () => {
