@@ -8,7 +8,10 @@ import { BLOB_CHAT_CONFIG, S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
@@ -17,6 +20,16 @@ export interface AuthorizationResult {
   granted: boolean
   reason: string
   workspaceId?: string
+}
+
+async function hasVisibleWorkspacePermission(userId: string, workspaceId: string): Promise<boolean> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return false
+  }
+
+  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+  return permission !== null
 }
 
 /**
@@ -188,12 +201,11 @@ async function verifyWorkspaceFileAccess(
     // Priority 1: Check database (most reliable, works for both local and cloud)
     const workspaceFileRecord = await lookupWorkspaceFileByKey(cloudKey)
     if (workspaceFileRecord) {
-      const permission = await getUserEntityPermissions(
+      const hasPermission = await hasVisibleWorkspacePermission(
         userId,
-        'workspace',
         workspaceFileRecord.workspaceId
       )
-      if (permission !== null) {
+      if (hasPermission) {
         logger.debug('Workspace file access granted (database lookup)', {
           userId,
           workspaceId: workspaceFileRecord.workspaceId,
@@ -215,8 +227,8 @@ async function verifyWorkspaceFileAccess(
     const workspaceId = metadata.workspaceId
 
     if (workspaceId) {
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (permission !== null) {
+      const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+      if (hasPermission) {
         logger.debug('Workspace file access granted (metadata)', {
           userId,
           workspaceId,
@@ -275,8 +287,8 @@ async function verifyExecutionFileAccess(
     return false
   }
 
-  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-  if (permission === null) {
+  const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+  if (!hasPermission) {
     logger.warn('User does not have workspace access for execution file', {
       userId,
       workspaceId,
@@ -396,8 +408,8 @@ async function verifyKBFileAccess(
         continue
       }
 
-      const permission = await getUserEntityPermissions(userId, 'workspace', doc.workspaceId)
-      if (permission !== null) {
+      const hasPermission = await hasVisibleWorkspacePermission(userId, doc.workspaceId)
+      if (hasPermission) {
         logger.debug('KB file access granted (active document lookup)', {
           userId,
           workspaceId: doc.workspaceId,
@@ -449,8 +461,8 @@ async function verifyChatFileAccess(
       return false
     }
 
-    const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-    if (permission === null) {
+    const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+    if (!hasPermission) {
       logger.warn('User does not have workspace access for chat file', {
         userId,
         workspaceId,
@@ -483,12 +495,11 @@ async function verifyRegularFileAccess(
     // This handles legacy files that might not have metadata
     const workspaceFileRecord = await lookupWorkspaceFileByKey(cloudKey)
     if (workspaceFileRecord) {
-      const permission = await getUserEntityPermissions(
+      const hasPermission = await hasVisibleWorkspacePermission(
         userId,
-        'workspace',
         workspaceFileRecord.workspaceId
       )
-      if (permission !== null) {
+      if (hasPermission) {
         logger.debug('Regular file access granted (workspace file from database)', {
           userId,
           workspaceId: workspaceFileRecord.workspaceId,
@@ -522,8 +533,8 @@ async function verifyRegularFileAccess(
 
     // If file has workspaceId, verify workspace membership
     if (workspaceId) {
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (permission !== null) {
+      const hasPermission = await hasVisibleWorkspacePermission(userId, workspaceId)
+      if (hasPermission) {
         logger.debug('Regular file access granted (workspace membership)', {
           userId,
           workspaceId,
