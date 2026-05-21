@@ -4,7 +4,10 @@ import type { NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { createMcpErrorResponse } from '@/lib/mcp/utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('McpAuthMiddleware')
 
@@ -82,6 +85,18 @@ async function validateMcpAuth(
           new Error('workspaceId is required'),
           'Missing required parameter',
           400
+        ),
+      }
+    }
+
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
+    if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+      return {
+        success: false,
+        errorResponse: createMcpErrorResponse(
+          new Error('Workspace not found'),
+          'Workspace not found',
+          404
         ),
       }
     }
