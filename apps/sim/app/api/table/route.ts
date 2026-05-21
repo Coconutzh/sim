@@ -13,29 +13,10 @@ import {
   type TableSchema,
   type TableScope,
 } from '@/lib/table'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { normalizeColumn } from '@/app/api/table/utils'
 
 const logger = createLogger('TableAPI')
-
-interface WorkspaceAccessResult {
-  hasAccess: boolean
-  canWrite: boolean
-}
-
-async function checkWorkspaceAccess(
-  workspaceId: string,
-  userId: string
-): Promise<WorkspaceAccessResult> {
-  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-
-  if (permission === null) {
-    return { hasAccess: false, canWrite: false }
-  }
-
-  const canWrite = permission === 'admin' || permission === 'write'
-  return { hasAccess: true, canWrite }
-}
 
 /** POST /api/table - Creates a new user-defined table. */
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -64,8 +45,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       authResult.userId
     )
 
-    if (!hasAccess || !canWrite) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
+    if (!canWrite) {
+      return NextResponse.json({ error: 'Write access required' }, { status: 403 })
     }
 
     const planLimits = await getWorkspaceTableLimits(params.workspaceId)
@@ -175,7 +160,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const { hasAccess } = await checkWorkspaceAccess(params.workspaceId, authResult.userId)
 
     if (!hasAccess) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const tables = await listTables(params.workspaceId, { scope: params.scope as TableScope })
