@@ -97,6 +97,16 @@ export async function getWorkgroupMembership(userId: string, workgroupId: string
   return row ?? null
 }
 
+async function getWorkgroupOrganizationId(workgroupId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ organizationId: workgroup.organizationId })
+    .from(workgroup)
+    .where(eq(workgroup.id, workgroupId))
+    .limit(1)
+
+  return row?.organizationId ?? null
+}
+
 export async function assertWorkgroupMember(userId: string, workgroupId: string) {
   const membership = await getWorkgroupMembership(userId, workgroupId)
   if (!membership) {
@@ -106,10 +116,18 @@ export async function assertWorkgroupMember(userId: string, workgroupId: string)
 }
 
 export async function assertWorkgroupAdmin(userId: string, workgroupId: string) {
-  const membership = await assertWorkgroupMember(userId, workgroupId)
-  if (membership.role === 'admin') return membership
-  const orgRole = await getOrganizationRole(userId, membership.organizationId)
+  const membership = await getWorkgroupMembership(userId, workgroupId)
+  if (membership?.role === 'admin') return membership
+  const organizationId =
+    membership?.organizationId ?? (await getWorkgroupOrganizationId(workgroupId))
+  if (!organizationId) {
+    throw new Error('Workgroup membership required')
+  }
+  const orgRole = await getOrganizationRole(userId, organizationId)
   if (orgRole === 'owner' || orgRole === 'admin') return membership
+  if (!membership) {
+    throw new Error('Workgroup membership required')
+  }
   throw new Error('Workgroup admin access required')
 }
 
