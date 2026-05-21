@@ -19,7 +19,7 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import {
   createErrorResponse,
   createOptionsResponse,
@@ -37,6 +37,18 @@ function validateFileExtension(filename: string): boolean {
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('FilesUploadAPI')
+
+async function ensureVisibleWorkspace(
+  workspaceId: string,
+  userId: string,
+  notFoundMessage: string
+): Promise<NextResponse | null> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: notFoundMessage }, { status: 404 })
+  }
+  return null
+}
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -130,6 +142,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         if (workspaceId) {
+          const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+            workspaceId,
+            session.user.id,
+            'Workspace not found'
+          )
+          if (hiddenWorkspaceResponse) {
+            return hiddenWorkspaceResponse
+          }
+
           const permission = await getUserEntityPermissions(
             session.user.id,
             'workspace',
@@ -197,6 +218,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         if (!workspaceId) {
           throw new InvalidRequestError('Workspace context requires workspaceId parameter')
         }
+        const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+          workspaceId,
+          session.user.id,
+          'Workspace not found'
+        )
+        if (hiddenWorkspaceResponse) {
+          return hiddenWorkspaceResponse
+        }
         const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
         if (permission !== 'admin' && permission !== 'write') {
           return NextResponse.json(
@@ -246,6 +275,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       if (context === 'mothership') {
         if (!workspaceId) {
           throw new InvalidRequestError('Mothership context requires workspaceId parameter')
+        }
+
+        const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+          workspaceId,
+          session.user.id,
+          'Workspace not found'
+        )
+        if (hiddenWorkspaceResponse) {
+          return hiddenWorkspaceResponse
         }
 
         logger.info(`Uploading mothership file: ${originalName}`)
@@ -312,6 +350,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           if (!workspaceId) {
             throw new InvalidRequestError('workspace-logos context requires workspaceId parameter')
           }
+          const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+            workspaceId,
+            session.user.id,
+            'Workspace not found'
+          )
+          if (hiddenWorkspaceResponse) {
+            return hiddenWorkspaceResponse
+          }
           const permission = await getUserEntityPermissions(
             session.user.id,
             'workspace',
@@ -326,6 +372,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         if (context === 'chat' && workspaceId) {
+          const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+            workspaceId,
+            session.user.id,
+            'Workspace not found'
+          )
+          if (hiddenWorkspaceResponse) {
+            return hiddenWorkspaceResponse
+          }
+
           const permission = await getUserEntityPermissions(
             session.user.id,
             'workspace',

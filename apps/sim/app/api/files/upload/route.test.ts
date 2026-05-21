@@ -131,6 +131,16 @@ function setupFileApiMocks(
   mocks.mockVerifyCopilotFileAccess.mockResolvedValue(true)
 
   permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+  permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+    exists: true,
+    hasAccess: true,
+    canWrite: true,
+    workspace: {
+      id: 'test-workspace-id',
+      ownerId: 'test-user-id',
+      workspaceMode: 'organization',
+    },
+  })
 
   mocks.mockUploadWorkspaceFile.mockResolvedValue({
     id: 'test-file-id',
@@ -306,6 +316,38 @@ describe('File Upload API Route', () => {
     expect(response.status).toBe(413)
     expect(data).toHaveProperty('error')
     expect(typeof data.error).toBe('string')
+  })
+
+  it('should return 404 when stale personal rows no longer grant workspace upload visibility', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'test-workspace-id',
+        ownerId: 'owner-2',
+        workspaceMode: 'personal',
+      },
+    })
+
+    const mockFile = createMockFile()
+    const formData = createMockFormData([mockFile], 'workspace')
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
   it('should handle CORS preflight requests', async () => {

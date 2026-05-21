@@ -26,6 +26,7 @@ const {
   mockGenerateWorkspaceFileKey,
   mockGenerateExecutionFileKey,
   mockInsertFileMetadata,
+  mockCheckWorkspaceAccess,
 } = vi.hoisted(() => ({
   mockVerifyFileAccess: vi.fn().mockResolvedValue(true),
   mockVerifyWorkspaceFileAccess: vi.fn().mockResolvedValue(true),
@@ -52,6 +53,12 @@ const {
       `execution/${ctx.workspaceId}/${ctx.workflowId}/${ctx.executionId}/${fileName}`
   ),
   mockInsertFileMetadata: vi.fn().mockResolvedValue({ id: 'wf_test' }),
+  mockCheckWorkspaceAccess: vi.fn().mockResolvedValue({
+    exists: true,
+    hasAccess: true,
+    canWrite: true,
+    workspace: { id: 'workspace-1', ownerId: 'test-user-id', workspaceMode: 'organization' },
+  }),
 }))
 
 vi.mock('@/app/api/files/authorization', () => ({
@@ -80,6 +87,7 @@ vi.mock('@/lib/uploads/utils/validation', () => ({
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: mockCheckWorkspaceAccess,
   getUserEntityPermissions: mockGetUserEntityPermissions,
 }))
 
@@ -173,6 +181,12 @@ function setupFileApiMocks(
   mockValidateFileType.mockReturnValue(null)
   mockValidateAttachmentFileType.mockReturnValue(null)
   mockGetUserEntityPermissions.mockResolvedValue('admin')
+  mockCheckWorkspaceAccess.mockResolvedValue({
+    exists: true,
+    hasAccess: true,
+    canWrite: true,
+    workspace: { id: 'workspace-1', ownerId: 'test-user-id', workspaceMode: 'organization' },
+  })
 
   mockGetStorageProviderUploads.mockReturnValue(
     storageProvider === 'blob' ? 'Azure Blob' : storageProvider === 's3' ? 'S3' : 'Local'
@@ -222,6 +236,42 @@ describe('/api/files/presigned', () => {
       expect(data.fileInfo.name).toBe('test.txt')
       expect(data.fileInfo.size).toBe(1024)
       expect(data.fileInfo.type).toBe('text/plain')
+    })
+
+    it('should return 404 for stale foreign personal workspaces on mothership uploads', async () => {
+      setupFileApiMocks({
+        cloudEnabled: true,
+        storageProvider: 's3',
+      })
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace-hidden',
+          ownerId: 'owner-2',
+          workspaceMode: 'personal',
+        },
+      })
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/files/presigned?type=mothership&workspaceId=workspace-hidden',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: 'test.txt',
+            contentType: 'text/plain',
+            fileSize: 1024,
+          }),
+        }
+      )
+
+      const response = await POST(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
     })
 
     it('should return error when fileName is missing', async () => {

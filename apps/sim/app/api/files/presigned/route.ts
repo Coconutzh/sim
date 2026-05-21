@@ -13,7 +13,7 @@ import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/
 import { insertFileMetadata } from '@/lib/uploads/server/metadata'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse } from '@/app/api/files/utils'
 
 const logger = createLogger('PresignedUploadAPI')
@@ -43,6 +43,18 @@ class ValidationError extends PresignedUrlError {
   constructor(message: string) {
     super(message, 'VALIDATION_ERROR', 400)
   }
+}
+
+async function ensureVisibleWorkspace(
+  workspaceId: string,
+  userId: string,
+  notFoundMessage: string
+): Promise<NextResponse | null> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: notFoundMessage }, { status: 404 })
+  }
+  return null
 }
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -134,6 +146,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         throw new ValidationError('workspaceId query parameter is required for mothership uploads')
       }
 
+      const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+        workspaceId,
+        sessionUserId,
+        'Workspace not found'
+      )
+      if (hiddenWorkspaceResponse) {
+        return hiddenWorkspaceResponse
+      }
+
       const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
       if (permission !== 'write' && permission !== 'admin') {
         return NextResponse.json(
@@ -178,6 +199,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+        workspaceId,
+        sessionUserId,
+        'Workspace not found'
+      )
+      if (hiddenWorkspaceResponse) {
+        return hiddenWorkspaceResponse
+      }
+
       const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
       if (permission !== 'write' && permission !== 'admin') {
         return NextResponse.json(
@@ -218,6 +248,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         throw new ValidationError(
           'workspaceId query parameter is required for workspace-logos uploads'
         )
+      }
+
+      const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+        workspaceId,
+        sessionUserId,
+        'Workspace not found'
+      )
+      if (hiddenWorkspaceResponse) {
+        return hiddenWorkspaceResponse
       }
 
       const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
