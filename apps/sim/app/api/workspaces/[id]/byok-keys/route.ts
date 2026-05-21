@@ -42,12 +42,12 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (!permission) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const byokKeys = await db
@@ -120,7 +120,7 @@ export const POST = withRouteHandler(
       const userId = session.user.id
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -259,7 +259,7 @@ export const DELETE = withRouteHandler(
       const userId = session.user.id
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
