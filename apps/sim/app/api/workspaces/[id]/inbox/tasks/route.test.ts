@@ -128,7 +128,26 @@ describe('GET /api/workspaces/[id]/inbox/tasks', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Not found' })
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for hidden personal workspaces before checking plan access', async () => {
+    mockHasInboxAccess.mockResolvedValueOnce(false)
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })

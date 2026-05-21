@@ -23,19 +23,19 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const [hasAccess, access, permission] = await Promise.all([
-      hasInboxAccess(session.user.id),
+    const [access, hasAccess, permission] = await Promise.all([
       checkWorkspaceAccess(workspaceId, session.user.id),
+      hasInboxAccess(session.user.id),
       getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
     ])
-    if (!hasAccess) {
-      return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
-    }
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
     if (!permission) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
     }
 
     const queryResult = inboxTasksQuerySchema.safeParse(

@@ -42,7 +42,7 @@ vi.mock('@/lib/billing/core/subscription', () => ({
   hasInboxAccess: mockHasInboxAccess,
 }))
 
-import { GET } from './route'
+import { DELETE, GET, POST } from './route'
 
 describe('GET /api/workspaces/[id]/inbox/senders', () => {
   beforeEach(() => {
@@ -117,7 +117,59 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Not found' })
+    expect(data).toEqual({ error: 'Workspace not found' })
     expect(permissionsMockFns.mockGetUsersWithPermissions).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for hidden personal workspaces before checking plan access', async () => {
+    mockHasInboxAccess.mockResolvedValueOnce(false)
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+  })
+
+  it('returns 404 for hidden personal workspaces when adding senders', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await POST(createMockRequest('POST', { email: 'x@example.com' }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+  })
+
+  it('returns 404 for hidden personal workspaces when deleting senders', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const response = await DELETE(createMockRequest('DELETE', { senderId: 'sender-1' }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
   })
 })
