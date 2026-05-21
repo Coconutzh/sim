@@ -8,14 +8,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   checkWorkspaceAccessMock,
   deleteWhereMock,
+  getSessionMock,
   hasWorkspaceAdminAccessMock,
   isWorkspaceOnEnterprisePlanMock,
+  parseRequestMock,
   selectGroupLimitMock,
 } = vi.hoisted(() => ({
   checkWorkspaceAccessMock: vi.fn(),
   deleteWhereMock: vi.fn().mockResolvedValue(undefined),
+  getSessionMock: vi.fn(),
   hasWorkspaceAdminAccessMock: vi.fn(),
   isWorkspaceOnEnterprisePlanMock: vi.fn(),
+  parseRequestMock: vi.fn(),
   selectGroupLimitMock: vi.fn(),
 }))
 
@@ -76,13 +80,11 @@ vi.mock('drizzle-orm', () => ({
 
 vi.mock('@/lib/api/server', () => ({
   getValidationErrorMessage: vi.fn(() => 'invalid'),
-  parseRequest: vi.fn(),
+  parseRequest: parseRequestMock,
 }))
 
 vi.mock('@/lib/auth', () => ({
-  getSession: vi.fn().mockResolvedValue({
-    user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
-  }),
+  getSession: getSessionMock,
 }))
 
 vi.mock('@/lib/billing', () => ({
@@ -98,11 +100,14 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   hasWorkspaceAdminAccess: hasWorkspaceAdminAccessMock,
 }))
 
-import { DELETE } from './route'
+import { DELETE, GET, PUT } from '@/app/api/workspaces/[id]/permission-groups/[groupId]/route'
 
 describe('DELETE /api/workspaces/[id]/permission-groups/[groupId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getSessionMock.mockResolvedValue({
+      user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin' },
+    })
     checkWorkspaceAccessMock.mockResolvedValue({
       exists: true,
       hasAccess: true,
@@ -114,6 +119,13 @@ describe('DELETE /api/workspaces/[id]/permission-groups/[groupId]', () => {
     selectGroupLimitMock.mockReturnValue([
       { id: 'group-1', workspaceId: 'ws-1', name: 'Team Members' },
     ])
+    parseRequestMock.mockResolvedValue({
+      success: true,
+      data: {
+        params: { id: 'ws-1', groupId: 'group-1' },
+        body: { name: 'Team Members' },
+      },
+    })
   })
 
   it('rejects permission-group deletion for personal workspaces before admin checks', async () => {
@@ -150,5 +162,47 @@ describe('DELETE /api/workspaces/[id]/permission-groups/[groupId]', () => {
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workspace not found' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates detail reads before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates updates before validating route params or body', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await PUT(createMockRequest('PUT', {}), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates deletes before validating route params', async () => {
+    getSessionMock.mockResolvedValue(null)
+
+    const response = await DELETE(createMockRequest('DELETE'), {
+      params: Promise.resolve({ id: '', groupId: '' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toEqual({ error: 'Unauthorized' })
+    expect(parseRequestMock).not.toHaveBeenCalled()
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
   })
 })

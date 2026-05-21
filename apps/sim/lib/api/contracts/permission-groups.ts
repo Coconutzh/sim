@@ -164,6 +164,18 @@ export const updatePermissionGroupContract = defineRouteContract({
   },
 })
 
+export const getPermissionGroupContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/permission-groups/[groupId]',
+  params: permissionGroupDetailParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      permissionGroup: permissionGroupWriteSchema,
+    }),
+  },
+})
+
 export const deletePermissionGroupContract = defineRouteContract({
   method: 'DELETE',
   path: '/api/workspaces/[id]/permission-groups/[groupId]',

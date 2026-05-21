@@ -4,7 +4,11 @@ import { permissionGroup, permissionGroupMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updatePermissionGroupContract } from '@/lib/api/contracts/permission-groups'
+import {
+  deletePermissionGroupContract,
+  getPermissionGroupContract,
+  updatePermissionGroupContract,
+} from '@/lib/api/contracts/permission-groups'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing'
@@ -38,13 +42,16 @@ async function loadGroupInWorkspace(groupId: string, workspaceId: string) {
 }
 
 export const GET = withRouteHandler(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; groupId: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await params
+    const parsed = await parseRequest(getPermissionGroupContract, req, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId, groupId: id } = parsed.data.params
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
@@ -87,9 +94,16 @@ export const PUT = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await context.params
-
     try {
+      const parsed = await parseRequest(updatePermissionGroupContract, req, context, {
+        validationErrorResponse: (error) =>
+          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId, groupId: id } = parsed.data.params
+      const updates = parsed.data.body
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -118,13 +132,6 @@ export const PUT = withRouteHandler(
       if (!group) {
         return NextResponse.json({ error: 'Permission group not found' }, { status: 404 })
       }
-
-      const parsed = await parseRequest(updatePermissionGroupContract, req, context, {
-        validationErrorResponse: (error) =>
-          NextResponse.json({ error: getValidationErrorMessage(error) }, { status: 400 }),
-      })
-      if (!parsed.success) return parsed.response
-      const updates = parsed.data.body
 
       if (updates.name) {
         const existingGroup = await db
@@ -219,15 +226,18 @@ export const PUT = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; groupId: string }> }) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id: workspaceId, groupId: id } = await params
-
     try {
+      const parsed = await parseRequest(deletePermissionGroupContract, req, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: workspaceId, groupId: id } = parsed.data.params
+
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
