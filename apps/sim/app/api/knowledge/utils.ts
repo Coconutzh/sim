@@ -1,7 +1,10 @@
 import { db } from '@sim/db'
 import { document, embedding, knowledgeBase } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 export interface KnowledgeBaseData {
   id: string
@@ -178,7 +181,15 @@ export async function checkKnowledgeBaseAccess(
   const kbData = kb[0]
 
   if (kbData.workspaceId) {
-    // Workspace KB: use workspace permissions only
+    const workspaceAccess = await checkWorkspaceAccess(kbData.workspaceId, userId)
+    if (!workspaceAccess.exists) {
+      return { hasAccess: false, notFound: true }
+    }
+    if (!workspaceAccess.hasAccess) {
+      return { hasAccess: false, notFound: workspaceAccess.workspace?.workspaceMode === 'personal' }
+    }
+
+    // Workspace KB: use workspace permissions only after visibility is confirmed.
     const userPermission = await getUserEntityPermissions(userId, 'workspace', kbData.workspaceId)
     if (userPermission !== null) {
       return { hasAccess: true, knowledgeBase: kbData }
@@ -223,7 +234,15 @@ export async function checkKnowledgeBaseWriteAccess(
   const kbData = kb[0]
 
   if (kbData.workspaceId) {
-    // Workspace KB: use workspace permissions only
+    const workspaceAccess = await checkWorkspaceAccess(kbData.workspaceId, userId)
+    if (!workspaceAccess.exists) {
+      return { hasAccess: false, notFound: true }
+    }
+    if (!workspaceAccess.hasAccess) {
+      return { hasAccess: false, notFound: workspaceAccess.workspace?.workspaceMode === 'personal' }
+    }
+
+    // Workspace KB: use workspace permissions only after visibility is confirmed.
     const userPermission = await getUserEntityPermissions(userId, 'workspace', kbData.workspaceId)
     if (userPermission === 'write' || userPermission === 'admin') {
       return { hasAccess: true, knowledgeBase: kbData }

@@ -26,6 +26,16 @@ vi.mock('@/lib/workspaces/utils', () => ({
   getWorkspaceBilledAccountUserId: vi.fn().mockResolvedValue('user1'),
 }))
 
+const { mockCheckWorkspaceAccess, mockGetUserEntityPermissions } = vi.hoisted(() => ({
+  mockCheckWorkspaceAccess: vi.fn(),
+  mockGetUserEntityPermissions: vi.fn(),
+}))
+
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: mockCheckWorkspaceAccess,
+  getUserEntityPermissions: mockGetUserEntityPermissions,
+}))
+
 vi.mock('@/lib/knowledge/documents/document-processor', () => ({
   processDocument: vi.fn().mockResolvedValue({
     chunks: [
@@ -208,6 +218,21 @@ describe('Knowledge Utils', () => {
     dbOps.updatePayloads.length = 0
     resetDatasets()
     vi.clearAllMocks()
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace1',
+        name: 'Workspace 1',
+        ownerId: 'user1',
+        organizationId: null,
+        workspaceMode: 'team',
+        billedAccountUserId: 'user1',
+        archivedAt: null,
+      },
+    })
+    mockGetUserEntityPermissions.mockResolvedValue('admin')
   })
 
   describe('processDocumentAsync', () => {
@@ -258,6 +283,29 @@ describe('Knowledge Utils', () => {
       expect(result.hasAccess).toBe(false)
       expect('notFound' in result && result.notFound).toBe(true)
     })
+
+    it('should hide foreign personal workspace knowledge bases as not found', async () => {
+      kbRows.push({ id: 'kb1', userId: 'owner', workspaceId: 'workspace1' })
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace1',
+          name: 'Workspace 1',
+          ownerId: 'owner',
+          organizationId: null,
+          workspaceMode: 'personal',
+          billedAccountUserId: 'owner',
+          archivedAt: null,
+        },
+      })
+
+      const result = await checkKnowledgeBaseAccess('kb1', 'intruder')
+
+      expect(result).toEqual({ hasAccess: false, notFound: true })
+      expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    })
   })
 
   describe('checkDocumentAccess', () => {
@@ -269,6 +317,32 @@ describe('Knowledge Utils', () => {
       if ('reason' in result) {
         expect(result.reason).toBe('Unauthorized knowledge base access')
       }
+    })
+
+    it('should propagate notFound for hidden personal workspace knowledge bases', async () => {
+      kbRows.push({ id: 'kb1', userId: 'owner', workspaceId: 'workspace1' })
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: false,
+        canWrite: false,
+        workspace: {
+          id: 'workspace1',
+          name: 'Workspace 1',
+          ownerId: 'owner',
+          organizationId: null,
+          workspaceMode: 'personal',
+          billedAccountUserId: 'owner',
+          archivedAt: null,
+        },
+      })
+
+      const result = await checkDocumentAccess('kb1', 'doc1', 'intruder')
+
+      expect(result).toEqual({
+        hasAccess: false,
+        notFound: true,
+        reason: 'Knowledge base not found',
+      })
     })
   })
 
