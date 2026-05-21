@@ -8,7 +8,7 @@ import { upsertWorkspaceCredentialMemberContract } from '@/lib/api/contracts/cre
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CredentialMembersAPI')
 
@@ -16,17 +16,31 @@ interface RouteContext {
   params: Promise<{ id: string }>
 }
 
-async function requireWorkspaceAdminMembership(credentialId: string, userId: string) {
+async function loadCredentialAccess(credentialId: string, userId: string) {
   const [cred] = await db
     .select({ id: credential.id, workspaceId: credential.workspaceId })
     .from(credential)
     .where(eq(credential.id, credentialId))
     .limit(1)
 
-  if (!cred) return null
+  if (!cred) {
+    return { credential: null, access: null, permission: null }
+  }
+
+  const access = await checkWorkspaceAccess(cred.workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return { credential: cred, access, permission: null }
+  }
 
   const perm = await getUserEntityPermissions(userId, 'workspace', cred.workspaceId)
-  if (perm === null) return null
+  return { credential: cred, access, permission: perm }
+}
+
+async function requireWorkspaceAdminMembership(credentialId: string, userId: string) {
+  const loaded = await loadCredentialAccess(credentialId, userId)
+  if (!loaded.credential || !loaded.access?.hasAccess || loaded.permission === null) {
+    return { ok: false as const, hidden: Boolean(loaded.credential && !loaded.access?.hasAccess) }
+  }
 
   const [membership] = await db
     .select({ role: credentialMember.role, status: credentialMember.status })
@@ -37,9 +51,9 @@ async function requireWorkspaceAdminMembership(credentialId: string, userId: str
     .limit(1)
 
   if (!membership || membership.status !== 'active' || membership.role !== 'admin') {
-    return null
+    return { ok: false as const, hidden: false }
   }
-  return membership
+  return { ok: true as const, membership }
 }
 
 export const GET = withRouteHandler(async (_request: NextRequest, context: RouteContext) => {
@@ -51,23 +65,15 @@ export const GET = withRouteHandler(async (_request: NextRequest, context: Route
 
     const { id: credentialId } = await context.params
 
-    const [cred] = await db
-      .select({ id: credential.id, workspaceId: credential.workspaceId })
-      .from(credential)
-      .where(eq(credential.id, credentialId))
-      .limit(1)
+    const loaded = await loadCredentialAccess(credentialId, session.user.id)
+    const cred = loaded.credential
 
     if (!cred) {
       return NextResponse.json({ members: [] }, { status: 200 })
     }
 
-    const callerPerm = await getUserEntityPermissions(
-      session.user.id,
-      'workspace',
-      cred.workspaceId
-    )
-    if (callerPerm === null) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!loaded.access?.hasAccess || loaded.permission === null) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const members = await db
@@ -101,7 +107,10 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Route
     const { id: credentialId } = await context.params
 
     const admin = await requireWorkspaceAdminMembership(credentialId, session.user.id)
-    if (!admin) {
+    if (!admin.ok) {
+      if (admin.hidden) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -160,7 +169,10 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Rou
     }
 
     const admin = await requireWorkspaceAdminMembership(credentialId, session.user.id)
-    if (!admin) {
+    if (!admin.ok) {
+      if (admin.hidden) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 

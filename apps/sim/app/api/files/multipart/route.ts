@@ -23,7 +23,7 @@ import {
   verifyUploadToken,
 } from '@/lib/uploads/core/upload-token'
 import type { StorageConfig } from '@/lib/uploads/shared/types'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MultipartUploadAPI')
 
@@ -127,6 +127,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           return NextResponse.json({ error: 'Invalid storage context' }, { status: 400 })
         }
         const storageContext = context as StorageContext
+
+        const access = await checkWorkspaceAccess(workspaceId, userId)
+        if (!access.exists || !access.hasAccess) {
+          return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        }
 
         const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
         if (permission !== 'write' && permission !== 'admin') {

@@ -27,7 +27,7 @@ import {
   inferContextFromKey,
   isInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
 import '@/lib/uploads/core/setup.server'
@@ -349,6 +349,20 @@ async function handleExternalUrl(
     const shouldCheckWorkspace = workspaceId && !isExecutionFile
 
     if (shouldCheckWorkspace) {
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.exists || !access.hasAccess) {
+        logger.warn('User does not have active workspace visibility for file parse', {
+          userId,
+          workspaceId,
+          filename,
+        })
+        return {
+          success: false,
+          error: 'File not found',
+          filePath: url,
+        }
+      }
+
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission === null) {
         logger.warn('User does not have workspace access for file parse', {

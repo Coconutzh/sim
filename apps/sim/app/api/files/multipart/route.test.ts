@@ -74,6 +74,12 @@ describe('POST /api/files/multipart action=complete', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
+    })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
     mockIsUsingCloudStorage.mockReturnValue(true)
     mockGetStorageConfig.mockReturnValue({ bucket: 'b', region: 'r' })
@@ -198,5 +204,30 @@ describe('POST /api/files/multipart action=complete', () => {
     )
     expect(res.status).toBe(200)
     expect(mockCompleteS3MultipartUpload).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns 404 when stale personal rows no longer grant multipart-init visibility', async () => {
+    mockGetStorageProvider.mockReturnValue('s3')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'owner-2', workspaceMode: 'personal' },
+    })
+
+    const res = await POST(
+      makeRequest('initiate', {
+        fileName: 'large.bin',
+        contentType: 'application/octet-stream',
+        fileSize: 1024,
+        workspaceId: 'ws-1',
+        context: 'workspace',
+      })
+    )
+    const data = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })

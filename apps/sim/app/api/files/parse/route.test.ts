@@ -8,6 +8,7 @@ import {
   createMockRequest,
   hybridAuthMockFns,
   inputValidationMock,
+  inputValidationMockFns,
   permissionsMock,
   permissionsMockFns,
   storageServiceMock,
@@ -172,6 +173,20 @@ describe('File Parse API Route', () => {
     })
 
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue({ canView: true })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'workspace-1',
+        ownerId: 'test-user-id',
+        workspaceMode: 'organization',
+      },
+    })
+    inputValidationMockFns.mockValidateUrlWithDNS.mockResolvedValue({
+      isValid: true,
+      resolvedIP: '93.184.216.34',
+    })
     storageServiceMockFns.mockHasCloudStorage.mockReturnValue(true)
     storageServiceMockFns.mockDownloadFile.mockResolvedValue(Buffer.from('test file content'))
     mockIsSupportedFileType.mockReturnValue(true)
@@ -245,6 +260,33 @@ describe('File Parse API Route', () => {
     } else {
       expect(data).toHaveProperty('error')
     }
+  })
+
+  it('should hide external URL workspace imports when stale personal rows no longer grant visibility', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'workspace-hidden',
+        ownerId: 'owner-2',
+        workspaceMode: 'personal',
+      },
+    })
+
+    const req = createMockRequest('POST', {
+      filePath: 'https://example.com/test.pdf',
+      workspaceId: 'workspace-hidden',
+      fileType: 'pdf',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.success).toBe(false)
+    expect(data.error).toBe('File not found')
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
   it('should keep known binary extensions as binary even when the bytes are valid UTF-8', async () => {
