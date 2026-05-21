@@ -11,13 +11,13 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
  * Used by the copilot store for credential masking.
  */
 export const GET = withRouteHandler(async (req: NextRequest) => {
-  const parsed = await parseRequest(copilotCredentialsContract, req, {})
-  if (!parsed.success) return parsed.response
-
   const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly()
   if (!isAuthenticated || !userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const parsed = await parseRequest(copilotCredentialsContract, req, {})
+  if (!parsed.success) return parsed.response
 
   try {
     const result = await routeExecution('get_credentials', {}, { userId })

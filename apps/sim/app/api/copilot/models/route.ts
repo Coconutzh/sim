@@ -55,13 +55,13 @@ function buildStaticAvailableModels(): AvailableModel[] {
 }
 
 export const GET = withRouteHandler(async (req: NextRequest) => {
-  const parsed = await parseRequest(copilotModelsContract, req, {})
-  if (!parsed.success) return parsed.response
-
   const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly()
   if (!isAuthenticated || !userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const parsed = await parseRequest(copilotModelsContract, req, {})
+  if (!parsed.success) return parsed.response
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
