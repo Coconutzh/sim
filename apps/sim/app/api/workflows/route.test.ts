@@ -10,6 +10,8 @@ import {
   workflowsApiUtilsMock,
   workflowsPersistenceUtilsMock,
   workflowsPersistenceUtilsMockFns,
+  workflowsUtilsMock,
+  workflowsUtilsMockFns,
 } from '@sim/testing'
 import { drizzleOrmMock } from '@sim/testing/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,6 +26,7 @@ const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermiss
 const mockListAccessibleWorkspaceIds = permissionsMockFns.mockListAccessibleWorkspaceIds
 const mockGetWorkspaceWithOwner = permissionsMockFns.mockGetWorkspaceWithOwner
 const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
+const mockGetActiveFolderInWorkspace = workflowsUtilsMockFns.mockGetActiveFolderInWorkspace
 
 vi.mock('drizzle-orm', () => ({
   ...drizzleOrmMock,
@@ -49,6 +52,8 @@ vi.mock('@sim/audit', () => auditMock)
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
 vi.mock('@/app/api/workflows/utils', () => workflowsApiUtilsMock)
+
+vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 vi.mock('@/lib/core/telemetry', () => ({
   PlatformEvents: {
@@ -105,6 +110,12 @@ describe('Workflows API Route - POST ordering', () => {
     })
     workflowsPersistenceUtilsMockFns.mockSaveWorkflowToNormalizedTables.mockResolvedValue({
       success: true,
+    })
+    workflowsUtilsMockFns.mockDeduplicateWorkflowName.mockResolvedValue('New Workflow')
+    mockGetActiveFolderInWorkspace.mockResolvedValue({
+      id: 'folder-1',
+      workspaceId: 'workspace-123',
+      parentId: null,
     })
   })
 
@@ -290,6 +301,26 @@ describe('Workflows API Route - POST ordering', () => {
     expect(response.status).toBe(404)
     expect(data.error).toBe('Workspace not found')
     expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('rejects workflow creation in a folder outside the target workspace', async () => {
+    mockGetActiveFolderInWorkspace.mockResolvedValueOnce(null)
+
+    const req = createMockRequest('POST', {
+      name: 'Hidden Folder Workflow',
+      description: 'desc',
+      color: '#3972F6',
+      workspaceId: 'workspace-123',
+      folderId: 'foreign-folder',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(data.error).toBe('Folder not found')
+    expect(mockGetActiveFolderInWorkspace).toHaveBeenCalledWith('foreign-folder', 'workspace-123')
+    expect(mockDbInsert).not.toHaveBeenCalled()
   })
 })
 

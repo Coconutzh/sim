@@ -19,7 +19,7 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import { performDeleteWorkflow } from '@/lib/workflows/orchestration'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { buildPublishedWorkflowReadSummary } from '@/lib/workflows/published-summary'
-import { getWorkflowById } from '@/lib/workflows/utils'
+import { getActiveFolderInWorkspace, getWorkflowById } from '@/lib/workflows/utils'
 
 const logger = createLogger('WorkflowByIdAPI')
 
@@ -397,7 +397,20 @@ export const PUT = withRouteHandler(
       if (hasNonLockUpdate) {
         await assertWorkflowMutable(workflowId)
       }
-      if (updates.folderId !== undefined) {
+
+      if (updates.folderId) {
+        if (!workflowData.workspaceId) {
+          logger.error(`[${requestId}] Workflow ${workflowId} has no workspaceId`)
+          return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+        }
+
+        const targetFolder = await getActiveFolderInWorkspace(
+          updates.folderId,
+          workflowData.workspaceId
+        )
+        if (!targetFolder) {
+          return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+        }
         await assertFolderMutable(updates.folderId)
       }
 

@@ -9,6 +9,8 @@ import {
   createMockRequest,
   permissionsMock,
   permissionsMockFns,
+  workflowsUtilsMock,
+  workflowsUtilsMockFns,
 } from '@sim/testing'
 import { drizzleOrmMock } from '@sim/testing/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,6 +32,7 @@ const { mockLogger } = vi.hoisted(() => {
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
+const mockGetActiveFolderInWorkspace = workflowsUtilsMockFns.mockGetActiveFolderInWorkspace
 
 vi.mock('@sim/audit', () => auditMock)
 vi.mock('drizzle-orm', () => ({
@@ -42,6 +45,7 @@ vi.mock('@sim/logger', () => ({
   getRequestContext: () => undefined,
 }))
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
+vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 import { db } from '@sim/db'
 import { GET, POST } from '@/app/api/folders/route'
@@ -165,6 +169,11 @@ describe('Folders API Route', () => {
       workspace: { id: 'workspace-123', ownerId: 'user-123', workspaceMode: 'organization' },
     })
     mockGetUserEntityPermissions.mockResolvedValue('admin')
+    mockGetActiveFolderInWorkspace.mockResolvedValue({
+      id: 'folder-1',
+      workspaceId: 'workspace-123',
+      parentId: null,
+    })
   })
 
   describe('GET /api/folders', () => {
@@ -402,6 +411,25 @@ describe('Folders API Route', () => {
       expect(data.folder).toMatchObject({
         parentId: 'folder-1',
       })
+      expect(mockGetActiveFolderInWorkspace).toHaveBeenCalledWith('folder-1', 'workspace-123')
+    })
+
+    it('should reject subfolder creation under a parent outside the visible workspace', async () => {
+      mockAuthenticatedUser()
+      mockGetActiveFolderInWorkspace.mockResolvedValueOnce(null)
+
+      const req = createMockRequest('POST', {
+        name: 'Subfolder',
+        workspaceId: 'workspace-123',
+        parentId: 'foreign-folder',
+      })
+
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toHaveProperty('error', 'Parent folder not found')
+      expect(mockTransaction).not.toHaveBeenCalled()
     })
 
     it('should return 401 for unauthenticated requests', async () => {

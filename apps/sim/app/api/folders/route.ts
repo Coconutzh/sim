@@ -3,6 +3,7 @@ import { db } from '@sim/db'
 import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { assertFolderMutable, FolderLockedError } from '@sim/workflow-authz'
 import { and, asc, eq, isNotNull, isNull, min } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createFolderContract, listFoldersContract } from '@/lib/api/contracts'
@@ -10,6 +11,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { getActiveFolderInWorkspace } from '@/lib/workflows/utils'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersAPI')
@@ -96,6 +98,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
+    if (parentId) {
+      const parentFolder = await getActiveFolderInWorkspace(parentId, workspaceId)
+      if (!parentFolder) {
+        return NextResponse.json({ error: 'Parent folder not found' }, { status: 404 })
+      }
+      await assertFolderMutable(parentId)
+    }
+
     const id = clientId || generateId()
 
     const newFolder = await db.transaction(async (tx) => {
@@ -179,6 +189,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ folder: newFolder })
   } catch (error) {
+    if (error instanceof FolderLockedError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+
     logger.error('Error creating folder:', { error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -24,7 +24,7 @@ type WorkflowRecord = {
   runCount: number
   lastRunAt: Date | null
   archivedAt: Date | null
-  variables?: Record<string, Record<string, unknown>> | null
+  variables?: unknown
 }
 
 type NormalizedWorkflowState = {
@@ -74,6 +74,7 @@ export function buildPublishedWorkflowStateSummary(
       nodes: [],
       iterations: 0,
       loopType: 'for',
+      enabled: true,
     }
     return acc
   }, {})
@@ -87,6 +88,7 @@ export function buildPublishedWorkflowStateSummary(
       nodes: [],
       count: 0,
       parallelType: 'count',
+      enabled: true,
     }
     return acc
   }, {})

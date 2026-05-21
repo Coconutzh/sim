@@ -3,6 +3,7 @@ import { db } from '@sim/db'
 import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { assertFolderMutable, FolderLockedError } from '@sim/workflow-authz'
 import { and, asc, eq, inArray, isNull, min, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createWorkflowContract, workflowListQuerySchema } from '@/lib/api/contracts/workflows'
@@ -13,7 +14,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { deduplicateWorkflowName, getActiveFolderInWorkspace } from '@/lib/workflows/utils'
 import {
   checkWorkspaceAccess,
   getUserEntityPermissions,
@@ -223,6 +224,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
+    if (folderId) {
+      const targetFolder = await getActiveFolderInWorkspace(folderId, workspaceId)
+      if (!targetFolder) {
+        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+      }
+      await assertFolderMutable(folderId)
+    }
+
     const workflowId = clientId || generateId()
     const now = new Date()
 
@@ -326,8 +335,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         track,
         visibility,
         sourceWorkflowId: sourceWorkflowId || null,
-        publishedAt: track === 'published' ? now : null,
-        publishedBy: track === 'published' ? userId : null,
+        publishedAt: null,
+        publishedBy: null,
         lastSynced: now,
         createdAt: now,
         updatedAt: now,
@@ -383,13 +392,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       track,
       visibility,
       sourceWorkflowId: sourceWorkflowId || null,
-      publishedAt: track === 'published' ? now : null,
+      publishedAt: null,
       createdAt: now,
       updatedAt: now,
       startBlockId,
       subBlockValues,
     })
   } catch (error) {
+    if (error instanceof FolderLockedError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+
     logger.error(`[${requestId}] Error creating workflow`, error)
     return NextResponse.json({ error: 'Failed to create workflow' }, { status: 500 })
   }

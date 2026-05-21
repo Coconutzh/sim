@@ -37,6 +37,7 @@ const mockPerformDeleteFolder = workflowsOrchestrationMockFns.mockPerformDeleteF
 
 const mockGetUserEntityPermissions = permissionsMockFns.mockGetUserEntityPermissions
 const mockCheckWorkspaceAccess = permissionsMockFns.mockCheckWorkspaceAccess
+const mockGetActiveFolderInWorkspace = workflowsUtilsMockFns.mockGetActiveFolderInWorkspace
 
 vi.mock('@sim/audit', () => auditMock)
 vi.mock('@sim/logger', () => ({
@@ -168,6 +169,11 @@ describe('Individual Folder API Route', () => {
       deletedItems: { folders: 1, workflows: 0 },
     })
     workflowsUtilsMockFns.mockCheckForCircularReference.mockResolvedValue(false)
+    mockGetActiveFolderInWorkspace.mockResolvedValue({
+      id: 'parent-folder-1',
+      workspaceId: 'workspace-123',
+      parentId: null,
+    })
   })
 
   describe('PUT /api/folders/[id]', () => {
@@ -203,6 +209,27 @@ describe('Individual Folder API Route', () => {
       const response = await PUT(req, { params })
 
       expect(response.status).toBe(200)
+      expect(mockGetActiveFolderInWorkspace).toHaveBeenCalledWith(
+        'parent-folder-1',
+        'workspace-123'
+      )
+    })
+
+    it('should reject moving a folder under a parent outside its workspace', async () => {
+      mockAuthenticatedUser()
+      mockGetActiveFolderInWorkspace.mockResolvedValueOnce(null)
+
+      const req = createMockRequest('PUT', {
+        parentId: 'foreign-folder',
+      })
+      const params = Promise.resolve({ id: 'folder-1' })
+
+      const response = await PUT(req, { params })
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data).toHaveProperty('error', 'Parent folder not found')
+      expect(workflowsUtilsMockFns.mockCheckForCircularReference).not.toHaveBeenCalled()
     })
 
     it('should return 401 for unauthenticated requests', async () => {

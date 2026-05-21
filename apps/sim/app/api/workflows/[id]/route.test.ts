@@ -24,6 +24,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockLoadWorkflowFromNormalizedTables =
   workflowsPersistenceUtilsMockFns.mockLoadWorkflowFromNormalizedTables
 const mockGetWorkflowById = workflowsUtilsMockFns.mockGetWorkflowById
+const mockGetActiveFolderInWorkspace = workflowsUtilsMockFns.mockGetActiveFolderInWorkspace
 const mockAuthorizeWorkflowByWorkspacePermission =
   workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission
 const mockPerformDeleteWorkflow = workflowsOrchestrationMockFns.mockPerformDeleteWorkflow
@@ -85,6 +86,11 @@ describe('Workflow By ID API Route', () => {
     })
 
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(null)
+    mockGetActiveFolderInWorkspace.mockResolvedValue({
+      id: 'folder-2',
+      workspaceId: 'workspace-456',
+      parentId: null,
+    })
     mockDbTransaction.mockImplementation(async (callback) =>
       callback({
         execute: vi.fn().mockResolvedValue(undefined),
@@ -1069,6 +1075,40 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       expect(data.workflow.folderId).toBe('folder-2')
+      expect(mockGetActiveFolderInWorkspace).toHaveBeenCalledWith('folder-2', 'workspace-456')
+    })
+
+    it('should reject moving to a folder outside the workflow workspace', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'user-123',
+        name: 'My Workflow',
+        folderId: 'folder-1',
+        workspaceId: 'workspace-456',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'write',
+      })
+      mockGetActiveFolderInWorkspace.mockResolvedValueOnce(null)
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        method: 'PUT',
+        body: JSON.stringify({ folderId: 'foreign-folder' }),
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await PUT(req, { params })
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data.error).toBe('Folder not found')
+      expect(mockDbUpdate).not.toHaveBeenCalled()
     })
 
     it('should reject moving to a folder where same name already exists', async () => {

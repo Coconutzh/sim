@@ -575,12 +575,30 @@ export async function verifyFolderWorkspace(
   folderId: string,
   workspaceId: string
 ): Promise<boolean> {
+  const folder = await getActiveFolderInWorkspace(folderId, workspaceId)
+  return Boolean(folder)
+}
+
+/**
+ * Returns an active folder only when it belongs to the expected workspace.
+ */
+export async function getActiveFolderInWorkspace(folderId: string, workspaceId: string) {
   const [row] = await db
-    .select({ id: workflowFolder.id })
+    .select({
+      id: workflowFolder.id,
+      workspaceId: workflowFolder.workspaceId,
+      parentId: workflowFolder.parentId,
+    })
     .from(workflowFolder)
-    .where(and(eq(workflowFolder.id, folderId), eq(workflowFolder.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(workflowFolder.id, folderId),
+        eq(workflowFolder.workspaceId, workspaceId),
+        isNull(workflowFolder.archivedAt)
+      )
+    )
     .limit(1)
-  return Boolean(row)
+  return row ?? null
 }
 
 export async function deleteFolderRecord(folderId: string): Promise<boolean> {

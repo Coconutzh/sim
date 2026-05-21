@@ -10,7 +10,7 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { performDeleteFolder } from '@/lib/workflows/orchestration'
-import { checkForCircularReference } from '@/lib/workflows/utils'
+import { checkForCircularReference, getActiveFolderInWorkspace } from '@/lib/workflows/utils'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersIDAPI')
@@ -81,17 +81,19 @@ export const PUT = withRouteHandler(
       if (hasNonLockUpdate) {
         await assertFolderMutable(id)
       }
-      if (parentId !== undefined) {
-        await assertFolderMutable(parentId)
-      }
 
       // Prevent setting a folder as its own parent or creating circular references
       if (parentId && parentId === id) {
         return NextResponse.json({ error: 'Folder cannot be its own parent' }, { status: 400 })
       }
 
-      // Check for circular references if parentId is provided
       if (parentId) {
+        const parentFolder = await getActiveFolderInWorkspace(parentId, existingFolder.workspaceId)
+        if (!parentFolder) {
+          return NextResponse.json({ error: 'Parent folder not found' }, { status: 404 })
+        }
+        await assertFolderMutable(parentId)
+
         const wouldCreateCycle = await checkForCircularReference(id, parentId)
         if (wouldCreateCycle) {
           return NextResponse.json(
