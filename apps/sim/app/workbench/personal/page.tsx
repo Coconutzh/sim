@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CanvasModeHeader } from '@/components/workbench/canvas-mode-header'
 import { WorkbenchShell } from '@/components/workbench/workbench-shell'
+import { WorkbenchStatusCard } from '@/components/workbench/workbench-status-card'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkbenchAccessIssue } from '@/lib/workbench/access-errors'
 import {
   useMyWorkgroups,
   usePersonalWorkspace,
@@ -13,9 +15,11 @@ import {
 
 export default function PersonalWorkbenchPage() {
   const { data: session, isPending } = useSession()
-  const { data: workgroupData, isLoading: isWorkgroupLoading } = useMyWorkgroups(
-    Boolean(session?.user)
-  )
+  const {
+    data: workgroupData,
+    error: workgroupError,
+    isLoading: isWorkgroupLoading,
+  } = useMyWorkgroups(Boolean(session?.user))
   const setActiveWorkgroup = useSetActiveWorkgroup()
   const [selectedWorkgroupId, setSelectedWorkgroupId] = useState<string | null>(null)
   const workgroupId =
@@ -24,7 +28,11 @@ export default function PersonalWorkbenchPage() {
     () => workgroupData?.workgroups.find((item) => item.id === workgroupId) ?? null,
     [workgroupData?.workgroups, workgroupId]
   )
-  const { data: workspaceData, isLoading } = usePersonalWorkspace(workgroupId)
+  const {
+    data: workspaceData,
+    error: workspaceError,
+    isLoading,
+  } = usePersonalWorkspace(workgroupId)
 
   if (isPending || isWorkgroupLoading || isLoading) {
     return (
@@ -34,11 +42,19 @@ export default function PersonalWorkbenchPage() {
     )
   }
 
+  const accessIssue = getWorkbenchAccessIssue(workgroupError ?? workspaceError)
+  if (accessIssue) {
+    return <WorkbenchStatusCard {...accessIssue} />
+  }
+
   if (!activeWorkgroup || !workspaceData?.workspace.id) {
     return (
-      <div className='flex min-h-screen items-center justify-center'>
-        请先加入团队后打开个人草稿。
-      </div>
+      <WorkbenchStatusCard
+        actionHref='/workbench'
+        actionLabel='返回工作台切换团队'
+        message='你的 active workgroup 可能已失效，或个人草稿画布不再对当前账号可见。请返回工作台切换团队后重试。'
+        title='当前团队或画布不可用'
+      />
     )
   }
 

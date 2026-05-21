@@ -5,20 +5,22 @@ import { useParams } from 'next/navigation'
 import { CanvasModeHeader } from '@/components/workbench/canvas-mode-header'
 import { ShowcaseReadOnlyCanvas } from '@/components/workbench/showcase-readonly-canvas'
 import { WorkbenchShell } from '@/components/workbench/workbench-shell'
+import { WorkbenchStatusCard } from '@/components/workbench/workbench-status-card'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkbenchAccessIssue } from '@/lib/workbench/access-errors'
 import { useMyWorkgroups, usePublication, usePublicationTree } from '@/hooks/queries/collaboration'
 
 export default function ShowcasePublicationPage() {
   const params = useParams<{ publicationVersionId: string }>()
   const publicationVersionId = params.publicationVersionId
   const { data: session } = useSession()
-  const { data: workgroupData } = useMyWorkgroups(Boolean(session?.user))
+  const { data: workgroupData, error: workgroupError } = useMyWorkgroups(Boolean(session?.user))
   const activeWorkgroupId =
     workgroupData?.defaultWorkgroupId ?? workgroupData?.workgroups[0]?.id ?? null
   const activeWorkgroup =
     workgroupData?.workgroups.find((item) => item.id === activeWorkgroupId) ?? null
-  const { data, isLoading } = usePublication(publicationVersionId)
-  const { data: tree } = usePublicationTree(publicationVersionId)
+  const { data, error: publicationError, isLoading } = usePublication(publicationVersionId)
+  const { data: tree, error: treeError } = usePublicationTree(publicationVersionId)
 
   if (isLoading) {
     return (
@@ -26,6 +28,11 @@ export default function ShowcasePublicationPage() {
         正在加载展示方案...
       </div>
     )
+  }
+
+  const accessIssue = getWorkbenchAccessIssue(workgroupError ?? publicationError ?? treeError)
+  if (accessIssue) {
+    return <WorkbenchStatusCard {...accessIssue} />
   }
 
   if (!data?.publication) {

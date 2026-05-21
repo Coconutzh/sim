@@ -2,6 +2,7 @@
 import { requestJson } from '@/lib/api/client/request'
 import {
   addWorkgroupMemberContract,
+  type CopySelectionBody,
   copySelectionContract,
   createOrganizationWorkgroupContract,
   getCopilotAgentProfileContract,
@@ -15,11 +16,10 @@ import {
   listMyWorkgroupsContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
+  type PublicationSummary,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
   updateWorkgroupMemberContract,
-  type CopySelectionBody,
-  type PublicationSummary,
 } from '@/lib/api/contracts/collaboration'
 
 export const collaborationKeys = {
@@ -27,23 +27,34 @@ export const collaborationKeys = {
   disciplines: () => [...collaborationKeys.all, 'disciplines'] as const,
   agents: () => [...collaborationKeys.all, 'agents'] as const,
   me: () => [...collaborationKeys.all, 'me'] as const,
-  myWorkgroups: () => [...collaborationKeys.me(), 'workgroups'] as const,
   organizations: () => [...collaborationKeys.all, 'organizations'] as const,
+  organizationWorkgroupLists: () => [...collaborationKeys.organizations(), 'list'] as const,
   organizationWorkgroups: (organizationId?: string) =>
-    [...collaborationKeys.organizations(), organizationId ?? '', 'workgroups'] as const,
+    [...collaborationKeys.organizationWorkgroupLists(), organizationId ?? ''] as const,
   workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
-  workgroup: (workgroupId?: string) => [...collaborationKeys.workgroups(), workgroupId ?? ''] as const,
-  members: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
-  personalWorkspace: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'personal-workspace'] as const,
-  teamWorkspace: (workgroupId?: string) => [...collaborationKeys.workgroup(workgroupId), 'team-workspace'] as const,
+  workgroupLists: () => [...collaborationKeys.workgroups(), 'list'] as const,
+  myWorkgroups: () => [...collaborationKeys.workgroupLists(), 'me'] as const,
+  workgroupDetails: () => [...collaborationKeys.workgroups(), 'detail'] as const,
+  workgroup: (workgroupId?: string) =>
+    [...collaborationKeys.workgroupDetails(), workgroupId ?? ''] as const,
+  members: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
+  personalWorkspace: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'personal-workspace'] as const,
+  teamWorkspace: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'team-workspace'] as const,
   publications: () => [...collaborationKeys.all, 'publications'] as const,
+  publicationLists: () => [...collaborationKeys.publications(), 'list'] as const,
   publicationList: (workgroupId?: string, filters?: PublicationFilters) =>
-    [...collaborationKeys.publications(), 'list', workgroupId ?? '', filters ?? {}] as const,
+    [...collaborationKeys.publicationLists(), workgroupId ?? '', filters ?? {}] as const,
+  publicationDetails: () => [...collaborationKeys.publications(), 'detail'] as const,
   publication: (publicationVersionId?: string) =>
-    [...collaborationKeys.publications(), 'detail', publicationVersionId ?? ''] as const,
+    [...collaborationKeys.publicationDetails(), publicationVersionId ?? ''] as const,
   publicationTree: (publicationVersionId?: string) =>
     [...collaborationKeys.publication(publicationVersionId), 'tree'] as const,
-  agentProfile: (workspaceId?: string) => [...collaborationKeys.agents(), 'workspace', workspaceId ?? ''] as const,
+  agentProfiles: () => [...collaborationKeys.agents(), 'profile'] as const,
+  agentProfile: (workspaceId?: string) =>
+    [...collaborationKeys.agentProfiles(), workspaceId ?? ''] as const,
 }
 
 export interface PublicationFilters {
@@ -91,10 +102,10 @@ export function useMyWorkgroups(enabled = true) {
 export function useSetActiveWorkgroup() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (workgroupId: string) => requestJson(setActiveWorkgroupContract, { body: { workgroupId } }),
+    mutationFn: (workgroupId: string) =>
+      requestJson(setActiveWorkgroupContract, { body: { workgroupId } }),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: collaborationKeys.me() })
-      queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroups() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.all })
     },
   })
 }
@@ -103,7 +114,10 @@ export function useOrganizationWorkgroups(organizationId?: string) {
   return useQuery({
     queryKey: collaborationKeys.organizationWorkgroups(organizationId),
     queryFn: ({ signal }) =>
-      requestJson(listOrganizationWorkgroupsContract, { params: { organizationId: organizationId as string }, signal }),
+      requestJson(listOrganizationWorkgroupsContract, {
+        params: { organizationId: organizationId as string },
+        signal,
+      }),
     enabled: Boolean(organizationId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
@@ -119,7 +133,9 @@ export function useCreateWorkgroup() {
         body: { name: variables.name, disciplineId: variables.disciplineId },
       }),
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId) })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+      })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
     },
   })
@@ -128,7 +144,11 @@ export function useCreateWorkgroup() {
 export function useWorkgroupMembers(workgroupId?: string) {
   return useQuery({
     queryKey: collaborationKeys.members(workgroupId),
-    queryFn: ({ signal }) => requestJson(getWorkgroupMembersContract, { params: { workgroupId: workgroupId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getWorkgroupMembersContract, {
+        params: { workgroupId: workgroupId as string },
+        signal,
+      }),
     enabled: Boolean(workgroupId),
     staleTime: 30 * 1000,
   })
@@ -167,7 +187,9 @@ export function useRemoveWorkgroupMember() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (variables: { workgroupId: string; userId: string }) =>
-      requestJson(removeWorkgroupMemberContract, { params: { workgroupId: variables.workgroupId, userId: variables.userId } }),
+      requestJson(removeWorkgroupMemberContract, {
+        params: { workgroupId: variables.workgroupId, userId: variables.userId },
+      }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
@@ -178,7 +200,11 @@ export function useRemoveWorkgroupMember() {
 export function usePersonalWorkspace(workgroupId?: string) {
   return useQuery({
     queryKey: collaborationKeys.personalWorkspace(workgroupId),
-    queryFn: ({ signal }) => requestJson(getPersonalWorkspaceContract, { params: { workgroupId: workgroupId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getPersonalWorkspaceContract, {
+        params: { workgroupId: workgroupId as string },
+        signal,
+      }),
     enabled: Boolean(workgroupId),
     staleTime: 30 * 1000,
   })
@@ -187,7 +213,11 @@ export function usePersonalWorkspace(workgroupId?: string) {
 export function useTeamWorkspace(workgroupId?: string) {
   return useQuery({
     queryKey: collaborationKeys.teamWorkspace(workgroupId),
-    queryFn: ({ signal }) => requestJson(getTeamWorkspaceContract, { params: { workgroupId: workgroupId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getTeamWorkspaceContract, {
+        params: { workgroupId: workgroupId as string },
+        signal,
+      }),
     enabled: Boolean(workgroupId),
     staleTime: 30 * 1000,
   })
@@ -211,7 +241,11 @@ export function useShowcasePublications(workgroupId?: string, filters?: Publicat
 export function usePublication(publicationVersionId?: string) {
   return useQuery({
     queryKey: collaborationKeys.publication(publicationVersionId),
-    queryFn: ({ signal }) => requestJson(getPublicationContract, { params: { publicationVersionId: publicationVersionId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getPublicationContract, {
+        params: { publicationVersionId: publicationVersionId as string },
+        signal,
+      }),
     enabled: Boolean(publicationVersionId),
     staleTime: 60 * 1000,
   })
@@ -220,7 +254,11 @@ export function usePublication(publicationVersionId?: string) {
 export function usePublicationTree(publicationVersionId?: string) {
   return useQuery({
     queryKey: collaborationKeys.publicationTree(publicationVersionId),
-    queryFn: ({ signal }) => requestJson(getPublicationTreeContract, { params: { publicationVersionId: publicationVersionId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getPublicationTreeContract, {
+        params: { publicationVersionId: publicationVersionId as string },
+        signal,
+      }),
     enabled: Boolean(publicationVersionId),
     staleTime: 60 * 1000,
   })
@@ -229,7 +267,11 @@ export function usePublicationTree(publicationVersionId?: string) {
 export function useCopilotAgentProfile(workspaceId?: string) {
   return useQuery({
     queryKey: collaborationKeys.agentProfile(workspaceId),
-    queryFn: ({ signal }) => requestJson(getCopilotAgentProfileContract, { query: { workspaceId: workspaceId as string }, signal }),
+    queryFn: ({ signal }) =>
+      requestJson(getCopilotAgentProfileContract, {
+        query: { workspaceId: workspaceId as string },
+        signal,
+      }),
     enabled: Boolean(workspaceId),
     staleTime: 60 * 1000,
   })
@@ -238,7 +280,10 @@ export function useCopilotAgentProfile(workspaceId?: string) {
 export function useCopySelection() {
   return useMutation({
     mutationFn: (variables: { workflowId: string; body: CopySelectionBody }) =>
-      requestJson(copySelectionContract, { params: { id: variables.workflowId }, body: variables.body }),
+      requestJson(copySelectionContract, {
+        params: { id: variables.workflowId },
+        body: variables.body,
+      }),
   })
 }
 

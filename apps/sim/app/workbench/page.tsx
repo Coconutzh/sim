@@ -3,12 +3,14 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { WorkbenchShell } from '@/components/workbench/workbench-shell'
+import { WorkbenchStatusCard } from '@/components/workbench/workbench-status-card'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkbenchAccessIssue } from '@/lib/workbench/access-errors'
 import { useMyWorkgroups, useSetActiveWorkgroup } from '@/hooks/queries/collaboration'
 
 export default function WorkbenchPage() {
   const { data: session, isPending } = useSession()
-  const { data, isLoading } = useMyWorkgroups(Boolean(session?.user))
+  const { data, error, isLoading } = useMyWorkgroups(Boolean(session?.user))
   const setActiveWorkgroup = useSetActiveWorkgroup()
   const [selectedWorkgroupId, setSelectedWorkgroupId] = useState<string | null>(null)
 
@@ -29,6 +31,11 @@ export default function WorkbenchPage() {
 
   if (!session?.user) {
     return <div className='flex min-h-screen items-center justify-center'>请先登录。</div>
+  }
+
+  const accessIssue = getWorkbenchAccessIssue(error)
+  if (accessIssue) {
+    return <WorkbenchStatusCard {...accessIssue} />
   }
 
   if (!data?.workgroups.length) {

@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CanvasModeHeader } from '@/components/workbench/canvas-mode-header'
 import { WorkbenchShell } from '@/components/workbench/workbench-shell'
+import { WorkbenchStatusCard } from '@/components/workbench/workbench-status-card'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkbenchAccessIssue } from '@/lib/workbench/access-errors'
 import {
   useDisciplines,
   useMyWorkgroups,
@@ -14,9 +16,11 @@ import {
 
 export default function ShowcaseWorkbenchPage() {
   const { data: session, isPending } = useSession()
-  const { data: workgroupData, isLoading: isWorkgroupLoading } = useMyWorkgroups(
-    Boolean(session?.user)
-  )
+  const {
+    data: workgroupData,
+    error: workgroupError,
+    isLoading: isWorkgroupLoading,
+  } = useMyWorkgroups(Boolean(session?.user))
   const { data: disciplinesData } = useDisciplines()
   const setActiveWorkgroup = useSetActiveWorkgroup()
   const [selectedWorkgroupId, setSelectedWorkgroupId] = useState<string | null>(null)
@@ -27,10 +31,11 @@ export default function ShowcaseWorkbenchPage() {
     () => workgroupData?.workgroups.find((item) => item.id === workgroupId) ?? null,
     [workgroupData?.workgroups, workgroupId]
   )
-  const { data, isLoading } = useShowcasePublications(
-    workgroupId,
-    disciplineCode ? { disciplineCode } : undefined
-  )
+  const {
+    data,
+    error: publicationsError,
+    isLoading,
+  } = useShowcasePublications(workgroupId, disciplineCode ? { disciplineCode } : undefined)
 
   if (isPending || isWorkgroupLoading || isLoading) {
     return (
@@ -40,11 +45,19 @@ export default function ShowcaseWorkbenchPage() {
     )
   }
 
+  const accessIssue = getWorkbenchAccessIssue(workgroupError ?? publicationsError)
+  if (accessIssue) {
+    return <WorkbenchStatusCard {...accessIssue} />
+  }
+
   if (!activeWorkgroup || !workgroupId) {
     return (
-      <div className='flex min-h-screen items-center justify-center'>
-        请先加入团队后查看展示画布。
-      </div>
+      <WorkbenchStatusCard
+        actionHref='/workbench'
+        actionLabel='返回工作台切换团队'
+        message='你的 active workgroup 可能已失效，或展示画布对当前团队不可用。请返回工作台切换团队后重试。'
+        title='当前团队或画布不可用'
+      />
     )
   }
 
