@@ -46,16 +46,16 @@ function deduplicatedFilename(preferred: string, existing: Set<string>, imageId:
 
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const parsed = await parseRequest(fileExportContract, request, context)
-    if (!parsed.success) return parsed.response
-
-    const { id } = parsed.data.params
-
     const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     const userId = authResult.userId
+
+    const parsed = await parseRequest(fileExportContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id } = parsed.data.params
 
     const record = await getFileMetadataById(id)
     if (!record) {

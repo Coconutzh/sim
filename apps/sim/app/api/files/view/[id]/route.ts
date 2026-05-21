@@ -13,15 +13,15 @@ const logger = createLogger('FilesViewAPI')
 
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const parsed = await parseRequest(fileViewContract, request, context)
-    if (!parsed.success) return parsed.response
-
-    const { id } = parsed.data.params
-
     const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(fileViewContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id } = parsed.data.params
 
     const record = await getFileMetadataById(id)
     if (!record) {

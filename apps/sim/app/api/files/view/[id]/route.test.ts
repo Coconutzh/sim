@@ -4,7 +4,12 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockParseRequest, mockCheckSessionOrInternalAuth, mockGetFileMetadataById, mockVerifyFileAccess } = vi.hoisted(() => ({
+const {
+  mockParseRequest,
+  mockCheckSessionOrInternalAuth,
+  mockGetFileMetadataById,
+  mockVerifyFileAccess,
+} = vi.hoisted(() => ({
   mockParseRequest: vi.fn(),
   mockCheckSessionOrInternalAuth: vi.fn(),
   mockGetFileMetadataById: vi.fn(),
@@ -62,5 +67,20 @@ describe('/api/files/view/[id]', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Not found' })
+  })
+
+  it('authenticates before validating route params', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/files/view/file-1'), {
+      params: Promise.resolve({ id: 'file-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 })

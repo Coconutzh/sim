@@ -65,12 +65,26 @@ describe('/api/files/export/[id]', () => {
   it('hides foreign personal workspace file exports behind 404', async () => {
     mockVerifyFileAccess.mockResolvedValueOnce(false)
 
-    const response = await GET(
-      new NextRequest('http://localhost:3000/api/files/export/file-1'),
-      { params: Promise.resolve({ id: 'file-1' }) }
-    )
+    const response = await GET(new NextRequest('http://localhost:3000/api/files/export/file-1'), {
+      params: Promise.resolve({ id: 'file-1' }),
+    })
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Not found' })
+  })
+
+  it('authenticates before validating route params', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/files/export/file-1'), {
+      params: Promise.resolve({ id: 'file-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 })
