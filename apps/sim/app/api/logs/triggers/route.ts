@@ -41,12 +41,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     const params = validation.data
     const access = await checkWorkspaceAccess(params.workspaceId, userId)
-    if (!access.hasAccess) {
-      logger.warn(`[${requestId}] Forbidden triggers access attempt`, {
+    if (!access.exists || !access.hasAccess) {
+      logger.warn(`[${requestId}] Hidden workspace triggers access attempt`, {
         userId,
         workspaceId: params.workspaceId,
       })
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
     const triggers = await db

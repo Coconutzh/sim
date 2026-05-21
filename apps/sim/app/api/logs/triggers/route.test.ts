@@ -66,4 +66,28 @@ describe('GET /api/logs/triggers', () => {
       count: 2,
     })
   })
+
+  it('hides foreign personal workspace triggers behind 404', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      workspace: {
+        id: 'ws-hidden',
+        name: 'Hidden Workspace',
+        ownerId: 'owner-2',
+        organizationId: null,
+        workspaceMode: 'personal',
+        billedAccountUserId: 'owner-2',
+      },
+    })
+
+    const response = await GET(
+      new Request('http://localhost:3000/api/logs/triggers?workspaceId=ws-hidden') as any
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    expect(mockSelectDistinct).not.toHaveBeenCalled()
+  })
 })
