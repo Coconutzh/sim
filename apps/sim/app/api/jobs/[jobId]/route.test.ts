@@ -121,4 +121,28 @@ describe('GET /api/jobs/[jobId]', () => {
 
     expect(response.status).toBe(404)
   })
+
+  it('hides foreign personal workspace jobs behind task not found', async () => {
+    mockAuthorizeWorkflow.mockResolvedValueOnce({
+      allowed: false,
+      status: 403,
+      message: 'Access denied',
+      workflow: { id: 'workflow-hidden', workspaceId: 'ws-hidden' },
+    })
+    mockGetJob.mockResolvedValue({
+      id: 'job-hidden',
+      status: 'pending',
+      metadata: {
+        workflowId: 'workflow-hidden',
+      },
+    })
+
+    const response = await GET(createMockRequest(), {
+      params: Promise.resolve({ jobId: 'job-hidden' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.error).toBe('Task not found')
+  })
 })

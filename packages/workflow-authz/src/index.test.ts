@@ -228,6 +228,8 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
 
     expect(result).toMatchObject({
       allowed: false,
+      status: 404,
+      message: 'Workflow not found',
       accessSource: null,
       workspacePermission: null,
       workspaceMode: 'personal',

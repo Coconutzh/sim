@@ -393,6 +393,19 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
     }
   }
 
+  if (activeContext.workspaceMode === 'personal') {
+    return {
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      workflow: wf,
+      workspacePermission,
+      accessSource: null,
+      workspaceWorkgroupId: activeContext.workspaceWorkgroupId,
+      workspaceMode: activeContext.workspaceMode,
+    }
+  }
+
   if (action !== 'read' || wf.track !== 'published') {
     return {
       allowed: false,

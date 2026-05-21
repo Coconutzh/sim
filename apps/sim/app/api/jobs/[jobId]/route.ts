@@ -44,8 +44,14 @@ export const GET = withRouteHandler(
           action: 'read',
         })
         if (!accessCheck.allowed) {
-          logger.warn(`[${requestId}] Access denied to workflow ${metadataToCheck.workflowId}`)
-          return createErrorResponse('Access denied', 403)
+          logger.warn(
+            `[${requestId}] Hidden or unauthorized workflow job status access denied`,
+            {
+              workflowId: metadataToCheck.workflowId,
+              taskId,
+            }
+          )
+          return createErrorResponse('Task not found', 404)
         }
         if (accessCheck.accessSource && accessCheck.accessSource !== 'workspace') {
           logger.warn(
