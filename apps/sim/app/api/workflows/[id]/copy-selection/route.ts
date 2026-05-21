@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server'
 import { copySelectionContract } from '@/lib/api/contracts/collaboration'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/service'
+import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('CopySelectionAPI')
@@ -27,8 +27,16 @@ export const POST = withRouteHandler(async (request, context) => {
   }
 
   const [sourceAccess, targetAccess] = await Promise.all([
-    authorizeWorkflowByWorkspacePermission({ workflowId: sourceWorkflowId, userId: session.user.id, action: 'read' }),
-    authorizeWorkflowByWorkspacePermission({ workflowId: targetWorkflowId, userId: session.user.id, action: 'write' }),
+    authorizeWorkflowByWorkspacePermission({
+      workflowId: sourceWorkflowId,
+      userId: session.user.id,
+      action: 'read',
+    }),
+    authorizeWorkflowByWorkspacePermission({
+      workflowId: targetWorkflowId,
+      userId: session.user.id,
+      action: 'write',
+    }),
   ])
   if (!sourceAccess.allowed || !targetAccess.allowed) {
     return NextResponse.json({ error: 'Copy selection access denied' }, { status: 403 })
@@ -38,7 +46,9 @@ export const POST = withRouteHandler(async (request, context) => {
     const blocks = await db
       .select()
       .from(workflowBlocks)
-      .where(and(eq(workflowBlocks.workflowId, sourceWorkflowId), inArray(workflowBlocks.id, blockIds)))
+      .where(
+        and(eq(workflowBlocks.workflowId, sourceWorkflowId), inArray(workflowBlocks.id, blockIds))
+      )
     const selectedBlockIds = new Set(blocks.map((block) => block.id))
     const explicitEdgeIds = [...new Set(parsed.data.body.selection.edgeIds)]
     const edges = await db
@@ -46,7 +56,10 @@ export const POST = withRouteHandler(async (request, context) => {
       .from(workflowEdges)
       .where(
         explicitEdgeIds.length > 0
-          ? and(eq(workflowEdges.workflowId, sourceWorkflowId), inArray(workflowEdges.id, explicitEdgeIds))
+          ? and(
+              eq(workflowEdges.workflowId, sourceWorkflowId),
+              inArray(workflowEdges.id, explicitEdgeIds)
+            )
           : eq(workflowEdges.workflowId, sourceWorkflowId)
       )
     const idMap = new Map(blocks.map((block) => [block.id, generateId()]))
