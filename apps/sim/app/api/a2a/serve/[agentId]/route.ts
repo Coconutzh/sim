@@ -251,8 +251,8 @@ export const POST = withRouteHandler(
         const workspaceAccess = await checkWorkspaceAccess(agent.workspaceId, authenticatedUserId)
         if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
           return NextResponse.json(
-            createError(null, A2A_ERROR_CODES.AUTHENTICATION_REQUIRED, 'Access denied'),
-            { status: 403 }
+            createError(null, A2A_ERROR_CODES.AGENT_UNAVAILABLE, 'Agent not found'),
+            { status: 404 }
           )
         }
       }

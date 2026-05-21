@@ -113,6 +113,9 @@ export const PUT = withRouteHandler(
       }
 
       const workspaceAccess = await checkWorkspaceAccess(existingAgent.workspaceId, auth.userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+      }
       if (!workspaceAccess.canWrite) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
@@ -179,6 +182,9 @@ export const DELETE = withRouteHandler(
       }
 
       const workspaceAccess = await checkWorkspaceAccess(existingAgent.workspaceId, auth.userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+      }
       if (!workspaceAccess.canWrite) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
@@ -234,6 +240,9 @@ export const POST = withRouteHandler(
       }
 
       const workspaceAccess = await checkWorkspaceAccess(existingAgent.workspaceId, auth.userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
+      }
       if (!workspaceAccess.canWrite) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
