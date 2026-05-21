@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
@@ -92,15 +93,19 @@ export const dynamic = 'force-dynamic'
 
 export const POST = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string; executionId: string }> }) => {
-    const parsed = await parseRequest(cancelWorkflowExecutionContract, req, context)
-    if (!parsed.success) return parsed.response
-    const { id: workflowId, executionId } = parsed.data.params
+    let workflowId = 'unknown'
+    let executionId = 'unknown'
 
     try {
       const auth = await checkHybridAuth(req, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(cancelWorkflowExecutionContract, req, context)
+      if (!parsed.success) return parsed.response
+      workflowId = parsed.data.params.id
+      executionId = parsed.data.params.executionId
 
       const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -291,10 +296,15 @@ export const POST = withRouteHandler(
         pausedCancelled,
         reason,
       })
-    } catch (error: any) {
-      logger.error('Failed to cancel execution', { workflowId, executionId, error: error.message })
+    } catch (error) {
+      const normalizedError = toError(error)
+      logger.error('Failed to cancel execution', {
+        workflowId,
+        executionId,
+        error: normalizedError.message,
+      })
       return NextResponse.json(
-        { error: error.message || 'Failed to cancel execution' },
+        { error: normalizedError.message || 'Failed to cancel execution' },
         { status: 500 }
       )
     }

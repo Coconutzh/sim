@@ -13,6 +13,7 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  mockParseRequest,
   mockMarkExecutionCancelled,
   mockAbortManualExecution,
   mockBeginPausedCancellation,
@@ -25,6 +26,10 @@ const {
   mockWriteEvent,
   mockWriteTerminalEvent,
 } = vi.hoisted(() => ({
+  mockParseRequest: vi.fn(async (_contract, _request, context) => ({
+    success: true,
+    data: { params: await context.params },
+  })),
   mockMarkExecutionCancelled: vi.fn(),
   mockAbortManualExecution: vi.fn(),
   mockBeginPausedCancellation: vi.fn(),
@@ -36,6 +41,10 @@ const {
   mockReadExecutionMetaState: vi.fn(),
   mockWriteEvent: vi.fn(),
   mockWriteTerminalEvent: vi.fn(),
+}))
+
+vi.mock('@/lib/api/server', () => ({
+  parseRequest: mockParseRequest,
 }))
 
 vi.mock('@/lib/execution/cancellation', () => ({
@@ -84,6 +93,10 @@ const makeParams = () => ({ params: Promise.resolve({ id: 'wf-1', executionId: '
 describe('POST /api/workflows/[id]/executions/[executionId]/cancel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockParseRequest.mockImplementation(async (_contract, _request, context) => ({
+      success: true,
+      data: { params: await context.params },
+    }))
     hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValue({ success: true, userId: 'user-1' })
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
@@ -273,6 +286,23 @@ describe('POST /api/workflows/[id]/executions/[executionId]/cancel', () => {
     const response = await POST(makeRequest(), makeParams())
 
     expect(response.status).toBe(401)
+  })
+
+  it('authenticates before validating route params', async () => {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValue({
+      success: false,
+      error: 'Unauthorized',
+    })
+    const unreadableParams = {
+      then: () => {
+        throw new Error('params should not be read')
+      },
+    } as unknown as Promise<{ id: string; executionId: string }>
+
+    const response = await POST(makeRequest(), { params: unreadableParams })
+
+    expect(response.status).toBe(401)
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 
   it('returns 403 when workflow access is denied', async () => {

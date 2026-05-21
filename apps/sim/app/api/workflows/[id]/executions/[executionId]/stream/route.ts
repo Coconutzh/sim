@@ -40,16 +40,20 @@ export const dynamic = 'force-dynamic'
 
 export const GET = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string; executionId: string }> }) => {
-    const parsed = await parseRequest(streamWorkflowExecutionContract, req, context)
-    if (!parsed.success) return parsed.response
-    const { id: workflowId, executionId } = parsed.data.params
-    const { from: fromEventId } = parsed.data.query
+    let workflowId = 'unknown'
+    let executionId = 'unknown'
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(streamWorkflowExecutionContract, req, context)
+      if (!parsed.success) return parsed.response
+      workflowId = parsed.data.params.id
+      executionId = parsed.data.params.executionId
+      const { from: fromEventId } = parsed.data.query
 
       const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -225,14 +229,15 @@ export const GET = withRouteHandler(
           'X-Execution-Id': executionId,
         },
       })
-    } catch (error: any) {
+    } catch (error) {
+      const normalizedError = toError(error)
       logger.error('Failed to start reconnection stream', {
         workflowId,
         executionId,
-        error: error.message,
+        error: normalizedError.message,
       })
       return NextResponse.json(
-        { error: error.message || 'Failed to start reconnection stream' },
+        { error: normalizedError.message || 'Failed to start reconnection stream' },
         { status: 500 }
       )
     }

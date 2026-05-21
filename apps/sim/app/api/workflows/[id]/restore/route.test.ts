@@ -1,12 +1,21 @@
 /**
  * @vitest-environment node
  */
-import { createMockRequest, hybridAuthMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import {
+  createMockRequest,
+  hybridAuthMockFns,
+  permissionsMock,
+  permissionsMockFns,
+} from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRestoreWorkflow, mockGetWorkflowById } = vi.hoisted(() => ({
+const { mockRestoreWorkflow, mockGetWorkflowById, mockParseRequest } = vi.hoisted(() => ({
   mockRestoreWorkflow: vi.fn(),
   mockGetWorkflowById: vi.fn(),
+  mockParseRequest: vi.fn(async (_contract, _request, context) => ({
+    success: true,
+    data: { params: await context.params },
+  })),
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
@@ -15,6 +24,9 @@ vi.mock('@/lib/workflows/lifecycle', () => ({
 }))
 vi.mock('@/lib/workflows/utils', () => ({
   getWorkflowById: mockGetWorkflowById,
+}))
+vi.mock('@/lib/api/server', () => ({
+  parseRequest: mockParseRequest,
 }))
 vi.mock('@sim/workflow-authz', () => ({
   assertFolderMutable: vi.fn(),
@@ -31,6 +43,10 @@ import { POST } from '@/app/api/workflows/[id]/restore/route'
 describe('POST /api/workflows/[id]/restore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockParseRequest.mockImplementation(async (_contract, _request, context) => ({
+      success: true,
+      data: { params: await context.params },
+    }))
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValue({
       success: true,
       userId: 'user-1',
@@ -64,6 +80,21 @@ describe('POST /api/workflows/[id]/restore', () => {
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
     expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'user-1')
+  })
+
+  it('authenticates before validating route params', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({ success: false })
+    const unreadableParams = {
+      then: () => {
+        throw new Error('params should not be read')
+      },
+    } as unknown as Promise<{ id: string }>
+
+    const response = await POST(createMockRequest('POST'), { params: unreadableParams })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 
   it('returns 404 when stale personal rows no longer grant restore visibility', async () => {

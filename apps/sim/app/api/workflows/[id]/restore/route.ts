@@ -17,15 +17,17 @@ const logger = createLogger('RestoreWorkflowAPI')
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const parsed = await parseRequest(restoreWorkflowContract, request, context)
-    if (!parsed.success) return parsed.response
-    const { id: workflowId } = parsed.data.params
+    let workflowId = 'unknown'
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+
+      const parsed = await parseRequest(restoreWorkflowContract, request, context)
+      if (!parsed.success) return parsed.response
+      workflowId = parsed.data.params.id
 
       const workflowData = await getWorkflowById(workflowId, { includeArchived: true })
       if (!workflowData) {

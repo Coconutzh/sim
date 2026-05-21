@@ -6,11 +6,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionEventEntry } from '@/lib/execution/event-buffer'
 
 const {
+  mockParseRequest,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockGetSession,
   mockReadExecutionEventsState,
   mockReadExecutionMetaState,
 } = vi.hoisted(() => ({
+  mockParseRequest: vi.fn(async (_contract, request, context) => {
+    const params = await context.params
+    const from = Number.parseInt(new URL(request.url).searchParams.get('from') ?? '0', 10)
+    return {
+      success: true,
+      data: { params, query: { from: Number.isFinite(from) ? from : 0 } },
+    }
+  }),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockGetSession: vi.fn(),
   mockReadExecutionEventsState: vi.fn(),
@@ -19,6 +28,10 @@ const {
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
+}))
+
+vi.mock('@/lib/api/server', () => ({
+  parseRequest: mockParseRequest,
 }))
 
 vi.mock('@sim/workflow-authz', () => ({
@@ -56,6 +69,14 @@ function completedEntry(eventId: number): ExecutionEventEntry {
 describe('execution stream reconnect route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockParseRequest.mockImplementation(async (_contract, request, context) => {
+      const params = await context.params
+      const from = Number.parseInt(new URL(request.url).searchParams.get('from') ?? '0', 10)
+      return {
+        success: true,
+        data: { params, query: { from: Number.isFinite(from) ? from : 0 } },
+      }
+    })
     mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({ allowed: true })
     mockReadExecutionMetaState.mockResolvedValue({
@@ -63,6 +84,27 @@ describe('execution stream reconnect route', () => {
       meta: { status: 'active', workflowId: 'wf-1' },
     })
     mockReadExecutionEventsState.mockResolvedValue({ status: 'ok', events: [] })
+  })
+
+  it('authenticates before validating route params or query', async () => {
+    mockGetSession.mockResolvedValueOnce(null)
+    const unreadableParams = {
+      then: () => {
+        throw new Error('params should not be read')
+      },
+    } as unknown as Promise<{ id: string; executionId: string }>
+
+    const req = createMockRequest(
+      'GET',
+      undefined,
+      undefined,
+      'http://localhost/api/workflows/wf-1/executions/exec-1/stream?from=3'
+    )
+    const response = await GET(req, { params: unreadableParams })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    expect(mockParseRequest).not.toHaveBeenCalled()
   })
 
   it('drains final events after terminal meta before sending DONE', async () => {
