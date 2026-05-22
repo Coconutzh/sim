@@ -2,9 +2,10 @@ import { db } from '@sim/db'
 import { account, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import { jwtDecode } from 'jwt-decode'
-import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
+import { createPermissionError } from '@/lib/copilot/auth/permissions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
@@ -30,12 +31,13 @@ export const getCredentialsServerTool: BaseServerTool<GetCredentialsParams, any>
     let workspaceId: string | undefined
 
     if (params?.workflowId) {
-      const { hasAccess, workspaceId: wId } = await verifyWorkflowAccess(
-        authenticatedUserId,
-        params.workflowId
-      )
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: params.workflowId,
+        userId: authenticatedUserId,
+        action: 'read',
+      })
 
-      if (!hasAccess) {
+      if (!authorization.allowed || !authorization.workflow?.workspaceId) {
         const errorMessage = createPermissionError('access credentials in')
         logger.error('Unauthorized attempt to access credentials', {
           workflowId: params.workflowId,
@@ -44,7 +46,18 @@ export const getCredentialsServerTool: BaseServerTool<GetCredentialsParams, any>
         throw new Error(errorMessage)
       }
 
-      workspaceId = wId
+      if (authorization.accessSource !== 'workspace') {
+        logger.warn('Blocked credential context for cross-team published workflow access', {
+          workflowId: params.workflowId,
+          authenticatedUserId,
+          accessSource: authorization.accessSource,
+        })
+        throw new Error(
+          'Access denied: Published workflow viewers cannot access source workspace credentials'
+        )
+      }
+
+      workspaceId = authorization.workflow.workspaceId
     }
 
     const userId = authenticatedUserId
