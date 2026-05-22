@@ -3,7 +3,7 @@ import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   bulkKnowledgeChunksContract,
-  createChunkBodySchema,
+  createKnowledgeChunkContract,
   listKnowledgeChunksQuerySchema,
 } from '@/lib/api/contracts/knowledge'
 import { isZodError, parseRequest } from '@/lib/api/server'
@@ -97,20 +97,30 @@ export const GET = withRouteHandler(
 )
 
 export const POST = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string; documentId: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; documentId: string }> }) => {
     const requestId = generateRequestId()
-    const { id: knowledgeBaseId, documentId } = await params
 
     try {
-      const body = await req.json()
-      const { workflowId, ...searchParams } = body
-
       const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         logger.warn(`[${requestId}] Authentication failed: ${auth.error || 'Unauthorized'}`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
+
+      const parsed = await parseRequest(createKnowledgeChunkContract, req, context, {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid chunk creation data`, { errors: error.issues })
+          return NextResponse.json(
+            { error: 'Invalid request data', details: error.issues },
+            { status: 400 }
+          )
+        },
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id: knowledgeBaseId, documentId } = parsed.data.params
+      const { workflowId, ...validatedData } = parsed.data.body
 
       if (workflowId) {
         const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -170,8 +180,6 @@ export const POST = withRouteHandler(
       }
 
       try {
-        const validatedData = createChunkBodySchema.parse(searchParams)
-
         const docTags = {
           // Text tags (7 slots)
           tag1: doc.tag1 ?? null,

@@ -26,6 +26,10 @@ export const createChunkBodySchema = z.object({
   enabled: z.boolean().optional().default(true),
 })
 
+export const createKnowledgeChunkBodySchema = createChunkBodySchema.extend({
+  workflowId: z.string().min(1).optional(),
+})
+
 export const updateChunkBodySchema = createChunkBodySchema.partial()
 
 export const bulkChunkOperationBodySchema = z.object({
@@ -102,7 +106,7 @@ export const createKnowledgeChunkContract = defineRouteContract({
   method: 'POST',
   path: '/api/knowledge/[id]/documents/[documentId]/chunks',
   params: knowledgeDocumentParamsSchema,
-  body: createChunkBodySchema,
+  body: createKnowledgeChunkBodySchema,
   response: {
     mode: 'json',
     schema: successResponseSchema(chunkDataSchema),

@@ -8,10 +8,12 @@ const {
   mockCheckSessionOrInternalAuth,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockCheckDocumentWriteAccess,
+  mockParseRequest,
 } = vi.hoisted(() => ({
   mockCheckSessionOrInternalAuth: vi.fn(),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockCheckDocumentWriteAccess: vi.fn(),
+  mockParseRequest: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/hybrid', () => ({
@@ -29,7 +31,7 @@ vi.mock('@/app/api/knowledge/utils', () => ({
 
 vi.mock('@/lib/api/server', () => ({
   isZodError: vi.fn(() => false),
-  parseRequest: vi.fn(),
+  parseRequest: mockParseRequest,
 }))
 
 vi.mock('@/lib/knowledge/chunks/service', () => ({
@@ -67,6 +69,16 @@ describe('POST /api/knowledge/[id]/documents/[documentId]/chunks', () => {
       success: true,
       userId: 'user-1',
     })
+    mockParseRequest.mockResolvedValue({
+      success: true,
+      data: {
+        params: { id: 'kb-1', documentId: 'doc-1' },
+        body: {
+          workflowId: 'workflow-1',
+          content: 'Chunk content',
+        },
+      },
+    })
   })
 
   it('rejects published workflow readers from creating chunks', async () => {
@@ -94,6 +106,16 @@ describe('POST /api/knowledge/[id]/documents/[documentId]/chunks', () => {
   })
 
   it('hides foreign personal workflows behind not found during chunk creation', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'kb-1', documentId: 'doc-1' },
+        body: {
+          workflowId: 'workflow-foreign',
+          content: 'Chunk content',
+        },
+      },
+    })
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
       allowed: false,
       status: 404,
