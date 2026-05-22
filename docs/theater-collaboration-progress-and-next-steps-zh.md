@@ -139,6 +139,15 @@
 - 仅 owner 关系不再让用户访问 workgroup 团队画布；团队画布仍必须通过 workgroup membership 判断。
 - 这个 helper 会影响 `/api/logs/execution/[executionId]` 这类按“可访问 workspace IDs”过滤的日志/快照路径，因此该修复同时降低了个人草稿执行数据被同团队成员枚举的风险。
 
+### 3.9 logs/metrics 路由隔离补证
+
+本轮收口 Phase 4 的日志与执行指标切片：
+
+- 复核 `apps/sim/app/api/logs/**` 与 `apps/sim/app/api/workspaces/[id]/metrics/executions/route.ts`：列表、导出、统计、触发器、按 log id、按 execution id 和执行快照路径均在查询前经过 `checkWorkspaceAccess` 或 `listAccessibleWorkspaceIds`，不会把其他成员个人草稿或非成员团队画布执行数据暴露给当前用户。
+- 新增 `apps/sim/app/api/logs/[id]/route.test.ts` 与 `apps/sim/app/api/logs/by-execution/[executionId]/route.test.ts`，证明详情入口统一委托 `fetchLogDetail` 的 workspace-scoped authorizer；当 authorizer 拒绝源 workspace 时返回 404，不泄露 source team execution detail。
+- 保留并复跑已有日志覆盖：`/api/logs`、`/api/logs/export`、`/api/logs/stats`、`/api/logs/triggers`、`/api/logs/execution/[executionId]`、`fetchLogDetail` 和 workspace execution metrics。
+- 顺手去掉 metrics route 中的 `any[]` 查询条件类型，改为 `SQL[]`，避免后续权限条件拼接退化成无类型路径。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
@@ -154,6 +163,9 @@
 | `apps/sim/app/api/workflows/[id]/duplicate/route.test.ts` | 跨团队展示访问不能复制源 workflow |
 | `apps/sim/app/api/workflows/[id]/variables/route.test.ts` | 跨团队展示访问不能读写 variables |
 | `apps/sim/app/api/workflows/[id]/executions/[executionId]/stream/route.test.ts` | 跨团队展示访问不能读取 execution stream |
+| `apps/sim/app/api/logs/[id]/route.test.ts` | log id 详情入口必须走 workspace-scoped detail authorizer，拒绝源 workspace 时返回 404 |
+| `apps/sim/app/api/logs/by-execution/[executionId]/route.test.ts` | execution id 详情入口必须走 workspace-scoped detail authorizer，拒绝源 workspace 时返回 404 |
+| `apps/sim/app/api/workspaces/[id]/metrics/executions/route.test.ts` | 执行指标读取需要真实 workspace read access，其他成员个人草稿返回 404 |
 
 最近切片中使用过的验证命令：
 
@@ -162,6 +174,7 @@ Set-Location apps\sim; bunx vitest run lib/collaboration/service.test.ts
 Set-Location apps\sim; bunx vitest run lib/copilot/tools/server/router.test.ts
 Set-Location apps\sim; bunx biome check --write lib/copilot/tools/server/router.ts lib/copilot/tools/server/router.test.ts
 Set-Location apps\sim; bun run type-check 2>&1 | Select-String -Pattern "lib/copilot/tools/server/router"
+Set-Location apps\sim; bunx vitest run app/api/logs/route.test.ts app/api/logs/export/route.test.ts app/api/logs/stats/route.test.ts app/api/logs/triggers/route.test.ts "app/api/logs/[id]/route.test.ts" "app/api/logs/by-execution/[executionId]/route.test.ts" app/api/logs/execution/[executionId]/route.test.ts app/api/workspaces/[id]/metrics/executions/route.test.ts lib/logs/fetch-log-detail.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
@@ -178,6 +191,7 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 | workspace list/detail | 已有 `listAccessibleWorkspaceIds` 与 canvas metadata，但仍需围绕旧入口和个人草稿泄露做最终审计 |
 | folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
 | files/assets | 正在排查，workspace files 多数路径已有 read/write 权限校验，但仍需完成 `/api/files/**` 与 presigned/serve/upload 全链路复核 |
+| logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |
 | credentials | 已加固 Copilot credential context，但普通 credential/API 路径仍需按展示读者场景复核 |
 | Copilot context | 已做多处过滤和脱敏，仍需继续查 tools、VFS、resource attachment、workspace mode 分支 |
 | Realtime room join/operation | 已有只读/发布画布限制，仍需补齐测试覆盖和 presence 隔离复核 |
@@ -210,21 +224,16 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
    - 确认 read-only showcase reader 不能上传、注册、删除、改名、覆盖源 workspace 文件。
    - 确认 serve/download/presigned 路径不能通过 key 或 workspaceId 猜测读取个人草稿或团队私有资源。
 
-2. **logs/metrics 切片**
-   - 排查 `apps/sim/app/api/logs/**`。
-   - 排查 `apps/sim/app/api/workspaces/[id]/metrics/executions/route.ts`。
-   - 确认展示读者不能看到源团队执行细节、trace、文件、成本、错误输入输出。
-
-3. **workspace/sidebar/recent/search 切片**
+2. **workspace/sidebar/recent/search 切片**
    - 排查 `apps/sim/app/api/workspaces/**`、workflow list、folder list、sidebar 数据源、recent workflows、搜索入口。
    - 确保旧 workspace API 不返回别人的个人草稿。
    - 确保非团队成员看不到团队画布。
 
-4. **Realtime 测试切片**
+3. **Realtime 测试切片**
    - 对 `apps/realtime/src/middleware/permissions.ts` 和 operation handlers 补更直接的测试。
    - 覆盖非 owner 不能进个人草稿 room、非成员不能进团队 room、展示画布 mutation 被拒绝、read role position update 被拒绝。
 
-5. **webhooks/internal tasks 切片**
+4. **webhooks/internal tasks 切片**
    - 排查 webhook、scheduled/internal cleanup、agentmail、outbox 等内部任务是否可能只凭 workspaceId 或 workflowId 绕过新的 canvas 边界。
 
 ### 6.2 Phase 4 完成前建议验收门槛

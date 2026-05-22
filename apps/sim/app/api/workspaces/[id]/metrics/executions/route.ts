@@ -43,7 +43,7 @@ export const GET = withRouteHandler(
       if (!access.exists || !access.hasAccess) {
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
-      const wfWhere = [eq(workflow.workspaceId, workspaceId)] as any[]
+      const wfWhere: SQL[] = [eq(workflow.workspaceId, workspaceId)]
       if (qp.folderIds) {
         const folderList = qp.folderIds.split(',').filter(Boolean)
         wfWhere.push(inArray(workflow.folderId, folderList))
