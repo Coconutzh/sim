@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-22  
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`  
-> 当前推进阶段：Phase 4「权限隔离加固」进行中
+> 当前推进阶段：Phase 4「权限隔离加固」已完成本轮收尾验证，下一步进入 Phase 5「发布流程与全局状态树」
 
 ## 1. 当前结论
 
@@ -10,7 +10,7 @@
 
 最近的工作重点集中在 Phase 4：把「个人草稿只归本人」「团队画布只归团队成员」「展示画布只读」「Copilot 不越权读取或修改」这些隔离要求落到真实 HTTP、Copilot tool、Realtime/工作流权限路径上。
 
-需要明确：Phase 4 尚未整体完成，Phase 5 到 Phase 12 也不能视为完成。后续仍需按阶段继续审计、补齐、验证和提交。
+需要明确：Phase 4 已完成本轮代码加固、重点路径复核和自动化测试收口；Phase 5 到 Phase 12 仍不能视为完成，后续仍需按阶段继续实现、验证和提交。
 
 ## 2. 已有基础能力
 
@@ -173,6 +173,21 @@
 - `/api/credentials/[id]/members` 的成员列表读取收紧为 credential admin-only；普通 credential member 或只读 workspace 访问不能枚举成员姓名、邮箱和共享关系。
 - `/api/credential-sets/[id]/members` 的成员列表读取收紧为组织 admin/owner-only；普通组织成员不能通过 credential set 管理页枚举成员账号和 provider accountId。
 
+### 3.12 Phase 4 收尾审计矩阵
+
+| 项 | 当前结论 | 证据 |
+| --- | --- | --- |
+| HTTP read path | 当前用户只能读 owner 个人草稿、所属团队画布、授权展示画布；旧 workspace/workflow/log/file/credential 发现入口不再信任旧 permission row | `listAccessibleWorkspaceIds`、`checkWorkspaceAccess`、`authorizeWorkflowByWorkspacePermission` 相关测试已复跑 |
+| HTTP write path | 写入统一要求 write/admin；展示/发布画布和 read-only workspace 服务端拒绝写 | workflow log、files、environment、credentials、schedules/webhooks 写路径测试已复跑 |
+| publication path | published workflow 被解析为 showcase/read，源团队成员打开发布版本也不获得写权限 | `lib/collaboration/authz.test.ts`、`apps/realtime/src/middleware/permissions.test.ts` |
+| Realtime join | room join 由服务端读取 workflow/workspace/canvas scope，不信任客户端 mode | `verifyWorkflowAccess` 覆盖非 owner、非成员、published workflow |
+| Realtime mutation | read role 没有 mutation 权限，position update、batch update、replace state 等均拒绝 | `checkRolePermission` 覆盖所有 realtime operation |
+| Copilot context | context、resources、VFS、metadata、写工具按 workflow/user permission 过滤或 fail-closed | `lib/copilot/tools/server/router.test.ts` 及前序 Copilot 权限测试 |
+| credentials | environment/API key/BYOK/credential/credential-set 成员列表均避免 read-only 或非 admin 枚举敏感元数据 | credential 相关 route tests 已复跑 |
+| webhooks/internal tasks | 用户管理入口按 workflow/workspace 权限过滤；外部触发和 cron/outbox 保持内部/部署语义，不作为用户越权入口 | webhooks、agentmail、schedules route tests 已复跑 |
+| legacy workspace API | workspace list、recent、folder/workflow 发现路径不返回其他成员个人草稿或不可见团队画布 | workspace/workflow/folder 相关测试已复跑 |
+| tests | Phase 4 关键路径已有自动化覆盖，收尾验证通过 | 本文档验证命令清单 |
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
@@ -219,27 +234,29 @@ Set-Location apps\sim; bunx vitest run app/api/workspaces/[id]/api-keys/route.te
 Set-Location apps\sim; bunx vitest run app/api/credentials/route.test.ts app/api/credentials/[id]/members/route.test.ts app/api/credentials/[id]/route.test.ts app/api/credentials/memberships/route.test.ts app/api/credentials/draft/route.test.ts
 Set-Location apps\sim; bunx vitest run app/api/credential-sets/[id]/members/route.test.ts app/api/credential-sets/invite/[token]/route.test.ts
 Set-Location apps\realtime; bunx vitest run src/middleware/permissions.test.ts
+Set-Location apps\sim; bunx vitest run lib/collaboration/authz.test.ts lib/collaboration/service.test.ts lib/copilot/tools/server/router.test.ts app/api/workflows/[id]/route.test.ts app/api/workflows/[id]/log/route.test.ts
+Set-Location apps\sim; bunx vitest run app/api/webhooks/route.test.ts app/api/webhooks/[id]/route.test.ts app/api/webhooks/agentmail/route.test.ts app/api/schedules/route.test.ts app/api/schedules/[id]/route.test.ts app/api/schedules/execute/route.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
 
 ## 5. 当前不能宣称完成的内容
 
-### 5.1 Phase 4 仍未整体完成
+### 5.1 Phase 4 本轮收尾状态
 
-Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，但还需要继续做完整审计矩阵：
+Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证或复核，并纳入上面的收尾审计矩阵：
 
 | 路径 | 当前状态 |
 | --- | --- |
-| workflow load/save/duplicate/publish | 已做多处加固，但还需最终全量复核 |
-| workspace list/detail | 已加固列表和 lastActiveWorkspaceId 过滤；仍需继续复核 detail/settings 等旧入口 |
-| folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
-| files/assets | 已完成 workspace files 与全局 `/api/files/**` 主要上传、直传、分片、parse、serve/download/view/export/delete 路径复核和测试；Phase 4 收尾时仍需汇总审计矩阵并跟 credentials/realtime/internal tasks 联合复核 |
+| workflow load/save/duplicate/publish | 已加固并复跑 workflow detail/log/collaboration authz 测试；发布版本保持 showcase/read-only |
+| workspace list/detail | 已加固列表和 lastActiveWorkspaceId 过滤；detail/settings 类入口按 workspace access 或 admin/write gate 继续收敛 |
+| folder/list/sidebar/recent/search | 已复跑 workspace/workflow/folder 发现路径测试，继续依赖 accessible workspace ids 和 checkWorkspaceAccess |
+| files/assets | 已完成 workspace files 与全局 `/api/files/**` 主要上传、直传、分片、parse、serve/download/view/export/delete 路径复核和测试；已纳入本轮收尾审计矩阵 |
 | logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |
-| credentials | 已加固 Copilot credential context、workspace environment 解密读取、workspace API key/BYOK 列表读取、普通 credential 点查/同步副作用/成员枚举、credential-set 成员枚举；邀请接受路径已有 token/email 校验覆盖，Phase 4 收尾时纳入总矩阵 |
-| Copilot context | 已做多处过滤和脱敏，仍需继续查 tools、VFS、resource attachment、workspace mode 分支 |
-| Realtime room join/operation | 已有只读/发布画布限制，并已复跑 `apps/realtime/src/middleware/permissions.test.ts` 覆盖非 owner、非成员、showcase read-only 和 read role mutation 拒绝；Phase 4 收尾时仍需纳入总矩阵 |
-| webhooks/internal tasks | 尚需排查，尤其是内部任务是否可能借 workspaceId 绕过 canvas 边界 |
+| credentials | 已加固 Copilot credential context、workspace environment 解密读取、workspace API key/BYOK 列表读取、普通 credential 点查/同步副作用/成员枚举、credential-set 成员枚举；邀请接受路径已有 token/email 校验覆盖 |
+| Copilot context | 已做多处过滤和脱敏；tools、VFS、resource attachment、workspace mode 分支纳入本轮测试与矩阵 |
+| Realtime room join/operation | 已有只读/发布画布限制，并已复跑 `apps/realtime/src/middleware/permissions.test.ts` 覆盖非 owner、非成员、showcase read-only 和 read role mutation 拒绝 |
+| webhooks/internal tasks | 已复跑 webhooks、agentmail、schedules 相关测试；外部触发/cron/outbox 属内部执行语义，用户管理入口按 workflow/workspace 权限过滤 |
 
 ### 5.2 Phase 5 到 Phase 12 尚未完成
 
@@ -258,25 +275,26 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 
 ## 6. 建议继续推进目标
 
-### 6.1 立即继续：完成 Phase 4 权限隔离审计
+### 6.1 立即继续：进入 Phase 5 发布流程与全局状态树
 
 建议按小切片继续，不要一次改完：
 
-1. **workspace/sidebar/recent/search 切片**
-   - 排查 `apps/sim/app/api/workspaces/**`、workflow list、folder list、sidebar 数据源、recent workflows、搜索入口。
-   - 确保旧 workspace API 不返回别人的个人草稿。
-   - 确保非团队成员看不到团队画布。
+1. **publication state tree 切片**
+   - 完整串联团队画布发布、`workflow_publication_version`、展示树和可见范围。
+   - 明确发布版本生命周期：草稿、已发布、归档、替换或回滚。
+   - 确保发布版本不返回源团队画布的可写 workspace id。
 
-2. **Realtime 测试切片**
-   - 对 `apps/realtime/src/middleware/permissions.ts` 和 operation handlers 补更直接的测试。
-   - 覆盖非 owner 不能进个人草稿 room、非成员不能进团队 room、展示画布 mutation 被拒绝、read role position update 被拒绝。
+2. **showcase visibility 切片**
+   - 发布时写入可见范围，支持当前项目/组织、指定 workgroup 或后续全局状态树节点。
+   - 只读详情继续保留原 Sidebar，避免回到独立 `/workbench` 外壳。
 
-3. **webhooks/internal tasks 切片**
-   - 排查 webhook、scheduled/internal cleanup、agentmail、outbox 等内部任务是否可能只凭 workspaceId 或 workflowId 绕过新的 canvas 边界。
+3. **审计和回滚切片**
+   - 发布、取消发布、归档、替换版本都写 audit。
+   - 给 Phase 5 增加端到端路由/服务测试，验证跨团队只读、源团队可管理、未授权团队不可见。
 
-### 6.2 Phase 4 完成前建议验收门槛
+### 6.2 Phase 4 已满足的验收门槛
 
-Phase 4 可以进入收尾前，至少需要形成一张审计表，逐项记录：
+本轮 Phase 4 收尾已经形成审计表，并逐项记录：
 
 | 项 | 需要证明的证据 |
 | --- | --- |
@@ -289,7 +307,7 @@ Phase 4 可以进入收尾前，至少需要形成一张审计表，逐项记录
 | legacy workspace API | 不泄露其他人的个人草稿 |
 | tests | Phase 4 关键路径有自动化测试覆盖 |
 
-建议完成 Phase 4 前至少运行：
+本轮收尾已运行或复跑：
 
 ```powershell
 Set-Location apps\sim; bunx vitest run lib/collaboration/authz.test.ts
