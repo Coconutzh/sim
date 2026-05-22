@@ -930,6 +930,7 @@ export async function getPublicationTree(params: { userId: string; publicationVe
     .select({
       publication: workflowPublicationVersion,
       sourceWorkgroupName: workgroup.name,
+      sourceDisciplineCode: discipline.code,
       sourceDisciplineName: discipline.name,
     })
     .from(workflowPublicationVersion)
@@ -959,7 +960,22 @@ export async function getPublicationTree(params: { userId: string; publicationVe
           ? row.publication.parentVersionId
           : null,
       title: row.publication.title,
+      description: row.publication.description,
       versionNumber: row.publication.versionNumber,
+      status: 'published' as const,
+      visibility: row.publication.visibility,
+      sourceWorkgroup: {
+        id: row.publication.sourceWorkgroupId,
+        name: row.sourceWorkgroupName,
+      },
+      sourceDiscipline: {
+        code: row.sourceDisciplineCode ?? 'chief_director',
+        name: row.sourceDisciplineName ?? '总导演',
+      },
+      agentCode: row.publication.agentCode,
+      dependsOnPublicationIds: row.publication.parentVersionId
+        ? [row.publication.parentVersionId]
+        : [],
       sourceWorkgroupName: row.sourceWorkgroupName,
       sourceDisciplineName: row.sourceDisciplineName ?? '总导演',
       publishedAt: row.publication.publishedAt.toISOString(),

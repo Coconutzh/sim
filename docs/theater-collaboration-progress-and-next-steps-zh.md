@@ -273,6 +273,15 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
+### 5.3 Phase 5 已启动的切片
+
+本轮已经开始 Phase 5 的全局状态树数据形态收敛：
+
+- `getPublicationTree` 不再只返回最小版本链路，还会返回每个可见节点的 `description`、`status`、`visibility`、`sourceWorkgroup`、`sourceDiscipline`、`agentCode` 和 `dependsOnPublicationIds`。
+- `publicationTreeSchema` 同步声明这些字段，前端展示画布/全局状态树可以直接按工种、团队、Agent 和依赖关系渲染。
+- 当前 `status` 先固定为 `published`，后续撤回/归档切片再补 DB 级 `archived/retracted/superseded` 生命周期字段和操作路由。
+- 已扩展 `apps/sim/lib/collaboration/service.test.ts`，确保发布树只返回当前用户可见节点，同时保留状态树元数据。
+
 ## 6. 建议继续推进目标
 
 ### 6.1 立即继续：进入 Phase 5 发布流程与全局状态树

@@ -435,11 +435,16 @@ describe('collaboration service', () => {
           publication: {
             id: 'publication-visible',
             title: 'Visible version',
+            description: 'Visible summary',
             versionNumber: 3,
             parentVersionId: 'publication-root',
+            sourceWorkgroupId: 'workgroup-1',
+            agentCode: 'chief_director',
+            visibility: 'organization',
             publishedAt: new Date('2026-05-23T00:00:00Z'),
           },
           sourceWorkgroupName: 'Team A',
+          sourceDisciplineCode: 'stage_design',
           sourceDisciplineName: 'Stage Design',
         },
       ]
@@ -451,7 +456,18 @@ describe('collaboration service', () => {
       rootVersionId: 'publication-root',
       versions: [
         { id: 'publication-root', parentVersionId: null, versionNumber: 2 },
-        { id: 'publication-visible', parentVersionId: 'publication-root', versionNumber: 3 },
+        {
+          id: 'publication-visible',
+          parentVersionId: 'publication-root',
+          description: 'Visible summary',
+          versionNumber: 3,
+          status: 'published',
+          visibility: 'organization',
+          sourceWorkgroup: { id: 'workgroup-1', name: 'Team A' },
+          sourceDiscipline: { code: 'stage_design', name: 'Stage Design' },
+          agentCode: 'chief_director',
+          dependsOnPublicationIds: ['publication-root'],
+        },
       ],
     })
     expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-hidden')
