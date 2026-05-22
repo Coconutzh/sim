@@ -48,7 +48,43 @@ interface AgentContext {
   content: string
 }
 
+type WorkflowContextRecord = NonNullable<Awaited<ReturnType<typeof getActiveWorkflowRecord>>>
+
 const logger = createLogger('ProcessContents')
+
+function buildWorkflowMetaForCopilot(
+  workflowRecord: WorkflowContextRecord,
+  options: { includeWorkspaceOnlyFields: boolean }
+) {
+  if (options.includeWorkspaceOnlyFields) {
+    return {
+      id: workflowRecord.id,
+      name: workflowRecord.name,
+      description: workflowRecord.description,
+      folderId: workflowRecord.folderId,
+      isDeployed: workflowRecord.isDeployed,
+      deployedAt: workflowRecord.deployedAt,
+      runCount: workflowRecord.runCount,
+      lastRunAt: workflowRecord.lastRunAt,
+      createdAt: workflowRecord.createdAt,
+      updatedAt: workflowRecord.updatedAt,
+    }
+  }
+
+  const publishedAt = workflowRecord.publishedAt ?? workflowRecord.updatedAt
+  return {
+    id: workflowRecord.id,
+    name: workflowRecord.name,
+    description: workflowRecord.description,
+    folderId: null,
+    isDeployed: false,
+    deployedAt: null,
+    runCount: 0,
+    lastRunAt: null,
+    createdAt: publishedAt,
+    updatedAt: publishedAt,
+  }
+}
 
 async function canUseWorkspaceContext(workspaceId: string, userId: string): Promise<boolean> {
   try {
@@ -295,6 +331,7 @@ async function processWorkflowFromDb(
 ): Promise<AgentContext | null> {
   try {
     let workflowRecord: Awaited<ReturnType<typeof getActiveWorkflowRecord>> = null
+    let workflowAccessSource: string | null = null
 
     if (userId) {
       const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -312,6 +349,7 @@ async function processWorkflowFromDb(
         return null
       }
       workflowRecord = authorization.workflow ?? null
+      workflowAccessSource = authorization.accessSource
     }
 
     if (!workflowRecord) {
@@ -320,17 +358,11 @@ async function processWorkflowFromDb(
 
     if (kind === 'workflow') {
       if (!workflowRecord) return null
-      const content = serializeWorkflowMeta({
-        id: workflowRecord.id,
-        name: workflowRecord.name,
-        description: workflowRecord.description,
-        isDeployed: workflowRecord.isDeployed,
-        deployedAt: workflowRecord.deployedAt,
-        runCount: workflowRecord.runCount,
-        lastRunAt: workflowRecord.lastRunAt,
-        createdAt: workflowRecord.createdAt,
-        updatedAt: workflowRecord.updatedAt,
-      })
+      const content = serializeWorkflowMeta(
+        buildWorkflowMetaForCopilot(workflowRecord, {
+          includeWorkspaceOnlyFields: !userId || workflowAccessSource === 'workspace',
+        })
+      )
       return { type: kind, tag, content }
     }
 

@@ -93,6 +93,7 @@ vi.mock('@/executor/constants', () => ({
   escapeRegExp: vi.fn((value: string) => value),
 }))
 
+import { serializeWorkflowMeta } from '@/lib/copilot/vfs/serializers'
 import { getTableById } from '@/lib/table/service'
 import { processContextsServer, resolveActiveResourceContext } from './process-contents'
 
@@ -143,6 +144,61 @@ describe('processContextsServer', () => {
 
     expect(result).toEqual([])
     expect(mockLoadWorkflowFromNormalizedTables).not.toHaveBeenCalled()
+  })
+
+  it('sanitizes workflow metadata for published workflow readers', async () => {
+    const publishedAt = new Date('2026-05-20T00:00:00Z')
+    const updatedAt = new Date('2026-05-21T00:00:00Z')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      status: 200,
+      accessSource: 'selected_workgroups',
+      workflow: {
+        id: 'wf-1',
+        workspaceId: 'ws-source',
+        folderId: 'folder-secret',
+        name: 'Published Workflow',
+        description: 'Visible publication summary',
+        isDeployed: true,
+        deployedAt: new Date('2026-05-19T00:00:00Z'),
+        runCount: 42,
+        lastRunAt: new Date('2026-05-21T08:00:00Z'),
+        createdAt: new Date('2026-05-01T00:00:00Z'),
+        updatedAt,
+        publishedAt,
+      },
+    })
+
+    const result = await processContextsServer(
+      [
+        {
+          kind: 'workflow',
+          workflowId: 'wf-1',
+          label: 'Published Workflow',
+        },
+      ],
+      'viewer-1'
+    )
+
+    expect(result).toEqual([
+      {
+        type: 'workflow',
+        tag: '@Published Workflow',
+        content: 'workflow-meta',
+      },
+    ])
+    expect(serializeWorkflowMeta).toHaveBeenCalledWith({
+      id: 'wf-1',
+      name: 'Published Workflow',
+      description: 'Visible publication summary',
+      folderId: null,
+      isDeployed: false,
+      deployedAt: null,
+      runCount: 0,
+      lastRunAt: null,
+      createdAt: publishedAt,
+      updatedAt: publishedAt,
+    })
   })
 
   it('does not expose workflow block details to published workflow readers', async () => {
