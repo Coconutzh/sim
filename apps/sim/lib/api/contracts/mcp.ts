@@ -178,6 +178,29 @@ export const mcpToolExecutionBodySchema = z
   .passthrough()
 export type McpToolExecutionBody = z.input<typeof mcpToolExecutionBodySchema>
 
+export const mcpToolResultContentSchema = z
+  .object({
+    type: z.enum(['text', 'image', 'resource']),
+    text: z.string().optional(),
+    data: z.string().optional(),
+    mimeType: z.string().optional(),
+  })
+  .passthrough()
+
+export const mcpToolResultSchema = z
+  .object({
+    content: z.array(mcpToolResultContentSchema).optional(),
+    isError: z.boolean().optional(),
+  })
+  .passthrough()
+
+export const mcpToolExecutionResultSchema = z.object({
+  success: z.boolean(),
+  output: mcpToolResultSchema.optional(),
+  error: z.string().optional(),
+})
+export type McpToolExecutionResult = z.output<typeof mcpToolExecutionResultSchema>
+
 export const mcpJsonRpcRequestSchema = z
   .object({
     jsonrpc: z.literal('2.0'),
@@ -364,6 +387,16 @@ export const refreshMcpToolsContract = defineRouteContract({
         }),
       })
     ),
+  },
+})
+
+export const executeMcpToolContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/mcp/tools/execute',
+  body: mcpToolExecutionBodySchema,
+  response: {
+    mode: 'json',
+    schema: mcpSuccessResponseSchema(mcpToolExecutionResultSchema),
   },
 })
 

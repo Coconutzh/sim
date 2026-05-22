@@ -1,14 +1,15 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
-import { mcpToolExecutionBodySchema } from '@/lib/api/contracts/mcp'
+import { executeMcpToolContract } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
 import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { SIM_VIA_HEADER } from '@/lib/execution/call-chain'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpService } from '@/lib/mcp/service'
-import type { McpTool, McpToolCall, McpToolResult } from '@/lib/mcp/types'
+import type { McpTool, McpToolCall, McpToolResult, McpToolSchemaProperty } from '@/lib/mcp/types'
 import { categorizeError, createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 import {
   assertPermissionsAllowed,
@@ -19,23 +20,30 @@ const logger = createLogger('McpToolExecutionAPI')
 
 export const dynamic = 'force-dynamic'
 
-interface SchemaProperty {
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array'
-  description?: string
-  enum?: unknown[]
-  format?: string
-  items?: SchemaProperty
-  properties?: Record<string, SchemaProperty>
-}
-
 interface ToolExecutionResult {
   success: boolean
   output?: McpToolResult
   error?: string
 }
 
-function hasType(prop: unknown): prop is SchemaProperty {
-  return typeof prop === 'object' && prop !== null && 'type' in prop
+function getSchemaTypes(prop: McpToolSchemaProperty): string[] {
+  if (Array.isArray(prop.type)) {
+    return prop.type.filter((type): type is string => typeof type === 'string')
+  }
+  return typeof prop.type === 'string' ? [prop.type] : []
+}
+
+function matchesSchemaType(value: unknown, schemaType: string): boolean {
+  if (schemaType === 'array') return Array.isArray(value)
+  if (schemaType === 'integer') return typeof value === 'number' && Number.isInteger(value)
+  if (schemaType === 'object')
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+  if (schemaType === 'null') return value === null
+  return typeof value === schemaType
+}
+
+function formatExpectedTypes(types: string[]): string {
+  return types.length === 1 ? types[0] : `one of: ${types.join(', ')}`
 }
 
 /**
@@ -44,14 +52,19 @@ function hasType(prop: unknown): prop is SchemaProperty {
 export const POST = withRouteHandler(
   withMcpAuth('read')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
-      const rawBody = getParsedBody(request) ?? (await request.json())
-      const parsedBody = mcpToolExecutionBodySchema.safeParse(rawBody)
-
-      if (!parsedBody.success) {
-        return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-      }
-
-      const body = parsedBody.data
+      const parsed = await parseRequest(
+        executeMcpToolContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+          invalidJsonResponse: () =>
+            createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+        }
+      )
+      if (!parsed.success) return parsed.response
+      const { body } = parsed.data
 
       logger.info(`[${requestId}] MCP tool execution request received`, {
         hasAuthHeader: !!request.headers.get('authorization'),
@@ -101,7 +114,7 @@ export const POST = withRouteHandler(
 
         if (tool.inputSchema?.properties) {
           for (const [paramName, paramSchema] of Object.entries(tool.inputSchema.properties)) {
-            const schema = paramSchema as any
+            const schemaTypes = getSchemaTypes(paramSchema)
             const value = args[paramName]
 
             if (value === undefined || value === null) {
@@ -109,21 +122,22 @@ export const POST = withRouteHandler(
             }
 
             if (
-              (schema.type === 'number' || schema.type === 'integer') &&
+              (schemaTypes.includes('number') || schemaTypes.includes('integer')) &&
               typeof value === 'string'
             ) {
-              const numValue =
-                schema.type === 'integer' ? Number.parseInt(value) : Number.parseFloat(value)
+              const numValue = schemaTypes.includes('integer')
+                ? Number.parseInt(value)
+                : Number.parseFloat(value)
               if (!Number.isNaN(numValue)) {
                 args[paramName] = numValue
               }
-            } else if (schema.type === 'boolean' && typeof value === 'string') {
+            } else if (schemaTypes.includes('boolean') && typeof value === 'string') {
               if (value.toLowerCase() === 'true') {
                 args[paramName] = true
               } else if (value.toLowerCase() === 'false') {
                 args[paramName] = false
               }
-            } else if (schema.type === 'array' && typeof value === 'string') {
+            } else if (schemaTypes.includes('array') && typeof value === 'string') {
               const stringValue = value.trim()
               if (stringValue) {
                 try {
@@ -244,33 +258,15 @@ function validateToolArguments(tool: McpTool, args: Record<string, unknown>): st
   if (schema.properties && args) {
     for (const [propName, propSchema] of Object.entries(schema.properties)) {
       const propValue = args[propName]
-      if (propValue !== undefined && hasType(propSchema)) {
-        const expectedType = propSchema.type
-        const actualType = typeof propValue
+      if (propValue !== undefined) {
+        const expectedTypes = getSchemaTypes(propSchema)
+        if (expectedTypes.length === 0) continue
 
-        if (expectedType === 'string' && actualType !== 'string') {
-          return `Property ${propName} must be a string`
-        }
-        if (expectedType === 'number' && actualType !== 'number') {
-          return `Property ${propName} must be a number`
-        }
-        if (
-          expectedType === 'integer' &&
-          (actualType !== 'number' || !Number.isInteger(propValue))
-        ) {
-          return `Property ${propName} must be an integer`
-        }
-        if (expectedType === 'boolean' && actualType !== 'boolean') {
-          return `Property ${propName} must be a boolean`
-        }
-        if (
-          expectedType === 'object' &&
-          (actualType !== 'object' || propValue === null || Array.isArray(propValue))
-        ) {
-          return `Property ${propName} must be an object`
-        }
-        if (expectedType === 'array' && !Array.isArray(propValue)) {
-          return `Property ${propName} must be an array`
+        const isValidType = expectedTypes.some((schemaType) =>
+          matchesSchemaType(propValue, schemaType)
+        )
+        if (!isValidType) {
+          return `Property ${propName} must be ${formatExpectedTypes(expectedTypes)}`
         }
       }
     }
