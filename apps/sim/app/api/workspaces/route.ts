@@ -95,7 +95,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   ])
   const userWorkspaces = userWorkspacesRaw
 
-  const lastActiveWorkspaceId = userSettings[0]?.lastActiveWorkspaceId ?? null
+  const storedLastActiveWorkspaceId = userSettings[0]?.lastActiveWorkspaceId ?? null
+  const lastActiveWorkspaceId =
+    storedLastActiveWorkspaceId && accessibleWorkspaceIds.includes(storedLastActiveWorkspaceId)
+      ? storedLastActiveWorkspaceId
+      : null
 
   if (scope === 'active' && userWorkspaces.length === 0) {
     if (!creationPolicy.canCreate) {

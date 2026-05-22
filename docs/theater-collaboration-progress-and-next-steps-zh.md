@@ -148,6 +148,14 @@
 - 保留并复跑已有日志覆盖：`/api/logs`、`/api/logs/export`、`/api/logs/stats`、`/api/logs/triggers`、`/api/logs/execution/[executionId]`、`fetchLogDetail` 和 workspace execution metrics。
 - 顺手去掉 metrics route 中的 `any[]` 查询条件类型，改为 `SQL[]`，避免后续权限条件拼接退化成无类型路径。
 
+### 3.10 workspace/recent 发现入口加固
+
+本轮继续收口 Phase 4 的旧 workspace 发现路径：
+
+- `GET /api/workspaces` 仍以 `listAccessibleWorkspaceIds(userId)` 作为唯一列表边界，并在返回 `lastActiveWorkspaceId` 前再次确认该 ID 仍属于当前用户可访问集合；如果设置里残留其他成员个人草稿或已失效团队画布 ID，响应改为 `null`，避免旧入口泄露不可访问 workspace id。
+- `useWorkspaceManagement` 的本地最近访问记录只在当前 `workspaceId` 已出现在服务端返回的可访问 workspace 列表后写入；用户手动打开不可访问 URL 时不会再把该 ID 写入 `localStorage` 或同步到 user settings。
+- 新增/扩展 `apps/sim/app/api/workspaces/route.test.ts` 覆盖“不可访问 last active workspace id 不返回给客户端”；并复跑 workspace/workflow 发现路径相关测试，确认 workflow 列表继续依赖 `listAccessibleWorkspaceIds` 和 `checkWorkspaceAccess`。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
@@ -166,6 +174,7 @@
 | `apps/sim/app/api/logs/[id]/route.test.ts` | log id 详情入口必须走 workspace-scoped detail authorizer，拒绝源 workspace 时返回 404 |
 | `apps/sim/app/api/logs/by-execution/[executionId]/route.test.ts` | execution id 详情入口必须走 workspace-scoped detail authorizer，拒绝源 workspace 时返回 404 |
 | `apps/sim/app/api/workspaces/[id]/metrics/executions/route.test.ts` | 执行指标读取需要真实 workspace read access，其他成员个人草稿返回 404 |
+| `apps/sim/app/api/workspaces/route.test.ts` | workspace 列表和 lastActiveWorkspaceId 都必须先经过 accessible workspace ids 过滤 |
 
 最近切片中使用过的验证命令：
 
@@ -175,6 +184,7 @@ Set-Location apps\sim; bunx vitest run lib/copilot/tools/server/router.test.ts
 Set-Location apps\sim; bunx biome check --write lib/copilot/tools/server/router.ts lib/copilot/tools/server/router.test.ts
 Set-Location apps\sim; bun run type-check 2>&1 | Select-String -Pattern "lib/copilot/tools/server/router"
 Set-Location apps\sim; bunx vitest run app/api/logs/route.test.ts app/api/logs/export/route.test.ts app/api/logs/stats/route.test.ts app/api/logs/triggers/route.test.ts "app/api/logs/[id]/route.test.ts" "app/api/logs/by-execution/[executionId]/route.test.ts" app/api/logs/execution/[executionId]/route.test.ts app/api/workspaces/[id]/metrics/executions/route.test.ts lib/logs/fetch-log-detail.test.ts
+Set-Location apps\sim; bunx vitest run app/api/workspaces/route.test.ts app/api/workflows/route.test.ts lib/workspaces/utils.test.ts lib/workflows/utils.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
@@ -188,7 +198,7 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 | 路径 | 当前状态 |
 | --- | --- |
 | workflow load/save/duplicate/publish | 已做多处加固，但还需最终全量复核 |
-| workspace list/detail | 已有 `listAccessibleWorkspaceIds` 与 canvas metadata，但仍需围绕旧入口和个人草稿泄露做最终审计 |
+| workspace list/detail | 已加固列表和 lastActiveWorkspaceId 过滤；仍需继续复核 detail/settings 等旧入口 |
 | folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
 | files/assets | 正在排查，workspace files 多数路径已有 read/write 权限校验，但仍需完成 `/api/files/**` 与 presigned/serve/upload 全链路复核 |
 | logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |

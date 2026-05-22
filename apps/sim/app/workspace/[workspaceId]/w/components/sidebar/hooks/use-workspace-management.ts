@@ -103,10 +103,10 @@ export function useWorkspaceManagement({
   }, [workspaces, workspaceId])
 
   useEffect(() => {
-    if (workspaceId) {
-      touchRecency(workspaceId)
-    }
-  }, [workspaceId, touchRecency])
+    if (!workspaceId || isWorkspacesLoading || isWorkspacesFetching) return
+    if (!workspaces.some((workspace) => workspace.id === workspaceId)) return
+    touchRecency(workspaceId)
+  }, [workspaceId, workspaces, isWorkspacesLoading, isWorkspacesFetching, touchRecency])
 
   const activeWorkspaceRef = useRef<Workspace | null>(activeWorkspace)
   activeWorkspaceRef.current = activeWorkspace
