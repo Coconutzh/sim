@@ -299,14 +299,20 @@ export async function listAccessibleWorkspaceIds(userId: string): Promise<string
     .select({ id: workspace.id })
     .from(workspace)
     .innerJoin(workgroupMember, eq(workspace.workgroupId, workgroupMember.workgroupId))
-    .where(and(isNull(workspace.archivedAt), eq(workgroupMember.userId, userId)))
+    .where(
+      and(
+        isNull(workspace.archivedAt),
+        eq(workspace.workspaceMode, 'organization'),
+        eq(workgroupMember.userId, userId)
+      )
+    )
 
   return [
     ...new Set([
       ...directRows
         .filter(
           (row) =>
-            (row.ownerId === userId && !row.workgroupId) ||
+            (row.ownerId === userId && (row.workspaceMode === 'personal' || !row.workgroupId)) ||
             (row.workspaceMode !== 'personal' && !row.workgroupId && row.permissionId)
         )
         .map((row) => row.id),

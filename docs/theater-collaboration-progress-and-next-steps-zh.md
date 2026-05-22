@@ -130,6 +130,15 @@
 - 已补 `apps/sim/app/api/files/authorization.test.ts` 覆盖“团队画布 write access 即使没有旧 permission row 也可写文件”。
 - 已调整 workspace files 路由测试，让只读/展示类场景通过 `checkWorkspaceAccess(...).canWrite = false` 证明服务端拒绝写操作。
 
+### 3.8 legacy accessible workspace helper 加固
+
+本轮修复 `listAccessibleWorkspaceIds` 的画布边界：
+
+- 用户自己的个人草稿画布即使挂在 workgroup 下，也会被纳入可访问 workspace 列表。
+- 团队成员通过 workgroup membership 只能拿到 `organization` 团队画布，不能因为同属一个 workgroup 就拿到其他成员的 `personal` 草稿画布。
+- 仅 owner 关系不再让用户访问 workgroup 团队画布；团队画布仍必须通过 workgroup membership 判断。
+- 这个 helper 会影响 `/api/logs/execution/[executionId]` 这类按“可访问 workspace IDs”过滤的日志/快照路径，因此该修复同时降低了个人草稿执行数据被同团队成员枚举的风险。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：

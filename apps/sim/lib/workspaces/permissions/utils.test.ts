@@ -1,4 +1,6 @@
 import { db } from '@sim/db'
+import { workspace } from '@sim/db/schema'
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   checkWorkspaceAccess,
@@ -345,6 +347,37 @@ describe('Permission Utils', () => {
       const result = await listAccessibleWorkspaceIds('user123')
 
       expect(result).toEqual([])
+    })
+
+    it('includes owned personal canvas workspaces even when they belong to a workgroup', async () => {
+      mockDb.select
+        .mockReturnValueOnce(
+          createMockChain([
+            {
+              id: 'personal-canvas',
+              ownerId: 'user123',
+              workspaceMode: 'personal',
+              workgroupId: 'workgroup-1',
+              permissionId: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual(['personal-canvas'])
+    })
+
+    it('does not include other members personal canvases through team membership', async () => {
+      mockDb.select
+        .mockReturnValueOnce(createMockChain([]))
+        .mockReturnValueOnce(createMockChain([]))
+
+      const result = await listAccessibleWorkspaceIds('user123')
+
+      expect(result).toEqual([])
+      expect(eq).toHaveBeenCalledWith(workspace.workspaceMode, 'organization')
     })
   })
 
