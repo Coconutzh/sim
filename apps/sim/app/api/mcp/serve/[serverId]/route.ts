@@ -23,9 +23,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import {
   mcpJsonRpcNotificationSchema,
   mcpJsonRpcRequestSchema,
+  mcpServeRequestContract,
   mcpServeRouteParamsSchema,
   mcpToolCallParamsSchema,
 } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { type AuthResult, AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
@@ -92,10 +94,7 @@ async function getServer(serverId: string) {
 async function authenticateServerAccess(
   request: NextRequest,
   server: NonNullable<Awaited<ReturnType<typeof getServer>>>
-): Promise<
-  | { ok: true; auth: AuthResult | null }
-  | { ok: false; response: NextResponse }
-> {
+): Promise<{ ok: true; auth: AuthResult | null } | { ok: false; response: NextResponse }> {
   const requiresWorkspaceAuth = server.workspaceMode === 'personal' || !server.isPublic
 
   if (!requiresWorkspaceAuth) {
@@ -188,15 +187,27 @@ export const POST = withRouteHandler(
         }
       }
 
-      let body: unknown
-      try {
-        body = await request.json()
-      } catch {
-        return NextResponse.json(createError(0, ErrorCode.ParseError, 'Invalid JSON body'), {
-          status: 400,
-        })
-      }
-      const message = body as JSONRPCMessage
+      const parsed = await parseRequest(
+        mcpServeRequestContract,
+        request,
+        { params },
+        {
+          invalidJsonResponse: () =>
+            NextResponse.json(createError(0, ErrorCode.ParseError, 'Invalid JSON body'), {
+              status: 400,
+            }),
+          validationErrorResponse: () =>
+            NextResponse.json(
+              createError(0, ErrorCode.InvalidRequest, 'Invalid JSON-RPC message'),
+              {
+                status: 400,
+              }
+            ),
+        }
+      )
+      if (!parsed.success) return parsed.response
+
+      const message = parsed.data.body as JSONRPCMessage
 
       if (isJSONRPCNotification(message)) {
         const notificationValidation = mcpJsonRpcNotificationSchema.safeParse(message)

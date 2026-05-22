@@ -223,6 +223,7 @@ export const mcpJsonRpcMessageSchema = z
     jsonrpc: z.literal('2.0'),
   })
   .passthrough()
+export type McpJsonRpcMessage = z.output<typeof mcpJsonRpcMessageSchema>
 
 export const mcpRequestBodySchema = z.union([
   mcpJsonRpcMessageSchema,
@@ -236,6 +237,18 @@ export const mcpCopilotRequestContract = defineRouteContract({
   response: {
     mode: 'json',
     // untyped-response: MCP SDK emits JSON-RPC result or error envelopes with method-dependent payloads
+    schema: z.unknown(),
+  },
+})
+
+export const mcpServeRequestContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/mcp/serve/[serverId]',
+  params: mcpServeRouteParamsSchema,
+  body: mcpJsonRpcMessageSchema,
+  response: {
+    mode: 'json',
+    // untyped-response: MCP serve emits JSON-RPC result or error envelopes with method-dependent payloads
     schema: z.unknown(),
   },
 })
