@@ -1149,6 +1149,157 @@ export async function updatePublicationLifecycleStatus(params: {
   }
 }
 
+async function getAgentSkillWorkgroupContext(userId: string, workgroupId: string) {
+  await assertWorkgroupAdmin(userId, workgroupId)
+
+  const [row] = await db
+    .select({
+      workgroupId: workgroup.id,
+      organizationId: workgroup.organizationId,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+      disciplineAgentCode: discipline.agentCode,
+    })
+    .from(workgroup)
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(eq(workgroup.id, workgroupId))
+    .limit(1)
+
+  if (!row) throw new Error('Workgroup not found')
+
+  const agent = getAgentProfile(row.disciplineAgentCode ?? 'chief_director')
+  return {
+    workgroupId: row.workgroupId,
+    organizationId: row.organizationId,
+    teamWorkspaceId: row.teamWorkspaceId,
+    agent,
+  }
+}
+
+export async function listWorkgroupAgentSkills(params: { userId: string; workgroupId: string }) {
+  const context = await getAgentSkillWorkgroupContext(params.userId, params.workgroupId)
+  if (!context.teamWorkspaceId) {
+    return { agent: context.agent, skills: [] }
+  }
+
+  const rows = await db
+    .select({
+      bindingId: agentSkillBinding.id,
+      skillId: skill.id,
+      name: skill.name,
+      description: skill.description,
+      enabled: agentSkillBinding.enabled,
+    })
+    .from(skill)
+    .leftJoin(
+      agentSkillBinding,
+      and(
+        eq(agentSkillBinding.organizationId, context.organizationId),
+        eq(agentSkillBinding.agentCode, context.agent.code),
+        eq(agentSkillBinding.workgroupId, context.workgroupId),
+        eq(agentSkillBinding.skillId, skill.id),
+        eq(agentSkillBinding.scope, 'team_override')
+      )
+    )
+    .where(eq(skill.workspaceId, context.teamWorkspaceId))
+    .orderBy(asc(skill.name))
+
+  return {
+    agent: context.agent,
+    skills: rows.map((row) => ({
+      id: row.bindingId ?? null,
+      skillId: row.skillId,
+      name: row.name,
+      description: row.description,
+      enabled: row.enabled ?? true,
+      scope: 'team_override' as const,
+    })),
+  }
+}
+
+export async function updateWorkgroupAgentSkill(params: {
+  actorUserId: string
+  workgroupId: string
+  skillId: string
+  enabled: boolean
+}) {
+  const context = await getAgentSkillWorkgroupContext(params.actorUserId, params.workgroupId)
+  if (!context.teamWorkspaceId) throw new Error('Team workspace is not initialized')
+
+  const [skillRow] = await db
+    .select({ id: skill.id, name: skill.name, description: skill.description })
+    .from(skill)
+    .where(and(eq(skill.id, params.skillId), eq(skill.workspaceId, context.teamWorkspaceId)))
+    .limit(1)
+
+  if (!skillRow) throw new Error('Skill not found')
+
+  const now = new Date()
+  const bindingId = generateId()
+  await db
+    .insert(agentSkillBinding)
+    .values({
+      id: bindingId,
+      organizationId: context.organizationId,
+      agentCode: context.agent.code,
+      workgroupId: context.workgroupId,
+      skillId: params.skillId,
+      enabled: params.enabled,
+      scope: 'team_override',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        agentSkillBinding.organizationId,
+        agentSkillBinding.agentCode,
+        agentSkillBinding.workgroupId,
+        agentSkillBinding.skillId,
+        agentSkillBinding.scope,
+      ],
+      set: { enabled: params.enabled, updatedAt: now },
+    })
+
+  const [bindingRow] = await db
+    .select({ id: agentSkillBinding.id })
+    .from(agentSkillBinding)
+    .where(
+      and(
+        eq(agentSkillBinding.organizationId, context.organizationId),
+        eq(agentSkillBinding.agentCode, context.agent.code),
+        eq(agentSkillBinding.workgroupId, context.workgroupId),
+        eq(agentSkillBinding.skillId, params.skillId),
+        eq(agentSkillBinding.scope, 'team_override')
+      )
+    )
+    .limit(1)
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action: AuditAction.SKILL_UPDATED,
+    resourceType: AuditResourceType.SKILL,
+    resourceId: params.skillId,
+    resourceName: skillRow.name,
+    description: params.enabled
+      ? `Enabled for ${context.agent.name} team agent`
+      : `Disabled for ${context.agent.name} team agent`,
+    metadata: {
+      workgroupId: context.workgroupId,
+      agentCode: context.agent.code,
+      scope: 'team_override',
+      enabled: params.enabled,
+    },
+  })
+
+  return {
+    id: bindingRow?.id ?? bindingId,
+    skillId: skillRow.id,
+    name: skillRow.name,
+    description: skillRow.description,
+    enabled: params.enabled,
+    scope: 'team_override' as const,
+  }
+}
+
 export async function resolveAgentForWorkspace(params: { userId: string; workspaceId: string }) {
   const [personalRow] = await db
     .select({ workgroupId: personalCanvasWorkspace.workgroupId })

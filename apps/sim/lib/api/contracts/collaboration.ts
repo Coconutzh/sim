@@ -234,6 +234,22 @@ export const publicationLifecycleSchema = z.object({
 })
 export type PublicationLifecycle = z.output<typeof publicationLifecycleSchema>
 
+export const agentSkillBindingSchema = z.object({
+  id: z.string().nullable(),
+  skillId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  enabled: z.boolean(),
+  scope: z.enum(['team_override']),
+})
+export type AgentSkillBinding = z.output<typeof agentSkillBindingSchema>
+
+export const updateAgentSkillBindingBodySchema = z.object({
+  skillId: nonEmptyIdSchema,
+  enabled: z.boolean(),
+})
+export type UpdateAgentSkillBindingBody = z.input<typeof updateAgentSkillBindingBodySchema>
+
 export const copySelectionBodySchema = z.object({
   source: z.object({
     type: z.enum(['personal', 'team', 'showcase']),
@@ -413,6 +429,30 @@ export const createTeamWorkspaceContract = defineRouteContract({
       workspace: canvasWorkspaceSchema,
       defaultWorkflowId: workflowIdSchema.nullable(),
     }),
+  },
+})
+
+export const listWorkgroupAgentSkillsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workgroups/[workgroupId]/agent-skills',
+  params: workgroupParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      agent: z.object({ code: agentCodeSchema, name: z.string(), description: z.string() }),
+      skills: z.array(agentSkillBindingSchema),
+    }),
+  },
+})
+
+export const updateWorkgroupAgentSkillContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/workgroups/[workgroupId]/agent-skills',
+  params: workgroupParamsSchema,
+  body: updateAgentSkillBindingBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ binding: agentSkillBindingSchema }),
   },
 })
 

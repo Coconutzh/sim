@@ -1,9 +1,20 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Archive, Crown, EyeOff, Mail, RotateCcw, Shield, UserMinus, Users, X } from 'lucide-react'
+import {
+  Archive,
+  Crown,
+  EyeOff,
+  Mail,
+  RotateCcw,
+  Shield,
+  Sparkles,
+  UserMinus,
+  Users,
+  X,
+} from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { Button, Input, Loader } from '@/components/emcn'
+import { Button, Input, Loader, Switch } from '@/components/emcn'
 import {
   useAddWorkgroupMember,
   useCreateTeamWorkspace,
@@ -12,7 +23,9 @@ import {
   useShowcasePublications,
   useTeamWorkspace,
   useUpdatePublicationLifecycle,
+  useUpdateWorkgroupAgentSkill,
   useUpdateWorkgroupMember,
+  useWorkgroupAgentSkills,
   useWorkgroupMembers,
 } from '@/hooks/queries/collaboration'
 import {
@@ -82,6 +95,7 @@ export function WorkgroupTeamManagement() {
   const createTeamWorkspace = useCreateTeamWorkspace()
   const inviteMember = useInviteMember()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
+  const updateAgentSkill = useUpdateWorkgroupAgentSkill()
   const cancelInvitation = useCancelWorkspaceInvitation()
   const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
@@ -99,13 +113,18 @@ export function WorkgroupTeamManagement() {
     isAdmin ? activeWorkgroupId : undefined,
     publicationFilters
   )
+  const { data: agentSkillsData, isLoading: isLoadingAgentSkills } = useWorkgroupAgentSkills(
+    isAdmin ? activeWorkgroupId : undefined
+  )
   const { data: pendingInvitations = [], isLoading: isLoadingPendingInvitations } =
     usePendingInvitations(isAdmin ? teamWorkspaceId : undefined)
   const publications = publicationsData?.publications ?? []
+  const agentSkills = agentSkillsData?.skills ?? []
   const isBusy =
     addMember.isPending ||
     inviteMember.isPending ||
     updatePublicationLifecycle.isPending ||
+    updateAgentSkill.isPending ||
     cancelInvitation.isPending ||
     resendInvitation.isPending ||
     updateMember.isPending ||
@@ -200,6 +219,16 @@ export function WorkgroupTeamManagement() {
         reason: `Updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
       })
       setStatusMessage(action === 'archive' ? 'Publication archived.' : 'Publication retracted.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const handleAgentSkillToggle = async (skillId: string, enabled: boolean) => {
+    if (!activeWorkgroupId) return
+    try {
+      await updateAgentSkill.mutateAsync({ workgroupId: activeWorkgroupId, skillId, enabled })
+      setStatusMessage(enabled ? 'Agent skill enabled.' : 'Agent skill disabled.')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -522,6 +551,64 @@ export function WorkgroupTeamManagement() {
             >
               Open showcase canvas
             </Button>
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Sparkles className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Team Agent Skills
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Enable or disable skills available to the {agentSkillsData?.agent.name ?? 'team'}{' '}
+                Copilot agent for this workgroup.
+              </p>
+            </div>
+          </div>
+          <div className='divide-y divide-[var(--border)]'>
+            {!teamWorkspaceId ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                Initialize the team canvas before binding skills to the team agent.
+              </div>
+            ) : isLoadingAgentSkills ? (
+              <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                <Loader className='h-[14px] w-[14px]' animate />
+                Loading agent skills...
+              </div>
+            ) : agentSkills.length === 0 ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                No skills exist in the team canvas yet. Create skills in the team workspace, then
+                return here to bind them to the agent.
+              </div>
+            ) : (
+              agentSkills.map((skill) => (
+                <div
+                  key={skill.skillId}
+                  className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                >
+                  <div className='min-w-0'>
+                    <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                      {skill.name}
+                    </div>
+                    <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                      {skill.description?.trim() || 'No description'}
+                    </div>
+                  </div>
+                  <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                    {skill.enabled ? 'Enabled' : 'Disabled'}
+                    <Switch
+                      checked={skill.enabled}
+                      disabled={isBusy}
+                      onCheckedChange={(checked) =>
+                        void handleAgentSkillToggle(skill.skillId, checked)
+                      }
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
 

@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-23
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 7「分屏工作台」已在原 `/workspace` 外壳下启动首个可用切片，下一步继续完善目标高亮、双 pane 状态隔离和发布/展示联动
+> 当前推进阶段：Phase 9「团队管理员闭环」继续在原 `/workspace` 外壳下收口团队发布管理、Agent Skill 绑定和协作日志；Phase 7 分屏仍保留目标高亮与双 pane 状态隔离待办
 
 ## 1. 当前结论
 
@@ -375,10 +375,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队管理页复用现有 workspace invitation 查询/取消/重发 hooks，发送邀请后会刷新 pending invitation 列表，避免管理员离开当前 shell 才能确认状态。
 - 团队发布管理先接入本团队 publication 列表和生命周期操作，复用 `useShowcasePublications` 与 `useUpdatePublicationLifecycle`，管理员可从原 shell 直接归档/撤回展示版本并跳转到展示画布。
 
+### 5.9 Phase 9 Team Agent Skill 绑定切片
+
+本轮继续补团队管理员闭环中的 Agent Skill 管理能力：
+
+- 新增 `GET/PATCH /api/workgroups/[workgroupId]/agent-skills`，路由使用 `collaboration.ts` contract 与 `parseRequest`，并在服务层统一执行 `assertWorkgroupAdmin`。
+- `listWorkgroupAgentSkills` 会基于 workgroup 的 discipline agent，列出团队画布 workspace 内的 skills，并合并 `agent_skill_binding` 的 `team_override` enabled 状态。
+- `updateWorkgroupAgentSkill` 会校验 skill 必须属于当前团队画布，再 upsert `agent_skill_binding(scope = team_override)`，并写入 `skill.updated` 审计事件。
+- `useWorkgroupAgentSkills` 与 `useUpdateWorkgroupAgentSkill` 接入 React Query，更新后精准刷新当前团队的 Agent Skill 列表与 agent profile cache。
+- `/workspace/[workspaceId]/team-management` 增加原风格 `Team Agent Skills` 区块，团队管理员可在原 Sidebar 外壳内直接启用/禁用本团队 Copilot Agent 的 skills。
+
 仍需继续：
 
 - 当前团队邀请已覆盖发送、接受后加入 workgroup、pending 列表、取消和重发；后续仍可补更细的错误分类、批量邀请和过期状态视觉。
-- Phase 9 仍需补发布创建表单、可见范围编辑、Agent Skill 绑定、团队协作日志和更完整的管理员闭环。
+- Phase 9 仍需补发布创建表单、可见范围编辑、团队协作日志和更完整的管理员闭环；Agent Skill 绑定已完成首个团队级 enabled/disabled 切片。
 
 ## 6. 建议继续推进目标
 

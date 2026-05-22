@@ -20,10 +20,12 @@ import {
   listMyWorkgroupsContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
+  listWorkgroupAgentSkillsContract,
   type PublicationSummary,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
   updatePublicationLifecycleContract,
+  updateWorkgroupAgentSkillContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
 import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
@@ -46,6 +48,8 @@ export const collaborationKeys = {
     [...collaborationKeys.workgroupDetails(), workgroupId ?? ''] as const,
   members: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
+  agentSkills: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'agent-skills'] as const,
   personalWorkspace: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'personal-workspace'] as const,
   teamWorkspace: (workgroupId?: string) =>
@@ -215,6 +219,36 @@ export function useRemoveWorkgroupMember() {
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function useWorkgroupAgentSkills(workgroupId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.agentSkills(workgroupId),
+    queryFn: ({ signal }) =>
+      requestJson(listWorkgroupAgentSkillsContract, {
+        params: { workgroupId: workgroupId as string },
+        signal,
+      }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useUpdateWorkgroupAgentSkill() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; skillId: string; enabled: boolean }) =>
+      requestJson(updateWorkgroupAgentSkillContract, {
+        params: { workgroupId: variables.workgroupId },
+        body: { skillId: variables.skillId, enabled: variables.enabled },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.agentSkills(variables.workgroupId),
+      })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() })
     },
   })
 }

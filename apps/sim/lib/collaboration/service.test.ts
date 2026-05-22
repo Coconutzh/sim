@@ -131,6 +131,23 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
       workflow: {
         id: 'workflow.id',
       },
+      skill: {
+        id: 'skill.id',
+        workspaceId: 'skill.workspaceId',
+        name: 'skill.name',
+        description: 'skill.description',
+      },
+      agentSkillBinding: {
+        id: 'agentSkillBinding.id',
+        organizationId: 'agentSkillBinding.organizationId',
+        agentCode: 'agentSkillBinding.agentCode',
+        workgroupId: 'agentSkillBinding.workgroupId',
+        skillId: 'agentSkillBinding.skillId',
+        enabled: 'agentSkillBinding.enabled',
+        scope: 'agentSkillBinding.scope',
+        createdAt: 'agentSkillBinding.createdAt',
+        updatedAt: 'agentSkillBinding.updatedAt',
+      },
     },
   }
 })
@@ -142,8 +159,9 @@ vi.mock('@sim/audit', () => ({
     PUBLICATION_CREATED: 'publication.created',
     PUBLICATION_ARCHIVED: 'publication.archived',
     PUBLICATION_RETRACTED: 'publication.retracted',
+    SKILL_UPDATED: 'skill.updated',
   },
-  AuditResourceType: { PUBLICATION: 'publication' },
+  AuditResourceType: { PUBLICATION: 'publication', SKILL: 'skill' },
   recordAudit: vi.fn(),
 }))
 vi.mock('@sim/logger', () => ({
@@ -189,7 +207,9 @@ import {
   getPublication,
   getPublicationTree,
   getTeamWorkspace,
+  listWorkgroupAgentSkills,
   updatePublicationLifecycleStatus,
+  updateWorkgroupAgentSkill,
   updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -666,6 +686,121 @@ describe('collaboration service', () => {
         resourceType: 'publication',
         resourceId: 'publication-1',
         description: 'Superseded by approved version',
+      })
+    )
+  })
+
+  it('lists team workspace skills with agent binding state for workgroup admins', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          workgroupId: 'workgroup-1',
+          organizationId: 'org-1',
+          teamWorkspaceId: 'workspace-team-1',
+          disciplineAgentCode: 'stage_design',
+        },
+      ],
+      [
+        {
+          bindingId: 'binding-1',
+          skillId: 'skill-1',
+          name: 'Stage cue checker',
+          description: 'Reviews cue timing',
+          enabled: false,
+        },
+        {
+          bindingId: null,
+          skillId: 'skill-2',
+          name: 'Spatial plan reviewer',
+          description: 'Reviews stage layout',
+          enabled: null,
+        },
+      ]
+    )
+
+    await expect(
+      listWorkgroupAgentSkills({ userId: 'admin-1', workgroupId: 'workgroup-1' })
+    ).resolves.toMatchObject({
+      agent: { code: 'stage_design' },
+      skills: [
+        {
+          id: 'binding-1',
+          skillId: 'skill-1',
+          enabled: false,
+          scope: 'team_override',
+        },
+        {
+          id: null,
+          skillId: 'skill-2',
+          enabled: true,
+          scope: 'team_override',
+        },
+      ],
+    })
+  })
+
+  it('upserts team agent skill overrides and records an audit event', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          workgroupId: 'workgroup-1',
+          organizationId: 'org-1',
+          teamWorkspaceId: 'workspace-team-1',
+          disciplineAgentCode: 'stage_design',
+        },
+      ],
+      [
+        {
+          id: 'skill-1',
+          name: 'Stage cue checker',
+          description: 'Reviews cue timing',
+        },
+      ],
+      [{ id: 'binding-existing' }]
+    )
+
+    await expect(
+      updateWorkgroupAgentSkill({
+        actorUserId: 'admin-1',
+        workgroupId: 'workgroup-1',
+        skillId: 'skill-1',
+        enabled: false,
+      })
+    ).resolves.toMatchObject({
+      id: 'binding-existing',
+      skillId: 'skill-1',
+      enabled: false,
+      scope: 'team_override',
+    })
+
+    expect(mockDb.insert).toHaveBeenCalledWith(schemaMock.agentSkillBinding)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'skill.updated',
+        resourceType: 'skill',
+        resourceId: 'skill-1',
+        metadata: expect.objectContaining({
+          workgroupId: 'workgroup-1',
+          agentCode: 'stage_design',
+          enabled: false,
+        }),
       })
     )
   })
