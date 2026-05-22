@@ -21,10 +21,20 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     return chain
   }
 
+  function createWriteChain() {
+    const chain: Record<string, unknown> = {}
+
+    chain.set = vi.fn(() => chain)
+    chain.where = vi.fn(() => Promise.resolve([]))
+
+    return chain
+  }
+
   return {
     mockResultsQueue: resultsQueue,
     mockDb: {
       select: vi.fn(() => createChain()),
+      update: vi.fn(() => createWriteChain()),
     },
     schemaMock: {
       workflowPublicationVersion: {
@@ -99,6 +109,7 @@ import {
   getNextPublicationVersionNumber,
   getPublication,
   getPublicationTree,
+  updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
 
 describe('collaboration service', () => {
@@ -147,6 +158,38 @@ describe('collaboration service', () => {
     await expect(assertWorkgroupAdmin('other-team-admin-1', 'workgroup-1')).rejects.toThrow(
       'Workgroup membership required'
     )
+  })
+
+  it('prevents demoting the last workgroup admin', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          id: 'workgroup-1',
+          organizationId: 'org-1',
+          teamWorkspaceId: null,
+        },
+      ],
+      [{ userId: 'team-admin-1' }]
+    )
+
+    await expect(
+      updateWorkgroupMemberRole({
+        actorUserId: 'team-admin-1',
+        workgroupId: 'workgroup-1',
+        userId: 'team-admin-1',
+        role: 'member',
+      })
+    ).rejects.toThrow('Cannot demote the last workgroup admin')
+
+    expect(mockDb.update).not.toHaveBeenCalled()
   })
 
   it('hides an unreadable publication parent link from publication details', async () => {

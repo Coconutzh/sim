@@ -481,6 +481,17 @@ export async function updateWorkgroupMemberRole(params: {
     .where(eq(workgroup.id, params.workgroupId))
     .limit(1)
   if (!wg) throw new Error('Workgroup not found')
+  if (params.role !== 'admin') {
+    const adminRows = await db
+      .select({ userId: workgroupMember.userId })
+      .from(workgroupMember)
+      .where(
+        and(eq(workgroupMember.workgroupId, params.workgroupId), eq(workgroupMember.role, 'admin'))
+      )
+    if (adminRows.length === 1 && adminRows[0].userId === params.userId) {
+      throw new Error('Cannot demote the last workgroup admin')
+    }
+  }
   await db
     .update(workgroupMember)
     .set({ role: params.role, updatedAt: new Date() })
