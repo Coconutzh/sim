@@ -11,7 +11,9 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, count, eq, inArray, isNull } from 'drizzle-orm'
+import { resolveAgentForWorkspace } from '@/lib/collaboration/service'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
@@ -22,7 +24,6 @@ import {
   getUsersWithPermissions,
   getWorkspaceWithOwner,
 } from '@/lib/workspaces/permissions/utils'
-import { resolveAgentForWorkspace } from '@/lib/collaboration/service'
 
 const logger = createLogger('WorkspaceContext')
 
@@ -91,6 +92,32 @@ function buildWorkflowStatePath(workflowName: string, folderPath?: string | null
   return normalizedFolderPath
     ? `workflows/${normalizedFolderPath}/${normalizedWorkflowName}/state.json`
     : `workflows/${normalizedWorkflowName}/state.json`
+}
+
+export async function filterReadableWorkflowRows<T extends { id: string }>(
+  userId: string,
+  workflows: T[]
+): Promise<T[]> {
+  const accessResults = await Promise.all(
+    workflows.map(async (workflowRow) => {
+      try {
+        const authorization = await authorizeWorkflowByWorkspacePermission({
+          workflowId: workflowRow.id,
+          userId,
+          action: 'read',
+        })
+        return authorization.allowed
+      } catch (error) {
+        logger.warn('Failed to authorize workflow for Copilot context', {
+          workflowId: workflowRow.id,
+          error: toError(error).message,
+        })
+        return false
+      }
+    })
+  )
+
+  return workflows.filter((_, index) => accessResults[index])
 }
 
 /**
@@ -418,10 +445,12 @@ export async function generateWorkspaceContext(
       return path
     }
 
+    const readableWorkflows = await filterReadableWorkflowRows(userId, workflows)
+
     const workspaceMd = buildWorkspaceMd({
       workspace: wsRow,
       members,
-      workflows: workflows.map((wf) => ({
+      workflows: readableWorkflows.map((wf) => ({
         ...wf,
         folderPath: wf.folderId ? resolveFolderPath(wf.folderId) : null,
       })),

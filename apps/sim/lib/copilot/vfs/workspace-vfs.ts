@@ -19,7 +19,11 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
 import { listApiKeys } from '@/lib/api-key/service'
-import { buildWorkspaceMd, type WorkspaceMdData } from '@/lib/copilot/chat/workspace-context'
+import {
+  buildWorkspaceMd,
+  filterReadableWorkflowRows,
+  type WorkspaceMdData,
+} from '@/lib/copilot/chat/workspace-context'
 import { extractDocumentStyle } from '@/lib/copilot/vfs/document-style'
 import { type FileReadResult, readFileRecord } from '@/lib/copilot/vfs/file-reader'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
@@ -607,17 +611,29 @@ export class WorkspaceVFS {
    */
   private async materializeWorkflows(
     workspaceId: string,
-    _userId: string
+    userId: string
   ): Promise<WorkspaceMdData['workflows']> {
     const [workflowRows, folderRows] = await Promise.all([
       listWorkflows(workspaceId),
       listFolders(workspaceId),
     ])
+    const readableWorkflowRows = await filterReadableWorkflowRows(userId, workflowRows)
+    const visibleFolderIds = new Set<string>()
+    const folderById = new Map(folderRows.map((folder) => [folder.folderId, folder]))
+    const addFolderAndParents = (folderId?: string | null): void => {
+      if (!folderId || visibleFolderIds.has(folderId)) return
+      visibleFolderIds.add(folderId)
+      addFolderAndParents(folderById.get(folderId)?.parentId)
+    }
+    for (const workflowRow of readableWorkflowRows) {
+      addFolderAndParents(workflowRow.folderId)
+    }
 
     const folderPaths = this.buildFolderPaths(folderRows)
 
-    // Register all folders in the VFS so empty folders are discoverable.
+    // Register only folders needed to reach readable workflows.
     for (const { folderId } of folderRows) {
+      if (!visibleFolderIds.has(folderId)) continue
       const folderPath = folderPaths.get(folderId)
       if (folderPath) {
         this.files.set(`workflows/${folderPath}/.folder`, '')
@@ -625,7 +641,7 @@ export class WorkspaceVFS {
     }
 
     await Promise.all(
-      workflowRows.map(async (wf) => {
+      readableWorkflowRows.map(async (wf) => {
         const safeName = sanitizeName(wf.name)
         const folderPath = wf.folderId ? folderPaths.get(wf.folderId) : null
         const prefix = folderPath
@@ -702,7 +718,7 @@ export class WorkspaceVFS {
       })
     )
 
-    return workflowRows.map((wf) => ({
+    return readableWorkflowRows.map((wf) => ({
       id: wf.id,
       name: wf.name,
       description: wf.description,
