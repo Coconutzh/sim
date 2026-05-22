@@ -13,10 +13,13 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDbSelect, mockArchiveWorkspace } = vi.hoisted(() => ({
-  mockDbSelect: vi.fn(),
-  mockArchiveWorkspace: vi.fn(),
-}))
+const { mockAnnotateWorkspaceCanvasMetadata, mockDbSelect, mockArchiveWorkspace } = vi.hoisted(
+  () => ({
+    mockAnnotateWorkspaceCanvasMetadata: vi.fn(async (workspaces: unknown[]) => workspaces),
+    mockDbSelect: vi.fn(),
+    mockArchiveWorkspace: vi.fn(),
+  })
+)
 
 function createSelectChain<T>(result: T) {
   const chain: Record<string, unknown> = {}
@@ -49,6 +52,10 @@ vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 vi.mock('@/lib/posthog/server', () => posthogServerMock)
 vi.mock('@/lib/workspaces/lifecycle', () => ({
   archiveWorkspace: mockArchiveWorkspace,
+}))
+
+vi.mock('@/lib/workspaces/canvas-metadata', () => ({
+  annotateWorkspaceCanvasMetadata: mockAnnotateWorkspaceCanvasMetadata,
 }))
 
 import { DELETE, GET, PATCH } from './route'
@@ -210,6 +217,7 @@ describe('GET /api/workspaces/[id]', () => {
       workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
     })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('admin')
+    mockAnnotateWorkspaceCanvasMetadata.mockImplementation(async (workspaces) => workspaces)
   })
 
   it('returns 404 when stale personal rows no longer grant workspace visibility', async () => {
@@ -244,5 +252,47 @@ describe('GET /api/workspaces/[id]', () => {
     expect(response.status).toBe(401)
     expect(data).toEqual({ error: 'Unauthorized' })
     expect(permissionsMockFns.mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+  })
+
+  it('returns collaboration canvas compatibility metadata on workspace detail', async () => {
+    mockDbSelect.mockReturnValueOnce(
+      createSelectChain([
+        {
+          id: 'ws-team',
+          name: 'Team Canvas',
+          ownerId: 'owner-1',
+          organizationId: 'org-1',
+          workgroupId: 'wg-stage',
+          workspaceMode: 'organization',
+          billedAccountUserId: 'owner-1',
+          archivedAt: null,
+        },
+      ])
+    )
+    mockAnnotateWorkspaceCanvasMetadata.mockImplementationOnce(
+      async (workspaces: Array<Record<string, unknown>>) =>
+        workspaces.map((workspace) => ({
+          ...workspace,
+          canvasScope: 'team',
+          disciplineId: 'discipline-stage',
+          isInternalWorkspace: true,
+        }))
+    )
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-team' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockAnnotateWorkspaceCanvasMetadata).toHaveBeenCalled()
+    expect(data.workspace).toMatchObject({
+      id: 'ws-team',
+      canvasScope: 'team',
+      workgroupId: 'wg-stage',
+      disciplineId: 'discipline-stage',
+      isInternalWorkspace: true,
+      permissions: 'admin',
+    })
   })
 })

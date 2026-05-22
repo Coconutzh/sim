@@ -14,6 +14,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { annotateWorkspaceCanvasMetadata } from '@/lib/workspaces/canvas-metadata'
 import { archiveWorkspace } from '@/lib/workspaces/lifecycle'
 import {
   checkWorkspaceAccess,
@@ -104,12 +105,16 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
-      workspace: {
+    const [workspaceWithMetadata] = await annotateWorkspaceCanvasMetadata([
+      {
         ...workspaceDetails,
+        id: workspaceDetails.id,
+        workgroupId: workspaceDetails.workgroupId,
         permissions: userPermission,
       },
-    })
+    ])
+
+    return NextResponse.json({ workspace: workspaceWithMetadata })
   }
 )
 
@@ -233,6 +238,10 @@ export const PATCH = withRouteHandler(
         .where(eq(workspace.id, workspaceId))
         .then((rows) => rows[0])
 
+      if (!updatedWorkspace) {
+        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      }
+
       recordAudit({
         workspaceId,
         actorId: session.user.id,
@@ -267,12 +276,16 @@ export const PATCH = withRouteHandler(
         request,
       })
 
-      return NextResponse.json({
-        workspace: {
+      const [workspaceWithMetadata] = await annotateWorkspaceCanvasMetadata([
+        {
           ...updatedWorkspace,
+          id: updatedWorkspace.id,
+          workgroupId: updatedWorkspace.workgroupId,
           permissions: userPermission,
         },
-      })
+      ])
+
+      return NextResponse.json({ workspace: workspaceWithMetadata })
     } catch (error) {
       logger.error('Error updating workspace:', error)
       return NextResponse.json({ error: 'Failed to update workspace' }, { status: 500 })

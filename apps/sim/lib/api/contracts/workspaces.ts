@@ -4,8 +4,10 @@ import { type ContractJsonResponse, defineRouteContract } from '@/lib/api/contra
 export const workspaceScopeSchema = z.enum(['active', 'archived', 'all'])
 export const workspaceModeSchema = z.enum(['personal', 'organization', 'grandfathered_shared'])
 export const workspacePermissionSchema = z.enum(['admin', 'write', 'read'])
+export const workspaceCanvasScopeSchema = z.enum(['personal', 'team'])
 export type WorkspaceMode = z.output<typeof workspaceModeSchema>
 export type WorkspacePermission = z.output<typeof workspacePermissionSchema>
+export type WorkspaceCanvasScope = z.output<typeof workspaceCanvasScopeSchema>
 
 export const workspaceSchema = z.object({
   id: z.string(),
@@ -15,6 +17,9 @@ export const workspaceSchema = z.object({
   ownerId: z.string(),
   organizationId: z.string().nullable(),
   workgroupId: z.string().nullable().optional(),
+  canvasScope: workspaceCanvasScopeSchema.nullable().optional(),
+  disciplineId: z.string().nullable().optional(),
+  isInternalWorkspace: z.boolean().optional(),
   workspaceMode: workspaceModeSchema,
   role: z.string().optional(),
   membershipId: z.string().optional(),

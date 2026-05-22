@@ -13,6 +13,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { annotateWorkspaceCanvasMetadata } from '@/lib/workspaces/canvas-metadata'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import {
@@ -139,8 +140,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     })
   )
 
-  const workspacesWithPermissions = userWorkspaces.map(
-    ({ workspace: workspaceDetails, permissionType }) => {
+  const workspacesWithPermissions = await annotateWorkspaceCanvasMetadata(
+    userWorkspaces.map(({ workspace: workspaceDetails, permissionType }) => {
       const invitePolicy = evaluateWorkspaceInvitePolicy(workspaceDetails, {
         billedUserHasTeamOrEnterprise:
           teamOrEnterpriseByUser.get(workspaceDetails.billedAccountUserId) ?? false,
@@ -167,7 +168,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         inviteDisabledReason,
         inviteUpgradeRequired: canActOnUpgrade,
       }
-    }
+    })
   )
 
   return NextResponse.json({

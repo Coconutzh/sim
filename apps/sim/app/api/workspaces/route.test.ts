@@ -4,7 +4,13 @@
 import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockGetWorkspaceCreationPolicy, mockDbSelect } = vi.hoisted(() => ({
+const {
+  mockAnnotateWorkspaceCanvasMetadata,
+  mockGetSession,
+  mockGetWorkspaceCreationPolicy,
+  mockDbSelect,
+} = vi.hoisted(() => ({
+  mockAnnotateWorkspaceCanvasMetadata: vi.fn(async (workspaces: unknown[]) => workspaces),
   mockGetSession: vi.fn(),
   mockGetWorkspaceCreationPolicy: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -53,6 +59,10 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   listAccessibleWorkspaceIds: vi.fn(),
 }))
 
+vi.mock('@/lib/workspaces/canvas-metadata', () => ({
+  annotateWorkspaceCanvasMetadata: mockAnnotateWorkspaceCanvasMetadata,
+}))
+
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import { GET } from './route'
 
@@ -70,6 +80,7 @@ describe('GET /api/workspaces', () => {
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
     })
+    mockAnnotateWorkspaceCanvasMetadata.mockImplementation(async (workspaces) => workspaces)
     vi.mocked(listAccessibleWorkspaceIds).mockResolvedValue(['ws-owner'])
     mockDbSelect
       .mockReturnValueOnce(createChain([{ lastActiveWorkspaceId: 'ws-owner' }]))
@@ -148,6 +159,37 @@ describe('GET /api/workspaces', () => {
           ownerId: 'other-user',
           role: 'member',
           permissions: 'read',
+        },
+      ],
+    })
+  })
+
+  it('returns collaboration canvas compatibility metadata on listed workspaces', async () => {
+    mockAnnotateWorkspaceCanvasMetadata.mockImplementationOnce(
+      async (workspaces: Array<Record<string, unknown>>) =>
+        workspaces.map((workspace) => ({
+          ...workspace,
+          canvasScope: 'team',
+          workgroupId: 'wg-stage',
+          disciplineId: 'discipline-stage',
+          isInternalWorkspace: true,
+        }))
+    )
+
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=all')
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockAnnotateWorkspaceCanvasMetadata).toHaveBeenCalled()
+    await expect(response.json()).resolves.toMatchObject({
+      workspaces: [
+        {
+          id: 'ws-owner',
+          canvasScope: 'team',
+          workgroupId: 'wg-stage',
+          disciplineId: 'discipline-stage',
+          isInternalWorkspace: true,
         },
       ],
     })
