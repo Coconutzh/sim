@@ -79,6 +79,21 @@ export const GET = withRouteHandler(async (_request: NextRequest, context: Route
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
+    const [membership] = await db
+      .select({ role: credentialMember.role, status: credentialMember.status })
+      .from(credentialMember)
+      .where(
+        and(
+          eq(credentialMember.credentialId, credentialId),
+          eq(credentialMember.userId, session.user.id)
+        )
+      )
+      .limit(1)
+
+    if (!membership || membership.status !== 'active' || membership.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+
     const members = await db
       .select({
         id: credentialMember.id,

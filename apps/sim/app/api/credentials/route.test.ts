@@ -5,9 +5,27 @@ import { authMock, authMockFns, permissionsMock, permissionsMockFns } from '@sim
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockParseRequest } = vi.hoisted(() => ({
+const { mockParseRequest, mockSyncWorkspaceOAuthCredentialsForUser } = vi.hoisted(() => ({
   mockParseRequest: vi.fn(),
+  mockSyncWorkspaceOAuthCredentialsForUser: vi.fn(),
 }))
+
+function createSelectChain<T>(result: T) {
+  const chain: Record<string, unknown> = {}
+  ;(chain as any).from = vi.fn(() => chain)
+  ;(chain as any).innerJoin = vi.fn(() => chain)
+  ;(chain as any).where = vi.fn(() => chain)
+  ;(chain as any).limit = vi.fn(() => Promise.resolve(result))
+  return chain
+}
+
+function createWhereResultChain<T>(result: T) {
+  const chain: Record<string, unknown> = {}
+  ;(chain as any).from = vi.fn(() => chain)
+  ;(chain as any).innerJoin = vi.fn(() => chain)
+  ;(chain as any).where = vi.fn(() => Promise.resolve(result))
+  return chain
+}
 
 vi.mock('@sim/db', () => ({
   db: {
@@ -68,7 +86,9 @@ vi.mock('@/lib/credentials/environment', () => ({
   getWorkspaceMemberUserIds: vi.fn(),
   syncWorkspaceOAuthCredentialsForUser: vi.fn(),
 }))
-vi.mock('@/lib/credentials/oauth', () => ({ syncWorkspaceOAuthCredentialsForUser: vi.fn() }))
+vi.mock('@/lib/credentials/oauth', () => ({
+  syncWorkspaceOAuthCredentialsForUser: mockSyncWorkspaceOAuthCredentialsForUser,
+}))
 vi.mock('@/lib/oauth', () => ({ getServiceConfigByProviderId: vi.fn() }))
 vi.mock('@/lib/oauth/types', () => ({
   ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID: 'atlassian-service-account',
@@ -88,6 +108,7 @@ vi.mock('@sim/audit', () => ({
 vi.mock('@sim/utils/errors', () => ({ getPostgresErrorCode: vi.fn() }))
 vi.mock('@sim/utils/id', () => ({ generateId: vi.fn(() => 'generated-id') }))
 
+import { db } from '@sim/db'
 import { GET, POST } from '@/app/api/credentials/route'
 
 describe('/api/credentials', () => {
@@ -153,6 +174,62 @@ describe('/api/credentials', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+  })
+
+  it('does not sync OAuth credentials for visible read-only workspaces', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(createWhereResultChain([]) as never)
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        query: {
+          workspaceId: 'ws-readonly',
+          type: undefined,
+          providerId: undefined,
+          credentialId: undefined,
+        },
+      },
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-readonly', ownerId: 'owner-2', workspaceMode: 'organization' },
+    })
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/credentials?workspaceId=ws-readonly')
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ credentials: [] })
+    expect(mockSyncWorkspaceOAuthCredentialsForUser).not.toHaveBeenCalled()
+  })
+
+  it('does not expose credential lookup results without active credential membership', async () => {
+    vi.mocked(db.select)
+      .mockReturnValueOnce(createSelectChain([]) as never)
+      .mockReturnValueOnce(createSelectChain([]) as never)
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        query: {
+          workspaceId: 'ws-1',
+          type: undefined,
+          providerId: undefined,
+          credentialId: 'cred-secret',
+        },
+      },
+    })
+
+    const response = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/credentials?workspaceId=ws-1&credentialId=cred-secret'
+      )
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ credential: null })
+    expect(mockSyncWorkspaceOAuthCredentialsForUser).not.toHaveBeenCalled()
   })
 
   it('hides foreign personal workspace credential creation behind 404', async () => {

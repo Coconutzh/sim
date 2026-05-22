@@ -177,6 +177,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           providerId: credential.providerId,
         })
         .from(credential)
+        .innerJoin(
+          credentialMember,
+          and(
+            eq(credentialMember.credentialId, credential.id),
+            eq(credentialMember.userId, session.user.id),
+            eq(credentialMember.status, 'active')
+          )
+        )
         .where(and(eq(credential.id, lookupCredentialId), eq(credential.workspaceId, workspaceId)))
         .limit(1)
 
@@ -189,6 +197,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             providerId: credential.providerId,
           })
           .from(credential)
+          .innerJoin(
+            credentialMember,
+            and(
+              eq(credentialMember.credentialId, credential.id),
+              eq(credentialMember.userId, session.user.id),
+              eq(credentialMember.status, 'active')
+            )
+          )
           .where(
             and(
               eq(credential.accountId, lookupCredentialId),
@@ -201,7 +217,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ credential: row ?? null })
     }
 
-    if (!type || type === 'oauth') {
+    if (workspaceAccess.canWrite && (!type || type === 'oauth')) {
       await syncWorkspaceOAuthCredentialsForUser({ workspaceId, userId: session.user.id })
     }
 

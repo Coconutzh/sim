@@ -75,6 +75,7 @@ describe('/api/credentials/[id]/members', () => {
   it('lists members for accessible credentials', async () => {
     mockDbSelect
       .mockReturnValueOnce(createSelectChain([{ id: 'cred-1', workspaceId: 'ws-1' }]))
+      .mockReturnValueOnce(createSelectChain([{ role: 'admin', status: 'active' }]))
       .mockReturnValueOnce(
         createJoinedSelectChain([
           {
@@ -97,6 +98,21 @@ describe('/api/credentials/[id]/members', () => {
     expect(response.status).toBe(200)
     expect(data.members).toHaveLength(1)
     expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'user-1')
+  })
+
+  it('does not list credential members for non-admin credential members', async () => {
+    mockDbSelect
+      .mockReturnValueOnce(createSelectChain([{ id: 'cred-1', workspaceId: 'ws-1' }]))
+      .mockReturnValueOnce(createSelectChain([{ role: 'member', status: 'active' }]))
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'cred-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Admin access required' })
+    expect(mockDbSelect).toHaveBeenCalledTimes(2)
   })
 
   it('returns 404 when stale personal rows no longer grant credential visibility', async () => {
