@@ -357,6 +357,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 - 新增 `/workspace/[workspaceId]/team-management`，仍然位于原 workspace shell 内，保留 Sidebar 和原 Provider 树。
 - Sidebar `Team management` 不再跳到 `settings/organization`，而是进入当前 active workgroup 的团队管理页。
+- Sidebar `Canvases` 分组在用户拥有多个 workgroup 时显示轻量团队切换器；切换后会写入 active workgroup，并优先进入目标团队的个人草稿画布，其次进入目标团队画布。
 - 普通成员访问团队管理页时只看到权限提示，不能列成员、邀请成员或初始化团队画布。
 - 团队管理员可以：
   - 查看当前 workgroup 成员；

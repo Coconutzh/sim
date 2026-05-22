@@ -97,6 +97,7 @@ import {
   useCreateTeamWorkspace,
   useMyWorkgroups,
   usePersonalWorkspace,
+  useSetActiveWorkgroup,
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
@@ -482,6 +483,8 @@ export const Sidebar = memo(function Sidebar() {
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
   const { data: workgroupsData } = useMyWorkgroups(Boolean(sessionData?.user?.id))
   const workgroups = workgroupsData?.workgroups ?? []
+  const { mutateAsync: setActiveWorkgroup, isPending: isSettingActiveWorkgroup } =
+    useSetActiveWorkgroup()
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
     workgroups.find((workgroup) => workgroup.id === activeWorkspaceFull?.workgroupId) ??
@@ -760,6 +763,40 @@ export const Sidebar = memo(function Sidebar() {
         : `/workspace/${result.workspace.id}/home`
     )
   }, [activeWorkgroupId, createTeamWorkspace, isCreatingTeamWorkspace, router, switchWorkspace])
+
+  const handleWorkgroupSwitch = useCallback(
+    async (targetWorkgroupId: string) => {
+      if (!targetWorkgroupId || targetWorkgroupId === activeWorkgroupId) return
+      const targetWorkgroup = workgroups.find((workgroup) => workgroup.id === targetWorkgroupId)
+      if (!targetWorkgroup) return
+
+      await setActiveWorkgroup(targetWorkgroupId)
+      const targetPersonalWorkspace = workspaces.find(
+        (workspace) =>
+          workspace.canvasScope === 'personal' && workspace.workgroupId === targetWorkgroupId
+      )
+      const targetTeamWorkspace = workspaces.find(
+        (workspace) => workspace.id === targetWorkgroup.teamWorkspaceId
+      )
+      const targetWorkspace = targetPersonalWorkspace ?? targetTeamWorkspace
+
+      if (targetWorkspace) {
+        await switchWorkspace(targetWorkspace)
+        return
+      }
+
+      router.push(`/workspace/${targetWorkgroup.teamWorkspaceId || workspaceId}/home`)
+    },
+    [
+      activeWorkgroupId,
+      router,
+      switchWorkspace,
+      workgroups,
+      workspaces,
+      workspaceId,
+      setActiveWorkgroup,
+    ]
+  )
 
   const topNavItems = useMemo(
     () => [
@@ -1536,6 +1573,23 @@ export const Sidebar = memo(function Sidebar() {
                   <div className='px-4 pb-1.5'>
                     <div className='font-base text-[var(--text-icon)] text-small'>Canvases</div>
                   </div>
+                  {!isCollapsed && workgroups.length > 1 && (
+                    <div className='px-2 pb-1.5'>
+                      <select
+                        value={activeWorkgroupId ?? ''}
+                        onChange={(event) => void handleWorkgroupSwitch(event.target.value)}
+                        disabled={isSettingActiveWorkgroup}
+                        aria-label='Switch team canvas context'
+                        className='h-[28px] w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:opacity-50'
+                      >
+                        {workgroups.map((workgroup) => (
+                          <option key={workgroup.id} value={workgroup.id}>
+                            {workgroup.discipline.name} / {workgroup.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className='flex flex-col gap-0.5 px-2'>
                     {canvasNavItems.map((item) => (
                       <SidebarNavItem
