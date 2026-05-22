@@ -171,6 +171,7 @@
 - 普通 `/api/credentials` 查询继续依赖 workspace 可见性和 credential membership；按 `credentialId/accountId` 点查时也必须有 active credential member 关系，避免只读或展示读者凭猜测 ID 看到源 workspace 凭证元数据。
 - `/api/credentials` 的 OAuth credential 同步副作用改为仅在当前用户对 workspace 有 `canWrite` 时触发，避免只读展示访问在 GET 路径上写入 credential membership 或规范化源凭证。
 - `/api/credentials/[id]/members` 的成员列表读取收紧为 credential admin-only；普通 credential member 或只读 workspace 访问不能枚举成员姓名、邮箱和共享关系。
+- `/api/credential-sets/[id]/members` 的成员列表读取收紧为组织 admin/owner-only；普通组织成员不能通过 credential set 管理页枚举成员账号和 provider accountId。
 
 ## 4. 已验证或已有测试覆盖的关键点
 
@@ -200,6 +201,8 @@
 | `apps/sim/app/api/workspaces/[id]/byok-keys/route.test.ts` | BYOK 列表和管理需 admin；read-only 不会触发 provider key 查询或解密 |
 | `apps/sim/app/api/credentials/route.test.ts` | read-only workspace GET 不触发 OAuth credential 同步，credentialId/accountId 点查必须有 active credential membership |
 | `apps/sim/app/api/credentials/[id]/members/route.test.ts` | Credential 成员列表读取需要 credential admin，非 admin 不会枚举共享成员 |
+| `apps/sim/app/api/credential-sets/[id]/members/route.test.ts` | Credential set 成员列表读取需要组织 admin/owner，普通成员不能枚举成员账号和 provider accountId |
+| `apps/realtime/src/middleware/permissions.test.ts` | 非 owner/非成员不能进个人或团队 room，展示/发布 workflow 强制 read，read role 不能提交位置更新 |
 
 最近切片中使用过的验证命令：
 
@@ -214,6 +217,8 @@ Set-Location apps\sim; bunx vitest run app/api/files/upload/route.test.ts app/ap
 Set-Location apps\sim; bunx vitest run app/api/workspaces/[id]/environment/route.test.ts
 Set-Location apps\sim; bunx vitest run app/api/workspaces/[id]/api-keys/route.test.ts app/api/workspaces/[id]/api-keys/[keyId]/route.test.ts app/api/workspaces/[id]/byok-keys/route.test.ts
 Set-Location apps\sim; bunx vitest run app/api/credentials/route.test.ts app/api/credentials/[id]/members/route.test.ts app/api/credentials/[id]/route.test.ts app/api/credentials/memberships/route.test.ts app/api/credentials/draft/route.test.ts
+Set-Location apps\sim; bunx vitest run app/api/credential-sets/[id]/members/route.test.ts app/api/credential-sets/invite/[token]/route.test.ts
+Set-Location apps\realtime; bunx vitest run src/middleware/permissions.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
@@ -231,9 +236,9 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 | folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
 | files/assets | 已完成 workspace files 与全局 `/api/files/**` 主要上传、直传、分片、parse、serve/download/view/export/delete 路径复核和测试；Phase 4 收尾时仍需汇总审计矩阵并跟 credentials/realtime/internal tasks 联合复核 |
 | logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |
-| credentials | 已加固 Copilot credential context、workspace environment 解密读取、workspace API key/BYOK 列表读取、普通 credential 点查/同步副作用/成员枚举；仍需继续复核 credential-set 成员和邀请路径 |
+| credentials | 已加固 Copilot credential context、workspace environment 解密读取、workspace API key/BYOK 列表读取、普通 credential 点查/同步副作用/成员枚举、credential-set 成员枚举；邀请接受路径已有 token/email 校验覆盖，Phase 4 收尾时纳入总矩阵 |
 | Copilot context | 已做多处过滤和脱敏，仍需继续查 tools、VFS、resource attachment、workspace mode 分支 |
-| Realtime room join/operation | 已有只读/发布画布限制，仍需补齐测试覆盖和 presence 隔离复核 |
+| Realtime room join/operation | 已有只读/发布画布限制，并已复跑 `apps/realtime/src/middleware/permissions.test.ts` 覆盖非 owner、非成员、showcase read-only 和 read role mutation 拒绝；Phase 4 收尾时仍需纳入总矩阵 |
 | webhooks/internal tasks | 尚需排查，尤其是内部任务是否可能借 workspaceId 绕过 canvas 边界 |
 
 ### 5.2 Phase 5 到 Phase 12 尚未完成

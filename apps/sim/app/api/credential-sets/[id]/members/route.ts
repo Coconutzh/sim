@@ -68,6 +68,10 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Credential set not found' }, { status: 404 })
     }
 
+    if (result.role !== 'admin' && result.role !== 'owner') {
+      return NextResponse.json({ error: 'Admin or owner permissions required' }, { status: 403 })
+    }
+
     const members = await db
       .select({
         id: credentialSetMember.id,
