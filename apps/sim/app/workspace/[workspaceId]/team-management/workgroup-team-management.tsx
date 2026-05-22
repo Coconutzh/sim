@@ -21,6 +21,7 @@ import {
   useResendWorkspaceInvitation,
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
 
@@ -62,8 +63,11 @@ export function WorkgroupTeamManagement() {
   const router = useRouter()
   const { data: workgroupsData, isLoading: isLoadingWorkgroups } = useMyWorkgroups()
   const workgroups = workgroupsData?.workgroups ?? []
+  const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+  const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+    workgroups.find((workgroup) => workgroup.id === currentWorkspaceWorkgroupId) ??
     workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
     workgroups[0]
   const activeWorkgroupId = activeWorkgroup?.id

@@ -14,6 +14,7 @@ import {
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
 import { useWorkflowState, useWorkflows } from '@/hooks/queries/workflows'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
 type CanvasPaneKind = 'personal' | 'team'
@@ -139,8 +140,11 @@ export function SplitCanvasWorkbench() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: workgroupsData } = useMyWorkgroups()
   const workgroups = workgroupsData?.workgroups ?? []
+  const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+  const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+    workgroups.find((workgroup) => workgroup.id === currentWorkspaceWorkgroupId) ??
     workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
     workgroups[0]
   const activeWorkgroupId = activeWorkgroup?.id

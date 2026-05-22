@@ -106,6 +106,7 @@ import {
   isFolderOrAncestorLocked,
 } from '@/hooks/queries/utils/folder-tree'
 import { useUpdateWorkflow, useWorkflowMap, useWorkflows } from '@/hooks/queries/workflows'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useOAuthReturnForWorkflow } from '@/hooks/use-oauth-return'
@@ -312,8 +313,15 @@ const WorkflowContent = React.memo(
     const updateWorkflowMutation = useUpdateWorkflow()
     const { mutateAsync: copySelection, isPending: isCopyingSelection } = useCopySelection()
     const { data: myWorkgroupsData } = useMyWorkgroups(!embedded)
+    const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+    const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
     const activeWorkgroupId =
-      myWorkgroupsData?.defaultWorkgroupId ?? myWorkgroupsData?.workgroups[0]?.id
+      myWorkgroupsData?.workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId)
+        ?.id ??
+      myWorkgroupsData?.workgroups.find((workgroup) => workgroup.id === currentWorkspaceWorkgroupId)
+        ?.id ??
+      myWorkgroupsData?.defaultWorkgroupId ??
+      myWorkgroupsData?.workgroups[0]?.id
     const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
     const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
     const copyTargetDescriptor = useMemo(() => {
