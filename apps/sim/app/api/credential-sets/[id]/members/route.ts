@@ -5,8 +5,11 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { removeCredentialSetMemberQuerySchema } from '@/lib/api/contracts/credential-sets'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import {
+  listCredentialSetMembersContract,
+  removeCredentialSetMemberContract,
+} from '@/lib/api/contracts/credential-sets'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasCredentialSetsAccess } from '@/lib/billing'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -40,7 +43,7 @@ async function getCredentialSetWithAccess(credentialSetId: string, userId: strin
 }
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -56,7 +59,9 @@ export const GET = withRouteHandler(
       )
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(listCredentialSetMembersContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
     const result = await getCredentialSetWithAccess(id, session.user.id)
 
     if (!result) {
@@ -122,7 +127,7 @@ export const GET = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -138,20 +143,10 @@ export const DELETE = withRouteHandler(
       )
     }
 
-    const { id } = await params
-    const { searchParams } = new URL(req.url)
-    const validation = removeCredentialSetMemberQuerySchema.safeParse({
-      memberId: searchParams.get('memberId') ?? '',
-    })
-
-    if (!validation.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(validation.error) },
-        { status: 400 }
-      )
-    }
-
-    const { memberId } = validation.data
+    const parsed = await parseRequest(removeCredentialSetMemberContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
+    const { memberId } = parsed.data.query
 
     try {
       const result = await getCredentialSetWithAccess(id, session.user.id)
