@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Crown, Mail, Shield, UserMinus, Users } from 'lucide-react'
+import { Crown, Mail, RotateCcw, Shield, UserMinus, Users, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Input, Loader } from '@/components/emcn'
 import {
@@ -13,12 +13,21 @@ import {
   useUpdateWorkgroupMember,
   useWorkgroupMembers,
 } from '@/hooks/queries/collaboration'
+import {
+  useCancelWorkspaceInvitation,
+  usePendingInvitations,
+  useResendWorkspaceInvitation,
+} from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
 
 type WorkgroupRole = 'admin' | 'member'
 
 function roleLabel(role: WorkgroupRole) {
   return role === 'admin' ? 'Admin' : 'Member'
+}
+
+function readErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
 
 export function WorkgroupTeamManagement() {
@@ -41,15 +50,21 @@ export function WorkgroupTeamManagement() {
   const removeMember = useRemoveWorkgroupMember()
   const createTeamWorkspace = useCreateTeamWorkspace()
   const inviteMember = useInviteMember()
+  const cancelInvitation = useCancelWorkspaceInvitation()
+  const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
   const [emailInvitationValue, setEmailInvitationValue] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkgroupRole>('member')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const members = membersData?.members ?? []
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+  const { data: pendingInvitations = [], isLoading: isLoadingPendingInvitations } =
+    usePendingInvitations(isAdmin ? teamWorkspaceId : undefined)
   const isBusy =
     addMember.isPending ||
     inviteMember.isPending ||
+    cancelInvitation.isPending ||
+    resendInvitation.isPending ||
     updateMember.isPending ||
     removeMember.isPending ||
     createTeamWorkspace.isPending
@@ -89,18 +104,46 @@ export function WorkgroupTeamManagement() {
   const handleEmailInvitation = async () => {
     const email = emailInvitationValue.trim()
     if (!activeWorkgroup?.organizationId || !teamWorkspaceId || !email) return
-    await inviteMember.mutateAsync({
-      orgId: activeWorkgroup.organizationId,
-      emails: [email],
-      workspaceInvitations: [
-        {
-          workspaceId: teamWorkspaceId,
-          permission: inviteRole === 'admin' ? 'admin' : 'write',
-        },
-      ],
-    })
-    setEmailInvitationValue('')
-    setStatusMessage('Invitation email sent for the team canvas.')
+    try {
+      await inviteMember.mutateAsync({
+        orgId: activeWorkgroup.organizationId,
+        emails: [email],
+        workspaceInvitations: [
+          {
+            workspaceId: teamWorkspaceId,
+            permission: inviteRole === 'admin' ? 'admin' : 'write',
+          },
+        ],
+      })
+      setEmailInvitationValue('')
+      setStatusMessage('Invitation email sent for the team canvas.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const handleResendInvitation = async (invitationId: string) => {
+    if (!teamWorkspaceId) return
+    try {
+      await resendInvitation.mutateAsync({ invitationId, workspaceId: teamWorkspaceId })
+      setStatusMessage('Invitation email resent.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const handleCancelInvitation = async (invitationId: string) => {
+    if (!teamWorkspaceId) return
+    try {
+      await cancelInvitation.mutateAsync({
+        invitationId,
+        workspaceId: teamWorkspaceId,
+        organizationId: activeWorkgroup?.organizationId,
+      })
+      setStatusMessage('Pending invitation canceled.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
   }
 
   const handleRoleChange = async (userId: string, role: WorkgroupRole) => {
@@ -341,6 +384,79 @@ export function WorkgroupTeamManagement() {
                   >
                     <UserMinus className='mr-2 h-[14px] w-[14px]' />
                     Remove
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Pending invitations
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Resend or cancel team canvas invites that have not been accepted yet.
+              </p>
+            </div>
+          </div>
+          <div className='divide-y divide-[var(--border)]'>
+            {!teamWorkspaceId ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                Initialize the team canvas before managing invitations.
+              </div>
+            ) : isLoadingPendingInvitations ? (
+              <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                <Loader className='h-[14px] w-[14px]' animate />
+                Loading invitations...
+              </div>
+            ) : pendingInvitations.length === 0 ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                No pending team invitations.
+              </div>
+            ) : (
+              pendingInvitations.map((invitation) => (
+                <div
+                  key={invitation.invitationId ?? invitation.email}
+                  className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
+                >
+                  <div className='min-w-0'>
+                    <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                      {invitation.email}
+                    </div>
+                    <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                      {invitation.permissionType === 'admin' ? 'Admin' : 'Member'} access
+                      {invitation.isExternal ? ' / external invite' : ''}
+                    </div>
+                  </div>
+                  <Button
+                    variant='default'
+                    className='h-[32px]'
+                    onClick={() =>
+                      invitation.invitationId
+                        ? void handleResendInvitation(invitation.invitationId)
+                        : undefined
+                    }
+                    disabled={!invitation.invitationId || isBusy}
+                  >
+                    <RotateCcw className='mr-2 h-[14px] w-[14px]' />
+                    Resend
+                  </Button>
+                  <Button
+                    variant='default'
+                    className='h-[32px]'
+                    onClick={() =>
+                      invitation.invitationId
+                        ? void handleCancelInvitation(invitation.invitationId)
+                        : undefined
+                    }
+                    disabled={!invitation.invitationId || isBusy}
+                  >
+                    <X className='mr-2 h-[14px] w-[14px]' />
+                    Cancel
                   </Button>
                 </div>
               ))

@@ -427,6 +427,7 @@ export function useInviteMember() {
       queryClient.invalidateQueries({ queryKey: organizationKeys.memberUsage(variables.orgId) })
       queryClient.invalidateQueries({ queryKey: organizationKeys.roster(variables.orgId) })
       queryClient.invalidateQueries({ queryKey: organizationKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: invitationListsKey })
     },
   })
 }
