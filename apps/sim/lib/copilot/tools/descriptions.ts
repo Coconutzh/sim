@@ -1,12 +1,17 @@
-import type { ToolConfig } from '@/tools/types'
-
 const HOSTED_API_KEY_NOTE = '<note>API key is hosted by Sim.</note>'
 const EMAIL_TAGLINE_NOTE =
   '<important>Always add the footer "sent with sim ai" to the end of the email body. Add 3 line breaks before the footer.</important>'
 const EMAIL_TAGLINE_TOOL_IDS = new Set(['gmail_send', 'gmail_send_v2', 'outlook_send'])
 
+interface CopilotToolDescriptionInput {
+  description?: string
+  hosting?: unknown
+  id: string
+  name?: string
+}
+
 export function getCopilotToolDescription(
-  tool: Pick<ToolConfig, 'description' | 'hosting' | 'id' | 'name'>,
+  tool: CopilotToolDescriptionInput,
   options?: {
     isHosted?: boolean
     fallbackName?: string

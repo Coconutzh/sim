@@ -14,7 +14,6 @@ import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-ch
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import { getToolCatalogEntry } from '@/tools/catalog'
 import { getToolOutputsFromCatalog } from '@/tools/outputs'
-import type { ToolConfig } from '@/tools/types'
 import { getTrigger, isTriggerValid } from '@/triggers'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
@@ -178,7 +177,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
               return {
                 id: toolId,
                 name: tool.name || toolId,
-                description: getCopilotToolDescription(tool as unknown as ToolConfig, {
+                description: getCopilotToolDescription(tool, {
                   isHosted,
                   fallbackName: toolId,
                 }),
@@ -273,7 +272,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
             toolId: resolvedToolId,
             toolName: toolCfg?.name || resolvedToolId,
             description: toolCfg
-              ? getCopilotToolDescription(toolCfg as unknown as ToolConfig, {
+              ? getCopilotToolDescription(toolCfg, {
                   isHosted,
                   fallbackName: resolvedToolId,
                 })

@@ -148,7 +148,7 @@ export async function buildIntegrationToolSchemas(
           const catalogEntry = getToolEntry(strippedName)
           integrationTools.push({
             name: strippedName,
-            description: getCopilotToolDescription(toolConfig as unknown as ToolConfig, {
+            description: getCopilotToolDescription(toolConfig, {
               isHosted,
               fallbackName: strippedName,
               appendEmailTagline: shouldAppendEmailTagline,

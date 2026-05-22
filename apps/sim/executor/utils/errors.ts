@@ -94,7 +94,7 @@ export function buildHTTPError(config: {
 
 function readStatusCode(value: unknown): number | undefined {
   if (!(value instanceof Error)) return undefined
-  const status = (value as unknown as { statusCode?: unknown }).statusCode
+  const status = 'statusCode' in value ? value.statusCode : undefined
   return typeof status === 'number' ? status : undefined
 }
 

@@ -215,11 +215,11 @@ export function extractResponseReasoning(output: OpenAI.Responses.ResponseOutput
   const parts: string[] = []
   for (const item of output) {
     if (!item || item.type !== 'reasoning') continue
-    const summary = (item as unknown as { summary?: Array<{ text?: string | null } | null> })
-      .summary
+    if (!isRecord(item)) continue
+    const summary = item.summary
     if (!Array.isArray(summary)) continue
     for (const entry of summary) {
-      const text = entry?.text
+      const text = isRecord(entry) ? entry.text : undefined
       if (typeof text === 'string' && text.length > 0) parts.push(text)
     }
   }
