@@ -131,7 +131,7 @@ export function buildPublishedWorkflowReadSummary(
     isDeployed: false,
     deployedAt: null,
     isPublicApi: false,
-    locked: false,
+    locked: true,
     runCount: 0,
     lastRunAt: null,
     archivedAt: null,

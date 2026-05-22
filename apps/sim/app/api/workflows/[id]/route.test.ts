@@ -402,6 +402,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.sourceWorkflowId).toBeNull()
       expect(data.data.publishedBy).toBeNull()
       expect(data.data.isPublicApi).toBe(false)
+      expect(data.data.locked).toBe(true)
       expect(data.data.runCount).toBe(0)
       expect(data.data.variables).toEqual({})
       expect(data.data.state.blocks).toEqual({
