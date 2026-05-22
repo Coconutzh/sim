@@ -86,7 +86,12 @@ export function resolveCanvasScope(params: {
   workspaceMode?: WorkspaceMode | null
   workspaceWorkgroupId?: string | null
   accessSource?: WorkflowAccessSource | null
+  workflowTrack?: WorkflowRecord['track'] | null
 }): CanvasScope | null {
+  if (params.workflowTrack === 'published') {
+    return 'showcase'
+  }
+
   if (params.accessSource === 'organization' || params.accessSource === 'selected_workgroups') {
     return 'showcase'
   }
@@ -124,7 +129,7 @@ export interface LockStatus {
   locked: boolean
   directLocked: boolean
   inheritedLocked: boolean
-  lockedBy: 'workflow' | 'folder' | null
+  lockedBy: 'workflow' | 'folder' | 'published' | null
   lockedFolderId: string | null
 }
 
@@ -184,6 +189,7 @@ export async function getWorkflowLockStatus(workflowId: string): Promise<LockSta
     .select({
       locked: workflow.locked,
       folderId: workflow.folderId,
+      track: workflow.track,
     })
     .from(workflow)
     .where(and(eq(workflow.id, workflowId), isNull(workflow.archivedAt)))
@@ -209,6 +215,16 @@ export async function getWorkflowLockStatus(workflowId: string): Promise<LockSta
     }
   }
 
+  if (wf.track === 'published') {
+    return {
+      locked: true,
+      directLocked: true,
+      inheritedLocked: false,
+      lockedBy: 'published',
+      lockedFolderId: null,
+    }
+  }
+
   return getFolderLockStatus(wf.folderId)
 }
 
@@ -216,9 +232,11 @@ export async function assertWorkflowMutable(workflowId: string): Promise<void> {
   const status = await getWorkflowLockStatus(workflowId)
   if (status.locked) {
     throw new WorkflowLockedError(
-      status.lockedBy === 'folder'
-        ? 'Workflow is locked by its containing folder'
-        : 'Workflow is locked'
+      status.lockedBy === 'published'
+        ? 'Published workflows are read-only'
+        : status.lockedBy === 'folder'
+          ? 'Workflow is locked by its containing folder'
+          : 'Workflow is locked'
     )
   }
 }

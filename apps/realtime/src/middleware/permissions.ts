@@ -96,6 +96,7 @@ export async function verifyWorkflowAccess(
       .select({
         workspaceId: workflow.workspaceId,
         name: workflow.name,
+        track: workflow.track,
       })
       .from(workflow)
       .where(and(eq(workflow.id, workflowId), isNull(workflow.archivedAt)))
@@ -106,7 +107,7 @@ export async function verifyWorkflowAccess(
       return { hasAccess: false }
     }
 
-    const { workspaceId, name: workflowName } = workflowData[0]
+    const { workspaceId, name: workflowName, track } = workflowData[0]
     const authorization = await authorizeWorkflowByWorkspacePermission({
       workflowId,
       userId,
@@ -124,9 +125,10 @@ export async function verifyWorkflowAccess(
       accessSource: authorization.accessSource,
       workspaceMode: authorization.workspaceMode,
       workspaceWorkgroupId: authorization.workspaceWorkgroupId,
+      workflowTrack: track,
     })
     const role =
-      authorization.accessSource === 'workspace'
+      authorization.accessSource === 'workspace' && track !== 'published'
         ? (authorization.workspacePermission ?? 'read')
         : 'read'
 

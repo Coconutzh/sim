@@ -63,7 +63,11 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
 }))
 
-import { authorizeWorkflowByWorkspacePermission, resolveCanvasScope } from './index'
+import {
+  assertWorkflowMutable,
+  authorizeWorkflowByWorkspacePermission,
+  resolveCanvasScope,
+} from './index'
 
 describe('authorizeWorkflowByWorkspacePermission', () => {
   beforeEach(() => {
@@ -520,6 +524,17 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
 })
 
 describe('resolveCanvasScope', () => {
+  it('resolves published workflows to showcase scope for source team readers', () => {
+    expect(
+      resolveCanvasScope({
+        workspaceMode: 'organization',
+        workspaceWorkgroupId: 'publisher-workgroup',
+        accessSource: 'workspace',
+        workflowTrack: 'published',
+      })
+    ).toBe('showcase')
+  })
+
   it('resolves personal workspaces to personal scope', () => {
     expect(resolveCanvasScope({ workspaceMode: 'personal', accessSource: 'workspace' })).toBe(
       'personal'
@@ -544,5 +559,26 @@ describe('resolveCanvasScope', () => {
         accessSource: 'selected_workgroups',
       })
     ).toBe('showcase')
+  })
+})
+
+describe('assertWorkflowMutable', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResultsQueue.length = 0
+  })
+
+  it('rejects published workflows as read-only even when they are not locked', async () => {
+    mockResultsQueue.push([
+      {
+        locked: false,
+        folderId: null,
+        track: 'published',
+      },
+    ])
+
+    await expect(assertWorkflowMutable('published-workflow')).rejects.toThrow(
+      'Published workflows are read-only'
+    )
   })
 })

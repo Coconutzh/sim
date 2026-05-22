@@ -46,6 +46,7 @@ const {
         archivedAt: 'workflow.archivedAt',
         workspaceId: 'workflow.workspaceId',
         name: 'workflow.name',
+        track: 'workflow.track',
       },
     },
   }
@@ -80,8 +81,8 @@ const WRITE_ALLOWED_OPERATIONS = SOCKET_OPERATIONS.filter(
   (operation) => operation !== BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED
 )
 
-function queueWorkflowRow(workflowId = 'workflow-1') {
-  mockWorkflowRows.push([{ workspaceId: 'workspace-1', name: workflowId }])
+function queueWorkflowRow(workflowId = 'workflow-1', track: 'draft' | 'published' = 'draft') {
+  mockWorkflowRows.push([{ workspaceId: 'workspace-1', name: workflowId, track }])
 }
 
 function expectPermissionAllowed(result: { allowed: boolean; reason?: string }) {
@@ -395,7 +396,7 @@ describe('verifyWorkflowAccess', () => {
   })
 
   it('keeps showcase room joins read-only for visible cross-team publications', async () => {
-    queueWorkflowRow('showcase-workflow')
+    queueWorkflowRow('showcase-workflow', 'published')
     mockResolveCanvasScope.mockReturnValue('showcase')
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
@@ -411,6 +412,29 @@ describe('verifyWorkflowAccess', () => {
       workspaceId: 'workspace-1',
       canvasScope: 'showcase',
     })
+    expect(checkRolePermission('read', BLOCK_OPERATIONS.UPDATE_POSITION).allowed).toBe(false)
+  })
+
+  it('keeps source team published workflow joins read-only', async () => {
+    queueWorkflowRow('published-workflow', 'published')
+    mockResolveCanvasScope.mockReturnValue('showcase')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      workspacePermission: 'admin',
+      accessSource: 'workspace',
+      workspaceMode: 'organization',
+      workspaceWorkgroupId: 'publisher-workgroup',
+    })
+
+    await expect(verifyWorkflowAccess('publisher-admin', 'published-workflow')).resolves.toEqual({
+      hasAccess: true,
+      role: 'read',
+      workspaceId: 'workspace-1',
+      canvasScope: 'showcase',
+    })
+    expect(mockResolveCanvasScope).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowTrack: 'published' })
+    )
     expect(checkRolePermission('read', BLOCK_OPERATIONS.UPDATE_POSITION).allowed).toBe(false)
   })
 
