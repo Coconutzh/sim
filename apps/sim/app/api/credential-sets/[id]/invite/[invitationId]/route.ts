@@ -5,7 +5,8 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getEmailSubject, renderPollingGroupInvitationEmail } from '@/components/emails'
-import { credentialSetInvitationParamsSchema } from '@/lib/api/contracts/credential-sets'
+import { resendCredentialSetInvitationContract } from '@/lib/api/contracts/credential-sets'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasCredentialSetsAccess } from '@/lib/billing'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -40,10 +41,7 @@ async function getCredentialSetWithAccess(credentialSetId: string, userId: strin
 }
 
 export const POST = withRouteHandler(
-  async (
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string; invitationId: string }> }
-  ) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string; invitationId: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -59,7 +57,9 @@ export const POST = withRouteHandler(
       )
     }
 
-    const { id, invitationId } = credentialSetInvitationParamsSchema.parse(await params)
+    const parsed = await parseRequest(resendCredentialSetInvitationContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id, invitationId } = parsed.data.params
 
     try {
       const result = await getCredentialSetWithAccess(id, session.user.id)

@@ -7,8 +7,9 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getEmailSubject, renderPollingGroupInvitationEmail } from '@/components/emails'
 import {
-  cancelCredentialSetInvitationQuerySchema,
+  cancelCredentialSetInvitationContract,
   createCredentialSetInvitationContract,
+  listCredentialSetInvitationDetailsContract,
 } from '@/lib/api/contracts/credential-sets'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
@@ -45,7 +46,7 @@ async function getCredentialSetWithAccess(credentialSetId: string, userId: strin
 }
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -61,7 +62,9 @@ export const GET = withRouteHandler(
       )
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(listCredentialSetInvitationDetailsContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
     const result = await getCredentialSetWithAccess(id, session.user.id)
 
     if (!result) {
@@ -218,7 +221,7 @@ export const POST = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -234,20 +237,10 @@ export const DELETE = withRouteHandler(
       )
     }
 
-    const { id } = await params
-    const { searchParams } = new URL(req.url)
-    const validation = cancelCredentialSetInvitationQuerySchema.safeParse({
-      invitationId: searchParams.get('invitationId') ?? '',
-    })
-
-    if (!validation.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(validation.error) },
-        { status: 400 }
-      )
-    }
-
-    const { invitationId } = validation.data
+    const parsed = await parseRequest(cancelCredentialSetInvitationContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
+    const { invitationId } = parsed.data.query
 
     try {
       const result = await getCredentialSetWithAccess(id, session.user.id)
