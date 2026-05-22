@@ -47,4 +47,38 @@ describe('sanitizeWorkflowSnapshot', () => {
       edges: [],
     })
   })
+
+  it('redacts file-like fields without treating profile as a file field', () => {
+    const snapshot = {
+      block: {
+        imageFile: {
+          id: 'file-1',
+          name: 'draft.png',
+          url: 'https://files.example/private',
+          size: 42,
+          type: 'image/png',
+          key: 'private/file-1',
+        },
+        files: [
+          {
+            id: 'file-2',
+            name: 'asset.mov',
+            url: 'https://files.example/movie',
+            size: 120,
+            type: 'video/quicktime',
+            key: 'private/file-2',
+          },
+        ],
+        profile: { name: 'Stage designer' },
+      },
+    }
+
+    expect(sanitizeWorkflowSnapshot(snapshot)).toEqual({
+      block: {
+        imageFile: { type: 'file', label: '已隐藏文件' },
+        files: { type: 'file', label: '已隐藏文件' },
+        profile: { name: 'Stage designer' },
+      },
+    })
+  })
 })

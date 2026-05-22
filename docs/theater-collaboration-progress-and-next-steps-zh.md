@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-22  
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`  
-> 当前推进阶段：Phase 4「权限隔离加固」已完成本轮收尾验证，下一步进入 Phase 5「发布流程与全局状态树」
+> 当前推进阶段：Phase 6「跨画布节点复制」后端闭环已完成本轮加固，下一步继续 Phase 6 前端入口与 Phase 7「分屏工作台」
 
 ## 1. 当前结论
 
@@ -292,22 +292,52 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 新增 `PATCH /api/publications/[publicationVersionId]`，团队管理员可 `archive` 或 `retract` 本团队发布，组织 admin/owner 继续通过 `assertWorkgroupAdmin` 管理团队发布生命周期。
 - 发布创建、归档、撤回写入 `@sim/audit` 的 `publication.*` 审计动作；前端 React Query 增加 `useUpdatePublicationLifecycle` 并精准失效展示列表和详情缓存。
 
+### 5.5 Phase 6 跨画布节点复制后端切片
+
+本轮继续推进 Phase 6 的复制 API 闭环，重点先落服务端强制边界，保证后续分屏/右键 UI 接入时不依赖客户端自律：
+
+- `POST /api/workflows/[id]/copy-selection` 现在以路由 `[id]` 作为源 workflow；如果请求体里的 `source.workflowId` 与路由不一致，直接返回 400，避免客户端把源/目标语义传错。
+- 空 selection 不再提前返回；仍会先验证源 workflow read 和目标 workflow write，防止借空请求探测或绕过目标权限。
+- 服务端会用 `resolveCanvasScope` 校验请求声明的 `source.type`、`target.type` 与真实授权上下文一致，个人/团队/展示画布类型不能由客户端伪造。
+- 目标 workflow 必须属于请求声明的 `target.workspaceId`，避免 UI cache 或分屏 pane 状态串线时把节点写进错误画布。
+- 复制响应除 `inserted` 外新增 `mappings.blockIds` 和 `mappings.edgeIds`，返回源 ID 到目标新 ID 的映射，后续前端可用于高亮新节点和刷新目标画布。
+- `placement.offsetX/offsetY` 纳入合约，默认仍为 80/80，但分屏或 viewport-center UI 可以显式传入安全范围内的偏移。
+- 节点复制继续重写 block/edge ID、只复制两端都在 selection 内的边、把目标节点 `locked` 设为 false，并保持源 workflow 不变。
+- `sanitizeWorkflowSnapshot` 增强为识别 `UserFile` 形态和 `imageFile/files/uploadFile` 等文件字段，复制时会用占位符隐藏文件引用，同时保留 `profile` 这类非文件字段，降低跨个人/团队画布泄露私有文件 key/url/base64 的风险。
+- 新增 `apps/sim/app/api/workflows/[id]/copy-selection/route.test.ts` 覆盖成功复制、源读/目标写拒绝、画布类型不匹配、源 workflow mismatch、空 selection 仍鉴权。
+- 扩展 `apps/sim/lib/collaboration/snapshot-sanitizer.test.ts` 覆盖文件字段脱敏和 `profile` 非误伤。
+
+仍需继续：
+
+- 在现有 `/workspace/[workspaceId]/w/[workflowId]` 画布 UI 中接入“复制到团队画布 / 复制到个人草稿”入口，成功后刷新目标 workflow 并高亮新节点。
+- Phase 7 分屏工作台需要复用这条 API，而不是再新增一套复制逻辑。
+
 ## 6. 建议继续推进目标
 
-### 6.1 立即继续：进入 Phase 5 发布流程与全局状态树
+### 6.1 立即继续：收口 Phase 6 前端入口并进入 Phase 7 分屏
 
 建议按小切片继续，不要一次改完：
 
-1. **publication state tree 切片**
+1. **copy-selection frontend 切片**
+   - 复用现有 `useCopySelection`，在画布选中节点后提供“复制到...”动作。
+   - 个人草稿默认复制到当前团队画布；团队画布默认复制到个人草稿或分屏另一侧。
+   - 成功后按 `mappings.blockIds` 高亮新节点，刷新目标 workflow，并 toast 显示复制数量。
+
+2. **split view workbench 切片**
+   - 在原 `/workspace/[workspaceId]` 布局下新增分屏入口，避免回到独立 `/workbench` 外壳。
+   - 左右 pane 独立保存 workflowId、selection、zoom/pan 和目标侧，复制动作显式传 source/target。
+   - 移动端降级为顶部 tab，不强制左右分屏。
+
+3. **publication state tree 后续切片**
    - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由和审计动作；后续继续补全全局树聚合视图、通知/广播和前端发布管理入口。
    - 发布版本生命周期已覆盖已发布、替换、归档、撤回；草稿和显式回滚可在管理入口阶段继续细化。
    - 确保发布版本不返回源团队画布的可写 workspace id。
 
-2. **showcase visibility 切片**
+4. **showcase visibility 切片**
    - 发布时写入可见范围，支持当前项目/组织、指定 workgroup 或后续全局状态树节点。
    - 只读详情继续保留原 Sidebar，避免回到独立 `/workbench` 外壳。
 
-3. **审计和回滚切片**
+5. **审计和回滚切片**
    - 发布、归档、撤回已经写 audit；取消发布/替换版本的前端管理入口和更完整端到端测试仍待补。
    - 继续给 Phase 5 增加端到端路由/服务测试，验证跨团队只读、源团队可管理、未授权团队不可见和广播行为。
 

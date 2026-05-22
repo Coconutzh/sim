@@ -190,10 +190,10 @@ export const publicationTreeSchema = z.object({
       id: z.string(),
       parentVersionId: z.string().nullable(),
       title: z.string(),
-        description: z.string().nullable(),
-        versionNumber: z.number(),
-        status: publicationStatusSchema,
-        visibility: publicationVisibilitySchema,
+      description: z.string().nullable(),
+      versionNumber: z.number(),
+      status: publicationStatusSchema,
+      visibility: publicationVisibilitySchema,
       sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),
       sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
       agentCode: agentCodeSchema,
@@ -210,9 +210,7 @@ export const updatePublicationLifecycleBodySchema = z.object({
   action: z.enum(['archive', 'retract']),
   reason: z.string().trim().max(1000).optional(),
 })
-export type UpdatePublicationLifecycleBody = z.input<
-  typeof updatePublicationLifecycleBodySchema
->
+export type UpdatePublicationLifecycleBody = z.input<typeof updatePublicationLifecycleBodySchema>
 
 export const publicationLifecycleSchema = z.object({
   id: z.string(),
@@ -240,6 +238,13 @@ export const copySelectionBodySchema = z.object({
     blockIds: z.array(z.string()).default([]),
     edgeIds: z.array(z.string()).default([]),
   }),
+  placement: z
+    .object({
+      offsetX: z.number().finite().min(-2000).max(2000).default(80),
+      offsetY: z.number().finite().min(-2000).max(2000).default(80),
+    })
+    .optional()
+    .default({ offsetX: 80, offsetY: 80 }),
 })
 export type CopySelectionBody = z.input<typeof copySelectionBodySchema>
 
@@ -451,6 +456,10 @@ export const copySelectionContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       inserted: z.object({ blockIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
+      mappings: z.object({
+        blockIds: z.record(z.string(), z.string()),
+        edgeIds: z.record(z.string(), z.string()),
+      }),
     }),
   },
 })

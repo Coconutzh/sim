@@ -2,7 +2,7 @@
 import { workflowBlocks, workflowEdges } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import { authorizeWorkflowByWorkspacePermission, resolveCanvasScope } from '@sim/workflow-authz'
 import { and, eq, inArray } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { copySelectionContract } from '@/lib/api/contracts/collaboration'
@@ -19,12 +19,16 @@ export const POST = withRouteHandler(async (request, context) => {
   const parsed = await parseRequest(copySelectionContract, request, context)
   if (!parsed.success) return parsed.response
 
-  const sourceWorkflowId = parsed.data.body.source.workflowId ?? parsed.data.params.id
+  if (
+    parsed.data.body.source.workflowId &&
+    parsed.data.body.source.workflowId !== parsed.data.params.id
+  ) {
+    return NextResponse.json({ error: 'Source workflow mismatch' }, { status: 400 })
+  }
+
+  const sourceWorkflowId = parsed.data.params.id
   const targetWorkflowId = parsed.data.body.target.workflowId
   const blockIds = [...new Set(parsed.data.body.selection.blockIds)]
-  if (blockIds.length === 0) {
-    return NextResponse.json({ inserted: { blockIds: [], edgeIds: [] } })
-  }
 
   const [sourceAccess, targetAccess] = await Promise.all([
     authorizeWorkflowByWorkspacePermission({
@@ -40,6 +44,40 @@ export const POST = withRouteHandler(async (request, context) => {
   ])
   if (!sourceAccess.allowed || !targetAccess.allowed) {
     return NextResponse.json({ error: 'Copy selection access denied' }, { status: 403 })
+  }
+
+  const sourceScope = resolveCanvasScope({
+    accessSource: sourceAccess.accessSource,
+    workspaceMode: sourceAccess.workspaceMode,
+    workspaceWorkgroupId: sourceAccess.workspaceWorkgroupId,
+    workflowTrack: sourceAccess.workflow?.track,
+  })
+  const targetScope = resolveCanvasScope({
+    accessSource: targetAccess.accessSource,
+    workspaceMode: targetAccess.workspaceMode,
+    workspaceWorkgroupId: targetAccess.workspaceWorkgroupId,
+    workflowTrack: targetAccess.workflow?.track,
+  })
+
+  if (
+    sourceScope !== parsed.data.body.source.type ||
+    targetScope !== parsed.data.body.target.type
+  ) {
+    return NextResponse.json({ error: 'Copy selection canvas type mismatch' }, { status: 403 })
+  }
+
+  if (targetAccess.workflow?.workspaceId !== parsed.data.body.target.workspaceId) {
+    return NextResponse.json(
+      { error: 'Target workflow does not belong to target workspace' },
+      { status: 403 }
+    )
+  }
+
+  if (blockIds.length === 0) {
+    return NextResponse.json({
+      inserted: { blockIds: [], edgeIds: [] },
+      mappings: { blockIds: {}, edgeIds: {} },
+    })
   }
 
   try {
@@ -68,7 +106,9 @@ export const POST = withRouteHandler(async (request, context) => {
     const insertedEdges = edges.filter(
       (edge) => selectedBlockIds.has(edge.sourceBlockId) && selectedBlockIds.has(edge.targetBlockId)
     )
-    const insertedEdgeIds = insertedEdges.map(() => generateId())
+    const edgeIdMap = new Map(insertedEdges.map((edge) => [edge.id, generateId()]))
+    const insertedEdgeIds = insertedEdges.map((edge) => edgeIdMap.get(edge.id) as string)
+    const placement = parsed.data.body.placement
 
     await db.transaction(async (tx) => {
       if (blocks.length > 0) {
@@ -78,8 +118,8 @@ export const POST = withRouteHandler(async (request, context) => {
             workflowId: targetWorkflowId,
             type: block.type,
             name: block.name,
-            positionX: String(Number(block.positionX) + 80),
-            positionY: String(Number(block.positionY) + 80),
+            positionX: String(Number(block.positionX) + placement.offsetX),
+            positionY: String(Number(block.positionY) + placement.offsetY),
             enabled: block.enabled,
             horizontalHandles: block.horizontalHandles,
             isWide: block.isWide,
@@ -97,8 +137,8 @@ export const POST = withRouteHandler(async (request, context) => {
       }
       if (insertedEdges.length > 0) {
         await tx.insert(workflowEdges).values(
-          insertedEdges.map((edge, index) => ({
-            id: insertedEdgeIds[index],
+          insertedEdges.map((edge) => ({
+            id: edgeIdMap.get(edge.id) as string,
             workflowId: targetWorkflowId,
             sourceBlockId: idMap.get(edge.sourceBlockId) as string,
             targetBlockId: idMap.get(edge.targetBlockId) as string,
@@ -110,7 +150,13 @@ export const POST = withRouteHandler(async (request, context) => {
       }
     })
 
-    return NextResponse.json({ inserted: { blockIds: insertedBlockIds, edgeIds: insertedEdgeIds } })
+    return NextResponse.json({
+      inserted: { blockIds: insertedBlockIds, edgeIds: insertedEdgeIds },
+      mappings: {
+        blockIds: Object.fromEntries(idMap),
+        edgeIds: Object.fromEntries(edgeIdMap),
+      },
+    })
   } catch (error) {
     logger.error('Failed to copy selection', error)
     return NextResponse.json({ error: 'Failed to copy selection' }, { status: 500 })
