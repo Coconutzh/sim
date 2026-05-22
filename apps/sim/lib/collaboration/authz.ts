@@ -87,12 +87,13 @@ export async function canReadPublication(
       sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
       visibility: workflowPublicationVersion.visibility,
       publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
+      status: workflowPublicationVersion.status,
     })
     .from(workflowPublicationVersion)
     .where(eq(workflowPublicationVersion.id, publicationVersionId))
     .limit(1)
 
-  if (!publication) return false
+  if (!publication || publication.status === 'retracted') return false
 
   const [sourceMembership] = await db
     .select({ id: workgroupMember.id })

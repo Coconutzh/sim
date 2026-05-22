@@ -1,6 +1,7 @@
 ﻿import type { QueryClient } from '@tanstack/react-query'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
+import type { WorkspacesResponse } from '@/lib/api/contracts'
 import {
   addWorkgroupMemberContract,
   type CopySelectionBody,
@@ -21,9 +22,10 @@ import {
   type PublicationSummary,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
+  updatePublicationLifecycleContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
-import { type Workspace, type WorkspacesResponse, workspaceKeys } from '@/hooks/queries/workspace'
+import { type Workspace, workspaceKeys } from '@/hooks/queries/workspace'
 
 export const collaborationKeys = {
   all: ['collaboration'] as const,
@@ -84,6 +86,7 @@ export interface PublicationFilters {
     | 'props_costume'
     | 'production'
   limit?: number
+  status?: 'draft' | 'published' | 'superseded' | 'archived' | 'retracted'
 }
 
 export function useDisciplines() {
@@ -309,6 +312,27 @@ export function usePublicationTree(publicationVersionId?: string) {
       }),
     enabled: Boolean(publicationVersionId),
     staleTime: 60 * 1000,
+  })
+}
+
+export function useUpdatePublicationLifecycle() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      publicationVersionId: string
+      action: 'archive' | 'retract'
+      reason?: string
+    }) =>
+      requestJson(updatePublicationLifecycleContract, {
+        params: { publicationVersionId: variables.publicationVersionId },
+        body: { action: variables.action, reason: variables.reason },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.publication(variables.publicationVersionId),
+      })
+    },
   })
 }
 

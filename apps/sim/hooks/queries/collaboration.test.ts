@@ -17,7 +17,11 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: vi.fn(() => queryClient),
 }))
 
-import { collaborationKeys, useSetActiveWorkgroup } from '@/hooks/queries/collaboration'
+import {
+  collaborationKeys,
+  useSetActiveWorkgroup,
+  useUpdatePublicationLifecycle,
+} from '@/hooks/queries/collaboration'
 
 describe('collaboration query invalidation', () => {
   beforeEach(() => {
@@ -46,6 +50,25 @@ describe('collaboration query invalidation', () => {
     })
     expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({
       queryKey: collaborationKeys.all,
+    })
+  })
+
+  it('invalidates publication lists and detail after lifecycle updates', async () => {
+    const mutation = useUpdatePublicationLifecycle() as {
+      onSettled: (
+        data: unknown,
+        error: unknown,
+        variables: { publicationVersionId: string }
+      ) => void
+    }
+
+    mutation.onSettled(null, null, { publicationVersionId: 'publication-1' })
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: collaborationKeys.publicationLists(),
+    })
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: collaborationKeys.publication('publication-1'),
     })
   })
 })

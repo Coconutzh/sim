@@ -819,6 +819,7 @@ export const publishWorkflowContract = defineRouteContract({
           id: z.string(),
           title: z.string(),
           versionNumber: z.number(),
+          status: z.enum(['published', 'superseded', 'archived', 'retracted', 'draft']),
           parentVersionId: z.string().nullable(),
           publishedAt: z.string(),
         })

@@ -42,7 +42,7 @@ describe('GET /api/workgroups/[workgroupId]/published-workflows', () => {
         'GET',
         undefined,
         {},
-        'http://localhost:3000/api/workgroups/wg-1/published-workflows?disciplineCode=lighting&sourceWorkgroupId=wg-source&agentCode=chief_director&limit=5'
+        'http://localhost:3000/api/workgroups/wg-1/published-workflows?disciplineCode=lighting&sourceWorkgroupId=wg-source&agentCode=chief_director&status=superseded&limit=5'
       ),
       { params: Promise.resolve({ workgroupId: 'wg-1' }) }
     )
@@ -58,6 +58,7 @@ describe('GET /api/workgroups/[workgroupId]/published-workflows', () => {
       disciplineCode: 'lighting',
       sourceWorkgroupId: 'wg-source',
       agentCode: 'chief_director',
+      status: 'superseded',
       limit: 5,
     })
   })

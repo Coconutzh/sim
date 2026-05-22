@@ -71,6 +71,8 @@ describe('showcase snapshot canvas', () => {
       sourceDiscipline: { code: 'lighting_sound', name: '灯光音响' },
       agentCode: 'lighting_sound',
       versionNumber: 1,
+      status: 'published',
+      visibility: 'organization',
       parentVersionId: null,
       snapshotState: validSnapshot,
       snapshotMetadata: { sourceWorkflowName: 'Team Draft' },

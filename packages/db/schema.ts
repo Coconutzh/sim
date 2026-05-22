@@ -239,6 +239,17 @@ export const workflowPublicationVersionVisibilityEnum = pgEnum(
 export type WorkflowPublicationVersionVisibility =
   (typeof workflowPublicationVersionVisibilityEnum.enumValues)[number]
 
+export const workflowPublicationVersionStatusEnum = pgEnum('workflow_publication_version_status', [
+  'draft',
+  'published',
+  'superseded',
+  'archived',
+  'retracted',
+])
+
+export type WorkflowPublicationVersionStatus =
+  (typeof workflowPublicationVersionStatusEnum.enumValues)[number]
+
 export const workflowPublicationVersion = pgTable(
   'workflow_publication_version',
   {
@@ -266,10 +277,19 @@ export const workflowPublicationVersion = pgTable(
     visibility: workflowPublicationVersionVisibilityEnum('visibility')
       .notNull()
       .default('organization'),
+    status: workflowPublicationVersionStatusEnum('status').notNull().default('published'),
     snapshotState: jsonb('snapshot_state').notNull(),
     snapshotMetadata: jsonb('snapshot_metadata').notNull().default('{}'),
     publishedBy: text('published_by').references(() => user.id, { onDelete: 'set null' }),
     publishedAt: timestamp('published_at').defaultNow().notNull(),
+    archivedAt: timestamp('archived_at'),
+    retractedAt: timestamp('retracted_at'),
+    lifecycleUpdatedBy: text('lifecycle_updated_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    lifecycleUpdatedAt: timestamp('lifecycle_updated_at'),
+    reviewState: text('review_state'),
+    riskLevel: text('risk_level'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -284,6 +304,8 @@ export const workflowPublicationVersion = pgTable(
       table.sourceDisciplineId
     ),
     agentCodeIdx: index('workflow_publication_version_agent_code_idx').on(table.agentCode),
+    statusIdx: index('workflow_publication_version_status_idx').on(table.status),
+    archivedAtIdx: index('workflow_publication_version_archived_at_idx').on(table.archivedAt),
     sourceWorkflowIdIdx: index('workflow_publication_version_source_workflow_id_idx').on(
       table.sourceWorkflowId
     ),

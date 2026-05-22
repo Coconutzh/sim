@@ -62,6 +62,7 @@ export const POST = withRouteHandler(
             id: publicationVersion.id,
             title: publicationVersion.title,
             versionNumber: publicationVersion.versionNumber,
+            status: publicationVersion.status,
             parentVersionId: publicationVersion.parentVersionId,
             publishedAt: publicationVersion.publishedAt.toISOString(),
           },

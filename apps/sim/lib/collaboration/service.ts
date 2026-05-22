@@ -1,4 +1,5 @@
-﻿import { db } from '@sim/db'
+﻿import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import { db } from '@sim/db'
 import {
   agentSkillBinding,
   discipline,
@@ -17,7 +18,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
-import { and, asc, desc, eq, inArray, isNull, max, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, max, ne, or, sql } from 'drizzle-orm'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
   AGENT_PROFILES,
@@ -36,6 +37,7 @@ const logger = createLogger('Collaboration')
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | null
 export type WorkgroupRole = 'admin' | 'member'
+export type PublicationStatus = 'draft' | 'published' | 'superseded' | 'archived' | 'retracted'
 
 function toSlug(name: string): string {
   const slug = name
@@ -756,6 +758,7 @@ export async function createPublicationVersion(params: {
   const [source] = await db
     .select({
       workflow,
+      workspaceId: workspace.id,
       organizationId: workspace.organizationId,
       workgroupId: workspace.workgroupId,
       disciplineId: workgroup.disciplineId,
@@ -787,6 +790,7 @@ export async function createPublicationVersion(params: {
       title: params.title,
       description: params.description,
       visibility: params.visibility,
+      status: 'published',
       snapshotState: sanitizeWorkflowSnapshot(
         state ?? { blocks: {}, edges: [], loops: {}, parallels: {} }
       ),
@@ -800,6 +804,35 @@ export async function createPublicationVersion(params: {
       updatedAt: new Date(),
     })
     .returning()
+  await db
+    .update(workflowPublicationVersion)
+    .set({
+      status: 'superseded',
+      lifecycleUpdatedBy: params.publishedBy,
+      lifecycleUpdatedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(workflowPublicationVersion.sourceWorkflowId, params.sourceWorkflowId),
+        eq(workflowPublicationVersion.status, 'published'),
+        ne(workflowPublicationVersion.id, inserted.id)
+      )
+    )
+  recordAudit({
+    workspaceId: source.workspaceId,
+    actorId: params.publishedBy,
+    action: AuditAction.PUBLICATION_CREATED,
+    resourceType: AuditResourceType.PUBLICATION,
+    resourceId: inserted.id,
+    resourceName: inserted.title,
+    metadata: {
+      sourceWorkflowId: params.sourceWorkflowId,
+      sourceWorkgroupId: source.workgroupId,
+      visibility: params.visibility,
+      versionNumber: inserted.versionNumber,
+    },
+  })
   return inserted
 }
 
@@ -809,6 +842,7 @@ export async function listVisiblePublications(params: {
   disciplineCode?: string
   sourceWorkgroupId?: string
   agentCode?: string
+  status?: PublicationStatus
   limit?: number
 }) {
   await assertWorkgroupMember(params.userId, params.workgroupId)
@@ -829,6 +863,11 @@ export async function listVisiblePublications(params: {
   }
   if (params.disciplineCode) {
     conditions.push(eq(discipline.code, params.disciplineCode))
+  }
+  if (params.status) {
+    conditions.push(eq(workflowPublicationVersion.status, params.status))
+  } else {
+    conditions.push(inArray(workflowPublicationVersion.status, ['published', 'superseded']))
   }
 
   const visibilityCondition = or(
@@ -868,6 +907,8 @@ export async function listVisiblePublications(params: {
     },
     agentCode: row.publication.agentCode,
     versionNumber: row.publication.versionNumber,
+    status: row.publication.status,
+    visibility: row.publication.visibility,
     publishedBy: {
       id: row.publisherId ?? '',
       name: row.publisherName ?? 'Unknown',
@@ -894,6 +935,7 @@ export async function getPublication(params: { userId: string; publicationVersio
     .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
     .limit(1)
   if (!row) throw new Error('Publication not found')
+  if (row.publication.status === 'retracted') throw new Error('Publication not found')
   const parentVersionId =
     row.publication.parentVersionId &&
     (await canReadPublication(params.userId, row.publication.parentVersionId))
@@ -912,6 +954,8 @@ export async function getPublication(params: { userId: string; publicationVersio
       name: row.sourceDisciplineName ?? '总导演',
     },
     agentCode: row.publication.agentCode,
+    status: row.publication.status,
+    visibility: row.publication.visibility,
     snapshotState: row.publication.snapshotState,
     snapshotMetadata: row.publication.snapshotMetadata,
     publishedAt: row.publication.publishedAt.toISOString(),
@@ -949,6 +993,7 @@ export async function getPublicationTree(params: { userId: string; publicationVe
   )
     .filter(({ canRead }) => canRead)
     .map(({ row }) => row)
+    .filter((row) => row.publication.status !== 'retracted')
   const visibleVersionIds = new Set(visibleRows.map((row) => row.publication.id))
 
   return {
@@ -962,7 +1007,7 @@ export async function getPublicationTree(params: { userId: string; publicationVe
       title: row.publication.title,
       description: row.publication.description,
       versionNumber: row.publication.versionNumber,
-      status: 'published' as const,
+      status: row.publication.status,
       visibility: row.publication.visibility,
       sourceWorkgroup: {
         id: row.publication.sourceWorkgroupId,
@@ -980,6 +1025,77 @@ export async function getPublicationTree(params: { userId: string; publicationVe
       sourceDisciplineName: row.sourceDisciplineName ?? '总导演',
       publishedAt: row.publication.publishedAt.toISOString(),
     })),
+  }
+}
+
+export async function updatePublicationLifecycleStatus(params: {
+  actorUserId: string
+  publicationVersionId: string
+  action: 'archive' | 'retract'
+  reason?: string
+}) {
+  const [row] = await db
+    .select({
+      id: workflowPublicationVersion.id,
+      title: workflowPublicationVersion.title,
+      sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
+      sourceWorkflowId: workflowPublicationVersion.sourceWorkflowId,
+      publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
+      status: workflowPublicationVersion.status,
+      archivedAt: workflowPublicationVersion.archivedAt,
+      retractedAt: workflowPublicationVersion.retractedAt,
+      publishedAt: workflowPublicationVersion.publishedAt,
+    })
+    .from(workflowPublicationVersion)
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+    .limit(1)
+  if (!row) throw new Error('Publication not found')
+  await assertWorkgroupAdmin(params.actorUserId, row.sourceWorkgroupId)
+
+  const now = new Date()
+  const status = params.action === 'archive' ? 'archived' : 'retracted'
+  const archivedAt = params.action === 'archive' ? (row.archivedAt ?? now) : row.archivedAt
+  const retractedAt = params.action === 'retract' ? (row.retractedAt ?? now) : row.retractedAt
+
+  await db
+    .update(workflowPublicationVersion)
+    .set({
+      status,
+      archivedAt,
+      retractedAt,
+      lifecycleUpdatedBy: params.actorUserId,
+      lifecycleUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action:
+      params.action === 'archive'
+        ? AuditAction.PUBLICATION_ARCHIVED
+        : AuditAction.PUBLICATION_RETRACTED,
+    resourceType: AuditResourceType.PUBLICATION,
+    resourceId: row.id,
+    resourceName: row.title,
+    description: params.reason,
+    metadata: {
+      previousStatus: row.status,
+      status,
+      sourceWorkflowId: row.sourceWorkflowId,
+      sourceWorkgroupId: row.sourceWorkgroupId,
+      publishedWorkflowId: row.publishedWorkflowId,
+    },
+  })
+
+  return {
+    id: row.id,
+    title: row.title,
+    status,
+    archivedAt: archivedAt?.toISOString() ?? null,
+    retractedAt: retractedAt?.toISOString() ?? null,
+    lifecycleUpdatedAt: now.toISOString(),
+    publishedAt: row.publishedAt.toISOString(),
   }
 }
 

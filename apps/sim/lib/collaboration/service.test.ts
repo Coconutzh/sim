@@ -56,14 +56,22 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         id: 'workflowPublicationVersion.id',
         title: 'workflowPublicationVersion.title',
         description: 'workflowPublicationVersion.description',
+        status: 'workflowPublicationVersion.status',
+        visibility: 'workflowPublicationVersion.visibility',
         parentVersionId: 'workflowPublicationVersion.parentVersionId',
         versionNumber: 'workflowPublicationVersion.versionNumber',
         sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
         sourceWorkgroupId: 'workflowPublicationVersion.sourceWorkgroupId',
         sourceDisciplineId: 'workflowPublicationVersion.sourceDisciplineId',
+        publishedWorkflowId: 'workflowPublicationVersion.publishedWorkflowId',
         snapshotState: 'workflowPublicationVersion.snapshotState',
         snapshotMetadata: 'workflowPublicationVersion.snapshotMetadata',
         publishedAt: 'workflowPublicationVersion.publishedAt',
+        archivedAt: 'workflowPublicationVersion.archivedAt',
+        retractedAt: 'workflowPublicationVersion.retractedAt',
+        lifecycleUpdatedBy: 'workflowPublicationVersion.lifecycleUpdatedBy',
+        lifecycleUpdatedAt: 'workflowPublicationVersion.lifecycleUpdatedAt',
+        updatedAt: 'workflowPublicationVersion.updatedAt',
       },
       discipline: {
         id: 'discipline.id',
@@ -123,6 +131,15 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
 
 vi.mock('@sim/db', () => ({ db: mockDb }))
 vi.mock('@sim/db/schema', () => schemaMock)
+vi.mock('@sim/audit', () => ({
+  AuditAction: {
+    PUBLICATION_CREATED: 'publication.created',
+    PUBLICATION_ARCHIVED: 'publication.archived',
+    PUBLICATION_RETRACTED: 'publication.retracted',
+  },
+  AuditResourceType: { PUBLICATION: 'publication' },
+  recordAudit: vi.fn(),
+}))
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
@@ -138,6 +155,7 @@ vi.mock('drizzle-orm', () => ({
   inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
   max: vi.fn((value: unknown) => ({ kind: 'max', value })),
+  ne: vi.fn((left: unknown, right: unknown) => ({ kind: 'ne', left, right })),
   or: vi.fn((...args: unknown[]) => ({ kind: 'or', args })),
   sql: vi.fn(() => 'sql'),
 }))
@@ -153,6 +171,7 @@ vi.mock('@/lib/workflows/defaults', () => ({
   buildDefaultWorkflowArtifacts: vi.fn(() => ({ workflowState: { blocks: {}, edges: [] } })),
 }))
 
+import { recordAudit } from '@sim/audit'
 import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   assertWorkgroupAdmin,
@@ -161,6 +180,7 @@ import {
   getOrCreatePersonalWorkspace,
   getPublication,
   getPublicationTree,
+  updatePublicationLifecycleStatus,
   updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -398,6 +418,8 @@ describe('collaboration service', () => {
             sourceWorkflowId: 'workflow-1',
             sourceWorkgroupId: 'workgroup-1',
             agentCode: 'chief_director',
+            status: 'published',
+            visibility: 'organization',
             snapshotState: {},
             snapshotMetadata: {},
             publishedAt: new Date('2026-05-22T00:00:00Z'),
@@ -426,6 +448,8 @@ describe('collaboration service', () => {
             title: 'Root visible version',
             versionNumber: 2,
             parentVersionId: 'publication-hidden',
+            status: 'published',
+            visibility: 'organization',
             publishedAt: new Date('2026-05-22T00:00:00Z'),
           },
           sourceWorkgroupName: 'Team A',
@@ -440,6 +464,7 @@ describe('collaboration service', () => {
             parentVersionId: 'publication-root',
             sourceWorkgroupId: 'workgroup-1',
             agentCode: 'chief_director',
+            status: 'published',
             visibility: 'organization',
             publishedAt: new Date('2026-05-23T00:00:00Z'),
           },
@@ -471,5 +496,58 @@ describe('collaboration service', () => {
       ],
     })
     expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-hidden')
+  })
+
+  it('archives publication versions through workgroup admin lifecycle control', async () => {
+    const publishedAt = new Date('2026-05-23T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          status: 'published',
+          archivedAt: null,
+          retractedAt: null,
+          publishedAt,
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+    )
+
+    await expect(
+      updatePublicationLifecycleStatus({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        action: 'archive',
+        reason: 'Superseded by approved version',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Team plan',
+      status: 'archived',
+      retractedAt: null,
+      publishedAt: publishedAt.toISOString(),
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflowPublicationVersion)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.archived',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Superseded by approved version',
+      })
+    )
   })
 })

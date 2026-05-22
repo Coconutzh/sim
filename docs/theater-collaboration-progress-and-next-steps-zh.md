@@ -279,8 +279,18 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 - `getPublicationTree` 不再只返回最小版本链路，还会返回每个可见节点的 `description`、`status`、`visibility`、`sourceWorkgroup`、`sourceDiscipline`、`agentCode` 和 `dependsOnPublicationIds`。
 - `publicationTreeSchema` 同步声明这些字段，前端展示画布/全局状态树可以直接按工种、团队、Agent 和依赖关系渲染。
-- 当前 `status` 先固定为 `published`，后续撤回/归档切片再补 DB 级 `archived/retracted/superseded` 生命周期字段和操作路由。
+- 当前 `status` 已从固定 `published` 推进为 DB 级生命周期字段，覆盖 `published/superseded/archived/retracted` 等状态。
 - 已扩展 `apps/sim/lib/collaboration/service.test.ts`，确保发布树只返回当前用户可见节点，同时保留状态树元数据。
+
+### 5.4 Phase 5 发布生命周期切片
+
+本轮继续把 Phase 5 从“状态树数据形态”推进到“发布生命周期”：
+
+- `workflow_publication_version` 增加 DB 级 `status`、`archivedAt`、`retractedAt`、`lifecycleUpdatedBy`、`lifecycleUpdatedAt`、`reviewState`、`riskLevel` 字段；迁移为 `packages/db/migrations/0208_publication_lifecycle_status.sql`。
+- 发布新版本时写入 `status = published`，并把同一源 workflow 的旧 `published` 版本标记为 `superseded`，全局状态树可表达当前版本和历史版本关系。
+- 展示列表默认只返回 `published/superseded`，可通过 `status` query 精确筛选；`retracted` 版本不再通过 `canReadPublication` 和详情/树接口暴露。
+- 新增 `PATCH /api/publications/[publicationVersionId]`，团队管理员可 `archive` 或 `retract` 本团队发布，组织 admin/owner 继续通过 `assertWorkgroupAdmin` 管理团队发布生命周期。
+- 发布创建、归档、撤回写入 `@sim/audit` 的 `publication.*` 审计动作；前端 React Query 增加 `useUpdatePublicationLifecycle` 并精准失效展示列表和详情缓存。
 
 ## 6. 建议继续推进目标
 
@@ -289,8 +299,8 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 建议按小切片继续，不要一次改完：
 
 1. **publication state tree 切片**
-   - 完整串联团队画布发布、`workflow_publication_version`、展示树和可见范围。
-   - 明确发布版本生命周期：草稿、已发布、归档、替换或回滚。
+   - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由和审计动作；后续继续补全全局树聚合视图、通知/广播和前端发布管理入口。
+   - 发布版本生命周期已覆盖已发布、替换、归档、撤回；草稿和显式回滚可在管理入口阶段继续细化。
    - 确保发布版本不返回源团队画布的可写 workspace id。
 
 2. **showcase visibility 切片**
@@ -298,8 +308,8 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
    - 只读详情继续保留原 Sidebar，避免回到独立 `/workbench` 外壳。
 
 3. **审计和回滚切片**
-   - 发布、取消发布、归档、替换版本都写 audit。
-   - 给 Phase 5 增加端到端路由/服务测试，验证跨团队只读、源团队可管理、未授权团队不可见。
+   - 发布、归档、撤回已经写 audit；取消发布/替换版本的前端管理入口和更完整端到端测试仍待补。
+   - 继续给 Phase 5 增加端到端路由/服务测试，验证跨团队只读、源团队可管理、未授权团队不可见和广播行为。
 
 ### 6.2 Phase 4 已满足的验收门槛
 

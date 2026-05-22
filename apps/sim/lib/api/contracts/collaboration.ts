@@ -21,6 +21,13 @@ export const agentCodeSchema = z.enum([
   'production',
 ])
 export const publicationVisibilitySchema = z.enum(['organization', 'selected_workgroups'])
+export const publicationStatusSchema = z.enum([
+  'draft',
+  'published',
+  'superseded',
+  'archived',
+  'retracted',
+])
 
 export const organizationParamsSchema = z.object({ id: nonEmptyIdSchema })
 export const workgroupParamsSchema = z.object({ workgroupId: nonEmptyIdSchema })
@@ -142,6 +149,7 @@ export const publicationListQuerySchema = z.object({
   disciplineCode: z.string().optional(),
   sourceWorkgroupId: z.string().optional(),
   agentCode: agentCodeSchema.optional(),
+  status: publicationStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
@@ -153,6 +161,8 @@ export const publicationSummarySchema = z.object({
   sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
   agentCode: agentCodeSchema,
   versionNumber: z.number(),
+  status: publicationStatusSchema,
+  visibility: publicationVisibilitySchema,
   publishedBy: z.object({ id: z.string(), name: z.string(), avatarUrl: z.string().nullable() }),
   publishedAt: z.string(),
 })
@@ -180,10 +190,10 @@ export const publicationTreeSchema = z.object({
       id: z.string(),
       parentVersionId: z.string().nullable(),
       title: z.string(),
-      description: z.string().nullable(),
-      versionNumber: z.number(),
-      status: z.literal('published'),
-      visibility: publicationVisibilitySchema,
+        description: z.string().nullable(),
+        versionNumber: z.number(),
+        status: publicationStatusSchema,
+        visibility: publicationVisibilitySchema,
       sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),
       sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
       agentCode: agentCodeSchema,
@@ -195,6 +205,25 @@ export const publicationTreeSchema = z.object({
   ),
 })
 export type PublicationTree = z.output<typeof publicationTreeSchema>
+
+export const updatePublicationLifecycleBodySchema = z.object({
+  action: z.enum(['archive', 'retract']),
+  reason: z.string().trim().max(1000).optional(),
+})
+export type UpdatePublicationLifecycleBody = z.input<
+  typeof updatePublicationLifecycleBodySchema
+>
+
+export const publicationLifecycleSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: publicationStatusSchema,
+  archivedAt: z.string().nullable(),
+  retractedAt: z.string().nullable(),
+  lifecycleUpdatedAt: z.string(),
+  publishedAt: z.string(),
+})
+export type PublicationLifecycle = z.output<typeof publicationLifecycleSchema>
 
 export const copySelectionBodySchema = z.object({
   source: z.object({
@@ -396,6 +425,14 @@ export const getPublicationContract = defineRouteContract({
   path: '/api/publications/[publicationVersionId]',
   params: publicationParamsSchema,
   response: { mode: 'json', schema: z.object({ publication: publicationDetailSchema }) },
+})
+
+export const updatePublicationLifecycleContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/publications/[publicationVersionId]',
+  params: publicationParamsSchema,
+  body: updatePublicationLifecycleBodySchema,
+  response: { mode: 'json', schema: z.object({ publication: publicationLifecycleSchema }) },
 })
 
 export const getPublicationTreeContract = defineRouteContract({

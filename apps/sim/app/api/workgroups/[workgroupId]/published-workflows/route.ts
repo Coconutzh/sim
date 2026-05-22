@@ -23,7 +23,7 @@ export const GET = withRouteHandler(
     const parsed = await parseRequest(listShowcasePublicationsContract, request, context)
     if (!parsed.success) return parsed.response
     const { workgroupId } = parsed.data.params
-    const { disciplineCode, sourceWorkgroupId, agentCode, limit } = parsed.data.query
+    const { disciplineCode, sourceWorkgroupId, agentCode, status, limit } = parsed.data.query
 
     try {
       const data = await listPublishedWorkflowsForWorkgroup({
@@ -36,6 +36,7 @@ export const GET = withRouteHandler(
         disciplineCode,
         sourceWorkgroupId,
         agentCode,
+        status,
         limit,
       })
 

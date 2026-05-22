@@ -47,6 +47,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         sourceWorkgroupId: 'workflowPublicationVersion.sourceWorkgroupId',
         visibility: 'workflowPublicationVersion.visibility',
         publishedWorkflowId: 'workflowPublicationVersion.publishedWorkflowId',
+        status: 'workflowPublicationVersion.status',
       },
       workgroup: { id: 'workgroup.id', organizationId: 'workgroup.organizationId' },
       workgroupMember: {
@@ -193,5 +194,19 @@ describe('collaboration authz helpers', () => {
     )
 
     await expect(canReadPublication('outsider-1', 'publication-1')).resolves.toBe(false)
+  })
+
+  it('denies reads for retracted publication versions', async () => {
+    mockResultsQueue.push([
+      {
+        organizationId: 'org-1',
+        sourceWorkgroupId: 'source-workgroup',
+        visibility: 'organization',
+        publishedWorkflowId: 'published-workflow-1',
+        status: 'retracted',
+      },
+    ])
+
+    await expect(canReadPublication('viewer-1', 'publication-1')).resolves.toBe(false)
   })
 })

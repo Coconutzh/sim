@@ -163,6 +163,12 @@ export const AuditAction = {
   TEMPLATE_UPDATED: 'template.updated',
   TEMPLATE_DELETED: 'template.deleted',
 
+  // Publications
+  PUBLICATION_CREATED: 'publication.created',
+  PUBLICATION_ARCHIVED: 'publication.archived',
+  PUBLICATION_RETRACTED: 'publication.retracted',
+  PUBLICATION_SUPERSEDED: 'publication.superseded',
+
   // Webhooks
   WEBHOOK_CREATED: 'webhook.created',
   WEBHOOK_DELETED: 'webhook.deleted',
@@ -214,6 +220,7 @@ export const AuditResourceType = {
   ORGANIZATION: 'organization',
   PASSWORD: 'password',
   PERMISSION_GROUP: 'permission_group',
+  PUBLICATION: 'publication',
   SCHEDULE: 'schedule',
   SKILL: 'skill',
   TABLE: 'table',
