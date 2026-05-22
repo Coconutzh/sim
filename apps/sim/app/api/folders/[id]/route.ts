@@ -4,7 +4,7 @@ import { createLogger } from '@sim/logger'
 import { assertFolderMutable, FolderLockedError } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateFolderContract } from '@/lib/api/contracts'
+import { deleteFolderContract, updateFolderContract } from '@/lib/api/contracts'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -140,7 +140,9 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id } = await params
+      const parsed = await parseRequest(deleteFolderContract, request, { params })
+      if (!parsed.success) return parsed.response
+      const { id } = parsed.data.params
 
       // Verify the folder exists
       const existingFolder = await db
