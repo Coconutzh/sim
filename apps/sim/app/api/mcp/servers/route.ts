@@ -6,8 +6,12 @@ import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { createMcpServerBodySchema, deleteMcpServerByQuerySchema } from '@/lib/api/contracts/mcp'
-import { validationErrorResponse } from '@/lib/api/server'
+import {
+  createMcpServerContract,
+  deleteMcpServerContract,
+  listMcpServersContract,
+} from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   McpDnsResolutionError,
@@ -16,7 +20,7 @@ import {
   validateMcpDomain,
   validateMcpServerSsrf,
 } from '@/lib/mcp/domain-check'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpService } from '@/lib/mcp/service'
 import {
   createMcpErrorResponse,
@@ -35,6 +39,17 @@ export const dynamic = 'force-dynamic'
 export const GET = withRouteHandler(
   withMcpAuth('read')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
+      const parsed = await parseRequest(
+        listMcpServersContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+        }
+      )
+      if (!parsed.success) return parsed.response
+
       logger.info(`[${requestId}] Listing MCP servers for workspace ${workspaceId}`)
 
       const servers = await db
@@ -67,14 +82,19 @@ export const POST = withRouteHandler(
   withMcpAuth('write')(
     async (request: NextRequest, { userId, userName, userEmail, workspaceId, requestId }) => {
       try {
-        const rawBody = getParsedBody(request) ?? (await request.json())
-        const parsedBody = createMcpServerBodySchema.safeParse(rawBody)
-
-        if (!parsedBody.success) {
-          return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-        }
-
-        const body = parsedBody.data
+        const parsed = await parseRequest(
+          createMcpServerContract,
+          request,
+          {},
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+            invalidJsonResponse: () =>
+              createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const { body } = parsed.data
 
         logger.info(`[${requestId}] Registering MCP server:`, {
           name: body.name,
@@ -233,12 +253,17 @@ export const DELETE = withRouteHandler(
   withMcpAuth('admin')(
     async (request: NextRequest, { userId, userName, userEmail, workspaceId, requestId }) => {
       try {
-        const { searchParams } = new URL(request.url)
-        const queryValidation = deleteMcpServerByQuerySchema.safeParse(
-          Object.fromEntries(searchParams)
+        const parsed = await parseRequest(
+          deleteMcpServerContract,
+          request,
+          {},
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+          }
         )
-        if (!queryValidation.success) return validationErrorResponse(queryValidation.error)
-        const query = queryValidation.data
+        if (!parsed.success) return parsed.response
+        const query = parsed.data.query
         const serverId = query.serverId
         const sourceParam = query.source
         const source =
@@ -287,7 +312,7 @@ export const DELETE = withRouteHandler(
           actorEmail: userEmail,
           action: AuditAction.MCP_SERVER_REMOVED,
           resourceType: AuditResourceType.MCP_SERVER,
-          resourceId: serverId!,
+          resourceId: serverId,
           resourceName: deletedServer.name,
           description: `Removed MCP server "${deletedServer.name}"`,
           metadata: {

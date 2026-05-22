@@ -1,7 +1,8 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import type { NextRequest } from 'next/server'
-import { mcpServerTestBodySchema } from '@/lib/api/contracts/mcp'
+import { testMcpServerConnectionContract } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { McpClient } from '@/lib/mcp/client'
 import {
@@ -11,7 +12,7 @@ import {
   validateMcpDomain,
   validateMcpServerSsrf,
 } from '@/lib/mcp/domain-check'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { resolveMcpConfigEnvVars } from '@/lib/mcp/resolve-config'
 import type { McpTransport } from '@/lib/mcp/types'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
@@ -61,14 +62,19 @@ function sanitizeConnectionError(error: unknown): string {
 export const POST = withRouteHandler(
   withMcpAuth('write')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
-      const rawBody = getParsedBody(request) ?? (await request.json())
-      const parsedBody = mcpServerTestBodySchema.safeParse(rawBody)
-
-      if (!parsedBody.success) {
-        return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-      }
-
-      const body = parsedBody.data
+      const parsed = await parseRequest(
+        testMcpServerConnectionContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+          invalidJsonResponse: () =>
+            createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+        }
+      )
+      if (!parsed.success) return parsed.response
+      const { body } = parsed.data
 
       logger.info(`[${requestId}] Testing MCP server connection:`, {
         name: body.name,

@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
-import { mcpToolDiscoveryQuerySchema, refreshMcpToolsBodySchema } from '@/lib/api/contracts/mcp'
-import { validationErrorResponse } from '@/lib/api/server'
+import { discoverMcpToolsContract, refreshMcpToolsContract } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpService } from '@/lib/mcp/service'
 import type { McpToolDiscoveryResponse } from '@/lib/mcp/types'
 import { categorizeError, createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
@@ -15,14 +15,19 @@ export const dynamic = 'force-dynamic'
 export const GET = withRouteHandler(
   withMcpAuth('read')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
-      const { searchParams } = new URL(request.url)
-      const queryValidation = mcpToolDiscoveryQuerySchema.safeParse(
-        Object.fromEntries(searchParams)
+      const parsed = await parseRequest(
+        discoverMcpToolsContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+        }
       )
-      if (!queryValidation.success) return validationErrorResponse(queryValidation.error)
-      const query = queryValidation.data
+      if (!parsed.success) return parsed.response
+      const query = parsed.data.query
       const serverId = query.serverId
-      const forceRefresh = query.refresh === 'true'
+      const forceRefresh = query.refresh === true
 
       logger.info(`[${requestId}] Discovering MCP tools`, { serverId, workspaceId, forceRefresh })
 
@@ -56,14 +61,19 @@ export const GET = withRouteHandler(
 export const POST = withRouteHandler(
   withMcpAuth('read')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
-      const rawBody = getParsedBody(request) ?? (await request.json())
-      const parsedBody = refreshMcpToolsBodySchema.safeParse(rawBody)
-
-      if (!parsedBody.success) {
-        return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-      }
-
-      const { serverIds } = parsedBody.data
+      const parsed = await parseRequest(
+        refreshMcpToolsContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+          invalidJsonResponse: () =>
+            createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+        }
+      )
+      if (!parsed.success) return parsed.response
+      const { serverIds } = parsed.data.body
 
       logger.info(`[${requestId}] Refreshing tools for ${serverIds.length} servers`)
 
