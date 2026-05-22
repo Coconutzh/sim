@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { copilotChatAbortBodySchema } from '@/lib/api/contracts/copilot'
-import { validationErrorResponse } from '@/lib/api/server'
+import { copilotChatAbortContract } from '@/lib/api/contracts/copilot'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
 import { CopilotAbortOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
@@ -34,18 +34,32 @@ export const POST = withRouteHandler((request: NextRequest) =>
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const body = await request.json().catch((err) => {
-        logger.warn('Abort request body parse failed; continuing with empty object', {
-          error: err instanceof Error ? err.message : String(err),
-        })
-        return {}
-      })
-      const validation = copilotChatAbortBodySchema.safeParse(body)
-      if (!validation.success) {
-        rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.MissingStreamId)
-        return validationErrorResponse(validation.error, 'Invalid request body')
-      }
-      const { streamId, chatId: parsedChatId } = validation.data
+      const parsed = await parseRequest(
+        copilotChatAbortContract,
+        request,
+        {},
+        {
+          invalidJsonResponse: () => {
+            rootSpan.setAttribute(
+              TraceAttr.CopilotAbortOutcome,
+              CopilotAbortOutcome.MissingStreamId
+            )
+            return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+          },
+          validationErrorResponse: (error) => {
+            rootSpan.setAttribute(
+              TraceAttr.CopilotAbortOutcome,
+              CopilotAbortOutcome.MissingStreamId
+            )
+            return NextResponse.json(
+              { error: getValidationErrorMessage(error, 'Invalid request body') },
+              { status: 400 }
+            )
+          },
+        }
+      )
+      if (!parsed.success) return parsed.response
+      const { streamId, chatId: parsedChatId } = parsed.data.body
       let chatId = parsedChatId
 
       if (!streamId) {
