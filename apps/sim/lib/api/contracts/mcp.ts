@@ -229,6 +229,17 @@ export const mcpRequestBodySchema = z.union([
   z.array(mcpJsonRpcMessageSchema),
 ])
 
+export const mcpCopilotRequestContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/mcp/copilot',
+  body: mcpRequestBodySchema,
+  response: {
+    mode: 'json',
+    // untyped-response: MCP SDK emits JSON-RPC result or error envelopes with method-dependent payloads
+    schema: z.unknown(),
+  },
+})
+
 export const mcpToolCallParamsSchema = z
   .object({
     name: z.string().min(1),

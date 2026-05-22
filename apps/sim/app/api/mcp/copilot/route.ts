@@ -18,7 +18,8 @@ import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { mcpRequestBodySchema, mcpToolCallParamsSchema } from '@/lib/api/contracts/mcp'
+import { mcpCopilotRequestContract, mcpToolCallParamsSchema } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { validateOAuthAccessToken } from '@/lib/auth/oauth-token'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
@@ -349,27 +350,24 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   }
 
   try {
-    let parsedBody: unknown
+    const parsed = await parseRequest(
+      mcpCopilotRequestContract,
+      request,
+      {},
+      {
+        invalidJsonResponse: () =>
+          NextResponse.json(createError(0, ErrorCode.ParseError, 'Invalid JSON body'), {
+            status: 400,
+          }),
+        validationErrorResponse: () =>
+          NextResponse.json(createError(0, ErrorCode.InvalidRequest, 'Invalid JSON-RPC message'), {
+            status: 400,
+          }),
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    try {
-      parsedBody = await request.json()
-    } catch {
-      return NextResponse.json(createError(0, ErrorCode.ParseError, 'Invalid JSON body'), {
-        status: 400,
-      })
-    }
-
-    const bodyValidation = mcpRequestBodySchema.safeParse(parsedBody)
-    if (!bodyValidation.success) {
-      return NextResponse.json(
-        createError(0, ErrorCode.InvalidRequest, 'Invalid JSON-RPC message'),
-        {
-          status: 400,
-        }
-      )
-    }
-
-    return await handleMcpRequestWithSdk(request, bodyValidation.data, auth.userId)
+    return await handleMcpRequestWithSdk(request, parsed.data.body, auth.userId)
   } catch (error) {
     if (request.signal.aborted || (error as Error)?.name === 'AbortError') {
       return NextResponse.json(
