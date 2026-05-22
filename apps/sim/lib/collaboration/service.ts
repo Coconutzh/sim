@@ -841,11 +841,27 @@ export async function getPublicationTree(params: { userId: string; publicationVe
     .leftJoin(discipline, eq(workflowPublicationVersion.sourceDisciplineId, discipline.id))
     .where(eq(workflowPublicationVersion.sourceWorkflowId, root.sourceWorkflowId))
     .orderBy(asc(workflowPublicationVersion.versionNumber))
+
+  const visibleRows = (
+    await Promise.all(
+      rows.map(async (row) => ({
+        row,
+        canRead: await canReadPublication(params.userId, row.publication.id),
+      }))
+    )
+  )
+    .filter(({ canRead }) => canRead)
+    .map(({ row }) => row)
+  const visibleVersionIds = new Set(visibleRows.map((row) => row.publication.id))
+
   return {
-    rootVersionId: rows[0]?.publication.id ?? publication.id,
-    versions: rows.map((row) => ({
+    rootVersionId: visibleRows[0]?.publication.id ?? publication.id,
+    versions: visibleRows.map((row) => ({
       id: row.publication.id,
-      parentVersionId: row.publication.parentVersionId,
+      parentVersionId:
+        row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
+          ? row.publication.parentVersionId
+          : null,
       title: row.publication.title,
       versionNumber: row.publication.versionNumber,
       sourceWorkgroupName: row.sourceWorkgroupName,

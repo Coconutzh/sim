@@ -11,6 +11,9 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
 
     chain.from = vi.fn(() => chain)
+    chain.innerJoin = vi.fn(() => chain)
+    chain.leftJoin = vi.fn(() => chain)
+    chain.orderBy = vi.fn(() => chain)
     chain.where = vi.fn(() => chain)
     chain.limit = vi.fn(() => Promise.resolve(resolveNext()))
     chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(resolveNext()))
@@ -25,8 +28,22 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     },
     schemaMock: {
       workflowPublicationVersion: {
+        id: 'workflowPublicationVersion.id',
+        title: 'workflowPublicationVersion.title',
+        description: 'workflowPublicationVersion.description',
+        parentVersionId: 'workflowPublicationVersion.parentVersionId',
         versionNumber: 'workflowPublicationVersion.versionNumber',
         sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
+        sourceWorkgroupId: 'workflowPublicationVersion.sourceWorkgroupId',
+        sourceDisciplineId: 'workflowPublicationVersion.sourceDisciplineId',
+        snapshotState: 'workflowPublicationVersion.snapshotState',
+        snapshotMetadata: 'workflowPublicationVersion.snapshotMetadata',
+        publishedAt: 'workflowPublicationVersion.publishedAt',
+      },
+      discipline: {
+        id: 'discipline.id',
+        code: 'discipline.code',
+        name: 'discipline.name',
       },
       member: {
         role: 'member.role',
@@ -76,7 +93,12 @@ vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadWorkflowFromNormalizedTables: vi.fn(),
 }))
 
-import { assertWorkgroupAdmin, getNextPublicationVersionNumber } from '@/lib/collaboration/service'
+import { canReadPublication } from '@/lib/collaboration/authz'
+import {
+  assertWorkgroupAdmin,
+  getNextPublicationVersionNumber,
+  getPublicationTree,
+} from '@/lib/collaboration/service'
 
 describe('collaboration service', () => {
   beforeEach(() => {
@@ -124,5 +146,80 @@ describe('collaboration service', () => {
     await expect(assertWorkgroupAdmin('other-team-admin-1', 'workgroup-1')).rejects.toThrow(
       'Workgroup membership required'
     )
+  })
+
+  it('filters publication tree versions by per-version visibility', async () => {
+    vi.mocked(canReadPublication).mockImplementation(async (_userId, publicationVersionId) =>
+      ['publication-root', 'publication-visible'].includes(publicationVersionId)
+    )
+    mockResultsQueue.push(
+      [
+        {
+          publication: {
+            id: 'publication-root',
+            title: 'Root visible version',
+            description: null,
+            versionNumber: 2,
+            parentVersionId: null,
+            sourceWorkflowId: 'workflow-1',
+            sourceWorkgroupId: 'workgroup-1',
+            agentCode: 'chief_director',
+            snapshotState: {},
+            snapshotMetadata: {},
+            publishedAt: new Date('2026-05-22T00:00:00Z'),
+          },
+          sourceWorkgroupName: 'Team A',
+          sourceDisciplineCode: 'stage_design',
+          sourceDisciplineName: 'Stage Design',
+        },
+      ],
+      [{ sourceWorkflowId: 'workflow-1' }],
+      [
+        {
+          publication: {
+            id: 'publication-hidden',
+            title: 'Hidden version',
+            versionNumber: 1,
+            parentVersionId: null,
+            publishedAt: new Date('2026-05-21T00:00:00Z'),
+          },
+          sourceWorkgroupName: 'Team A',
+          sourceDisciplineName: 'Stage Design',
+        },
+        {
+          publication: {
+            id: 'publication-root',
+            title: 'Root visible version',
+            versionNumber: 2,
+            parentVersionId: 'publication-hidden',
+            publishedAt: new Date('2026-05-22T00:00:00Z'),
+          },
+          sourceWorkgroupName: 'Team A',
+          sourceDisciplineName: 'Stage Design',
+        },
+        {
+          publication: {
+            id: 'publication-visible',
+            title: 'Visible version',
+            versionNumber: 3,
+            parentVersionId: 'publication-root',
+            publishedAt: new Date('2026-05-23T00:00:00Z'),
+          },
+          sourceWorkgroupName: 'Team A',
+          sourceDisciplineName: 'Stage Design',
+        },
+      ]
+    )
+
+    await expect(
+      getPublicationTree({ userId: 'viewer-1', publicationVersionId: 'publication-root' })
+    ).resolves.toMatchObject({
+      rootVersionId: 'publication-root',
+      versions: [
+        { id: 'publication-root', parentVersionId: null, versionNumber: 2 },
+        { id: 'publication-visible', parentVersionId: 'publication-root', versionNumber: 3 },
+      ],
+    })
+    expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-hidden')
   })
 })
