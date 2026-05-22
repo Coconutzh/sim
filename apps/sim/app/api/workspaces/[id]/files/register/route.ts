@@ -11,7 +11,7 @@ import {
   parseWorkspaceFileKey,
   registerUploadedWorkspaceFile,
 } from '@/lib/uploads/contexts/workspace'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceRegisterAPI')
 
@@ -41,8 +41,7 @@ export const POST = withRouteHandler(
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-    if (permission !== 'admin' && permission !== 'write') {
+    if (!access.canWrite) {
       logger.warn(`User ${userId} lacks write permission for ${workspaceId}`)
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

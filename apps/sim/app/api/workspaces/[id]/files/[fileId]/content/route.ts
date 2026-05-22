@@ -7,7 +7,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { updateWorkspaceFileContent } from '@/lib/uploads/contexts/workspace'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,12 +35,7 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      const userPermission = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
-      )
-      if (userPermission !== 'admin' && userPermission !== 'write') {
+      if (!access.canWrite) {
         logger.warn(`User ${session.user.id} lacks write permission for workspace ${workspaceId}`)
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
       }

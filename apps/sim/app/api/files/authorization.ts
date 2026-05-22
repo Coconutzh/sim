@@ -8,7 +8,7 @@ import { BLOB_CHAT_CONFIG, S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
@@ -31,12 +31,11 @@ async function hasWorkspacePermission(
     return false
   }
 
-  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   if (accessMode === 'read') {
-    return permission !== null
+    return access.hasAccess
   }
 
-  return permission === 'write' || permission === 'admin'
+  return access.canWrite
 }
 
 /**

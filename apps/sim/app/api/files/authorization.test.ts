@@ -140,6 +140,32 @@ describe('verifyFileAccess', () => {
     expect(granted).toBe(false)
   })
 
+  it('allows workspace file writes from canvas-boundary write access without legacy permission rows', async () => {
+    mockGetFileMetadataByKey.mockReset()
+    mockGetFileMetadataByKey.mockResolvedValue({
+      workspaceId: 'team-ws-1',
+      userId: 'user-1',
+      deletedAt: null,
+    })
+    permissionsMockFns.mockCheckWorkspaceAccess.mockReset()
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: true,
+      canWrite: true,
+      workspace: {
+        id: 'team-ws-1',
+        ownerId: 'team-admin',
+        workgroupId: 'workgroup-1',
+        workspaceMode: 'organization',
+      },
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce(null)
+
+    const granted = await verifyFileWriteAccess('team-ws-1/file.txt', 'user-1', {}, 'workspace')
+
+    expect(granted).toBe(true)
+  })
+
   it('allows writes for owner-scoped regular uploads without workspace metadata', async () => {
     mockGetFileMetadata.mockResolvedValueOnce({ userId: 'user-1' })
 

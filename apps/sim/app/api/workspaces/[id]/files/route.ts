@@ -16,7 +16,7 @@ import {
   uploadWorkspaceFile,
 } from '@/lib/uploads/contexts/workspace'
 import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
 
 export const dynamic = 'force-dynamic'
@@ -179,13 +179,7 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      // Check workspace permissions (requires write)
-      const userPermission = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
-      )
-      if (userPermission !== 'admin' && userPermission !== 'write') {
+      if (!access.canWrite) {
         logger.warn(
           `[${requestId}] User ${session.user.id} lacks write permission for workspace ${workspaceId}`
         )

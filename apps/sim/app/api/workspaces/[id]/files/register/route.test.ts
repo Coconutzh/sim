@@ -96,7 +96,12 @@ describe('POST /api/workspaces/[id]/files/register', () => {
   })
 
   it('returns 403 when user lacks write permission', async () => {
-    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: WS, ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
     const res = await POST(makeRequest(validBody), params())
     expect(res.status).toBe(403)
   })

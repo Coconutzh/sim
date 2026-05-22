@@ -121,6 +121,15 @@
 
 - 后续若团队需要多个团队画布，再新增 `team_canvas_workspace` 表；当前仍保持每个 workgroup 一个 `teamWorkspaceId` 的 v1 方案。
 
+### 3.7 files/assets 权限切片
+
+本轮继续推进 Phase 4 的文件与资产隔离：
+
+- `apps/sim/app/api/files/authorization.ts` 不再二次依赖旧 `permissions` 表判断文件读写，而是直接使用 `checkWorkspaceAccess` 返回的 `hasAccess/canWrite`。这样个人草稿 owner-only、团队成员可写、展示/发布读者不能写源 workspace 文件都走统一画布边界。
+- `/api/workspaces/[id]/files` 上传、直传 presigned、register、rename、delete、content update、restore 这些写路径统一改为检查 `access.canWrite`，避免团队画布成员因为缺少旧 permission row 被误拒，也避免只读读者绕过。
+- 已补 `apps/sim/app/api/files/authorization.test.ts` 覆盖“团队画布 write access 即使没有旧 permission row 也可写文件”。
+- 已调整 workspace files 路由测试，让只读/展示类场景通过 `checkWorkspaceAccess(...).canWrite = false` 证明服务端拒绝写操作。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
