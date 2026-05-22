@@ -6,11 +6,13 @@ import { toError } from '@sim/utils/errors'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import {
-  updateWorkflowMcpToolBodySchema,
-  workflowMcpToolParamsSchema,
+  deleteWorkflowMcpToolContract,
+  getWorkflowMcpToolContract,
+  updateWorkflowMcpToolContract,
 } from '@/lib/api/contracts/workflow-mcp-servers'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 import { sanitizeToolName } from '@/lib/mcp/workflow-tool-schema'
@@ -31,7 +33,17 @@ export const GET = withRouteHandler(
   withMcpAuth<RouteParams>('read')(
     async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
       try {
-        const { id: serverId, toolId } = workflowMcpToolParamsSchema.parse(await params)
+        const parsed = await parseRequest(
+          getWorkflowMcpToolContract,
+          request,
+          { params },
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const { id: serverId, toolId } = parsed.data.params
 
         logger.info(`[${requestId}] Getting tool ${toolId} from server ${serverId}`)
 
@@ -87,15 +99,22 @@ export const PATCH = withRouteHandler(
       { params }
     ) => {
       try {
-        const { id: serverId, toolId } = workflowMcpToolParamsSchema.parse(await params)
-        const rawBody = getParsedBody(request) ?? (await request.json())
-        const parsedBody = updateWorkflowMcpToolBodySchema.safeParse(rawBody)
-
-        if (!parsedBody.success) {
-          return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-        }
-
-        const body = parsedBody.data
+        const parsed = await parseRequest(
+          updateWorkflowMcpToolContract,
+          request,
+          { params },
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+            invalidJsonResponse: () =>
+              createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const {
+          params: { id: serverId, toolId },
+          body,
+        } = parsed.data
 
         logger.info(`[${requestId}] Updating tool ${toolId} in server ${serverId}`)
 
@@ -193,7 +212,17 @@ export const DELETE = withRouteHandler(
       { params }
     ) => {
       try {
-        const { id: serverId, toolId } = workflowMcpToolParamsSchema.parse(await params)
+        const parsed = await parseRequest(
+          deleteWorkflowMcpToolContract,
+          request,
+          { params },
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const { id: serverId, toolId } = parsed.data.params
 
         logger.info(`[${requestId}] Deleting tool ${toolId} from server ${serverId}`)
 

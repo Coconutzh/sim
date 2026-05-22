@@ -6,9 +6,13 @@ import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { createWorkflowMcpServerBodySchema } from '@/lib/api/contracts/workflow-mcp-servers'
+import {
+  createWorkflowMcpServerContract,
+  listWorkflowMcpServersContract,
+} from '@/lib/api/contracts/workflow-mcp-servers'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 import { generateParameterSchemaForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
@@ -25,6 +29,17 @@ export const dynamic = 'force-dynamic'
 export const GET = withRouteHandler(
   withMcpAuth('read')(async (request: NextRequest, { userId, workspaceId, requestId }) => {
     try {
+      const parsed = await parseRequest(
+        listWorkflowMcpServersContract,
+        request,
+        {},
+        {
+          validationErrorResponse: (error) =>
+            createMcpErrorResponse(error, 'Invalid request format', 400),
+        }
+      )
+      if (!parsed.success) return parsed.response
+
       logger.info(`[${requestId}] Listing workflow MCP servers for workspace ${workspaceId}`)
 
       const servers = await db
@@ -97,14 +112,19 @@ export const POST = withRouteHandler(
   withMcpAuth('write')(
     async (request: NextRequest, { userId, userName, userEmail, workspaceId, requestId }) => {
       try {
-        const rawBody = getParsedBody(request) ?? (await request.json())
-        const parsedBody = createWorkflowMcpServerBodySchema.safeParse(rawBody)
-
-        if (!parsedBody.success) {
-          return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-        }
-
-        const body = parsedBody.data
+        const parsed = await parseRequest(
+          createWorkflowMcpServerContract,
+          request,
+          {},
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+            invalidJsonResponse: () =>
+              createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const { body } = parsed.data
 
         logger.info(`[${requestId}] Creating workflow MCP server:`, {
           name: body.name,

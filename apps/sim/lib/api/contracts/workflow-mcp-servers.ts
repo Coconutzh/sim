@@ -233,6 +233,21 @@ export const updateWorkflowMcpToolContract = defineRouteContract({
   },
 })
 
+export const getWorkflowMcpToolContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/mcp/workflow-servers/[id]/tools/[toolId]',
+  params: workflowMcpToolParamsSchema,
+  query: workflowMcpWorkspaceQuerySchema,
+  response: {
+    mode: 'json',
+    schema: workflowMcpSuccessResponseSchema(
+      z.object({
+        tool: workflowMcpToolSchema,
+      })
+    ),
+  },
+})
+
 export const deleteWorkflowMcpToolContract = defineRouteContract({
   method: 'DELETE',
   path: '/api/mcp/workflow-servers/[id]/tools/[toolId]',
