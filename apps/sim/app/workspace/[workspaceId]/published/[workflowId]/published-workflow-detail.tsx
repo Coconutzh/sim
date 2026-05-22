@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { ArrowLeft, Compass, GitBranch, Network, RefreshCw } from 'lucide-react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
@@ -54,8 +54,10 @@ function formatVisibility(value: 'workspace' | 'organization' | 'selected_workgr
 export function PublishedWorkflowDetail() {
   const params = useParams<{ workspaceId: string; workflowId: string }>()
   const router = useRouter()
+  const pathname = usePathname()
   const workspaceId = params.workspaceId
   const workflowId = params.workflowId
+  const isShowcaseRoute = pathname?.startsWith(`/workspace/${workspaceId}/showcase`) ?? false
 
   const { data: workspaceSettingsData, isLoading: isWorkspaceLoading } =
     useWorkspaceSettings(workspaceId)
@@ -132,7 +134,7 @@ export function PublishedWorkflowDetail() {
         label: 'Back',
         icon: ArrowLeft,
         onClick: () => {
-          router.push(`/workspace/${workspaceId}/published`)
+          router.push(`/workspace/${workspaceId}/${isShowcaseRoute ? 'showcase' : 'published'}`)
         },
       },
       {
@@ -144,7 +146,14 @@ export function PublishedWorkflowDetail() {
         disabled: !publishedWorkflow || isFetchingWorkflowState,
       },
     ],
-    [isFetchingWorkflowState, publishedWorkflow, refetchWorkflowState, router, workspaceId]
+    [
+      isFetchingWorkflowState,
+      isShowcaseRoute,
+      publishedWorkflow,
+      refetchWorkflowState,
+      router,
+      workspaceId,
+    ]
   )
 
   const isLoading =
@@ -156,7 +165,11 @@ export function PublishedWorkflowDetail() {
   if (!isLoading && !publishedWorkflow) {
     return (
       <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-        <ResourceHeader icon={Compass} title='Published Workflow' actions={headerActions} />
+        <ResourceHeader
+          icon={Compass}
+          title={isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow'}
+          actions={headerActions}
+        />
         <div className='flex flex-1 items-center justify-center px-6'>
           <div className='max-w-[520px] rounded-[16px] border border-[var(--border)] bg-[var(--surface-2)] p-6'>
             <h2 className='font-medium text-[var(--text-body)] text-lg'>
@@ -170,10 +183,12 @@ export function PublishedWorkflowDetail() {
               variant='subtle'
               className='mt-4 px-3 py-1.5 text-caption'
               onClick={() => {
-                router.push(`/workspace/${workspaceId}/published`)
+                router.push(
+                  `/workspace/${workspaceId}/${isShowcaseRoute ? 'showcase' : 'published'}`
+                )
               }}
             >
-              Back to published list
+              Back to {isShowcaseRoute ? 'showcase' : 'published'} list
             </Button>
           </div>
         </div>
@@ -190,7 +205,9 @@ export function PublishedWorkflowDetail() {
     <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
       <ResourceHeader
         icon={Compass}
-        title={publishedWorkflow?.name ?? 'Published Workflow'}
+        title={
+          publishedWorkflow?.name ?? (isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow')
+        }
         actions={headerActions}
       />
       <div className='border-[var(--border)] border-b px-6 py-4'>

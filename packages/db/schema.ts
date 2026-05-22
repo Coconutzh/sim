@@ -1367,10 +1367,6 @@ export const personalCanvasWorkspace = pgTable(
       table.organizationId
     ),
     workgroupIdIdx: index('personal_canvas_workspace_workgroup_id_idx').on(table.workgroupId),
-    userWorkgroupUnique: uniqueIndex('personal_canvas_workspace_user_workgroup_unique').on(
-      table.userId,
-      table.workgroupId
-    ),
     workspaceUnique: uniqueIndex('personal_canvas_workspace_workspace_unique').on(
       table.workspaceId
     ),

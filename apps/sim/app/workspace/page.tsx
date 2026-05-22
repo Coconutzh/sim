@@ -36,15 +36,14 @@ export default function WorkspacePage() {
 
     hasRedirectedRef.current = true
 
-    if (workgroupData.workgroups.length > 0) {
-      logger.info('Redirecting to workbench for team-based canvas navigation')
-      router.replace('/workbench')
-      return
-    }
+    const defaultWorkgroup =
+      workgroupData.workgroups.find(
+        (workgroup) => workgroup.id === workgroupData.defaultWorkgroupId
+      ) ?? workgroupData.workgroups[0]
 
-    if (workgroupData.workgroups.length === 0) {
-      logger.info('Redirecting to workbench empty state because user has no team assignment')
-      router.replace('/workbench')
+    if (defaultWorkgroup?.teamWorkspaceId) {
+      logger.info('Redirecting to team canvas inside the original workspace shell')
+      router.replace(`/workspace/${defaultWorkgroup.teamWorkspaceId}/home`)
       return
     }
 
@@ -72,7 +71,15 @@ export default function WorkspacePage() {
 
     logger.info(`Redirecting to workspace: ${targetWorkspace.id}`)
     router.replace(`/workspace/${targetWorkspace.id}/home`)
-  }, [session, isSessionPending, isWorkspacesLoading, isWorkgroupsLoading, data, workgroupData, router])
+  }, [
+    session,
+    isSessionPending,
+    isWorkspacesLoading,
+    isWorkgroupsLoading,
+    data,
+    workgroupData,
+    router,
+  ])
 
   if (isSessionPending || isWorkspacesLoading || isWorkgroupsLoading) {
     return (

@@ -104,6 +104,23 @@
 - 这不改变画布和智能体交互行为。
 - 主要作用是让 Copilot/tool metadata gate 更类型安全，降低后续权限加固时的误判风险。
 
+### 3.6 原主界面入口纠偏
+
+本轮已把画布入口从独立 `/workbench` 外壳方向迁回原始 Sim 主界面：
+
+- `/workspace/[workspaceId]/home` 保留原 Mothership/Copilot 能力，同时在空首页顶部增加“个人草稿画布 / 团队画布 / 展示画布”三张原风格入口卡片。
+- 原 Sidebar 增加持久 `Canvases` 分组，用户可在深层页面中切回个人草稿、团队画布、展示画布。
+- 新增 `/workspace/[workspaceId]/showcase` 与详情路径，复用现有只读 published workflow 展示能力，保证打开展示画布时仍保留原 Sidebar。
+- `/workspace` 入口不再跳到 `/workbench`，而是优先进入当前团队画布所在的原 workspace shell。
+- 个人草稿画布创建已改为走协作专用 `POST /api/workgroups/[workgroupId]/personal-workspace`，普通团队成员不再依赖组织级 `/api/workspaces` 创建策略；创建后自动生成默认 workflow 并跳转打开。
+- 数据库迁移 `0207_personal_canvas_multiple_drafts.sql` 去掉 `userId + workgroupId` 唯一约束，使同一用户在同一团队下可以拥有多个个人草稿画布。
+- 旧 `/workbench`、`/workbench/personal`、`/workbench/team`、`/workbench/showcase`、`/workbench/team-management` 已降级为兼容跳转到 `/workspace`，避免继续维护两套主入口外壳。
+- 已补 `apps/sim/app/api/workgroups/[workgroupId]/personal-workspace/route.test.ts` 与 `apps/sim/lib/collaboration/service.test.ts` 覆盖个人多草稿创建、默认 workflow 创建、鉴权前置和合约校验。
+
+仍需继续：
+
+- 后续若团队需要多个团队画布，再新增 `team_canvas_workspace` 表；当前仍保持每个 workgroup 一个 `teamWorkspaceId` 的 v1 方案。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
@@ -252,4 +269,3 @@ git status --short
 ```
 
 并且只 stage 本切片相关文件，避免混入用户改动或无关格式化。
-

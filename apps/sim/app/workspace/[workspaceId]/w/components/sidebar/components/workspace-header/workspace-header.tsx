@@ -48,6 +48,8 @@ interface WorkspaceHeaderProps {
   workspaces: Workspace[]
   /** Server-derived workspace creation policy for the current user context */
   workspaceCreationPolicy?: WorkspaceCreationPolicy | null
+  /** Whether the current team context allows personal draft canvas creation */
+  canCreatePersonalCanvas?: boolean
   /** Whether workspaces are loading */
   isWorkspacesLoading: boolean
   /** Whether workspace creation is in progress */
@@ -90,6 +92,7 @@ function WorkspaceHeaderImpl({
   workspaceId,
   workspaces,
   workspaceCreationPolicy,
+  canCreatePersonalCanvas = false,
   isWorkspacesLoading,
   isCreatingWorkspace,
   isWorkspaceMenuOpen,
@@ -162,7 +165,7 @@ function WorkspaceHeaderImpl({
     : ''
   const isFreePlan = showPlanInfo && isFree(currentPlan)
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId) || null
-  const canCreateWorkspace = workspaceCreationPolicy?.canCreate === true
+  const canCreateWorkspace = workspaceCreationPolicy?.canCreate === true || canCreatePersonalCanvas
   const inviteMembersEnabled = activeWorkspaceFull?.inviteMembersEnabled ?? false
   const inviteUpgradeRequired = activeWorkspaceFull?.inviteUpgradeRequired ?? false
   const inviteDisabledReason = inviteMembersEnabled
@@ -318,7 +321,7 @@ function WorkspaceHeaderImpl({
   }
 
   /**
-   * Handle leave workspace after confirmation
+   * Handle leave canvas after confirmation
    */
   const handleLeaveWorkspace = async () => {
     if (!leaveTarget || !onLeaveWorkspace) return
@@ -348,7 +351,6 @@ function WorkspaceHeaderImpl({
 
   return (
     <div className='min-w-0'>
-      {/* Workspace Name with Switcher */}
       <div className='min-w-0'>
         {isMounted ? (
           <DropdownMenu
@@ -366,7 +368,7 @@ function WorkspaceHeaderImpl({
             <DropdownMenuTrigger asChild>
               <button
                 type='button'
-                aria-label='Switch workspace'
+                aria-label='Switch personal draft canvas'
                 className={cn(
                   'group flex h-[32px] min-w-0 items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] pl-[5px] transition-colors hover-hover:bg-[var(--surface-5)]',
                   isCollapsed ? 'w-[32px]' : 'w-full cursor-pointer gap-2 pr-2'
@@ -382,7 +384,7 @@ function WorkspaceHeaderImpl({
                   activeWorkspaceFull.logoUrl ? (
                     <img
                       src={activeWorkspaceFull.logoUrl}
-                      alt={activeWorkspaceFull.name || 'Workspace logo'}
+                      alt={activeWorkspaceFull.name || 'Canvas logo'}
                       className='h-[20px] w-[20px] flex-shrink-0 rounded-sm object-cover'
                     />
                   ) : (
@@ -429,7 +431,7 @@ function WorkspaceHeaderImpl({
             >
               {isWorkspacesLoading ? (
                 <div className='px-2 py-[5px] font-medium text-[var(--text-secondary)] text-caption'>
-                  Loading workspaces...
+                  Loading canvases...
                 </div>
               ) : (
                 <>
@@ -438,7 +440,7 @@ function WorkspaceHeaderImpl({
                       activeWorkspaceFull.logoUrl ? (
                         <img
                           src={activeWorkspaceFull.logoUrl}
-                          alt={activeWorkspaceFull.name || 'Workspace logo'}
+                          alt={activeWorkspaceFull.name || 'Canvas logo'}
                           className='h-[32px] w-[32px] flex-shrink-0 rounded-md object-cover'
                         />
                       ) : (
@@ -489,7 +491,7 @@ function WorkspaceHeaderImpl({
                       />
                       <Input
                         ref={searchInputRef}
-                        placeholder='Search workspaces...'
+                        placeholder='Search personal drafts...'
                         value={workspaceSearch}
                         onChange={(e) => {
                           setWorkspaceSearch(e.target.value)
@@ -523,7 +525,7 @@ function WorkspaceHeaderImpl({
                     >
                       {filteredWorkspaces.length === 0 && workspaceSearch && (
                         <div className='px-2 py-[5px] text-[var(--text-tertiary)] text-caption'>
-                          No workspaces match "{workspaceSearch}"
+                          No canvases match "{workspaceSearch}"
                         </div>
                       )}
                       {filteredWorkspaces.map((workspace, idx) => (
@@ -619,7 +621,7 @@ function WorkspaceHeaderImpl({
                               <span className='min-w-0 flex-1 truncate'>{workspace.name}</span>
                               <button
                                 type='button'
-                                aria-label='Workspace options'
+                                aria-label='Canvas options'
                                 onMouseDown={() => {
                                   isContextMenuOpeningRef.current = true
                                 }}
@@ -656,7 +658,7 @@ function WorkspaceHeaderImpl({
                         disabled={isCreatingWorkspace}
                       >
                         <Plus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
-                        Create new workspace
+                        New personal draft canvas
                       </button>
                     </div>
                   )}
@@ -675,7 +677,7 @@ function WorkspaceHeaderImpl({
                         title={inviteDisabledReason ?? undefined}
                       >
                         <UserPlus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
-                        Invite members
+                        Invite canvas members
                       </button>
                     </>
                   )}
@@ -686,7 +688,7 @@ function WorkspaceHeaderImpl({
         ) : (
           <button
             type='button'
-            aria-label='Switch workspace'
+            aria-label='Switch personal draft canvas'
             className={cn(
               'flex h-[32px] min-w-0 items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] pl-[5px]',
               isCollapsed ? 'w-[32px]' : 'w-full gap-2 pr-2'
@@ -698,7 +700,7 @@ function WorkspaceHeaderImpl({
               activeWorkspaceFull.logoUrl ? (
                 <img
                   src={activeWorkspaceFull.logoUrl}
-                  alt={activeWorkspaceFull.name || 'Workspace logo'}
+                  alt={activeWorkspaceFull.name || 'Canvas logo'}
                   className='h-[20px] w-[20px] flex-shrink-0 rounded-sm object-cover'
                 />
               ) : (
@@ -758,7 +760,6 @@ function WorkspaceHeaderImpl({
         )
       })()}
 
-      {/* Create Workspace Modal */}
       {canCreateWorkspace && (
         <CreateWorkspaceModal
           open={isCreateModalOpen}
@@ -775,7 +776,7 @@ function WorkspaceHeaderImpl({
       <InviteModal
         open={isInviteModalOpen}
         onOpenChange={setIsInviteModalOpen}
-        workspaceName={activeWorkspace?.name || 'Workspace'}
+        workspaceName={activeWorkspace?.name || 'Canvas'}
         inviteDisabledReason={inviteDisabledReason}
         organizationId={activeWorkspaceFull?.organizationId ?? null}
       />
@@ -791,12 +792,12 @@ function WorkspaceHeaderImpl({
       {/* Leave Confirmation Modal */}
       <Modal open={isLeaveModalOpen} onOpenChange={() => setIsLeaveModalOpen(false)}>
         <ModalContent size='sm'>
-          <ModalHeader>Leave Workspace</ModalHeader>
+          <ModalHeader>Leave Canvas</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
               Are you sure you want to leave{' '}
               <span className='font-base text-[var(--text-primary)]'>{leaveTarget?.name}</span>? You
-              will lose access to all workflows and data in this workspace. This action cannot be
+              will lose access to all workflows and data in this canvas. This action cannot be
               undone.
             </p>
           </ModalBody>
@@ -813,7 +814,7 @@ function WorkspaceHeaderImpl({
               onClick={handleLeaveWorkspace}
               disabled={isLeavingWorkspace}
             >
-              {isLeavingWorkspace ? 'Leaving...' : 'Leave Workspace'}
+              {isLeavingWorkspace ? 'Leaving...' : 'Leave Canvas'}
             </Button>
           </ModalFooter>
         </ModalContent>

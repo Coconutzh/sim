@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react'
 import { createLogger } from '@sim/logger'
-import { Compass, MoreHorizontal } from 'lucide-react'
+import { Compass, MoreHorizontal, PenLine, Users } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -90,6 +90,12 @@ import {
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import {
+  useCreatePersonalWorkspace,
+  useMyWorkgroups,
+  usePersonalWorkspace,
+  useTeamWorkspace,
+} from '@/hooks/queries/collaboration'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
 import { useTablesList } from '@/hooks/queries/tables'
@@ -470,7 +476,32 @@ export const Sidebar = memo(function Sidebar() {
     sessionUserId: sessionData?.user?.id,
   })
 
+  const { data: workgroupsData } = useMyWorkgroups(Boolean(sessionData?.user?.id))
+  const workgroups = workgroupsData?.workgroups ?? []
+  const activeWorkgroup =
+    workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+    workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
+    workgroups[0]
+  const activeWorkgroupId = activeWorkgroup?.id
+  const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
+  const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
+  const { mutateAsync: createPersonalWorkspace, isPending: isCreatingPersonalWorkspace } =
+    useCreatePersonalWorkspace()
+  const personalCanvasWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
+  const teamCanvasWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
+  const personalDraftWorkspaces = useMemo(() => {
+    const drafts = workspaces.filter((workspace) => {
+      if (workspace.canvasScope !== 'personal') return false
+      return !activeWorkgroupId || workspace.workgroupId === activeWorkgroupId
+    })
+    const currentWorkspace = activeWorkspaceFull
+    if (currentWorkspace && !drafts.some((workspace) => workspace.id === currentWorkspace.id)) {
+      return [currentWorkspace, ...drafts]
+    }
+    return drafts
+  }, [activeWorkspaceFull, activeWorkgroupId, workspaces])
   const logoTargetWorkspaceIdRef = useRef<string>(workspaceId)
 
   const {
@@ -722,6 +753,30 @@ export const Sidebar = memo(function Sidebar() {
     [workspaceId, openSearchModal]
   )
 
+  const canvasNavItems = useMemo(
+    () => [
+      {
+        id: 'personal-canvas',
+        label: 'Personal draft',
+        icon: PenLine,
+        href: `/workspace/${personalCanvasWorkspaceId}/home`,
+      },
+      {
+        id: 'team-canvas',
+        label: 'Team canvas',
+        icon: Users,
+        href: teamCanvasWorkspaceId ? `/workspace/${teamCanvasWorkspaceId}/home` : undefined,
+      },
+      {
+        id: 'showcase-canvas',
+        label: 'Showcase canvas',
+        icon: Compass,
+        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/showcase`,
+      },
+    ],
+    [personalCanvasWorkspaceId, teamCanvasWorkspaceId, workspaceId]
+  )
+
   const workspaceNavItems = useMemo(
     () =>
       [
@@ -760,7 +815,7 @@ export const Sidebar = memo(function Sidebar() {
         },
         {
           id: 'published',
-          label: 'Published',
+          label: 'Published workflows',
           icon: Compass,
           href: `/workspace/${workspaceId}/published`,
         },
@@ -1055,6 +1110,29 @@ export const Sidebar = memo(function Sidebar() {
       setIsWorkspaceMenuOpen(false)
     },
     [workspaceId, switchWorkspace]
+  )
+
+  const handleCreatePersonalCanvas = useCallback(
+    async (name: string) => {
+      if (!activeWorkgroupId) {
+        await handleCreateWorkspace(name)
+        return
+      }
+      const result = await createPersonalWorkspace({
+        workgroupId: activeWorkgroupId,
+        name,
+      })
+      await switchWorkspace({
+        ...result.workspace,
+        role: 'owner',
+        permissions: 'admin',
+        inviteMembersEnabled: false,
+        inviteDisabledReason: null,
+        inviteUpgradeRequired: false,
+      })
+      router.push(`/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`)
+    },
+    [activeWorkgroupId, createPersonalWorkspace, handleCreateWorkspace, router, switchWorkspace]
   )
 
   const handleSidebarClick = (e: React.MouseEvent<HTMLElement>) => {
@@ -1365,14 +1443,15 @@ export const Sidebar = memo(function Sidebar() {
               <WorkspaceHeader
                 activeWorkspace={activeWorkspace}
                 workspaceId={workspaceId}
-                workspaces={workspaces}
+                workspaces={personalDraftWorkspaces}
                 workspaceCreationPolicy={workspaceCreationPolicy}
+                canCreatePersonalCanvas={Boolean(activeWorkgroupId)}
                 isWorkspacesLoading={isWorkspacesLoading}
-                isCreatingWorkspace={isCreatingWorkspace}
+                isCreatingWorkspace={isCreatingWorkspace || isCreatingPersonalWorkspace}
                 isWorkspaceMenuOpen={isWorkspaceMenuOpen}
                 setIsWorkspaceMenuOpen={setIsWorkspaceMenuOpen}
                 onWorkspaceSwitch={handleWorkspaceSwitch}
-                onCreateWorkspace={handleCreateWorkspace}
+                onCreateWorkspace={handleCreatePersonalCanvas}
                 onRenameWorkspace={handleRenameWorkspace}
                 onDeleteWorkspace={handleDeleteWorkspace}
                 isDeletingWorkspace={isDeletingWorkspace}
@@ -1403,6 +1482,23 @@ export const Sidebar = memo(function Sidebar() {
                       onContextMenu={item.href ? handleNavItemContextMenu : undefined}
                     />
                   ))}
+                </div>
+
+                <div className='mt-3.5 flex flex-shrink-0 flex-col pb-2'>
+                  <div className='px-4 pb-1.5'>
+                    <div className='font-base text-[var(--text-icon)] text-small'>Canvases</div>
+                  </div>
+                  <div className='flex flex-col gap-0.5 px-2'>
+                    {canvasNavItems.map((item) => (
+                      <SidebarNavItem
+                        key={item.id}
+                        item={item}
+                        active={item.href ? !!pathname?.startsWith(item.href) : false}
+                        showCollapsedTooltips={showCollapsedTooltips}
+                        onContextMenu={item.href ? handleNavItemContextMenu : undefined}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 <div className='mt-3.5 flex flex-shrink-0 flex-col pb-2'>

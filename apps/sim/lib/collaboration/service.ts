@@ -26,7 +26,11 @@ import {
   workspacePermissionForWorkgroupRole,
 } from '@/lib/collaboration/definitions'
 import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
-import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
+import {
+  loadWorkflowFromNormalizedTables,
+  saveWorkflowToNormalizedTables,
+} from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('Collaboration')
 
@@ -285,6 +289,37 @@ async function upsertWorkspacePermission(params: {
       target: [permissions.userId, permissions.entityType, permissions.entityId],
       set: { permissionType: params.permissionType, updatedAt: now },
     })
+}
+
+async function createDefaultWorkflowForWorkspace(params: {
+  userId: string
+  workspaceId: string
+  name: string
+  description: string
+}) {
+  const workflowId = generateId()
+  const now = new Date()
+  await db.transaction(async (tx) => {
+    await tx.insert(workflow).values({
+      id: workflowId,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      folderId: null,
+      name: params.name,
+      description: params.description,
+      color: '#3972F6',
+      lastSynced: now,
+      createdAt: now,
+      updatedAt: now,
+      isDeployed: false,
+      runCount: 0,
+      variables: {},
+    })
+
+    const { workflowState } = buildDefaultWorkflowArtifacts()
+    await saveWorkflowToNormalizedTables(workflowId, workflowState, tx)
+  })
+  return workflowId
 }
 
 export async function createWorkgroup(params: {
@@ -568,6 +603,7 @@ export async function getOrCreatePersonalWorkspace(params: {
         isNull(workspace.archivedAt)
       )
     )
+    .orderBy(desc(personalCanvasWorkspace.createdAt))
     .limit(1)
   if (existing[0]?.workspace) return workspaceDto(existing[0].workspace)
 
@@ -594,6 +630,12 @@ export async function getOrCreatePersonalWorkspace(params: {
       createdAt: new Date(),
       updatedAt: new Date(),
     })
+    await createDefaultWorkflowForWorkspace({
+      userId: params.userId,
+      workspaceId: ws.id,
+      name: 'Personal draft',
+      description: `Default node graph for ${ws.name}`,
+    })
     return workspaceDto(ws)
   } catch (error) {
     logger.warn('Personal canvas workspace lazy creation raced or failed; reloading', { error })
@@ -611,6 +653,44 @@ export async function getOrCreatePersonalWorkspace(params: {
     if (fallback?.workspace) return workspaceDto(fallback.workspace)
     throw error
   }
+}
+
+export async function createPersonalWorkspace(params: {
+  userId: string
+  workgroupId: string
+  name: string
+}) {
+  const membership = await assertWorkgroupMember(params.userId, params.workgroupId)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
+  if (!wg) throw new Error('Workgroup not found')
+
+  const ws = await insertWorkspace({
+    name: params.name,
+    ownerId: params.userId,
+    organizationId: membership.organizationId,
+    workgroupId: params.workgroupId,
+    mode: 'personal',
+  })
+  await db.insert(personalCanvasWorkspace).values({
+    id: generateId(),
+    userId: params.userId,
+    organizationId: membership.organizationId,
+    workgroupId: params.workgroupId,
+    workspaceId: ws.id,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  const defaultWorkflowId = await createDefaultWorkflowForWorkspace({
+    userId: params.userId,
+    workspaceId: ws.id,
+    name: 'Personal draft',
+    description: `Default node graph for ${params.name}`,
+  })
+  return { workspace: workspaceDto(ws), defaultWorkflowId }
 }
 
 export async function getTeamWorkspace(params: { userId: string; workgroupId: string }) {

@@ -6,6 +6,7 @@ import {
   type CopySelectionBody,
   copySelectionContract,
   createOrganizationWorkgroupContract,
+  createPersonalWorkspaceContract,
   getCopilotAgentProfileContract,
   getPersonalWorkspaceContract,
   getPublicationContract,
@@ -22,6 +23,7 @@ import {
   setActiveWorkgroupContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
+import { type Workspace, type WorkspacesResponse, workspaceKeys } from '@/hooks/queries/workspace'
 
 export const collaborationKeys = {
   all: ['collaboration'] as const,
@@ -125,7 +127,7 @@ export function useOrganizationWorkgroups(organizationId?: string) {
     queryKey: collaborationKeys.organizationWorkgroups(organizationId),
     queryFn: ({ signal }) =>
       requestJson(listOrganizationWorkgroupsContract, {
-        params: { organizationId: organizationId as string },
+        params: { id: organizationId as string },
         signal,
       }),
     enabled: Boolean(organizationId),
@@ -139,7 +141,7 @@ export function useCreateWorkgroup() {
   return useMutation({
     mutationFn: (variables: { organizationId: string; name: string; disciplineId: string }) =>
       requestJson(createOrganizationWorkgroupContract, {
-        params: { organizationId: variables.organizationId },
+        params: { id: variables.organizationId },
         body: { name: variables.name, disciplineId: variables.disciplineId },
       }),
     onSettled: (_data, _error, variables) => {
@@ -217,6 +219,42 @@ export function usePersonalWorkspace(workgroupId?: string) {
       }),
     enabled: Boolean(workgroupId),
     staleTime: 30 * 1000,
+  })
+}
+
+export function useCreatePersonalWorkspace() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; name: string }) =>
+      requestJson(createPersonalWorkspaceContract, {
+        params: { workgroupId: variables.workgroupId },
+        body: { name: variables.name },
+      }),
+    onSuccess: (data, variables) => {
+      const newWorkspace: Workspace = {
+        ...data.workspace,
+        canvasScope: 'personal',
+        isInternalWorkspace: true,
+        role: 'owner',
+        permissions: 'admin',
+        inviteMembersEnabled: false,
+        inviteDisabledReason: null,
+        inviteUpgradeRequired: false,
+      }
+      queryClient.setQueryData<WorkspacesResponse>(workspaceKeys.list('active'), (previous) => {
+        if (!previous) {
+          return { workspaces: [newWorkspace], lastActiveWorkspaceId: null, creationPolicy: null }
+        }
+        if (previous.workspaces.some((workspace) => workspace.id === newWorkspace.id)) {
+          return previous
+        }
+        return { ...previous, workspaces: [newWorkspace, ...previous.workspaces] }
+      })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.lists() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.personalWorkspace(variables.workgroupId),
+      })
+    },
   })
 }
 

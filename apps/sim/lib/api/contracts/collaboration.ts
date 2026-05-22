@@ -22,7 +22,7 @@ export const agentCodeSchema = z.enum([
 ])
 export const publicationVisibilitySchema = z.enum(['organization', 'selected_workgroups'])
 
-export const organizationParamsSchema = z.object({ organizationId: nonEmptyIdSchema })
+export const organizationParamsSchema = z.object({ id: nonEmptyIdSchema })
 export const workgroupParamsSchema = z.object({ workgroupId: nonEmptyIdSchema })
 export const workgroupMemberParamsSchema = z.object({
   workgroupId: nonEmptyIdSchema,
@@ -123,6 +123,11 @@ export type UpsertWorkgroupMemberBody = z.input<typeof upsertWorkgroupMemberBody
 
 export const updateWorkgroupMemberBodySchema = z.object({ role: workgroupRoleSchema })
 export type UpdateWorkgroupMemberBody = z.input<typeof updateWorkgroupMemberBodySchema>
+
+export const createPersonalWorkspaceBodySchema = z.object({
+  name: z.string().trim().min(1, 'Canvas name is required').max(120),
+})
+export type CreatePersonalWorkspaceBody = z.input<typeof createPersonalWorkspaceBodySchema>
 
 export const publishWorkflowVersionBodySchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -262,7 +267,7 @@ export const setActiveWorkgroupContract = defineRouteContract({
 
 export const listOrganizationWorkgroupsContract = defineRouteContract({
   method: 'GET',
-  path: '/api/organizations/[organizationId]/workgroups',
+  path: '/api/organizations/[id]/workgroups',
   params: organizationParamsSchema,
   response: {
     mode: 'json',
@@ -272,7 +277,7 @@ export const listOrganizationWorkgroupsContract = defineRouteContract({
 
 export const createOrganizationWorkgroupContract = defineRouteContract({
   method: 'POST',
-  path: '/api/organizations/[organizationId]/workgroups',
+  path: '/api/organizations/[id]/workgroups',
   params: organizationParamsSchema,
   body: createWorkgroupBodySchema,
   response: {
@@ -323,6 +328,20 @@ export const getPersonalWorkspaceContract = defineRouteContract({
   path: '/api/workgroups/[workgroupId]/personal-workspace',
   params: workgroupParamsSchema,
   response: { mode: 'json', schema: z.object({ workspace: canvasWorkspaceSchema }) },
+})
+
+export const createPersonalWorkspaceContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/personal-workspace',
+  params: workgroupParamsSchema,
+  body: createPersonalWorkspaceBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      workspace: canvasWorkspaceSchema,
+      defaultWorkflowId: workflowIdSchema,
+    }),
+  },
 })
 
 export const getTeamWorkspaceContract = defineRouteContract({

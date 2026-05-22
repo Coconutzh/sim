@@ -30,11 +30,26 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     return chain
   }
 
+  function createInsertChain() {
+    const chain: Record<string, unknown> = {}
+
+    chain.values = vi.fn(() => chain)
+    chain.onConflictDoUpdate = vi.fn(() => Promise.resolve([]))
+
+    return chain
+  }
+
   return {
     mockResultsQueue: resultsQueue,
     mockDb: {
       select: vi.fn(() => createChain()),
+      insert: vi.fn(() => createInsertChain()),
       update: vi.fn(() => createWriteChain()),
+      transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback({
+          insert: vi.fn(() => createInsertChain()),
+        })
+      ),
     },
     schemaMock: {
       workflowPublicationVersion: {
@@ -62,7 +77,9 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
       },
       workgroup: {
         id: 'workgroup.id',
+        name: 'workgroup.name',
         organizationId: 'workgroup.organizationId',
+        teamWorkspaceId: 'workgroup.teamWorkspaceId',
       },
       workgroupMember: {
         id: 'workgroupMember.id',
@@ -70,6 +87,35 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         userId: 'workgroupMember.userId',
         organizationId: 'workgroupMember.organizationId',
         workgroupId: 'workgroupMember.workgroupId',
+      },
+      permissions: {
+        userId: 'permissions.userId',
+        entityType: 'permissions.entityType',
+        entityId: 'permissions.entityId',
+      },
+      personalCanvasWorkspace: {
+        userId: 'personalCanvasWorkspace.userId',
+        organizationId: 'personalCanvasWorkspace.organizationId',
+        workgroupId: 'personalCanvasWorkspace.workgroupId',
+        workspaceId: 'personalCanvasWorkspace.workspaceId',
+      },
+      workspace: {
+        id: 'workspace.id',
+        name: 'workspace.name',
+        color: 'workspace.color',
+        logoUrl: 'workspace.logoUrl',
+        ownerId: 'workspace.ownerId',
+        organizationId: 'workspace.organizationId',
+        workgroupId: 'workspace.workgroupId',
+        workspaceMode: 'workspace.workspaceMode',
+        billedAccountUserId: 'workspace.billedAccountUserId',
+        allowPersonalApiKeys: 'workspace.allowPersonalApiKeys',
+        archivedAt: 'workspace.archivedAt',
+        createdAt: 'workspace.createdAt',
+        updatedAt: 'workspace.updatedAt',
+      },
+      workflow: {
+        id: 'workflow.id',
       },
     },
   }
@@ -101,16 +147,23 @@ vi.mock('@/lib/collaboration/authz', () => ({
 }))
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadWorkflowFromNormalizedTables: vi.fn(),
+  saveWorkflowToNormalizedTables: vi.fn(),
+}))
+vi.mock('@/lib/workflows/defaults', () => ({
+  buildDefaultWorkflowArtifacts: vi.fn(() => ({ workflowState: { blocks: {}, edges: [] } })),
 }))
 
 import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   assertWorkgroupAdmin,
+  createPersonalWorkspace,
   getNextPublicationVersionNumber,
+  getOrCreatePersonalWorkspace,
   getPublication,
   getPublicationTree,
   updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
+import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 
 describe('collaboration service', () => {
   beforeEach(() => {
@@ -190,6 +243,110 @@ describe('collaboration service', () => {
     ).rejects.toThrow('Cannot demote the last workgroup admin')
 
     expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it('creates additional personal draft canvases with a default workflow', async () => {
+    const now = new Date('2026-05-22T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting' }],
+      [
+        {
+          id: 'generated-id',
+          name: 'Lighting scratch 2',
+          color: '#33C482',
+          logoUrl: null,
+          ownerId: 'user-1',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+          workspaceMode: 'personal',
+          billedAccountUserId: 'user-1',
+          allowPersonalApiKeys: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ]
+    )
+
+    await expect(
+      createPersonalWorkspace({
+        userId: 'user-1',
+        workgroupId: 'workgroup-1',
+        name: 'Lighting scratch 2',
+      })
+    ).resolves.toMatchObject({
+      workspace: {
+        id: 'generated-id',
+        name: 'Lighting scratch 2',
+        workspaceMode: 'personal',
+      },
+      defaultWorkflowId: 'generated-id',
+    })
+
+    expect(mockDb.insert).toHaveBeenCalled()
+    expect(mockDb.transaction).toHaveBeenCalled()
+    expect(saveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'generated-id',
+      { blocks: {}, edges: [] },
+      expect.anything()
+    )
+  })
+
+  it('creates a default workflow when lazily creating the first personal draft canvas', async () => {
+    const now = new Date('2026-05-22T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting' }],
+      [
+        {
+          id: 'generated-id',
+          name: '个人草稿 - Lighting',
+          color: '#33C482',
+          logoUrl: null,
+          ownerId: 'user-1',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+          workspaceMode: 'personal',
+          billedAccountUserId: 'user-1',
+          allowPersonalApiKeys: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ]
+    )
+
+    await expect(
+      getOrCreatePersonalWorkspace({
+        userId: 'user-1',
+        workgroupId: 'workgroup-1',
+      })
+    ).resolves.toMatchObject({
+      id: 'generated-id',
+      name: '个人草稿 - Lighting',
+      workspaceMode: 'personal',
+    })
+
+    expect(mockDb.transaction).toHaveBeenCalled()
+    expect(saveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'generated-id',
+      { blocks: {}, edges: [] },
+      expect.anything()
+    )
   })
 
   it('hides an unreadable publication parent link from publication details', async () => {

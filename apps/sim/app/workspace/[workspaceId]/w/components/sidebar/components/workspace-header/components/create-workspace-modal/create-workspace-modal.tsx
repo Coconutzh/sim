@@ -19,7 +19,7 @@ interface CreateWorkspaceModalProps {
 }
 
 /**
- * Modal for naming a new workspace before creation.
+ * Modal for naming a new personal draft canvas before creation.
  */
 export function CreateWorkspaceModal({
   open,
@@ -58,14 +58,14 @@ export function CreateWorkspaceModal({
           inputRef.current?.focus()
         }}
       >
-        <ModalHeader>Create Workspace</ModalHeader>
+        <ModalHeader>New Personal Draft Canvas</ModalHeader>
         <ModalBody>
           <Input
             ref={inputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder='Workspace name'
+            placeholder='Canvas name'
             maxLength={100}
             autoComplete='off'
             autoCorrect='off'
@@ -83,7 +83,7 @@ export function CreateWorkspaceModal({
             onClick={() => void handleSubmit()}
             disabled={!name.trim() || isCreating}
           >
-            {isCreating ? 'Creating...' : 'Create'}
+            {isCreating ? 'Creating...' : 'Create canvas'}
           </Button>
         </ModalFooter>
       </ModalContent>

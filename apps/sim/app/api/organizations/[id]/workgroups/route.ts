@@ -19,7 +19,7 @@ export const GET = withRouteHandler(async (request, context) => {
   try {
     const workgroups = await listOrganizationWorkgroups({
       userId: session.user.id,
-      organizationId: parsed.data.params.organizationId,
+      organizationId: parsed.data.params.id,
     })
     return NextResponse.json({ workgroups })
   } catch (error) {
@@ -36,7 +36,7 @@ export const POST = withRouteHandler(async (request, context) => {
   try {
     const workgroup = await createWorkgroup({
       actorUserId: session.user.id,
-      organizationId: parsed.data.params.organizationId,
+      organizationId: parsed.data.params.id,
       disciplineId: parsed.data.body.disciplineId,
       name: parsed.data.body.name,
     })

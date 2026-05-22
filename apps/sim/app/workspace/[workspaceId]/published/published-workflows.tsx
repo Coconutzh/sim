@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { Compass, RefreshCw } from 'lucide-react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
 import {
   type ResourceColumn,
@@ -51,7 +51,9 @@ function formatVisibility(visibility: PublishedWorkflowView['visibility']): stri
 export function PublishedWorkflows() {
   const params = useParams<{ workspaceId: string }>()
   const router = useRouter()
+  const pathname = usePathname()
   const workspaceId = params.workspaceId
+  const isShowcaseRoute = pathname?.startsWith(`/workspace/${workspaceId}/showcase`) ?? false
 
   const { data: workspaceSettingsData, isLoading: isWorkspaceLoading } =
     useWorkspaceSettings(workspaceId)
@@ -124,7 +126,7 @@ export function PublishedWorkflows() {
     <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
       <ResourceHeader
         icon={Compass}
-        title='Published'
+        title={isShowcaseRoute ? 'Showcase Canvas' : 'Published'}
         actions={[
           {
             label: isFetching ? 'Refreshing...' : 'Refresh',
@@ -149,7 +151,9 @@ export function PublishedWorkflows() {
         defaultSort='publishedAt'
         emptyMessage={emptyMessage}
         onRowClick={(workflowId) => {
-          router.push(`/workspace/${workspaceId}/published/${workflowId}`)
+          router.push(
+            `/workspace/${workspaceId}/${isShowcaseRoute ? 'showcase' : 'published'}/${workflowId}`
+          )
         }}
       />
       {!workgroupId && !isWorkspaceLoading && (
