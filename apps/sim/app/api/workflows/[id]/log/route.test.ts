@@ -91,4 +91,34 @@ describe('POST /api/workflows/[id]/log', () => {
     expect(mockParseRequest).not.toHaveBeenCalled()
     expect(mockValidateWorkflowAccess).not.toHaveBeenCalled()
   })
+
+  it('requires workflow write access before persisting execution logs', async () => {
+    mockParseRequest.mockResolvedValueOnce({
+      success: true,
+      data: {
+        params: { id: 'workflow-1' },
+        body: {
+          logs: [{ level: 'info', message: 'started' }],
+        },
+      },
+    })
+    mockValidateWorkflowAccess.mockResolvedValueOnce({
+      error: { message: 'Published workflows are read-only', status: 403 },
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/workflow-1/log', {
+      method: 'POST',
+      body: JSON.stringify({ logs: [{ level: 'info', message: 'started' }] }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await POST(request, { params: Promise.resolve({ id: 'workflow-1' }) })
+
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(request, 'workflow-1', false, 'write')
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Published workflows are read-only',
+      code: 'PUBLISHED_WORKFLOWS_ARE_READ-ONLY',
+    })
+  })
 })

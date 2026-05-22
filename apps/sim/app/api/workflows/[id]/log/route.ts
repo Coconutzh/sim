@@ -33,7 +33,7 @@ export const POST = withRouteHandler(
       const { id } = parsed.data.params
       workflowIdForLog = id
 
-      const accessValidation = await validateWorkflowAccess(request, id, false)
+      const accessValidation = await validateWorkflowAccess(request, id, false, 'write')
       if (accessValidation.error) {
         logger.warn(
           `[${requestId}] Workflow access validation failed: ${accessValidation.error.message}`
