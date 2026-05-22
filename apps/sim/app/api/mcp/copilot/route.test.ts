@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+import type { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -125,7 +126,8 @@ vi.mock('@/lib/workflows/utils', () => ({
   resolveWorkflowIdForUser: mockResolveWorkflowIdForUser,
 }))
 
-import { handleBuildToolCall } from './route'
+import { validateOAuthAccessToken } from '@/lib/auth/oauth-token'
+import { handleBuildToolCall, POST } from '@/app/api/mcp/copilot/route'
 
 describe('handleBuildToolCall', () => {
   beforeEach(() => {
@@ -201,5 +203,58 @@ describe('handleBuildToolCall', () => {
       workspaceId: 'ws-1',
     })
     expect(mockRunHeadlessCopilotLifecycle).toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/mcp/copilot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('authenticates bearer tokens before reading the JSON-RPC body', async () => {
+    vi.mocked(validateOAuthAccessToken).mockResolvedValueOnce({
+      success: false,
+      error: 'bad token',
+    })
+    const json = vi.fn(async () => {
+      throw new Error('body should not be parsed before auth')
+    })
+    const request = {
+      headers: new Headers({ authorization: 'Bearer bad-token' }),
+      json,
+      signal: new AbortController().signal,
+    } as unknown as NextRequest
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(data).toMatchObject({ error: 'unauthorized', message: 'bad token' })
+    expect(json).not.toHaveBeenCalled()
+  })
+
+  it('validates auth before returning invalid JSON errors', async () => {
+    vi.mocked(validateOAuthAccessToken).mockResolvedValueOnce({
+      success: true,
+      userId: 'user-1',
+      scopes: ['mcp:tools'],
+    })
+    const request = {
+      headers: new Headers({ authorization: 'Bearer good-token' }),
+      json: vi.fn(async () => {
+        throw new SyntaxError('invalid json')
+      }),
+      signal: new AbortController().signal,
+    } as unknown as NextRequest
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(validateOAuthAccessToken).toHaveBeenCalledWith('good-token')
+    expect(response.status).toBe(400)
+    expect(data.error).toMatchObject({
+      code: -32700,
+      message: 'Invalid JSON body',
+    })
   })
 })

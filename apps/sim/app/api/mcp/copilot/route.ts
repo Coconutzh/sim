@@ -49,6 +49,16 @@ interface CopilotKeyAuthResult {
   error?: string
 }
 
+interface McpCopilotAuthSuccess {
+  success: true
+  userId: string
+}
+
+interface McpCopilotAuthFailure {
+  success: false
+  response: NextResponse
+}
+
 /**
  * Validates a copilot API key by forwarding it to the Go copilot service's
  * `/api/validate-key` endpoint. Returns the associated userId on success.
@@ -157,8 +167,6 @@ When the user refers to a workflow by name or description ("the email one", "my 
 - Variable syntax: \`<blockname.field>\` for block outputs, \`{{ENV_VAR}}\` for env vars.
 `
 
-type HeaderMap = Record<string, string | string[] | undefined>
-
 function createError(id: RequestId, code: ErrorCode | number, message: string): JSONRPCError {
   return {
     jsonrpc: '2.0',
@@ -167,16 +175,69 @@ function createError(id: RequestId, code: ErrorCode | number, message: string): 
   }
 }
 
-function readHeader(headers: HeaderMap | undefined, name: string): string | undefined {
-  if (!headers) return undefined
-  const value = headers[name.toLowerCase()]
-  if (Array.isArray(value)) {
-    return value[0]
-  }
-  return value
+function createMissingAuthResponse(): NextResponse {
+  const origin = getBaseUrl().replace(/\/$/, '')
+  const resourceMetadataUrl = `${origin}/.well-known/oauth-protected-resource/api/mcp/copilot`
+  return new NextResponse(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401,
+    headers: {
+      'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}", scope="mcp:tools"`,
+      'Content-Type': 'application/json',
+    },
+  })
 }
 
-function buildMcpServer(abortSignal?: AbortSignal): Server {
+function createAuthErrorResponse(message: string, status = 401): NextResponse {
+  return NextResponse.json({ error: 'unauthorized', message }, { status })
+}
+
+async function authenticateMcpCopilotRequest(
+  request: NextRequest
+): Promise<McpCopilotAuthSuccess | McpCopilotAuthFailure> {
+  const apiKeyHeader = request.headers.get('x-api-key')
+  const authorizationHeader = request.headers.get('authorization')
+
+  if (authorizationHeader?.startsWith('Bearer ')) {
+    const token = authorizationHeader.slice(7)
+    const oauthResult = await validateOAuthAccessToken(token)
+    if (!oauthResult.success || !oauthResult.userId) {
+      return {
+        success: false,
+        response: createAuthErrorResponse(oauthResult.error ?? 'Invalid OAuth access token'),
+      }
+    }
+
+    if (!oauthResult.scopes?.includes('mcp:tools')) {
+      return {
+        success: false,
+        response: createAuthErrorResponse(
+          'OAuth token is missing the required "mcp:tools" scope',
+          403
+        ),
+      }
+    }
+
+    return { success: true, userId: oauthResult.userId }
+  }
+
+  if (apiKeyHeader) {
+    const authResult = await authenticateCopilotApiKey(apiKeyHeader)
+    if (authResult.success && authResult.userId) {
+      return { success: true, userId: authResult.userId }
+    }
+
+    return {
+      success: false,
+      response: createAuthErrorResponse(
+        authResult.error ?? 'Invalid Copilot API key. Generate a new key in Settings > Copilot.'
+      ),
+    }
+  }
+
+  return { success: false, response: createMissingAuthResponse() }
+}
+
+function buildMcpServer(userId: string, abortSignal?: AbortSignal): Server {
   const server = new Server(
     {
       name: 'sim-copilot',
@@ -210,63 +271,10 @@ function buildMcpServer(abortSignal?: AbortSignal): Server {
     return result
   })
 
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const headers = (extra.requestInfo?.headers || {}) as HeaderMap
-    const apiKeyHeader = readHeader(headers, 'x-api-key')
-    const authorizationHeader = readHeader(headers, 'authorization')
-
-    let authResult: CopilotKeyAuthResult = { success: false }
-
-    if (authorizationHeader?.startsWith('Bearer ')) {
-      const token = authorizationHeader.slice(7)
-      const oauthResult = await validateOAuthAccessToken(token)
-      if (oauthResult.success && oauthResult.userId) {
-        if (!oauthResult.scopes?.includes('mcp:tools')) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: 'AUTHENTICATION ERROR: OAuth token is missing the required "mcp:tools" scope. Re-authorize with the correct scopes.',
-              },
-            ],
-            isError: true,
-          }
-        }
-        authResult = { success: true, userId: oauthResult.userId }
-      } else {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `AUTHENTICATION ERROR: ${oauthResult.error ?? 'Invalid OAuth access token'} Do NOT retry — re-authorize via OAuth.`,
-            },
-          ],
-          isError: true,
-        }
-      }
-    } else if (apiKeyHeader) {
-      authResult = await authenticateCopilotApiKey(apiKeyHeader)
-    }
-
-    if (!authResult.success || !authResult.userId) {
-      const errorMsg = apiKeyHeader
-        ? `AUTHENTICATION ERROR: ${authResult.error} Do NOT retry — this will fail until the user fixes their Copilot API key.`
-        : 'AUTHENTICATION ERROR: No authentication provided. Provide a Bearer token (OAuth 2.1) or an x-api-key header. Generate a Copilot API key in Settings → Copilot.'
-      logger.warn('MCP copilot auth failed', { method: request.method })
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: errorMsg,
-          },
-        ],
-        isError: true,
-      }
-    }
-
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const rateLimitResult = await mcpRateLimiter.checkRateLimitWithSubscription(
-      authResult.userId,
-      await getHighestPrioritySubscription(authResult.userId),
+      userId,
+      await getHighestPrioritySubscription(userId),
       'api-endpoint',
       false
     )
@@ -294,11 +302,11 @@ function buildMcpServer(abortSignal?: AbortSignal): Server {
         name: params.name,
         arguments: params.arguments,
       },
-      authResult.userId,
+      userId,
       abortSignal
     )
 
-    trackMcpCopilotCall(authResult.userId)
+    trackMcpCopilotCall(userId)
 
     return result
   })
@@ -308,9 +316,10 @@ function buildMcpServer(abortSignal?: AbortSignal): Server {
 
 async function handleMcpRequestWithSdk(
   request: NextRequest,
-  parsedBody: unknown
+  parsedBody: unknown,
+  userId: string
 ): Promise<Response> {
-  const server = buildMcpServer(request.signal)
+  const server = buildMcpServer(userId, request.signal)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -334,18 +343,9 @@ export const GET = withRouteHandler(async () => {
 })
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
-  const hasAuth = request.headers.has('authorization') || request.headers.has('x-api-key')
-
-  if (!hasAuth) {
-    const origin = getBaseUrl().replace(/\/$/, '')
-    const resourceMetadataUrl = `${origin}/.well-known/oauth-protected-resource/api/mcp/copilot`
-    return new NextResponse(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
-      headers: {
-        'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}", scope="mcp:tools"`,
-        'Content-Type': 'application/json',
-      },
-    })
+  const auth = await authenticateMcpCopilotRequest(request)
+  if (!auth.success) {
+    return auth.response
   }
 
   try {
@@ -369,7 +369,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    return await handleMcpRequestWithSdk(request, bodyValidation.data)
+    return await handleMcpRequestWithSdk(request, bodyValidation.data, auth.userId)
   } catch (error) {
     if (request.signal.aborted || (error as Error)?.name === 'AbortError') {
       return NextResponse.json(
