@@ -6,11 +6,11 @@ import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   type BatchInsertTableRowsBodyInput,
-  batchUpdateTableRowsBodySchema,
-  deleteTableRowsBodySchema,
+  batchUpdateTableRowsContract,
+  deleteTableRowsContract,
   insertTableRowsContract,
   tableRowsQuerySchema,
-  updateRowsByFilterBodySchema,
+  updateTableRowsByFilterContract,
 } from '@/lib/api/contracts/tables'
 import { parseRequest } from '@/lib/api/server'
 import { isZodError, validationErrorResponse } from '@/lib/api/server/validation'
@@ -347,112 +347,105 @@ export const GET = withRouteHandler(
 )
 
 /** PUT /api/table/[tableId]/rows - Updates rows matching filter criteria. */
-export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: TableRowsRouteParams) => {
-    const requestId = generateRequestId()
-    const { tableId } = await params
+export const PUT = withRouteHandler(async (request: NextRequest, context: TableRowsRouteParams) => {
+  const requestId = generateRequestId()
 
-    try {
-      const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
-      if (!authResult.success || !authResult.userId) {
-        return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-      }
-
-      let body: unknown
-      try {
-        body = await request.json()
-      } catch {
-        return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
-      }
-
-      const validated = updateRowsByFilterBodySchema.parse(body)
-
-      const accessResult = await checkAccess(tableId, authResult.userId, 'write')
-      if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
-
-      const { table } = accessResult
-
-      if (validated.workspaceId !== table.workspaceId) {
-        logger.warn(
-          `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
-        )
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
-      }
-
-      const sizeValidation = validateRowSize(validated.data as RowData)
-      if (!sizeValidation.valid) {
-        return NextResponse.json(
-          { error: 'Invalid row data', details: sizeValidation.errors },
-          { status: 400 }
-        )
-      }
-
-      const result = await updateRowsByFilter(
-        {
-          tableId,
-          filter: validated.filter as Filter,
-          data: validated.data as RowData,
-          limit: validated.limit,
-          workspaceId: validated.workspaceId,
-        },
-        table,
-        requestId
-      )
-
-      if (result.affectedCount === 0) {
-        return NextResponse.json(
-          {
-            success: true,
-            data: {
-              message: 'No rows matched the filter criteria',
-              updatedCount: 0,
-            },
-          },
-          { status: 200 }
-        )
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          message: 'Rows updated successfully',
-          updatedCount: result.affectedCount,
-          updatedRowIds: result.affectedRowIds,
-        },
-      })
-    } catch (error) {
-      if (isZodError(error)) {
-        return validationErrorResponse(error)
-      }
-
-      if (error instanceof TableQueryValidationError) {
-        return NextResponse.json({ error: error.message }, { status: 400 })
-      }
-
-      const errorMessage = toError(error).message
-
-      if (
-        errorMessage.includes('Row size exceeds') ||
-        errorMessage.includes('Schema validation') ||
-        errorMessage.includes('must be unique') ||
-        errorMessage.includes('Unique constraint violation') ||
-        errorMessage.includes('Cannot set unique column') ||
-        errorMessage.includes('Filter is required')
-      ) {
-        return NextResponse.json({ error: errorMessage }, { status: 400 })
-      }
-
-      logger.error(`[${requestId}] Error updating rows by filter:`, error)
-      return NextResponse.json({ error: 'Failed to update rows' }, { status: 500 })
+  try {
+    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    if (!authResult.success || !authResult.userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
+
+    const parsed = await parseRequest(updateTableRowsByFilterContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { tableId } = parsed.data.params
+    const validated = parsed.data.body
+
+    const accessResult = await checkAccess(tableId, authResult.userId, 'write')
+    if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
+
+    const { table } = accessResult
+
+    if (validated.workspaceId !== table.workspaceId) {
+      logger.warn(
+        `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
+      )
+      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+    }
+
+    const sizeValidation = validateRowSize(validated.data as RowData)
+    if (!sizeValidation.valid) {
+      return NextResponse.json(
+        { error: 'Invalid row data', details: sizeValidation.errors },
+        { status: 400 }
+      )
+    }
+
+    const result = await updateRowsByFilter(
+      {
+        tableId,
+        filter: validated.filter as Filter,
+        data: validated.data as RowData,
+        limit: validated.limit,
+        workspaceId: validated.workspaceId,
+      },
+      table,
+      requestId
+    )
+
+    if (result.affectedCount === 0) {
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            message: 'No rows matched the filter criteria',
+            updatedCount: 0,
+          },
+        },
+        { status: 200 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        message: 'Rows updated successfully',
+        updatedCount: result.affectedCount,
+        updatedRowIds: result.affectedRowIds,
+      },
+    })
+  } catch (error) {
+    if (isZodError(error)) {
+      return validationErrorResponse(error)
+    }
+
+    if (error instanceof TableQueryValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    const errorMessage = toError(error).message
+
+    if (
+      errorMessage.includes('Row size exceeds') ||
+      errorMessage.includes('Schema validation') ||
+      errorMessage.includes('must be unique') ||
+      errorMessage.includes('Unique constraint violation') ||
+      errorMessage.includes('Cannot set unique column') ||
+      errorMessage.includes('Filter is required')
+    ) {
+      return NextResponse.json({ error: errorMessage }, { status: 400 })
+    }
+
+    logger.error(`[${requestId}] Error updating rows by filter:`, error)
+    return NextResponse.json({ error: 'Failed to update rows' }, { status: 500 })
   }
-)
+})
 
 /** DELETE /api/table/[tableId]/rows - Deletes rows matching filter criteria or by IDs. */
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: TableRowsRouteParams) => {
+  async (request: NextRequest, context: TableRowsRouteParams) => {
     const requestId = generateRequestId()
-    const { tableId } = await params
 
     try {
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -460,14 +453,11 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
 
-      let body: unknown
-      try {
-        body = await request.json()
-      } catch {
-        return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
-      }
+      const parsed = await parseRequest(deleteTableRowsContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const validated = deleteTableRowsBodySchema.parse(body)
+      const { tableId } = parsed.data.params
+      const validated = parsed.data.body
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
@@ -546,9 +536,8 @@ export const DELETE = withRouteHandler(
 
 /** PATCH /api/table/[tableId]/rows - Batch updates rows by ID. */
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, { params }: TableRowsRouteParams) => {
+  async (request: NextRequest, context: TableRowsRouteParams) => {
     const requestId = generateRequestId()
-    const { tableId } = await params
 
     try {
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -556,14 +545,11 @@ export const PATCH = withRouteHandler(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
 
-      let body: unknown
-      try {
-        body = await request.json()
-      } catch {
-        return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
-      }
+      const parsed = await parseRequest(batchUpdateTableRowsContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const validated = batchUpdateTableRowsBodySchema.parse(body)
+      const { tableId } = parsed.data.params
+      const validated = parsed.data.body
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
