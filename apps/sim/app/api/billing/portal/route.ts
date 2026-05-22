@@ -3,7 +3,8 @@ import { subscription as subscriptionTable, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { billingPortalBodySchema } from '@/lib/api/contracts/subscription'
+import { createBillingPortalContract } from '@/lib/api/contracts/subscription'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
@@ -21,14 +22,22 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json().catch(() => ({}))
-    const parsedBody = billingPortalBodySchema.safeParse(body)
-    if (!parsedBody.success) {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-    }
-    const context = parsedBody.data.context
-    const organizationId = parsedBody.data.organizationId
-    const returnUrl = parsedBody.data.returnUrl || `${getBaseUrl()}/workspace?billing=updated`
+    const parsed = await parseRequest(
+      createBillingPortalContract,
+      request,
+      {},
+      {
+        validationErrorResponse: () =>
+          NextResponse.json({ error: 'Invalid request body' }, { status: 400 }),
+        invalidJsonResponse: () =>
+          NextResponse.json({ error: 'Invalid request body' }, { status: 400 }),
+      }
+    )
+    if (!parsed.success) return parsed.response
+
+    const context = parsed.data.body.context
+    const organizationId = parsed.data.body.organizationId
+    const returnUrl = parsed.data.body.returnUrl || `${getBaseUrl()}/workspace?billing=updated`
 
     const stripe = requireStripeClient()
 

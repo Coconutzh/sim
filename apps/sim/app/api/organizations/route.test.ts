@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { auditMock, createSession, loggerMock } from '@sim/testing'
+import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -126,7 +127,7 @@ describe('POST /api/organizations', () => {
     ]
 
     const response = await POST(
-      new Request('http://localhost/api/organizations', {
+      new NextRequest('http://localhost/api/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Recovered Org' }),
@@ -170,7 +171,7 @@ describe('POST /api/organizations', () => {
     ]
 
     const response = await POST(
-      new Request('http://localhost/api/organizations', {
+      new NextRequest('http://localhost/api/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Recovered Org' }),
@@ -205,7 +206,7 @@ describe('POST /api/organizations', () => {
     mockDbState.selectResults = [[{ organizationId: 'org-1', role: 'member' }]]
 
     const response = await POST(
-      new Request('http://localhost/api/organizations', {
+      new NextRequest('http://localhost/api/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Blocked Org' }),
@@ -241,7 +242,7 @@ describe('POST /api/organizations', () => {
     )
 
     const response = await POST(
-      new Request('http://localhost/api/organizations', {
+      new NextRequest('http://localhost/api/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Recovered Org' }),

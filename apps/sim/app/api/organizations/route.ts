@@ -6,7 +6,7 @@ import { and, eq, inArray, or } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { listCreatorOrganizationsContract } from '@/lib/api/contracts/creator-profile'
-import { createOrganizationBodySchema } from '@/lib/api/contracts/organization'
+import { createOrganizationContract } from '@/lib/api/contracts/organization'
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { setActiveOrganizationForCurrentSession } from '@/lib/auth/active-organization'
@@ -74,7 +74,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   }
 })
 
-export const POST = withRouteHandler(async (request: Request) => {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const session = await getSession()
 
@@ -87,19 +87,25 @@ export const POST = withRouteHandler(async (request: Request) => {
     let organizationName = user.name
     let organizationSlug: string | undefined
 
-    const rawBody = await request.json().catch(() => ({}))
-    const parsedBody = createOrganizationBodySchema.safeParse(rawBody)
-    if (!parsedBody.success) {
-      return NextResponse.json(
-        { error: getValidationErrorMessage(parsedBody.error, 'Invalid request body') },
-        { status: 400 }
-      )
+    const parsed = await parseRequest(
+      createOrganizationContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          NextResponse.json(
+            { error: getValidationErrorMessage(error, 'Invalid request body') },
+            { status: 400 }
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
+
+    if (parsed.data.body.name) {
+      organizationName = parsed.data.body.name
     }
-    if (parsedBody.data.name) {
-      organizationName = parsedBody.data.name
-    }
-    if (parsedBody.data.slug) {
-      organizationSlug = parsedBody.data.slug
+    if (parsed.data.body.slug) {
+      organizationSlug = parsed.data.body.slug
     }
 
     const existingOrgMembership = await db

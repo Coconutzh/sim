@@ -2,11 +2,12 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { renderHelpConfirmationEmail } from '@/components/emails'
 import {
+  contactIntakeContract,
   getContactTopicLabel,
   mapContactTopicToHelpType,
   submitContactBodySchema,
 } from '@/lib/api/contracts/contact'
-import { getValidationErrorMessage } from '@/lib/api/server'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { env } from '@/lib/core/config/env'
 import type { TokenBucketConfig } from '@/lib/core/rate-limiter'
 import { RateLimiter } from '@/lib/core/rate-limiter'
@@ -58,8 +59,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
-    const body = await req.json()
-    const bodyRecord = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+    const parsed = await parseRequest(contactIntakeContract, req, {})
+    if (!parsed.success) return parsed.response
+    const bodyRecord = parsed.data.body
 
     const honeypot = bodyRecord.website
     if (typeof honeypot === 'string' && honeypot.trim().length > 0) {
@@ -120,7 +122,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       }
     }
 
-    const validationResult = submitContactBodySchema.safeParse(body)
+    const validationResult = submitContactBodySchema.safeParse(bodyRecord)
 
     if (!validationResult.success) {
       logger.warn(`[${requestId}] Invalid contact request data`, {

@@ -71,6 +71,14 @@ export const submitContactBodySchema = contactRequestSchema.extend({
   captchaUnavailable: z.boolean().optional(),
 })
 
+export const contactIntakeBodySchema = z
+  .object({
+    website: z.unknown().optional(),
+    captchaToken: z.unknown().optional(),
+    captchaUnavailable: z.unknown().optional(),
+  })
+  .passthrough()
+
 export function getContactTopicLabel(value: ContactRequestPayload['topic']): string {
   return CONTACT_TOPIC_OPTIONS.find((option) => option.value === value)?.label ?? value
 }
@@ -105,4 +113,15 @@ export const submitContactContract = defineRouteContract({
   },
 })
 
+export const contactIntakeContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/contact',
+  body: contactIntakeBodySchema,
+  response: {
+    mode: 'json',
+    schema: contactResponseSchema,
+  },
+})
+
 export type SubmitContactBody = ContractBodyInput<typeof submitContactContract>
+export type ContactIntakeBody = ContractBodyInput<typeof contactIntakeContract>
