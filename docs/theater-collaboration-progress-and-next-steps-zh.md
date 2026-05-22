@@ -1,8 +1,8 @@
-# 剧场项目多团队画布协作系统进度与后续目标
+﻿# 剧场项目多团队画布协作系统进度与后续目标
 
-> 更新时间：2026-05-22  
-> 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`  
-> 当前推进阶段：Phase 6「跨画布节点复制」后端闭环已完成本轮加固，下一步继续 Phase 6 前端入口与 Phase 7「分屏工作台」
+> 更新时间：2026-05-23
+> 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
+> 当前推进阶段：Phase 7「分屏工作台」已在原 `/workspace` 外壳下启动首个可用切片，下一步继续完善目标高亮、双 pane 状态隔离和发布/展示联动
 
 ## 1. 当前结论
 
@@ -321,6 +321,31 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 - 目标画布新节点高亮仍需等分屏/目标 pane 打开后按 `mappings.blockIds` 接入；当前切片先完成右键入口和目标缓存刷新。
 - Phase 7 分屏工作台需要复用这条 API，而不是再新增一套复制逻辑。
+
+### 5.7 Phase 7 原主界面分屏工作台首个切片
+
+本轮按“保留原 `/workspace/[workspaceId]` shell”的方向继续推进，不再回到独立 `/workbench` 外壳：
+
+- 新增 `/workspace/[workspaceId]/split`，仍然挂在原 `layout.tsx`、原 Sidebar、原 Provider 树下面。
+- Sidebar 的 `Canvases` 分组新增 `Split view`，用户在深层页面可以直接进入个人草稿 / 团队画布的并排工作区。
+- 分屏页左侧默认加载当前 active workgroup 的个人草稿画布，右侧默认加载团队画布；每侧可以独立选择当前画布内的 workflow。
+- 分屏页复用已有 `PreviewWorkflow` 做只读画布预览，避免在第一切片里复制一套完整 ReactFlow 编辑器状态。
+- 用户点击任一 pane 的节点后，可以调用既有 `useCopySelection` / `POST /api/workflows/[id]/copy-selection` 把选中节点复制到另一侧画布；复制后使用 `mappings.blockIds` 选中新生成的目标节点。
+- 移动端不强制左右双栏，当前通过响应式 grid 降级为上下两 pane。
+
+本轮同时继续收敛原主界面的画布语义：
+
+- Workspace 下拉进一步变成个人草稿画布切换器，移除其中的邀请成员入口，避免把团队管理操作混进个人草稿切换语义。
+- Sidebar `Canvases` 分组增加团队管理员入口 `Team management`，继续复用原设置页承接邀请/成员管理。
+- `Published workflows` 从普通 Workspace 分组移除，展示类入口统一收敛到 `Showcase canvas`。
+- 团队画布创建从“成员 GET 时懒创建”改为“管理员 POST 初始化”；普通成员只能读取已有团队画布。
+- `createWorkgroup` 和管理员初始化团队画布都会创建默认 workflow，避免团队画布没有节点图导致复制目标不可用。
+
+仍需继续：
+
+- 当前分屏第一切片是“只读预览 + 显式复制”，还不是左右两侧完整可编辑 ReactFlow；后续如果要做真正双编辑器，需要拆分 workflow store / selection / viewport 为 pane-scoped 状态。
+- 当前复制选择以单节点点击为主，完整多选、边选择、框选和右侧目标高亮动画仍需继续做。
+- 团队管理员入口目前复用 `settings/organization`，后续 Phase 9 应补团队专属成员/发布/Agent Skill 管理页。
 
 ## 6. 建议继续推进目标
 

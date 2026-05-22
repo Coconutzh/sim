@@ -385,6 +385,12 @@ export async function createWorkgroup(params: {
       updatedAt: now,
     })
   })
+  await createDefaultWorkflowForWorkspace({
+    userId: params.actorUserId,
+    workspaceId: teamWorkspaceId,
+    name: 'Team canvas',
+    description: `Default node graph for ${params.name}`,
+  })
 
   return { id: workgroupId, name: params.name, disciplineId: params.disciplineId, teamWorkspaceId }
 }
@@ -711,6 +717,26 @@ export async function getTeamWorkspace(params: { userId: string; workgroupId: st
       .limit(1)
     if (ws) return workspaceDto(ws)
   }
+  throw new Error('Team workspace not initialized')
+}
+
+export async function createTeamWorkspace(params: { userId: string; workgroupId: string }) {
+  await assertWorkgroupAdmin(params.userId, params.workgroupId)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
+  if (!wg) throw new Error('Workgroup not found')
+  if (wg.teamWorkspaceId) {
+    const [existingWorkspace] = await db
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, wg.teamWorkspaceId))
+      .limit(1)
+    if (existingWorkspace)
+      return { workspace: workspaceDto(existingWorkspace), defaultWorkflowId: null }
+  }
   const ws = await insertWorkspace({
     name: `${wg.name} 团队画布`,
     ownerId: params.userId,
@@ -735,7 +761,13 @@ export async function getTeamWorkspace(params: { userId: string; workgroupId: st
       })
     )
   )
-  return workspaceDto(ws)
+  const defaultWorkflowId = await createDefaultWorkflowForWorkspace({
+    userId: params.userId,
+    workspaceId: ws.id,
+    name: 'Team canvas',
+    description: `Default node graph for ${wg.name}`,
+  })
+  return { workspace: workspaceDto(ws), defaultWorkflowId }
 }
 
 export async function getNextPublicationVersionNumber(sourceWorkflowId: string): Promise<number> {

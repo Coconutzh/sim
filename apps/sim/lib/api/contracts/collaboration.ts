@@ -392,6 +392,19 @@ export const getTeamWorkspaceContract = defineRouteContract({
   response: { mode: 'json', schema: z.object({ workspace: canvasWorkspaceSchema }) },
 })
 
+export const createTeamWorkspaceContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/team-workspace',
+  params: workgroupParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      workspace: canvasWorkspaceSchema,
+      defaultWorkflowId: workflowIdSchema.nullable(),
+    }),
+  },
+})
+
 export const publishWorkflowVersionContract = defineRouteContract({
   method: 'POST',
   path: '/api/workflows/[id]/publish',

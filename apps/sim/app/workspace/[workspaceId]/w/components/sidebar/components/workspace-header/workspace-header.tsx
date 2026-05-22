@@ -1,16 +1,14 @@
 'use client'
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { MoreHorizontal, Search } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import {
   Button,
   ChevronDown,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
   Modal,
@@ -20,7 +18,6 @@ import {
   ModalHeader,
   Plus,
   Skeleton,
-  UserPlus,
 } from '@/components/emcn'
 import { getDisplayPlanName, isFree } from '@/lib/billing/plan-helpers'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
@@ -28,10 +25,8 @@ import { cn } from '@/lib/core/utils/cn'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
-import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 import type { Workspace, WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
-import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 const logger = createLogger('WorkspaceHeader')
@@ -110,9 +105,7 @@ function WorkspaceHeaderImpl({
   sessionUserId,
   isCollapsed = false,
 }: WorkspaceHeaderProps) {
-  const router = useRouter()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null)
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
@@ -152,7 +145,6 @@ function WorkspaceHeaderImpl({
     setIsMounted(true)
   }, [])
 
-  const { isInvitationsDisabled } = usePermissionConfig()
   const { data: subscriptionResponse } = useSubscriptionData({ enabled: isBillingEnabled })
   const { navigateToSettings } = useSettingsNavigation()
   const currentPlan = subscriptionResponse?.data?.plan
@@ -166,30 +158,6 @@ function WorkspaceHeaderImpl({
   const isFreePlan = showPlanInfo && isFree(currentPlan)
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId) || null
   const canCreateWorkspace = workspaceCreationPolicy?.canCreate === true || canCreatePersonalCanvas
-  const inviteMembersEnabled = activeWorkspaceFull?.inviteMembersEnabled ?? false
-  const inviteUpgradeRequired = activeWorkspaceFull?.inviteUpgradeRequired ?? false
-  const inviteDisabledReason = inviteMembersEnabled
-    ? null
-    : (activeWorkspaceFull?.inviteDisabledReason ?? null)
-  const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
-
-  const handleInviteClick = useCallback(() => {
-    if (isInvitationsDisabled) return
-    if (!inviteMembersEnabled && inviteUpgradeRequired && workspaceId) {
-      router.push(`/workspace/${workspaceId}/settings/subscription`)
-      return
-    }
-    if (!inviteMembersEnabled) return
-    setIsInviteModalOpen(true)
-  }, [isInvitationsDisabled, inviteMembersEnabled, inviteUpgradeRequired, workspaceId, router])
-
-  useEffect(() => {
-    const handleOpenInvite = () => {
-      handleInviteClick()
-    }
-    window.addEventListener('open-invite-modal', handleOpenInvite)
-    return () => window.removeEventListener('open-invite-modal', handleOpenInvite)
-  }, [handleInviteClick])
 
   /**
    * Save and exit edit mode when popover closes
@@ -662,25 +630,6 @@ function WorkspaceHeaderImpl({
                       </button>
                     </div>
                   )}
-
-                  {!isInvitationsDisabled && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <button
-                        type='button'
-                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
-                        onClick={() => {
-                          setIsWorkspaceMenuOpen(false)
-                          handleInviteClick()
-                        }}
-                        disabled={inviteButtonDisabled}
-                        title={inviteDisabledReason ?? undefined}
-                      >
-                        <UserPlus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
-                        Invite canvas members
-                      </button>
-                    </>
-                  )}
                 </>
               )}
             </DropdownMenuContent>
@@ -772,14 +721,6 @@ function WorkspaceHeaderImpl({
         />
       )}
 
-      {/* Invite Modal */}
-      <InviteModal
-        open={isInviteModalOpen}
-        onOpenChange={setIsInviteModalOpen}
-        workspaceName={activeWorkspace?.name || 'Canvas'}
-        inviteDisabledReason={inviteDisabledReason}
-        organizationId={activeWorkspaceFull?.organizationId ?? null}
-      />
       {/* Delete Confirmation Modal */}
       <DeleteModal
         isOpen={isDeleteModalOpen}

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { ArrowRight, Compass, PenLine, Users } from 'lucide-react'
 import Link from 'next/link'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
 import { PanelLeft } from '@/components/emcn/icons'
@@ -20,6 +20,7 @@ import {
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import {
+  useCreateTeamWorkspace,
   useMyWorkgroups,
   usePersonalWorkspace,
   useTeamWorkspace,
@@ -43,6 +44,7 @@ interface CanvasEntryCardProps {
   href: string
   icon: ComponentType<{ className?: string }>
   meta: string
+  onClick?: () => void
   title: string
 }
 
@@ -53,6 +55,7 @@ function CanvasEntryCard({
   href,
   icon: Icon,
   meta,
+  onClick,
   title,
 }: CanvasEntryCardProps) {
   const content = (
@@ -84,6 +87,18 @@ function CanvasEntryCard({
     )
   }
 
+  if (onClick) {
+    return (
+      <button
+        type='button'
+        onClick={onClick}
+        className='group rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4 text-left transition-colors hover-hover:bg-[var(--surface-hover)]'
+      >
+        {content}
+      </button>
+    )
+  }
+
   return (
     <Link
       href={href}
@@ -96,6 +111,7 @@ function CanvasEntryCard({
 
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
   const { data: session } = useSession()
@@ -108,8 +124,11 @@ export function Home({ chatId }: HomeProps = {}) {
   const activeWorkgroupId = activeWorkgroup?.id
   const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
   const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
+  const { mutateAsync: createTeamWorkspace, isPending: isCreatingTeamWorkspace } =
+    useCreateTeamWorkspace()
   const personalWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+  const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
   posthogRef.current = posthog
@@ -357,6 +376,16 @@ export function Home({ chatId }: HomeProps = {}) {
     handleResourceEvent()
   }
 
+  const handleInitializeTeamCanvas = useCallback(async () => {
+    if (!activeWorkgroupId || isCreatingTeamWorkspace) return
+    const result = await createTeamWorkspace({ workgroupId: activeWorkgroupId })
+    router.push(
+      result.defaultWorkflowId
+        ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
+        : `/workspace/${result.workspace.id}/home`
+    )
+  }, [activeWorkgroupId, createTeamWorkspace, isCreatingTeamWorkspace, router])
+
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
   const draftScopeKey = `${workspaceId}:${chatId ?? 'new'}`
@@ -394,12 +423,21 @@ export function Home({ chatId }: HomeProps = {}) {
             />
             <CanvasEntryCard
               description='Shared work area for your active workgroup. Team members collaborate here.'
-              disabled={!teamWorkspaceId}
+              disabled={!teamWorkspaceId && !isActiveWorkgroupAdmin}
               eyebrow='Team'
               href={teamWorkspaceId ? `/workspace/${teamWorkspaceId}/home` : '#'}
               icon={Users}
-              meta={activeWorkgroup ? activeWorkgroup.name : 'No active team'}
-              title='Team canvas'
+              meta={
+                teamWorkspaceId
+                  ? activeWorkgroup?.name || 'Team canvas'
+                  : isActiveWorkgroupAdmin
+                    ? 'Admin can initialize'
+                    : 'Waiting for team admin'
+              }
+              onClick={
+                !teamWorkspaceId && isActiveWorkgroupAdmin ? handleInitializeTeamCanvas : undefined
+              }
+              title={teamWorkspaceId ? 'Team canvas' : 'Initialize team canvas'}
             />
             <CanvasEntryCard
               description='Read-only published versions shared with your team or organization.'

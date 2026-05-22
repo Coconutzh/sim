@@ -35,6 +35,7 @@ import {
 import {
   BookOpen,
   Calendar,
+  Columns2,
   Database,
   File,
   HelpCircle,
@@ -44,6 +45,7 @@ import {
   Settings,
   Sim,
   Table,
+  UserPlus,
   Wordmark,
 } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
@@ -92,6 +94,7 @@ import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import {
   useCreatePersonalWorkspace,
+  useCreateTeamWorkspace,
   useMyWorkgroups,
   usePersonalWorkspace,
   useTeamWorkspace,
@@ -487,8 +490,11 @@ export const Sidebar = memo(function Sidebar() {
   const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
   const { mutateAsync: createPersonalWorkspace, isPending: isCreatingPersonalWorkspace } =
     useCreatePersonalWorkspace()
+  const { mutateAsync: createTeamWorkspace, isPending: isCreatingTeamWorkspace } =
+    useCreateTeamWorkspace()
   const personalCanvasWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
   const teamCanvasWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+  const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
 
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
   const personalDraftWorkspaces = useMemo(() => {
@@ -735,6 +741,24 @@ export const Sidebar = memo(function Sidebar() {
     [workspaces, workspaceId]
   )
 
+  const handleInitializeTeamCanvas = useCallback(async () => {
+    if (!activeWorkgroupId || isCreatingTeamWorkspace) return
+    const result = await createTeamWorkspace({ workgroupId: activeWorkgroupId })
+    await switchWorkspace({
+      ...result.workspace,
+      role: 'admin',
+      permissions: 'admin',
+      inviteMembersEnabled: true,
+      inviteDisabledReason: null,
+      inviteUpgradeRequired: false,
+    })
+    router.push(
+      result.defaultWorkflowId
+        ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
+        : `/workspace/${result.workspace.id}/home`
+    )
+  }, [activeWorkgroupId, createTeamWorkspace, isCreatingTeamWorkspace, router, switchWorkspace])
+
   const topNavItems = useMemo(
     () => [
       {
@@ -753,8 +777,8 @@ export const Sidebar = memo(function Sidebar() {
     [workspaceId, openSearchModal]
   )
 
-  const canvasNavItems = useMemo(
-    () => [
+  const canvasNavItems = useMemo(() => {
+    const items: SidebarNavItemData[] = [
       {
         id: 'personal-canvas',
         label: 'Personal draft',
@@ -763,9 +787,15 @@ export const Sidebar = memo(function Sidebar() {
       },
       {
         id: 'team-canvas',
-        label: 'Team canvas',
+        label: teamCanvasWorkspaceId
+          ? 'Team canvas'
+          : isActiveWorkgroupAdmin
+            ? 'Initialize team canvas'
+            : 'Team canvas',
         icon: Users,
         href: teamCanvasWorkspaceId ? `/workspace/${teamCanvasWorkspaceId}/home` : undefined,
+        onClick:
+          !teamCanvasWorkspaceId && isActiveWorkgroupAdmin ? handleInitializeTeamCanvas : undefined,
       },
       {
         id: 'showcase-canvas',
@@ -773,9 +803,31 @@ export const Sidebar = memo(function Sidebar() {
         icon: Compass,
         href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/showcase`,
       },
-    ],
-    [personalCanvasWorkspaceId, teamCanvasWorkspaceId, workspaceId]
-  )
+      {
+        id: 'split-view',
+        label: 'Split view',
+        icon: Columns2,
+        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/split`,
+      },
+    ]
+
+    if (isActiveWorkgroupAdmin) {
+      items.push({
+        id: 'team-management',
+        label: 'Team management',
+        icon: UserPlus,
+        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/settings/organization`,
+      })
+    }
+
+    return items
+  }, [
+    handleInitializeTeamCanvas,
+    isActiveWorkgroupAdmin,
+    personalCanvasWorkspaceId,
+    teamCanvasWorkspaceId,
+    workspaceId,
+  ])
 
   const workspaceNavItems = useMemo(
     () =>
@@ -812,12 +864,6 @@ export const Sidebar = memo(function Sidebar() {
           label: 'Logs',
           icon: Library,
           href: `/workspace/${workspaceId}/logs`,
-        },
-        {
-          id: 'published',
-          label: 'Published workflows',
-          icon: Compass,
-          href: `/workspace/${workspaceId}/published`,
         },
       ].filter((item) => !item.hidden),
     [

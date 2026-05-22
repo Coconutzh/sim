@@ -176,10 +176,12 @@ import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   assertWorkgroupAdmin,
   createPersonalWorkspace,
+  createTeamWorkspace,
   getNextPublicationVersionNumber,
   getOrCreatePersonalWorkspace,
   getPublication,
   getPublicationTree,
+  getTeamWorkspace,
   updatePublicationLifecycleStatus,
   updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
@@ -361,6 +363,84 @@ describe('collaboration service', () => {
       workspaceMode: 'personal',
     })
 
+    expect(mockDb.transaction).toHaveBeenCalled()
+    expect(saveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'generated-id',
+      { blocks: {}, edges: [] },
+      expect.anything()
+    )
+  })
+
+  it('does not let ordinary members lazily create a missing team canvas', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting', teamWorkspaceId: null }]
+    )
+
+    await expect(
+      getTeamWorkspace({ userId: 'member-1', workgroupId: 'workgroup-1' })
+    ).rejects.toThrow('Team workspace not initialized')
+
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it('lets a workgroup admin initialize a team canvas with a default workflow', async () => {
+    const now = new Date('2026-05-23T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting', teamWorkspaceId: null }],
+      [
+        {
+          id: 'generated-id',
+          name: 'Lighting 团队画布',
+          color: '#33C482',
+          logoUrl: null,
+          ownerId: 'admin-1',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+          workspaceMode: 'organization',
+          billedAccountUserId: 'admin-1',
+          allowPersonalApiKeys: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          userId: 'admin-1',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+    )
+
+    await expect(
+      createTeamWorkspace({ userId: 'admin-1', workgroupId: 'workgroup-1' })
+    ).resolves.toMatchObject({
+      workspace: {
+        id: 'generated-id',
+        name: 'Lighting 团队画布',
+        workspaceMode: 'organization',
+      },
+      defaultWorkflowId: 'generated-id',
+    })
+
+    expect(mockDb.update).toHaveBeenCalled()
     expect(mockDb.transaction).toHaveBeenCalled()
     expect(saveWorkflowToNormalizedTables).toHaveBeenCalledWith(
       'generated-id',

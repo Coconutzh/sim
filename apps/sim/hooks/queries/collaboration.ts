@@ -8,6 +8,7 @@ import {
   copySelectionContract,
   createOrganizationWorkgroupContract,
   createPersonalWorkspaceContract,
+  createTeamWorkspaceContract,
   getCopilotAgentProfileContract,
   getPersonalWorkspaceContract,
   getPublicationContract,
@@ -272,6 +273,42 @@ export function useTeamWorkspace(workgroupId?: string) {
       }),
     enabled: Boolean(workgroupId),
     staleTime: 30 * 1000,
+  })
+}
+
+export function useCreateTeamWorkspace() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string }) =>
+      requestJson(createTeamWorkspaceContract, {
+        params: { workgroupId: variables.workgroupId },
+      }),
+    onSuccess: (data, variables) => {
+      const newWorkspace: Workspace = {
+        ...data.workspace,
+        canvasScope: 'team',
+        isInternalWorkspace: true,
+        role: 'admin',
+        permissions: 'admin',
+        inviteMembersEnabled: true,
+        inviteDisabledReason: null,
+        inviteUpgradeRequired: false,
+      }
+      queryClient.setQueryData<WorkspacesResponse>(workspaceKeys.list('active'), (previous) => {
+        if (!previous) {
+          return { workspaces: [newWorkspace], lastActiveWorkspaceId: null, creationPolicy: null }
+        }
+        if (previous.workspaces.some((workspace) => workspace.id === newWorkspace.id)) {
+          return previous
+        }
+        return { ...previous, workspaces: [newWorkspace, ...previous.workspaces] }
+      })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.teamWorkspace(variables.workgroupId),
+      })
+    },
   })
 }
 
