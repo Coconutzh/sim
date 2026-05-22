@@ -23,8 +23,14 @@ export interface ActiveWorkflowContext {
 }
 
 export async function getActiveWorkflowContext(
-  workflowId: string
+  workflowId: string,
+  options: { includeArchived?: boolean } = {}
 ): Promise<ActiveWorkflowContext | null> {
+  const conditions = [eq(workflow.id, workflowId), isNull(workspace.archivedAt)]
+  if (!options.includeArchived) {
+    conditions.push(isNull(workflow.archivedAt))
+  }
+
   const rows = await db
     .select({
       workflow,
@@ -35,9 +41,7 @@ export async function getActiveWorkflowContext(
     })
     .from(workflow)
     .innerJoin(workspace, eq(workflow.workspaceId, workspace.id))
-    .where(
-      and(eq(workflow.id, workflowId), isNull(workflow.archivedAt), isNull(workspace.archivedAt))
-    )
+    .where(and(...conditions))
     .limit(1)
 
   if (rows.length === 0) {
@@ -393,10 +397,11 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
   workflowId: string
   userId: string
   action?: WorkflowWorkspaceAction
+  includeArchived?: boolean
 }): Promise<WorkflowWorkspaceAuthorizationResult> {
-  const { workflowId, userId, action = 'read' } = params
+  const { workflowId, userId, action = 'read', includeArchived = false } = params
 
-  const activeContext = await getActiveWorkflowContext(workflowId)
+  const activeContext = await getActiveWorkflowContext(workflowId, { includeArchived })
   if (!activeContext) {
     return {
       allowed: false,

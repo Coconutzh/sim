@@ -1,6 +1,11 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
-import { assertFolderMutable, FolderLockedError, WorkflowLockedError } from '@sim/workflow-authz'
+import {
+  assertFolderMutable,
+  authorizeWorkflowByWorkspacePermission,
+  FolderLockedError,
+  WorkflowLockedError,
+} from '@sim/workflow-authz'
 import { type NextRequest, NextResponse } from 'next/server'
 import { restoreWorkflowContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
@@ -9,8 +14,6 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { restoreWorkflow } from '@/lib/workflows/lifecycle'
-import { getWorkflowById } from '@/lib/workflows/utils'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreWorkflowAPI')
 
@@ -29,27 +32,21 @@ export const POST = withRouteHandler(
       if (!parsed.success) return parsed.response
       workflowId = parsed.data.params.id
 
-      const workflowData = await getWorkflowById(workflowId, { includeArchived: true })
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId,
+        userId: auth.userId,
+        action: 'write',
+        includeArchived: true,
+      })
+      const workflowData = authorization.workflow
       if (!workflowData) {
         return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
       }
 
-      if (workflowData.workspaceId) {
-        const access = await checkWorkspaceAccess(workflowData.workspaceId, auth.userId)
-        if (!access.exists || !access.hasAccess) {
-          return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-        }
-
-        const permission = await getUserEntityPermissions(
-          auth.userId,
-          'workspace',
-          workflowData.workspaceId
-        )
-        if (permission !== 'admin' && permission !== 'write') {
-          return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
-        }
-      } else if (workflowData.userId !== auth.userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      if (!authorization.allowed) {
+        const status = authorization.status || 403
+        const message = status === 404 ? 'Workflow not found' : authorization.message || 'Forbidden'
+        return NextResponse.json({ error: message }, { status })
       }
 
       if (workflowData.locked) {

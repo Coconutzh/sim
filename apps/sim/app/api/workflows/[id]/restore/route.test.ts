@@ -1,35 +1,33 @@
 /**
  * @vitest-environment node
  */
-import {
-  createMockRequest,
-  hybridAuthMockFns,
-  permissionsMock,
-  permissionsMockFns,
-} from '@sim/testing'
+import { createMockRequest, hybridAuthMockFns } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRestoreWorkflow, mockGetWorkflowById, mockParseRequest } = vi.hoisted(() => ({
+const {
+  mockAssertFolderMutable,
+  mockAuthorizeWorkflowByWorkspacePermission,
+  mockRestoreWorkflow,
+  mockParseRequest,
+} = vi.hoisted(() => ({
+  mockAssertFolderMutable: vi.fn(),
+  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockRestoreWorkflow: vi.fn(),
-  mockGetWorkflowById: vi.fn(),
   mockParseRequest: vi.fn(async (_contract, _request, context) => ({
     success: true,
     data: { params: await context.params },
   })),
 }))
 
-vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 vi.mock('@/lib/workflows/lifecycle', () => ({
   restoreWorkflow: mockRestoreWorkflow,
-}))
-vi.mock('@/lib/workflows/utils', () => ({
-  getWorkflowById: mockGetWorkflowById,
 }))
 vi.mock('@/lib/api/server', () => ({
   parseRequest: mockParseRequest,
 }))
 vi.mock('@sim/workflow-authz', () => ({
-  assertFolderMutable: vi.fn(),
+  assertFolderMutable: mockAssertFolderMutable,
+  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
   FolderLockedError: class FolderLockedError extends Error {
     status = 423
   },
@@ -53,20 +51,19 @@ describe('POST /api/workflows/[id]/restore', () => {
       userName: 'User',
       userEmail: 'user@example.com',
     })
-    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
-      exists: true,
-      hasAccess: true,
-      canWrite: true,
-      workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
-    })
-    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
-    mockGetWorkflowById.mockResolvedValue({
-      id: 'wf-1',
-      name: 'Workflow',
-      userId: 'user-1',
-      folderId: null,
-      locked: false,
-      workspaceId: 'ws-1',
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      accessSource: 'workspace',
+      workspacePermission: 'write',
+      workflow: {
+        id: 'wf-1',
+        name: 'Workflow',
+        userId: 'user-1',
+        folderId: null,
+        locked: false,
+        workspaceId: 'ws-1',
+      },
     })
     mockRestoreWorkflow.mockResolvedValue({ restored: true })
   })
@@ -79,7 +76,12 @@ describe('POST /api/workflows/[id]/restore', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-1', 'user-1')
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      userId: 'user-1',
+      action: 'write',
+      includeArchived: true,
+    })
   })
 
   it('authenticates before validating route params', async () => {
@@ -98,11 +100,20 @@ describe('POST /api/workflows/[id]/restore', () => {
   })
 
   it('returns 404 when stale personal rows no longer grant restore visibility', async () => {
-    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
-      exists: true,
-      hasAccess: false,
-      canWrite: false,
-      workspace: { id: 'ws-1', ownerId: 'owner-2', workspaceMode: 'personal' },
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: false,
+      status: 404,
+      message: 'Workflow not found',
+      accessSource: null,
+      workspacePermission: null,
+      workflow: {
+        id: 'wf-1',
+        name: 'Workflow',
+        userId: 'owner-2',
+        folderId: null,
+        locked: false,
+        workspaceId: 'ws-1',
+      },
     })
 
     const response = await POST(createMockRequest('POST'), {
@@ -112,6 +123,6 @@ describe('POST /api/workflows/[id]/restore', () => {
 
     expect(response.status).toBe(404)
     expect(data).toEqual({ error: 'Workflow not found' })
-    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    expect(mockRestoreWorkflow).not.toHaveBeenCalled()
   })
 })
