@@ -4,10 +4,7 @@ import type { NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { createMcpErrorResponse } from '@/lib/mcp/utils'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('McpAuthMiddleware')
 
@@ -38,6 +35,8 @@ interface AuthFailure {
 }
 
 type AuthValidationResult = AuthResult | AuthFailure
+
+const parsedRequestBodies = new WeakMap<NextRequest, unknown>()
 
 /**
  * Validates MCP authentication and authorization
@@ -71,9 +70,16 @@ async function validateMcpAuth(
       try {
         const contentType = request.headers.get('content-type')
         if (contentType?.includes('application/json')) {
-          const body = await request.json()
-          workspaceId = body.workspaceId
-          ;(request as any)._parsedBody = body
+          const body = await request.clone().json()
+          parsedRequestBodies.set(request, body)
+          if (
+            typeof body === 'object' &&
+            body !== null &&
+            'workspaceId' in body &&
+            typeof body.workspaceId === 'string'
+          ) {
+            workspaceId = body.workspaceId
+          }
         }
       } catch {}
     }
@@ -218,6 +224,6 @@ export function withMcpAuth<TParams = Record<string, string>>(
 /**
  * Utility to get parsed request body
  */
-export function getParsedBody(request: NextRequest): any {
-  return (request as any)._parsedBody
+export function getParsedBody(request: NextRequest): unknown {
+  return parsedRequestBodies.get(request)
 }

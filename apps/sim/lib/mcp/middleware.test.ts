@@ -15,7 +15,7 @@ vi.mock('@/lib/auth/hybrid', () => ({
 
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
-import { withMcpAuth } from '@/lib/mcp/middleware'
+import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
 
 function createHandler() {
   return withMcpAuth('read')(
@@ -81,6 +81,37 @@ describe('withMcpAuth', () => {
     await expect(response.json()).resolves.toEqual({
       success: false,
       error: 'Insufficient permissions',
+    })
+  })
+
+  it('can authorize from JSON body without consuming it for the route handler', async () => {
+    const handler = withMcpAuth('read')(
+      async (request: NextRequest, context: { workspaceId: string; userId: string }) => {
+        const body = await request.json()
+        return NextResponse.json({
+          body,
+          cachedBody: getParsedBody(request),
+          workspaceId: context.workspaceId,
+          userId: context.userId,
+        })
+      }
+    )
+
+    const response = await handler(
+      new NextRequest('http://localhost:3000/api/mcp/servers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspaceId: 'ws-1', name: 'Server' }),
+      }),
+      { params: Promise.resolve({}) }
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      body: { workspaceId: 'ws-1', name: 'Server' },
+      cachedBody: { workspaceId: 'ws-1', name: 'Server' },
+      workspaceId: 'ws-1',
+      userId: 'user-1',
     })
   })
 })

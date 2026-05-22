@@ -5,7 +5,8 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { updateMcpServerBodySchema } from '@/lib/api/contracts/mcp'
+import { updateMcpServerContract } from '@/lib/api/contracts/mcp'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   McpDnsResolutionError,
@@ -14,7 +15,7 @@ import {
   validateMcpDomain,
   validateMcpServerSsrf,
 } from '@/lib/mcp/domain-check'
-import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpService } from '@/lib/mcp/service'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 
@@ -33,16 +34,22 @@ export const PATCH = withRouteHandler(
       { params }
     ) => {
       try {
-        const { id: serverId } = await params
-
-        const rawBody = getParsedBody(request) ?? (await request.json())
-        const parsedBody = updateMcpServerBodySchema.safeParse(rawBody)
-
-        if (!parsedBody.success) {
-          return createMcpErrorResponse(parsedBody.error, 'Invalid request format', 400)
-        }
-
-        const body = parsedBody.data
+        const parsed = await parseRequest(
+          updateMcpServerContract,
+          request,
+          { params },
+          {
+            validationErrorResponse: (error) =>
+              createMcpErrorResponse(error, 'Invalid request format', 400),
+            invalidJsonResponse: () =>
+              createMcpErrorResponse(new Error('Invalid JSON body'), 'Invalid request format', 400),
+          }
+        )
+        if (!parsed.success) return parsed.response
+        const {
+          params: { id: serverId },
+          body,
+        } = parsed.data
 
         logger.info(
           `[${requestId}] Updating MCP server: ${serverId} in workspace: ${workspaceId}`,
