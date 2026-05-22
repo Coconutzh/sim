@@ -96,6 +96,20 @@ describe('/api/workspaces/[id]/api-keys', () => {
     expect(mockGetApiKeyDisplayFormat).toHaveBeenCalledWith('encrypted-key')
   })
 
+  it('does not list workspace API keys for read-only access', async () => {
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Forbidden' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockGetApiKeyDisplayFormat).not.toHaveBeenCalled()
+  })
+
   it('authenticates list requests before validating route params', async () => {
     authMockFns.mockGetSession.mockResolvedValue(null)
 

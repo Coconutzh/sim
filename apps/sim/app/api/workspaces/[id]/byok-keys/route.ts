@@ -53,8 +53,11 @@ export const GET = withRouteHandler(
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (!permission) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      if (permission !== 'admin') {
+        return NextResponse.json(
+          { error: 'Only workspace admins can view BYOK keys' },
+          { status: 403 }
+        )
       }
 
       const byokKeys = await db

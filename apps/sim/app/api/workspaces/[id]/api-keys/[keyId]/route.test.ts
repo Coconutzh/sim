@@ -103,6 +103,20 @@ describe('/api/workspaces/[id]/api-keys/[keyId]', () => {
     expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
   })
 
+  it('rejects key updates for read-only access before key lookup', async () => {
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const response = await PUT(createMockRequest('PUT', { name: 'New Name' }), {
+      params: Promise.resolve({ id: 'ws-owner', keyId: 'key-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Forbidden' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
   it('authenticates update requests before validating route params or body', async () => {
     authMockFns.mockGetSession.mockResolvedValue(null)
 

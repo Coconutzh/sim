@@ -96,6 +96,20 @@ describe('/api/workspaces/[id]/byok-keys', () => {
     expect(mockDecryptSecret).toHaveBeenCalledWith('encrypted-key')
   })
 
+  it('does not list BYOK key metadata for read-only access', async () => {
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Only workspace admins can view BYOK keys' })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockDecryptSecret).not.toHaveBeenCalled()
+  })
+
   it('authenticates list requests before validating route params', async () => {
     authMockFns.mockGetSession.mockResolvedValue(null)
 
