@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Crown, Mail, RotateCcw, Shield, UserMinus, Users, X } from 'lucide-react'
+import { Archive, Crown, EyeOff, Mail, RotateCcw, Shield, UserMinus, Users, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Input, Loader } from '@/components/emcn'
 import {
@@ -9,7 +9,9 @@ import {
   useCreateTeamWorkspace,
   useMyWorkgroups,
   useRemoveWorkgroupMember,
+  useShowcasePublications,
   useTeamWorkspace,
+  useUpdatePublicationLifecycle,
   useUpdateWorkgroupMember,
   useWorkgroupMembers,
 } from '@/hooks/queries/collaboration'
@@ -24,6 +26,31 @@ type WorkgroupRole = 'admin' | 'member'
 
 function roleLabel(role: WorkgroupRole) {
   return role === 'admin' ? 'Admin' : 'Member'
+}
+
+function formatPublicationDate(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatPublicationStatus(status: string) {
+  switch (status) {
+    case 'published':
+      return 'Published'
+    case 'superseded':
+      return 'Superseded'
+    case 'archived':
+      return 'Archived'
+    case 'retracted':
+      return 'Retracted'
+    default:
+      return status
+  }
 }
 
 function readErrorMessage(error: unknown) {
@@ -50,6 +77,7 @@ export function WorkgroupTeamManagement() {
   const removeMember = useRemoveWorkgroupMember()
   const createTeamWorkspace = useCreateTeamWorkspace()
   const inviteMember = useInviteMember()
+  const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const cancelInvitation = useCancelWorkspaceInvitation()
   const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
@@ -58,11 +86,22 @@ export function WorkgroupTeamManagement() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const members = membersData?.members ?? []
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+  const publicationFilters = useMemo(
+    () =>
+      isAdmin && activeWorkgroupId ? { sourceWorkgroupId: activeWorkgroupId, limit: 8 } : undefined,
+    [activeWorkgroupId, isAdmin]
+  )
+  const { data: publicationsData, isLoading: isLoadingPublications } = useShowcasePublications(
+    isAdmin ? activeWorkgroupId : undefined,
+    publicationFilters
+  )
   const { data: pendingInvitations = [], isLoading: isLoadingPendingInvitations } =
     usePendingInvitations(isAdmin ? teamWorkspaceId : undefined)
+  const publications = publicationsData?.publications ?? []
   const isBusy =
     addMember.isPending ||
     inviteMember.isPending ||
+    updatePublicationLifecycle.isPending ||
     cancelInvitation.isPending ||
     resendInvitation.isPending ||
     updateMember.isPending ||
@@ -141,6 +180,22 @@ export function WorkgroupTeamManagement() {
         organizationId: activeWorkgroup?.organizationId,
       })
       setStatusMessage('Pending invitation canceled.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const handlePublicationLifecycle = async (
+    publicationVersionId: string,
+    action: 'archive' | 'retract'
+  ) => {
+    try {
+      await updatePublicationLifecycle.mutateAsync({
+        publicationVersionId,
+        action,
+        reason: `Updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
+      })
+      setStatusMessage(action === 'archive' ? 'Publication archived.' : 'Publication retracted.')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -388,6 +443,81 @@ export function WorkgroupTeamManagement() {
                 </div>
               ))
             )}
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Archive className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Team publications
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Review the latest showcase versions from this workgroup and manage their lifecycle.
+              </p>
+            </div>
+          </div>
+          <div className='divide-y divide-[var(--border)]'>
+            {isLoadingPublications ? (
+              <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                <Loader className='h-[14px] w-[14px]' animate />
+                Loading publications...
+              </div>
+            ) : publications.length === 0 ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                No showcase publications from this team yet.
+              </div>
+            ) : (
+              publications.map((publication) => (
+                <div
+                  key={publication.id}
+                  className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
+                >
+                  <div className='min-w-0'>
+                    <div className='flex min-w-0 items-center gap-2'>
+                      <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                        {publication.title}
+                      </span>
+                      <span className='shrink-0 rounded-[8px] border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]'>
+                        v{publication.versionNumber} · {formatPublicationStatus(publication.status)}
+                      </span>
+                    </div>
+                    <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                      {publication.description?.trim() || 'No description'} ·{' '}
+                      {formatPublicationDate(publication.publishedAt)}
+                    </div>
+                  </div>
+                  <Button
+                    variant='default'
+                    className='h-[32px]'
+                    onClick={() => void handlePublicationLifecycle(publication.id, 'archive')}
+                    disabled={isBusy}
+                  >
+                    <Archive className='mr-2 h-[14px] w-[14px]' />
+                    Archive
+                  </Button>
+                  <Button
+                    variant='default'
+                    className='h-[32px]'
+                    onClick={() => void handlePublicationLifecycle(publication.id, 'retract')}
+                    disabled={isBusy}
+                  >
+                    <EyeOff className='mr-2 h-[14px] w-[14px]' />
+                    Retract
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className='border-[var(--border)] border-t px-4 py-3'>
+            <Button
+              variant='default'
+              className='h-[32px]'
+              onClick={() => router.push(`/workspace/${workspaceId}/showcase`)}
+            >
+              Open showcase canvas
+            </Button>
           </div>
         </section>
 
