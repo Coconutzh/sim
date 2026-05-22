@@ -4,7 +4,11 @@ import { credentialSet, credentialSetMember, member, user } from '@sim/db/schema
 import { createLogger } from '@sim/logger'
 import { and, count, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateCredentialSetContract } from '@/lib/api/contracts/credential-sets'
+import {
+  deleteCredentialSetContract,
+  getCredentialSetContract,
+  updateCredentialSetContract,
+} from '@/lib/api/contracts/credential-sets'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { hasCredentialSetsAccess } from '@/lib/billing'
@@ -61,7 +65,7 @@ async function getCredentialSetWithAccess(credentialSetId: string, userId: strin
 }
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -77,7 +81,9 @@ export const GET = withRouteHandler(
       )
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(getCredentialSetContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
     const result = await getCredentialSetWithAccess(id, session.user.id)
 
     if (!result) {
@@ -105,7 +111,9 @@ export const PUT = withRouteHandler(
       )
     }
 
-    const { id } = await context.params
+    const parsed = await parseRequest(updateCredentialSetContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
 
     try {
       const result = await getCredentialSetWithAccess(id, session.user.id)
@@ -118,8 +126,6 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Admin or owner permissions required' }, { status: 403 })
       }
 
-      const parsed = await parseRequest(updateCredentialSetContract, req, context)
-      if (!parsed.success) return parsed.response
       const updates = parsed.data.body
 
       if (updates.name) {
@@ -185,7 +191,7 @@ export const PUT = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -201,7 +207,9 @@ export const DELETE = withRouteHandler(
       )
     }
 
-    const { id } = await params
+    const parsed = await parseRequest(deleteCredentialSetContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { id } = parsed.data.params
 
     try {
       const result = await getCredentialSetWithAccess(id, session.user.id)
