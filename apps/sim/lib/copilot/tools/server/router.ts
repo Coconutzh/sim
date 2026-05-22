@@ -112,6 +112,28 @@ function requiresWritePermission(toolName: string, action: string | undefined): 
   return Boolean(action && writeActions.includes(action))
 }
 
+function getToolAction(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return undefined
+  }
+
+  const raw = payload as Record<string, unknown>
+  const directAction = raw.operation ?? raw.action
+  if (typeof directAction === 'string') {
+    return directAction
+  }
+
+  if (raw.args && typeof raw.args === 'object' && !Array.isArray(raw.args)) {
+    const nested = raw.args as Record<string, unknown>
+    const nestedAction = nested.operation ?? nested.action
+    if (typeof nestedAction === 'string') {
+      return nestedAction
+    }
+  }
+
+  return undefined
+}
+
 /** Registry of all server tools. Tools self-declare their validation schemas. */
 const serverToolRegistry: Record<string, BaseServerTool> = {
   [getBlocksMetadataServerTool.name]: getBlocksMetadataServerTool,
@@ -157,8 +179,7 @@ export async function routeExecution(
 
   // Action-level permission enforcement for mixed read/write tools
   if (WRITE_ACTIONS[toolName]) {
-    const p = payload as Record<string, unknown>
-    const action = (p?.operation ?? p?.action) as string | undefined
+    const action = getToolAction(payload)
     if (
       requiresWritePermission(toolName, action) &&
       !isWritePermission(context?.userPermission ?? '')

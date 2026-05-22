@@ -16,4 +16,16 @@ describe('server tool router permissions', () => {
       "Permission denied: create_file requires write access. You have 'none' permission."
     )
   })
+
+  it('checks write permissions before unwrapping nested tool args', async () => {
+    await expect(
+      routeExecution(
+        'knowledge_base',
+        { args: { operation: 'create', name: 'Production Notes' } },
+        { userId: 'user-1', workspaceId: 'workspace-1', userPermission: 'read' }
+      )
+    ).rejects.toThrow(
+      "Permission denied: 'create' on knowledge_base requires write access. You have 'read' permission."
+    )
+  })
 })
