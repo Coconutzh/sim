@@ -159,6 +159,14 @@
 - `useWorkspaceManagement` 的本地最近访问记录只在当前 `workspaceId` 已出现在服务端返回的可访问 workspace 列表后写入；用户手动打开不可访问 URL 时不会再把该 ID 写入 `localStorage` 或同步到 user settings。
 - 新增/扩展 `apps/sim/app/api/workspaces/route.test.ts` 覆盖“不可访问 last active workspace id 不返回给客户端”；并复跑 workspace/workflow 发现路径相关测试，确认 workflow 列表继续依赖 `listAccessibleWorkspaceIds` 和 `checkWorkspaceAccess`。
 
+### 3.11 workspace environment 凭证隔离
+
+本轮补上普通 workspace environment API 的凭证读取边界：
+
+- `GET /api/workspaces/[id]/environment` 不再只要求 workspace 可见，而是要求 `checkWorkspaceAccess(...).canWrite`，避免只读成员或未来展示类读者拿到解密后的 workspace 环境变量。
+- `PUT/DELETE /api/workspaces/[id]/environment` 同步改为依赖 `access.canWrite`，团队画布成员可按画布边界写入，read-only 访问统一返回 403。
+- 已补 `apps/sim/app/api/workspaces/[id]/environment/route.test.ts` 覆盖隐藏 personal workspace 返回 404、read-only GET 不调用解密服务、read-only PUT/DELETE 被拒绝。
+
 ## 4. 已验证或已有测试覆盖的关键点
 
 当前已有或近期补充的测试覆盖重点包括：
@@ -182,6 +190,7 @@
 | `apps/sim/app/api/files/presigned/route.test.ts` | mothership/execution 直传 URL 申请需要画布 write 权限，隐藏 workspace 返回 404 |
 | `apps/sim/app/api/files/multipart/route.test.ts` | 分片上传 initiate 阶段要求画布 write 权限，并把 execution 上传归一到真实 workflow workspace |
 | `apps/sim/app/api/files/parse/route.test.ts` | 外部 URL 导入到 workspace 时，隐藏或只读 workspace 不会触发下载/保存 |
+| `apps/sim/app/api/workspaces/[id]/environment/route.test.ts` | 解密环境变量读取需要画布 write 权限，隐藏 workspace 返回 404，read-only 访问返回 403 |
 
 最近切片中使用过的验证命令：
 
@@ -193,6 +202,7 @@ Set-Location apps\sim; bun run type-check 2>&1 | Select-String -Pattern "lib/cop
 Set-Location apps\sim; bunx vitest run app/api/logs/route.test.ts app/api/logs/export/route.test.ts app/api/logs/stats/route.test.ts app/api/logs/triggers/route.test.ts "app/api/logs/[id]/route.test.ts" "app/api/logs/by-execution/[executionId]/route.test.ts" app/api/logs/execution/[executionId]/route.test.ts app/api/workspaces/[id]/metrics/executions/route.test.ts lib/logs/fetch-log-detail.test.ts
 Set-Location apps\sim; bunx vitest run app/api/workspaces/route.test.ts app/api/workflows/route.test.ts lib/workspaces/utils.test.ts lib/workflows/utils.test.ts
 Set-Location apps\sim; bunx vitest run app/api/files/upload/route.test.ts app/api/files/presigned/route.test.ts app/api/files/multipart/route.test.ts app/api/files/parse/route.test.ts app/api/files/authorization.test.ts app/api/files/delete/route.test.ts app/api/files/download/route.test.ts app/api/files/serve/[...path]/route.test.ts app/api/files/view/[id]/route.test.ts app/api/files/export/[id]/route.test.ts
+Set-Location apps\sim; bunx vitest run app/api/workspaces/[id]/environment/route.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
@@ -210,7 +220,7 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 | folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
 | files/assets | 已完成 workspace files 与全局 `/api/files/**` 主要上传、直传、分片、parse、serve/download/view/export/delete 路径复核和测试；Phase 4 收尾时仍需汇总审计矩阵并跟 credentials/realtime/internal tasks 联合复核 |
 | logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |
-| credentials | 已加固 Copilot credential context，但普通 credential/API 路径仍需按展示读者场景复核 |
+| credentials | 已加固 Copilot credential context 与 workspace environment 解密读取；仍需继续复核 credential sharing/API key/BYOK 等普通凭证路径 |
 | Copilot context | 已做多处过滤和脱敏，仍需继续查 tools、VFS、resource attachment、workspace mode 分支 |
 | Realtime room join/operation | 已有只读/发布画布限制，仍需补齐测试覆盖和 presence 隔离复核 |
 | webhooks/internal tasks | 尚需排查，尤其是内部任务是否可能借 workspaceId 绕过 canvas 边界 |

@@ -20,7 +20,7 @@ import {
   deleteWorkspaceEnvCredentials,
 } from '@/lib/credentials/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceEnvironmentAPI')
 
@@ -46,9 +46,8 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (!permission) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (!access.canWrite) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
       const { workspaceDecrypted, personalDecrypted, conflicts } = await getPersonalAndWorkspaceEnv(
@@ -99,8 +98,7 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (!permission || (permission !== 'admin' && permission !== 'write')) {
+      if (!access.canWrite) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
@@ -192,8 +190,7 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
       }
 
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (!permission || (permission !== 'admin' && permission !== 'write')) {
+      if (!access.canWrite) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 

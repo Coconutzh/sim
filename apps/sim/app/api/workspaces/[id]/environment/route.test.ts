@@ -139,6 +139,64 @@ describe('/api/workspaces/[id]/environment', () => {
     expect(mockGetPersonalAndWorkspaceEnv).not.toHaveBeenCalled()
   })
 
+  it('does not expose decrypted environment data to read-only workspace access', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Forbidden' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    expect(mockGetPersonalAndWorkspaceEnv).not.toHaveBeenCalled()
+  })
+
+  it('rejects environment updates when canvas auth is read-only', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+
+    const response = await PUT(
+      createMockRequest('PUT', { variables: { OPENAI_API_KEY: 'next-secret' } }),
+      {
+        params: Promise.resolve({ id: 'ws-owner' }),
+      }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Forbidden' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('rejects environment deletes when canvas auth is read-only', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-owner', ownerId: 'owner-1', workspaceMode: 'organization' },
+    })
+
+    const response = await DELETE(createMockRequest('DELETE', { keys: ['OPENAI_API_KEY'] }), {
+      params: Promise.resolve({ id: 'ws-owner' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Forbidden' })
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
   it('returns 404 for stale foreign personal workspace environment deletes', async () => {
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
