@@ -127,8 +127,11 @@
 
 - `apps/sim/app/api/files/authorization.ts` 不再二次依赖旧 `permissions` 表判断文件读写，而是直接使用 `checkWorkspaceAccess` 返回的 `hasAccess/canWrite`。这样个人草稿 owner-only、团队成员可写、展示/发布读者不能写源 workspace 文件都走统一画布边界。
 - `/api/workspaces/[id]/files` 上传、直传 presigned、register、rename、delete、content update、restore 这些写路径统一改为检查 `access.canWrite`，避免团队画布成员因为缺少旧 permission row 被误拒，也避免只读读者绕过。
+- `/api/files/upload`、`/api/files/presigned`、`/api/files/multipart` 的 workspace/mothership/execution/knowledge-base/chat 等带 workspace 上下文的写路径已改为依赖 `checkWorkspaceAccess(...).canWrite`；只读展示读者不能再仅凭旧 permission row 或可见 workspaceId 申请上传、直传或分片上传。
+- `/api/files/parse` 的外部 URL 导入到 workspace 场景改为要求 `canWrite`，只读读者不会触发外部下载或把 URL 内容保存/复制进源 workspace。
+- `/api/files/delete`、`/api/files/download`、`/api/files/serve`、`/api/files/view`、`/api/files/export` 继续通过 `verifyFileAccess`/`verifyFileWriteAccess` 回到统一文件授权 helper，按文件 metadata/key 映射到真实 workspace 后再判断画布边界。
 - 已补 `apps/sim/app/api/files/authorization.test.ts` 覆盖“团队画布 write access 即使没有旧 permission row 也可写文件”。
-- 已调整 workspace files 路由测试，让只读/展示类场景通过 `checkWorkspaceAccess(...).canWrite = false` 证明服务端拒绝写操作。
+- 已调整 workspace files 与全局 files 路由测试，让只读/展示类场景通过 `checkWorkspaceAccess(...).canWrite = false` 证明服务端拒绝写操作，同时证明团队画布 write access 不依赖旧 `permissions` row。
 
 ### 3.8 legacy accessible workspace helper 加固
 
@@ -175,6 +178,10 @@
 | `apps/sim/app/api/logs/by-execution/[executionId]/route.test.ts` | execution id 详情入口必须走 workspace-scoped detail authorizer，拒绝源 workspace 时返回 404 |
 | `apps/sim/app/api/workspaces/[id]/metrics/executions/route.test.ts` | 执行指标读取需要真实 workspace read access，其他成员个人草稿返回 404 |
 | `apps/sim/app/api/workspaces/route.test.ts` | workspace 列表和 lastActiveWorkspaceId 都必须先经过 accessible workspace ids 过滤 |
+| `apps/sim/app/api/files/upload/route.test.ts` | workspace/mothership/execution 上传写入依赖 `checkWorkspaceAccess(...).canWrite`，团队画布成员不再依赖旧 permission row |
+| `apps/sim/app/api/files/presigned/route.test.ts` | mothership/execution 直传 URL 申请需要画布 write 权限，隐藏 workspace 返回 404 |
+| `apps/sim/app/api/files/multipart/route.test.ts` | 分片上传 initiate 阶段要求画布 write 权限，并把 execution 上传归一到真实 workflow workspace |
+| `apps/sim/app/api/files/parse/route.test.ts` | 外部 URL 导入到 workspace 时，隐藏或只读 workspace 不会触发下载/保存 |
 
 最近切片中使用过的验证命令：
 
@@ -185,6 +192,7 @@ Set-Location apps\sim; bunx biome check --write lib/copilot/tools/server/router.
 Set-Location apps\sim; bun run type-check 2>&1 | Select-String -Pattern "lib/copilot/tools/server/router"
 Set-Location apps\sim; bunx vitest run app/api/logs/route.test.ts app/api/logs/export/route.test.ts app/api/logs/stats/route.test.ts app/api/logs/triggers/route.test.ts "app/api/logs/[id]/route.test.ts" "app/api/logs/by-execution/[executionId]/route.test.ts" app/api/logs/execution/[executionId]/route.test.ts app/api/workspaces/[id]/metrics/executions/route.test.ts lib/logs/fetch-log-detail.test.ts
 Set-Location apps\sim; bunx vitest run app/api/workspaces/route.test.ts app/api/workflows/route.test.ts lib/workspaces/utils.test.ts lib/workflows/utils.test.ts
+Set-Location apps\sim; bunx vitest run app/api/files/upload/route.test.ts app/api/files/presigned/route.test.ts app/api/files/multipart/route.test.ts app/api/files/parse/route.test.ts app/api/files/authorization.test.ts app/api/files/delete/route.test.ts app/api/files/download/route.test.ts app/api/files/serve/[...path]/route.test.ts app/api/files/view/[id]/route.test.ts app/api/files/export/[id]/route.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
@@ -200,7 +208,7 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 | workflow load/save/duplicate/publish | 已做多处加固，但还需最终全量复核 |
 | workspace list/detail | 已加固列表和 lastActiveWorkspaceId 过滤；仍需继续复核 detail/settings 等旧入口 |
 | folder/list/sidebar/recent/search | 尚需系统排查，确保不会列出其他人的个人草稿或不可见团队画布 |
-| files/assets | 正在排查，workspace files 多数路径已有 read/write 权限校验，但仍需完成 `/api/files/**` 与 presigned/serve/upload 全链路复核 |
+| files/assets | 已完成 workspace files 与全局 `/api/files/**` 主要上传、直传、分片、parse、serve/download/view/export/delete 路径复核和测试；Phase 4 收尾时仍需汇总审计矩阵并跟 credentials/realtime/internal tasks 联合复核 |
 | logs/metrics | 已完成本轮补证：日志列表/导出/统计/详情/执行快照和 workspace metrics 均走 workspace access 或 accessible workspace ids 过滤 |
 | credentials | 已加固 Copilot credential context，但普通 credential/API 路径仍需按展示读者场景复核 |
 | Copilot context | 已做多处过滤和脱敏，仍需继续查 tools、VFS、resource attachment、workspace mode 分支 |
@@ -228,22 +236,16 @@ Phase 4 文档要求排查以下路径。当前已经加固了其中一部分，
 
 建议按小切片继续，不要一次改完：
 
-1. **files/assets 切片**
-   - 排查 `apps/sim/app/api/files/**`。
-   - 排查 `apps/sim/app/api/workspaces/[id]/files/**`。
-   - 确认 read-only showcase reader 不能上传、注册、删除、改名、覆盖源 workspace 文件。
-   - 确认 serve/download/presigned 路径不能通过 key 或 workspaceId 猜测读取个人草稿或团队私有资源。
-
-2. **workspace/sidebar/recent/search 切片**
+1. **workspace/sidebar/recent/search 切片**
    - 排查 `apps/sim/app/api/workspaces/**`、workflow list、folder list、sidebar 数据源、recent workflows、搜索入口。
    - 确保旧 workspace API 不返回别人的个人草稿。
    - 确保非团队成员看不到团队画布。
 
-3. **Realtime 测试切片**
+2. **Realtime 测试切片**
    - 对 `apps/realtime/src/middleware/permissions.ts` 和 operation handlers 补更直接的测试。
    - 覆盖非 owner 不能进个人草稿 room、非成员不能进团队 room、展示画布 mutation 被拒绝、read role position update 被拒绝。
 
-4. **webhooks/internal tasks 切片**
+3. **webhooks/internal tasks 切片**
    - 排查 webhook、scheduled/internal cleanup、agentmail、outbox 等内部任务是否可能只凭 workspaceId 或 workflowId 绕过新的 canvas 边界。
 
 ### 6.2 Phase 4 完成前建议验收门槛

@@ -57,13 +57,12 @@ async function ensureWritableWorkspace(
   notFoundMessage: string,
   forbiddenMessage: string
 ): Promise<NextResponse | null> {
-  const hiddenWorkspaceResponse = await ensureVisibleWorkspace(workspaceId, userId, notFoundMessage)
-  if (hiddenWorkspaceResponse) {
-    return hiddenWorkspaceResponse
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: notFoundMessage }, { status: 404 })
   }
 
-  const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-  if (permission !== 'write' && permission !== 'admin') {
+  if (!access.canWrite) {
     return NextResponse.json({ error: forbiddenMessage }, { status: 403 })
   }
 
@@ -181,25 +180,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         if (workspaceId) {
-          const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+          const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
             workspaceId,
             session.user.id,
-            'Workspace not found'
+            'Workspace not found',
+            'Write access required for workspace'
           )
-          if (hiddenWorkspaceResponse) {
-            return hiddenWorkspaceResponse
-          }
-
-          const permission = await getUserEntityPermissions(
-            session.user.id,
-            'workspace',
-            workspaceId
-          )
-          if (permission === null) {
-            return NextResponse.json(
-              { error: 'Insufficient permissions for workspace' },
-              { status: 403 }
-            )
+          if (forbiddenWorkspaceResponse) {
+            return forbiddenWorkspaceResponse
           }
         }
 
@@ -406,25 +394,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         if (context === 'chat' && workspaceId) {
-          const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+          const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
             workspaceId,
             session.user.id,
-            'Workspace not found'
+            'Workspace not found',
+            'Write access required for workspace'
           )
-          if (hiddenWorkspaceResponse) {
-            return hiddenWorkspaceResponse
-          }
-
-          const permission = await getUserEntityPermissions(
-            session.user.id,
-            'workspace',
-            workspaceId
-          )
-          if (permission === null) {
-            return NextResponse.json(
-              { error: 'Insufficient permissions for workspace' },
-              { status: 403 }
-            )
+          if (forbiddenWorkspaceResponse) {
+            return forbiddenWorkspaceResponse
           }
         }
 

@@ -309,6 +309,34 @@ describe('File Parse API Route', () => {
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
+  it('should reject external URL workspace imports when the workspace is read-only', async () => {
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: {
+        id: 'workspace-readonly',
+        ownerId: 'owner-1',
+        workspaceMode: 'organization',
+      },
+    })
+
+    const req = createMockRequest('POST', {
+      filePath: 'https://example.com/test.pdf',
+      workspaceId: 'workspace-readonly',
+      fileType: 'pdf',
+    })
+
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.success).toBe(false)
+    expect(data.error).toBe('File not found')
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    expect(inputValidationMockFns.mockSecureFetchWithPinnedIP).not.toHaveBeenCalled()
+  })
+
   it('should hide foreign personal execution contexts before parsing', async () => {
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
       response: Response.json({ error: 'Workspace not found' }, { status: 404 }),

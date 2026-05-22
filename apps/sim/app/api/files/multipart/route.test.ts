@@ -295,16 +295,36 @@ describe('POST /api/files/multipart action=complete', () => {
       workflowId: 'wf-1',
       workspaceId: 'ws-spoofed',
     })
-    expect(permissionsMockFns.mockGetUserEntityPermissions).toHaveBeenCalledWith(
-      'user-1',
-      'workspace',
-      'ws-actual'
-    )
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockSignUploadToken).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId: 'ws-actual',
         context: 'execution',
       })
     )
+  })
+
+  it('rejects multipart initiation when canvas auth is read-only', async () => {
+    mockGetStorageProvider.mockReturnValue('s3')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
+    })
+
+    const res = await POST(
+      makeRequest('initiate', {
+        fileName: 'large.bin',
+        contentType: 'application/octet-stream',
+        fileSize: 1024,
+        workspaceId: 'ws-1',
+        context: 'workspace',
+      })
+    )
+
+    expect(res.status).toBe(403)
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    expect(mockInitiateS3MultipartUpload).not.toHaveBeenCalled()
   })
 })

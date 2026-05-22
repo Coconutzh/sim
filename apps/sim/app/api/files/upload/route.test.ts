@@ -418,7 +418,16 @@ describe('File Upload API Route', () => {
       cloudEnabled: false,
       storageProvider: 'local',
     })
-    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: {
+        id: 'test-workspace-id',
+        ownerId: 'test-user-id',
+        workspaceMode: 'organization',
+      },
+    })
 
     const mockFile = createMockFile()
     const formData = new FormData()
@@ -490,7 +499,16 @@ describe('File Upload API Route', () => {
       cloudEnabled: false,
       storageProvider: 'local',
     })
-    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce('read')
+    permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: {
+        id: 'test-workspace-id',
+        ownerId: 'test-user-id',
+        workspaceMode: 'organization',
+      },
+    })
 
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile], 'mothership')
@@ -507,6 +525,28 @@ describe('File Upload API Route', () => {
       error: 'Write or Admin access required for mothership uploads',
     })
     expect(storageServiceMockFns.mockUploadFile).not.toHaveBeenCalled()
+  })
+
+  it('allows workspace uploads when canvas auth grants write without legacy permission rows', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+    permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValueOnce(null)
+
+    const mockFile = createMockFile()
+    const formData = createMockFormData([mockFile], 'workspace')
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(200)
+    expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    expect(mocks.mockUploadWorkspaceFile).toHaveBeenCalled()
   })
 })
 

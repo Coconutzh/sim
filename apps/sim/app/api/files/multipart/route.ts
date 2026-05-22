@@ -24,7 +24,7 @@ import {
 } from '@/lib/uploads/core/upload-token'
 import type { StorageConfig } from '@/lib/uploads/shared/types'
 import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MultipartUploadAPI')
 
@@ -168,8 +168,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
         }
 
-        const permission = await getUserEntityPermissions(userId, 'workspace', resolvedWorkspaceId)
-        if (permission !== 'write' && permission !== 'admin') {
+        if (!access.canWrite) {
           return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 

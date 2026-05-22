@@ -28,7 +28,7 @@ import {
   isInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils'
 import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
 import '@/lib/uploads/core/setup.server'
@@ -136,7 +136,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         ? { workspaceId: resolvedWorkspaceId, workflowId, executionId }
         : undefined
 
-      logger.info('File parse request received:', {
+    logger.info('File parse request received:', {
       filePath,
       fileType,
       workspaceId: resolvedWorkspaceId,
@@ -383,9 +383,8 @@ async function handleExternalUrl(
         }
       }
 
-      const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-      if (permission === null) {
-        logger.warn('User does not have workspace access for file parse', {
+      if (!access.canWrite) {
+        logger.warn('User cannot write to workspace for file parse', {
           userId,
           workspaceId,
           filename,
@@ -449,13 +448,12 @@ async function handleExternalUrl(
 
     if (shouldCheckWorkspace) {
       try {
-        const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-        if (permission !== 'admin' && permission !== 'write') {
+        const access = await checkWorkspaceAccess(workspaceId, userId)
+        if (!access.exists || !access.hasAccess || !access.canWrite) {
           logger.warn('User does not have write permission for workspace file save', {
             userId,
             workspaceId,
             filename,
-            permission,
           })
         } else {
           const { uploadWorkspaceFile } = await import('@/lib/uploads/contexts/workspace')

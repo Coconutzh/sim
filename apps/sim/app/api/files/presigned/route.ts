@@ -58,6 +58,24 @@ async function ensureVisibleWorkspace(
   return null
 }
 
+async function ensureWritableWorkspace(
+  workspaceId: string,
+  userId: string,
+  notFoundMessage: string,
+  forbiddenMessage: string
+): Promise<NextResponse | null> {
+  const access = await checkWorkspaceAccess(workspaceId, userId)
+  if (!access.exists || !access.hasAccess) {
+    return NextResponse.json({ error: notFoundMessage }, { status: 404 })
+  }
+
+  if (!access.canWrite) {
+    return NextResponse.json({ error: forbiddenMessage }, { status: 403 })
+  }
+
+  return null
+}
+
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const session = await getSession()
@@ -147,21 +165,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         throw new ValidationError('workspaceId query parameter is required for mothership uploads')
       }
 
-      const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
+      const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
         workspaceId,
         sessionUserId,
-        'Workspace not found'
+        'Workspace not found',
+        'Write or Admin access required for mothership uploads'
       )
-      if (hiddenWorkspaceResponse) {
-        return hiddenWorkspaceResponse
-      }
-
-      const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
-      if (permission !== 'write' && permission !== 'admin') {
-        return NextResponse.json(
-          { error: 'Write or Admin access required for mothership uploads' },
-          { status: 403 }
-        )
+      if (forbiddenWorkspaceResponse) {
+        return forbiddenWorkspaceResponse
       }
 
       const fileValidationError = validateAttachmentFileType(fileName)
@@ -210,16 +221,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
       const resolvedWorkspaceId = workspaceResolution.workspaceId
 
-      const permission = await getUserEntityPermissions(
+      const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
+        resolvedWorkspaceId,
         sessionUserId,
-        'workspace',
-        resolvedWorkspaceId
+        'Workspace not found',
+        'Write or Admin access required for execution uploads'
       )
-      if (permission !== 'write' && permission !== 'admin') {
-        return NextResponse.json(
-          { error: 'Write or Admin access required for execution uploads' },
-          { status: 403 }
-        )
+      if (forbiddenWorkspaceResponse) {
+        return forbiddenWorkspaceResponse
       }
 
       const fileValidationError = validateAttachmentFileType(fileName)

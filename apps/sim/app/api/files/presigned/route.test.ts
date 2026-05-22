@@ -661,7 +661,12 @@ describe('/api/files/presigned', () => {
 
     it('returns 403 when user lacks workspace write permission', async () => {
       setupFileApiMocks({ cloudEnabled: true, storageProvider: 's3' })
-      mockGetUserEntityPermissions.mockResolvedValue('read')
+      mockCheckWorkspaceAccess.mockResolvedValueOnce({
+        exists: true,
+        hasAccess: true,
+        canWrite: false,
+        workspace: { id: 'ws-1', ownerId: 'test-user-id', workspaceMode: 'organization' },
+      })
 
       const request = new NextRequest(
         'http://localhost:3000/api/files/presigned?type=mothership&workspaceId=ws-1',
@@ -677,6 +682,30 @@ describe('/api/files/presigned', () => {
 
       const response = await POST(request)
       expect(response.status).toBe(403)
+    })
+
+    it('allows mothership presigned uploads when canvas auth grants write without legacy permission rows', async () => {
+      setupFileApiMocks({ cloudEnabled: true, storageProvider: 's3' })
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/files/presigned?type=mothership&workspaceId=ws-1',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: 'doc.pdf',
+            contentType: 'application/pdf',
+            fileSize: 4096,
+          }),
+        }
+      )
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(200)
+      expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+      expect(mockInsertFileMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'ws-1', context: 'mothership' })
+      )
     })
 
     it('inserts a workspaceFiles row with context=mothership so previews authorize', async () => {
