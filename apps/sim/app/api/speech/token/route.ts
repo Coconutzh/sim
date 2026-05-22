@@ -74,6 +74,7 @@ async function validateChatAuth(
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
+    // boundary-raw-json: tolerant body parse selects chat or session auth path before either auth mode is enforced
     const rawBody = await request.json().catch(() => ({}))
     const body = speechTokenBodySchema.safeParse(rawBody)
     const chatId =
