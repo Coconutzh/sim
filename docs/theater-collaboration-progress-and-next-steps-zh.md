@@ -307,9 +307,19 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 新增 `apps/sim/app/api/workflows/[id]/copy-selection/route.test.ts` 覆盖成功复制、源读/目标写拒绝、画布类型不匹配、源 workflow mismatch、空 selection 仍鉴权。
 - 扩展 `apps/sim/lib/collaboration/snapshot-sanitizer.test.ts` 覆盖文件字段脱敏和 `profile` 非误伤。
 
+### 5.6 Phase 6 跨画布复制前端入口切片
+
+本轮继续把复制能力接入原 `/workspace/[workspaceId]/w/[workflowId]` 画布外壳，而不是新增独立 `/workbench` 操作面：
+
+- `BlockMenu` 右键菜单新增可选 `Copy to team canvas` / `Copy to personal draft` 动作，保持现有 Popover/spacing/菜单风格。
+- 当前 workspace 不是 active workgroup 的团队画布时，默认把 selection 复制到团队画布；当前在团队画布时，默认复制到个人草稿画布。
+- 复制动作复用 `useCopySelection`，显式传 source/target canvas type、目标 workspaceId、目标 workflowId、选中 blockIds 和 edgeIds。
+- 成功后通知当前用户复制数量；`useCopySelection` 会失效目标 workflow state 和目标 workspace workflow list，让目标画布下一次打开或已订阅视图刷新到新节点。
+- 如果没有 active workgroup、没有 alternate canvas，或目标画布还没有节点图，菜单项会 disabled 并给出原因，不在前端绕过后端权限。
+
 仍需继续：
 
-- 在现有 `/workspace/[workspaceId]/w/[workflowId]` 画布 UI 中接入“复制到团队画布 / 复制到个人草稿”入口，成功后刷新目标 workflow 并高亮新节点。
+- 目标画布新节点高亮仍需等分屏/目标 pane 打开后按 `mappings.blockIds` 接入；当前切片先完成右键入口和目标缓存刷新。
 - Phase 7 分屏工作台需要复用这条 API，而不是再新增一套复制逻辑。
 
 ## 6. 建议继续推进目标

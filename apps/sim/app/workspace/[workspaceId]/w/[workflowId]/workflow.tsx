@@ -92,6 +92,12 @@ import {
 } from '@/blocks/catalog'
 import type { BlockConfig } from '@/blocks/types'
 import { isAnnotationOnlyBlock } from '@/executor/constants'
+import {
+  useCopySelection,
+  useMyWorkgroups,
+  usePersonalWorkspace,
+  useTeamWorkspace,
+} from '@/hooks/queries/collaboration'
 import { useWorkspaceEnvironment } from '@/hooks/queries/environment'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { useAutoConnect, useSnapToGridSize } from '@/hooks/queries/general-settings'
@@ -99,7 +105,7 @@ import {
   findLockedAncestorFolder,
   isFolderOrAncestorLocked,
 } from '@/hooks/queries/utils/folder-tree'
-import { useUpdateWorkflow, useWorkflowMap } from '@/hooks/queries/workflows'
+import { useUpdateWorkflow, useWorkflowMap, useWorkflows } from '@/hooks/queries/workflows'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useOAuthReturnForWorkflow } from '@/hooks/use-oauth-return'
@@ -304,6 +310,44 @@ const WorkflowContent = React.memo(
     } = useWorkflowMap(workspaceId)
     const { data: folders = {} } = useFolderMap(workspaceId)
     const updateWorkflowMutation = useUpdateWorkflow()
+    const { mutateAsync: copySelection, isPending: isCopyingSelection } = useCopySelection()
+    const { data: myWorkgroupsData } = useMyWorkgroups(!embedded)
+    const activeWorkgroupId =
+      myWorkgroupsData?.defaultWorkgroupId ?? myWorkgroupsData?.workgroups[0]?.id
+    const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
+    const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
+    const copyTargetDescriptor = useMemo(() => {
+      if (!activeWorkgroupId) return null
+      const teamWorkspace = teamWorkspaceData?.workspace
+      const personalWorkspace = personalWorkspaceData?.workspace
+
+      if (teamWorkspace?.id && teamWorkspace.id !== workspaceId) {
+        return {
+          sourceType: 'personal' as const,
+          targetType: 'team' as const,
+          targetWorkspaceId: teamWorkspace.id,
+          label: 'Copy to team canvas',
+        }
+      }
+
+      if (personalWorkspace?.id && personalWorkspace.id !== workspaceId) {
+        return {
+          sourceType: 'team' as const,
+          targetType: 'personal' as const,
+          targetWorkspaceId: personalWorkspace.id,
+          label: 'Copy to personal draft',
+        }
+      }
+
+      return null
+    }, [
+      activeWorkgroupId,
+      personalWorkspaceData?.workspace,
+      teamWorkspaceData?.workspace,
+      workspaceId,
+    ])
+    const { data: copyTargetWorkflows = [] } = useWorkflows(copyTargetDescriptor?.targetWorkspaceId)
+    const copyTargetWorkflow = copyTargetWorkflows[0]
 
     const {
       activeWorkflowId,
@@ -1287,6 +1331,73 @@ const WorkflowContent = React.memo(
       copyBlocks(contextMenuBlocks.map((b) => b.id))
       executePasteOperation('duplicate', DEFAULT_PASTE_OFFSET)
     }, [contextMenuBlocks, copyBlocks, executePasteOperation])
+
+    const copyToCanvasDisabledReason = useMemo(() => {
+      if (!copyTargetDescriptor) return 'No alternate personal/team canvas is available'
+      if (!copyTargetWorkflow) return 'Target canvas does not have a node graph yet'
+      return 'Select blocks to copy'
+    }, [copyTargetDescriptor, copyTargetWorkflow])
+
+    const canCopySelectionToCanvas = Boolean(
+      activeWorkflowId &&
+        copyTargetDescriptor &&
+        copyTargetWorkflow &&
+        contextMenuBlocks.length > 0 &&
+        !isCopyingSelection
+    )
+
+    const handleContextCopyToCanvas = useCallback(async () => {
+      if (!activeWorkflowId || !copyTargetDescriptor || !copyTargetWorkflow) {
+        addNotification({
+          level: 'error',
+          message: copyToCanvasDisabledReason,
+          workflowId: activeWorkflowId || undefined,
+        })
+        return
+      }
+
+      const blockIds = contextMenuBlocks.map((block) => block.id)
+      if (blockIds.length === 0) return
+
+      try {
+        const result = await copySelection({
+          workflowId: activeWorkflowId,
+          body: {
+            source: { type: copyTargetDescriptor.sourceType, workflowId: activeWorkflowId },
+            target: {
+              type: copyTargetDescriptor.targetType,
+              workspaceId: copyTargetDescriptor.targetWorkspaceId,
+              workflowId: copyTargetWorkflow.id,
+            },
+            selection: {
+              blockIds,
+              edgeIds: Array.from(selectedEdges.values()),
+            },
+          },
+        })
+        addNotification({
+          level: 'info',
+          message: `Copied ${result.inserted.blockIds.length} block(s) to ${copyTargetDescriptor.label.toLowerCase().replace('copy to ', '')}.`,
+          workflowId: activeWorkflowId,
+        })
+      } catch (error) {
+        logger.warn('Failed to copy selection to another canvas', { error })
+        addNotification({
+          level: 'error',
+          message: 'Failed to copy selection to the target canvas.',
+          workflowId: activeWorkflowId,
+        })
+      }
+    }, [
+      activeWorkflowId,
+      addNotification,
+      contextMenuBlocks,
+      copySelection,
+      copyTargetDescriptor,
+      copyTargetWorkflow,
+      copyToCanvasDisabledReason,
+      selectedEdges,
+    ])
 
     const handleContextCut = useCallback(() => {
       cutBlocksWithProtection(contextMenuBlocks.map((b) => b.id))
@@ -4433,6 +4544,7 @@ const WorkflowContent = React.memo(
                       onCut={handleContextCut}
                       onPaste={handleContextPaste}
                       onDuplicate={handleContextDuplicate}
+                      onCopyToCanvas={handleContextCopyToCanvas}
                       onDelete={handleContextDelete}
                       onToggleEnabled={handleContextToggleEnabled}
                       onToggleHandles={handleContextToggleHandles}
@@ -4447,6 +4559,10 @@ const WorkflowContent = React.memo(
                           b.parentId && (b.parentType === 'loop' || b.parentType === 'parallel')
                       )}
                       canRunFromBlock={runFromBlockState.canRun}
+                      canCopyToCanvas={canCopySelectionToCanvas}
+                      copyToCanvasLabel={copyTargetDescriptor?.label}
+                      copyToCanvasDisabledReason={copyToCanvasDisabledReason}
+                      isCopyingToCanvas={isCopyingSelection}
                       disableEdit={
                         !effectivePermissions.canEdit ||
                         contextMenuBlocks.some((b) => b.locked || b.isParentLocked)

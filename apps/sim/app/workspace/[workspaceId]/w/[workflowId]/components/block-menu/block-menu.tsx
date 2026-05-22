@@ -42,6 +42,7 @@ export interface BlockMenuProps {
   onCut: () => void
   onPaste: () => void
   onDuplicate: () => void
+  onCopyToCanvas?: () => void
   onDelete: () => void
   onToggleEnabled: () => void
   onToggleHandles: () => void
@@ -54,6 +55,10 @@ export interface BlockMenuProps {
   showRemoveFromSubflow?: boolean
   /** Whether run from block is available (has snapshot, was executed, not inside subflow) */
   canRunFromBlock?: boolean
+  canCopyToCanvas?: boolean
+  copyToCanvasLabel?: string
+  copyToCanvasDisabledReason?: string
+  isCopyingToCanvas?: boolean
   /** Whether to disable edit actions (user can't edit OR blocks are locked) */
   disableEdit?: boolean
   /** Whether the user has edit permission (ignoring locked state) */
@@ -82,6 +87,7 @@ export function BlockMenu({
   onCut,
   onPaste,
   onDuplicate,
+  onCopyToCanvas,
   onDelete,
   onToggleEnabled,
   onToggleHandles,
@@ -93,6 +99,10 @@ export function BlockMenu({
   hasClipboard = false,
   showRemoveFromSubflow = false,
   canRunFromBlock = false,
+  canCopyToCanvas = false,
+  copyToCanvasLabel = 'Copy to canvas',
+  copyToCanvasDisabledReason = 'No target canvas available',
+  isCopyingToCanvas = false,
   disableEdit = false,
   userCanEdit = true,
   isExecuting = false,
@@ -201,6 +211,19 @@ export function BlockMenu({
             }}
           >
             Duplicate
+          </PopoverItem>
+        )}
+        {onCopyToCanvas && (
+          <PopoverItem
+            disabled={!canCopyToCanvas || isCopyingToCanvas}
+            title={!canCopyToCanvas ? copyToCanvasDisabledReason : undefined}
+            onClick={() => {
+              if (!canCopyToCanvas || isCopyingToCanvas) return
+              onCopyToCanvas()
+              onClose()
+            }}
+          >
+            {isCopyingToCanvas ? 'Copying...' : copyToCanvasLabel}
           </PopoverItem>
         )}
 

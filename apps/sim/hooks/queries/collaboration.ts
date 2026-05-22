@@ -25,6 +25,7 @@ import {
   updatePublicationLifecycleContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
+import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
 import { type Workspace, workspaceKeys } from '@/hooks/queries/workspace'
 
 export const collaborationKeys = {
@@ -350,12 +351,21 @@ export function useCopilotAgentProfile(workspaceId?: string) {
 }
 
 export function useCopySelection() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (variables: { workflowId: string; body: CopySelectionBody }) =>
       requestJson(copySelectionContract, {
         params: { id: variables.workflowId },
         body: variables.body,
       }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: workflowKeys.state(variables.body.target.workflowId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: workflowKeys.list(variables.body.target.workspaceId),
+      })
+    },
   })
 }
 

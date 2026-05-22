@@ -19,9 +19,11 @@ vi.mock('@tanstack/react-query', () => ({
 
 import {
   collaborationKeys,
+  useCopySelection,
   useSetActiveWorkgroup,
   useUpdatePublicationLifecycle,
 } from '@/hooks/queries/collaboration'
+import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
 
 describe('collaboration query invalidation', () => {
   beforeEach(() => {
@@ -69,6 +71,33 @@ describe('collaboration query invalidation', () => {
     })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: collaborationKeys.publication('publication-1'),
+    })
+  })
+
+  it('invalidates the target workflow state after cross-canvas copy', async () => {
+    const mutation = useCopySelection() as {
+      onSettled: (
+        data: unknown,
+        error: unknown,
+        variables: {
+          body: {
+            target: { workspaceId: string; workflowId: string }
+          }
+        }
+      ) => void
+    }
+
+    mutation.onSettled(null, null, {
+      body: {
+        target: { workspaceId: 'target-workspace', workflowId: 'target-workflow' },
+      },
+    })
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: workflowKeys.state('target-workflow'),
+    })
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: workflowKeys.list('target-workspace'),
     })
   })
 })
