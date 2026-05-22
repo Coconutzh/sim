@@ -18,12 +18,13 @@ import {
   type A2AMessageSendParams,
   type A2APushNotificationSetParams,
   type A2ATaskIdParams,
-  a2aJsonRpcRequestSchema,
   a2aMessageSendParamsSchema,
   a2aPushNotificationSetParamsSchema,
   a2aServeAgentParamsSchema,
+  a2aServeRequestContract,
   a2aTaskIdParamsSchema,
 } from '@/lib/api/contracts/a2a-agents'
+import { parseRequest } from '@/lib/api/server'
 import { type AuthResult, AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { acquireLock, getRedisClient, releaseLock } from '@/lib/core/config/redis'
 import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
@@ -285,26 +286,25 @@ export const POST = withRouteHandler(
         )
       }
 
-      let rawBody: unknown
-      try {
-        rawBody = await request.json()
-      } catch {
-        return NextResponse.json(
-          createError(null, A2A_ERROR_CODES.PARSE_ERROR, 'Invalid JSON body'),
-          { status: 400 }
-        )
-      }
+      const parsed = await parseRequest(
+        a2aServeRequestContract,
+        request,
+        { params },
+        {
+          invalidJsonResponse: () =>
+            NextResponse.json(createError(null, A2A_ERROR_CODES.PARSE_ERROR, 'Invalid JSON body'), {
+              status: 400,
+            }),
+          validationErrorResponse: () =>
+            NextResponse.json(
+              createError(null, A2A_ERROR_CODES.INVALID_REQUEST, 'Invalid JSON-RPC request'),
+              { status: 400 }
+            ),
+        }
+      )
+      if (!parsed.success) return parsed.response
 
-      const bodyResult = a2aJsonRpcRequestSchema.safeParse(rawBody)
-
-      if (!bodyResult.success) {
-        return NextResponse.json(
-          createError(null, A2A_ERROR_CODES.INVALID_REQUEST, 'Invalid JSON-RPC request'),
-          { status: 400 }
-        )
-      }
-
-      const body = bodyResult.data
+      const body = parsed.data.body
       const { id, method, params: rpcParams } = body
       const requestApiKey = request.headers.get('X-API-Key')
       const apiKey = authenticatedAuthType === AuthType.API_KEY ? requestApiKey : null

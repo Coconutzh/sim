@@ -213,6 +213,18 @@ export const a2aJsonRpcRequestSchema = z
   .passthrough()
 export type A2AJsonRpcRequest = z.output<typeof a2aJsonRpcRequestSchema>
 
+export const a2aServeRequestContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/a2a/serve/[agentId]',
+  params: a2aServeAgentParamsSchema,
+  body: a2aJsonRpcRequestSchema,
+  response: {
+    mode: 'json',
+    // untyped-response: A2A serve emits JSON-RPC result or error envelopes with method-dependent payloads
+    schema: z.unknown(),
+  },
+})
+
 export const a2aMessageSendParamsSchema = z
   .object({
     message: z.custom<Message>(
