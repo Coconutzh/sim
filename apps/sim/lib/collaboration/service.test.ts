@@ -97,6 +97,7 @@ import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   assertWorkgroupAdmin,
   getNextPublicationVersionNumber,
+  getPublication,
   getPublicationTree,
 } from '@/lib/collaboration/service'
 
@@ -146,6 +147,39 @@ describe('collaboration service', () => {
     await expect(assertWorkgroupAdmin('other-team-admin-1', 'workgroup-1')).rejects.toThrow(
       'Workgroup membership required'
     )
+  })
+
+  it('hides an unreadable publication parent link from publication details', async () => {
+    vi.mocked(canReadPublication).mockImplementation(
+      async (_userId, publicationVersionId) => publicationVersionId === 'publication-visible'
+    )
+    mockResultsQueue.push([
+      {
+        publication: {
+          id: 'publication-visible',
+          title: 'Visible version',
+          description: null,
+          versionNumber: 2,
+          parentVersionId: 'publication-hidden',
+          sourceWorkgroupId: 'workgroup-1',
+          agentCode: 'chief_director',
+          snapshotState: {},
+          snapshotMetadata: {},
+          publishedAt: new Date('2026-05-22T00:00:00Z'),
+        },
+        sourceWorkgroupName: 'Team A',
+        sourceDisciplineCode: 'stage_design',
+        sourceDisciplineName: 'Stage Design',
+      },
+    ])
+
+    await expect(
+      getPublication({ userId: 'viewer-1', publicationVersionId: 'publication-visible' })
+    ).resolves.toMatchObject({
+      id: 'publication-visible',
+      parentVersionId: null,
+    })
+    expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-hidden')
   })
 
   it('filters publication tree versions by per-version visibility', async () => {

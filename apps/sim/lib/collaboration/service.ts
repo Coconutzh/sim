@@ -803,13 +803,18 @@ export async function getPublication(params: { userId: string; publicationVersio
     .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
     .limit(1)
   if (!row) throw new Error('Publication not found')
+  const parentVersionId =
+    row.publication.parentVersionId &&
+    (await canReadPublication(params.userId, row.publication.parentVersionId))
+      ? row.publication.parentVersionId
+      : null
 
   return {
     id: row.publication.id,
     title: row.publication.title,
     description: row.publication.description,
     versionNumber: row.publication.versionNumber,
-    parentVersionId: row.publication.parentVersionId,
+    parentVersionId,
     sourceWorkgroup: { id: row.publication.sourceWorkgroupId, name: row.sourceWorkgroupName },
     sourceDiscipline: {
       code: row.sourceDisciplineCode ?? 'chief_director',
