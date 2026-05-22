@@ -357,15 +357,17 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队管理员可以：
   - 查看当前 workgroup 成员；
   - 通过已存在用户的 email 或 userId 添加成员；
+  - 通过 email 发送团队邀请；
   - 设置 member/admin 角色；
   - 移除成员；
   - 初始化或打开团队画布。
 - 后端 `POST /api/workgroups/[workgroupId]/members` 的 contract 支持 `userId` 或 `email` 两种输入，但仍由服务层统一执行 `assertWorkgroupAdmin`，不会让前端直接决定权限。
 - `addWorkgroupMember` 会把 email 解析为已存在用户账号，再写入 `workgroup_member`，如果团队画布已存在则同步 workspace permission。
+- 团队邀请复用现有 organization/workspace invitation 邮件链路；接受 team canvas grant 时会自动把用户加入该 workspace 对应的 workgroup。
 
 仍需继续：
 
-- 当前“邀请”是添加已存在账号到团队；如果要支持未注册用户 email 邀请，需要接入现有 invitation 邮件和接受流程，接受后再写入 workgroup membership。
+- 当前团队邀请已接入 email 发送和接受后加入 workgroup，但还需要在管理页补 pending invitation 列表、取消/重发和更清晰的错误提示。
 - Phase 9 仍需补发布管理、Agent Skill 绑定、团队协作日志和更完整的管理员闭环。
 
 ## 6. 建议继续推进目标

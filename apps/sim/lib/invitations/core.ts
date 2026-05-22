@@ -8,18 +8,19 @@ import {
   organization,
   permissions,
   user,
+  workgroupMember,
   workspace,
   workspaceEnvironment,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, lte } from 'drizzle-orm'
+import { and, eq, inArray, lte, sql } from 'drizzle-orm'
 import { setActiveOrganizationForCurrentSession } from '@/lib/auth/active-organization'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { ensureUserInOrganization } from '@/lib/billing/organizations/membership'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InvitationCore')
 
@@ -314,11 +315,13 @@ export async function acceptInvitation(
 
   const acceptedWorkspaceIds: string[] = []
   const workspaceOwners = new Map<string, string>()
+  const workspaceWorkgroups = new Map<string, string>()
 
   for (const grant of inv.grants) {
     const [workspaceRow] = await db
       .select({
         ownerId: workspace.ownerId,
+        workgroupId: workspace.workgroupId,
         workspaceMode: workspace.workspaceMode,
         archivedAt: workspace.archivedAt,
       })
@@ -337,6 +340,9 @@ export async function acceptInvitation(
     }
 
     workspaceOwners.set(grant.workspaceId, workspaceRow.ownerId)
+    if (workspaceRow.workspaceMode === 'organization' && workspaceRow.workgroupId) {
+      workspaceWorkgroups.set(grant.workspaceId, workspaceRow.workgroupId)
+    }
   }
 
   await db.transaction(async (tx) => {
@@ -391,6 +397,29 @@ export async function acceptInvitation(
       }
 
       await applyWorkspaceAutoAddGroup(tx, grant.workspaceId, input.userId)
+
+      const workgroupId = workspaceWorkgroups.get(grant.workspaceId)
+      if (workgroupId && inv.organizationId) {
+        const role = grant.permission === 'admin' ? 'admin' : 'member'
+        await tx
+          .insert(workgroupMember)
+          .values({
+            id: generateId(),
+            organizationId: inv.organizationId,
+            workgroupId,
+            userId: input.userId,
+            role,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [workgroupMember.workgroupId, workgroupMember.userId],
+            set: {
+              role: sql`CASE WHEN ${workgroupMember.role} = 'admin' THEN 'admin' ELSE EXCLUDED.role END`,
+              updatedAt: new Date(),
+            },
+          })
+      }
 
       acceptedWorkspaceIds.push(grant.workspaceId)
     }

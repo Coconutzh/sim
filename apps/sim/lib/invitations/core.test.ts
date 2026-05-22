@@ -126,6 +126,65 @@ describe('acceptInvitation', () => {
     )
   })
 
+  it('adds accepted team canvas invitees to the mapped workgroup', async () => {
+    queueWhereResponses([
+      [
+        {
+          id: 'inv-1',
+          kind: 'workspace',
+          email: 'member@example.com',
+          organizationId: 'org-1',
+          membershipIntent: 'external',
+          inviterId: 'inviter-1',
+          role: 'member',
+          status: 'pending',
+          token: 'tok-1',
+          expiresAt: new Date(Date.now() + 60_000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          id: 'grant-1',
+          workspaceId: 'team-workspace-1',
+          permission: 'write',
+          workspaceName: 'Lighting team canvas',
+        },
+      ],
+      [{ name: 'Acme' }],
+      [{ name: 'Inviter', email: 'inviter@example.com' }],
+      [
+        {
+          ownerId: 'someone-else',
+          workgroupId: 'workgroup-1',
+          workspaceMode: 'organization',
+          archivedAt: null,
+        },
+      ],
+      [],
+      [],
+      [{ variables: {} }],
+    ])
+
+    const result = await acceptInvitation({
+      userId: 'member-1',
+      userEmail: 'member@example.com',
+      invitationId: 'inv-1',
+      token: 'tok-1',
+    })
+
+    expect(result.success).toBe(true)
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-1',
+        workgroupId: 'workgroup-1',
+        userId: 'member-1',
+        role: 'member',
+      })
+    )
+  })
+
   it('falls back to external access when an internal workspace invitee joined another organization', async () => {
     mockEnsureUserInOrganization.mockResolvedValueOnce({
       success: false,

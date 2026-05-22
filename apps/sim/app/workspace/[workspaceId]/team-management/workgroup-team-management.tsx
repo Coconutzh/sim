@@ -13,6 +13,7 @@ import {
   useUpdateWorkgroupMember,
   useWorkgroupMembers,
 } from '@/hooks/queries/collaboration'
+import { useInviteMember } from '@/hooks/queries/organization'
 
 type WorkgroupRole = 'admin' | 'member'
 
@@ -39,13 +40,16 @@ export function WorkgroupTeamManagement() {
   const updateMember = useUpdateWorkgroupMember()
   const removeMember = useRemoveWorkgroupMember()
   const createTeamWorkspace = useCreateTeamWorkspace()
+  const inviteMember = useInviteMember()
   const [inviteValue, setInviteValue] = useState('')
+  const [emailInvitationValue, setEmailInvitationValue] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkgroupRole>('member')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const members = membersData?.members ?? []
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
   const isBusy =
     addMember.isPending ||
+    inviteMember.isPending ||
     updateMember.isPending ||
     removeMember.isPending ||
     createTeamWorkspace.isPending
@@ -80,6 +84,23 @@ export function WorkgroupTeamManagement() {
     setInviteValue('')
     setInviteRole('member')
     setStatusMessage('Member added to the team.')
+  }
+
+  const handleEmailInvitation = async () => {
+    const email = emailInvitationValue.trim()
+    if (!activeWorkgroup?.organizationId || !teamWorkspaceId || !email) return
+    await inviteMember.mutateAsync({
+      orgId: activeWorkgroup.organizationId,
+      emails: [email],
+      workspaceInvitations: [
+        {
+          workspaceId: teamWorkspaceId,
+          permission: inviteRole === 'admin' ? 'admin' : 'write',
+        },
+      ],
+    })
+    setEmailInvitationValue('')
+    setStatusMessage('Invitation email sent for the team canvas.')
   }
 
   const handleRoleChange = async (userId: string, role: WorkgroupRole) => {
@@ -180,7 +201,7 @@ export function WorkgroupTeamManagement() {
             <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
             <div>
               <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                Invite existing user
+                Add existing user
               </h2>
               <p className='text-[12px] text-[var(--text-muted)]'>
                 Enter an existing account email or user ID, then choose the team role.
@@ -212,6 +233,53 @@ export function WorkgroupTeamManagement() {
               Add member
             </Button>
           </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Send team invitation
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Email a new teammate. Accepting the invite grants team canvas access and joins this
+                workgroup.
+              </p>
+            </div>
+          </div>
+          <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_140px_auto]'>
+            <Input
+              value={emailInvitationValue}
+              onChange={(event) => setEmailInvitationValue(event.target.value)}
+              placeholder='name@example.com'
+              disabled={isBusy || !teamWorkspaceId}
+            />
+            <select
+              value={inviteRole}
+              onChange={(event) => setInviteRole(event.target.value as WorkgroupRole)}
+              disabled={isBusy || !teamWorkspaceId}
+              className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+            >
+              <option value='member'>Member</option>
+              <option value='admin'>Admin</option>
+            </select>
+            <Button
+              variant='primary'
+              onClick={() => void handleEmailInvitation()}
+              disabled={!emailInvitationValue.trim() || !teamWorkspaceId || isBusy}
+            >
+              {inviteMember.isPending ? (
+                <Loader className='mr-2 h-[14px] w-[14px]' animate />
+              ) : null}
+              Send invite
+            </Button>
+          </div>
+          {!teamWorkspaceId && (
+            <div className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'>
+              Initialize the team canvas before sending a team invitation.
+            </div>
+          )}
         </section>
 
         <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
