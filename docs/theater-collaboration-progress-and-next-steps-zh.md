@@ -336,6 +336,8 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 本轮同时继续收敛原主界面的画布语义：
 
 - Workspace 下拉进一步变成个人草稿画布切换器，移除其中的邀请成员入口，避免把团队管理操作混进个人草稿切换语义。
+- Workspace 下拉在团队画布/展示画布等页面也保持个人草稿切换语义，只列出当前 active workgroup 下的个人草稿，不再把当前团队 workspace 临时塞进下拉列表。
+- Home 页和 Sidebar 在解析 active workgroup 时会优先使用当前 workspace 的 `workgroupId`，因此用户切到非默认团队的个人草稿后，三张卡片和左侧团队/展示入口仍指向对应团队。
 - Sidebar `Canvases` 分组增加团队管理员入口 `Team management`，继续复用原设置页承接邀请/成员管理。
 - `Published workflows` 从普通 Workspace 分组移除，展示类入口统一收敛到 `Showcase canvas`。
 - 团队画布创建从“成员 GET 时懒创建”改为“管理员 POST 初始化”；普通成员只能读取已有团队画布。

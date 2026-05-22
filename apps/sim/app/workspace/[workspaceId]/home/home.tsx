@@ -26,6 +26,7 @@ import {
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
 import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import type { ChatContext } from '@/stores/panel'
 import { MothershipChat, MothershipView, TemplatePrompts, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
@@ -117,8 +118,11 @@ export function Home({ chatId }: HomeProps = {}) {
   const { data: session } = useSession()
   const { data: workgroupsData } = useMyWorkgroups(Boolean(session?.user?.id))
   const workgroups = workgroupsData?.workgroups ?? []
+  const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+  const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+    workgroups.find((workgroup) => workgroup.id === currentWorkspaceWorkgroupId) ??
     workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
     workgroups[0]
   const activeWorkgroupId = activeWorkgroup?.id

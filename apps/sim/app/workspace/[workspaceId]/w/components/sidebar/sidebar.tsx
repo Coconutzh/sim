@@ -479,10 +479,12 @@ export const Sidebar = memo(function Sidebar() {
     sessionUserId: sessionData?.user?.id,
   })
 
+  const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
   const { data: workgroupsData } = useMyWorkgroups(Boolean(sessionData?.user?.id))
   const workgroups = workgroupsData?.workgroups ?? []
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+    workgroups.find((workgroup) => workgroup.id === activeWorkspaceFull?.workgroupId) ??
     workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
     workgroups[0]
   const activeWorkgroupId = activeWorkgroup?.id
@@ -496,18 +498,18 @@ export const Sidebar = memo(function Sidebar() {
   const teamCanvasWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
 
-  const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
   const personalDraftWorkspaces = useMemo(() => {
-    const drafts = workspaces.filter((workspace) => {
+    return workspaces.filter((workspace) => {
       if (workspace.canvasScope !== 'personal') return false
       return !activeWorkgroupId || workspace.workgroupId === activeWorkgroupId
     })
-    const currentWorkspace = activeWorkspaceFull
-    if (currentWorkspace && !drafts.some((workspace) => workspace.id === currentWorkspace.id)) {
-      return [currentWorkspace, ...drafts]
-    }
-    return drafts
-  }, [activeWorkspaceFull, activeWorkgroupId, workspaces])
+  }, [activeWorkgroupId, workspaces])
+  const activePersonalDraftWorkspace =
+    personalDraftWorkspaces.find((workspace) => workspace.id === workspaceId) ??
+    personalDraftWorkspaces.find((workspace) => workspace.id === personalCanvasWorkspaceId) ??
+    personalDraftWorkspaces[0] ??
+    null
+  const workspaceHeaderWorkspaceId = activePersonalDraftWorkspace?.id ?? workspaceId
   const logoTargetWorkspaceIdRef = useRef<string>(workspaceId)
 
   const {
@@ -1487,8 +1489,8 @@ export const Sidebar = memo(function Sidebar() {
 
             <div className='flex-shrink-0 pr-2.5 pl-[9px]'>
               <WorkspaceHeader
-                activeWorkspace={activeWorkspace}
-                workspaceId={workspaceId}
+                activeWorkspace={activePersonalDraftWorkspace ?? activeWorkspace}
+                workspaceId={workspaceHeaderWorkspaceId}
                 workspaces={personalDraftWorkspaces}
                 workspaceCreationPolicy={workspaceCreationPolicy}
                 canCreatePersonalCanvas={Boolean(activeWorkgroupId)}
