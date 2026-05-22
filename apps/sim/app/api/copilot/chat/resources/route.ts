@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
@@ -30,6 +31,20 @@ const VALID_RESOURCE_TYPES = new Set<ResourceType>([
   'log',
 ])
 const GENERIC_TITLES = new Set(['Table', 'File', 'Workflow', 'Knowledge Base', 'Folder', 'Log'])
+
+async function canAttachChatResource(userId: string, resource: ChatResource): Promise<boolean> {
+  if (resource.type !== 'workflow') {
+    return true
+  }
+
+  const authorization = await authorizeWorkflowByWorkspacePermission({
+    workflowId: resource.id,
+    userId,
+    action: 'read',
+  })
+
+  return authorization.allowed
+}
 
 export const POST = withRouteHandler(async (req: NextRequest) => {
   try {
@@ -67,6 +82,11 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     if (!chat) {
       return createNotFoundResponse('Chat not found or unauthorized')
+    }
+
+    const canAttach = await canAttachChatResource(userId, resource)
+    if (!canAttach) {
+      return createNotFoundResponse('Resource not found or unauthorized')
     }
 
     const existing = Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
