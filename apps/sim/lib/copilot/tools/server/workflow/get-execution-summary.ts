@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, desc, eq, type SQL } from 'drizzle-orm'
 import { GetExecutionSummary } from '@/lib/copilot/generated/tool-catalog-v1'
 import type { BaseServerTool, ServerToolContext } from '@/lib/copilot/tools/server/base-tool'
@@ -27,13 +28,52 @@ interface ExecutionSummary {
   error: string | null
 }
 
-function extractErrorMessage(executionData: any): string | null {
-  if (!executionData) return null
+interface ExecutionData {
+  errorDetails?: { error?: unknown; message?: unknown }
+  finalOutput?: { error?: unknown }
+  error?: unknown
+}
+
+interface CostData {
+  total?: unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toExecutionData(executionData: unknown): ExecutionData {
+  if (!isRecord(executionData)) return {}
+
+  const errorDetails = isRecord(executionData.errorDetails)
+    ? {
+        error: executionData.errorDetails.error,
+        message: executionData.errorDetails.message,
+      }
+    : undefined
+  const finalOutput = isRecord(executionData.finalOutput)
+    ? { error: executionData.finalOutput.error }
+    : undefined
+
+  return {
+    ...(errorDetails ? { errorDetails } : {}),
+    ...(finalOutput ? { finalOutput } : {}),
+    error: executionData.error,
+  }
+}
+
+function toCostData(cost: unknown): CostData {
+  if (!isRecord(cost)) return {}
+  return { total: cost.total }
+}
+
+function extractErrorMessage(executionData: unknown): unknown {
+  const data = toExecutionData(executionData)
   return (
-    executionData?.errorDetails?.error ||
-    executionData?.errorDetails?.message ||
-    executionData?.finalOutput?.error ||
-    executionData?.error ||
+    data.errorDetails?.error ||
+    data.errorDetails?.message ||
+    data.finalOutput?.error ||
+    data.error ||
     null
   )
 }
@@ -56,9 +96,23 @@ export const getExecutionSummaryServerTool: BaseServerTool<
       throw new Error('Unauthorized access')
     }
 
-    const access = await checkWorkspaceAccess(workspaceId, context.userId)
-    if (!access.hasAccess) {
-      throw new Error('Unauthorized workspace access')
+    if (workflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId,
+        userId: context.userId,
+        action: 'read',
+      })
+      if (!authorization.allowed || authorization.accessSource !== 'workspace') {
+        throw new Error(authorization.message || 'Unauthorized workflow access')
+      }
+      if (authorization.workflow?.workspaceId !== workspaceId) {
+        throw new Error('Workflow does not belong to the requested workspace')
+      }
+    } else {
+      const access = await checkWorkspaceAccess(workspaceId, context.userId)
+      if (!access.hasAccess) {
+        throw new Error('Unauthorized workspace access')
+      }
     }
 
     const clampedLimit = Math.min(Math.max(1, limit), 20)
@@ -102,7 +156,7 @@ export const getExecutionSummaryServerTool: BaseServerTool<
       .limit(clampedLimit)
 
     const summaries: ExecutionSummary[] = rows.map((row) => {
-      const costData = row.cost as any
+      const costData = toCostData(row.cost)
       const errorMsg = row.level === 'error' ? extractErrorMessage(row.executionData) : null
 
       return {
@@ -113,7 +167,7 @@ export const getExecutionSummaryServerTool: BaseServerTool<
         trigger: row.trigger,
         startedAt: row.startedAt.toISOString(),
         durationMs: row.totalDurationMs ?? null,
-        cost: costData?.total ? Number(costData.total) : null,
+        cost: costData.total ? Number(costData.total) : null,
         error: errorMsg
           ? typeof errorMsg === 'string'
             ? errorMsg
