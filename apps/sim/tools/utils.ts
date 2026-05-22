@@ -15,6 +15,7 @@ import {
   resolveCatalogToolId,
   stripToolVersionSuffix,
 } from '@/tools/catalog'
+import type { ToolCatalogEntry } from '@/tools/catalog-types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ToolsUtils')
@@ -275,9 +276,9 @@ export function createCustomToolRequestBody(customTool: any, isClient = true, wo
 }
 
 // Get a tool by its ID
-export function getTool(toolId: string, _workspaceId?: string): ToolConfig | undefined {
+export function getTool(toolId: string, _workspaceId?: string): ToolCatalogEntry | undefined {
   const builtInTool = getToolCatalogEntry(toolId)
-  if (builtInTool) return builtInTool as unknown as ToolConfig
+  if (builtInTool) return builtInTool
 
   return undefined
 }

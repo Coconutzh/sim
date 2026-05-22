@@ -85,7 +85,6 @@ import { getAllBlocks } from '@/blocks/registry'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import { toolCatalog } from '@/tools/catalog'
 import { getToolOutputsFromCatalog } from '@/tools/outputs'
-import type { ToolConfig } from '@/tools/types'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
 import { TRIGGER_REGISTRY } from '@/triggers/registry'
 
@@ -145,10 +144,7 @@ function getStaticComponentFiles(): Map<string, string> {
     const operation = baseName.startsWith(prefix) ? baseName.slice(prefix.length) : baseName
 
     const path = `components/integrations/${service}/${operation}.json`
-    files.set(
-      path,
-      serializeIntegrationSchema(tool as unknown as ToolConfig, getToolOutputsFromCatalog(toolId))
-    )
+    files.set(path, serializeIntegrationSchema(tool, getToolOutputsFromCatalog(toolId)))
     integrationCount++
 
     if (tool.oauth?.required) {

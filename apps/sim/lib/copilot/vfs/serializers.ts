@@ -3,6 +3,7 @@ import { isHosted } from '@/lib/core/config/feature-flags'
 import { isSubBlockHidden } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import { DYNAMIC_MODEL_PROVIDERS, PROVIDER_DEFINITIONS } from '@/providers/models'
+import type { ToolMetadataConfig } from '@/tools/catalog-types'
 import type { ToolConfig } from '@/tools/types'
 
 /**
@@ -735,7 +736,7 @@ export function serializeSkill(s: {
  * Serialize an integration/tool schema for VFS components/integrations/{service}/{operation}.json
  */
 export function serializeIntegrationSchema(
-  tool: ToolConfig,
+  tool: ToolMetadataConfig,
   outputs: ToolConfig['outputs'] = tool.outputs
 ): string {
   const hostedApiKeyParam = isHosted && tool.hosting ? tool.hosting.apiKeyParam : null

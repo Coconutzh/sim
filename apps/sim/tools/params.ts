@@ -17,6 +17,7 @@ import type { SubBlockConfig as BlockSubBlockConfig, GenerationType } from '@/bl
 export { deepMergeInputMapping, mergeToolParameters } from '@/tools/merge-params'
 export { formatParameterLabel } from '@/tools/param-label'
 
+import type { ToolMetadataConfig } from '@/tools/catalog-types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { OAuthConfig, ParameterVisibility, ToolConfig } from '@/tools/types'
 import { getTool } from '@/tools/utils'
@@ -154,7 +155,7 @@ export interface ToolParameterConfig {
 }
 
 export interface ToolWithParameters {
-  toolConfig: ToolConfig
+  toolConfig: ToolMetadataConfig
   allParameters: ToolParameterConfig[]
   userInputParameters: ToolParameterConfig[] // Parameters shown to user
   requiredParameters: ToolParameterConfig[] // Must be filled by user or LLM
@@ -496,7 +497,7 @@ function buildCopilotFileParameterSchema(param: ToolParamDefinition): SchemaProp
 }
 
 export function createUserToolSchema(
-  toolConfig: ToolConfig,
+  toolConfig: ToolMetadataConfig,
   options: UserToolSchemaOptions = {}
 ): ToolSchema {
   const surface = options.surface ?? 'default'
@@ -534,7 +535,7 @@ export function createUserToolSchema(
 }
 
 export async function createLLMToolSchema(
-  toolConfig: ToolConfig,
+  toolConfig: ToolMetadataConfig,
   userProvidedParams: Record<string, unknown>
 ): Promise<LLMToolSchemaResult> {
   const schema: ToolSchema = {
@@ -827,7 +828,7 @@ const EXCLUDED_SUBBLOCK_TYPES = new Set([
 ])
 
 export interface SubBlocksForToolInput {
-  toolConfig: ToolConfig
+  toolConfig: ToolMetadataConfig
   subBlocks: BlockSubBlockConfig[]
   oauthConfig?: OAuthConfig
 }

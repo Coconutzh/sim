@@ -8,7 +8,6 @@ import { isHosted } from '@/lib/core/config/feature-flags'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { toolCatalog } from '@/tools/catalog'
-import type { ToolConfig } from '@/tools/types'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
 
 const logger = createLogger('CopilotChatPayload')
@@ -142,7 +141,7 @@ export async function buildIntegrationToolSchemas(
               continue
             }
           }
-          const userSchema = createUserToolSchema(toolConfig as unknown as ToolConfig, {
+          const userSchema = createUserToolSchema(toolConfig, {
             surface: options.schemaSurface ?? 'copilot',
           })
           const catalogEntry = getToolEntry(strippedName)
