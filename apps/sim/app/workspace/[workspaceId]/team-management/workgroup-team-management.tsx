@@ -7,6 +7,7 @@ import {
   EyeOff,
   Mail,
   RotateCcw,
+  Send,
   Shield,
   Sparkles,
   UserMinus,
@@ -34,6 +35,7 @@ import {
   useResendWorkspaceInvitation,
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
+import { usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
@@ -96,23 +98,40 @@ export function WorkgroupTeamManagement() {
   const inviteMember = useInviteMember()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const updateAgentSkill = useUpdateWorkgroupAgentSkill()
+  const publishWorkflow = usePublishWorkflow()
   const cancelInvitation = useCancelWorkspaceInvitation()
   const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
   const [emailInvitationValue, setEmailInvitationValue] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkgroupRole>('member')
+  const [publishWorkflowId, setPublishWorkflowId] = useState('')
+  const [publishTitle, setPublishTitle] = useState('')
+  const [publishDescription, setPublishDescription] = useState('')
+  const [publishVisibility, setPublishVisibility] = useState<
+    'organization' | 'selected_workgroups'
+  >('organization')
+  const [publishTargetWorkgroupIds, setPublishTargetWorkgroupIds] = useState<string[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const members = membersData?.members ?? []
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
+  const { data: teamWorkflows = [], isLoading: isLoadingTeamWorkflows } = useWorkflows(
+    isAdmin && teamWorkspaceId ? teamWorkspaceId : undefined
+  )
+  const selectedPublishWorkflow =
+    teamWorkflows.find((workflow) => workflow.id === publishWorkflowId) ?? teamWorkflows[0]
+  const publishTargetWorkgroups = workgroups.filter(
+    (workgroup) => workgroup.organizationId === activeWorkgroup?.organizationId
+  )
   const publicationFilters = useMemo(
     () =>
       isAdmin && activeWorkgroupId ? { sourceWorkgroupId: activeWorkgroupId, limit: 8 } : undefined,
     [activeWorkgroupId, isAdmin]
   )
-  const { data: publicationsData, isLoading: isLoadingPublications } = useShowcasePublications(
-    isAdmin ? activeWorkgroupId : undefined,
-    publicationFilters
-  )
+  const {
+    data: publicationsData,
+    isLoading: isLoadingPublications,
+    refetch: refetchPublications,
+  } = useShowcasePublications(isAdmin ? activeWorkgroupId : undefined, publicationFilters)
   const { data: agentSkillsData, isLoading: isLoadingAgentSkills } = useWorkgroupAgentSkills(
     isAdmin ? activeWorkgroupId : undefined
   )
@@ -125,6 +144,7 @@ export function WorkgroupTeamManagement() {
     inviteMember.isPending ||
     updatePublicationLifecycle.isPending ||
     updateAgentSkill.isPending ||
+    publishWorkflow.isPending ||
     cancelInvitation.isPending ||
     resendInvitation.isPending ||
     updateMember.isPending ||
@@ -219,6 +239,43 @@ export function WorkgroupTeamManagement() {
         reason: `Updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
       })
       setStatusMessage(action === 'archive' ? 'Publication archived.' : 'Publication retracted.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const handlePublishTargetToggle = (workgroupId: string, checked: boolean) => {
+    setPublishTargetWorkgroupIds((current) =>
+      checked
+        ? Array.from(new Set([...current, workgroupId]))
+        : current.filter((item) => item !== workgroupId)
+    )
+  }
+
+  const handlePublishTeamWorkflow = async () => {
+    if (!teamWorkspaceId || !activeWorkgroupId || !selectedPublishWorkflow) return
+    const title = publishTitle.trim() || selectedPublishWorkflow.name
+    const description = publishDescription.trim()
+    const targetWorkgroupIds =
+      publishVisibility === 'selected_workgroups'
+        ? publishTargetWorkgroupIds.length > 0
+          ? publishTargetWorkgroupIds
+          : [activeWorkgroupId]
+        : []
+    try {
+      await publishWorkflow.mutateAsync({
+        workflowId: selectedPublishWorkflow.id,
+        workspaceId: teamWorkspaceId,
+        title,
+        description: description || undefined,
+        visibility: publishVisibility,
+        targetWorkgroupIds,
+      })
+      await refetchPublications()
+      setPublishTitle('')
+      setPublishDescription('')
+      setPublishTargetWorkgroupIds([])
+      setStatusMessage('Team canvas published to showcase.')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -475,6 +532,124 @@ export function WorkgroupTeamManagement() {
                   </Button>
                 </div>
               ))
+            )}
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Send className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Publish team canvas
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Create a showcase snapshot from a team workflow and choose the initial visibility.
+              </p>
+            </div>
+          </div>
+          <div className='grid gap-3 p-4'>
+            {!teamWorkspaceId ? (
+              <div className='text-[13px] text-[var(--text-muted)]'>
+                Initialize the team canvas before publishing showcase versions.
+              </div>
+            ) : isLoadingTeamWorkflows ? (
+              <div className='flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
+                <Loader className='h-[14px] w-[14px]' animate />
+                Loading team workflows...
+              </div>
+            ) : teamWorkflows.length === 0 ? (
+              <div className='text-[13px] text-[var(--text-muted)]'>
+                No workflows exist in the team canvas yet.
+              </div>
+            ) : (
+              <>
+                <div className='grid gap-2 md:grid-cols-[minmax(0,1fr)_180px]'>
+                  <select
+                    value={selectedPublishWorkflow?.id ?? ''}
+                    onChange={(event) => setPublishWorkflowId(event.target.value)}
+                    disabled={isBusy}
+                    className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                  >
+                    {teamWorkflows.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={publishVisibility}
+                    onChange={(event) =>
+                      setPublishVisibility(
+                        event.target.value as 'organization' | 'selected_workgroups'
+                      )
+                    }
+                    disabled={isBusy}
+                    className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                  >
+                    <option value='organization'>Organization visible</option>
+                    <option value='selected_workgroups'>Selected teams</option>
+                  </select>
+                </div>
+                <Input
+                  value={publishTitle}
+                  onChange={(event) => setPublishTitle(event.target.value)}
+                  placeholder={`Title: ${selectedPublishWorkflow?.name ?? 'Team plan'}`}
+                  disabled={isBusy}
+                />
+                <Input
+                  value={publishDescription}
+                  onChange={(event) => setPublishDescription(event.target.value)}
+                  placeholder='Version note or review summary'
+                  disabled={isBusy}
+                />
+                {publishVisibility === 'selected_workgroups' && (
+                  <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                    <div className='mb-2 text-[12px] text-[var(--text-muted)]'>
+                      Select teams that can see this showcase snapshot. If none are selected, only
+                      the current team is targeted.
+                    </div>
+                    <div className='grid gap-2 md:grid-cols-2'>
+                      {publishTargetWorkgroups.map((workgroup) => (
+                        <div
+                          key={workgroup.id}
+                          className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
+                        >
+                          <span className='truncate'>
+                            {workgroup.discipline.name} / {workgroup.name}
+                          </span>
+                          <Switch
+                            checked={publishTargetWorkgroupIds.includes(workgroup.id)}
+                            disabled={isBusy}
+                            aria-label={`Toggle ${workgroup.name} showcase visibility`}
+                            onCheckedChange={(checked) =>
+                              handlePublishTargetToggle(workgroup.id, checked)
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className='flex items-center justify-between gap-3'>
+                  <div className='text-[12px] text-[var(--text-muted)]'>
+                    Publishing creates an immutable showcase version and supersedes older published
+                    versions for this workflow.
+                  </div>
+                  <Button
+                    variant='primary'
+                    onClick={() => void handlePublishTeamWorkflow()}
+                    disabled={isBusy || !selectedPublishWorkflow}
+                  >
+                    {publishWorkflow.isPending ? (
+                      <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                    ) : (
+                      <Send className='mr-2 h-[14px] w-[14px]' />
+                    )}
+                    Publish
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         </section>

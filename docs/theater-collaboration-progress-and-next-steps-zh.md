@@ -374,6 +374,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队邀请复用现有 organization/workspace invitation 邮件链路；接受 team canvas grant 时会自动把用户加入该 workspace 对应的 workgroup。
 - 团队管理页复用现有 workspace invitation 查询/取消/重发 hooks，发送邀请后会刷新 pending invitation 列表，避免管理员离开当前 shell 才能确认状态。
 - 团队发布管理先接入本团队 publication 列表和生命周期操作，复用 `useShowcasePublications` 与 `useUpdatePublicationLifecycle`，管理员可从原 shell 直接归档/撤回展示版本并跳转到展示画布。
+- 团队管理页新增发布创建表单，管理员可选择团队画布内 workflow、填写标题/说明，并选择组织可见或指定团队可见；提交后复用现有 `POST /api/workflows/[id]/publish` 发布快照并刷新本团队展示列表。
 
 ### 5.9 Phase 9 Team Agent Skill 绑定切片
 
@@ -388,7 +389,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 当前团队邀请已覆盖发送、接受后加入 workgroup、pending 列表、取消和重发；后续仍可补更细的错误分类、批量邀请和过期状态视觉。
-- Phase 9 仍需补发布创建表单、可见范围编辑、团队协作日志和更完整的管理员闭环；Agent Skill 绑定已完成首个团队级 enabled/disabled 切片。
+- Phase 9 仍需补团队协作日志、更完整的发布可见范围编辑和管理员闭环；发布创建表单与 Agent Skill 绑定已完成首个可用切片。
 
 ## 6. 建议继续推进目标
 

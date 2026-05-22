@@ -254,7 +254,8 @@ export interface WorkflowTracksData {
   published: WorkflowMetadata[]
 }
 
-export interface PublishedWorkflowView extends PublishedWorkflowCatalogItem {
+export interface PublishedWorkflowView
+  extends Omit<PublishedWorkflowCatalogItem, 'description' | 'publishedAt'> {
   description?: string
   publishedAt: Date | null
   workspaceName: string
@@ -448,8 +449,12 @@ interface PublishWorkflowVariables {
   workflowId: string
   workspaceId: string
   name?: string
+  title?: string
+  description?: string
   visibility?: 'workspace' | 'organization' | 'selected_workgroups'
   viewerWorkgroupIds?: string[]
+  targetWorkgroupIds?: string[]
+  parentVersionId?: string | null
 }
 
 export function usePublishWorkflow() {
@@ -461,8 +466,12 @@ export function usePublishWorkflow() {
         params: { id: variables.workflowId },
         body: {
           name: variables.name,
+          title: variables.title,
+          description: variables.description,
           visibility: variables.visibility ?? 'organization',
           viewerWorkgroupIds: variables.viewerWorkgroupIds ?? [],
+          targetWorkgroupIds: variables.targetWorkgroupIds ?? [],
+          parentVersionId: variables.parentVersionId ?? null,
         },
       })
 
