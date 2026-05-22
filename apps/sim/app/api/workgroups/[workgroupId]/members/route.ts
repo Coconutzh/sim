@@ -1,6 +1,9 @@
 ﻿import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
-import { addWorkgroupMemberContract, getWorkgroupMembersContract } from '@/lib/api/contracts/collaboration'
+import {
+  addWorkgroupMemberContract,
+  getWorkgroupMembersContract,
+} from '@/lib/api/contracts/collaboration'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { addWorkgroupMember, getWorkgroupMembers } from '@/lib/collaboration/service'
@@ -35,6 +38,7 @@ export const POST = withRouteHandler(async (request, context) => {
       actorUserId: session.user.id,
       workgroupId: parsed.data.params.workgroupId,
       userId: parsed.data.body.userId,
+      email: parsed.data.body.email,
       role: parsed.data.body.role,
     })
     return NextResponse.json({ success: true })

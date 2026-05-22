@@ -83,6 +83,12 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         userId: 'member.userId',
         organizationId: 'member.organizationId',
       },
+      user: {
+        id: 'user.id',
+        name: 'user.name',
+        email: 'user.email',
+        image: 'user.image',
+      },
       workgroup: {
         id: 'workgroup.id',
         name: 'workgroup.name',
@@ -174,6 +180,7 @@ vi.mock('@/lib/workflows/defaults', () => ({
 import { recordAudit } from '@sim/audit'
 import { canReadPublication } from '@/lib/collaboration/authz'
 import {
+  addWorkgroupMember,
   assertWorkgroupAdmin,
   createPersonalWorkspace,
   createTeamWorkspace,
@@ -265,6 +272,38 @@ describe('collaboration service', () => {
     ).rejects.toThrow('Cannot demote the last workgroup admin')
 
     expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it('resolves an invited workgroup member by email', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          id: 'workgroup-1',
+          organizationId: 'org-1',
+          teamWorkspaceId: null,
+        },
+      ],
+      [{ id: 'member-1' }]
+    )
+
+    await expect(
+      addWorkgroupMember({
+        actorUserId: 'admin-1',
+        workgroupId: 'workgroup-1',
+        email: 'Member@Example.com',
+        role: 'member',
+      })
+    ).resolves.toBeUndefined()
+
+    expect(mockDb.insert).toHaveBeenCalled()
   })
 
   it('creates additional personal draft canvases with a default workflow', async () => {

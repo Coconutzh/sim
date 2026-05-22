@@ -122,10 +122,21 @@ export type CreateWorkgroupBody = z.input<typeof createWorkgroupBodySchema>
 export const setActiveWorkgroupBodySchema = z.object({ workgroupId: nonEmptyIdSchema })
 export type SetActiveWorkgroupBody = z.input<typeof setActiveWorkgroupBodySchema>
 
-export const upsertWorkgroupMemberBodySchema = z.object({
-  userId: nonEmptyIdSchema,
-  role: workgroupRoleSchema,
-})
+export const upsertWorkgroupMemberBodySchema = z
+  .object({
+    userId: nonEmptyIdSchema.optional(),
+    email: z.string().trim().email('Valid email is required').optional(),
+    role: workgroupRoleSchema,
+  })
+  .superRefine((value, ctx) => {
+    if (!value.userId && !value.email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'User ID or email is required',
+        path: ['userId'],
+      })
+    }
+  })
 export type UpsertWorkgroupMemberBody = z.input<typeof upsertWorkgroupMemberBodySchema>
 
 export const updateWorkgroupMemberBodySchema = z.object({ role: workgroupRoleSchema })

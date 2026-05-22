@@ -473,10 +473,27 @@ export async function getWorkgroupMembers(params: { userId: string; workgroupId:
   return rows.map((row) => ({ ...row, joinedAt: row.joinedAt.toISOString() }))
 }
 
+async function resolveWorkgroupMemberTargetUserId(params: {
+  userId?: string
+  email?: string
+}): Promise<string> {
+  if (params.userId) return params.userId
+  const normalizedEmail = params.email?.trim().toLowerCase()
+  if (!normalizedEmail) throw new Error('User ID or email is required')
+  const [row] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(sql`lower(${user.email}) = ${normalizedEmail}`)
+    .limit(1)
+  if (!row?.id) throw new Error('User not found')
+  return row.id
+}
+
 export async function addWorkgroupMember(params: {
   actorUserId: string
   workgroupId: string
-  userId: string
+  userId?: string
+  email?: string
   role: WorkgroupRole
 }) {
   await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
@@ -486,6 +503,7 @@ export async function addWorkgroupMember(params: {
     .where(eq(workgroup.id, params.workgroupId))
     .limit(1)
   if (!wg) throw new Error('Workgroup not found')
+  const targetUserId = await resolveWorkgroupMemberTargetUserId(params)
   const now = new Date()
   await db
     .insert(workgroupMember)
@@ -493,7 +511,7 @@ export async function addWorkgroupMember(params: {
       id: generateId(),
       organizationId: wg.organizationId,
       workgroupId: wg.id,
-      userId: params.userId,
+      userId: targetUserId,
       role: params.role,
       createdAt: now,
       updatedAt: now,
@@ -504,7 +522,7 @@ export async function addWorkgroupMember(params: {
     })
   if (wg.teamWorkspaceId) {
     await upsertWorkspacePermission({
-      userId: params.userId,
+      userId: targetUserId,
       workspaceId: wg.teamWorkspaceId,
       permissionType: workspacePermissionForWorkgroupRole(params.role),
     })

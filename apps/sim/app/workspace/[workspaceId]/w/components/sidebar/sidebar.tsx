@@ -816,7 +816,7 @@ export const Sidebar = memo(function Sidebar() {
         id: 'team-management',
         label: 'Team management',
         icon: UserPlus,
-        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/settings/organization`,
+        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/team-management`,
       })
     }
 

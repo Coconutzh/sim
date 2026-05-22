@@ -174,10 +174,15 @@ export function useWorkgroupMembers(workgroupId?: string) {
 export function useAddWorkgroupMember() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (variables: { workgroupId: string; userId: string; role: 'admin' | 'member' }) =>
+    mutationFn: (variables: {
+      workgroupId: string
+      userId?: string
+      email?: string
+      role: 'admin' | 'member'
+    }) =>
       requestJson(addWorkgroupMemberContract, {
         params: { workgroupId: variables.workgroupId },
-        body: { userId: variables.userId, role: variables.role },
+        body: { userId: variables.userId, email: variables.email, role: variables.role },
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
