@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { billingOutboxHandlers } from '@/lib/billing/webhooks/outbox-handlers'
+import { collaborationNotificationOutboxHandlers } from '@/lib/collaboration/notification-outbox'
 import { processOutboxEvents } from '@/lib/core/outbox/service'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -15,6 +16,7 @@ export const maxDuration = 120
 
 const handlers = {
   ...billingOutboxHandlers,
+  ...collaborationNotificationOutboxHandlers,
   ...workflowDeploymentOutboxHandlers,
 } as const
 

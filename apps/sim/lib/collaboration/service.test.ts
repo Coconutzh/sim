@@ -3,201 +3,203 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
-  const resultsQueue: unknown[] = []
+const { mockDb, mockEnqueuePublicationNotificationDelivery, mockResultsQueue, schemaMock } =
+  vi.hoisted(() => {
+    const resultsQueue: unknown[] = []
 
-  function createChain() {
-    const chain: Record<string, unknown> = {}
-    const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
+    function createChain() {
+      const chain: Record<string, unknown> = {}
+      const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
 
-    chain.from = vi.fn(() => chain)
-    chain.innerJoin = vi.fn(() => chain)
-    chain.leftJoin = vi.fn(() => chain)
-    chain.orderBy = vi.fn(() => chain)
-    chain.where = vi.fn(() => chain)
-    chain.limit = vi.fn(() => chain)
-    chain.offset = vi.fn(() => chain)
-    chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(resolveNext()))
+      chain.from = vi.fn(() => chain)
+      chain.innerJoin = vi.fn(() => chain)
+      chain.leftJoin = vi.fn(() => chain)
+      chain.orderBy = vi.fn(() => chain)
+      chain.where = vi.fn(() => chain)
+      chain.limit = vi.fn(() => chain)
+      chain.offset = vi.fn(() => chain)
+      chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(resolveNext()))
 
-    return chain
-  }
+      return chain
+    }
 
-  function createWriteChain() {
-    const chain: Record<string, unknown> = {}
+    function createWriteChain() {
+      const chain: Record<string, unknown> = {}
 
-    chain.set = vi.fn(() => chain)
-    chain.where = vi.fn(() => Promise.resolve([]))
+      chain.set = vi.fn(() => chain)
+      chain.where = vi.fn(() => Promise.resolve([]))
 
-    return chain
-  }
+      return chain
+    }
 
-  function createDeleteChain() {
-    const chain: Record<string, unknown> = {}
+    function createDeleteChain() {
+      const chain: Record<string, unknown> = {}
 
-    chain.where = vi.fn(() => Promise.resolve([]))
+      chain.where = vi.fn(() => Promise.resolve([]))
 
-    return chain
-  }
+      return chain
+    }
 
-  function createInsertChain() {
-    const chain: Record<string, unknown> = {}
+    function createInsertChain() {
+      const chain: Record<string, unknown> = {}
 
-    chain.values = vi.fn(() => chain)
-    chain.onConflictDoUpdate = vi.fn(() => Promise.resolve([]))
+      chain.values = vi.fn(() => chain)
+      chain.onConflictDoUpdate = vi.fn(() => Promise.resolve([]))
 
-    return chain
-  }
+      return chain
+    }
 
-  return {
-    mockResultsQueue: resultsQueue,
-    mockDb: {
-      select: vi.fn(() => createChain()),
-      insert: vi.fn(() => createInsertChain()),
-      update: vi.fn(() => createWriteChain()),
-      delete: vi.fn(() => createDeleteChain()),
-      transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
-        callback({
-          insert: vi.fn(() => createInsertChain()),
-          update: vi.fn(() => createWriteChain()),
-        })
-      ),
-    },
-    schemaMock: {
-      workflowPublicationVersion: {
-        id: 'workflowPublicationVersion.id',
-        organizationId: 'workflowPublicationVersion.organizationId',
-        title: 'workflowPublicationVersion.title',
-        description: 'workflowPublicationVersion.description',
-        status: 'workflowPublicationVersion.status',
-        visibility: 'workflowPublicationVersion.visibility',
-        reviewState: 'workflowPublicationVersion.reviewState',
-        riskLevel: 'workflowPublicationVersion.riskLevel',
-        reviewerUserId: 'workflowPublicationVersion.reviewerUserId',
-        reviewerAssignedBy: 'workflowPublicationVersion.reviewerAssignedBy',
-        reviewerAssignedAt: 'workflowPublicationVersion.reviewerAssignedAt',
-        parentVersionId: 'workflowPublicationVersion.parentVersionId',
-        versionNumber: 'workflowPublicationVersion.versionNumber',
-        sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
-        sourceWorkgroupId: 'workflowPublicationVersion.sourceWorkgroupId',
-        sourceDisciplineId: 'workflowPublicationVersion.sourceDisciplineId',
-        publishedWorkflowId: 'workflowPublicationVersion.publishedWorkflowId',
-        snapshotState: 'workflowPublicationVersion.snapshotState',
-        snapshotMetadata: 'workflowPublicationVersion.snapshotMetadata',
-        publishedAt: 'workflowPublicationVersion.publishedAt',
-        archivedAt: 'workflowPublicationVersion.archivedAt',
-        retractedAt: 'workflowPublicationVersion.retractedAt',
-        lifecycleUpdatedBy: 'workflowPublicationVersion.lifecycleUpdatedBy',
-        lifecycleUpdatedAt: 'workflowPublicationVersion.lifecycleUpdatedAt',
-        updatedAt: 'workflowPublicationVersion.updatedAt',
+    return {
+      mockResultsQueue: resultsQueue,
+      mockDb: {
+        select: vi.fn(() => createChain()),
+        insert: vi.fn(() => createInsertChain()),
+        update: vi.fn(() => createWriteChain()),
+        delete: vi.fn(() => createDeleteChain()),
+        transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+          callback({
+            insert: vi.fn(() => createInsertChain()),
+            update: vi.fn(() => createWriteChain()),
+          })
+        ),
       },
-      discipline: {
-        id: 'discipline.id',
-        code: 'discipline.code',
-        name: 'discipline.name',
+      mockEnqueuePublicationNotificationDelivery: vi.fn(async () => 'outbox-event-1'),
+      schemaMock: {
+        workflowPublicationVersion: {
+          id: 'workflowPublicationVersion.id',
+          organizationId: 'workflowPublicationVersion.organizationId',
+          title: 'workflowPublicationVersion.title',
+          description: 'workflowPublicationVersion.description',
+          status: 'workflowPublicationVersion.status',
+          visibility: 'workflowPublicationVersion.visibility',
+          reviewState: 'workflowPublicationVersion.reviewState',
+          riskLevel: 'workflowPublicationVersion.riskLevel',
+          reviewerUserId: 'workflowPublicationVersion.reviewerUserId',
+          reviewerAssignedBy: 'workflowPublicationVersion.reviewerAssignedBy',
+          reviewerAssignedAt: 'workflowPublicationVersion.reviewerAssignedAt',
+          parentVersionId: 'workflowPublicationVersion.parentVersionId',
+          versionNumber: 'workflowPublicationVersion.versionNumber',
+          sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
+          sourceWorkgroupId: 'workflowPublicationVersion.sourceWorkgroupId',
+          sourceDisciplineId: 'workflowPublicationVersion.sourceDisciplineId',
+          publishedWorkflowId: 'workflowPublicationVersion.publishedWorkflowId',
+          snapshotState: 'workflowPublicationVersion.snapshotState',
+          snapshotMetadata: 'workflowPublicationVersion.snapshotMetadata',
+          publishedAt: 'workflowPublicationVersion.publishedAt',
+          archivedAt: 'workflowPublicationVersion.archivedAt',
+          retractedAt: 'workflowPublicationVersion.retractedAt',
+          lifecycleUpdatedBy: 'workflowPublicationVersion.lifecycleUpdatedBy',
+          lifecycleUpdatedAt: 'workflowPublicationVersion.lifecycleUpdatedAt',
+          updatedAt: 'workflowPublicationVersion.updatedAt',
+        },
+        discipline: {
+          id: 'discipline.id',
+          code: 'discipline.code',
+          name: 'discipline.name',
+        },
+        member: {
+          id: 'member.id',
+          role: 'member.role',
+          userId: 'member.userId',
+          organizationId: 'member.organizationId',
+        },
+        user: {
+          id: 'user.id',
+          name: 'user.name',
+          email: 'user.email',
+          image: 'user.image',
+        },
+        workgroup: {
+          id: 'workgroup.id',
+          name: 'workgroup.name',
+          organizationId: 'workgroup.organizationId',
+          disciplineId: 'workgroup.disciplineId',
+          teamWorkspaceId: 'workgroup.teamWorkspaceId',
+          archivedAt: 'workgroup.archivedAt',
+        },
+        workgroupMember: {
+          id: 'workgroupMember.id',
+          role: 'workgroupMember.role',
+          userId: 'workgroupMember.userId',
+          organizationId: 'workgroupMember.organizationId',
+          workgroupId: 'workgroupMember.workgroupId',
+        },
+        permissions: {
+          userId: 'permissions.userId',
+          entityType: 'permissions.entityType',
+          entityId: 'permissions.entityId',
+        },
+        personalCanvasWorkspace: {
+          userId: 'personalCanvasWorkspace.userId',
+          organizationId: 'personalCanvasWorkspace.organizationId',
+          workgroupId: 'personalCanvasWorkspace.workgroupId',
+          workspaceId: 'personalCanvasWorkspace.workspaceId',
+        },
+        workspace: {
+          id: 'workspace.id',
+          name: 'workspace.name',
+          color: 'workspace.color',
+          logoUrl: 'workspace.logoUrl',
+          ownerId: 'workspace.ownerId',
+          organizationId: 'workspace.organizationId',
+          workgroupId: 'workspace.workgroupId',
+          workspaceMode: 'workspace.workspaceMode',
+          billedAccountUserId: 'workspace.billedAccountUserId',
+          allowPersonalApiKeys: 'workspace.allowPersonalApiKeys',
+          archivedAt: 'workspace.archivedAt',
+          createdAt: 'workspace.createdAt',
+          updatedAt: 'workspace.updatedAt',
+        },
+        workflow: {
+          id: 'workflow.id',
+        },
+        workflowPublicationScope: {
+          id: 'workflowPublicationScope.id',
+          workflowId: 'workflowPublicationScope.workflowId',
+          viewerWorkgroupId: 'workflowPublicationScope.viewerWorkgroupId',
+        },
+        skill: {
+          id: 'skill.id',
+          workspaceId: 'skill.workspaceId',
+          name: 'skill.name',
+          description: 'skill.description',
+        },
+        agentSkillBinding: {
+          id: 'agentSkillBinding.id',
+          organizationId: 'agentSkillBinding.organizationId',
+          agentCode: 'agentSkillBinding.agentCode',
+          workgroupId: 'agentSkillBinding.workgroupId',
+          skillId: 'agentSkillBinding.skillId',
+          enabled: 'agentSkillBinding.enabled',
+          scope: 'agentSkillBinding.scope',
+          createdAt: 'agentSkillBinding.createdAt',
+          updatedAt: 'agentSkillBinding.updatedAt',
+        },
+        organizationAgentTemplate: {
+          id: 'organizationAgentTemplate.id',
+          organizationId: 'organizationAgentTemplate.organizationId',
+          agentCode: 'organizationAgentTemplate.agentCode',
+          projectInstructions: 'organizationAgentTemplate.projectInstructions',
+          updatedBy: 'organizationAgentTemplate.updatedBy',
+          createdAt: 'organizationAgentTemplate.createdAt',
+          updatedAt: 'organizationAgentTemplate.updatedAt',
+        },
+        auditLog: {
+          id: 'auditLog.id',
+          workspaceId: 'auditLog.workspaceId',
+          action: 'auditLog.action',
+          resourceType: 'auditLog.resourceType',
+          resourceId: 'auditLog.resourceId',
+          resourceName: 'auditLog.resourceName',
+          description: 'auditLog.description',
+          actorName: 'auditLog.actorName',
+          actorEmail: 'auditLog.actorEmail',
+          metadata: 'auditLog.metadata',
+          createdAt: 'auditLog.createdAt',
+        },
       },
-      member: {
-        id: 'member.id',
-        role: 'member.role',
-        userId: 'member.userId',
-        organizationId: 'member.organizationId',
-      },
-      user: {
-        id: 'user.id',
-        name: 'user.name',
-        email: 'user.email',
-        image: 'user.image',
-      },
-      workgroup: {
-        id: 'workgroup.id',
-        name: 'workgroup.name',
-        organizationId: 'workgroup.organizationId',
-        disciplineId: 'workgroup.disciplineId',
-        teamWorkspaceId: 'workgroup.teamWorkspaceId',
-        archivedAt: 'workgroup.archivedAt',
-      },
-      workgroupMember: {
-        id: 'workgroupMember.id',
-        role: 'workgroupMember.role',
-        userId: 'workgroupMember.userId',
-        organizationId: 'workgroupMember.organizationId',
-        workgroupId: 'workgroupMember.workgroupId',
-      },
-      permissions: {
-        userId: 'permissions.userId',
-        entityType: 'permissions.entityType',
-        entityId: 'permissions.entityId',
-      },
-      personalCanvasWorkspace: {
-        userId: 'personalCanvasWorkspace.userId',
-        organizationId: 'personalCanvasWorkspace.organizationId',
-        workgroupId: 'personalCanvasWorkspace.workgroupId',
-        workspaceId: 'personalCanvasWorkspace.workspaceId',
-      },
-      workspace: {
-        id: 'workspace.id',
-        name: 'workspace.name',
-        color: 'workspace.color',
-        logoUrl: 'workspace.logoUrl',
-        ownerId: 'workspace.ownerId',
-        organizationId: 'workspace.organizationId',
-        workgroupId: 'workspace.workgroupId',
-        workspaceMode: 'workspace.workspaceMode',
-        billedAccountUserId: 'workspace.billedAccountUserId',
-        allowPersonalApiKeys: 'workspace.allowPersonalApiKeys',
-        archivedAt: 'workspace.archivedAt',
-        createdAt: 'workspace.createdAt',
-        updatedAt: 'workspace.updatedAt',
-      },
-      workflow: {
-        id: 'workflow.id',
-      },
-      workflowPublicationScope: {
-        id: 'workflowPublicationScope.id',
-        workflowId: 'workflowPublicationScope.workflowId',
-        viewerWorkgroupId: 'workflowPublicationScope.viewerWorkgroupId',
-      },
-      skill: {
-        id: 'skill.id',
-        workspaceId: 'skill.workspaceId',
-        name: 'skill.name',
-        description: 'skill.description',
-      },
-      agentSkillBinding: {
-        id: 'agentSkillBinding.id',
-        organizationId: 'agentSkillBinding.organizationId',
-        agentCode: 'agentSkillBinding.agentCode',
-        workgroupId: 'agentSkillBinding.workgroupId',
-        skillId: 'agentSkillBinding.skillId',
-        enabled: 'agentSkillBinding.enabled',
-        scope: 'agentSkillBinding.scope',
-        createdAt: 'agentSkillBinding.createdAt',
-        updatedAt: 'agentSkillBinding.updatedAt',
-      },
-      organizationAgentTemplate: {
-        id: 'organizationAgentTemplate.id',
-        organizationId: 'organizationAgentTemplate.organizationId',
-        agentCode: 'organizationAgentTemplate.agentCode',
-        projectInstructions: 'organizationAgentTemplate.projectInstructions',
-        updatedBy: 'organizationAgentTemplate.updatedBy',
-        createdAt: 'organizationAgentTemplate.createdAt',
-        updatedAt: 'organizationAgentTemplate.updatedAt',
-      },
-      auditLog: {
-        id: 'auditLog.id',
-        workspaceId: 'auditLog.workspaceId',
-        action: 'auditLog.action',
-        resourceType: 'auditLog.resourceType',
-        resourceId: 'auditLog.resourceId',
-        resourceName: 'auditLog.resourceName',
-        description: 'auditLog.description',
-        actorName: 'auditLog.actorName',
-        actorEmail: 'auditLog.actorEmail',
-        metadata: 'auditLog.metadata',
-        createdAt: 'auditLog.createdAt',
-      },
-    },
-  }
-})
+    }
+  })
 
 vi.mock('@sim/db', () => ({ db: mockDb }))
 vi.mock('@sim/db/schema', () => schemaMock)
@@ -252,6 +254,9 @@ vi.mock('drizzle-orm', () => ({
 vi.mock('@/lib/collaboration/authz', () => ({
   canPublishTeamCanvas: vi.fn(),
   canReadPublication: vi.fn(),
+}))
+vi.mock('@/lib/collaboration/notification-outbox', () => ({
+  enqueuePublicationNotificationDelivery: mockEnqueuePublicationNotificationDelivery,
 }))
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadWorkflowFromNormalizedTables: vi.fn(),
@@ -1273,17 +1278,32 @@ describe('collaboration service', () => {
       notificationCount: 2,
       dangerCount: 2,
       publicationIds: ['publication-review-1'],
+      outboxEventId: 'outbox-event-1',
     })
 
+    expect(mockEnqueuePublicationNotificationDelivery).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        id: 'publication-review-email-digest',
+        organizationId: 'org-1',
+        actorUserId: 'org-admin-1',
+        channel: 'email',
+        event: 'publication.review_notifications.digest',
+        notificationCount: 2,
+        publicationIds: ['publication-review-1'],
+      })
+    )
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'org-admin-1',
         action: 'notification.created',
         resourceType: 'notification',
-        resourceId: 'publication-review-email-digest',
+        resourceId: 'outbox-event-1',
         metadata: expect.objectContaining({
           organizationId: 'org-1',
           channel: 'email',
+          deliveryDraftId: 'publication-review-email-digest',
+          outboxEventId: 'outbox-event-1',
           notificationEvent: 'publication.review_notifications.digest',
           notificationCount: 2,
         }),

@@ -373,6 +373,7 @@ export const publicationNotificationDeliverySchema = z.object({
   dangerCount: z.number().int().min(0),
   warningCount: z.number().int().min(0),
   publicationIds: z.array(nonEmptyIdSchema),
+  outboxEventId: nonEmptyIdSchema.nullable(),
 })
 export type PublicationNotificationDelivery = z.output<typeof publicationNotificationDeliverySchema>
 

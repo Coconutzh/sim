@@ -30,6 +30,7 @@ import {
   isAgentCode,
   workspacePermissionForWorkgroupRole,
 } from '@/lib/collaboration/definitions'
+import { enqueuePublicationNotificationDelivery } from '@/lib/collaboration/notification-outbox'
 import {
   buildPublicationDependencyConflictAlerts,
   buildPublicationNotificationDeliveryDrafts,
@@ -113,6 +114,7 @@ export interface PublicationNotificationDeliveryResult {
   dangerCount: number
   warningCount: number
   publicationIds: string[]
+  outboxEventId: string | null
 }
 
 function toSlug(name: string): string {
@@ -2041,22 +2043,43 @@ export async function deliverOrganizationPublicationNotifications(params: {
       dangerCount: 0,
       warningCount: 0,
       publicationIds: [],
+      outboxEventId: null,
     }
   }
 
   const publicationIds = [
     ...new Set(draft.payload.notifications.map((notification) => notification.publicationId)),
   ]
+  const outboxEventId = await enqueuePublicationNotificationDelivery(db, {
+    id: draft.id,
+    organizationId: params.organizationId,
+    actorUserId: params.userId,
+    channel: draft.channel,
+    event: draft.payload.event,
+    projectName: draft.payload.projectName,
+    title: draft.title,
+    detail: draft.detail,
+    body: draft.body,
+    notificationCount: draft.payload.notificationCount,
+    dangerCount: draft.payload.dangerCount,
+    warningCount: draft.payload.warningCount,
+    publicationIds,
+    notifications: draft.payload.notifications,
+    enqueuedAt: new Date().toISOString(),
+  })
+
   recordAudit({
     actorId: params.userId,
     action: AuditAction.NOTIFICATION_CREATED,
     resourceType: AuditResourceType.NOTIFICATION,
-    resourceId: draft.id,
+    resourceId: outboxEventId,
     resourceName: draft.title,
     description: `Queued ${draft.title} for publication review notifications`,
     metadata: {
       organizationId: params.organizationId,
       channel: draft.channel,
+      deliveryDraftId: draft.id,
+      outboxEventId,
       notificationEvent: draft.payload.event,
       notificationCount: draft.payload.notificationCount,
       dangerCount: draft.payload.dangerCount,
@@ -2075,6 +2098,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
     dangerCount: draft.payload.dangerCount,
     warningCount: draft.payload.warningCount,
     publicationIds,
+    outboxEventId,
   }
 }
 

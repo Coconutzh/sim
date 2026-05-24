@@ -2066,7 +2066,7 @@ export function ProjectAdminCenter() {
           message: delivery.body,
         })
         setPublicationGovernanceStatus(
-          `Recorded server-side digest delivery and queued ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'} in the in-app bell.`
+          `Persisted digest outbox ${delivery.outboxEventId ?? 'record'} and queued ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'} in the in-app bell.`
         )
         resetActivityPage()
         return
@@ -2074,7 +2074,7 @@ export function ProjectAdminCenter() {
 
       await navigator.clipboard.writeText(delivery.body)
       setPublicationGovernanceStatus(
-        `Recorded server-side ${delivery.channel.replace('_', ' ')} delivery and copied ${delivery.title.toLowerCase()} to clipboard.`
+        `Persisted ${delivery.channel.replace('_', ' ')} outbox ${delivery.outboxEventId ?? 'record'} and copied ${delivery.title.toLowerCase()} to clipboard.`
       )
       resetActivityPage()
     } catch (error) {
@@ -2631,8 +2631,8 @@ export function ProjectAdminCenter() {
                           Delivery channels
                         </h4>
                         <p className='mt-1 max-w-[720px] text-[11px] text-[var(--text-muted)]'>
-                          Record server-side project-admin delivery, queue an in-app digest, or copy
-                          email and webhook payloads for external delivery setup.
+                          Persist a server-side outbox delivery record, queue an in-app digest, or
+                          copy email and webhook payloads for external delivery setup.
                         </p>
                       </div>
                       <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
