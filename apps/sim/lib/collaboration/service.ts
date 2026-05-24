@@ -73,6 +73,7 @@ function formatPublicationReviewer(publication: {
 type PublicationVisibility = 'organization' | 'selected_workgroups'
 type PublicationNotificationChannel = 'in_app' | 'email' | 'webhook'
 type PublicationNotificationDeliveryStatus = 'queued' | 'skipped'
+const PUBLICATION_REVIEW_NOTIFICATION_EVENT = 'publication.review_notifications.digest'
 type WorkgroupMemberTarget = {
   userId?: string
   email?: string
@@ -128,6 +129,23 @@ export interface PublicationNotificationInboxEntry {
   warningCount: number
   publicationIds: string[]
   outboxEventId: string | null
+  actorName: string | null
+  actorEmail: string | null
+  createdAt: string
+  readAt: string | null
+}
+
+type ProjectNotificationCenterKind = 'publication_review' | 'project_admin_failure'
+
+export interface ProjectNotificationCenterEntry {
+  id: string
+  kind: ProjectNotificationCenterKind
+  severity: 'info' | 'warning' | 'danger'
+  title: string
+  detail: string
+  channel: PublicationNotificationChannel | null
+  body: string | null
+  notificationCount: number
   actorName: string | null
   actorEmail: string | null
   createdAt: string
@@ -1512,7 +1530,7 @@ function getPublicationNotificationReadAt(
 function getPublicationNotificationInboxMetadata(metadata: unknown, userId: string) {
   if (!metadata || typeof metadata !== 'object') return null
   const record = metadata as Record<string, unknown>
-  if (record.notificationEvent !== 'publication.review_notifications.digest') return null
+  if (record.notificationEvent !== PUBLICATION_REVIEW_NOTIFICATION_EVENT) return null
   if (!isPublicationNotificationChannel(record.channel)) return null
 
   return {
@@ -1527,6 +1545,76 @@ function getPublicationNotificationInboxMetadata(metadata: unknown, userId: stri
     outboxEventId: getMetadataString(record, 'outboxEventId'),
     readAt: getPublicationNotificationReadAt(record, userId),
   }
+}
+
+function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCenterKind) {
+  const publicationReviewCondition = and(
+    eq(auditLog.action, AuditAction.NOTIFICATION_CREATED),
+    sql`${auditLog.metadata}->>'notificationEvent' = ${PUBLICATION_REVIEW_NOTIFICATION_EVENT}`
+  )
+  const failureCondition = eq(auditLog.action, AuditAction.PROJECT_ADMIN_FAILURE_RECORDED)
+  if (kind === 'publication_review') return publicationReviewCondition
+  if (kind === 'project_admin_failure') return failureCondition
+  return or(publicationReviewCondition, failureCondition)
+}
+
+function getProjectNotificationCenterEntry(
+  row: {
+    id: string
+    action: string
+    resourceName: string | null
+    description: string | null
+    actorName: string | null
+    actorEmail: string | null
+    metadata: unknown
+    createdAt: Date
+  },
+  userId: string
+): ProjectNotificationCenterEntry | null {
+  if (row.action === AuditAction.NOTIFICATION_CREATED) {
+    const metadata = getPublicationNotificationInboxMetadata(row.metadata, userId)
+    if (!metadata) return null
+    return {
+      id: row.id,
+      kind: 'publication_review',
+      severity:
+        metadata.dangerCount > 0 ? 'danger' : metadata.warningCount > 0 ? 'warning' : 'info',
+      title: metadata.title ?? row.resourceName ?? 'Publication review digest',
+      detail: metadata.detail ?? row.description ?? '',
+      channel: metadata.channel,
+      body: metadata.body ?? null,
+      notificationCount: metadata.notificationCount,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt: metadata.readAt,
+    }
+  }
+
+  if (row.action === AuditAction.PROJECT_ADMIN_FAILURE_RECORDED) {
+    const metadata = getProjectAdminFailureMetadata(row.metadata)
+    if (!metadata) return null
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'project_admin_failure',
+      severity: 'danger',
+      title: metadata.operation ? `Failed: ${metadata.operation}` : 'Project admin failure',
+      detail: metadata.message ?? row.description ?? '',
+      channel: null,
+      body: metadata.target ?? row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  return null
 }
 
 export async function listOrganizationWorkgroupActivity(params: {
@@ -2167,7 +2255,7 @@ export async function listOrganizationPublicationNotificationInbox(params: {
       and(
         eq(auditLog.action, AuditAction.NOTIFICATION_CREATED),
         sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
-        sql`${auditLog.metadata}->>'notificationEvent' = ${'publication.review_notifications.digest'}`
+        sql`${auditLog.metadata}->>'notificationEvent' = ${PUBLICATION_REVIEW_NOTIFICATION_EVENT}`
       )
     )
     .orderBy(desc(auditLog.createdAt))
@@ -2217,7 +2305,77 @@ export async function markOrganizationPublicationNotificationInboxRead(params: {
   const conditions = [
     eq(auditLog.action, AuditAction.NOTIFICATION_CREATED),
     sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
-    sql`${auditLog.metadata}->>'notificationEvent' = ${'publication.review_notifications.digest'}`,
+    sql`${auditLog.metadata}->>'notificationEvent' = ${PUBLICATION_REVIEW_NOTIFICATION_EVENT}`,
+  ]
+  if (!params.markAll && params.notificationId) {
+    conditions.push(eq(auditLog.id, params.notificationId))
+  }
+
+  await db
+    .update(auditLog)
+    .set({
+      metadata: sql`jsonb_set(coalesce(${auditLog.metadata}, '{}'::jsonb), array['readAtByUserId', ${params.userId}]::text[], to_jsonb(${readAt}::text), true)`,
+    })
+    .where(and(...conditions))
+
+  return { readAt }
+}
+
+export async function listOrganizationProjectNotificationCenter(params: {
+  userId: string
+  organizationId: string
+  limit?: number
+  offset?: number
+  kind?: ProjectNotificationCenterKind
+}): Promise<{ notifications: ProjectNotificationCenterEntry[]; nextOffset: number | null }> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const pageSize = params.limit ?? 10
+  const offset = params.offset ?? 0
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      action: auditLog.action,
+      resourceName: auditLog.resourceName,
+      description: auditLog.description,
+      actorName: auditLog.actorName,
+      actorEmail: auditLog.actorEmail,
+      metadata: auditLog.metadata,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .where(
+      and(
+        projectNotificationCenterScopeCondition(params.kind),
+        sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`
+      )
+    )
+    .orderBy(desc(auditLog.createdAt))
+    .limit(pageSize + 1)
+    .offset(offset)
+
+  return {
+    notifications: rows.slice(0, pageSize).flatMap((row) => {
+      const entry = getProjectNotificationCenterEntry(row, params.userId)
+      return entry ? [entry] : []
+    }),
+    nextOffset: rows.length > pageSize ? offset + pageSize : null,
+  }
+}
+
+export async function markOrganizationProjectNotificationCenterRead(params: {
+  userId: string
+  organizationId: string
+  notificationId?: string
+  markAll?: boolean
+  kind?: ProjectNotificationCenterKind
+}): Promise<{ readAt: string }> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const readAt = new Date().toISOString()
+  const conditions = [
+    projectNotificationCenterScopeCondition(params.kind),
+    sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
   ]
   if (!params.markAll && params.notificationId) {
     conditions.push(eq(auditLog.id, params.notificationId))

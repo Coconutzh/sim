@@ -470,6 +470,51 @@ export type MarkPublicationNotificationInboxReadBody = z.input<
   typeof markPublicationNotificationInboxReadBodySchema
 >
 
+export const projectNotificationCenterKindSchema = z.enum([
+  'publication_review',
+  'project_admin_failure',
+])
+export type ProjectNotificationCenterKind = z.output<typeof projectNotificationCenterKindSchema>
+export const projectNotificationCenterQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
+  kind: projectNotificationCenterKindSchema.optional(),
+})
+export type ProjectNotificationCenterQuery = z.output<typeof projectNotificationCenterQuerySchema>
+export const projectNotificationCenterEntrySchema = z.object({
+  id: nonEmptyIdSchema,
+  kind: projectNotificationCenterKindSchema,
+  severity: z.enum(['info', 'warning', 'danger']),
+  title: z.string(),
+  detail: z.string(),
+  channel: publicationNotificationChannelSchema.nullable(),
+  body: z.string().nullable(),
+  notificationCount: z.number().int().min(0),
+  actorName: z.string().nullable(),
+  actorEmail: z.string().nullable(),
+  createdAt: z.string(),
+  readAt: z.string().nullable(),
+})
+export type ProjectNotificationCenterEntry = z.output<typeof projectNotificationCenterEntrySchema>
+export const markProjectNotificationCenterReadBodySchema = z
+  .object({
+    notificationId: nonEmptyIdSchema.optional(),
+    markAll: z.boolean().optional(),
+    kind: projectNotificationCenterKindSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.notificationId && !value.markAll) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['notificationId'],
+        message: 'notificationId is required unless markAll is true',
+      })
+    }
+  })
+export type MarkProjectNotificationCenterReadBody = z.input<
+  typeof markProjectNotificationCenterReadBodySchema
+>
+
 export const recordProjectAdminFailureBodySchema = z.object({
   scope: projectAdminFailureScopeSchema,
   operation: z.string().trim().min(1, 'operation cannot be empty').max(160),
@@ -993,6 +1038,33 @@ export const markOrganizationPublicationNotificationInboxReadContract = defineRo
   path: '/api/organizations/[id]/publications/notifications/inbox',
   params: organizationParamsSchema,
   body: markPublicationNotificationInboxReadBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      readAt: z.string(),
+    }),
+  },
+})
+
+export const listOrganizationProjectNotificationCenterContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/notifications/center',
+  params: organizationParamsSchema,
+  query: projectNotificationCenterQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      notifications: z.array(projectNotificationCenterEntrySchema),
+      nextOffset: z.number().nullable(),
+    }),
+  },
+})
+
+export const markOrganizationProjectNotificationCenterReadContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/organizations/[id]/notifications/center',
+  params: organizationParamsSchema,
+  body: markProjectNotificationCenterReadBodySchema,
   response: {
     mode: 'json',
     schema: z.object({

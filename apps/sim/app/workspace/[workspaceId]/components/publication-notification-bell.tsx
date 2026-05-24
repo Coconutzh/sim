@@ -11,11 +11,11 @@ import {
 import { Bell } from '@/components/emcn/icons'
 import { cn } from '@/lib/core/utils/cn'
 import {
-  useMarkPublicationNotificationInboxRead,
-  usePublicationNotificationInbox,
+  useMarkProjectNotificationCenterRead,
+  useProjectNotificationCenter,
 } from '@/hooks/queries/collaboration'
 
-const INBOX_QUERY = { limit: 10 } as const
+const CENTER_QUERY = { limit: 10 } as const
 
 interface PublicationNotificationBellProps {
   organizationId?: string
@@ -29,13 +29,13 @@ export function PublicationNotificationBell({
   enabled,
 }: PublicationNotificationBellProps) {
   const router = useRouter()
-  const { data, isLoading } = usePublicationNotificationInbox(
+  const { data, isLoading } = useProjectNotificationCenter(
     enabled ? organizationId : undefined,
-    INBOX_QUERY
+    CENTER_QUERY
   )
-  const markRead = useMarkPublicationNotificationInboxRead()
-  const inbox = data?.inbox ?? []
-  const unreadCount = inbox.filter((entry) => !entry.readAt).length
+  const markRead = useMarkProjectNotificationCenterRead()
+  const notifications = data?.notifications ?? []
+  const unreadCount = notifications.filter((entry) => !entry.readAt).length
 
   if (!enabled || !organizationId) return null
 
@@ -68,10 +68,10 @@ export function PublicationNotificationBell({
         <div className='flex items-start justify-between gap-3 px-1 py-1'>
           <div>
             <div className='font-medium text-[12px] text-[var(--text-primary)]'>
-              Publication inbox
+              Project notification center
             </div>
             <div className='mt-0.5 text-[11px] text-[var(--text-muted)]'>
-              {unreadCount} unread in recent project-admin deliveries
+              {unreadCount} unread in recent project alerts
             </div>
           </div>
           <Button
@@ -91,12 +91,12 @@ export function PublicationNotificationBell({
               <Loader className='h-[14px] w-[14px] animate-spin' />
               Loading notifications...
             </div>
-          ) : inbox.length === 0 ? (
+          ) : notifications.length === 0 ? (
             <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] text-[var(--text-muted)]'>
-              No publication review notifications yet.
+              No project notifications yet.
             </div>
           ) : (
-            inbox.map((entry) => (
+            notifications.map((entry) => (
               <button
                 key={entry.id}
                 type='button'
@@ -118,7 +118,9 @@ export function PublicationNotificationBell({
                     {entry.title}
                   </span>
                   <span className='shrink-0 rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]'>
-                    {entry.channel.replace('_', ' ')}
+                    {entry.kind === 'publication_review'
+                      ? (entry.channel?.replace('_', ' ') ?? 'publication')
+                      : 'failure'}
                   </span>
                 </div>
                 <div className='mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]'>

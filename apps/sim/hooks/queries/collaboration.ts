@@ -25,6 +25,7 @@ import {
   listMyWorkgroupsContract,
   listOrganizationAgentSkillPoliciesContract,
   listOrganizationAgentTemplatesContract,
+  listOrganizationProjectNotificationCenterContract,
   listOrganizationPublicationNotificationInboxContract,
   listOrganizationPublicationsContract,
   listOrganizationWorkgroupActivityContract,
@@ -32,9 +33,12 @@ import {
   listShowcasePublicationsContract,
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
+  type MarkProjectNotificationCenterReadBody,
   type MarkPublicationNotificationInboxReadBody,
+  markOrganizationProjectNotificationCenterReadContract,
   markOrganizationPublicationNotificationInboxReadContract,
   type ProjectAdminFailureScope,
+  type ProjectNotificationCenterQuery,
   type PublicationNotificationInboxQuery,
   type PublicationSummary,
   type RecordProjectAdminFailureBody,
@@ -91,6 +95,16 @@ export const collaborationKeys = {
       ...collaborationKeys.organizationPublicationLists(),
       organizationId ?? '',
       'notification-inbox',
+      query ?? {},
+    ] as const,
+  organizationProjectNotificationCenter: (
+    organizationId?: string,
+    query?: ProjectNotificationCenterQuery
+  ) =>
+    [
+      ...collaborationKeys.organizations(),
+      organizationId ?? '',
+      'project-notification-center',
       query ?? {},
     ] as const,
   workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
@@ -678,6 +692,49 @@ export function useMarkPublicationNotificationInboxRead() {
         },
       }),
     onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationPublicationNotificationInbox(
+          variables.organizationId
+        ),
+      })
+    },
+  })
+}
+
+export function useProjectNotificationCenter(
+  organizationId?: string,
+  query: ProjectNotificationCenterQuery = {}
+) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationProjectNotificationCenter(organizationId, query),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationProjectNotificationCenterContract, {
+        params: { id: organizationId as string },
+        query,
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useMarkProjectNotificationCenterRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & MarkProjectNotificationCenterReadBody) =>
+      requestJson(markOrganizationProjectNotificationCenterReadContract, {
+        params: { id: variables.organizationId },
+        body: {
+          notificationId: variables.notificationId,
+          markAll: variables.markAll,
+          kind: variables.kind,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationProjectNotificationCenter(variables.organizationId),
+      })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationPublicationNotificationInbox(
           variables.organizationId

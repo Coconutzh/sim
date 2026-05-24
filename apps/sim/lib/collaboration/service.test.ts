@@ -284,11 +284,13 @@ import {
   getTeamWorkspace,
   listOrganizationAgentSkillPolicies,
   listOrganizationAgentTemplates,
+  listOrganizationProjectNotificationCenter,
   listOrganizationPublicationNotificationInbox,
   listOrganizationPublications,
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
+  markOrganizationProjectNotificationCenterRead,
   markOrganizationPublicationNotificationInboxRead,
   recordProjectAdminFailureAudit,
   resolveAgentForWorkspace,
@@ -1462,6 +1464,84 @@ describe('collaboration service', () => {
         userId: 'org-admin-1',
         organizationId: 'org-1',
         notificationId: 'audit-notification-1',
+      })
+    ).resolves.toEqual({
+      readAt: expect.any(String),
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.auditLog)
+  })
+
+  it('lists project notification center entries across publication and failure audits', async () => {
+    const createdAt = new Date('2026-05-25T10:00:00Z')
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          id: 'audit-notification-1',
+          action: 'notification.created',
+          resourceName: 'In-app bell digest',
+          description: 'Queued In-app bell digest for publication review notifications',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            channel: 'in_app',
+            notificationEvent: 'publication.review_notifications.digest',
+            title: 'In-app bell digest',
+            detail: 'Queue a local in-app digest for the project admin session.',
+            body: '2 publication review notifications need attention.',
+            notificationCount: 2,
+            dangerCount: 1,
+            warningCount: 1,
+            publicationIds: ['publication-1'],
+            outboxEventId: 'outbox-event-1',
+          },
+        },
+        {
+          id: 'audit-failure-1',
+          action: 'project_admin_failure.recorded',
+          resourceName: 'Archive team',
+          description: 'Archive team failed for Stage',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            failureId: 'failure-1',
+            scope: 'team',
+            operation: 'Archive team',
+            target: 'Stage',
+            message: 'Archive failed',
+          },
+        },
+      ]
+    )
+
+    await expect(
+      listOrganizationProjectNotificationCenter({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        limit: 10,
+      })
+    ).resolves.toMatchObject({
+      notifications: [
+        { id: 'audit-notification-1', kind: 'publication_review', severity: 'danger' },
+        { id: 'audit-failure-1', kind: 'project_admin_failure', severity: 'danger' },
+      ],
+      nextOffset: null,
+    })
+  })
+
+  it('marks project notification center entries as read', async () => {
+    mockResultsQueue.push([{ role: 'admin' }])
+
+    await expect(
+      markOrganizationProjectNotificationCenterRead({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        markAll: true,
       })
     ).resolves.toEqual({
       readAt: expect.any(String),
