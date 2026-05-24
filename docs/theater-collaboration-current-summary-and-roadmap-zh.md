@@ -130,11 +130,13 @@
 - `sanitizeWorkflowSnapshot` 已增强文件字段脱敏，降低个人/团队/展示之间复制时泄露私有文件引用的风险。
 - 原 workflow 右键菜单已有 `Copy to team canvas` / `Copy to personal draft` 入口。
 - `/workspace/[workspaceId]/split` 已有首个原 shell 分屏切片，左右 pane 默认加载个人草稿和团队画布，移动端降级为上下布局。
+- 分屏 pane 已支持独立多节点选择：普通点击替换当前 pane selection，Shift/Ctrl/Cmd-click 追加或移除节点。
+- 分屏复制成功后会按 `mappings.blockIds` 在目标 pane 选中新生成节点，作为复制结果高亮；复制 payload 会带上当前 pane 的多节点 `blockIds`，服务端继续自动复制 selection 内部合法边。
 
 仍需继续：
 
 - 当前分屏是“只读预览 + 显式复制”，不是两个完整可编辑 ReactFlow 编辑器。
-- 目标新节点高亮、多选/框选、边选择、viewport-center 粘贴、pane-scoped selection/zoom/pan/store 隔离仍需 Phase 7 后续实现。
+- 框选、显式边选择、viewport-center 粘贴、pane-scoped zoom/pan/store 隔离仍需 Phase 7 后续实现。
 
 ### 3.6 团队管理闭环
 
@@ -220,8 +222,8 @@ git diff --check
 
 建议任务：
 
-1. 复制成功后用 `mappings.blockIds` 在目标画布中高亮新节点。
-2. 支持多选节点、边选择和框选，而不是只靠单节点/当前 selection。
+1. 已在分屏里用 `mappings.blockIds` 把复制结果映射为目标 pane selection，高亮新节点。
+2. 已支持 Shift/Ctrl/Cmd-click 多节点复制；边会随服务端 selection 内部合法边自动复制。显式边选择和框选仍待补齐。
 3. 支持复制到 viewport center 或目标 pane 当前视口，而不是固定 offset。
 4. UI 明确展示目标画布不可写、目标 workflow 缺失、源为只读展示画布等原因。
 5. 增加前端组件/Hook 测试，验证复制 payload 不会把 source/target workspaceId 串线。
@@ -234,9 +236,9 @@ git diff --check
 
 建议任务：
 
-1. 拆分 pane-scoped selection、viewport、current workflow、copy target 状态。
+1. 已拆分 pane-scoped selection、current workflow 和 copy target highlight 状态；viewport/zoom/pan 仍待拆分。
 2. 若要双编辑器，拆分 workflow store 或引入 pane id，避免左右 ReactFlow 操作串线。
-3. 增加 pane 级目标高亮、复制结果定位、刷新策略。
+3. 已增加 pane 级目标高亮和目标 workflow state/list 刷新；复制结果定位到 viewport 中心仍待继续。
 4. 增加组合场景：个人草稿 + 团队画布、团队画布 + 展示画布、展示画布 + 个人草稿。
 5. 移动端从上下布局进一步优化为 tab 切换。
 
@@ -318,8 +320,8 @@ git diff --check
 
 推荐短期按以下顺序继续，避免范围过大：
 
-1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或进入 Phase 7 “目标高亮 + pane-scoped 状态”。
-2. 再做 Phase 7 的“目标高亮 + pane-scoped 状态”，因为已有 split 首版和 copy-selection 后端。
+1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 viewport/框选/边选择。
+2. Phase 7 的“目标高亮 + pane-scoped selection”已补首版；下一步继续 viewport-center 粘贴、框选/边选择和 pane-scoped zoom/pan。
 3. 然后收 Phase 9 的团队管理页结构优化，把成员/邀请/发布/Agent Skill/activity 拆成更清晰的信息架构。
 4. 接着启动 Phase 10 项目管理员中心，优先做工种/团队/成员分配，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。

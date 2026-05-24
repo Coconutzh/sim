@@ -6,6 +6,11 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Button, Loader } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  describePaneSelection,
+  mapCopiedTargetBlockIds,
+  selectPaneBlock,
+} from '@/app/workspace/[workspaceId]/split/split-selection'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow'
 import {
   useCopySelection,
@@ -26,8 +31,10 @@ interface PaneConfig {
   workflowId?: string
   workflows: WorkflowMetadata[]
   isWorkflowsLoading: boolean
-  selectedBlockId: string | null
-  onSelectBlock: (blockId: string) => void
+  selectedBlockIds: string[]
+  copiedBlockIds: string[]
+  onSelectBlock: (blockId: string, additive: boolean) => void
+  onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
 }
 
@@ -62,7 +69,7 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
               {pane.label}
             </div>
             <div className='truncate text-[12px] text-[var(--text-muted)]'>
-              {pane.selectedBlockId ? `Selected ${pane.selectedBlockId}` : 'Click a node to copy'}
+              {describePaneSelection(pane.selectedBlockIds)}
             </div>
           </div>
         </div>
@@ -115,9 +122,11 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
           <PreviewWorkflow
             workflowState={workflowState}
             workspaceId={pane.workspaceId}
-            selectedBlockId={pane.selectedBlockId}
-            onNodeClick={(blockId) => pane.onSelectBlock(blockId)}
-            onPaneClick={() => pane.onSelectBlock('')}
+            selectedBlockIds={pane.selectedBlockIds}
+            onNodeClick={(blockId, _mousePosition, modifiers) =>
+              pane.onSelectBlock(blockId, modifiers?.additive ?? false)
+            }
+            onPaneClick={pane.onClearSelection}
             cursorStyle='pointer'
             fitPadding={0.2}
             lightweight
@@ -159,9 +168,10 @@ export function SplitCanvasWorkbench() {
   const [personalWorkflowId, setPersonalWorkflowId] = useDefaultWorkflowSelection(personalWorkflows)
   const [teamWorkflowId, setTeamWorkflowId] = useDefaultWorkflowSelection(teamWorkflows)
   const [selectedPane, setSelectedPane] = useState<CanvasPaneKind>('personal')
-  const [selectedPersonalBlockId, setSelectedPersonalBlockId] = useState<string | null>(null)
-  const [selectedTeamBlockId, setSelectedTeamBlockId] = useState<string | null>(null)
-  const [copiedTargetBlockId, setCopiedTargetBlockId] = useState<string | null>(null)
+  const [selectedPersonalBlockIds, setSelectedPersonalBlockIds] = useState<string[]>([])
+  const [selectedTeamBlockIds, setSelectedTeamBlockIds] = useState<string[]>([])
+  const [copiedPersonalBlockIds, setCopiedPersonalBlockIds] = useState<string[]>([])
+  const [copiedTeamBlockIds, setCopiedTeamBlockIds] = useState<string[]>([])
   const copySelection = useCopySelection()
 
   const panes = useMemo(() => {
@@ -172,12 +182,24 @@ export function SplitCanvasWorkbench() {
       workflowId: personalWorkflowId,
       workflows: personalWorkflows,
       isWorkflowsLoading: isPersonalWorkflowsLoading,
-      selectedBlockId: selectedPersonalBlockId,
-      onSelectBlock: (blockId) => {
+      selectedBlockIds: selectedPersonalBlockIds,
+      copiedBlockIds: copiedPersonalBlockIds,
+      onSelectBlock: (blockId, additive) => {
         setSelectedPane('personal')
-        setSelectedPersonalBlockId(blockId || null)
+        setSelectedPersonalBlockIds((currentBlockIds) =>
+          selectPaneBlock({ currentBlockIds, blockId, additive })
+        )
+        setCopiedPersonalBlockIds([])
       },
-      onSelectWorkflow: setPersonalWorkflowId,
+      onClearSelection: () => {
+        setSelectedPersonalBlockIds([])
+        setCopiedPersonalBlockIds([])
+      },
+      onSelectWorkflow: (workflowId) => {
+        setPersonalWorkflowId(workflowId)
+        setSelectedPersonalBlockIds([])
+        setCopiedPersonalBlockIds([])
+      },
     }
     const teamPane: PaneConfig = {
       kind: 'team',
@@ -186,22 +208,36 @@ export function SplitCanvasWorkbench() {
       workflowId: teamWorkflowId,
       workflows: teamWorkflows,
       isWorkflowsLoading: isTeamWorkflowsLoading,
-      selectedBlockId: selectedTeamBlockId,
-      onSelectBlock: (blockId) => {
+      selectedBlockIds: selectedTeamBlockIds,
+      copiedBlockIds: copiedTeamBlockIds,
+      onSelectBlock: (blockId, additive) => {
         setSelectedPane('team')
-        setSelectedTeamBlockId(blockId || null)
+        setSelectedTeamBlockIds((currentBlockIds) =>
+          selectPaneBlock({ currentBlockIds, blockId, additive })
+        )
+        setCopiedTeamBlockIds([])
       },
-      onSelectWorkflow: setTeamWorkflowId,
+      onClearSelection: () => {
+        setSelectedTeamBlockIds([])
+        setCopiedTeamBlockIds([])
+      },
+      onSelectWorkflow: (workflowId) => {
+        setTeamWorkflowId(workflowId)
+        setSelectedTeamBlockIds([])
+        setCopiedTeamBlockIds([])
+      },
     }
     return { personal: personalPane, team: teamPane }
   }, [
+    copiedPersonalBlockIds,
+    copiedTeamBlockIds,
     isPersonalWorkflowsLoading,
     isTeamWorkflowsLoading,
     personalWorkflowId,
     personalWorkflows,
     personalWorkspaceId,
-    selectedPersonalBlockId,
-    selectedTeamBlockId,
+    selectedPersonalBlockIds,
+    selectedTeamBlockIds,
     setPersonalWorkflowId,
     setTeamWorkflowId,
     teamWorkflowId,
@@ -214,12 +250,12 @@ export function SplitCanvasWorkbench() {
   const canCopy =
     Boolean(sourcePane.workspaceId) &&
     Boolean(sourcePane.workflowId) &&
-    Boolean(sourcePane.selectedBlockId) &&
+    sourcePane.selectedBlockIds.length > 0 &&
     Boolean(targetPane.workspaceId) &&
     Boolean(targetPane.workflowId)
 
   const handleCopy = async () => {
-    if (!canCopy || !sourcePane.workflowId || !sourcePane.selectedBlockId) return
+    if (!canCopy || !sourcePane.workflowId || sourcePane.selectedBlockIds.length === 0) return
     if (!targetPane.workspaceId || !targetPane.workflowId) return
 
     const result = await copySelection.mutateAsync({
@@ -231,18 +267,28 @@ export function SplitCanvasWorkbench() {
           workspaceId: targetPane.workspaceId,
           workflowId: targetPane.workflowId,
         },
-        selection: { blockIds: [sourcePane.selectedBlockId], edgeIds: [] },
+        selection: { blockIds: sourcePane.selectedBlockIds, edgeIds: [] },
         placement: { offsetX: 120, offsetY: 80 },
       },
     })
 
-    const firstTargetBlockId = Object.values(result.mappings.blockIds)[0]
-    if (firstTargetBlockId) {
-      setCopiedTargetBlockId(firstTargetBlockId)
-      if (targetPane.kind === 'personal') setSelectedPersonalBlockId(firstTargetBlockId)
-      if (targetPane.kind === 'team') setSelectedTeamBlockId(firstTargetBlockId)
+    const targetBlockIds = mapCopiedTargetBlockIds(
+      sourcePane.selectedBlockIds,
+      result.mappings.blockIds
+    )
+    if (targetBlockIds.length > 0) {
+      if (targetPane.kind === 'personal') {
+        setSelectedPersonalBlockIds(targetBlockIds)
+        setCopiedPersonalBlockIds(targetBlockIds)
+      }
+      if (targetPane.kind === 'team') {
+        setSelectedTeamBlockIds(targetBlockIds)
+        setCopiedTeamBlockIds(targetBlockIds)
+      }
     }
   }
+
+  const copiedTargetBlockIds = targetPane.copiedBlockIds
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-[var(--bg)]'>
@@ -275,12 +321,12 @@ export function SplitCanvasWorkbench() {
         <div
           className={cn(
             'rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[12px] text-[var(--text-muted)]',
-            copiedTargetBlockId && 'text-[var(--text-body)]'
+            copiedTargetBlockIds.length > 0 && 'text-[var(--text-body)]'
           )}
         >
-          {copiedTargetBlockId
-            ? `Copied into ${targetPane.label}. New block ${copiedTargetBlockId} is selected after refresh.`
-            : 'Click a node in either pane, then copy it into the other canvas. Each pane keeps its own workflow and selection.'}
+          {copiedTargetBlockIds.length > 0
+            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'} into ${targetPane.label}. New target selection is highlighted after refresh.`
+            : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, then copy into the other canvas. Each pane keeps its own workflow and selection.'}
         </div>
       </div>
       <div className='grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 lg:grid-cols-2'>

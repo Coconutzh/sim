@@ -158,7 +158,11 @@ interface PreviewWorkflowProps {
   defaultPosition?: { x: number; y: number }
   defaultZoom?: number
   fitPadding?: number
-  onNodeClick?: (blockId: string, mousePosition: { x: number; y: number }) => void
+  onNodeClick?: (
+    blockId: string,
+    mousePosition: { x: number; y: number },
+    modifiers?: { additive: boolean }
+  ) => void
   /** Callback when a node is right-clicked */
   onNodeContextMenu?: (blockId: string, mousePosition: { x: number; y: number }) => void
   /** Callback when the canvas (empty area) is clicked */
@@ -169,6 +173,8 @@ interface PreviewWorkflowProps {
   executedBlocks?: Record<string, { status: string; output?: unknown }>
   /** Currently selected block ID for highlighting */
   selectedBlockId?: string | null
+  /** Currently selected block IDs for multi-node highlighting */
+  selectedBlockIds?: string[]
   /** Skips expensive subblock computations for thumbnails/template previews */
   lightweight?: boolean
 }
@@ -249,6 +255,7 @@ export function PreviewWorkflow({
   cursorStyle = 'grab',
   executedBlocks,
   selectedBlockId,
+  selectedBlockIds,
   lightweight = false,
 }: PreviewWorkflowProps) {
   const params = useParams<{ workspaceId: string }>()
@@ -262,6 +269,10 @@ export function PreviewWorkflow({
   const containerRef = useRef<HTMLDivElement>(null)
   const nodeTypes = previewNodeTypes
   const isValidWorkflowState = workflowState?.blocks && workflowState.edges
+  const selectedBlockIdSet = useMemo(
+    () => new Set([...(selectedBlockIds ?? []), ...(selectedBlockId ? [selectedBlockId] : [])]),
+    [selectedBlockId, selectedBlockIds]
+  )
 
   const blocksStructure = useMemo(() => {
     if (!isValidWorkflowState) return { count: 0, ids: '' }
@@ -395,7 +406,7 @@ export function PreviewWorkflow({
       const absolutePosition = calculateAbsolutePosition(block, workflowState.blocks)
 
       if (block.type === 'loop' || block.type === 'parallel') {
-        const isSelected = selectedBlockId === blockId
+        const isSelected = selectedBlockIdSet.has(blockId)
         const dimensions = calculateContainerDimensions(blockId, workflowState.blocks)
 
         // Check for direct error on the subflow block itself (e.g., loop resolution errors)
@@ -426,7 +437,7 @@ export function PreviewWorkflow({
         return
       }
 
-      const isSelected = selectedBlockId === blockId
+      const isSelected = selectedBlockIdSet.has(blockId)
 
       let executionStatus: ExecutionStatus | undefined
       if (executedBlocks) {
@@ -478,7 +489,7 @@ export function PreviewWorkflow({
     workflowState.blocks,
     isValidWorkflowState,
     executedBlocks,
-    selectedBlockId,
+    selectedBlockIdSet,
     getSubflowExecutionStatus,
     workflowMap,
     workflowLabelsReady,
@@ -635,7 +646,11 @@ export function PreviewWorkflow({
             onNodeClick
               ? (event, node) => {
                   logger.debug('Node clicked:', { nodeId: node.id, event })
-                  onNodeClick(node.id, { x: event.clientX, y: event.clientY })
+                  onNodeClick(
+                    node.id,
+                    { x: event.clientX, y: event.clientY },
+                    { additive: event.shiftKey || event.metaKey || event.ctrlKey }
+                  )
                 }
               : undefined
           }
