@@ -58,6 +58,7 @@ const BATCH_IMPORT_IGNORED_CELLS = new Set([
 const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: '', label: 'All actions' },
   { value: 'member.invited', label: 'Member added' },
+  { value: 'member.batch_assigned', label: 'Batch member assignment' },
   { value: 'member.role_changed', label: 'Role updated' },
   { value: 'member.removed', label: 'Member removed' },
   { value: 'publication.created', label: 'Published showcase' },
@@ -245,6 +246,8 @@ function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
       return 'Member added'
+    case 'member.batch_assigned':
+      return 'Batch member assignment'
     case 'member.role_changed':
       return 'Role updated'
     case 'member.removed':

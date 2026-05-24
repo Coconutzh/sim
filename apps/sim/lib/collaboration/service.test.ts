@@ -194,6 +194,7 @@ vi.mock('@sim/audit', () => ({
     PUBLICATION_RETRACTED: 'publication.retracted',
     PUBLICATION_RESTORED: 'publication.restored',
     MEMBER_INVITED: 'member.invited',
+    MEMBER_BATCH_ASSIGNED: 'member.batch_assigned',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     MEMBER_REMOVED: 'member.removed',
     SKILL_UPDATED: 'skill.updated',
@@ -472,7 +473,18 @@ describe('collaboration service', () => {
       { target: 'user-2@example.com', userId: 'user-2', role: 'member' },
     ])
     expect(mockDb.transaction).toHaveBeenCalledTimes(1)
-    expect(recordAudit).toHaveBeenCalledTimes(2)
+    expect(recordAudit).toHaveBeenCalledTimes(3)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'member.batch_assigned',
+        description: 'Batch assigned 2 team members as member',
+        metadata: expect.objectContaining({
+          batchOperationId: 'short-id',
+          targetCount: 2,
+          targetUserIds: ['user-1', 'user-2'],
+        }),
+      })
+    )
   })
 
   it('rejects a batch add before opening the transaction when a target is invalid', async () => {

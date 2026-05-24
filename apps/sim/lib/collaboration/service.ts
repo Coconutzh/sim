@@ -605,6 +605,7 @@ export async function addWorkgroupMembersBatch(params: {
   }
   const assigned = Array.from(resolvedTargets.values())
   const now = new Date()
+  const batchOperationId = generateShortId(12)
 
   await db.transaction(async (tx) => {
     for (const target of assigned) {
@@ -647,6 +648,23 @@ export async function addWorkgroupMembersBatch(params: {
     }
   })
 
+  recordAudit({
+    workspaceId: wg.teamWorkspaceId,
+    actorId: params.actorUserId,
+    action: AuditAction.MEMBER_BATCH_ASSIGNED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: wg.id,
+    resourceName: wg.name,
+    description: `Batch assigned ${assigned.length} team member${assigned.length === 1 ? '' : 's'} as ${params.role}`,
+    metadata: {
+      workgroupId: wg.id,
+      role: params.role,
+      targetCount: assigned.length,
+      targetUserIds: assigned.map((target) => target.userId),
+      batchOperationId,
+    },
+  })
+
   for (const target of assigned) {
     recordAudit({
       workspaceId: wg.teamWorkspaceId,
@@ -656,7 +674,12 @@ export async function addWorkgroupMembersBatch(params: {
       resourceId: wg.id,
       resourceName: wg.name,
       description: `Batch added team member as ${params.role}`,
-      metadata: { workgroupId: wg.id, targetUserId: target.userId, role: params.role },
+      metadata: {
+        workgroupId: wg.id,
+        targetUserId: target.userId,
+        role: params.role,
+        batchOperationId,
+      },
     })
   }
 

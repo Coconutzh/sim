@@ -96,6 +96,7 @@ export const auditMock = {
     MCP_SERVER_UPDATED: 'mcp_server.updated',
     MCP_SERVER_REMOVED: 'mcp_server.removed',
     MEMBER_INVITED: 'member.invited',
+    MEMBER_BATCH_ASSIGNED: 'member.batch_assigned',
     MEMBER_REMOVED: 'member.removed',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     NOTIFICATION_CREATED: 'notification.created',
