@@ -26,6 +26,7 @@ import type {
   PublicationReviewState,
   PublicationRiskLevel,
   PublicationSummary,
+  PublicationTree,
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
 import {
@@ -145,6 +146,21 @@ interface SnapshotSummary {
   metadataDescription: string | null
 }
 
+interface PublicationDependencyImpactRow {
+  id: string
+  title: string
+  meta: string
+  detail: string
+  tone: 'default' | 'warning' | 'danger' | 'info'
+}
+
+interface PublicationDependencyImpact {
+  directDependencies: PublicationDependencyImpactRow[]
+  dependentPublications: PublicationDependencyImpactRow[]
+  treeLinks: PublicationDependencyImpactRow[]
+  riskFlags: PublicationDependencyImpactRow[]
+}
+
 function formatAgentCode(agentCode: string) {
   return agentCode
     .split('_')
@@ -227,6 +243,51 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>{children}</div>
 }
 
+function dependencyImpactToneClass(tone: PublicationDependencyImpactRow['tone']): string {
+  switch (tone) {
+    case 'danger':
+      return 'border-red-500/30 bg-red-500/10 text-red-500'
+    case 'warning':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+    case 'info':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-500'
+    default:
+      return 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]'
+  }
+}
+
+function DependencyImpactList({
+  title,
+  empty,
+  rows,
+}: {
+  title: string
+  empty: string
+  rows: PublicationDependencyImpactRow[]
+}) {
+  return (
+    <div className='grid gap-2'>
+      <div className='font-medium text-[11px] text-[var(--text-primary)]'>{title}</div>
+      {rows.length === 0 ? (
+        <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--text-muted)]'>
+          {empty}
+        </div>
+      ) : (
+        rows.map((row) => (
+          <div
+            key={row.id}
+            className={cn('rounded-[8px] border p-2', dependencyImpactToneClass(row.tone))}
+          >
+            <div className='font-medium text-[12px]'>{row.title}</div>
+            <div className='mt-1 text-[11px] opacity-80'>{row.meta}</div>
+            <div className='mt-1 text-[11px] opacity-90'>{row.detail}</div>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
@@ -289,6 +350,178 @@ function buildBlockTypeDiff(candidate: SnapshotSummary, current: SnapshotSummary
     }))
     .filter((entry) => entry.candidate !== entry.current)
     .sort((a, b) => a.type.localeCompare(b.type))
+}
+
+function getPublicationImpactTone(
+  publication: Pick<PublicationSummary, 'status' | 'reviewState' | 'riskLevel'>
+): PublicationDependencyImpactRow['tone'] {
+  if (publication.riskLevel === 'critical' || publication.status === 'retracted') return 'danger'
+  if (publication.status === 'published' || publication.reviewState !== 'approved') return 'warning'
+  return 'default'
+}
+
+function formatPublicationImpactMeta(
+  publication: Pick<
+    PublicationSummary,
+    'versionNumber' | 'status' | 'sourceWorkgroup' | 'sourceDiscipline'
+  >
+) {
+  return `v${publication.versionNumber} / ${publication.sourceWorkgroup.name} / ${publication.sourceDiscipline.name} / ${publication.status}`
+}
+
+function buildPublicationDependencyImpact(
+  selectedPublication: PublicationSummary | null,
+  publications: PublicationSummary[],
+  publicationById: Map<string, PublicationSummary>,
+  selectedPublicationTree?: PublicationTree
+): PublicationDependencyImpact {
+  if (!selectedPublication) {
+    return {
+      directDependencies: [],
+      dependentPublications: [],
+      treeLinks: [],
+      riskFlags: [],
+    }
+  }
+
+  const directDependencies = selectedPublication.dependsOnPublicationIds.map((publicationId) => {
+    const dependency = publicationById.get(publicationId)
+    if (!dependency) {
+      return {
+        id: `missing-${publicationId}`,
+        title: publicationId,
+        meta: 'Not returned in the current organization publication list',
+        detail:
+          'This dependency may be outside the current visibility window, archived beyond the current filter, or no longer readable.',
+        tone: 'warning' as const,
+      }
+    }
+
+    return {
+      id: dependency.id,
+      title: dependency.title,
+      meta: formatPublicationImpactMeta(dependency),
+      detail: `Review ${dependency.reviewState ?? 'unreviewed'}; risk ${
+        dependency.riskLevel ?? 'none'
+      }.`,
+      tone: getPublicationImpactTone(dependency),
+    }
+  })
+
+  const dependentPublications = publications
+    .filter(
+      (publication) =>
+        publication.id !== selectedPublication.id &&
+        publication.dependsOnPublicationIds.includes(selectedPublication.id)
+    )
+    .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt))
+
+  const dependentRows = dependentPublications.map((publication) => ({
+    id: publication.id,
+    title: publication.title,
+    meta: formatPublicationImpactMeta(publication),
+    detail: `${
+      publication.status === 'published' ? 'Current' : 'Historical'
+    } publication directly depends on this version; review ${
+      publication.reviewState ?? 'unreviewed'
+    }, risk ${publication.riskLevel ?? 'none'}.`,
+    tone: getPublicationImpactTone(publication),
+  }))
+
+  const treeLinks =
+    selectedPublicationTree?.versions
+      .filter(
+        (version) =>
+          version.id !== selectedPublication.id &&
+          (version.parentVersionId === selectedPublication.id ||
+            version.dependsOnPublicationIds.includes(selectedPublication.id))
+      )
+      .map((version) => {
+        const relation =
+          version.parentVersionId === selectedPublication.id &&
+          version.dependsOnPublicationIds.includes(selectedPublication.id)
+            ? 'Parent and dependency link'
+            : version.parentVersionId === selectedPublication.id
+              ? 'Parent version link'
+              : 'Dependency link'
+
+        return {
+          id: version.id,
+          title: version.title,
+          meta: `v${version.versionNumber} / ${version.sourceWorkgroup.name} / ${version.sourceDiscipline.name} / ${version.status}`,
+          detail: `${relation} inside the selected publication family; review ${
+            version.reviewState ?? 'unreviewed'
+          }, risk ${version.riskLevel ?? 'none'}.`,
+          tone: getPublicationImpactTone(version),
+        }
+      }) ?? []
+
+  const currentDependents = dependentPublications.filter(
+    (publication) => publication.status === 'published'
+  )
+  const criticalDependents = dependentPublications.filter(
+    (publication) => publication.riskLevel === 'critical'
+  )
+  const unapprovedDependents = dependentPublications.filter(
+    (publication) => publication.reviewState !== 'approved'
+  )
+  const missingDependencies = directDependencies.filter((row) => row.id.startsWith('missing-'))
+  const riskFlags: PublicationDependencyImpactRow[] = []
+
+  if (currentDependents.length > 0) {
+    riskFlags.push({
+      id: 'current-dependent-publications',
+      title: `${currentDependents.length} current dependent publication${
+        currentDependents.length === 1 ? '' : 's'
+      }`,
+      meta: 'Restore, archive, or retract actions may affect live downstream teams',
+      detail: currentDependents.map((publication) => `v${publication.versionNumber}`).join(', '),
+      tone: 'warning',
+    })
+  }
+
+  if (criticalDependents.length > 0) {
+    riskFlags.push({
+      id: 'critical-dependent-publications',
+      title: `${criticalDependents.length} critical-risk dependent publication${
+        criticalDependents.length === 1 ? '' : 's'
+      }`,
+      meta: 'Downstream critical risk should be resolved before changing this version',
+      detail: criticalDependents.map((publication) => publication.title).join(', '),
+      tone: 'danger',
+    })
+  }
+
+  if (unapprovedDependents.length > 0) {
+    riskFlags.push({
+      id: 'unapproved-dependent-publications',
+      title: `${unapprovedDependents.length} unapproved dependent publication${
+        unapprovedDependents.length === 1 ? '' : 's'
+      }`,
+      meta: 'Downstream review state is not fully approved',
+      detail: unapprovedDependents.map((publication) => publication.title).join(', '),
+      tone: 'warning',
+    })
+  }
+
+  if (missingDependencies.length > 0) {
+    riskFlags.push({
+      id: 'missing-direct-dependencies',
+      title: `${missingDependencies.length} unresolved direct dependenc${
+        missingDependencies.length === 1 ? 'y' : 'ies'
+      }`,
+      meta: 'The current list could not resolve every dependency id',
+      detail: missingDependencies.map((row) => row.title).join(', '),
+      tone: 'warning',
+    })
+  }
+
+  return {
+    directDependencies,
+    dependentPublications: dependentRows,
+    treeLinks,
+    riskFlags,
+  }
 }
 
 function parseBatchAssignmentTargets(value: string) {
@@ -589,6 +822,16 @@ export function ProjectAdminCenter() {
   const publicationById = useMemo(
     () => new Map(publications.map((publication) => [publication.id, publication])),
     [publications]
+  )
+  const selectedPublicationDependencyImpact = useMemo(
+    () =>
+      buildPublicationDependencyImpact(
+        selectedPublication,
+        publications,
+        publicationById,
+        selectedPublicationTree
+      ),
+    [publicationById, publications, selectedPublication, selectedPublicationTree]
   )
   const publicationGovernanceAlertGroups = publicationStateGroups.filter(
     (group) => group.governanceAlerts.length > 0
@@ -2732,6 +2975,51 @@ export function ProjectAdminCenter() {
                     )}
                   </div>
                 )}
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <div className='flex items-start justify-between gap-3'>
+                  <div>
+                    <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Dependency impact preview
+                    </h3>
+                    <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                      Preview direct dependency links, downstream publications, same-family links,
+                      and review risks before changing this version.
+                    </p>
+                  </div>
+                  <Network className='h-[15px] w-[15px] text-[var(--text-muted)]' />
+                </div>
+                <div className='mt-3 grid gap-3'>
+                  <DependencyImpactList
+                    title='Risk flags'
+                    empty='No downstream dependency risk flags were found.'
+                    rows={selectedPublicationDependencyImpact.riskFlags}
+                  />
+                  <DependencyImpactList
+                    title='Direct dependencies'
+                    empty='This publication does not declare direct dependency versions.'
+                    rows={selectedPublicationDependencyImpact.directDependencies}
+                  />
+                  <DependencyImpactList
+                    title='Dependent publications'
+                    empty='No other visible publication directly depends on this version.'
+                    rows={selectedPublicationDependencyImpact.dependentPublications}
+                  />
+                  {isLoadingSelectedPublicationTree &&
+                  selectedPublication.status !== 'retracted' ? (
+                    <div className='flex items-center gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--text-muted)]'>
+                      <Loader className='h-[12px] w-[12px]' animate />
+                      Loading same-family dependency links...
+                    </div>
+                  ) : (
+                    <DependencyImpactList
+                      title='Same-family links'
+                      empty='No child version or same-family dependency points to this version.'
+                      rows={selectedPublicationDependencyImpact.treeLinks}
+                    />
+                  )}
+                </div>
               </section>
 
               <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
