@@ -31,6 +31,7 @@ import {
   updateWorkgroupAgentSkillContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
+import { organizationKeys } from '@/hooks/queries/organization'
 import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
 import { type Workspace, workspaceKeys } from '@/hooks/queries/workspace'
 
@@ -215,6 +216,9 @@ export function useAddWorkgroupMember() {
       if (variables.organizationId) {
         queryClient.invalidateQueries({
           queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: organizationKeys.roster(variables.organizationId),
         })
       }
     },

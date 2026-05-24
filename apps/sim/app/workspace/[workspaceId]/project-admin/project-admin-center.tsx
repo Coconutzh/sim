@@ -21,6 +21,7 @@ import {
   useOrganizationWorkgroups,
   useShowcasePublications,
 } from '@/hooks/queries/collaboration'
+import { useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
@@ -119,6 +120,7 @@ export function ProjectAdminCenter() {
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
+  const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
   const [assignmentRole, setAssignmentRole] = useState<'member' | 'admin'>('member')
   const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null)
@@ -136,6 +138,8 @@ export function ProjectAdminCenter() {
   const activeWorkgroupId = activeWorkgroup?.id
   const { data: organizationWorkgroupsData, isLoading: isLoadingOrganizationWorkgroups } =
     useOrganizationWorkgroups(organizationId)
+  const { data: organizationRoster, isLoading: isLoadingOrganizationRoster } =
+    useOrganizationRoster(organizationId)
   const { data: disciplinesData, isLoading: isLoadingDisciplines } = useDisciplines()
   const { data: agentsData, isLoading: isLoadingAgents } = useAgentProfiles()
   const { data: publicationsData, isLoading: isLoadingPublications } = useShowcasePublications(
@@ -144,6 +148,7 @@ export function ProjectAdminCenter() {
   )
 
   const organizationWorkgroups = organizationWorkgroupsData?.workgroups ?? []
+  const rosterMembers = organizationRoster?.members ?? []
   const disciplines = disciplinesData?.disciplines ?? []
   const agents = agentsData?.agents ?? []
   const publications = publicationsData?.publications ?? []
@@ -179,6 +184,9 @@ export function ProjectAdminCenter() {
   const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
+  )
+  const selectedRosterMember = rosterMembers.find(
+    (member) => member.userId === selectedRosterUserId
   )
   const canCreateTeam = Boolean(
     organizationId &&
@@ -221,9 +229,14 @@ export function ProjectAdminCenter() {
         workgroupId: selectedAssignmentTeamId,
         organizationId,
         role: assignmentRole,
-        ...(isEmail ? { email: trimmed } : { userId: trimmed }),
+        ...(selectedRosterMember
+          ? { userId: selectedRosterMember.userId }
+          : isEmail
+            ? { email: trimmed }
+            : { userId: trimmed }),
       })
       setAssignmentValue('')
+      setSelectedRosterUserId('')
       setAssignmentStatus(
         `Assigned ${trimmed} to ${selectedAssignmentTeam?.name ?? 'the selected team'} as ${
           assignmentRole
@@ -408,60 +421,87 @@ export function ProjectAdminCenter() {
                   Assign project member
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Add an existing user to any project team as member or team admin.
+                  Pick from the organization roster, or enter an existing user email or ID.
                 </p>
               </div>
             </div>
-            <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_160px_130px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_160px_130px_auto]'>
-              <input
-                value={assignmentValue}
-                onChange={(event) => {
-                  setAssignmentValue(event.target.value)
-                  setAssignmentStatus(null)
-                }}
-                placeholder='User email or ID'
-                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
-              />
+            <div className='grid gap-2 p-4'>
               <select
-                value={selectedAssignmentTeamId}
+                value={selectedRosterUserId}
                 onChange={(event) => {
-                  setAssignmentTeamId(event.target.value)
+                  const userId = event.target.value
+                  const member = rosterMembers.find((item) => item.userId === userId)
+                  setSelectedRosterUserId(userId)
+                  setAssignmentValue(member?.email ?? '')
                   setAssignmentStatus(null)
                 }}
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
               >
-                {organizationWorkgroups.length === 0 ? (
-                  <option value=''>No team available</option>
-                ) : (
-                  organizationWorkgroups.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))
-                )}
+                <option value=''>
+                  {isLoadingOrganizationRoster ? 'Loading organization roster...' : 'Manual entry'}
+                </option>
+                {rosterMembers.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {member.name || member.email} / {member.email}
+                  </option>
+                ))}
               </select>
-              <select
-                value={assignmentRole}
-                onChange={(event) => {
-                  setAssignmentRole(event.target.value as 'member' | 'admin')
-                  setAssignmentStatus(null)
-                }}
-                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
-              >
-                <option value='member'>Member</option>
-                <option value='admin'>Team admin</option>
-              </select>
-              <button
-                type='button'
-                className={buttonVariants({ variant: 'primary' })}
-                disabled={!canAssignMember}
-                onClick={() => void handleAssignMember()}
-              >
-                {addWorkgroupMember.isPending ? (
-                  <Loader className='mr-2 h-[14px] w-[14px]' animate />
-                ) : null}
-                Assign
-              </button>
+              <div className='grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_130px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_160px_130px_auto]'>
+                <input
+                  value={assignmentValue}
+                  onChange={(event) => {
+                    setAssignmentValue(event.target.value)
+                    setSelectedRosterUserId('')
+                    setAssignmentStatus(null)
+                  }}
+                  placeholder='User email or ID'
+                  className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                />
+                <select
+                  value={selectedAssignmentTeamId}
+                  onChange={(event) => {
+                    setAssignmentTeamId(event.target.value)
+                    setAssignmentStatus(null)
+                  }}
+                  className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                >
+                  {organizationWorkgroups.length === 0 ? (
+                    <option value=''>No team available</option>
+                  ) : (
+                    organizationWorkgroups.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <select
+                  value={assignmentRole}
+                  onChange={(event) => {
+                    setAssignmentRole(event.target.value as 'member' | 'admin')
+                    setAssignmentStatus(null)
+                  }}
+                  className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                >
+                  <option value='member'>Member</option>
+                  <option value='admin'>Team admin</option>
+                </select>
+                <button
+                  type='button'
+                  className={buttonVariants({ variant: 'primary' })}
+                  disabled={!canAssignMember}
+                  onClick={() => void handleAssignMember()}
+                >
+                  {addWorkgroupMember.isPending ? (
+                    <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                  ) : null}
+                  Assign
+                </button>
+              </div>
+              <div className='text-[11px] text-[var(--text-muted)]'>
+                {rosterMembers.length} organization member{rosterMembers.length === 1 ? '' : 's'}{' '}
+                available for project team assignment.
+              </div>
             </div>
             {assignmentStatus && (
               <div
