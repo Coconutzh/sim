@@ -2,10 +2,11 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import type { PublicationSummary } from '@/lib/api/contracts/collaboration'
+import type { PublicationSummary, WorkgroupAdminSummary } from '@/lib/api/contracts/collaboration'
 import {
   buildPublicationConflictRepairGuide,
   buildPublicationStateGroups,
+  buildPublicationTeamNudges,
 } from '@/lib/collaboration/publication-state-tree'
 
 function publication(overrides: Partial<PublicationSummary>): PublicationSummary {
@@ -26,6 +27,20 @@ function publication(overrides: Partial<PublicationSummary>): PublicationSummary
     targetWorkgroupIds: [],
     publishedBy: { id: 'user-1', name: 'Admin', avatarUrl: null },
     publishedAt: '2026-05-24T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function team(overrides: Partial<WorkgroupAdminSummary>): WorkgroupAdminSummary {
+  return {
+    id: 'workgroup-lighting',
+    name: 'Lighting',
+    disciplineId: 'discipline-lighting',
+    disciplineName: 'Lighting & Sound',
+    agentCode: 'lighting_sound',
+    teamWorkspaceId: 'team-workspace-lighting',
+    memberCount: 3,
+    currentUserRole: 'org_admin',
     ...overrides,
   }
 }
@@ -228,5 +243,65 @@ describe('publication state tree grouping', () => {
       'unapproved_current_version',
       'critical_risk_current_version',
     ])
+  })
+
+  it('builds team publication nudges for stale, missing, and never-published teams', () => {
+    const groups = buildPublicationStateGroups(
+      [
+        publication({
+          id: 'stale-v1',
+          sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+          publishedAt: '2026-05-01T00:00:00.000Z',
+        }),
+        publication({
+          id: 'archived-v1',
+          sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+          sourceDiscipline: { code: 'stage', name: 'Stage' },
+          agentCode: 'stage',
+          status: 'archived',
+        }),
+      ],
+      { now: new Date('2026-05-24T00:00:00.000Z'), staleDays: 14 }
+    )
+
+    const nudges = buildPublicationTeamNudges({
+      groups,
+      teams: [
+        team({ id: 'workgroup-lighting', name: 'Lighting' }),
+        team({
+          id: 'workgroup-stage',
+          name: 'Stage',
+          disciplineName: 'Stage',
+          agentCode: 'stage',
+        }),
+        team({
+          id: 'workgroup-visual',
+          name: 'Visual',
+          disciplineName: 'Visual',
+          agentCode: 'visual',
+        }),
+      ],
+    })
+
+    expect(nudges.map((nudge) => nudge.type)).toEqual([
+      'stale_current',
+      'missing_current',
+      'never_published',
+    ])
+    expect(nudges[0]).toMatchObject({
+      teamName: 'Lighting',
+      publicationId: 'stale-v1',
+      actionLabel: 'Start refresh review',
+    })
+    expect(nudges[1]).toMatchObject({
+      teamName: 'Stage',
+      publicationId: 'archived-v1',
+      actionLabel: 'Restore latest visible',
+    })
+    expect(nudges[2]).toMatchObject({
+      teamName: 'Visual',
+      publicationId: null,
+      actionLabel: 'Open team management',
+    })
   })
 })

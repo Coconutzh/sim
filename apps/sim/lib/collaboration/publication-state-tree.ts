@@ -1,4 +1,4 @@
-import type { PublicationSummary } from '@/lib/api/contracts/collaboration'
+import type { PublicationSummary, WorkgroupAdminSummary } from '@/lib/api/contracts/collaboration'
 
 const DEFAULT_STALE_DAYS = 14
 
@@ -49,6 +49,21 @@ export interface PublicationConflictRepairGuideStep {
   detail: string
   actionLabel: string
   reason: string
+}
+
+export interface PublicationTeamNudge {
+  id: string
+  type: 'never_published' | 'missing_current' | 'stale_current'
+  severity: PublicationGovernanceAlertSeverity
+  teamId: string
+  teamName: string
+  teamWorkspaceId: string | null
+  disciplineName: string
+  agentCode: string
+  publicationId: string | null
+  versionNumber: number | null
+  detail: string
+  actionLabel: string
 }
 
 export interface PublicationStateGroupOptions {
@@ -246,6 +261,88 @@ export function buildPublicationConflictRepairGuide(
   }
 
   return steps
+}
+
+export function buildPublicationTeamNudges(params: {
+  teams: WorkgroupAdminSummary[]
+  groups: PublicationStateGroup[]
+}): PublicationTeamNudge[] {
+  const groupByWorkgroupId = new Map(
+    params.groups.map((group) => [group.sourceWorkgroup.id, group])
+  )
+
+  return params.teams
+    .filter((team) => Boolean(team.teamWorkspaceId))
+    .flatMap((team) => {
+      const group = groupByWorkgroupId.get(team.id)
+      if (!group) {
+        return [
+          {
+            id: `${team.id}:never-published`,
+            type: 'never_published' as const,
+            severity: 'info' as const,
+            teamId: team.id,
+            teamName: team.name,
+            teamWorkspaceId: team.teamWorkspaceId,
+            disciplineName: team.disciplineName,
+            agentCode: team.agentCode,
+            publicationId: null,
+            versionNumber: null,
+            detail: 'No showcase publication has been submitted from this team canvas yet.',
+            actionLabel: 'Open team management',
+          },
+        ]
+      }
+
+      const alerts = new Set(group.governanceAlerts.map((alert) => alert.code))
+      const nudges: PublicationTeamNudge[] = []
+      if (alerts.has('no_current_version')) {
+        const restoreCandidate =
+          group.current && group.current.status !== 'retracted' ? group.current : null
+        nudges.push({
+          id: `${team.id}:missing-current`,
+          type: 'missing_current',
+          severity: 'warning',
+          teamId: team.id,
+          teamName: team.name,
+          teamWorkspaceId: team.teamWorkspaceId,
+          disciplineName: team.disciplineName,
+          agentCode: team.agentCode,
+          publicationId: restoreCandidate?.id ?? null,
+          versionNumber: group.current?.versionNumber ?? null,
+          detail: restoreCandidate
+            ? `Latest visible v${restoreCandidate.versionNumber} is ${restoreCandidate.status}; restore it or ask the team to submit a new current version.`
+            : 'No visible publication version can act as the current showcase baseline.',
+          actionLabel: restoreCandidate ? 'Restore latest visible' : 'Open team management',
+        })
+      }
+
+      if (alerts.has('stale_current_version') && group.current) {
+        nudges.push({
+          id: `${team.id}:stale-current`,
+          type: 'stale_current',
+          severity: 'warning',
+          teamId: team.id,
+          teamName: team.name,
+          teamWorkspaceId: team.teamWorkspaceId,
+          disciplineName: team.disciplineName,
+          agentCode: team.agentCode,
+          publicationId: group.current.id,
+          versionNumber: group.current.versionNumber,
+          detail: `Current v${group.current.versionNumber} is past the freshness window; request a team refresh review or confirm it is still valid.`,
+          actionLabel: 'Start refresh review',
+        })
+      }
+
+      return nudges
+    })
+    .sort((left, right) => {
+      const severityOrder = { danger: 0, warning: 1, info: 2 }
+      return (
+        severityOrder[left.severity] - severityOrder[right.severity] ||
+        left.teamName.localeCompare(right.teamName)
+      )
+    })
 }
 
 export function buildPublicationStateGroups(

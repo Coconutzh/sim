@@ -33,6 +33,7 @@ import type {
 import {
   buildPublicationConflictRepairGuide,
   buildPublicationStateGroups,
+  buildPublicationTeamNudges,
   type PublicationGovernanceAlertSeverity,
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
@@ -1253,6 +1254,14 @@ export function ProjectAdminCenter() {
     () => buildPublicationStateGroups(publications),
     [publications]
   )
+  const publicationTeamNudges = useMemo(
+    () =>
+      buildPublicationTeamNudges({ teams: organizationWorkgroups, groups: publicationStateGroups }),
+    [organizationWorkgroups, publicationStateGroups]
+  )
+  const neverPublishedNudgeCount = publicationTeamNudges.filter(
+    (nudge) => nudge.type === 'never_published'
+  ).length
   const publicationById = useMemo(
     () => new Map(publications.map((publication) => [publication.id, publication])),
     [publications]
@@ -2007,13 +2016,15 @@ export function ProjectAdminCenter() {
               criticalPublicationCount +
               unreviewedPublicationCount +
               publicationGovernanceAlertCount +
+              neverPublishedNudgeCount +
               teamsWithoutCanvas.length
             }
-            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${publicationGovernanceAlertCount} state-tree, ${teamsWithoutCanvas.length} missing canvas`}
+            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${publicationGovernanceAlertCount} state-tree, ${neverPublishedNudgeCount} unpublished, ${teamsWithoutCanvas.length} missing canvas`}
             tone={
               criticalPublicationCount +
                 unreviewedPublicationCount +
                 publicationGovernanceAlertCount +
+                neverPublishedNudgeCount +
                 teamsWithoutCanvas.length >
               0
                 ? 'warning'
@@ -2150,6 +2161,102 @@ export function ProjectAdminCenter() {
               <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
                 No eligible batch governance actions are currently available.
               </p>
+            )}
+            {publicationTeamNudges.length > 0 && (
+              <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Team publication nudges
+                    </h3>
+                    <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
+                      Follow up with teams that have stale, missing, or not-yet-submitted showcase
+                      baselines before project sign-off.
+                    </p>
+                  </div>
+                  <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                    {publicationTeamNudges.length} nudges
+                  </span>
+                </div>
+                <div className='mt-3 grid gap-2'>
+                  {publicationTeamNudges.slice(0, 6).map((nudge) => {
+                    const nudgePublication = nudge.publicationId
+                      ? publicationById.get(nudge.publicationId)
+                      : null
+                    return (
+                      <div
+                        key={nudge.id}
+                        className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                      >
+                        <div className='min-w-0'>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              {nudge.teamName}
+                            </span>
+                            <span
+                              className={cn(
+                                'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                                governanceAlertClass(nudge.severity)
+                              )}
+                            >
+                              {nudge.type === 'never_published'
+                                ? 'No submission'
+                                : nudge.type === 'missing_current'
+                                  ? 'Missing current'
+                                  : 'Stale current'}
+                            </span>
+                          </div>
+                          <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                            {nudge.detail}
+                          </p>
+                          <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                            <span>{nudge.disciplineName}</span>
+                            <span>{formatAgentCode(nudge.agentCode)}</span>
+                            {nudge.versionNumber ? <span>v{nudge.versionNumber}</span> : null}
+                          </div>
+                        </div>
+                        <div className='flex items-center gap-2 md:justify-end'>
+                          {nudge.type === 'stale_current' && nudgePublication ? (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationReview.isPending}
+                              onClick={() =>
+                                void handlePublicationReviewResolution(
+                                  nudgePublication,
+                                  'in_review',
+                                  nudgePublication.riskLevel,
+                                  `Started refresh review nudge for ${nudge.teamName}.`
+                                )
+                              }
+                            >
+                              {nudge.actionLabel}
+                            </button>
+                          ) : nudge.type === 'missing_current' && nudgePublication ? (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationLifecycle.isPending}
+                              onClick={() =>
+                                void handlePublicationLifecycle(nudgePublication, 'restore')
+                              }
+                            >
+                              {nudge.actionLabel}
+                            </button>
+                          ) : (
+                            <Link
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              href={`/workspace/${nudge.teamWorkspaceId || workspaceId}/team-management`}
+                            >
+                              {nudge.actionLabel}
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )}
           </div>
           <div className='divide-y divide-[var(--border)]'>
