@@ -1236,6 +1236,10 @@ export function ProjectAdminCenter() {
   const [activityOffset, setActivityOffset] = useState(0)
   const [isExportingActivity, setIsExportingActivity] = useState(false)
   const [activityExportStatus, setActivityExportStatus] = useState<string | null>(null)
+  const [failureHistoryScope, setFailureHistoryScope] = useState<ProjectAdminFailureScope | ''>('')
+  const [failureHistoryActor, setFailureHistoryActor] = useState('')
+  const [failureHistoryStartDate, setFailureHistoryStartDate] = useState('')
+  const [failureHistoryEndDate, setFailureHistoryEndDate] = useState('')
   const [projectAdminFailureAudit, setProjectAdminFailureAudit] = useState<
     ProjectAdminFailureAuditEntry[]
   >([])
@@ -1630,10 +1634,14 @@ export function ProjectAdminCenter() {
   const serverFailureHistoryFilters = useMemo(
     () => ({
       action: 'project_admin_failure.recorded',
+      failureScope: failureHistoryScope || undefined,
+      actor: failureHistoryActor.trim() || undefined,
+      startDate: failureHistoryStartDate || undefined,
+      endDate: failureHistoryEndDate || undefined,
       limit: PROJECT_ADMIN_FAILURE_HISTORY_LIMIT,
       offset: 0,
     }),
-    []
+    [failureHistoryActor, failureHistoryEndDate, failureHistoryScope, failureHistoryStartDate]
   )
   const { data: serverFailureHistoryData, isLoading: isLoadingServerFailureHistory } =
     useOrganizationWorkgroupActivity(
@@ -4195,6 +4203,46 @@ export function ProjectAdminCenter() {
                     </span>
                   </div>
                   <div className='mt-3 grid gap-2'>
+                    <div className='grid gap-2 md:grid-cols-2'>
+                      <select
+                        value={failureHistoryScope}
+                        onChange={(event) =>
+                          setFailureHistoryScope(
+                            event.target.value as ProjectAdminFailureScope | ''
+                          )
+                        }
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                      >
+                        <option value=''>All failure scopes</option>
+                        {PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.map((option) => (
+                          <option key={option.scope} value={option.scope}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={failureHistoryActor}
+                        onChange={(event) => setFailureHistoryActor(event.target.value)}
+                        placeholder='Exact actor email or name'
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                      />
+                      <input
+                        type='date'
+                        value={failureHistoryStartDate}
+                        max={failureHistoryEndDate || undefined}
+                        onChange={(event) => setFailureHistoryStartDate(event.target.value)}
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                        aria-label='Failure audit history start date'
+                      />
+                      <input
+                        type='date'
+                        value={failureHistoryEndDate}
+                        min={failureHistoryStartDate || undefined}
+                        onChange={(event) => setFailureHistoryEndDate(event.target.value)}
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                        aria-label='Failure audit history end date'
+                      />
+                    </div>
                     {isLoadingServerFailureHistory ? (
                       <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
                         <Loader className='h-[13px] w-[13px]' animate />

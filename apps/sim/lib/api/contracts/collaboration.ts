@@ -492,6 +492,7 @@ export const organizationWorkgroupActivityQuerySchema = z
     workgroupId: optionalTrimmedQuerySchema,
     disciplineId: optionalTrimmedQuerySchema,
     action: optionalTrimmedQuerySchema,
+    failureScope: projectAdminFailureScopeSchema.optional(),
     search: optionalTrimmedQuerySchema,
     actor: optionalTrimmedQuerySchema,
     startDate: activityDateQuerySchema,

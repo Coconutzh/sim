@@ -1456,6 +1456,7 @@ export async function listOrganizationWorkgroupActivity(params: {
   workgroupId?: string
   disciplineId?: string
   action?: string
+  failureScope?: ProjectAdminFailureScope
   search?: string
   actor?: string
   startDate?: string
@@ -1512,6 +1513,9 @@ export async function listOrganizationWorkgroupActivity(params: {
 
   const filters = [or(...scopeConditions)!]
   if (params.action) filters.push(eq(auditLog.action, params.action))
+  if (params.failureScope) {
+    filters.push(sql`${auditLog.metadata}->>'scope' = ${params.failureScope}`)
+  }
   if (params.actor) {
     filters.push(or(eq(auditLog.actorEmail, params.actor), eq(auditLog.actorName, params.actor))!)
   }

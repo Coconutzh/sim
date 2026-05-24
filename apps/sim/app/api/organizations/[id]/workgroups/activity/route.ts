@@ -20,6 +20,7 @@ export const GET = withRouteHandler(async (request, context) => {
       workgroupId: parsed.data.query.workgroupId,
       disciplineId: parsed.data.query.disciplineId,
       action: parsed.data.query.action,
+      failureScope: parsed.data.query.failureScope,
       search: parsed.data.query.search,
       actor: parsed.data.query.actor,
       startDate: parsed.data.query.startDate,

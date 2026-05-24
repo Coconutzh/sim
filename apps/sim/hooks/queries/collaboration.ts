@@ -31,6 +31,7 @@ import {
   listShowcasePublicationsContract,
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
+  type ProjectAdminFailureScope,
   type PublicationSummary,
   type RecordProjectAdminFailureBody,
   recordProjectAdminFailureContract,
@@ -146,6 +147,7 @@ export interface OrganizationWorkgroupActivityFilters {
   workgroupId?: string
   disciplineId?: string
   action?: string
+  failureScope?: ProjectAdminFailureScope
   search?: string
   actor?: string
   startDate?: string

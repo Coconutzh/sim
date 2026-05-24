@@ -416,6 +416,8 @@ describe('collaboration service', () => {
       listOrganizationWorkgroupActivity({
         userId: 'org-admin-1',
         organizationId: 'org-1',
+        action: 'project_admin_failure.recorded',
+        failureScope: 'team',
         actor: 'admin@example.com',
         startDate: '2026-05-01',
         endDate: '2026-05-24',
