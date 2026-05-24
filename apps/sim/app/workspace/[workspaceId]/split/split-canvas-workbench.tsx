@@ -7,8 +7,10 @@ import { useParams } from 'next/navigation'
 import { Button, Loader } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
+  computeViewportCenteredPlacement,
   describePaneSelection,
   mapCopiedTargetBlockIds,
+  type PaneViewportSnapshot,
   selectPaneBlock,
 } from '@/app/workspace/[workspaceId]/split/split-selection'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow'
@@ -21,21 +23,27 @@ import {
 import { useWorkflowState, useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 type CanvasPaneKind = 'personal' | 'team'
+const FALLBACK_COPY_PLACEMENT = { offsetX: 120, offsetY: 80 } as const
 
 interface PaneConfig {
   kind: CanvasPaneKind
   label: string
   workspaceId?: string
   workflowId?: string
+  workflowState?: WorkflowState
   workflows: WorkflowMetadata[]
   isWorkflowsLoading: boolean
+  isWorkflowStateLoading: boolean
+  viewport?: PaneViewportSnapshot
   selectedBlockIds: string[]
   copiedBlockIds: string[]
   onSelectBlock: (blockId: string, additive: boolean) => void
   onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
+  onViewportChange: (viewport: PaneViewportSnapshot) => void
 }
 
 function useDefaultWorkflowSelection(workflows: WorkflowMetadata[], preferredId?: string) {
@@ -104,10 +112,7 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
 }
 
 function CanvasPane({ pane }: { pane: PaneConfig }) {
-  const { data: workflowState, isLoading: isWorkflowStateLoading } = useWorkflowState(
-    pane.workflowId
-  )
-  const isLoading = pane.isWorkflowsLoading || isWorkflowStateLoading
+  const isLoading = pane.isWorkflowsLoading || pane.isWorkflowStateLoading
 
   return (
     <section className='flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
@@ -118,9 +123,9 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
             <Loader className='h-[18px] w-[18px] text-[var(--text-icon)]' animate />
           </div>
         )}
-        {!isLoading && workflowState && pane.workspaceId ? (
+        {!isLoading && pane.workflowState && pane.workspaceId ? (
           <PreviewWorkflow
-            workflowState={workflowState}
+            workflowState={pane.workflowState}
             workspaceId={pane.workspaceId}
             selectedBlockIds={pane.selectedBlockIds}
             onNodeClick={(blockId, _mousePosition, modifiers) =>
@@ -129,6 +134,7 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
             onPaneClick={pane.onClearSelection}
             cursorStyle='pointer'
             fitPadding={0.2}
+            onViewportChange={pane.onViewportChange}
             lightweight
           />
         ) : (
@@ -167,11 +173,17 @@ export function SplitCanvasWorkbench() {
     useWorkflows(teamWorkspaceId)
   const [personalWorkflowId, setPersonalWorkflowId] = useDefaultWorkflowSelection(personalWorkflows)
   const [teamWorkflowId, setTeamWorkflowId] = useDefaultWorkflowSelection(teamWorkflows)
+  const { data: personalWorkflowState, isLoading: isPersonalWorkflowStateLoading } =
+    useWorkflowState(personalWorkflowId)
+  const { data: teamWorkflowState, isLoading: isTeamWorkflowStateLoading } =
+    useWorkflowState(teamWorkflowId)
   const [selectedPane, setSelectedPane] = useState<CanvasPaneKind>('personal')
   const [selectedPersonalBlockIds, setSelectedPersonalBlockIds] = useState<string[]>([])
   const [selectedTeamBlockIds, setSelectedTeamBlockIds] = useState<string[]>([])
   const [copiedPersonalBlockIds, setCopiedPersonalBlockIds] = useState<string[]>([])
   const [copiedTeamBlockIds, setCopiedTeamBlockIds] = useState<string[]>([])
+  const [personalViewport, setPersonalViewport] = useState<PaneViewportSnapshot | undefined>()
+  const [teamViewport, setTeamViewport] = useState<PaneViewportSnapshot | undefined>()
   const copySelection = useCopySelection()
 
   const panes = useMemo(() => {
@@ -180,8 +192,11 @@ export function SplitCanvasWorkbench() {
       label: 'Personal draft',
       workspaceId: personalWorkspaceId,
       workflowId: personalWorkflowId,
+      workflowState: personalWorkflowState ?? undefined,
       workflows: personalWorkflows,
       isWorkflowsLoading: isPersonalWorkflowsLoading,
+      isWorkflowStateLoading: isPersonalWorkflowStateLoading,
+      viewport: personalViewport,
       selectedBlockIds: selectedPersonalBlockIds,
       copiedBlockIds: copiedPersonalBlockIds,
       onSelectBlock: (blockId, additive) => {
@@ -199,15 +214,20 @@ export function SplitCanvasWorkbench() {
         setPersonalWorkflowId(workflowId)
         setSelectedPersonalBlockIds([])
         setCopiedPersonalBlockIds([])
+        setPersonalViewport(undefined)
       },
+      onViewportChange: setPersonalViewport,
     }
     const teamPane: PaneConfig = {
       kind: 'team',
       label: 'Team canvas',
       workspaceId: teamWorkspaceId,
       workflowId: teamWorkflowId,
+      workflowState: teamWorkflowState ?? undefined,
       workflows: teamWorkflows,
       isWorkflowsLoading: isTeamWorkflowsLoading,
+      isWorkflowStateLoading: isTeamWorkflowStateLoading,
+      viewport: teamViewport,
       selectedBlockIds: selectedTeamBlockIds,
       copiedBlockIds: copiedTeamBlockIds,
       onSelectBlock: (blockId, additive) => {
@@ -225,24 +245,32 @@ export function SplitCanvasWorkbench() {
         setTeamWorkflowId(workflowId)
         setSelectedTeamBlockIds([])
         setCopiedTeamBlockIds([])
+        setTeamViewport(undefined)
       },
+      onViewportChange: setTeamViewport,
     }
     return { personal: personalPane, team: teamPane }
   }, [
     copiedPersonalBlockIds,
     copiedTeamBlockIds,
     isPersonalWorkflowsLoading,
+    isPersonalWorkflowStateLoading,
     isTeamWorkflowsLoading,
+    isTeamWorkflowStateLoading,
     personalWorkflowId,
+    personalWorkflowState,
     personalWorkflows,
     personalWorkspaceId,
+    personalViewport,
     selectedPersonalBlockIds,
     selectedTeamBlockIds,
     setPersonalWorkflowId,
     setTeamWorkflowId,
     teamWorkflowId,
+    teamWorkflowState,
     teamWorkflows,
     teamWorkspaceId,
+    teamViewport,
   ])
 
   const sourcePane = panes[selectedPane]
@@ -258,6 +286,13 @@ export function SplitCanvasWorkbench() {
     if (!canCopy || !sourcePane.workflowId || sourcePane.selectedBlockIds.length === 0) return
     if (!targetPane.workspaceId || !targetPane.workflowId) return
 
+    const placement = computeViewportCenteredPlacement({
+      sourceBlockIds: sourcePane.selectedBlockIds,
+      sourceWorkflowState: sourcePane.workflowState,
+      targetViewport: targetPane.viewport,
+      fallback: FALLBACK_COPY_PLACEMENT,
+    })
+
     const result = await copySelection.mutateAsync({
       workflowId: sourcePane.workflowId,
       body: {
@@ -268,7 +303,7 @@ export function SplitCanvasWorkbench() {
           workflowId: targetPane.workflowId,
         },
         selection: { blockIds: sourcePane.selectedBlockIds, edgeIds: [] },
-        placement: { offsetX: 120, offsetY: 80 },
+        placement,
       },
     })
 

@@ -8,8 +8,10 @@ import ReactFlow, {
   type EdgeTypes,
   type Node,
   type NodeTypes,
+  type ReactFlowInstance,
   ReactFlowProvider,
   useReactFlow,
+  type Viewport,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -26,6 +28,14 @@ import { useWorkflowMap } from '@/hooks/queries/workflows'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('PreviewWorkflow')
+
+export interface PreviewWorkflowViewport {
+  x: number
+  y: number
+  zoom: number
+  width: number
+  height: number
+}
 
 /** Gets block dimensions, using stored values or defaults. */
 function getPreviewBlockDimensions(block: BlockState): { width: number; height: number } {
@@ -175,6 +185,8 @@ interface PreviewWorkflowProps {
   selectedBlockId?: string | null
   /** Currently selected block IDs for multi-node highlighting */
   selectedBlockIds?: string[]
+  /** Reports the preview viewport for placement-aware copy targets */
+  onViewportChange?: (viewport: PreviewWorkflowViewport) => void
   /** Skips expensive subblock computations for thumbnails/template previews */
   lightweight?: boolean
 }
@@ -196,12 +208,26 @@ interface FitViewOnChangeProps {
   nodeIds: string
   fitPadding: number
   containerRef: React.RefObject<HTMLDivElement | null>
+  onViewportChange?: (viewport: PreviewWorkflowViewport) => void
 }
 
 /** Calls fitView on node changes or container resize. */
-function FitViewOnChange({ nodeIds, fitPadding, containerRef }: FitViewOnChangeProps) {
-  const { fitView } = useReactFlow()
+function FitViewOnChange({
+  nodeIds,
+  fitPadding,
+  containerRef,
+  onViewportChange,
+}: FitViewOnChangeProps) {
+  const { fitView, getViewport } = useReactFlow()
   const lastNodeIdsRef = useRef<string | null>(null)
+  const emitViewport = useMemo(
+    () => () => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect || !onViewportChange) return
+      onViewportChange({ ...getViewport(), width: rect.width, height: rect.height })
+    },
+    [containerRef, getViewport, onViewportChange]
+  )
 
   useEffect(() => {
     if (!nodeIds.length) return
@@ -211,9 +237,10 @@ function FitViewOnChange({ nodeIds, fitPadding, containerRef }: FitViewOnChangeP
 
     const timeoutId = setTimeout(() => {
       fitView({ padding: fitPadding, duration: 200 })
+      setTimeout(emitViewport, 220)
     }, 50)
     return () => clearTimeout(timeoutId)
-  }, [nodeIds, fitPadding, fitView])
+  }, [nodeIds, fitPadding, fitView, emitViewport])
 
   useEffect(() => {
     const container = containerRef.current
@@ -225,6 +252,7 @@ function FitViewOnChange({ nodeIds, fitPadding, containerRef }: FitViewOnChangeP
       if (timeoutId) clearTimeout(timeoutId)
       timeoutId = setTimeout(() => {
         fitView({ padding: fitPadding, duration: 150 })
+        setTimeout(emitViewport, 170)
       }, 100)
     })
 
@@ -233,7 +261,7 @@ function FitViewOnChange({ nodeIds, fitPadding, containerRef }: FitViewOnChangeP
       if (timeoutId) clearTimeout(timeoutId)
       resizeObserver.disconnect()
     }
-  }, [containerRef, fitPadding, fitView])
+  }, [containerRef, fitPadding, fitView, emitViewport])
 
   return null
 }
@@ -256,6 +284,7 @@ export function PreviewWorkflow({
   executedBlocks,
   selectedBlockId,
   selectedBlockIds,
+  onViewportChange,
   lightweight = false,
 }: PreviewWorkflowProps) {
   const params = useParams<{ workspaceId: string }>()
@@ -273,6 +302,11 @@ export function PreviewWorkflow({
     () => new Set([...(selectedBlockIds ?? []), ...(selectedBlockId ? [selectedBlockId] : [])]),
     [selectedBlockId, selectedBlockIds]
   )
+  const emitViewportSnapshot = (viewport: Viewport) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect || !onViewportChange) return
+    onViewportChange({ ...viewport, width: rect.width, height: rect.height })
+  }
 
   const blocksStructure = useMemo(() => {
     if (!isValidWorkflowState) return { count: 0, ids: '' }
@@ -636,6 +670,8 @@ export function PreviewWorkflow({
             y: defaultPosition?.y ?? 0,
             zoom: defaultZoom ?? 1,
           }}
+          onInit={(instance: ReactFlowInstance) => emitViewportSnapshot(instance.getViewport())}
+          onMoveEnd={(_event, viewport) => emitViewportSnapshot(viewport)}
           minZoom={0.1}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
@@ -669,6 +705,7 @@ export function PreviewWorkflow({
           nodeIds={blocksStructure.ids}
           fitPadding={fitPadding}
           containerRef={containerRef}
+          onViewportChange={onViewportChange}
         />
       </div>
     </ReactFlowProvider>

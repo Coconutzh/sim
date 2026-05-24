@@ -335,6 +335,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 分屏 pane selection 已从单节点扩展为 pane-scoped 多节点数组：普通点击替换当前 pane selection，Shift/Ctrl/Cmd-click 追加或移除节点。
 - 分屏复制 payload 会传入当前 pane 的多节点 `blockIds`；服务端仍按 selection 内部合法边复制边，因此多节点之间的连接会随节点一起进入目标画布。
 - `PreviewWorkflow` 新增多选高亮输入和节点点击 modifier 信息，保留既有单选 `selectedBlockId` 兼容调用方。
+- `PreviewWorkflow` 现在会上报当前预览 viewport；分屏复制会优先计算 source selection bounds 到目标 pane 视口中心的 `placement.offsetX/offsetY`，仅在 viewport 未就绪时回退固定 offset。
 - 新增 `split-selection.ts` 和对应测试，覆盖点击替换、多选 toggle、复制映射保持源选择顺序和 selection 文案。
 
 本轮同时继续收敛原主界面的画布语义：
@@ -352,7 +353,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 当前分屏第一切片是“只读预览 + 显式复制”，还不是左右两侧完整可编辑 ReactFlow；后续如果要做真正双编辑器，需要拆分 workflow store / selection / viewport 为 pane-scoped 状态。
-- 当前复制选择已支持多节点点击和目标 pane 高亮；显式边选择、框选、viewport-center 粘贴、右侧目标高亮动画和 pane-scoped zoom/pan 仍需继续做。
+- 当前复制选择已支持多节点点击、目标 pane 高亮和 viewport-center placement；显式边选择、框选、复制后自动定位/动画和 pane-scoped zoom/pan 持久化仍需继续做。
 - 团队管理员入口需要继续从通用组织设置页迁出；下一切片先补团队成员/初始化页，Phase 9 再补发布和 Agent Skill 管理。
 
 ### 5.8 原 shell 团队管理入口切片
