@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请与 pending invitation 过期状态视觉；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉和团队画布健康概览；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
 
 ## 1. 当前结论
 
@@ -386,6 +386,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队发布管理先接入本团队 publication 列表和生命周期操作，复用 `useShowcasePublications` 与 `useUpdatePublicationLifecycle`，管理员可从原 shell 直接归档/撤回展示版本并跳转到展示画布。
 - 团队管理页新增发布创建表单，管理员可选择团队画布内 workflow、填写标题/说明，并选择组织可见或指定团队可见；提交后复用现有 `POST /api/workflows/[id]/publish` 发布快照并刷新本团队展示列表。
 - 团队管理页后续已拆成 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个本地 tab，沿用 `var(--bg)`、`var(--surface-*)`、`var(--border)`、8px 圆角和原页面状态，不引入独立工作台外壳。
+- 团队管理页顶部新增 `Team canvas health`，复用现有 team workspace、workflow list、workspace permissions 和 publication list hooks，展示团队画布初始化、workflow graph、成员权限同步和最近发布状态。
 
 ### 5.9 Phase 9 Team Agent Skill 绑定切片
 
@@ -514,6 +515,16 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - `usePendingInvitations` 现在保留 `expiresAt` / `createdAt`，团队管理页 pending invitation 列表能显示具体过期状态。
 - Pending invitation 行会标记 `Expired - resend or cancel`，48 小时内到期会标记 `Expires in Nh`，更远的邀请显示具体过期时间；管理员可以据此重发或取消。
 - 本切片补齐 Phase 9 “批量邀请和邀请过期状态”的首版能力；后续仍需逐项展示 invalid/existing/pending/failed 的批量结果分类。
+
+### 5.18 Phase 9 团队画布健康状态切片
+
+本轮继续补齐团队管理员闭环中的“团队画布健康状态”，仍然位于原 `/workspace/[workspaceId]/team-management` shell 内：
+
+- `Team canvas health` 概览显示四个状态卡：团队画布是否初始化、team workspace 是否有 workflow graph、workgroup 成员与 team workspace permission 是否同步、最近展示发布版本状态。
+- 健康数据复用现有 hooks：`useTeamWorkspace`、`useWorkflows`、`useWorkspacePermissionsQuery` 和 `useShowcasePublications`，不新增 API route，也不改变权限边界。
+- 成员权限同步检查按 workgroup role 推导期望 workspace permission：`admin -> admin`、`member -> write`；若 team workspace permission 缺失或不匹配，会显示需要同步的人数。
+- 最近发布状态会显示最新 publication 版本号、生命周期状态、review state 和 risk level；没有发布、没有当前 published 版本或最新版本为 critical risk 时显示 warning。
+- 本切片完成 Phase 9 “默认 workflow 是否存在、成员权限是否同步、最近发布状态”的首版可见性；后续可继续补一键修复成员权限、默认 workflow 自动修复和失败操作审计。
 
 ## 6. 建议继续推进目标
 

@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react'
 import {
   Activity,
+  AlertTriangle,
   Archive,
+  CheckCircle2,
   Crown,
   EyeOff,
   Mail,
@@ -45,13 +47,14 @@ import {
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
 import { usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
 type PublicationVisibility = 'organization' | 'selected_workgroups'
 type ReviewStateDraft = PublicationReviewState | 'unreviewed'
 type RiskLevelDraft = PublicationRiskLevel | 'unset'
 type TeamManagementTab = 'members' | 'invites' | 'publications' | 'agent' | 'activity'
+type TeamHealthTone = 'healthy' | 'warning' | 'loading'
 
 const TEAM_MANAGEMENT_TABS: {
   id: TeamManagementTab
@@ -298,10 +301,111 @@ export function WorkgroupTeamManagement() {
   } = useWorkgroupActivity(isAdmin ? activeWorkgroupId : undefined, 10)
   const { data: pendingInvitations = [], isLoading: isLoadingPendingInvitations } =
     usePendingInvitations(isAdmin ? teamWorkspaceId : undefined)
+  const { data: teamWorkspacePermissions, isLoading: isLoadingTeamWorkspacePermissions } =
+    useWorkspacePermissionsQuery(isAdmin && teamWorkspaceId ? teamWorkspaceId : undefined)
   const publications = publicationsData?.publications ?? []
   const agentSkills = agentSkillsData?.skills ?? []
   const activity = activityData?.activity ?? []
   const emailInvitationEmails = parseInvitationEmails(emailInvitationValue)
+  const teamWorkspacePermissionUsers = teamWorkspacePermissions?.users ?? []
+  const teamWorkspacePermissionByUserId = useMemo(
+    () => new Map(teamWorkspacePermissionUsers.map((user) => [user.userId, user.permissionType])),
+    [teamWorkspacePermissionUsers]
+  )
+  const permissionMismatches = teamWorkspacePermissions
+    ? members.filter((member) => {
+        const expectedPermission = member.role === 'admin' ? 'admin' : 'write'
+        return teamWorkspacePermissionByUserId.get(member.userId) !== expectedPermission
+      })
+    : []
+  const latestPublication = useMemo(
+    () =>
+      publications.reduce<(typeof publications)[number] | null>((latest, publication) => {
+        if (!latest) return publication
+        return new Date(publication.publishedAt).getTime() > new Date(latest.publishedAt).getTime()
+          ? publication
+          : latest
+      }, null),
+    [publications]
+  )
+  const hasCurrentPublishedPublication = publications.some(
+    (publication) => publication.status === 'published'
+  )
+  const teamHealthItems: Array<{
+    id: string
+    label: string
+    detail: string
+    tone: TeamHealthTone
+  }> = [
+    {
+      id: 'canvas',
+      label: 'Team canvas',
+      detail: teamWorkspaceId
+        ? 'Initialized and linked to this workgroup.'
+        : 'Not initialized yet.',
+      tone: teamWorkspaceId ? 'healthy' : 'warning',
+    },
+    {
+      id: 'workflow',
+      label: 'Workflow graph',
+      detail: !teamWorkspaceId
+        ? 'Initialize the team canvas first.'
+        : isLoadingTeamWorkflows
+          ? 'Checking team workflows...'
+          : teamWorkflows.length > 0
+            ? `${teamWorkflows.length} workflow${teamWorkflows.length === 1 ? '' : 's'} available.`
+            : 'No workflow graph exists yet.',
+      tone: !teamWorkspaceId
+        ? 'warning'
+        : isLoadingTeamWorkflows
+          ? 'loading'
+          : teamWorkflows.length > 0
+            ? 'healthy'
+            : 'warning',
+    },
+    {
+      id: 'permissions',
+      label: 'Member permissions',
+      detail: !teamWorkspaceId
+        ? 'No team canvas permissions to sync yet.'
+        : isLoadingTeamWorkspacePermissions
+          ? 'Checking workspace permissions...'
+          : !teamWorkspacePermissions
+            ? 'Workspace permissions could not be checked.'
+            : permissionMismatches.length === 0
+              ? 'Every workgroup member has the expected team canvas role.'
+              : `${permissionMismatches.length} member${
+                  permissionMismatches.length === 1 ? '' : 's'
+                } need permission sync.`,
+      tone: !teamWorkspaceId
+        ? 'warning'
+        : isLoadingTeamWorkspacePermissions
+          ? 'loading'
+          : teamWorkspacePermissions && permissionMismatches.length === 0
+            ? 'healthy'
+            : 'warning',
+    },
+    {
+      id: 'publication',
+      label: 'Recent publication',
+      detail: isLoadingPublications
+        ? 'Checking showcase versions...'
+        : latestPublication
+          ? `v${latestPublication.versionNumber} ${formatPublicationStatus(
+              latestPublication.status
+            )}, ${formatPublicationReviewState(latestPublication.reviewState)}, ${formatPublicationRiskLevel(
+              latestPublication.riskLevel
+            )}.`
+          : 'No showcase version has been published from this team.',
+      tone: isLoadingPublications
+        ? 'loading'
+        : latestPublication &&
+            hasCurrentPublishedPublication &&
+            latestPublication.riskLevel !== 'critical'
+          ? 'healthy'
+          : 'warning',
+    },
+  ]
   const tabCounts: Record<TeamManagementTab, number> = {
     members: members.length,
     invites: pendingInvitations.length,
@@ -720,6 +824,43 @@ export function WorkgroupTeamManagement() {
             </button>
           ))}
         </div>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Team canvas health
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Verify the shared canvas, workflow graph, member permission sync, and latest
+                showcase status.
+              </p>
+            </div>
+          </div>
+          <div className='grid gap-2 p-4 md:grid-cols-2 xl:grid-cols-4'>
+            {teamHealthItems.map((item) => (
+              <div
+                key={item.id}
+                className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+              >
+                <div className='flex items-center gap-2'>
+                  {item.tone === 'healthy' ? (
+                    <CheckCircle2 className='h-[14px] w-[14px] text-emerald-500' />
+                  ) : item.tone === 'loading' ? (
+                    <Loader className='h-[14px] w-[14px] text-[var(--text-icon)]' animate />
+                  ) : (
+                    <AlertTriangle className='h-[14px] w-[14px] text-amber-500' />
+                  )}
+                  <span className='font-medium text-[13px] text-[var(--text-primary)]'>
+                    {item.label}
+                  </span>
+                </div>
+                <p className='mt-2 text-[12px] text-[var(--text-muted)] leading-5'>{item.detail}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {activeTab === 'members' && (
           <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
