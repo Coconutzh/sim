@@ -110,6 +110,18 @@ const PUBLICATION_RISK_OPTIONS: { value: PublicationRiskLevel | ''; label: strin
   { value: 'high', label: 'High' },
   { value: 'critical', label: 'Critical' },
 ]
+const RISK_SKILL_KEYWORDS = [
+  'delete',
+  'deploy',
+  'execute',
+  'publish',
+  'credential',
+  'secret',
+  'api key',
+  'webhook',
+  'file',
+  'write',
+] as const
 
 function governanceAlertClass(severity: PublicationGovernanceAlertSeverity): string {
   switch (severity) {
@@ -191,6 +203,7 @@ interface PublicationDependencyImpact {
 }
 
 interface AgentPolicyImpact {
+  agentCode: string
   disciplineNames: string[]
   teams: WorkgroupAdminSummary[]
   currentPublications: PublicationSummary[]
@@ -200,6 +213,13 @@ interface AgentPolicyImpact {
   enabledPolicies: OrganizationAgentSkillPolicy[]
   promptChanged: boolean
   promptCharacterDelta: number
+}
+
+interface AgentSkillRiskGuardrail {
+  policy: OrganizationAgentSkillPolicy
+  matchedTerms: string[]
+  tone: 'warning' | 'danger'
+  reason: string
 }
 
 function formatAgentCode(agentCode: string) {
@@ -879,6 +899,7 @@ function buildAgentPolicyImpact(params: {
   const draftInstructions = params.draftInstructions.trim()
 
   return {
+    agentCode: params.template.code,
     disciplineNames,
     teams,
     currentPublications,
@@ -936,6 +957,32 @@ function buildAgentSkillPolicyCopyGroups(policies: OrganizationAgentSkillPolicy[
   return Array.from(groups.values())
     .filter((group) => group.total > 1)
     .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name))
+}
+
+function buildAgentSkillRiskGuardrails(params: {
+  policies: OrganizationAgentSkillPolicy[]
+  impact: AgentPolicyImpact | null
+}): AgentSkillRiskGuardrail[] {
+  if (!params.impact) return []
+  const agentCode = params.impact.agentCode
+  const hasCriticalPublication = params.impact.riskPublications.length > 0
+  return params.policies
+    .filter((policy) => policy.agentCode === agentCode)
+    .map((policy) => {
+      const text = `${policy.name} ${policy.description ?? ''}`.toLowerCase()
+      const matchedTerms = RISK_SKILL_KEYWORDS.filter((term) => text.includes(term))
+      if (!policy.enabled || matchedTerms.length === 0) return null
+      return {
+        policy,
+        matchedTerms,
+        tone: hasCriticalPublication ? ('danger' as const) : ('warning' as const),
+        reason: hasCriticalPublication
+          ? 'This Agent has critical current publications; risky project-default skills should be disabled until review is complete.'
+          : 'This project-default skill looks action-oriented; disable it unless teams explicitly need it.',
+      }
+    })
+    .filter((item): item is AgentSkillRiskGuardrail => Boolean(item))
+    .sort((left, right) => left.policy.name.localeCompare(right.policy.name))
 }
 
 function parseBatchAssignmentTargets(value: string) {
@@ -1391,6 +1438,14 @@ export function ProjectAdminCenter() {
     () => buildAgentSkillPolicyCopyGroups(agentSkillPolicies),
     [agentSkillPolicies]
   )
+  const agentSkillRiskGuardrails = useMemo(
+    () =>
+      buildAgentSkillRiskGuardrails({
+        policies: agentSkillPolicies,
+        impact: selectedAgentPolicyImpact,
+      }),
+    [agentSkillPolicies, selectedAgentPolicyImpact]
+  )
   const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
@@ -1595,6 +1650,26 @@ export function ProjectAdminCenter() {
       }
       setAgentSkillPolicyStatus(
         `Copied ${policy.enabled ? 'enabled' : 'disabled'} default for ${policy.name} to ${targets.length} matching team canvas${targets.length === 1 ? '' : 'es'}.`
+      )
+    } catch (error) {
+      setAgentSkillPolicyStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleDisableRiskSkillDefaults = async () => {
+    if (!organizationId || agentSkillRiskGuardrails.length === 0) return
+    setAgentSkillPolicyStatus(null)
+    try {
+      for (const guardrail of agentSkillRiskGuardrails) {
+        await updateAgentSkillPolicy.mutateAsync({
+          organizationId,
+          agentCode: guardrail.policy.agentCode,
+          skillId: guardrail.policy.skillId,
+          enabled: false,
+        })
+      }
+      setAgentSkillPolicyStatus(
+        `Disabled ${agentSkillRiskGuardrails.length} risky project-default skill${agentSkillRiskGuardrails.length === 1 ? '' : 's'} for ${selectedAgentTemplate?.name ?? 'this Agent'}.`
       )
     } catch (error) {
       setAgentSkillPolicyStatus(readErrorMessage(error))
@@ -3067,6 +3142,65 @@ export function ProjectAdminCenter() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+            {agentSkillRiskGuardrails.length > 0 && (
+              <div className='mt-3 rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                      Risk skill guardrails
+                    </div>
+                    <p className='mt-1 max-w-[760px] text-[11px] text-[var(--text-muted)]'>
+                      These enabled project-default skills match risky action keywords. Disable them
+                      by default when the Agent is in review or carrying critical publication risk.
+                    </p>
+                  </div>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={updateAgentSkillPolicy.isPending}
+                    onClick={() => void handleDisableRiskSkillDefaults()}
+                  >
+                    Disable risky defaults ({agentSkillRiskGuardrails.length})
+                  </button>
+                </div>
+                <div className='mt-2 grid gap-2'>
+                  {agentSkillRiskGuardrails.slice(0, 4).map((guardrail) => (
+                    <div
+                      key={`${guardrail.policy.sourceWorkgroup.id}:${guardrail.policy.skillId}`}
+                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'
+                    >
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                          {guardrail.policy.name}
+                        </span>
+                        <span
+                          className={cn(
+                            'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                            guardrail.tone === 'danger'
+                              ? 'border-red-500/30 bg-red-500/10 text-red-500'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+                          )}
+                        >
+                          {guardrail.matchedTerms.join(', ')}
+                        </span>
+                      </div>
+                      <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {guardrail.reason}
+                      </p>
+                      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {guardrail.policy.sourceWorkgroup.name}
+                      </div>
+                    </div>
+                  ))}
+                  {agentSkillRiskGuardrails.length > 4 && (
+                    <div className='text-[11px] text-[var(--text-muted)]'>
+                      +{agentSkillRiskGuardrails.length - 4} more risky defaults will be disabled by
+                      the bulk action.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
