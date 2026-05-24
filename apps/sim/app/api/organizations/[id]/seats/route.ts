@@ -1,3 +1,4 @@
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { invitation, member, organization, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -197,7 +198,7 @@ export const PUT = withRouteHandler(
       const newMinimumLimit = newSeatCount * basePrice
 
       const orgData = await db
-        .select({ orgUsageLimit: organization.orgUsageLimit })
+        .select({ name: organization.name, orgUsageLimit: organization.orgUsageLimit })
         .from(organization)
         .where(eq(organization.id, organizationId))
         .limit(1)
@@ -231,6 +232,26 @@ export const PUT = withRouteHandler(
         newSeats: newSeatCount,
         updatedBy: session.user.id,
         prorationBehavior: 'always_invoice',
+      })
+
+      recordAudit({
+        workspaceId: null,
+        actorId: session.user.id,
+        actorName: session.user.name ?? undefined,
+        actorEmail: session.user.email ?? undefined,
+        action: AuditAction.ORGANIZATION_UPDATED,
+        resourceType: AuditResourceType.ORGANIZATION,
+        resourceId: organizationId,
+        resourceName: orgData[0]?.name,
+        description: `Updated organization seats from ${currentSeats} to ${newSeatCount}`,
+        metadata: {
+          organizationId,
+          billingEvent: 'organization.seats_updated',
+          previousSeats: currentSeats,
+          seats: newSeatCount,
+          stripeSubscriptionId: updatedSubscription.id,
+        },
+        request,
       })
 
       return NextResponse.json({

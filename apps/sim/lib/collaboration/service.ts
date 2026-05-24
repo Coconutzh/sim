@@ -139,6 +139,13 @@ const ORGANIZATION_MANAGEMENT_AUDIT_ACTIONS = [
   AuditAction.ORG_INVITATION_RESENT,
 ] as const
 const DATA_RETENTION_AUDIT_EVENT = 'data_retention.settings_updated'
+const ORGANIZATION_SETTINGS_EVENTS = [
+  'organization.settings_updated',
+  'organization.whitelabel_updated',
+] as const
+const BILLING_MANAGEMENT_EVENTS = ['organization.seats_updated'] as const
+type OrganizationSettingsEvent = (typeof ORGANIZATION_SETTINGS_EVENTS)[number]
+type BillingManagementEvent = (typeof BILLING_MANAGEMENT_EVENTS)[number]
 
 interface PublicationBroadcastParams {
   actorUserId: string
@@ -1659,6 +1666,22 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     auditLog.action,
     ORGANIZATION_MANAGEMENT_AUDIT_ACTIONS
   )
+  const organizationSettingsCondition = and(
+    eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+    or(
+      ...ORGANIZATION_SETTINGS_EVENTS.map(
+        (event) => sql`${auditLog.metadata}->>'organizationEvent' = ${event}`
+      )
+    )
+  )
+  const billingManagementCondition = and(
+    eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+    or(
+      ...BILLING_MANAGEMENT_EVENTS.map(
+        (event) => sql`${auditLog.metadata}->>'billingEvent' = ${event}`
+      )
+    )
+  )
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
   if (kind === 'publication_governance') return publicationGovernanceCondition
@@ -1668,6 +1691,8 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
   if (kind === 'retention_policy') return retentionPolicyCondition
   if (kind === 'data_drain') return dataDrainCondition
   if (kind === 'organization_management') return organizationManagementCondition
+  if (kind === 'organization_settings') return organizationSettingsCondition
+  if (kind === 'billing_management') return billingManagementCondition
   return or(
     publicationReviewCondition,
     failureCondition,
@@ -1677,7 +1702,9 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     agentPolicyCondition,
     retentionPolicyCondition,
     dataDrainCondition,
-    organizationManagementCondition
+    organizationManagementCondition,
+    organizationSettingsCondition,
+    billingManagementCondition
   )
 }
 
@@ -1868,6 +1895,50 @@ function getOrganizationManagementSeverity(
     action === AuditAction.ORG_INVITATION_REJECTED ||
     action === AuditAction.ORG_INVITATION_CANCELLED ||
     action === AuditAction.ORG_INVITATION_REVOKED
+    ? 'warning'
+    : 'info'
+}
+
+function getMetadataRecord(metadata: unknown): Record<string, unknown> | null {
+  return metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : null
+}
+
+function getOrganizationSettingsEvent(metadata: unknown): OrganizationSettingsEvent | null {
+  const event = getMetadataRecord(metadata)?.organizationEvent
+  return ORGANIZATION_SETTINGS_EVENTS.find((knownEvent) => knownEvent === event) ?? null
+}
+
+function getOrganizationSettingsTitle(
+  event: OrganizationSettingsEvent,
+  resourceName: string | null
+) {
+  const name = resourceName?.trim()
+  if (event === 'organization.whitelabel_updated') {
+    return name ? `Organization branding updated: ${name}` : 'Organization branding updated'
+  }
+  return name ? `Organization settings updated: ${name}` : 'Organization settings updated'
+}
+
+function getBillingManagementEvent(metadata: unknown): BillingManagementEvent | null {
+  const event = getMetadataRecord(metadata)?.billingEvent
+  return BILLING_MANAGEMENT_EVENTS.find((knownEvent) => knownEvent === event) ?? null
+}
+
+function getBillingManagementTitle(event: BillingManagementEvent, resourceName: string | null) {
+  const name = resourceName?.trim()
+  if (event === 'organization.seats_updated') {
+    return name ? `Organization seats updated: ${name}` : 'Organization seats updated'
+  }
+  return name ? `Billing updated: ${name}` : 'Billing updated'
+}
+
+function getBillingManagementSeverity(
+  metadata: unknown
+): ProjectNotificationCenterEntry['severity'] {
+  const record = getMetadataRecord(metadata)
+  const previousSeats = record?.previousSeats
+  const seats = record?.seats
+  return typeof previousSeats === 'number' && typeof seats === 'number' && seats < previousSeats
     ? 'warning'
     : 'info'
 }
@@ -2066,6 +2137,54 @@ function getProjectNotificationCenterEntry(
       kind: 'organization_management',
       severity: getOrganizationManagementSeverity(row.action),
       title: getOrganizationManagementTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  const organizationSettingsEvent =
+    row.action === AuditAction.ORGANIZATION_UPDATED
+      ? getOrganizationSettingsEvent(row.metadata)
+      : null
+  if (organizationSettingsEvent) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'organization_settings',
+      severity: 'info',
+      title: getOrganizationSettingsTitle(organizationSettingsEvent, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  const billingManagementEvent =
+    row.action === AuditAction.ORGANIZATION_UPDATED ? getBillingManagementEvent(row.metadata) : null
+  if (billingManagementEvent) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'billing_management',
+      severity: getBillingManagementSeverity(row.metadata),
+      title: getBillingManagementTitle(billingManagementEvent, row.resourceName),
       detail: row.description ?? '',
       channel: null,
       body: row.resourceName,

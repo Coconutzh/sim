@@ -128,6 +128,8 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: 'retention_policy', label: 'Retention policy' },
   { value: 'data_drain', label: 'Data drain' },
   { value: 'organization_management', label: 'Organization management' },
+  { value: 'organization_settings', label: 'Organization settings' },
+  { value: 'billing_management', label: 'Billing management' },
 ]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',

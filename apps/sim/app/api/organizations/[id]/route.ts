@@ -210,7 +210,11 @@ export const PUT = withRouteHandler(
           actorEmail: session.user.email ?? undefined,
           resourceName: updatedOrg[0].name,
           description: `Updated organization settings`,
-          metadata: { changes: { name, slug, logo } },
+          metadata: {
+            organizationId,
+            organizationEvent: 'organization.settings_updated',
+            changes: { name, slug, logo },
+          },
           request,
         })
 

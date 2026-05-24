@@ -164,7 +164,11 @@ export const PUT = withRouteHandler(
         actorEmail: session.user.email ?? undefined,
         resourceName: currentOrg.name,
         description: 'Updated organization whitelabel settings',
-        metadata: { changes: Object.keys(incoming) },
+        metadata: {
+          organizationId,
+          organizationEvent: 'organization.whitelabel_updated',
+          changes: Object.keys(incoming),
+        },
         request,
       })
 

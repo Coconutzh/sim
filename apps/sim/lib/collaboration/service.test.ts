@@ -1634,6 +1634,35 @@ describe('collaboration service', () => {
             targetRole: 'member',
           },
         },
+        {
+          id: 'audit-organization-settings-1',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Updated organization whitelabel settings',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            organizationEvent: 'organization.whitelabel_updated',
+            changes: ['brandName', 'logoUrl'],
+          },
+        },
+        {
+          id: 'audit-billing-management-1',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Updated organization seats from 12 to 10',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.seats_updated',
+            previousSeats: 12,
+            seats: 10,
+          },
+        },
       ]
     )
 
@@ -1641,7 +1670,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 10,
+        limit: 12,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1688,6 +1717,18 @@ describe('collaboration service', () => {
           kind: 'organization_management',
           severity: 'info',
           title: 'Organization invitation resent: Theater Project',
+        },
+        {
+          id: 'audit-organization-settings-1',
+          kind: 'organization_settings',
+          severity: 'info',
+          title: 'Organization branding updated: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-1',
+          kind: 'billing_management',
+          severity: 'warning',
+          title: 'Organization seats updated: Theater Project',
         },
       ],
       nextOffset: null,
