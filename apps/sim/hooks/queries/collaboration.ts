@@ -7,7 +7,9 @@ import {
   archiveWorkgroupContract,
   type BatchAddWorkgroupMembersBody,
   batchAddWorkgroupMembersContract,
+  type CleanupProjectAdminFailureBody,
   type CopySelectionBody,
+  cleanupProjectAdminFailureContract,
   copySelectionContract,
   createOrganizationWorkgroupContract,
   createPersonalWorkspaceContract,
@@ -794,6 +796,28 @@ export function useRecordProjectAdminFailureAudit() {
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+    },
+  })
+}
+
+export function useCleanupProjectAdminFailureAudit() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & CleanupProjectAdminFailureBody) =>
+      requestJson(cleanupProjectAdminFailureContract, {
+        params: { id: variables.organizationId },
+        body: {
+          retentionHours: variables.retentionHours,
+          dryRun: variables.dryRun,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationProjectNotificationCenter(variables.organizationId),
       })
     },
   })

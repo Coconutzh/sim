@@ -6,10 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { mockDb, mockEnqueuePublicationNotificationDelivery, mockResultsQueue, schemaMock } =
   vi.hoisted(() => {
     const resultsQueue: unknown[] = []
+    const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
 
     function createChain() {
       const chain: Record<string, unknown> = {}
-      const resolveNext = () => (resultsQueue.shift() as unknown) ?? []
 
       chain.from = vi.fn(() => chain)
       chain.innerJoin = vi.fn(() => chain)
@@ -35,7 +35,8 @@ const { mockDb, mockEnqueuePublicationNotificationDelivery, mockResultsQueue, sc
     function createDeleteChain() {
       const chain: Record<string, unknown> = {}
 
-      chain.where = vi.fn(() => Promise.resolve([]))
+      chain.where = vi.fn(() => chain)
+      chain.returning = vi.fn(() => Promise.resolve(resolveNext()))
 
       return chain
     }
@@ -263,6 +264,7 @@ vi.mock('drizzle-orm', () => ({
   ilike: vi.fn((left: unknown, right: unknown) => ({ kind: 'ilike', left, right })),
   inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
+  lt: vi.fn((left: unknown, right: unknown) => ({ kind: 'lt', left, right })),
   lte: vi.fn((left: unknown, right: unknown) => ({ kind: 'lte', left, right })),
   max: vi.fn((value: unknown) => ({ kind: 'max', value })),
   ne: vi.fn((left: unknown, right: unknown) => ({ kind: 'ne', left, right })),
@@ -291,6 +293,7 @@ import {
   addWorkgroupMembersBatch,
   archiveWorkgroup,
   assertWorkgroupAdmin,
+  cleanupProjectAdminFailureAudit,
   createPersonalWorkspace,
   createTeamWorkspace,
   deliverOrganizationPublicationNotifications,
@@ -1943,6 +1946,84 @@ describe('collaboration service', () => {
           operation: 'Archive team',
           target: 'Stage',
           message: 'Archive failed',
+        }),
+      })
+    )
+  })
+
+  it('previews project admin failure audit cleanup without deleting rows', async () => {
+    mockResultsQueue.push([{ role: 'admin' }], [{ id: 'audit-old-1' }, { id: 'audit-old-2' }])
+
+    await expect(
+      cleanupProjectAdminFailureAudit({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        retentionHours: 720,
+        dryRun: true,
+      })
+    ).resolves.toMatchObject({
+      retentionHours: 720,
+      dryRun: true,
+      matchedCount: 2,
+      deletedCount: 0,
+    })
+
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'org-admin-1',
+        action: 'organization.updated',
+        resourceType: 'organization',
+        resourceId: 'org-1',
+        resourceName: 'Project admin failure audit retention',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          cleanupEvent: 'cleanup.execution_completed',
+          jobType: 'project_admin_failure_audit_retention',
+          retentionHours: 720,
+          dryRun: true,
+          matchedCount: 2,
+          deletedCount: 0,
+        }),
+      })
+    )
+  })
+
+  it('deletes only matched project admin failure audit rows and records cleanup metadata', async () => {
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [{ id: 'audit-old-1' }, { id: 'audit-old-2' }],
+      [{ id: 'audit-old-1' }, { id: 'audit-old-2' }]
+    )
+
+    await expect(
+      cleanupProjectAdminFailureAudit({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        retentionHours: 168,
+      })
+    ).resolves.toMatchObject({
+      retentionHours: 168,
+      dryRun: false,
+      matchedCount: 2,
+      deletedCount: 2,
+    })
+
+    expect(mockDb.delete).toHaveBeenCalledWith(schemaMock.auditLog)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'organization.updated',
+        description: 'Cleaned project-admin failure audit older than 168h: 2 row(s) deleted',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          cleanupEvent: 'cleanup.execution_completed',
+          jobType: 'project_admin_failure_audit_retention',
+          retentionHours: 168,
+          dryRun: false,
+          matchedCount: 2,
+          deletedCount: 2,
+          rowsDeleted: 2,
+          rowsFailed: 0,
         }),
       })
     )

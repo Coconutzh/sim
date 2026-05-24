@@ -21,7 +21,22 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, max, ne, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  max,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { ORGANIZATION_BILLING_LIFECYCLE_EVENTS } from '@/lib/billing/billing-lifecycle-audit'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
@@ -152,6 +167,7 @@ const BILLING_MANAGEMENT_EVENTS = [
   ...ORGANIZATION_BILLING_LIFECYCLE_EVENTS,
 ] as const
 const CLEANUP_EXECUTION_AUDIT_EVENT = 'cleanup.execution_completed'
+const PROJECT_ADMIN_FAILURE_RETENTION_CLEANUP_JOB_TYPE = 'project_admin_failure_audit_retention'
 type OrganizationSettingsEvent = (typeof ORGANIZATION_SETTINGS_EVENTS)[number]
 type BillingManagementEvent = (typeof BILLING_MANAGEMENT_EVENTS)[number]
 
@@ -241,6 +257,14 @@ export interface ProjectAdminFailureAuditResult {
   target: string
   message: string
   recordedAt: string
+}
+
+export interface ProjectAdminFailureCleanupResult {
+  retentionHours: number
+  cutoff: string
+  dryRun: boolean
+  matchedCount: number
+  deletedCount: number
 }
 
 type ProjectAdminFailureScope =
@@ -2007,6 +2031,9 @@ function getCleanupExecutionTitle(metadata: unknown, resourceName: string | null
   const record = getMetadataRecord(metadata)
   const jobType = typeof record?.jobType === 'string' ? record.jobType : 'cleanup job'
   const name = resourceName?.trim()
+  if (record?.dryRun === true) {
+    return name ? `Cleanup previewed: ${name} (${jobType})` : `Cleanup previewed: ${jobType}`
+  }
   return name ? `Cleanup completed: ${name} (${jobType})` : `Cleanup completed: ${jobType}`
 }
 
@@ -3223,6 +3250,62 @@ export async function recordProjectAdminFailureAudit(params: {
     message,
     recordedAt,
   }
+}
+
+export async function cleanupProjectAdminFailureAudit(params: {
+  userId: string
+  organizationId: string
+  retentionHours: number
+  dryRun?: boolean
+}): Promise<ProjectAdminFailureCleanupResult> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const retentionHours = Math.trunc(params.retentionHours)
+  const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000)
+  const condition = and(
+    eq(auditLog.action, AuditAction.PROJECT_ADMIN_FAILURE_RECORDED),
+    sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
+    lt(auditLog.createdAt, cutoff)
+  )
+  const matchedRows = await db.select({ id: auditLog.id }).from(auditLog).where(condition)
+  const dryRun = params.dryRun === true
+  const deletedRows = dryRun
+    ? []
+    : await db.delete(auditLog).where(condition).returning({ id: auditLog.id })
+  const result = {
+    retentionHours,
+    cutoff: cutoff.toISOString(),
+    dryRun,
+    matchedCount: matchedRows.length,
+    deletedCount: deletedRows.length,
+  }
+
+  recordAudit({
+    actorId: params.userId,
+    action: AuditAction.ORGANIZATION_UPDATED,
+    resourceType: AuditResourceType.ORGANIZATION,
+    resourceId: params.organizationId,
+    resourceName: 'Project admin failure audit retention',
+    description: dryRun
+      ? `Previewed project-admin failure audit retention for ${retentionHours}h: ${result.matchedCount} row(s) matched`
+      : `Cleaned project-admin failure audit older than ${retentionHours}h: ${result.deletedCount} row(s) deleted`,
+    metadata: {
+      organizationId: params.organizationId,
+      cleanupEvent: CLEANUP_EXECUTION_AUDIT_EVENT,
+      jobType: PROJECT_ADMIN_FAILURE_RETENTION_CLEANUP_JOB_TYPE,
+      retentionHours,
+      cutoff: result.cutoff,
+      dryRun,
+      matchedCount: result.matchedCount,
+      deletedCount: result.deletedCount,
+      rowsDeleted: result.deletedCount,
+      rowsFailed: 0,
+      filesDeleted: 0,
+      filesFailed: 0,
+    },
+  })
+
+  return result
 }
 
 export async function updatePublicationVisibility(params: {

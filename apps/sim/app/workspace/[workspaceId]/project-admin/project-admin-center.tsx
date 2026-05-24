@@ -62,6 +62,7 @@ import {
   useAgentProfiles,
   useArchiveWorkgroup,
   useBatchAddWorkgroupMembers,
+  useCleanupProjectAdminFailureAudit,
   useCreateWorkgroup,
   useDeliverPublicationNotifications,
   useDisciplines,
@@ -1399,6 +1400,7 @@ export function ProjectAdminCenter() {
   const deliverPublicationNotifications = useDeliverPublicationNotifications()
   const markProjectNotificationCenterRead = useMarkProjectNotificationCenterRead()
   const recordProjectAdminFailureAudit = useRecordProjectAdminFailureAudit()
+  const cleanupProjectAdminFailureAudit = useCleanupProjectAdminFailureAudit()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const addNotification = useNotificationStore((state) => state.addNotification)
@@ -1450,6 +1452,8 @@ export function ProjectAdminCenter() {
   const [failureHistoryOffset, setFailureHistoryOffset] = useState(0)
   const [isExportingFailureHistory, setIsExportingFailureHistory] = useState(false)
   const [failureHistoryExportStatus, setFailureHistoryExportStatus] = useState<string | null>(null)
+  const [failureCleanupRetentionHours, setFailureCleanupRetentionHours] = useState('720')
+  const [failureCleanupStatus, setFailureCleanupStatus] = useState<string | null>(null)
   const [selectedFailureHistoryId, setSelectedFailureHistoryId] = useState<string | null>(null)
   const [projectNotificationKind, setProjectNotificationKind] = useState<
     ProjectNotificationCenterKind | ''
@@ -1958,6 +1962,16 @@ export function ProjectAdminCenter() {
   const canExportActivity = Boolean(organizationId && !isExportingActivity)
   const canExportFailureHistory = Boolean(organizationId && !isExportingFailureHistory)
   const canExportProjectNotifications = Boolean(organizationId && !isExportingProjectNotifications)
+  const failureCleanupRetentionHoursNumber = Number(failureCleanupRetentionHours)
+  const isValidFailureCleanupRetentionWindow =
+    Number.isInteger(failureCleanupRetentionHoursNumber) &&
+    failureCleanupRetentionHoursNumber >= 24 &&
+    failureCleanupRetentionHoursNumber <= 87600
+  const canRunFailureCleanup = Boolean(
+    organizationId &&
+      isValidFailureCleanupRetentionWindow &&
+      !cleanupProjectAdminFailureAudit.isPending
+  )
   const projectAdminFailureAuditSummary = useMemo(
     () => buildProjectAdminFailureAuditSummary(projectAdminFailureAudit),
     [projectAdminFailureAudit]
@@ -2006,6 +2020,35 @@ export function ProjectAdminCenter() {
     setProjectNotificationOffset(0)
     setSelectedProjectNotificationId(null)
     setProjectNotificationExportStatus(null)
+  }
+
+  const handleFailureAuditCleanup = async (dryRun: boolean) => {
+    if (!organizationId || !canRunFailureCleanup) return
+    if (
+      !dryRun &&
+      !window.confirm(
+        `Delete persisted project-admin failure audit rows older than ${failureCleanupRetentionHoursNumber} hours? Export any evidence you need before continuing.`
+      )
+    ) {
+      return
+    }
+    setFailureCleanupStatus(null)
+    try {
+      const result = await cleanupProjectAdminFailureAudit.mutateAsync({
+        organizationId,
+        retentionHours: failureCleanupRetentionHoursNumber,
+        dryRun,
+      })
+      setFailureCleanupStatus(
+        dryRun
+          ? `Preview matched ${result.cleanup.matchedCount} row(s) older than ${formatDateTime(result.cleanup.cutoff)}.`
+          : `Deleted ${result.cleanup.deletedCount} of ${result.cleanup.matchedCount} matched row(s) older than ${formatDateTime(result.cleanup.cutoff)}.`
+      )
+      resetFailureHistoryPage()
+      resetProjectNotificationPage()
+    } catch (error) {
+      setFailureCleanupStatus(readErrorMessage(error))
+    }
   }
 
   const handleCreateTeam = async () => {
@@ -5057,6 +5100,79 @@ export function ProjectAdminCenter() {
                             : '. Manage it from Data Retention settings when enabled.'}
                         </div>
                       )}
+                      <div className='mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                        <div className='flex flex-wrap items-start justify-between gap-3'>
+                          <div>
+                            <h5 className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              Failure audit cleanup
+                            </h5>
+                            <p className='mt-1 max-w-[640px] text-[11px] text-[var(--text-muted)]'>
+                              Preview or delete only project-admin failure audit rows older than the
+                              selected window. Cleanup runs independently from the organization-wide
+                              retention policy and records its own cleanup audit entry.
+                            </p>
+                          </div>
+                          {cleanupProjectAdminFailureAudit.isPending && (
+                            <span className='flex items-center gap-1 text-[11px] text-[var(--text-muted)]'>
+                              <Loader className='h-[12px] w-[12px]' animate />
+                              Running cleanup
+                            </span>
+                          )}
+                        </div>
+                        <div className='mt-3 grid gap-2 md:grid-cols-[minmax(180px,240px)_auto]'>
+                          <label className='grid gap-1 text-[11px] text-[var(--text-muted)]'>
+                            Retention window in hours
+                            <input
+                              type='number'
+                              min={24}
+                              max={87600}
+                              step={24}
+                              value={failureCleanupRetentionHours}
+                              onChange={(event) => {
+                                setFailureCleanupRetentionHours(event.target.value)
+                                setFailureCleanupStatus(null)
+                              }}
+                              className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                              aria-label='Failure audit cleanup retention hours'
+                            />
+                          </label>
+                          <div className='flex flex-wrap items-end gap-2'>
+                            <button
+                              type='button'
+                              className={cn(
+                                buttonVariants({ size: 'sm', variant: 'default' }),
+                                'h-[32px]'
+                              )}
+                              disabled={!canRunFailureCleanup}
+                              onClick={() => handleFailureAuditCleanup(true)}
+                            >
+                              Preview cleanup
+                            </button>
+                            <button
+                              type='button'
+                              className={cn(
+                                buttonVariants({ size: 'sm', variant: 'destructive' }),
+                                'h-[32px]'
+                              )}
+                              disabled={!canRunFailureCleanup}
+                              onClick={() => handleFailureAuditCleanup(false)}
+                            >
+                              Delete old failures
+                            </button>
+                          </div>
+                        </div>
+                        {!isValidFailureCleanupRetentionWindow &&
+                          failureCleanupRetentionHours.trim() && (
+                            <div className='mt-2 text-[11px] text-amber-500'>
+                              Use a whole-hour window between 24 hours and 10 years.
+                            </div>
+                          )}
+                        {failureCleanupStatus && (
+                          <div className='mt-2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--text-muted)]'>
+                            {failureCleanupStatus}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className='mt-3 grid gap-2'>

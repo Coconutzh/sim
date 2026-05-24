@@ -533,6 +533,16 @@ export const recordProjectAdminFailureBodySchema = z.object({
 })
 export type RecordProjectAdminFailureBody = z.input<typeof recordProjectAdminFailureBodySchema>
 
+export const cleanupProjectAdminFailureBodySchema = z.object({
+  retentionHours: z
+    .number()
+    .int('retentionHours must be a whole number of hours')
+    .min(24, 'retentionHours must be at least 24 hours')
+    .max(87600, 'retentionHours cannot exceed 10 years'),
+  dryRun: z.boolean().optional().default(false),
+})
+export type CleanupProjectAdminFailureBody = z.input<typeof cleanupProjectAdminFailureBodySchema>
+
 export const projectAdminFailureRecordSchema = z.object({
   id: nonEmptyIdSchema,
   scope: projectAdminFailureScopeSchema,
@@ -542,6 +552,15 @@ export const projectAdminFailureRecordSchema = z.object({
   recordedAt: z.string(),
 })
 export type ProjectAdminFailureRecord = z.output<typeof projectAdminFailureRecordSchema>
+
+export const projectAdminFailureCleanupSchema = z.object({
+  retentionHours: z.number().int(),
+  cutoff: z.string(),
+  dryRun: z.boolean(),
+  matchedCount: z.number().int().min(0),
+  deletedCount: z.number().int().min(0),
+})
+export type ProjectAdminFailureCleanup = z.output<typeof projectAdminFailureCleanupSchema>
 
 export const projectAdminFailureActivityMetadataSchema = z.object({
   failureId: z.string().nullable(),
@@ -1092,6 +1111,19 @@ export const recordProjectAdminFailureContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       failure: projectAdminFailureRecordSchema,
+    }),
+  },
+})
+
+export const cleanupProjectAdminFailureContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/organizations/[id]/project-admin/failures/cleanup',
+  params: organizationParamsSchema,
+  body: cleanupProjectAdminFailureBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      cleanup: projectAdminFailureCleanupSchema,
     }),
   },
 })
