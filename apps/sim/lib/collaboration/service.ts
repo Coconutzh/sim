@@ -20,7 +20,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, max, ne, or, sql } from 'drizzle-orm'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
   AGENT_PROFILES,
@@ -903,6 +903,12 @@ export async function listWorkgroupActivity(params: {
   }))
 }
 
+function parseActivityDateBoundary(value: string, boundary: 'start' | 'end') {
+  const [year, month, day] = value.split('-').map(Number)
+  if (boundary === 'start') return new Date(Date.UTC(year, month - 1, day))
+  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
+}
+
 function getAuditMetadataValue(metadata: unknown, keys: string[]) {
   if (!metadata || typeof metadata !== 'object') return null
   const record = metadata as Record<string, unknown>
@@ -920,6 +926,9 @@ export async function listOrganizationWorkgroupActivity(params: {
   disciplineId?: string
   action?: string
   search?: string
+  actor?: string
+  startDate?: string
+  endDate?: string
   limit?: number
   offset?: number
 }) {
@@ -968,6 +977,15 @@ export async function listOrganizationWorkgroupActivity(params: {
 
   const filters = [or(...scopeConditions)!]
   if (params.action) filters.push(eq(auditLog.action, params.action))
+  if (params.actor) {
+    filters.push(or(eq(auditLog.actorEmail, params.actor), eq(auditLog.actorName, params.actor))!)
+  }
+  if (params.startDate) {
+    filters.push(gte(auditLog.createdAt, parseActivityDateBoundary(params.startDate, 'start')))
+  }
+  if (params.endDate) {
+    filters.push(lte(auditLog.createdAt, parseActivityDateBoundary(params.endDate, 'end')))
+  }
   if (params.search) {
     const escapedSearch = params.search.replace(/[%_\\]/g, '\\$&')
     const searchTerm = `%${escapedSearch}%`

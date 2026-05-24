@@ -214,9 +214,11 @@ vi.mock('drizzle-orm', () => ({
   asc: vi.fn((value: unknown) => ({ kind: 'asc', value })),
   desc: vi.fn((value: unknown) => ({ kind: 'desc', value })),
   eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
+  gte: vi.fn((left: unknown, right: unknown) => ({ kind: 'gte', left, right })),
   ilike: vi.fn((left: unknown, right: unknown) => ({ kind: 'ilike', left, right })),
   inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
+  lte: vi.fn((left: unknown, right: unknown) => ({ kind: 'lte', left, right })),
   max: vi.fn((value: unknown) => ({ kind: 'max', value })),
   ne: vi.fn((left: unknown, right: unknown) => ({ kind: 'ne', left, right })),
   or: vi.fn((...args: unknown[]) => ({ kind: 'or', args })),
@@ -364,6 +366,9 @@ describe('collaboration service', () => {
       listOrganizationWorkgroupActivity({
         userId: 'org-admin-1',
         organizationId: 'org-1',
+        actor: 'admin@example.com',
+        startDate: '2026-05-01',
+        endDate: '2026-05-24',
         limit: 2,
         offset: 4,
       })

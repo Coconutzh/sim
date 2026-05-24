@@ -21,6 +21,9 @@ export const GET = withRouteHandler(async (request, context) => {
       disciplineId: parsed.data.query.disciplineId,
       action: parsed.data.query.action,
       search: parsed.data.query.search,
+      actor: parsed.data.query.actor,
+      startDate: parsed.data.query.startDate,
+      endDate: parsed.data.query.endDate,
       limit: parsed.data.query.limit,
       offset: parsed.data.query.offset,
     })

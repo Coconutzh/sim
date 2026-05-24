@@ -308,14 +308,41 @@ const optionalTrimmedQuerySchema = z
   .optional()
   .transform((value) => value?.trim() || undefined)
 
-export const organizationWorkgroupActivityQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-  offset: z.coerce.number().int().min(0).max(10000).optional(),
-  workgroupId: optionalTrimmedQuerySchema,
-  disciplineId: optionalTrimmedQuerySchema,
-  action: optionalTrimmedQuerySchema,
-  search: optionalTrimmedQuerySchema,
-})
+function isValidActivityDateQuery(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  )
+}
+
+const activityDateQuerySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must use YYYY-MM-DD format')
+  .refine(isValidActivityDateQuery, 'Date must be a valid calendar date')
+  .optional()
+
+export const organizationWorkgroupActivityQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    offset: z.coerce.number().int().min(0).max(10000).optional(),
+    workgroupId: optionalTrimmedQuerySchema,
+    disciplineId: optionalTrimmedQuerySchema,
+    action: optionalTrimmedQuerySchema,
+    search: optionalTrimmedQuerySchema,
+    actor: optionalTrimmedQuerySchema,
+    startDate: activityDateQuerySchema,
+    endDate: activityDateQuerySchema,
+  })
+  .superRefine((value, ctx) => {
+    if (value.startDate && value.endDate && value.startDate > value.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startDate must be before or equal to endDate',
+        path: ['startDate'],
+      })
+    }
+  })
 export type OrganizationWorkgroupActivityQuery = z.output<
   typeof organizationWorkgroupActivityQuerySchema
 >

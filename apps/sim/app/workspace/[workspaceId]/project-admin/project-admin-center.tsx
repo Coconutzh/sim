@@ -289,6 +289,9 @@ export function ProjectAdminCenter() {
   const [activityDisciplineId, setActivityDisciplineId] = useState('')
   const [activityAction, setActivityAction] = useState('')
   const [activitySearch, setActivitySearch] = useState('')
+  const [activityActor, setActivityActor] = useState('')
+  const [activityStartDate, setActivityStartDate] = useState('')
+  const [activityEndDate, setActivityEndDate] = useState('')
   const [activityOffset, setActivityOffset] = useState(0)
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
@@ -396,8 +399,20 @@ export function ProjectAdminCenter() {
       disciplineId: activityTeamId ? undefined : activityDisciplineId || undefined,
       action: activityAction || undefined,
       search: activitySearch.trim() || undefined,
+      actor: activityActor.trim() || undefined,
+      startDate: activityStartDate || undefined,
+      endDate: activityEndDate || undefined,
     }),
-    [activityAction, activityDisciplineId, activityOffset, activitySearch, activityTeamId]
+    [
+      activityAction,
+      activityActor,
+      activityDisciplineId,
+      activityEndDate,
+      activityOffset,
+      activitySearch,
+      activityStartDate,
+      activityTeamId,
+    ]
   )
   const { data: activityData, isLoading: isLoadingActivity } = useOrganizationWorkgroupActivity(
     isProjectAdmin ? organizationId : undefined,
@@ -1137,6 +1152,37 @@ export function ProjectAdminCenter() {
                     }}
                     placeholder='Search actor, action, resource...'
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                  />
+                  <input
+                    value={activityActor}
+                    onChange={(event) => {
+                      setActivityActor(event.target.value)
+                      setActivityOffset(0)
+                    }}
+                    placeholder='Exact actor email or name'
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                  />
+                  <input
+                    type='date'
+                    value={activityStartDate}
+                    max={activityEndDate || undefined}
+                    onChange={(event) => {
+                      setActivityStartDate(event.target.value)
+                      setActivityOffset(0)
+                    }}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                    aria-label='Project activity start date'
+                  />
+                  <input
+                    type='date'
+                    value={activityEndDate}
+                    min={activityStartDate || undefined}
+                    onChange={(event) => {
+                      setActivityEndDate(event.target.value)
+                      setActivityOffset(0)
+                    }}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                    aria-label='Project activity end date'
                   />
                 </div>
                 <div className='flex flex-wrap items-center justify-between gap-2'>

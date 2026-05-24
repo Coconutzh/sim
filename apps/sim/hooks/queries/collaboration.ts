@@ -113,6 +113,9 @@ export interface OrganizationWorkgroupActivityFilters {
   disciplineId?: string
   action?: string
   search?: string
+  actor?: string
+  startDate?: string
+  endDate?: string
   limit?: number
   offset?: number
 }
