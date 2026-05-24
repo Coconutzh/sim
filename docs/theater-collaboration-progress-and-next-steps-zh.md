@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」继续在原 `/workspace` 外壳下收口团队发布管理、Agent Skill 绑定和协作日志；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画和 pane-scoped zoom/pan 持久化，仍保留框选和移动端 tab 优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」继续在原 `/workspace` 外壳下收口团队发布管理、Agent Skill 绑定和协作日志；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
 
 ## 1. 当前结论
 
@@ -266,7 +266,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | --- | --- |
 | Phase 5 发布流程与全局状态树 | 完整发布流程、状态树更新、可见范围广播、发布版本生命周期 |
 | Phase 6 跨画布节点复制 | 已有个人/团队复制、ID 重写、敏感字段剥离、源读/目标写权限矩阵、显式 edgeIds；普通编辑器目标跳转/高亮仍可补 |
-| Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画和 pane-scoped zoom/pan 持久化；框选和移动端 tab 仍待补 |
+| Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab；框选/触摸选择仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
 | Phase 10 项目管理员中心 | 工种/团队/成员分配、全局状态树、Agent 模板、权限和审计 |
@@ -331,7 +331,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 分屏页左侧默认加载当前 active workgroup 的个人草稿画布，右侧默认加载团队画布；每侧可以独立选择当前画布内的 workflow。
 - 分屏页复用已有 `PreviewWorkflow` 做只读画布预览，避免在第一切片里复制一套完整 ReactFlow 编辑器状态。
 - 用户点击任一 pane 的节点后，可以调用既有 `useCopySelection` / `POST /api/workflows/[id]/copy-selection` 把选中节点复制到另一侧画布；复制后使用 `mappings.blockIds` 选中新生成的目标节点。
-- 移动端不强制左右双栏，当前通过响应式 grid 降级为上下两 pane。
+- 移动端不强制左右双栏，已从上下两 pane 改为单 pane tab：一次只显示 Personal draft 或 Team canvas，切换 tab 会同步复制源 pane，复制成功后自动跳到目标 tab 查看高亮结果。
 - 分屏 pane selection 已从单节点扩展为 pane-scoped 多节点数组：普通点击替换当前 pane selection，Shift/Ctrl/Cmd-click 追加或移除节点。
 - 分屏复制 payload 会传入当前 pane 的多节点 `blockIds`；服务端仍按 selection 内部合法边复制边，因此多节点之间的连接会随节点一起进入目标画布。
 - `PreviewWorkflow` 新增多选高亮输入和节点点击 modifier 信息，保留既有单选 `selectedBlockId` 兼容调用方。
@@ -357,7 +357,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 当前分屏第一切片是“只读预览 + 显式复制”，还不是左右两侧完整可编辑 ReactFlow；后续如果要做真正双编辑器，需要拆分 workflow store / selection / viewport 为 pane-scoped 状态。
-- 当前复制选择已支持多节点点击、显式边选择、目标 pane 节点/边高亮、viewport-center placement、复制后自动定位动画和 pane-scoped zoom/pan 持久化；框选和移动端 tab 仍需继续做。
+- 当前复制选择已支持多节点点击、显式边选择、目标 pane 节点/边高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab；框选/触摸选择仍需继续做。
 - 团队管理员入口需要继续从通用组织设置页迁出；下一切片先补团队成员/初始化页，Phase 9 再补发布和 Agent Skill 管理。
 
 ### 5.8 原 shell 团队管理入口切片
@@ -508,7 +508,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 2. **split view workbench 切片**
    - 在原 `/workspace/[workspaceId]` 布局下新增分屏入口，避免回到独立 `/workbench` 外壳。
    - 左右 pane 已独立保存 workflowId、节点/边 selection、目标侧和 pane/workflow 维度 viewport，复制动作显式传 source/target。
-   - 移动端降级为顶部 tab，不强制左右分屏。
+   - 移动端已降级为顶部 tab，不强制左右分屏或上下堆叠。
 
 3. **publication state tree 后续切片**
    - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由、历史版本恢复、审核/风险字段、审计动作和首版 team activity 广播；后续继续补全站内通知、reviewer 指派、审批流和前端治理操作。

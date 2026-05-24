@@ -263,6 +263,7 @@ export function SplitCanvasWorkbench() {
   const [teamViewport, setTeamViewport] = useState<PaneViewportSnapshot | undefined>()
   const [personalHasStoredViewport, setPersonalHasStoredViewport] = useState(false)
   const [teamHasStoredViewport, setTeamHasStoredViewport] = useState(false)
+  const [activeMobilePane, setActiveMobilePane] = useState<CanvasPaneKind>('personal')
   const copySelection = useCopySelection()
 
   useEffect(() => {
@@ -295,6 +296,7 @@ export function SplitCanvasWorkbench() {
       copiedEdgeIds: copiedPersonalEdgeIds,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('personal')
+        setActiveMobilePane('personal')
         setSelectedPersonalBlockIds((currentBlockIds) =>
           selectPaneBlock({ currentBlockIds, blockId, additive })
         )
@@ -304,6 +306,7 @@ export function SplitCanvasWorkbench() {
       },
       onSelectEdge: (edgeId, additive) => {
         setSelectedPane('personal')
+        setActiveMobilePane('personal')
         setSelectedPersonalEdgeIds((currentEdgeIds) =>
           selectPaneEdge({ currentEdgeIds, edgeId, additive })
         )
@@ -348,6 +351,7 @@ export function SplitCanvasWorkbench() {
       copiedEdgeIds: copiedTeamEdgeIds,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('team')
+        setActiveMobilePane('team')
         setSelectedTeamBlockIds((currentBlockIds) =>
           selectPaneBlock({ currentBlockIds, blockId, additive })
         )
@@ -357,6 +361,7 @@ export function SplitCanvasWorkbench() {
       },
       onSelectEdge: (edgeId, additive) => {
         setSelectedPane('team')
+        setActiveMobilePane('team')
         setSelectedTeamEdgeIds((currentEdgeIds) =>
           selectPaneEdge({ currentEdgeIds, edgeId, additive })
         )
@@ -465,12 +470,14 @@ export function SplitCanvasWorkbench() {
         setSelectedPersonalEdgeIds(targetEdgeIds)
         setCopiedPersonalBlockIds(targetBlockIds)
         setCopiedPersonalEdgeIds(targetEdgeIds)
+        setActiveMobilePane('personal')
       }
       if (targetPane.kind === 'team') {
         setSelectedTeamBlockIds(targetBlockIds)
         setSelectedTeamEdgeIds(targetEdgeIds)
         setCopiedTeamBlockIds(targetBlockIds)
         setCopiedTeamEdgeIds(targetEdgeIds)
+        setActiveMobilePane('team')
       }
     }
   }
@@ -517,9 +524,37 @@ export function SplitCanvasWorkbench() {
             : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, and click edges to limit which connections copy. Selected edges copy only when both endpoint nodes are selected.'}
         </div>
       </div>
+      <div className='grid grid-cols-2 gap-1 border-[var(--border)] border-b bg-[var(--surface-1)] p-2 lg:hidden'>
+        {([panes.personal, panes.team] as const).map((pane) => {
+          const isActive = activeMobilePane === pane.kind
+          return (
+            <button
+              key={pane.kind}
+              type='button'
+              onClick={() => {
+                setActiveMobilePane(pane.kind)
+                setSelectedPane(pane.kind)
+              }}
+              aria-pressed={isActive}
+              className={cn(
+                'h-[30px] rounded-[6px] px-3 font-medium text-[12px] transition-colors',
+                isActive
+                  ? 'bg-[var(--surface-3)] text-[var(--text-primary)]'
+                  : 'text-[var(--text-muted)] hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-body)]'
+              )}
+            >
+              {pane.label}
+            </button>
+          )
+        })}
+      </div>
       <div className='grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 lg:grid-cols-2'>
-        <CanvasPane pane={panes.personal} />
-        <CanvasPane pane={panes.team} />
+        <div className={cn(activeMobilePane !== 'personal' && 'hidden lg:block')}>
+          <CanvasPane pane={panes.personal} />
+        </div>
+        <div className={cn(activeMobilePane !== 'team' && 'hidden lg:block')}>
+          <CanvasPane pane={panes.team} />
+        </div>
       </div>
     </div>
   )
