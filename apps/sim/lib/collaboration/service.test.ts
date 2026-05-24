@@ -1663,6 +1663,23 @@ describe('collaboration service', () => {
             seats: 10,
           },
         },
+        {
+          id: 'audit-cleanup-execution-1',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'cleanup-logs completed for 1 workspace(s): 42 row(s) and 3 file(s) deleted',
+          actorName: 'System cleanup',
+          actorEmail: null,
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            cleanupEvent: 'cleanup.execution_completed',
+            jobType: 'cleanup-logs',
+            rowsDeleted: 42,
+            filesDeleted: 3,
+            filesFailed: 1,
+          },
+        },
       ]
     )
 
@@ -1670,7 +1687,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 12,
+        limit: 13,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1729,6 +1746,12 @@ describe('collaboration service', () => {
           kind: 'billing_management',
           severity: 'warning',
           title: 'Organization seats updated: Theater Project',
+        },
+        {
+          id: 'audit-cleanup-execution-1',
+          kind: 'cleanup_execution',
+          severity: 'warning',
+          title: 'Cleanup completed: Theater Project (cleanup-logs)',
         },
       ],
       nextOffset: null,

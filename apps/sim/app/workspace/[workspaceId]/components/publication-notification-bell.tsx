@@ -29,7 +29,8 @@ function formatProjectNotificationBadge(
     | 'data_drain'
     | 'organization_management'
     | 'organization_settings'
-    | 'billing_management',
+    | 'billing_management'
+    | 'cleanup_execution',
   channel?: string | null
 ) {
   if (kind === 'publication_review') return channel?.replace('_', ' ') ?? 'publication'
@@ -42,6 +43,7 @@ function formatProjectNotificationBadge(
   if (kind === 'organization_management') return 'org'
   if (kind === 'organization_settings') return 'settings'
   if (kind === 'billing_management') return 'billing'
+  if (kind === 'cleanup_execution') return 'cleanup'
   return 'failure'
 }
 

@@ -15,6 +15,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { and, inArray, isNotNull, lt } from 'drizzle-orm'
+import { recordEnterpriseCleanupAudit } from '@/lib/billing/cleanup-audit'
 import { type CleanupJobPayload, resolveCleanupScope } from '@/lib/billing/cleanup-dispatcher'
 import {
   batchDeleteByWorkspaceAndTimestamp,
@@ -269,6 +270,12 @@ export async function runCleanupSoftDeletes(payload: CleanupJobPayload): Promise
   }
 
   const timeElapsed = (Date.now() - startTime) / 1000
+  recordEnterpriseCleanupAudit('cleanup-soft-deletes', scope, {
+    rowsDeleted: totalDeleted,
+    filesDeleted: fileStats.filesDeleted,
+    filesFailed: fileStats.filesFailed,
+    durationSeconds: timeElapsed,
+  })
   logger.info(`[${label}] Job completed in ${timeElapsed.toFixed(2)}s`)
 }
 

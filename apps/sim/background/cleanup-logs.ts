@@ -3,6 +3,7 @@ import { jobExecutionLogs, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { and, inArray, lt } from 'drizzle-orm'
+import { recordEnterpriseCleanupAudit } from '@/lib/billing/cleanup-audit'
 import { type CleanupJobPayload, resolveCleanupScope } from '@/lib/billing/cleanup-dispatcher'
 import {
   batchDeleteByWorkspaceAndTimestamp,
@@ -97,7 +98,7 @@ export async function runCleanupLogs(payload: CleanupJobPayload): Promise<void> 
     `[${label}] workflow_execution_logs files: ${workflowResults.filesDeleted}/${workflowResults.filesTotal} deleted, ${workflowResults.filesDeleteFailed} failed`
   )
 
-  await batchDeleteByWorkspaceAndTimestamp({
+  const jobLogResult = await batchDeleteByWorkspaceAndTimestamp({
     tableDef: jobExecutionLogs,
     workspaceIdCol: jobExecutionLogs.workspaceId,
     timestampCol: jobExecutionLogs.startedAt,
@@ -106,11 +107,12 @@ export async function runCleanupLogs(payload: CleanupJobPayload): Promise<void> 
     tableName: `${label}/job_execution_logs`,
   })
 
+  let snapshotsCleaned = 0
   // Snapshot cleanup runs only on the free job to avoid running it N times for N enterprise workspaces.
   if (payload.plan === 'free') {
     try {
       const retentionDays = Math.floor(retentionHours / 24)
-      const snapshotsCleaned = await snapshotService.cleanupOrphanedSnapshots(retentionDays + 1)
+      snapshotsCleaned = await snapshotService.cleanupOrphanedSnapshots(retentionDays + 1)
       logger.info(`Cleaned up ${snapshotsCleaned} orphaned snapshots`)
     } catch (snapshotError) {
       logger.error('Error cleaning up orphaned snapshots:', { snapshotError })
@@ -118,6 +120,15 @@ export async function runCleanupLogs(payload: CleanupJobPayload): Promise<void> 
   }
 
   const timeElapsed = (Date.now() - startTime) / 1000
+  recordEnterpriseCleanupAudit('cleanup-logs', scope, {
+    rowsDeleted: workflowResults.deleted + jobLogResult.deleted,
+    rowsFailed: workflowResults.failed + jobLogResult.failed,
+    filesTotal: workflowResults.filesTotal,
+    filesDeleted: workflowResults.filesDeleted,
+    filesFailed: workflowResults.filesDeleteFailed,
+    snapshotsCleaned,
+    durationSeconds: timeElapsed,
+  })
   logger.info(`[${label}] Job completed in ${timeElapsed.toFixed(2)}s`)
 }
 

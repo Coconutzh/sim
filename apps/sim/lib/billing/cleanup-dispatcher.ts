@@ -109,6 +109,8 @@ export interface ResolvedCleanupScope {
   workspaceIds: string[]
   retentionHours: number
   label: string
+  organizationId?: string
+  organizationName?: string
 }
 
 /**
@@ -131,7 +133,11 @@ export async function resolveCleanupScope(
   }
 
   const [row] = await db
-    .select({ settings: organization.dataRetentionSettings })
+    .select({
+      organizationId: organization.id,
+      organizationName: organization.name,
+      settings: organization.dataRetentionSettings,
+    })
     .from(workspace)
     .innerJoin(organization, eq(organization.id, workspace.organizationId))
     .where(and(eq(workspace.id, payload.workspaceId), buildActiveOrganizationWorkspaceCondition()))
@@ -144,6 +150,8 @@ export async function resolveCleanupScope(
     workspaceIds: [payload.workspaceId],
     retentionHours: hours,
     label: `enterprise/${payload.workspaceId}`,
+    organizationId: row.organizationId,
+    organizationName: row.organizationName,
   }
 }
 

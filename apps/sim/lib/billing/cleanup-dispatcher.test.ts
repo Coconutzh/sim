@@ -39,6 +39,7 @@ vi.mock('@sim/db/schema', () => ({
   organization: {
     dataRetentionSettings: 'organization.dataRetentionSettings',
     id: 'organization.id',
+    name: 'organization.name',
   },
   subscription: {
     id: 'subscription.id',

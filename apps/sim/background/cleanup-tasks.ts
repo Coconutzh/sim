@@ -10,6 +10,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { and, inArray, lt, sql } from 'drizzle-orm'
+import { recordEnterpriseCleanupAudit } from '@/lib/billing/cleanup-audit'
 import { type CleanupJobPayload, resolveCleanupScope } from '@/lib/billing/cleanup-dispatcher'
 import {
   batchDeleteByWorkspaceAndTimestamp,
@@ -193,6 +194,16 @@ export async function runCleanupTasks(payload: CleanupJobPayload): Promise<void>
   await chatCleanup.execute()
 
   const timeElapsed = (Date.now() - startTime) / 1000
+  recordEnterpriseCleanupAudit('cleanup-tasks', scope, {
+    rowsDeleted: totalDeleted,
+    rowsFailed:
+      runChildResults.reduce((sum, result) => sum + result.failed, 0) +
+      feedbackResult.failed +
+      runsResult.failed +
+      chatsResult.failed +
+      inboxResult.failed,
+    durationSeconds: timeElapsed,
+  })
   logger.info(`Task cleanup completed in ${timeElapsed.toFixed(2)}s`)
 }
 

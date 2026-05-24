@@ -144,6 +144,7 @@ const ORGANIZATION_SETTINGS_EVENTS = [
   'organization.whitelabel_updated',
 ] as const
 const BILLING_MANAGEMENT_EVENTS = ['organization.seats_updated'] as const
+const CLEANUP_EXECUTION_AUDIT_EVENT = 'cleanup.execution_completed'
 type OrganizationSettingsEvent = (typeof ORGANIZATION_SETTINGS_EVENTS)[number]
 type BillingManagementEvent = (typeof BILLING_MANAGEMENT_EVENTS)[number]
 
@@ -204,6 +205,12 @@ type ProjectNotificationCenterKind =
   | 'member_management'
   | 'team_management'
   | 'agent_policy'
+  | 'retention_policy'
+  | 'data_drain'
+  | 'organization_management'
+  | 'organization_settings'
+  | 'billing_management'
+  | 'cleanup_execution'
 
 export interface ProjectNotificationCenterEntry {
   id: string
@@ -1682,6 +1689,10 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
       )
     )
   )
+  const cleanupExecutionCondition = and(
+    eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+    sql`${auditLog.metadata}->>'cleanupEvent' = ${CLEANUP_EXECUTION_AUDIT_EVENT}`
+  )
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
   if (kind === 'publication_governance') return publicationGovernanceCondition
@@ -1693,6 +1704,7 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
   if (kind === 'organization_management') return organizationManagementCondition
   if (kind === 'organization_settings') return organizationSettingsCondition
   if (kind === 'billing_management') return billingManagementCondition
+  if (kind === 'cleanup_execution') return cleanupExecutionCondition
   return or(
     publicationReviewCondition,
     failureCondition,
@@ -1704,7 +1716,8 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     dataDrainCondition,
     organizationManagementCondition,
     organizationSettingsCondition,
-    billingManagementCondition
+    billingManagementCondition,
+    cleanupExecutionCondition
   )
 }
 
@@ -1939,6 +1952,32 @@ function getBillingManagementSeverity(
   const previousSeats = record?.previousSeats
   const seats = record?.seats
   return typeof previousSeats === 'number' && typeof seats === 'number' && seats < previousSeats
+    ? 'warning'
+    : 'info'
+}
+
+function isCleanupExecutionAction(action: string, metadata: unknown) {
+  return Boolean(
+    action === AuditAction.ORGANIZATION_UPDATED &&
+      getMetadataRecord(metadata)?.cleanupEvent === CLEANUP_EXECUTION_AUDIT_EVENT
+  )
+}
+
+function getCleanupExecutionTitle(metadata: unknown, resourceName: string | null) {
+  const record = getMetadataRecord(metadata)
+  const jobType = typeof record?.jobType === 'string' ? record.jobType : 'cleanup job'
+  const name = resourceName?.trim()
+  return name ? `Cleanup completed: ${name} (${jobType})` : `Cleanup completed: ${jobType}`
+}
+
+function getCleanupExecutionSeverity(
+  metadata: unknown
+): ProjectNotificationCenterEntry['severity'] {
+  const record = getMetadataRecord(metadata)
+  const rowsFailed = record?.rowsFailed
+  const filesFailed = record?.filesFailed
+  return (typeof rowsFailed === 'number' && rowsFailed > 0) ||
+    (typeof filesFailed === 'number' && filesFailed > 0)
     ? 'warning'
     : 'info'
 }
@@ -2185,6 +2224,27 @@ function getProjectNotificationCenterEntry(
       kind: 'billing_management',
       severity: getBillingManagementSeverity(row.metadata),
       title: getBillingManagementTitle(billingManagementEvent, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isCleanupExecutionAction(row.action, row.metadata)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'cleanup_execution',
+      severity: getCleanupExecutionSeverity(row.metadata),
+      title: getCleanupExecutionTitle(row.metadata, row.resourceName),
       detail: row.description ?? '',
       channel: null,
       body: row.resourceName,

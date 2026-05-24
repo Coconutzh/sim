@@ -39,6 +39,7 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: 'organization_management', label: 'Organization management' },
   { value: 'organization_settings', label: 'Organization settings' },
   { value: 'billing_management', label: 'Billing management' },
+  { value: 'cleanup_execution', label: 'Cleanup execution' },
 ]
 
 function getActiveWorkgroup(
