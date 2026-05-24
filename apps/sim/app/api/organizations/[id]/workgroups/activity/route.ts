@@ -14,7 +14,7 @@ export const GET = withRouteHandler(async (request, context) => {
   const parsed = await parseRequest(listOrganizationWorkgroupActivityContract, request, context)
   if (!parsed.success) return parsed.response
   try {
-    const activity = await listOrganizationWorkgroupActivity({
+    const activityResult = await listOrganizationWorkgroupActivity({
       userId: session.user.id,
       organizationId: parsed.data.params.id,
       workgroupId: parsed.data.query.workgroupId,
@@ -22,8 +22,9 @@ export const GET = withRouteHandler(async (request, context) => {
       action: parsed.data.query.action,
       search: parsed.data.query.search,
       limit: parsed.data.query.limit,
+      offset: parsed.data.query.offset,
     })
-    return NextResponse.json({ activity })
+    return NextResponse.json(activityResult)
   } catch (error) {
     logger.warn('Failed to list organization workgroup activity', error)
     return NextResponse.json({ error: 'Organization admin access required' }, { status: 403 })

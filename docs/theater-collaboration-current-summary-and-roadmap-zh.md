@@ -196,11 +196,12 @@
 - 项目管理员批量分配已补首版建议填充：基于 organization roster 和当前所选团队的 team canvas access map，提示尚未拥有该团队画布访问权的 roster 成员，并可一键把建议 email 合并进批量输入框。
 - 项目管理员批量分配已补文件导入首版：可上传 CSV/TSV/TXT，前端提取 email 或 user ID 并合并进现有批量输入框，仍由管理员显式点击 `Assign batch` 后才逐项写入。
 - 项目管理员中心新增 `Project activity filters`，可在项目级入口按团队、工种、动作和搜索文本筛选 audit-backed 最近活动；该能力复用新的 `useOrganizationWorkgroupActivity` / `GET /api/organizations/[id]/workgroups/activity`，不走 enterprise audit subscription gate。
+- 项目级 activity drilldown 已补分页与当前页 CSV 导出首版：后端 `GET /api/organizations/[id]/workgroups/activity` 支持 `offset + limit + nextOffset`，前端保留当前筛选条件翻页，并可导出当前页审计活动。
 - 团队列表可从项目中心跳转到对应团队管理页，复杂写操作仍留在团队级页面。
 
 仍需继续：
 
-- 这仍只是 Phase 10 的早期首版，不包含归档团队、更智能的工种/默认团队建议、项目级 Agent 模板、完整审计分页/导出或完整状态树治理写操作；批量导入目前只是前端文件解析，不是事务性 bulk API。
+- 这仍只是 Phase 10 的早期首版，不包含归档团队、更智能的工种/默认团队建议、项目级 Agent 模板、完整审计时间范围/actor 精确筛选、全量导出或完整状态树治理写操作；批量导入目前只是前端文件解析，不是事务性 bulk API。
 
 ### 3.9 权限与安全加固
 
@@ -316,7 +317,7 @@ git diff --check
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 批量分配、文件导入和基于团队画布访问权的建议填充首版；后续补更智能的工种/默认团队建议、事务性 bulk API 和更完整的批处理审计。
 5. 全局状态树治理：查看所有团队发布、风险、冲突、过期、未提交团队。
 6. Agent 模板：项目级 prompt 附加说明、默认 Skill、风险 Skill 禁用策略。
-7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作和搜索文本筛选；后续补分页、导出、时间范围、actor 精确筛选和批量操作聚合。
+7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作和搜索文本筛选，并已补 offset 分页与当前页 CSV 导出；后续补时间范围、actor 精确筛选、全量导出和批量操作聚合。
 
 建议提交：`Add project collaboration admin center`。
 
@@ -355,7 +356,7 @@ git diff --check
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
-4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充和项目级 activity filters；下一步继续做团队归档、更智能的工种/默认团队建议、事务性 bulk API 或项目级审计分页/导出，不要一开始就做复杂图形状态树。
+4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充和项目级 activity filters；activity drilldown 已补分页与当前页 CSV 导出。下一步继续做团队归档、更智能的工种/默认团队建议、事务性 bulk API 或项目级审计时间范围/全量导出，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：

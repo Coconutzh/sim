@@ -114,6 +114,7 @@ export interface OrganizationWorkgroupActivityFilters {
   action?: string
   search?: string
   limit?: number
+  offset?: number
 }
 
 export function useDisciplines() {

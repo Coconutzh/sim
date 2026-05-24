@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   Compass,
+  Download,
   Network,
   ShieldCheck,
   Sparkles,
@@ -17,6 +18,7 @@ import { buttonVariants, Loader } from '@/components/emcn'
 import type {
   AgentProfile,
   Discipline,
+  OrganizationWorkgroupActivityEntry,
   PublicationSummary,
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
@@ -35,6 +37,7 @@ import { useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
+const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',
   'emails',
@@ -239,6 +242,34 @@ function formatDateTime(value: string) {
   }).format(new Date(value))
 }
 
+function escapeCsvValue(value: string | null | undefined) {
+  const normalized = value ?? ''
+  if (!/[",\r\n]/.test(normalized)) return normalized
+  return `"${normalized.replace(/"/g, '""')}"`
+}
+
+function downloadProjectActivityCsv(entries: OrganizationWorkgroupActivityEntry[]) {
+  const rows = [
+    ['Created at', 'Action', 'Team', 'Discipline', 'Resource', 'Description', 'Actor'],
+    ...entries.map((entry) => [
+      entry.createdAt,
+      formatActivityAction(entry.action),
+      entry.workgroupName ?? 'Project',
+      entry.disciplineName ?? '',
+      entry.resourceName ?? '',
+      entry.description ?? '',
+      entry.actorName || entry.actorEmail || 'Unknown actor',
+    ]),
+  ]
+  const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `project-activity-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
@@ -258,6 +289,7 @@ export function ProjectAdminCenter() {
   const [activityDisciplineId, setActivityDisciplineId] = useState('')
   const [activityAction, setActivityAction] = useState('')
   const [activitySearch, setActivitySearch] = useState('')
+  const [activityOffset, setActivityOffset] = useState(0)
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -358,19 +390,26 @@ export function ProjectAdminCenter() {
   )
   const activityFilters = useMemo(
     () => ({
-      limit: 12,
+      limit: PROJECT_ACTIVITY_PAGE_SIZE,
+      offset: activityOffset,
       workgroupId: activityTeamId || undefined,
       disciplineId: activityTeamId ? undefined : activityDisciplineId || undefined,
       action: activityAction || undefined,
       search: activitySearch.trim() || undefined,
     }),
-    [activityAction, activityDisciplineId, activitySearch, activityTeamId]
+    [activityAction, activityDisciplineId, activityOffset, activitySearch, activityTeamId]
   )
   const { data: activityData, isLoading: isLoadingActivity } = useOrganizationWorkgroupActivity(
     isProjectAdmin ? organizationId : undefined,
     activityFilters
   )
   const projectActivity = activityData?.activity ?? []
+  const hasPreviousActivityPage = activityOffset > 0
+  const hasNextActivityPage = activityData?.nextOffset != null
+  const activityRangeLabel =
+    projectActivity.length > 0
+      ? `Showing ${activityOffset + 1}-${activityOffset + projectActivity.length} of filtered project activity.`
+      : 'No filtered project activity to show.'
 
   const handleCreateTeam = async () => {
     if (!organizationId || !selectedNewTeamDisciplineId || !newTeamName.trim()) return
@@ -1047,7 +1086,10 @@ export function ProjectAdminCenter() {
                 <div className='grid gap-2 md:grid-cols-2'>
                   <select
                     value={activityTeamId}
-                    onChange={(event) => setActivityTeamId(event.target.value)}
+                    onChange={(event) => {
+                      setActivityTeamId(event.target.value)
+                      setActivityOffset(0)
+                    }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                   >
                     <option value=''>All teams</option>
@@ -1059,7 +1101,10 @@ export function ProjectAdminCenter() {
                   </select>
                   <select
                     value={activityDisciplineId}
-                    onChange={(event) => setActivityDisciplineId(event.target.value)}
+                    onChange={(event) => {
+                      setActivityDisciplineId(event.target.value)
+                      setActivityOffset(0)
+                    }}
                     disabled={Boolean(activityTeamId)}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none disabled:opacity-60'
                   >
@@ -1072,7 +1117,10 @@ export function ProjectAdminCenter() {
                   </select>
                   <select
                     value={activityAction}
-                    onChange={(event) => setActivityAction(event.target.value)}
+                    onChange={(event) => {
+                      setActivityAction(event.target.value)
+                      setActivityOffset(0)
+                    }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                   >
                     {PROJECT_ACTIVITY_ACTION_OPTIONS.map((option) => (
@@ -1083,10 +1131,51 @@ export function ProjectAdminCenter() {
                   </select>
                   <input
                     value={activitySearch}
-                    onChange={(event) => setActivitySearch(event.target.value)}
+                    onChange={(event) => {
+                      setActivitySearch(event.target.value)
+                      setActivityOffset(0)
+                    }}
                     placeholder='Search actor, action, resource...'
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
                   />
+                </div>
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <span className='text-[11px] text-[var(--text-muted)]'>{activityRangeLabel}</span>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <button
+                      type='button'
+                      className={buttonVariants({ variant: 'default' })}
+                      disabled={projectActivity.length === 0}
+                      onClick={() => downloadProjectActivityCsv(projectActivity)}
+                    >
+                      <Download className='mr-2 h-[13px] w-[13px]' />
+                      Export page
+                    </button>
+                    <button
+                      type='button'
+                      className={buttonVariants({ variant: 'default' })}
+                      disabled={!hasPreviousActivityPage || isLoadingActivity}
+                      onClick={() =>
+                        setActivityOffset((currentOffset) =>
+                          Math.max(0, currentOffset - PROJECT_ACTIVITY_PAGE_SIZE)
+                        )
+                      }
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type='button'
+                      className={buttonVariants({ variant: 'default' })}
+                      disabled={!hasNextActivityPage || isLoadingActivity}
+                      onClick={() => {
+                        if (activityData?.nextOffset != null) {
+                          setActivityOffset(activityData.nextOffset)
+                        }
+                      }}
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className='divide-y divide-[var(--border)]'>

@@ -921,6 +921,7 @@ export async function listOrganizationWorkgroupActivity(params: {
   action?: string
   search?: string
   limit?: number
+  offset?: number
 }) {
   await assertOrganizationAdmin(params.userId, params.organizationId)
   const orgWorkgroups = await db
@@ -944,7 +945,10 @@ export async function listOrganizationWorkgroupActivity(params: {
       (entry) => entry.disciplineId === params.disciplineId
     )
   }
-  if (scopedWorkgroups.length === 0) return []
+  if (scopedWorkgroups.length === 0) return { activity: [], nextOffset: null }
+
+  const pageSize = params.limit ?? 20
+  const offset = params.offset ?? 0
 
   const workgroupIds = scopedWorkgroups.map((entry) => entry.id)
   const workspaceIds = scopedWorkgroups
@@ -995,7 +999,11 @@ export async function listOrganizationWorkgroupActivity(params: {
     .from(auditLog)
     .where(and(...filters))
     .orderBy(desc(auditLog.createdAt))
-    .limit(params.limit ?? 20)
+    .limit(pageSize + 1)
+    .offset(offset)
+
+  const pageRows = rows.slice(0, pageSize)
+  const nextOffset = rows.length > pageSize ? offset + pageSize : null
 
   const workgroupById = new Map(scopedWorkgroups.map((entry) => [entry.id, entry]))
   const workgroupByWorkspaceId = new Map(
@@ -1004,7 +1012,7 @@ export async function listOrganizationWorkgroupActivity(params: {
       .map((entry) => [entry.teamWorkspaceId as string, entry])
   )
 
-  return rows.map((row) => {
+  const activity = pageRows.map((row) => {
     const metadataWorkgroupId = getAuditMetadataValue(row.metadata, [
       'workgroupId',
       'sourceWorkgroupId',
@@ -1027,6 +1035,8 @@ export async function listOrganizationWorkgroupActivity(params: {
       createdAt: row.createdAt.toISOString(),
     }
   })
+
+  return { activity, nextOffset }
 }
 
 export async function getNextPublicationVersionNumber(sourceWorkflowId: string): Promise<number> {

@@ -15,7 +15,8 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     chain.leftJoin = vi.fn(() => chain)
     chain.orderBy = vi.fn(() => chain)
     chain.where = vi.fn(() => chain)
-    chain.limit = vi.fn(() => Promise.resolve(resolveNext()))
+    chain.limit = vi.fn(() => chain)
+    chain.offset = vi.fn(() => chain)
     chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(resolveNext()))
 
     return chain
@@ -245,6 +246,7 @@ import {
   getPublication,
   getPublicationTree,
   getTeamWorkspace,
+  listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
   updatePublicationLifecycleStatus,
@@ -301,6 +303,77 @@ describe('collaboration service', () => {
     await expect(assertWorkgroupAdmin('other-team-admin-1', 'workgroup-1')).rejects.toThrow(
       'Workgroup membership required'
     )
+  })
+
+  it('paginates organization workgroup activity with one extra row probe', async () => {
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          id: 'workgroup-1',
+          name: 'Lighting',
+          disciplineId: 'discipline-1',
+          disciplineName: 'Lighting',
+          teamWorkspaceId: 'team-workspace-1',
+        },
+      ],
+      [
+        {
+          id: 'audit-1',
+          workspaceId: 'team-workspace-1',
+          action: 'publication.created',
+          resourceType: 'publication',
+          resourceId: 'publication-1',
+          resourceName: 'Cue map',
+          description: 'Published showcase',
+          actorName: 'Admin',
+          actorEmail: 'admin@example.com',
+          metadata: { workgroupId: 'workgroup-1' },
+          createdAt: new Date('2026-05-24T01:00:00.000Z'),
+        },
+        {
+          id: 'audit-2',
+          workspaceId: 'team-workspace-1',
+          action: 'member.invited',
+          resourceType: 'member',
+          resourceId: 'user-1',
+          resourceName: 'Member',
+          description: 'Added member',
+          actorName: 'Admin',
+          actorEmail: 'admin@example.com',
+          metadata: { workgroupId: 'workgroup-1' },
+          createdAt: new Date('2026-05-24T00:30:00.000Z'),
+        },
+        {
+          id: 'audit-3',
+          workspaceId: 'team-workspace-1',
+          action: 'workspace.created',
+          resourceType: 'workspace',
+          resourceId: 'team-workspace-1',
+          resourceName: 'Lighting canvas',
+          description: 'Initialized team canvas',
+          actorName: 'Admin',
+          actorEmail: 'admin@example.com',
+          metadata: { workgroupId: 'workgroup-1' },
+          createdAt: new Date('2026-05-24T00:00:00.000Z'),
+        },
+      ]
+    )
+
+    await expect(
+      listOrganizationWorkgroupActivity({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        limit: 2,
+        offset: 4,
+      })
+    ).resolves.toMatchObject({
+      nextOffset: 6,
+      activity: [
+        { id: 'audit-1', workgroupName: 'Lighting', createdAt: '2026-05-24T01:00:00.000Z' },
+        { id: 'audit-2', workgroupName: 'Lighting', createdAt: '2026-05-24T00:30:00.000Z' },
+      ],
+    })
   })
 
   it('prevents demoting the last workgroup admin', async () => {

@@ -310,6 +310,7 @@ const optionalTrimmedQuerySchema = z
 
 export const organizationWorkgroupActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).max(10000).optional(),
   workgroupId: optionalTrimmedQuerySchema,
   disciplineId: optionalTrimmedQuerySchema,
   action: optionalTrimmedQuerySchema,
@@ -598,7 +599,10 @@ export const listOrganizationWorkgroupActivityContract = defineRouteContract({
   query: organizationWorkgroupActivityQuerySchema,
   response: {
     mode: 'json',
-    schema: z.object({ activity: z.array(organizationWorkgroupActivityEntrySchema) }),
+    schema: z.object({
+      activity: z.array(organizationWorkgroupActivityEntrySchema),
+      nextOffset: z.number().nullable(),
+    }),
   },
 })
 
