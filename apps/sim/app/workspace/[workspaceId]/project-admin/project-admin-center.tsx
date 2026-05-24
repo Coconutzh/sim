@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, Compass, Network, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -14,6 +14,7 @@ import type {
 import { cn } from '@/lib/core/utils/cn'
 import {
   useAgentProfiles,
+  useCreateWorkgroup,
   useDisciplines,
   useMyWorkgroups,
   useOrganizationWorkgroups,
@@ -105,8 +106,16 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>{children}</div>
 }
 
+function readErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+}
+
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const createWorkgroup = useCreateWorkgroup()
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
+  const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -157,6 +166,35 @@ export function ProjectAdminCenter() {
   const unreviewedPublicationCount = publications.filter(
     (publication) => !publication.reviewState || publication.reviewState === 'pending'
   ).length
+  const selectedNewTeamDisciplineId = newTeamDisciplineId || disciplines[0]?.id || ''
+  const selectedNewTeamDiscipline = disciplines.find(
+    (discipline) => discipline.id === selectedNewTeamDisciplineId
+  )
+  const canCreateTeam = Boolean(
+    organizationId &&
+      selectedNewTeamDisciplineId &&
+      newTeamName.trim() &&
+      !createWorkgroup.isPending
+  )
+
+  const handleCreateTeam = async () => {
+    if (!organizationId || !selectedNewTeamDisciplineId || !newTeamName.trim()) return
+    try {
+      const result = await createWorkgroup.mutateAsync({
+        organizationId,
+        name: newTeamName.trim(),
+        disciplineId: selectedNewTeamDisciplineId,
+      })
+      setNewTeamName('')
+      setCreateTeamStatus(
+        `Created ${result.workgroup.name} for ${
+          selectedNewTeamDiscipline?.name ?? 'the selected discipline'
+        }.`
+      )
+    } catch (error) {
+      setCreateTeamStatus(readErrorMessage(error))
+    }
+  }
 
   if (isLoading) {
     return (
@@ -211,14 +249,14 @@ export function ProjectAdminCenter() {
             <div>
               <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
                 <ShieldCheck className='h-[15px] w-[15px]' />
-                Phase 10 first slice
+                Phase 10 admin operations
               </div>
               <h1 className='mt-2 font-medium text-[22px] text-[var(--text-primary)]'>
                 Project admin center
               </h1>
               <p className='mt-2 max-w-[760px] text-[13px] text-[var(--text-muted)]'>
-                Read-only overview for disciplines, teams, members, Agent mapping, and visible
-                showcase governance. Management actions stay in team-level pages for this slice.
+                Project-level overview for disciplines, teams, members, Agent mapping, and visible
+                showcase governance, with controlled admin actions added one slice at a time.
               </p>
             </div>
             <Link
@@ -258,6 +296,69 @@ export function ProjectAdminCenter() {
                 : 'default'
             }
           />
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Users className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Create project team
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Organization admins can create a discipline team with its team canvas and default
+                workflow graph.
+              </p>
+            </div>
+          </div>
+          <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto]'>
+            <input
+              value={newTeamName}
+              onChange={(event) => {
+                setNewTeamName(event.target.value)
+                setCreateTeamStatus(null)
+              }}
+              placeholder='Team name, e.g. Lighting show control'
+              className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+            />
+            <select
+              value={selectedNewTeamDisciplineId}
+              onChange={(event) => {
+                setNewTeamDisciplineId(event.target.value)
+                setCreateTeamStatus(null)
+              }}
+              className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+            >
+              {disciplines.length === 0 ? (
+                <option value=''>No discipline available</option>
+              ) : (
+                disciplines.map((discipline) => (
+                  <option key={discipline.id} value={discipline.id}>
+                    {discipline.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <button
+              type='button'
+              className={buttonVariants({ variant: 'primary' })}
+              disabled={!canCreateTeam}
+              onClick={() => void handleCreateTeam()}
+            >
+              {createWorkgroup.isPending ? (
+                <Loader className='mr-2 h-[14px] w-[14px]' animate />
+              ) : null}
+              Create team
+            </button>
+          </div>
+          {createTeamStatus && (
+            <div
+              className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'
+              aria-live='polite'
+            >
+              {createTeamStatus}
+            </div>
+          )}
         </section>
 
         <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>

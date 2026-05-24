@@ -16,9 +16,9 @@
 - 原主界面 `/workspace/[workspaceId]` 已成为主要承载外壳，不再维护新的独立 `/workbench` shell。
 - 普通成员可以在当前团队上下文中创建多个个人草稿画布，并进入默认节点图。
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
-- 组织/项目管理员已有首个只读项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射和展示发布治理 watchlist。
+- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射和展示发布治理 watchlist，并可创建新的工种团队。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动首个只读概览切片；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览和创建团队首个写操作；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -190,11 +190,12 @@
 - Sidebar 会在当前用户具备组织 owner/admin 语义时显示 `Project admin` 入口；普通团队管理员仍使用 `Team management`。
 - 项目管理员中心复用现有 `useMyWorkgroups`、`useOrganizationWorkgroups`、`useDisciplines`、`useAgentProfiles` 和 `useShowcasePublications`，不新增写 API，也不改变权限边界。
 - 首版概览显示工种覆盖率、团队数量、成员数量、当前可见展示发布数量，以及 critical risk、未审核发布、缺失 team canvas 的治理 watchlist。
+- 项目管理员可在中心页创建新的工种团队；创建动作复用现有 `useCreateWorkgroup`、`POST /api/organizations/[id]/workgroups` 和 `createWorkgroup` 服务，仍由 `assertOrganizationAdmin` 保护，并自动生成 team canvas 与默认 workflow graph。
 - 团队列表可从项目中心跳转到对应团队管理页，复杂写操作仍留在团队级页面。
 
 仍需继续：
 
-- 这只是 Phase 10 只读首版，不包含创建/归档团队、用户批量分配、项目级 Agent 模板、全局审计筛选或完整状态树治理写操作。
+- 这仍只是 Phase 10 的早期首版，不包含归档团队、用户批量分配、项目级 Agent 模板、全局审计筛选或完整状态树治理写操作。
 
 ### 3.9 权限与安全加固
 
@@ -304,9 +305,9 @@ git diff --check
 
 建议任务：
 
-1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 只读首版已完成；后续继续扩展项目级管理操作。
+1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 首版已完成，并已补项目级创建团队入口；后续继续扩展其他项目级管理操作。
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览；后续补启用/停用、显示名、Agent 模板策略。
-3. 团队管理：首版已展示团队、成员数量并跳转团队管理页；后续补创建/归档团队、设置团队管理员、查看团队画布和发布详情 drawer。
+3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队；后续补归档团队、设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：把用户加入工种团队、批量导入、默认团队建议。
 5. 全局状态树治理：查看所有团队发布、风险、冲突、过期、未提交团队。
 6. Agent 模板：项目级 prompt 附加说明、默认 Skill、风险 Skill 禁用策略。
@@ -349,7 +350,7 @@ git diff --check
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
-4. Phase 10 项目管理员中心已启动只读概览；下一步继续做工种/团队/成员分配的写操作或项目级审计视图，不要一开始就做复杂图形状态树。
+4. Phase 10 项目管理员中心已启动概览并补创建团队；下一步继续做团队归档/成员分配/项目级审计视图，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：
