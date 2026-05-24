@@ -6,7 +6,9 @@ import {
   computeViewportCenteredPlacement,
   describePaneSelection,
   mapCopiedTargetBlockIds,
+  mapCopiedTargetEdgeIds,
   selectPaneBlock,
+  selectPaneEdge,
 } from '@/app/workspace/[workspaceId]/split/split-selection'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -39,6 +41,32 @@ describe('split canvas pane selection', () => {
     ).toEqual(['block-b'])
   })
 
+  it('toggles edges independently during additive selection', () => {
+    expect(
+      selectPaneEdge({
+        currentEdgeIds: ['edge-a'],
+        edgeId: 'edge-b',
+        additive: true,
+      })
+    ).toEqual(['edge-a', 'edge-b'])
+
+    expect(
+      selectPaneEdge({
+        currentEdgeIds: ['edge-a', 'edge-b'],
+        edgeId: 'edge-a',
+        additive: true,
+      })
+    ).toEqual(['edge-b'])
+
+    expect(
+      selectPaneEdge({
+        currentEdgeIds: ['edge-a', 'edge-b'],
+        edgeId: 'edge-c',
+        additive: false,
+      })
+    ).toEqual(['edge-c'])
+  })
+
   it('keeps copied target highlights ordered by source selection', () => {
     expect(
       mapCopiedTargetBlockIds(['source-b', 'source-a'], {
@@ -49,10 +77,29 @@ describe('split canvas pane selection', () => {
     ).toEqual(['target-b', 'target-a', 'target-c'])
   })
 
+  it('keeps copied target edge highlights ordered by explicit source selection', () => {
+    expect(
+      mapCopiedTargetEdgeIds(['edge-b', 'edge-a'], {
+        'edge-a': 'target-edge-a',
+        'edge-b': 'target-edge-b',
+        'edge-c': 'target-edge-c',
+      })
+    ).toEqual(['target-edge-b', 'target-edge-a', 'target-edge-c'])
+  })
+
   it('describes empty, single, and multi selection states', () => {
     expect(describePaneSelection([])).toBe('Click nodes to copy')
     expect(describePaneSelection(['block-a'])).toBe('Selected block-a')
     expect(describePaneSelection(['block-a', 'block-b'])).toBe('Selected 2 blocks')
+    expect(describePaneSelection([], ['edge-a'])).toBe(
+      'Select endpoint nodes to copy selected edges'
+    )
+    expect(describePaneSelection(['block-a', 'block-b'], ['edge-a'])).toBe(
+      'Selected 2 blocks + 1 edge'
+    )
+    expect(describePaneSelection(['block-a', 'block-b'], ['edge-a', 'edge-b'])).toBe(
+      'Selected 2 blocks + 2 edges'
+    )
   })
 
   it('centers copied selection in the target pane viewport', () => {

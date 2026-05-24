@@ -133,11 +133,12 @@
 - 分屏 pane 已支持独立多节点选择：普通点击替换当前 pane selection，Shift/Ctrl/Cmd-click 追加或移除节点。
 - 分屏复制成功后会按 `mappings.blockIds` 在目标 pane 选中新生成节点，作为复制结果高亮；复制 payload 会带上当前 pane 的多节点 `blockIds`，服务端继续自动复制 selection 内部合法边。
 - 分屏复制 placement 已从固定 offset 升级为优先对齐目标 pane 当前可见视口中心；如果目标 viewport 尚未上报，则回退到安全固定 offset。
+- 分屏 pane 已支持显式边选择：点击边可把 `edgeIds` 带入 copy-selection；未选边时仍复制所选节点之间的全部内部合法边，选边后只复制两端节点也被选中的连接。目标 pane 会用 `mappings.edgeIds` 高亮新连接。
 
 仍需继续：
 
 - 当前分屏是“只读预览 + 显式复制”，不是两个完整可编辑 ReactFlow 编辑器。
-- 框选、显式边选择、复制后自动定位/动画、pane-scoped zoom/pan/store 隔离仍需 Phase 7 后续实现。
+- 框选、复制后自动定位/动画、pane-scoped zoom/pan/store 隔离仍需 Phase 7 后续实现。
 
 ### 3.6 团队管理闭环
 
@@ -224,7 +225,7 @@ git diff --check
 建议任务：
 
 1. 已在分屏里用 `mappings.blockIds` 把复制结果映射为目标 pane selection，高亮新节点。
-2. 已支持 Shift/Ctrl/Cmd-click 多节点复制；边会随服务端 selection 内部合法边自动复制。显式边选择和框选仍待补齐。
+2. 已支持 Shift/Ctrl/Cmd-click 多节点复制和显式边选择；未显式选边时边会随服务端 selection 内部合法边自动复制，显式选边时只复制两端节点也入选的连接。框选仍待补齐。
 3. 已支持复制到目标 pane 当前 viewport center；目标 viewport 未就绪时才回退固定 offset。
 4. UI 明确展示目标画布不可写、目标 workflow 缺失、源为只读展示画布等原因。
 5. 增加前端组件/Hook 测试，验证复制 payload 不会把 source/target workspaceId 串线。
@@ -239,7 +240,7 @@ git diff --check
 
 1. 已拆分 pane-scoped selection、current workflow、copy target highlight 和 viewport snapshot 状态；zoom/pan 持久化仍待拆分。
 2. 若要双编辑器，拆分 workflow store 或引入 pane id，避免左右 ReactFlow 操作串线。
-3. 已增加 pane 级目标高亮、目标 workflow state/list 刷新和 viewport-center placement；复制后自动定位/动画仍待继续。
+3. 已增加 pane 级目标高亮、目标 workflow state/list 刷新、viewport-center placement 和目标边高亮；复制后自动定位/动画仍待继续。
 4. 增加组合场景：个人草稿 + 团队画布、团队画布 + 展示画布、展示画布 + 个人草稿。
 5. 移动端从上下布局进一步优化为 tab 切换。
 

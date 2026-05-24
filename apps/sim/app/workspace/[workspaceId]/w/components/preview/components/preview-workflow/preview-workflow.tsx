@@ -173,6 +173,7 @@ interface PreviewWorkflowProps {
     mousePosition: { x: number; y: number },
     modifiers?: { additive: boolean }
   ) => void
+  onEdgeClick?: (edgeId: string, modifiers?: { additive: boolean }) => void
   /** Callback when a node is right-clicked */
   onNodeContextMenu?: (blockId: string, mousePosition: { x: number; y: number }) => void
   /** Callback when the canvas (empty area) is clicked */
@@ -185,6 +186,8 @@ interface PreviewWorkflowProps {
   selectedBlockId?: string | null
   /** Currently selected block IDs for multi-node highlighting */
   selectedBlockIds?: string[]
+  /** Currently selected edge IDs for preview-only edge highlighting */
+  selectedEdgeIds?: string[]
   /** Reports the preview viewport for placement-aware copy targets */
   onViewportChange?: (viewport: PreviewWorkflowViewport) => void
   /** Skips expensive subblock computations for thumbnails/template previews */
@@ -278,12 +281,14 @@ export function PreviewWorkflow({
   defaultZoom = 0.8,
   fitPadding = 0.25,
   onNodeClick,
+  onEdgeClick,
   onNodeContextMenu,
   onPaneClick,
   cursorStyle = 'grab',
   executedBlocks,
   selectedBlockId,
   selectedBlockIds,
+  selectedEdgeIds,
   onViewportChange,
   lightweight = false,
 }: PreviewWorkflowProps) {
@@ -302,6 +307,7 @@ export function PreviewWorkflow({
     () => new Set([...(selectedBlockIds ?? []), ...(selectedBlockId ? [selectedBlockId] : [])]),
     [selectedBlockId, selectedBlockIds]
   )
+  const selectedEdgeIdSet = useMemo(() => new Set(selectedEdgeIds ?? []), [selectedEdgeIds])
   const emitViewportSnapshot = (viewport: Viewport) => {
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect || !onViewportChange) return
@@ -583,6 +589,7 @@ export function PreviewWorkflow({
     return (workflowState.edges || []).map((edge) => {
       const status = getEdgeExecutionStatus(edge)
       const isErrorEdge = edge.sourceHandle === 'error'
+      const isSelected = selectedEdgeIdSet.has(edge.id)
       return {
         id: edge.id,
         source: edge.source,
@@ -591,9 +598,10 @@ export function PreviewWorkflow({
         targetHandle: edge.targetHandle,
         data: {
           ...(status ? { executionStatus: status } : {}),
+          ...(isSelected ? { isPreviewSelected: true } : {}),
           sourceHandle: edge.sourceHandle,
         },
-        zIndex: status === 'success' ? 10 : isErrorEdge ? 5 : 0,
+        zIndex: isSelected ? 15 : status === 'success' ? 10 : isErrorEdge ? 5 : 0,
       }
     })
   }, [
@@ -602,6 +610,7 @@ export function PreviewWorkflow({
     isValidWorkflowState,
     blockExecutionMap,
     getBlockExecutionStatus,
+    selectedEdgeIdSet,
   ])
 
   if (!isValidWorkflowState) {
@@ -625,7 +634,12 @@ export function PreviewWorkflow({
       <div
         ref={containerRef}
         style={{ height, width, backgroundColor: 'var(--bg)' }}
-        className={cn('preview-mode', onNodeClick && 'interactive-nodes', className)}
+        className={cn(
+          'preview-mode',
+          onNodeClick && 'interactive-nodes',
+          onEdgeClick && 'interactive-edges',
+          className
+        )}
       >
         <style>{`
           /* Canvas cursor - grab on the flow container and pane */
@@ -652,6 +666,7 @@ export function PreviewWorkflow({
           .preview-mode.interactive-nodes .react-flow__node { cursor: pointer !important; }
           .preview-mode.interactive-nodes .react-flow__node > div { cursor: pointer !important; }
           .preview-mode.interactive-nodes .react-flow__node * { cursor: pointer !important; }
+          .preview-mode.interactive-edges .react-flow__edge { cursor: pointer !important; }
         `}</style>
         <ReactFlow
           nodes={nodes}
@@ -696,6 +711,17 @@ export function PreviewWorkflow({
                   event.preventDefault()
                   event.stopPropagation()
                   onNodeContextMenu(node.id, { x: event.clientX, y: event.clientY })
+                }
+              : undefined
+          }
+          onEdgeClick={
+            onEdgeClick
+              ? (event, edge) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onEdgeClick(edge.id, {
+                    additive: event.shiftKey || event.metaKey || event.ctrlKey,
+                  })
                 }
               : undefined
           }

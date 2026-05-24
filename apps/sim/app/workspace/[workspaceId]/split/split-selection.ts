@@ -9,6 +9,12 @@ export interface PaneBlockSelectionInput {
   additive: boolean
 }
 
+export interface PaneEdgeSelectionInput {
+  currentEdgeIds: string[]
+  edgeId: string
+  additive: boolean
+}
+
 export interface PaneViewportSnapshot {
   x: number
   y: number
@@ -35,24 +41,51 @@ export function selectPaneBlock({
   return [...currentBlockIds, blockId]
 }
 
+export function selectPaneEdge({
+  currentEdgeIds,
+  edgeId,
+  additive,
+}: PaneEdgeSelectionInput): string[] {
+  if (!edgeId) return []
+  if (!additive) return [edgeId]
+  if (currentEdgeIds.includes(edgeId)) {
+    return currentEdgeIds.filter((currentEdgeId) => currentEdgeId !== edgeId)
+  }
+  return [...currentEdgeIds, edgeId]
+}
+
+function mapCopiedTargetIds(sourceIds: string[], mappings: Record<string, string>): string[] {
+  const orderedTargetIds = sourceIds
+    .map((sourceId) => mappings[sourceId])
+    .filter((targetId): targetId is string => Boolean(targetId))
+  const orderedSet = new Set(orderedTargetIds)
+  const remainingTargetIds = Object.values(mappings).filter((targetId) => !orderedSet.has(targetId))
+  return [...orderedTargetIds, ...remainingTargetIds]
+}
+
 export function mapCopiedTargetBlockIds(
   sourceBlockIds: string[],
   mappings: Record<string, string>
 ): string[] {
-  const orderedTargetIds = sourceBlockIds
-    .map((sourceBlockId) => mappings[sourceBlockId])
-    .filter((targetBlockId): targetBlockId is string => Boolean(targetBlockId))
-  const orderedSet = new Set(orderedTargetIds)
-  const remainingTargetIds = Object.values(mappings).filter(
-    (targetBlockId) => !orderedSet.has(targetBlockId)
-  )
-  return [...orderedTargetIds, ...remainingTargetIds]
+  return mapCopiedTargetIds(sourceBlockIds, mappings)
 }
 
-export function describePaneSelection(blockIds: string[]): string {
-  if (blockIds.length === 0) return 'Click nodes to copy'
-  if (blockIds.length === 1) return `Selected ${blockIds[0]}`
-  return `Selected ${blockIds.length} blocks`
+export function mapCopiedTargetEdgeIds(
+  sourceEdgeIds: string[],
+  mappings: Record<string, string>
+): string[] {
+  return mapCopiedTargetIds(sourceEdgeIds, mappings)
+}
+
+export function describePaneSelection(blockIds: string[], edgeIds: string[] = []): string {
+  if (blockIds.length === 0 && edgeIds.length === 0) return 'Click nodes to copy'
+  if (blockIds.length === 0) return 'Select endpoint nodes to copy selected edges'
+  if (blockIds.length === 1 && edgeIds.length === 0) return `Selected ${blockIds[0]}`
+  if (blockIds.length === 1 && edgeIds.length === 1) return `Selected ${blockIds[0]} + 1 edge`
+  if (blockIds.length === 1) return `Selected ${blockIds[0]} + ${edgeIds.length} edges`
+  if (edgeIds.length === 0) return `Selected ${blockIds.length} blocks`
+  if (edgeIds.length === 1) return `Selected ${blockIds.length} blocks + 1 edge`
+  return `Selected ${blockIds.length} blocks + ${edgeIds.length} edges`
 }
 
 function getBlockDimensions(block: WorkflowState['blocks'][string]): {

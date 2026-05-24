@@ -10,8 +10,10 @@ import {
   computeViewportCenteredPlacement,
   describePaneSelection,
   mapCopiedTargetBlockIds,
+  mapCopiedTargetEdgeIds,
   type PaneViewportSnapshot,
   selectPaneBlock,
+  selectPaneEdge,
 } from '@/app/workspace/[workspaceId]/split/split-selection'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview/components/preview-workflow'
 import {
@@ -39,8 +41,11 @@ interface PaneConfig {
   isWorkflowStateLoading: boolean
   viewport?: PaneViewportSnapshot
   selectedBlockIds: string[]
+  selectedEdgeIds: string[]
   copiedBlockIds: string[]
+  copiedEdgeIds: string[]
   onSelectBlock: (blockId: string, additive: boolean) => void
+  onSelectEdge: (edgeId: string, additive: boolean) => void
   onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
   onViewportChange: (viewport: PaneViewportSnapshot) => void
@@ -77,7 +82,7 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
               {pane.label}
             </div>
             <div className='truncate text-[12px] text-[var(--text-muted)]'>
-              {describePaneSelection(pane.selectedBlockIds)}
+              {describePaneSelection(pane.selectedBlockIds, pane.selectedEdgeIds)}
             </div>
           </div>
         </div>
@@ -128,8 +133,12 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
             workflowState={pane.workflowState}
             workspaceId={pane.workspaceId}
             selectedBlockIds={pane.selectedBlockIds}
+            selectedEdgeIds={pane.selectedEdgeIds}
             onNodeClick={(blockId, _mousePosition, modifiers) =>
               pane.onSelectBlock(blockId, modifiers?.additive ?? false)
+            }
+            onEdgeClick={(edgeId, modifiers) =>
+              pane.onSelectEdge(edgeId, modifiers?.additive ?? false)
             }
             onPaneClick={pane.onClearSelection}
             cursorStyle='pointer'
@@ -179,9 +188,13 @@ export function SplitCanvasWorkbench() {
     useWorkflowState(teamWorkflowId)
   const [selectedPane, setSelectedPane] = useState<CanvasPaneKind>('personal')
   const [selectedPersonalBlockIds, setSelectedPersonalBlockIds] = useState<string[]>([])
+  const [selectedPersonalEdgeIds, setSelectedPersonalEdgeIds] = useState<string[]>([])
   const [selectedTeamBlockIds, setSelectedTeamBlockIds] = useState<string[]>([])
+  const [selectedTeamEdgeIds, setSelectedTeamEdgeIds] = useState<string[]>([])
   const [copiedPersonalBlockIds, setCopiedPersonalBlockIds] = useState<string[]>([])
+  const [copiedPersonalEdgeIds, setCopiedPersonalEdgeIds] = useState<string[]>([])
   const [copiedTeamBlockIds, setCopiedTeamBlockIds] = useState<string[]>([])
+  const [copiedTeamEdgeIds, setCopiedTeamEdgeIds] = useState<string[]>([])
   const [personalViewport, setPersonalViewport] = useState<PaneViewportSnapshot | undefined>()
   const [teamViewport, setTeamViewport] = useState<PaneViewportSnapshot | undefined>()
   const copySelection = useCopySelection()
@@ -198,22 +211,38 @@ export function SplitCanvasWorkbench() {
       isWorkflowStateLoading: isPersonalWorkflowStateLoading,
       viewport: personalViewport,
       selectedBlockIds: selectedPersonalBlockIds,
+      selectedEdgeIds: selectedPersonalEdgeIds,
       copiedBlockIds: copiedPersonalBlockIds,
+      copiedEdgeIds: copiedPersonalEdgeIds,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('personal')
         setSelectedPersonalBlockIds((currentBlockIds) =>
           selectPaneBlock({ currentBlockIds, blockId, additive })
         )
+        if (!additive) setSelectedPersonalEdgeIds([])
         setCopiedPersonalBlockIds([])
+        setCopiedPersonalEdgeIds([])
+      },
+      onSelectEdge: (edgeId, additive) => {
+        setSelectedPane('personal')
+        setSelectedPersonalEdgeIds((currentEdgeIds) =>
+          selectPaneEdge({ currentEdgeIds, edgeId, additive })
+        )
+        setCopiedPersonalBlockIds([])
+        setCopiedPersonalEdgeIds([])
       },
       onClearSelection: () => {
         setSelectedPersonalBlockIds([])
+        setSelectedPersonalEdgeIds([])
         setCopiedPersonalBlockIds([])
+        setCopiedPersonalEdgeIds([])
       },
       onSelectWorkflow: (workflowId) => {
         setPersonalWorkflowId(workflowId)
         setSelectedPersonalBlockIds([])
+        setSelectedPersonalEdgeIds([])
         setCopiedPersonalBlockIds([])
+        setCopiedPersonalEdgeIds([])
         setPersonalViewport(undefined)
       },
       onViewportChange: setPersonalViewport,
@@ -229,22 +258,38 @@ export function SplitCanvasWorkbench() {
       isWorkflowStateLoading: isTeamWorkflowStateLoading,
       viewport: teamViewport,
       selectedBlockIds: selectedTeamBlockIds,
+      selectedEdgeIds: selectedTeamEdgeIds,
       copiedBlockIds: copiedTeamBlockIds,
+      copiedEdgeIds: copiedTeamEdgeIds,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('team')
         setSelectedTeamBlockIds((currentBlockIds) =>
           selectPaneBlock({ currentBlockIds, blockId, additive })
         )
+        if (!additive) setSelectedTeamEdgeIds([])
         setCopiedTeamBlockIds([])
+        setCopiedTeamEdgeIds([])
+      },
+      onSelectEdge: (edgeId, additive) => {
+        setSelectedPane('team')
+        setSelectedTeamEdgeIds((currentEdgeIds) =>
+          selectPaneEdge({ currentEdgeIds, edgeId, additive })
+        )
+        setCopiedTeamBlockIds([])
+        setCopiedTeamEdgeIds([])
       },
       onClearSelection: () => {
         setSelectedTeamBlockIds([])
+        setSelectedTeamEdgeIds([])
         setCopiedTeamBlockIds([])
+        setCopiedTeamEdgeIds([])
       },
       onSelectWorkflow: (workflowId) => {
         setTeamWorkflowId(workflowId)
         setSelectedTeamBlockIds([])
+        setSelectedTeamEdgeIds([])
         setCopiedTeamBlockIds([])
+        setCopiedTeamEdgeIds([])
         setTeamViewport(undefined)
       },
       onViewportChange: setTeamViewport,
@@ -252,7 +297,9 @@ export function SplitCanvasWorkbench() {
     return { personal: personalPane, team: teamPane }
   }, [
     copiedPersonalBlockIds,
+    copiedPersonalEdgeIds,
     copiedTeamBlockIds,
+    copiedTeamEdgeIds,
     isPersonalWorkflowsLoading,
     isPersonalWorkflowStateLoading,
     isTeamWorkflowsLoading,
@@ -263,7 +310,9 @@ export function SplitCanvasWorkbench() {
     personalWorkspaceId,
     personalViewport,
     selectedPersonalBlockIds,
+    selectedPersonalEdgeIds,
     selectedTeamBlockIds,
+    selectedTeamEdgeIds,
     setPersonalWorkflowId,
     setTeamWorkflowId,
     teamWorkflowId,
@@ -302,7 +351,10 @@ export function SplitCanvasWorkbench() {
           workspaceId: targetPane.workspaceId,
           workflowId: targetPane.workflowId,
         },
-        selection: { blockIds: sourcePane.selectedBlockIds, edgeIds: [] },
+        selection: {
+          blockIds: sourcePane.selectedBlockIds,
+          edgeIds: sourcePane.selectedEdgeIds,
+        },
         placement,
       },
     })
@@ -311,19 +363,28 @@ export function SplitCanvasWorkbench() {
       sourcePane.selectedBlockIds,
       result.mappings.blockIds
     )
+    const targetEdgeIds = mapCopiedTargetEdgeIds(
+      sourcePane.selectedEdgeIds,
+      result.mappings.edgeIds
+    )
     if (targetBlockIds.length > 0) {
       if (targetPane.kind === 'personal') {
         setSelectedPersonalBlockIds(targetBlockIds)
+        setSelectedPersonalEdgeIds(targetEdgeIds)
         setCopiedPersonalBlockIds(targetBlockIds)
+        setCopiedPersonalEdgeIds(targetEdgeIds)
       }
       if (targetPane.kind === 'team') {
         setSelectedTeamBlockIds(targetBlockIds)
+        setSelectedTeamEdgeIds(targetEdgeIds)
         setCopiedTeamBlockIds(targetBlockIds)
+        setCopiedTeamEdgeIds(targetEdgeIds)
       }
     }
   }
 
   const copiedTargetBlockIds = targetPane.copiedBlockIds
+  const copiedTargetEdgeIds = targetPane.copiedEdgeIds
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-[var(--bg)]'>
@@ -360,8 +421,8 @@ export function SplitCanvasWorkbench() {
           )}
         >
           {copiedTargetBlockIds.length > 0
-            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'} into ${targetPane.label}. New target selection is highlighted after refresh.`
-            : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, then copy into the other canvas. Each pane keeps its own workflow and selection.'}
+            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'}${copiedTargetEdgeIds.length > 0 ? ` and ${copiedTargetEdgeIds.length} edge${copiedTargetEdgeIds.length === 1 ? '' : 's'}` : ''} into ${targetPane.label}. New target selection is highlighted after refresh.`
+            : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, and click edges to limit which connections copy. Selected edges copy only when both endpoint nodes are selected.'}
         </div>
       </div>
       <div className='grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 lg:grid-cols-2'>

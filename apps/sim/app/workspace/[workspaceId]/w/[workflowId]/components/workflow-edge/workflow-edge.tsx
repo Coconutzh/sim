@@ -41,6 +41,8 @@ const WorkflowEdgeComponent = ({
   })
 
   const isSelected = data?.isSelected ?? false
+  const isPreviewSelected =
+    (data as { isPreviewSelected?: boolean } | undefined)?.isPreviewSelected ?? false
 
   const { diffAnalysis, isShowingDiff, isDiffReady } = useWorkflowDiffStore(
     useShallow((state) => ({
@@ -105,22 +107,34 @@ const WorkflowEdgeComponent = ({
 
     if (isSelected) {
       opacity = 0.5
+    } else if (isPreviewSelected) {
+      color = 'var(--brand-accent)'
     }
 
     return {
       ...(style ?? {}),
       strokeWidth: edgeDiffStatus
         ? 3
-        : edgeRunStatus === 'success' || edgeRunStatus === 'error'
-          ? 2.5
-          : isSelected
+        : isPreviewSelected
+          ? 3
+          : edgeRunStatus === 'success' || edgeRunStatus === 'error'
             ? 2.5
-            : 2,
+            : isSelected
+              ? 2.5
+              : 2,
       stroke: color,
       strokeDasharray: edgeDiffStatus === 'deleted' ? '10,5' : undefined,
       opacity,
     }
-  }, [style, edgeDiffStatus, isSelected, isErrorEdge, edgeRunStatus, previewExecutionStatus])
+  }, [
+    style,
+    edgeDiffStatus,
+    isSelected,
+    isPreviewSelected,
+    isErrorEdge,
+    edgeRunStatus,
+    previewExecutionStatus,
+  ])
 
   return (
     <>
