@@ -139,6 +139,10 @@ function parseBatchAssignmentTargets(value: string) {
     })
 }
 
+function mergeBatchAssignmentTargets(currentValue: string, additions: string[]) {
+  return parseBatchAssignmentTargets([currentValue, ...additions].join('\n')).join('\n')
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -271,6 +275,18 @@ export function ProjectAdminCenter() {
     () => parseBatchAssignmentTargets(batchAssignmentValue),
     [batchAssignmentValue]
   )
+  const suggestedAssignmentMembers = useMemo(() => {
+    if (!selectedAssignmentTeam?.teamWorkspaceId) return []
+    return [...rosterMembers]
+      .filter(
+        (member) =>
+          !member.workspaces.some(
+            (workspaceAccess) =>
+              workspaceAccess.workspaceId === selectedAssignmentTeam.teamWorkspaceId
+          )
+      )
+      .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+  }, [rosterMembers, selectedAssignmentTeam?.teamWorkspaceId])
   const canBatchAssignMembers = Boolean(
     organizationId &&
       selectedAssignmentTeamId &&
@@ -359,6 +375,15 @@ export function ProjectAdminCenter() {
       `Batch assignment completed for ${selectedAssignmentTeam?.name ?? 'the selected team'}: ${assignedCount}/${results.length} assigned.`
     )
     if (assignedCount === results.length) setBatchAssignmentValue('')
+  }
+
+  const handleLoadSuggestedAssignments = () => {
+    const suggestedTargets = suggestedAssignmentMembers.map((member) => member.email)
+    setBatchAssignmentValue((currentValue) =>
+      mergeBatchAssignmentTargets(currentValue, suggestedTargets)
+    )
+    setBatchAssignmentResults([])
+    setAssignmentStatus(null)
   }
 
   if (isLoading) {
@@ -627,6 +652,41 @@ export function ProjectAdminCenter() {
                     Paste emails or user IDs separated by commas, spaces, or new lines. Batch uses
                     the selected team and role above.
                   </p>
+                </div>
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <div>
+                      <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                        Suggested batch
+                      </div>
+                      <p className='text-[11px] text-[var(--text-muted)]'>
+                        {selectedAssignmentTeam?.teamWorkspaceId
+                          ? `${suggestedAssignmentMembers.length} roster member${
+                              suggestedAssignmentMembers.length === 1 ? '' : 's'
+                            } without ${selectedAssignmentTeam.name} team canvas access.`
+                          : 'Selected team has no team canvas access map yet.'}
+                      </p>
+                    </div>
+                    <button
+                      type='button'
+                      className={buttonVariants({ variant: 'default' })}
+                      disabled={suggestedAssignmentMembers.length === 0}
+                      onClick={handleLoadSuggestedAssignments}
+                    >
+                      Load suggestions
+                    </button>
+                  </div>
+                  {suggestedAssignmentMembers.length > 0 && (
+                    <div className='mt-2 truncate text-[11px] text-[var(--text-muted)]'>
+                      {suggestedAssignmentMembers
+                        .slice(0, 3)
+                        .map((member) => member.name || member.email)
+                        .join(', ')}
+                      {suggestedAssignmentMembers.length > 3
+                        ? ` +${suggestedAssignmentMembers.length - 3} more`
+                        : ''}
+                    </div>
+                  )}
                 </div>
                 <textarea
                   value={batchAssignmentValue}
