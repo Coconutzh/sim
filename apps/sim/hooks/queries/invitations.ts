@@ -29,6 +29,8 @@ export interface WorkspaceInvitation {
   isPendingInvitation: boolean
   isExternal: boolean
   invitationId?: string
+  expiresAt?: string
+  createdAt?: string
 }
 
 async function fetchPendingInvitations(
@@ -48,6 +50,8 @@ async function fetchPendingInvitations(
         isPendingInvitation: true,
         isExternal: inv.membershipIntent === 'external',
         invitationId: inv.id,
+        expiresAt: inv.expiresAt,
+        createdAt: inv.createdAt,
       })) || []
   )
 }

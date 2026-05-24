@@ -150,7 +150,8 @@
 - `/workspace/[workspaceId]/team-management` 已在原 shell 下落地，普通成员看到权限提示，团队管理员可进入管理功能。
 - 管理员可添加已有用户，支持 email 或 userId。
 - 管理员可发送 team canvas invitation，接受后自动加入对应 workgroup。
-- Pending invitations 支持查看、重发、取消。
+- 管理员可在邀请 tab 中一次输入多个 email（逗号、空格或换行分隔）批量发送 team canvas invitation，接受后自动加入对应 workgroup。
+- Pending invitations 支持查看、重发、取消，并显示过期或 48 小时内即将过期的视觉状态，方便管理员决定重发或取消。
 - 管理员可更新成员 role、移除成员；服务端保护最后一个 admin 不被降级或移除。
 - 发布创建表单、发布生命周期面板、Agent Skill 管理、团队活动日志已经接入同一个团队管理页。
 - 最新活动日志切片新增 `GET /api/workgroups/[workgroupId]/activity`，按团队上下文聚合 `audit_log` 中的成员、团队画布初始化、发布、Agent Skill 事件。
@@ -158,7 +159,7 @@
 
 仍需继续：
 
-- 邀请错误分类、批量邀请、邀请过期视觉状态仍可补。
+- 邀请错误分类仍可补；批量邀请与邀请过期视觉状态已完成首版。
 - 团队管理页 tab 已完成首版；后续如功能继续膨胀，可再把复杂发布治理或成员批量操作拆成 drawer。
 - 权限拒绝类 warn 是否写 audit 还未完整设计。
 
@@ -272,7 +273,7 @@ git diff --check
 
 1. 发布详情治理和更细的可见范围变更反馈。
 2. 团队管理页分区优化首版已完成：成员、邀请、发布、Agent Skill、活动日志已拆成 tabs；后续继续补复杂治理 drawer。
-3. 批量邀请和邀请过期状态。
+3. 批量邀请和邀请过期状态已完成首版；后续继续补更细的错误分类和批量结果逐项反馈。
 4. 权限拒绝/失败操作是否进入 activity 或 audit 的规则。
 5. 团队画布健康状态：默认 workflow 是否存在、成员权限是否同步、最近发布状态。
 
@@ -328,7 +329,7 @@ git diff --check
 
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab”已补首版；下一步继续框选或触摸选择优化。
-3. Phase 9 的团队管理页结构优化已完成首版 tab；下一步可继续批量邀请、邀请过期状态、失败操作审计和团队画布健康状态。
+3. Phase 9 的团队管理页结构优化、批量邀请和邀请过期状态已完成首版；下一步可继续失败操作审计和团队画布健康状态。
 4. 接着启动 Phase 10 项目管理员中心，优先做工种/团队/成员分配，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 

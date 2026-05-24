@@ -32,6 +32,7 @@ export const pendingWorkspaceInvitationSchema = z
     permission: workspacePermissionSchema,
     membershipIntent: z.enum(['internal', 'external']).optional(),
     status: z.string(),
+    expiresAt: z.string().optional(),
     createdAt: z.string(),
   })
   .passthrough()

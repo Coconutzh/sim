@@ -160,6 +160,41 @@ function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
 
+function parseInvitationEmails(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/)
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  )
+}
+
+function getInvitationExpiryState(expiresAt?: string) {
+  if (!expiresAt) return null
+  const expiresAtTime = new Date(expiresAt).getTime()
+  if (Number.isNaN(expiresAtTime)) return null
+
+  const hoursRemaining = Math.ceil((expiresAtTime - Date.now()) / (60 * 60 * 1000))
+  if (hoursRemaining <= 0) {
+    return {
+      label: 'Expired - resend or cancel',
+      tone: 'danger',
+    } as const
+  }
+  if (hoursRemaining <= 48) {
+    return {
+      label: `Expires in ${hoursRemaining}h`,
+      tone: 'warning',
+    } as const
+  }
+  return {
+    label: `Expires ${formatPublicationDate(expiresAt)}`,
+    tone: 'default',
+  } as const
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -266,6 +301,7 @@ export function WorkgroupTeamManagement() {
   const publications = publicationsData?.publications ?? []
   const agentSkills = agentSkillsData?.skills ?? []
   const activity = activityData?.activity ?? []
+  const emailInvitationEmails = parseInvitationEmails(emailInvitationValue)
   const tabCounts: Record<TeamManagementTab, number> = {
     members: members.length,
     invites: pendingInvitations.length,
@@ -320,12 +356,17 @@ export function WorkgroupTeamManagement() {
   }
 
   const handleEmailInvitation = async () => {
-    const email = emailInvitationValue.trim()
-    if (!activeWorkgroup?.organizationId || !teamWorkspaceId || !email) return
+    if (
+      !activeWorkgroup?.organizationId ||
+      !teamWorkspaceId ||
+      emailInvitationEmails.length === 0
+    ) {
+      return
+    }
     try {
       await inviteMember.mutateAsync({
         orgId: activeWorkgroup.organizationId,
-        emails: [email],
+        emails: emailInvitationEmails,
         workspaceInvitations: [
           {
             workspaceId: teamWorkspaceId,
@@ -334,7 +375,11 @@ export function WorkgroupTeamManagement() {
         ],
       })
       setEmailInvitationValue('')
-      setStatusMessage('Invitation email sent for the team canvas.')
+      setStatusMessage(
+        emailInvitationEmails.length === 1
+          ? 'Invitation email sent for the team canvas.'
+          : `${emailInvitationEmails.length} invitation emails sent for the team canvas.`
+      )
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -732,12 +777,24 @@ export function WorkgroupTeamManagement() {
               </div>
             </div>
             <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_140px_auto]'>
-              <Input
-                value={emailInvitationValue}
-                onChange={(event) => setEmailInvitationValue(event.target.value)}
-                placeholder='name@example.com'
-                disabled={isBusy || !teamWorkspaceId}
-              />
+              <div className='grid gap-1'>
+                <textarea
+                  value={emailInvitationValue}
+                  onChange={(event) => setEmailInvitationValue(event.target.value)}
+                  placeholder='name@example.com, teammate@example.com'
+                  rows={3}
+                  disabled={isBusy || !teamWorkspaceId}
+                  className='min-h-[74px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-60'
+                />
+                <div className='text-[11px] text-[var(--text-muted)]'>
+                  Separate multiple emails with commas, spaces, or new lines.
+                  {emailInvitationEmails.length > 0
+                    ? ` ${emailInvitationEmails.length} unique recipient${
+                        emailInvitationEmails.length === 1 ? '' : 's'
+                      } ready.`
+                    : ''}
+                </div>
+              </div>
               <select
                 value={inviteRole}
                 onChange={(event) => setInviteRole(event.target.value as WorkgroupRole)}
@@ -750,12 +807,12 @@ export function WorkgroupTeamManagement() {
               <Button
                 variant='primary'
                 onClick={() => void handleEmailInvitation()}
-                disabled={!emailInvitationValue.trim() || !teamWorkspaceId || isBusy}
+                disabled={emailInvitationEmails.length === 0 || !teamWorkspaceId || isBusy}
               >
                 {inviteMember.isPending ? (
                   <Loader className='mr-2 h-[14px] w-[14px]' animate />
                 ) : null}
-                Send invite
+                {emailInvitationEmails.length > 1 ? 'Send invites' : 'Send invite'}
               </Button>
             </div>
             {!teamWorkspaceId && (
@@ -1294,48 +1351,67 @@ export function WorkgroupTeamManagement() {
                   No pending team invitations.
                 </div>
               ) : (
-                pendingInvitations.map((invitation) => (
-                  <div
-                    key={invitation.invitationId ?? invitation.email}
-                    className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
-                  >
-                    <div className='min-w-0'>
-                      <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
-                        {invitation.email}
+                pendingInvitations.map((invitation) => {
+                  const expiryState = getInvitationExpiryState(invitation.expiresAt)
+                  return (
+                    <div
+                      key={invitation.invitationId ?? invitation.email}
+                      className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
+                    >
+                      <div className='min-w-0'>
+                        <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                          <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                            {invitation.email}
+                          </span>
+                          {expiryState && (
+                            <span
+                              className={cn(
+                                'shrink-0 rounded-[8px] border px-2 py-0.5 text-[11px]',
+                                expiryState.tone === 'danger'
+                                  ? 'border-red-500/30 text-red-500'
+                                  : expiryState.tone === 'warning'
+                                    ? 'border-amber-500/30 text-amber-500'
+                                    : 'border-[var(--border)] text-[var(--text-muted)]'
+                              )}
+                            >
+                              {expiryState.label}
+                            </span>
+                          )}
+                        </div>
+                        <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                          {invitation.permissionType === 'admin' ? 'Admin' : 'Member'} access
+                          {invitation.isExternal ? ' / external invite' : ''}
+                        </div>
                       </div>
-                      <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                        {invitation.permissionType === 'admin' ? 'Admin' : 'Member'} access
-                        {invitation.isExternal ? ' / external invite' : ''}
-                      </div>
+                      <Button
+                        variant='default'
+                        className='h-[32px]'
+                        onClick={() =>
+                          invitation.invitationId
+                            ? void handleResendInvitation(invitation.invitationId)
+                            : undefined
+                        }
+                        disabled={!invitation.invitationId || isBusy}
+                      >
+                        <RotateCcw className='mr-2 h-[14px] w-[14px]' />
+                        Resend
+                      </Button>
+                      <Button
+                        variant='default'
+                        className='h-[32px]'
+                        onClick={() =>
+                          invitation.invitationId
+                            ? void handleCancelInvitation(invitation.invitationId)
+                            : undefined
+                        }
+                        disabled={!invitation.invitationId || isBusy}
+                      >
+                        <X className='mr-2 h-[14px] w-[14px]' />
+                        Cancel
+                      </Button>
                     </div>
-                    <Button
-                      variant='default'
-                      className='h-[32px]'
-                      onClick={() =>
-                        invitation.invitationId
-                          ? void handleResendInvitation(invitation.invitationId)
-                          : undefined
-                      }
-                      disabled={!invitation.invitationId || isBusy}
-                    >
-                      <RotateCcw className='mr-2 h-[14px] w-[14px]' />
-                      Resend
-                    </Button>
-                    <Button
-                      variant='default'
-                      className='h-[32px]'
-                      onClick={() =>
-                        invitation.invitationId
-                          ? void handleCancelInvitation(invitation.invitationId)
-                          : undefined
-                      }
-                      disabled={!invitation.invitationId || isBusy}
-                    >
-                      <X className='mr-2 h-[14px] w-[14px]' />
-                      Cancel
-                    </Button>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </section>

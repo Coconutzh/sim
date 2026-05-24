@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请与 pending invitation 过期状态视觉；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
 
 ## 1. 当前结论
 
@@ -382,7 +382,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 后端 `POST /api/workgroups/[workgroupId]/members` 的 contract 支持 `userId` 或 `email` 两种输入，但仍由服务层统一执行 `assertWorkgroupAdmin`，不会让前端直接决定权限。
 - `addWorkgroupMember` 会把 email 解析为已存在用户账号，再写入 `workgroup_member`，如果团队画布已存在则同步 workspace permission。
 - 团队邀请复用现有 organization/workspace invitation 邮件链路；接受 team canvas grant 时会自动把用户加入该 workspace 对应的 workgroup。
-- 团队管理页复用现有 workspace invitation 查询/取消/重发 hooks，发送邀请后会刷新 pending invitation 列表，避免管理员离开当前 shell 才能确认状态。
+- 团队管理页复用现有 workspace invitation 查询/取消/重发 hooks，发送邀请后会刷新 pending invitation 列表，避免管理员离开当前 shell 才能确认状态；邀请输入已支持逗号、空格或换行分隔的多 email 批量发送。
 - 团队发布管理先接入本团队 publication 列表和生命周期操作，复用 `useShowcasePublications` 与 `useUpdatePublicationLifecycle`，管理员可从原 shell 直接归档/撤回展示版本并跳转到展示画布。
 - 团队管理页新增发布创建表单，管理员可选择团队画布内 workflow、填写标题/说明，并选择组织可见或指定团队可见；提交后复用现有 `POST /api/workflows/[id]/publish` 发布快照并刷新本团队展示列表。
 - 团队管理页后续已拆成 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个本地 tab，沿用 `var(--bg)`、`var(--surface-*)`、`var(--border)`、8px 圆角和原页面状态，不引入独立工作台外壳。
@@ -399,7 +399,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- 当前团队邀请已覆盖发送、接受后加入 workgroup、pending 列表、取消和重发；后续仍可补更细的错误分类、批量邀请和过期状态视觉。
+- 当前团队邀请已覆盖发送、批量发送、接受后加入 workgroup、pending 列表、取消、重发和过期状态视觉；后续仍可补更细的错误分类和批量结果逐项反馈。
 - Phase 9 仍需补更完整的发布可见范围编辑和管理员闭环；发布创建表单与 Agent Skill 绑定已完成首个可用切片。
 
 ### 5.10 Phase 9 团队协作日志切片
@@ -503,7 +503,17 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 页面顶部新增 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个 tab，每个 tab 显示对应数据数量，视觉继续使用 `var(--surface-2)` 容器、`var(--surface-1)` 选中态、`var(--border)` 和 8px 圆角。
 - `Members` tab 承载添加已有用户和成员角色/移除列表；`Invites` tab 承载发送邮件邀请和 pending invitation 重发/取消；`Publications` tab 承载发布表单、可见范围、生命周期、恢复当前版本和审核/风险控件；`Agent Skill` 与 `Activity` 分别承载技能开关和团队活动日志。
 - 本切片不改 API、contract、React Query hook 或权限边界；所有原有 mutation、refetch 和 status message 继续复用，只改变页面信息架构。
-- 该切片解决 Phase 9 “团队管理页过长，需要 tabs/drawer” 的首版问题；后续仍可为批量邀请、邀请过期状态、失败审计和复杂发布治理补 drawer。
+- 该切片解决 Phase 9 “团队管理页过长，需要 tabs/drawer” 的首版问题；后续仍可为失败审计和复杂发布治理补 drawer。
+
+### 5.17 Phase 9 批量邀请与过期状态视觉切片
+
+本轮继续收口团队邀请体验，仍然保持在原 `/workspace/[workspaceId]/team-management` 的 `Invites` tab 内：
+
+- `Send team invitation` 输入从单行 email 改为本地 textarea，支持用逗号、空格或换行输入多个 email，并在提交前去重、归一化为小写。
+- 提交仍复用 `useInviteMember` 和 `POST /api/organizations/[id]/invitations?batch=true`，请求体一次发送 `emails` 数组和 team canvas workspace grant；没有新增 route，也没有改变服务端权限边界。
+- `usePendingInvitations` 现在保留 `expiresAt` / `createdAt`，团队管理页 pending invitation 列表能显示具体过期状态。
+- Pending invitation 行会标记 `Expired - resend or cancel`，48 小时内到期会标记 `Expires in Nh`，更远的邀请显示具体过期时间；管理员可以据此重发或取消。
+- 本切片补齐 Phase 9 “批量邀请和邀请过期状态”的首版能力；后续仍需逐项展示 invalid/existing/pending/failed 的批量结果分类。
 
 ## 6. 建议继续推进目标
 
