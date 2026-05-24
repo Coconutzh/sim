@@ -1,5 +1,6 @@
-﻿'use client'
+'use client'
 
+import type { ChangeEvent } from 'react'
 import { useMemo, useState } from 'react'
 import {
   Activity,
@@ -34,6 +35,19 @@ import { useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
+const BATCH_IMPORT_IGNORED_CELLS = new Set([
+  'email',
+  'emails',
+  'userid',
+  'user',
+  'id',
+  'name',
+  'role',
+  'member',
+  'admin',
+  'team',
+  'workgroup',
+])
 
 interface BatchAssignmentResult {
   target: string
@@ -143,6 +157,39 @@ function mergeBatchAssignmentTargets(currentValue: string, additions: string[]) 
   return parseBatchAssignmentTargets([currentValue, ...additions].join('\n')).join('\n')
 }
 
+function cleanBatchImportCell(value: string) {
+  return value
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .trim()
+}
+
+function getBatchImportCandidate(line: string) {
+  const cells = line
+    .split(/[,;\t]/)
+    .map(cleanBatchImportCell)
+    .filter(Boolean)
+  if (cells.length === 0) return null
+
+  const emailCell = cells.find((cell) => cell.includes('@'))
+  if (emailCell) return emailCell
+
+  return (
+    cells.find((cell) => {
+      const normalized = cell.toLowerCase().replace(/[\s_-]/g, '')
+      return !BATCH_IMPORT_IGNORED_CELLS.has(normalized)
+    }) ?? null
+  )
+}
+
+function extractBatchAssignmentTargetsFromImport(value: string) {
+  const candidates = value
+    .split(/\r?\n/)
+    .map(getBatchImportCandidate)
+    .filter((candidate): candidate is string => Boolean(candidate))
+  return parseBatchAssignmentTargets(candidates.join('\n'))
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -193,6 +240,7 @@ export function ProjectAdminCenter() {
   const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null)
   const [batchAssignmentValue, setBatchAssignmentValue] = useState('')
   const [batchAssignmentResults, setBatchAssignmentResults] = useState<BatchAssignmentResult[]>([])
+  const [batchImportStatus, setBatchImportStatus] = useState<string | null>(null)
   const [activityTeamId, setActivityTeamId] = useState('')
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
@@ -383,7 +431,31 @@ export function ProjectAdminCenter() {
       mergeBatchAssignmentTargets(currentValue, suggestedTargets)
     )
     setBatchAssignmentResults([])
+    setBatchImportStatus(null)
     setAssignmentStatus(null)
+  }
+
+  const handleImportBatchAssignments = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const importedTargets = extractBatchAssignmentTargetsFromImport(await file.text())
+      if (importedTargets.length === 0) {
+        setBatchImportStatus(`No email or user ID targets found in ${file.name}.`)
+        return
+      }
+
+      setBatchAssignmentValue((currentValue) =>
+        mergeBatchAssignmentTargets(currentValue, importedTargets)
+      )
+      setBatchAssignmentResults([])
+      setAssignmentStatus(null)
+      setBatchImportStatus(`Imported ${importedTargets.length} target(s) from ${file.name}.`)
+    } catch (error) {
+      setBatchImportStatus(readErrorMessage(error))
+    }
   }
 
   if (isLoading) {
@@ -602,6 +674,7 @@ export function ProjectAdminCenter() {
                     setAssignmentTeamId(event.target.value)
                     setAssignmentStatus(null)
                     setBatchAssignmentResults([])
+                    setBatchImportStatus(null)
                   }}
                   className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                 >
@@ -621,6 +694,7 @@ export function ProjectAdminCenter() {
                     setAssignmentRole(event.target.value as 'member' | 'admin')
                     setAssignmentStatus(null)
                     setBatchAssignmentResults([])
+                    setBatchImportStatus(null)
                   }}
                   className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                 >
@@ -693,11 +767,36 @@ export function ProjectAdminCenter() {
                   onChange={(event) => {
                     setBatchAssignmentValue(event.target.value)
                     setBatchAssignmentResults([])
+                    setBatchImportStatus(null)
                     setAssignmentStatus(null)
                   }}
                   placeholder={'alice@example.com\nbob@example.com'}
                   className='min-h-[76px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
                 />
+                <div className='flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                  <div>
+                    <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                      Import from file
+                    </div>
+                    <p className='text-[11px] text-[var(--text-muted)]'>
+                      Upload a CSV, TSV, or TXT file with email or user ID values.
+                    </p>
+                  </div>
+                  <label className={buttonVariants({ variant: 'default' })}>
+                    Choose file
+                    <input
+                      type='file'
+                      accept='.csv,.tsv,.txt,text/csv,text/plain'
+                      className='sr-only'
+                      onChange={(event) => void handleImportBatchAssignments(event)}
+                    />
+                  </label>
+                </div>
+                {batchImportStatus && (
+                  <div className='text-[11px] text-[var(--text-muted)]' aria-live='polite'>
+                    {batchImportStatus}
+                  </div>
+                )}
                 <div className='flex flex-wrap items-center justify-between gap-2'>
                   <span className='text-[11px] text-[var(--text-muted)]'>
                     {batchAssignmentTargets.length} unique target

@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器、按团队 activity drilldown、批量成员分配和建议填充首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器、按团队 activity drilldown、批量成员分配、文件导入和建议填充首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -269,7 +269,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
-| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器、按团队 activity drilldown、批量成员分配和建议填充首版；后续继续团队归档、更智能的工种/默认团队建议、文件导入式批量分配、全局状态树、Agent 模板、权限和完整审计筛选 |
+| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器、按团队 activity drilldown、批量成员分配、文件导入和建议填充首版；后续继续团队归档、更智能的工种/默认团队建议、事务性 bulk API、全局状态树、Agent 模板、权限和完整审计筛选 |
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
@@ -652,7 +652,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- 当前建议只是 access-map based 首版，不理解人员工种、默认团队归属、seat 余量或历史项目偏好；Phase 10 仍需文件导入式批量分配、团队归档/恢复、全局审计筛选、项目级 Agent 模板策略和完整状态树治理。
+- 当前建议只是 access-map based 首版，不理解人员工种、默认团队归属、seat 余量或历史项目偏好；后续 5.29 已补本地文件导入首版，Phase 10 仍需团队归档/恢复、全局审计筛选、项目级 Agent 模板策略和完整状态树治理。
+
+### 5.29 Phase 10 项目级成员文件导入切片
+
+本轮继续补齐项目管理员批量分配的输入来源，保持“前端导入、显式提交、逐项复用现有 API”的边界：
+
+- `ProjectAdminCenter` 在 `Batch assign` 区块新增 `Import from file`，支持 CSV、TSV、TXT 本地文件。
+- 导入逻辑逐行解析文件，优先取包含 `@` 的 email 单元格；如果该行没有 email，则取第一个非 header/role/team 语义的单元格作为 user ID 候选。
+- 导入结果会合并进现有 textarea，并继续复用 `parseBatchAssignmentTargets` 做大小写不敏感去重；不会自动写入成员关系。
+- 写入仍必须点击 `Assign batch`，继续逐项调用 `useAddWorkgroupMember` / `POST /api/workgroups/[workgroupId]/members`，没有新增 bulk route、contract 或权限边界。
+
+仍需继续：
+
+- 该切片不是严格 CSV 解析器，也没有事务性 bulk API、批量操作 audit 聚合、seat 预检查或失败原因分类；Phase 10 仍需团队归档/恢复、全局审计筛选、项目级 Agent 模板策略和完整状态树治理。
 
 ## 6. 建议继续推进目标
 
