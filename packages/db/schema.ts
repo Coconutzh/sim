@@ -290,6 +290,11 @@ export const workflowPublicationVersion = pgTable(
     lifecycleUpdatedAt: timestamp('lifecycle_updated_at'),
     reviewState: text('review_state'),
     riskLevel: text('risk_level'),
+    reviewerUserId: text('reviewer_user_id').references(() => user.id, { onDelete: 'set null' }),
+    reviewerAssignedBy: text('reviewer_assigned_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    reviewerAssignedAt: timestamp('reviewer_assigned_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -306,6 +311,9 @@ export const workflowPublicationVersion = pgTable(
     agentCodeIdx: index('workflow_publication_version_agent_code_idx').on(table.agentCode),
     statusIdx: index('workflow_publication_version_status_idx').on(table.status),
     archivedAtIdx: index('workflow_publication_version_archived_at_idx').on(table.archivedAt),
+    reviewerUserIdIdx: index('workflow_publication_version_reviewer_user_id_idx').on(
+      table.reviewerUserId
+    ),
     sourceWorkflowIdIdx: index('workflow_publication_version_source_workflow_id_idx').on(
       table.sourceWorkflowId
     ),

@@ -19,13 +19,18 @@ export const PATCH = withRouteHandler(async (request, context) => {
       publicationVersionId: parsed.data.params.publicationVersionId,
       reviewState: parsed.data.body.reviewState,
       riskLevel: parsed.data.body.riskLevel,
+      reviewerUserId: parsed.data.body.reviewerUserId,
       reason: parsed.data.body.reason,
     })
     return NextResponse.json({ publication })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Publication review update failed'
     logger.warn('Failed to update publication review', { error })
-    const status = message.includes('access required') ? 403 : 404
+    const status = message.includes('access required')
+      ? 403
+      : message.includes('Reviewer must')
+        ? 400
+        : 404
     return NextResponse.json({ error: message }, { status })
   }
 })

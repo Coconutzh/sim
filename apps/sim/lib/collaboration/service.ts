@@ -50,6 +50,19 @@ export type PublicationReviewState =
   | 'rejected'
 export type PublicationRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
+function formatPublicationReviewer(publication: {
+  reviewerUserId: string | null
+  reviewerAssignedBy: string | null
+  reviewerAssignedAt: Date | null
+}) {
+  if (!publication.reviewerUserId) return null
+  return {
+    userId: publication.reviewerUserId,
+    assignedBy: publication.reviewerAssignedBy,
+    assignedAt: publication.reviewerAssignedAt?.toISOString() ?? null,
+  }
+}
+
 type PublicationVisibility = 'organization' | 'selected_workgroups'
 type WorkgroupMemberTarget = {
   userId?: string
@@ -1875,6 +1888,7 @@ export async function listVisiblePublications(params: {
     visibility: row.publication.visibility,
     reviewState: row.publication.reviewState as PublicationReviewState | null,
     riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+    reviewer: formatPublicationReviewer(row.publication),
     dependsOnPublicationIds:
       row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
         ? [row.publication.parentVersionId]
@@ -1962,6 +1976,7 @@ export async function listOrganizationPublications(params: {
     visibility: row.publication.visibility,
     reviewState: row.publication.reviewState as PublicationReviewState | null,
     riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+    reviewer: formatPublicationReviewer(row.publication),
     dependsOnPublicationIds:
       row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
         ? [row.publication.parentVersionId]
@@ -2155,17 +2170,22 @@ export async function updatePublicationReview(params: {
   publicationVersionId: string
   reviewState: PublicationReviewState | null
   riskLevel: PublicationRiskLevel | null
+  reviewerUserId?: string | null
   reason?: string
 }) {
   const [row] = await db
     .select({
       id: workflowPublicationVersion.id,
       title: workflowPublicationVersion.title,
+      organizationId: workflowPublicationVersion.organizationId,
       sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
       sourceWorkflowId: workflowPublicationVersion.sourceWorkflowId,
       publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
       reviewState: workflowPublicationVersion.reviewState,
       riskLevel: workflowPublicationVersion.riskLevel,
+      reviewerUserId: workflowPublicationVersion.reviewerUserId,
+      reviewerAssignedBy: workflowPublicationVersion.reviewerAssignedBy,
+      reviewerAssignedAt: workflowPublicationVersion.reviewerAssignedAt,
     })
     .from(workflowPublicationVersion)
     .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
@@ -2174,11 +2194,32 @@ export async function updatePublicationReview(params: {
   await assertWorkgroupAdmin(params.actorUserId, row.sourceWorkgroupId)
 
   const now = new Date()
+  const reviewerUpdate =
+    params.reviewerUserId === undefined
+      ? {}
+      : {
+          reviewerUserId: params.reviewerUserId,
+          reviewerAssignedBy: params.reviewerUserId ? params.actorUserId : null,
+          reviewerAssignedAt: params.reviewerUserId ? now : null,
+        }
+
+  if (params.reviewerUserId) {
+    const [reviewerMembership] = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(
+        and(eq(member.userId, params.reviewerUserId), eq(member.organizationId, row.organizationId))
+      )
+      .limit(1)
+    if (!reviewerMembership) throw new Error('Reviewer must be an organization member')
+  }
+
   await db
     .update(workflowPublicationVersion)
     .set({
       reviewState: params.reviewState,
       riskLevel: params.riskLevel,
+      ...reviewerUpdate,
       lifecycleUpdatedBy: params.actorUserId,
       lifecycleUpdatedAt: now,
       updatedAt: now,
@@ -2197,6 +2238,9 @@ export async function updatePublicationReview(params: {
       reviewState: params.reviewState,
       previousRiskLevel: row.riskLevel,
       riskLevel: params.riskLevel,
+      previousReviewerUserId: row.reviewerUserId,
+      reviewerUserId:
+        params.reviewerUserId === undefined ? row.reviewerUserId : params.reviewerUserId,
       sourceWorkflowId: row.sourceWorkflowId,
       sourceWorkgroupId: row.sourceWorkgroupId,
       publishedWorkflowId: row.publishedWorkflowId,
@@ -2209,6 +2253,16 @@ export async function updatePublicationReview(params: {
     title: row.title,
     reviewState: params.reviewState,
     riskLevel: params.riskLevel,
+    reviewer:
+      params.reviewerUserId === undefined
+        ? formatPublicationReviewer(row)
+        : params.reviewerUserId
+          ? {
+              userId: params.reviewerUserId,
+              assignedBy: params.actorUserId,
+              assignedAt: now.toISOString(),
+            }
+          : null,
     updatedAt: now.toISOString(),
   }
 }
@@ -2253,6 +2307,7 @@ export async function getPublication(params: { userId: string; publicationVersio
     visibility: row.publication.visibility,
     reviewState: row.publication.reviewState as PublicationReviewState | null,
     riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+    reviewer: formatPublicationReviewer(row.publication),
     snapshotState: row.publication.snapshotState,
     snapshotMetadata: row.publication.snapshotMetadata,
     publishedAt: row.publication.publishedAt.toISOString(),
@@ -2308,6 +2363,7 @@ export async function getPublicationTree(params: { userId: string; publicationVe
       visibility: row.publication.visibility,
       reviewState: row.publication.reviewState as PublicationReviewState | null,
       riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+      reviewer: formatPublicationReviewer(row.publication),
       sourceWorkgroup: {
         id: row.publication.sourceWorkgroupId,
         name: row.sourceWorkgroupName,

@@ -30,6 +30,7 @@ describe('Publication review API route', () => {
       title: 'Team plan',
       reviewState: 'approved',
       riskLevel: 'medium',
+      reviewer: null,
       updatedAt: '2026-05-24T00:00:00.000Z',
     })
 
@@ -53,6 +54,7 @@ describe('Publication review API route', () => {
       publicationVersionId: 'publication-1',
       reviewState: 'approved',
       riskLevel: 'medium',
+      reviewerUserId: undefined,
       reason: 'Approved for project tree',
     })
     await expect(response.json()).resolves.toEqual({
@@ -61,8 +63,48 @@ describe('Publication review API route', () => {
         title: 'Team plan',
         reviewState: 'approved',
         riskLevel: 'medium',
+        reviewer: null,
         updatedAt: '2026-05-24T00:00:00.000Z',
       },
+    })
+  })
+
+  it('assigns a reviewer through the review governance route', async () => {
+    mockUpdatePublicationReview.mockResolvedValue({
+      id: 'publication-1',
+      title: 'Team plan',
+      reviewState: 'in_review',
+      riskLevel: 'high',
+      reviewer: {
+        userId: 'reviewer-1',
+        assignedBy: 'admin-1',
+        assignedAt: '2026-05-24T00:00:00.000Z',
+      },
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/publications/publication-1/review', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        reviewState: 'in_review',
+        riskLevel: 'high',
+        reviewerUserId: 'reviewer-1',
+      }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await PATCH(request, {
+      params: Promise.resolve({ publicationVersionId: 'publication-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockUpdatePublicationReview).toHaveBeenCalledWith({
+      actorUserId: 'admin-1',
+      publicationVersionId: 'publication-1',
+      reviewState: 'in_review',
+      riskLevel: 'high',
+      reviewerUserId: 'reviewer-1',
+      reason: undefined,
     })
   })
 
@@ -72,6 +114,7 @@ describe('Publication review API route', () => {
       title: 'Team plan',
       reviewState: null,
       riskLevel: null,
+      reviewer: null,
       updatedAt: '2026-05-24T00:00:00.000Z',
     })
 
@@ -91,6 +134,7 @@ describe('Publication review API route', () => {
       publicationVersionId: 'publication-1',
       reviewState: null,
       riskLevel: null,
+      reviewerUserId: undefined,
       reason: undefined,
     })
   })

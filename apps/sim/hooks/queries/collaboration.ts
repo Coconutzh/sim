@@ -34,6 +34,7 @@ import {
   setActiveWorkgroupContract,
   type UpdateOrganizationAgentSkillPolicyBody,
   type UpdateOrganizationAgentTemplateBody,
+  type UpdatePublicationReviewBody,
   updateOrganizationAgentSkillPolicyContract,
   updateOrganizationAgentTemplateContract,
   updatePublicationDetailsContract,
@@ -733,17 +734,13 @@ export function useUpdatePublicationDetails() {
 export function useUpdatePublicationReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (variables: {
-      publicationVersionId: string
-      reviewState: 'pending' | 'in_review' | 'approved' | 'changes_requested' | 'rejected' | null
-      riskLevel: 'low' | 'medium' | 'high' | 'critical' | null
-      reason?: string
-    }) =>
+    mutationFn: (variables: { publicationVersionId: string } & UpdatePublicationReviewBody) =>
       requestJson(updatePublicationReviewContract, {
         params: { publicationVersionId: variables.publicationVersionId },
         body: {
           reviewState: variables.reviewState,
           riskLevel: variables.riskLevel,
+          reviewerUserId: variables.reviewerUserId,
           reason: variables.reason,
         },
       }),

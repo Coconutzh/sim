@@ -72,6 +72,9 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         visibility: 'workflowPublicationVersion.visibility',
         reviewState: 'workflowPublicationVersion.reviewState',
         riskLevel: 'workflowPublicationVersion.riskLevel',
+        reviewerUserId: 'workflowPublicationVersion.reviewerUserId',
+        reviewerAssignedBy: 'workflowPublicationVersion.reviewerAssignedBy',
+        reviewerAssignedAt: 'workflowPublicationVersion.reviewerAssignedAt',
         parentVersionId: 'workflowPublicationVersion.parentVersionId',
         versionNumber: 'workflowPublicationVersion.versionNumber',
         sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
@@ -93,6 +96,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         name: 'discipline.name',
       },
       member: {
+        id: 'member.id',
         role: 'member.role',
         userId: 'member.userId',
         organizationId: 'member.organizationId',
@@ -1399,11 +1403,15 @@ describe('collaboration service', () => {
         {
           id: 'publication-1',
           title: 'Team plan',
+          organizationId: 'org-1',
           sourceWorkgroupId: 'workgroup-1',
           sourceWorkflowId: 'workflow-1',
           publishedWorkflowId: 'published-workflow-1',
           reviewState: 'pending',
           riskLevel: 'high',
+          reviewerUserId: null,
+          reviewerAssignedBy: null,
+          reviewerAssignedAt: null,
         },
       ],
       [
@@ -1429,6 +1437,7 @@ describe('collaboration service', () => {
       title: 'Team plan',
       reviewState: 'approved',
       riskLevel: 'medium',
+      reviewer: null,
     })
 
     expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflowPublicationVersion)
@@ -1444,8 +1453,75 @@ describe('collaboration service', () => {
           reviewState: 'approved',
           previousRiskLevel: 'high',
           riskLevel: 'medium',
+          previousReviewerUserId: null,
+          reviewerUserId: null,
           sourceWorkgroupId: 'workgroup-1',
           publishedWorkflowId: 'published-workflow-1',
+          publicationEvent: 'review_updated',
+        }),
+      })
+    )
+  })
+
+  it('assigns a publication reviewer from the same organization', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          reviewState: 'pending',
+          riskLevel: 'high',
+          reviewerUserId: null,
+          reviewerAssignedBy: null,
+          reviewerAssignedAt: null,
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'org-member-1' }]
+    )
+
+    await expect(
+      updatePublicationReview({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        reviewState: 'in_review',
+        riskLevel: 'high',
+        reviewerUserId: 'reviewer-1',
+        reason: 'Assign reviewer before approval',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Team plan',
+      reviewState: 'in_review',
+      riskLevel: 'high',
+      reviewer: {
+        userId: 'reviewer-1',
+        assignedBy: 'admin-1',
+      },
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflowPublicationVersion)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.updated',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Assign reviewer before approval',
+        metadata: expect.objectContaining({
+          previousReviewerUserId: null,
+          reviewerUserId: 'reviewer-1',
           publicationEvent: 'review_updated',
         }),
       })

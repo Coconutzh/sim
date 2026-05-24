@@ -38,6 +38,12 @@ export const publicationReviewStateSchema = z.enum([
 export type PublicationReviewState = z.output<typeof publicationReviewStateSchema>
 export const publicationRiskLevelSchema = z.enum(['low', 'medium', 'high', 'critical'])
 export type PublicationRiskLevel = z.output<typeof publicationRiskLevelSchema>
+export const publicationReviewerSchema = z.object({
+  userId: nonEmptyIdSchema,
+  assignedBy: z.string().nullable(),
+  assignedAt: z.string().nullable(),
+})
+export type PublicationReviewer = z.output<typeof publicationReviewerSchema>
 
 export const organizationParamsSchema = z.object({ id: nonEmptyIdSchema })
 export const workgroupParamsSchema = z.object({ workgroupId: nonEmptyIdSchema })
@@ -233,6 +239,7 @@ export const publicationSummarySchema = z.object({
   visibility: publicationVisibilitySchema,
   reviewState: publicationReviewStateSchema.nullable(),
   riskLevel: publicationRiskLevelSchema.nullable(),
+  reviewer: publicationReviewerSchema.nullable(),
   dependsOnPublicationIds: z.array(z.string()),
   targetWorkgroupIds: z.array(z.string()).optional(),
   publishedBy: z.object({ id: z.string(), name: z.string(), avatarUrl: z.string().nullable() }),
@@ -267,6 +274,7 @@ export const publicationTreeSchema = z.object({
       visibility: publicationVisibilitySchema,
       reviewState: publicationReviewStateSchema.nullable(),
       riskLevel: publicationRiskLevelSchema.nullable(),
+      reviewer: publicationReviewerSchema.nullable(),
       sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),
       sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
       agentCode: agentCodeSchema,
@@ -302,6 +310,7 @@ export type UpdatePublicationDetailsBody = z.input<typeof updatePublicationDetai
 export const updatePublicationReviewBodySchema = z.object({
   reviewState: publicationReviewStateSchema.nullable(),
   riskLevel: publicationRiskLevelSchema.nullable(),
+  reviewerUserId: nonEmptyIdSchema.nullable().optional(),
   reason: z.string().trim().max(1000).optional(),
 })
 export type UpdatePublicationReviewBody = z.input<typeof updatePublicationReviewBodySchema>
@@ -339,6 +348,7 @@ export const publicationReviewUpdateSchema = z.object({
   title: z.string(),
   reviewState: publicationReviewStateSchema.nullable(),
   riskLevel: publicationRiskLevelSchema.nullable(),
+  reviewer: publicationReviewerSchema.nullable(),
   updatedAt: z.string(),
 })
 export type PublicationReviewUpdate = z.output<typeof publicationReviewUpdateSchema>

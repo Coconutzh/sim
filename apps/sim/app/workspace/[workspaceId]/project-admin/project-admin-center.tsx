@@ -229,6 +229,11 @@ function formatAgentCode(agentCode: string) {
     .join(' ')
 }
 
+function formatRosterMemberLabel(member: RosterMember | undefined, fallbackUserId?: string | null) {
+  if (!member) return fallbackUserId ? `User ${fallbackUserId}` : 'Unassigned'
+  return member.name ? `${member.name} / ${member.email}` : member.email
+}
+
 function getAgentName(agentCode: string, agents: AgentProfile[]) {
   return agents.find((agent) => agent.code === agentCode)?.name ?? formatAgentCode(agentCode)
 }
@@ -1763,6 +1768,39 @@ export function ProjectAdminCenter() {
     }
   }
 
+  const handlePublicationReviewerAssignment = async (
+    publication: PublicationSummary,
+    reviewerUserId: string | null
+  ) => {
+    const draft = getPublicationReviewDraft(publication)
+    const reviewer = rosterMembers.find((member) => member.userId === reviewerUserId)
+    try {
+      const result = await updatePublicationReview.mutateAsync({
+        publicationVersionId: publication.id,
+        reviewState: draft.reviewState || null,
+        riskLevel: draft.riskLevel || null,
+        reviewerUserId,
+        reason: reviewerUserId
+          ? 'Project admin assigned publication reviewer'
+          : 'Project admin cleared publication reviewer',
+      })
+      setPublicationGovernanceStatus(
+        reviewerUserId
+          ? `Assigned ${formatRosterMemberLabel(reviewer, reviewerUserId)} to review ${result.publication.title}.`
+          : `Cleared reviewer for ${result.publication.title}.`
+      )
+      setPublicationReviewDrafts((drafts) => ({
+        ...drafts,
+        [publication.id]: {
+          reviewState: result.publication.reviewState ?? '',
+          riskLevel: result.publication.riskLevel ?? '',
+        },
+      }))
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
   const handlePublicationLifecycle = async (
     publication: PublicationSummary,
     action: 'archive' | 'retract' | 'restore'
@@ -2392,7 +2430,7 @@ export function ProjectAdminCenter() {
                         </div>
                       )}
                     </div>
-                    <div className='grid gap-2 sm:grid-cols-2'>
+                    <div className='grid gap-2 sm:grid-cols-3'>
                       <select
                         value={draft.reviewState}
                         onChange={(event) =>
@@ -2429,6 +2467,34 @@ export function ProjectAdminCenter() {
                           </option>
                         ))}
                       </select>
+                      <select
+                        value={publication.reviewer?.userId ?? ''}
+                        onChange={(event) =>
+                          void handlePublicationReviewerAssignment(
+                            publication,
+                            event.target.value || null
+                          )
+                        }
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                        aria-label={`Reviewer for ${publication.title}`}
+                        disabled={updatePublicationReview.isPending}
+                      >
+                        <option value=''>Unassigned reviewer</option>
+                        {rosterMembers.map((member) => (
+                          <option key={member.userId} value={member.userId}>
+                            {formatRosterMemberLabel(member)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className='text-[11px] text-[var(--text-muted)] sm:col-span-3'>
+                        Reviewer:{' '}
+                        {formatRosterMemberLabel(
+                          rosterMembers.find(
+                            (member) => member.userId === publication.reviewer?.userId
+                          ),
+                          publication.reviewer?.userId
+                        )}
+                      </div>
                     </div>
                     <div className='flex flex-wrap items-center gap-2 xl:justify-end'>
                       <button
@@ -3671,6 +3737,17 @@ export function ProjectAdminCenter() {
                       )}
                     >
                       {selectedPublication.riskLevel ?? 'None'}
+                    </span>
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span>Reviewer</span>
+                    <span className='text-right text-[var(--text-primary)]'>
+                      {formatRosterMemberLabel(
+                        rosterMembers.find(
+                          (member) => member.userId === selectedPublication.reviewer?.userId
+                        ),
+                        selectedPublication.reviewer?.userId
+                      )}
                     </span>
                   </div>
                   <div className='flex items-center justify-between gap-3'>
