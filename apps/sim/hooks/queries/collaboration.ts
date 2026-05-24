@@ -21,6 +21,7 @@ import {
   listAgentProfilesContract,
   listDisciplinesContract,
   listMyWorkgroupsContract,
+  listOrganizationAgentTemplatesContract,
   listOrganizationWorkgroupActivityContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
@@ -29,6 +30,8 @@ import {
   type PublicationSummary,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
+  type UpdateOrganizationAgentTemplateBody,
+  updateOrganizationAgentTemplateContract,
   updatePublicationLifecycleContract,
   updatePublicationReviewContract,
   updatePublicationVisibilityContract,
@@ -48,6 +51,8 @@ export const collaborationKeys = {
   organizationWorkgroupLists: () => [...collaborationKeys.organizations(), 'list'] as const,
   organizationWorkgroups: (organizationId?: string) =>
     [...collaborationKeys.organizationWorkgroupLists(), organizationId ?? ''] as const,
+  organizationAgentTemplates: (organizationId?: string) =>
+    [...collaborationKeys.organizations(), 'agent-templates', organizationId ?? ''] as const,
   workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
   workgroupLists: () => [...collaborationKeys.workgroups(), 'list'] as const,
   myWorkgroups: () => [...collaborationKeys.workgroupLists(), 'me'] as const,
@@ -186,6 +191,43 @@ export function useCreateWorkgroup() {
         queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
       })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function useOrganizationAgentTemplates(organizationId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationAgentTemplates(organizationId),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationAgentTemplatesContract, {
+        params: { id: organizationId as string },
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useUpdateOrganizationAgentTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & UpdateOrganizationAgentTemplateBody) =>
+      requestJson(updateOrganizationAgentTemplateContract, {
+        params: { id: variables.organizationId },
+        body: {
+          agentCode: variables.agentCode,
+          projectInstructions: variables.projectInstructions,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationAgentTemplates(variables.organizationId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() })
     },
   })
 }

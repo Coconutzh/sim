@@ -100,6 +100,7 @@ export const auditMock = {
     MEMBER_REMOVED: 'member.removed',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     WORKGROUP_ARCHIVED: 'workgroup.archived',
+    AGENT_TEMPLATE_UPDATED: 'agent_template.updated',
     NOTIFICATION_CREATED: 'notification.created',
     NOTIFICATION_UPDATED: 'notification.updated',
     NOTIFICATION_DELETED: 'notification.deleted',

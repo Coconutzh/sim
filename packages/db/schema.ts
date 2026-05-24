@@ -1163,6 +1163,31 @@ export const agentProfile = pgTable(
   })
 )
 
+export const organizationAgentTemplate = pgTable(
+  'organization_agent_template',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    agentCode: text('agent_code').notNull(),
+    projectInstructions: text('project_instructions').notNull().default(''),
+    updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIdIdx: index('organization_agent_template_organization_id_idx').on(
+      table.organizationId
+    ),
+    agentCodeIdx: index('organization_agent_template_agent_code_idx').on(table.agentCode),
+    organizationAgentUnique: uniqueIndex('organization_agent_template_org_agent_unique').on(
+      table.organizationId,
+      table.agentCode
+    ),
+  })
+)
+
 export const discipline = pgTable(
   'discipline',
   {

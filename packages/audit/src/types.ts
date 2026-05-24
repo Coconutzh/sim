@@ -108,6 +108,9 @@ export const AuditAction = {
   // Workgroups
   WORKGROUP_ARCHIVED: 'workgroup.archived',
 
+  // Agent templates
+  AGENT_TEMPLATE_UPDATED: 'agent_template.updated',
+
   // Notifications
   NOTIFICATION_CREATED: 'notification.created',
   NOTIFICATION_UPDATED: 'notification.updated',

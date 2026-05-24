@@ -5,6 +5,7 @@ import {
   auditLog,
   discipline,
   member,
+  organizationAgentTemplate,
   permissions,
   personalCanvasWorkspace,
   settings,
@@ -26,6 +27,7 @@ import {
   AGENT_PROFILES,
   DISCIPLINES,
   getAgentProfile,
+  isAgentCode,
   workspacePermissionForWorkgroupRole,
 } from '@/lib/collaboration/definitions'
 import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
@@ -198,6 +200,99 @@ export async function listAgentProfiles() {
       .filter((item) => item.agentCode === profile.code)
       .map((item) => item.code),
   }))
+}
+
+function formatOrganizationAgentTemplate(
+  profile: (typeof AGENT_PROFILES)[keyof typeof AGENT_PROFILES],
+  disciplineCodes: string[],
+  template?: { projectInstructions: string; updatedAt: Date } | null
+) {
+  return {
+    ...profile,
+    disciplineCodes,
+    projectInstructions: template?.projectInstructions ?? '',
+    updatedAt: template?.updatedAt.toISOString() ?? null,
+  }
+}
+
+export async function listOrganizationAgentTemplates(params: {
+  userId: string
+  organizationId: string
+}) {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+  const [disciplineRows, templateRows] = await Promise.all([
+    listDisciplines(),
+    db
+      .select({
+        agentCode: organizationAgentTemplate.agentCode,
+        projectInstructions: organizationAgentTemplate.projectInstructions,
+        updatedAt: organizationAgentTemplate.updatedAt,
+      })
+      .from(organizationAgentTemplate)
+      .where(eq(organizationAgentTemplate.organizationId, params.organizationId)),
+  ])
+  const templateByAgent = new Map(templateRows.map((row) => [row.agentCode, row]))
+
+  return Object.values(AGENT_PROFILES).map((profile) =>
+    formatOrganizationAgentTemplate(
+      profile,
+      disciplineRows.filter((item) => item.agentCode === profile.code).map((item) => item.code),
+      templateByAgent.get(profile.code)
+    )
+  )
+}
+
+export async function updateOrganizationAgentTemplate(params: {
+  actorUserId: string
+  organizationId: string
+  agentCode: string
+  projectInstructions: string
+}) {
+  await assertOrganizationAdmin(params.actorUserId, params.organizationId)
+  if (!isAgentCode(params.agentCode)) throw new Error('Agent template not found')
+
+  const now = new Date()
+  const templateId = generateId()
+  const projectInstructions = params.projectInstructions.trim()
+  await db
+    .insert(organizationAgentTemplate)
+    .values({
+      id: templateId,
+      organizationId: params.organizationId,
+      agentCode: params.agentCode,
+      projectInstructions,
+      updatedBy: params.actorUserId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [organizationAgentTemplate.organizationId, organizationAgentTemplate.agentCode],
+      set: { projectInstructions, updatedBy: params.actorUserId, updatedAt: now },
+    })
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action: AuditAction.AGENT_TEMPLATE_UPDATED,
+    resourceType: AuditResourceType.ORGANIZATION,
+    resourceId: params.organizationId,
+    resourceName: getAgentProfile(params.agentCode).name,
+    description: projectInstructions
+      ? `Updated project instructions for ${getAgentProfile(params.agentCode).name}`
+      : `Cleared project instructions for ${getAgentProfile(params.agentCode).name}`,
+    metadata: {
+      organizationId: params.organizationId,
+      agentCode: params.agentCode,
+      hasProjectInstructions: Boolean(projectInstructions),
+    },
+  })
+
+  return formatOrganizationAgentTemplate(
+    getAgentProfile(params.agentCode),
+    (await listDisciplines())
+      .filter((item) => item.agentCode === params.agentCode)
+      .map((item) => item.code),
+    { projectInstructions, updatedAt: now }
+  )
 }
 
 async function getDisciplineById(disciplineId: string) {
@@ -1138,7 +1233,11 @@ export async function listOrganizationWorkgroupActivity(params: {
   const workspaceIds = scopedWorkgroups
     .map((entry) => entry.teamWorkspaceId)
     .filter((workspaceId): workspaceId is string => Boolean(workspaceId))
+  const includeProjectActivity = !params.workgroupId && !params.disciplineId
   const scopeConditions = [
+    ...(includeProjectActivity
+      ? [sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`]
+      : []),
     ...workgroupIds.map(
       (workgroupId) => sql`${auditLog.metadata}->>'workgroupId' = ${workgroupId}`
     ),
@@ -2235,7 +2334,24 @@ export async function resolveAgentForWorkspace(params: { userId: string; workspa
     .where(eq(workgroup.id, workgroupId))
     .limit(1)
   if (!row) throw new Error('Workgroup not found')
-  const agent = getAgentProfile(row.agentCode ?? 'chief_director')
+  const baseAgent = getAgentProfile(row.agentCode ?? 'chief_director')
+  const [templateRow] = await db
+    .select({ projectInstructions: organizationAgentTemplate.projectInstructions })
+    .from(organizationAgentTemplate)
+    .where(
+      and(
+        eq(organizationAgentTemplate.organizationId, row.organizationId),
+        eq(organizationAgentTemplate.agentCode, baseAgent.code)
+      )
+    )
+    .limit(1)
+  const projectInstructions = templateRow?.projectInstructions.trim()
+  const agent = projectInstructions
+    ? {
+        ...baseAgent,
+        defaultSystemPrompt: `${baseAgent.defaultSystemPrompt}\n\n项目级补充说明：\n${projectInstructions}`,
+      }
+    : baseAgent
   const skillRows = await db
     .select({
       id: skill.id,

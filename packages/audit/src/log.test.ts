@@ -46,6 +46,7 @@ describe('AuditAction', () => {
     expect(AuditAction.MEMBER_INVITED).toBe('member.invited')
     expect(AuditAction.MEMBER_BATCH_ASSIGNED).toBe('member.batch_assigned')
     expect(AuditAction.WORKGROUP_ARCHIVED).toBe('workgroup.archived')
+    expect(AuditAction.AGENT_TEMPLATE_UPDATED).toBe('agent_template.updated')
     expect(AuditAction.API_KEY_CREATED).toBe('api_key.created')
     expect(AuditAction.ORGANIZATION_CREATED).toBe('organization.created')
   })

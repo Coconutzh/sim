@@ -33,9 +33,11 @@ import {
   useCreateWorkgroup,
   useDisciplines,
   useMyWorkgroups,
+  useOrganizationAgentTemplates,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
   useShowcasePublications,
+  useUpdateOrganizationAgentTemplate,
 } from '@/hooks/queries/collaboration'
 import { type RosterMember, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
@@ -64,6 +66,7 @@ const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: 'member.role_changed', label: 'Role updated' },
   { value: 'member.removed', label: 'Member removed' },
   { value: 'workgroup.archived', label: 'Team archived' },
+  { value: 'agent_template.updated', label: 'Agent template updated' },
   { value: 'publication.created', label: 'Published showcase' },
   { value: 'publication.updated', label: 'Updated publication' },
   { value: 'publication.archived', label: 'Archived publication' },
@@ -257,6 +260,8 @@ function formatActivityAction(action: string) {
       return 'Member removed'
     case 'workgroup.archived':
       return 'Team archived'
+    case 'agent_template.updated':
+      return 'Agent template updated'
     case 'publication.created':
       return 'Published showcase'
     case 'publication.updated':
@@ -320,12 +325,16 @@ export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
   const archiveWorkgroup = useArchiveWorkgroup()
+  const updateAgentTemplate = useUpdateOrganizationAgentTemplate()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
   const [archiveTeamStatus, setArchiveTeamStatus] = useState<string | null>(null)
+  const [selectedAgentTemplateCode, setSelectedAgentTemplateCode] = useState('')
+  const [agentTemplateDrafts, setAgentTemplateDrafts] = useState<Record<string, string>>({})
+  const [agentTemplateStatus, setAgentTemplateStatus] = useState<string | null>(null)
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
   const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
@@ -358,6 +367,8 @@ export function ProjectAdminCenter() {
   const activeWorkgroupId = activeWorkgroup?.id
   const { data: organizationWorkgroupsData, isLoading: isLoadingOrganizationWorkgroups } =
     useOrganizationWorkgroups(organizationId)
+  const { data: agentTemplatesData, isLoading: isLoadingAgentTemplates } =
+    useOrganizationAgentTemplates(organizationId)
   const { data: organizationRoster, isLoading: isLoadingOrganizationRoster } =
     useOrganizationRoster(organizationId)
   const { data: disciplinesData, isLoading: isLoadingDisciplines } = useDisciplines()
@@ -371,6 +382,7 @@ export function ProjectAdminCenter() {
   const rosterMembers = organizationRoster?.members ?? []
   const disciplines = disciplinesData?.disciplines ?? []
   const agents = agentsData?.agents ?? []
+  const agentTemplates = agentTemplatesData?.templates ?? []
   const publications = publicationsData?.publications ?? []
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
@@ -378,6 +390,7 @@ export function ProjectAdminCenter() {
   const isLoading =
     isLoadingMyWorkgroups ||
     isLoadingOrganizationWorkgroups ||
+    isLoadingAgentTemplates ||
     isLoadingDisciplines ||
     isLoadingAgents ||
     isLoadingPublications
@@ -401,6 +414,14 @@ export function ProjectAdminCenter() {
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
   )
+  const selectedAgentTemplateCodeValue = selectedAgentTemplateCode || agentTemplates[0]?.code || ''
+  const selectedAgentTemplate = agentTemplates.find(
+    (template) => template.code === selectedAgentTemplateCodeValue
+  )
+  const selectedAgentTemplateDraft =
+    agentTemplateDrafts[selectedAgentTemplateCodeValue] ??
+    selectedAgentTemplate?.projectInstructions ??
+    ''
   const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
@@ -448,6 +469,12 @@ export function ProjectAdminCenter() {
       batchAssignmentTargets.length > 0 &&
       !addWorkgroupMember.isPending &&
       !batchAddWorkgroupMembers.isPending
+  )
+  const canSaveAgentTemplate = Boolean(
+    organizationId &&
+      selectedAgentTemplate &&
+      selectedAgentTemplateDraft.trim().length <= 4000 &&
+      !updateAgentTemplate.isPending
   )
   const activityFilterBase = useMemo(
     () => ({
@@ -533,6 +560,24 @@ export function ProjectAdminCenter() {
       }
     } catch (error) {
       setArchiveTeamStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleSaveAgentTemplate = async () => {
+    if (!organizationId || !selectedAgentTemplate) return
+    try {
+      const result = await updateAgentTemplate.mutateAsync({
+        organizationId,
+        agentCode: selectedAgentTemplate.code,
+        projectInstructions: selectedAgentTemplateDraft,
+      })
+      setAgentTemplateStatus(`Updated ${result.template.name} project instructions.`)
+      setAgentTemplateDrafts((drafts) => ({
+        ...drafts,
+        [result.template.code]: result.template.projectInstructions,
+      }))
+    } catch (error) {
+      setAgentTemplateStatus(readErrorMessage(error))
     }
   }
 
@@ -1171,6 +1216,106 @@ export function ProjectAdminCenter() {
                 </div>
               ))
             )}
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Sparkles className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Project Agent templates
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Add project-wide instructions that are appended to each discipline Agent prompt.
+              </p>
+            </div>
+          </div>
+          <div className='grid gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)]'>
+            <div className='grid gap-2'>
+              <label
+                htmlFor='project-agent-template'
+                className='font-medium text-[12px] text-[var(--text-primary)]'
+              >
+                Agent
+              </label>
+              <select
+                id='project-agent-template'
+                value={selectedAgentTemplateCodeValue}
+                onChange={(event) => {
+                  setSelectedAgentTemplateCode(event.target.value)
+                  setAgentTemplateStatus(null)
+                }}
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+              >
+                {agentTemplates.length === 0 ? (
+                  <option value=''>No Agent template available</option>
+                ) : (
+                  agentTemplates.map((template) => (
+                    <option key={template.code} value={template.code}>
+                      {template.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              {selectedAgentTemplate && (
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] text-[var(--text-muted)]'>
+                  <div className='font-medium text-[var(--text-primary)]'>
+                    {selectedAgentTemplate.disciplineCodes.length} discipline
+                    {selectedAgentTemplate.disciplineCodes.length === 1 ? '' : 's'}
+                  </div>
+                  <div className='mt-1'>
+                    {selectedAgentTemplate.disciplineCodes.length > 0
+                      ? selectedAgentTemplate.disciplineCodes.join(', ')
+                      : 'No discipline currently maps to this Agent.'}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className='grid gap-3'>
+              <div>
+                <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                  Base system prompt
+                </div>
+                <p className='mt-1 line-clamp-3 text-[12px] text-[var(--text-muted)]'>
+                  {selectedAgentTemplate?.defaultSystemPrompt ?? 'Select an Agent template.'}
+                </p>
+              </div>
+              <textarea
+                value={selectedAgentTemplateDraft}
+                onChange={(event) => {
+                  setAgentTemplateDrafts((drafts) => ({
+                    ...drafts,
+                    [selectedAgentTemplateCodeValue]: event.target.value,
+                  }))
+                  setAgentTemplateStatus(null)
+                }}
+                placeholder='Project-wide constraints, tone, safety checks, delivery standards, or review priorities for this Agent.'
+                className='min-h-[120px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                disabled={!selectedAgentTemplate}
+              />
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <span className='text-[11px] text-[var(--text-muted)]'>
+                  {selectedAgentTemplateDraft.trim().length}/4000 characters used.
+                </span>
+                <button
+                  type='button'
+                  className={buttonVariants({ variant: 'primary' })}
+                  disabled={!canSaveAgentTemplate}
+                  onClick={() => void handleSaveAgentTemplate()}
+                >
+                  {updateAgentTemplate.isPending ? (
+                    <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                  ) : null}
+                  Save Agent template
+                </button>
+              </div>
+              {agentTemplateStatus && (
+                <div className='text-[12px] text-[var(--text-muted)]' aria-live='polite'>
+                  {agentTemplateStatus}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

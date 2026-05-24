@@ -169,6 +169,15 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         createdAt: 'agentSkillBinding.createdAt',
         updatedAt: 'agentSkillBinding.updatedAt',
       },
+      organizationAgentTemplate: {
+        id: 'organizationAgentTemplate.id',
+        organizationId: 'organizationAgentTemplate.organizationId',
+        agentCode: 'organizationAgentTemplate.agentCode',
+        projectInstructions: 'organizationAgentTemplate.projectInstructions',
+        updatedBy: 'organizationAgentTemplate.updatedBy',
+        createdAt: 'organizationAgentTemplate.createdAt',
+        updatedAt: 'organizationAgentTemplate.updatedAt',
+      },
       auditLog: {
         id: 'auditLog.id',
         workspaceId: 'auditLog.workspaceId',
@@ -200,10 +209,16 @@ vi.mock('@sim/audit', () => ({
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     MEMBER_REMOVED: 'member.removed',
     WORKGROUP_ARCHIVED: 'workgroup.archived',
+    AGENT_TEMPLATE_UPDATED: 'agent_template.updated',
     SKILL_UPDATED: 'skill.updated',
     WORKSPACE_CREATED: 'workspace.created',
   },
-  AuditResourceType: { PUBLICATION: 'publication', SKILL: 'skill', WORKSPACE: 'workspace' },
+  AuditResourceType: {
+    ORGANIZATION: 'organization',
+    PUBLICATION: 'publication',
+    SKILL: 'skill',
+    WORKSPACE: 'workspace',
+  },
   recordAudit: vi.fn(),
 }))
 vi.mock('@sim/logger', () => ({
@@ -254,9 +269,12 @@ import {
   getPublication,
   getPublicationTree,
   getTeamWorkspace,
+  listOrganizationAgentTemplates,
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
+  resolveAgentForWorkspace,
+  updateOrganizationAgentTemplate,
   updatePublicationLifecycleStatus,
   updatePublicationReview,
   updatePublicationVisibility,
@@ -1473,6 +1491,113 @@ describe('collaboration service', () => {
           scope: 'team_override',
         },
       ],
+    })
+  })
+
+  it('lists project Agent templates with organization prompt overrides', async () => {
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          id: 'discipline-stage',
+          code: 'stage_design',
+          name: 'Stage design',
+          description: 'Stage',
+          agentCode: 'stage_design',
+          sortOrder: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [
+        {
+          agentCode: 'stage_design',
+          projectInstructions: 'Prioritize constructability and cue safety.',
+          updatedAt: new Date('2026-05-24T00:00:00.000Z'),
+        },
+      ]
+    )
+
+    await expect(
+      listOrganizationAgentTemplates({ userId: 'org-admin-1', organizationId: 'org-1' })
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'stage_design',
+          disciplineCodes: ['stage_design'],
+          projectInstructions: 'Prioritize constructability and cue safety.',
+          updatedAt: '2026-05-24T00:00:00.000Z',
+        }),
+      ])
+    )
+  })
+
+  it('updates a project Agent template and records an audit event', async () => {
+    mockResultsQueue.push([{ role: 'owner' }], [])
+
+    await expect(
+      updateOrganizationAgentTemplate({
+        actorUserId: 'org-admin-1',
+        organizationId: 'org-1',
+        agentCode: 'stage_design',
+        projectInstructions: 'Require safety notes before approving stage changes.',
+      })
+    ).resolves.toMatchObject({
+      code: 'stage_design',
+      projectInstructions: 'Require safety notes before approving stage changes.',
+    })
+
+    expect(mockDb.insert).toHaveBeenCalledWith(schemaMock.organizationAgentTemplate)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'agent_template.updated',
+        resourceType: 'organization',
+        resourceId: 'org-1',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          agentCode: 'stage_design',
+          hasProjectInstructions: true,
+        }),
+      })
+    )
+  })
+
+  it('injects project Agent template instructions into resolved workspace agents', async () => {
+    mockResultsQueue.push(
+      [],
+      [{ workgroupId: 'workgroup-1', workspaceId: 'workspace-1' }],
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          workgroupId: 'workgroup-1',
+          workgroupName: 'Stage',
+          disciplineId: 'discipline-stage',
+          disciplineCode: 'stage_design',
+          disciplineName: 'Stage design',
+          agentCode: 'stage_design',
+          organizationId: 'org-1',
+        },
+      ],
+      [{ projectInstructions: 'Use the project safety checklist before answering.' }],
+      []
+    )
+
+    await expect(
+      resolveAgentForWorkspace({ userId: 'member-1', workspaceId: 'workspace-1' })
+    ).resolves.toMatchObject({
+      agent: {
+        code: 'stage_design',
+        defaultSystemPrompt: expect.stringContaining(
+          'Use the project safety checklist before answering.'
+        ),
+      },
     })
   })
 

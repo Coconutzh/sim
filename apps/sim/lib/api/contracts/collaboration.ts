@@ -69,6 +69,17 @@ export const agentProfileSchema = z.object({
 })
 export type AgentProfile = z.output<typeof agentProfileSchema>
 
+export const agentTemplateSchema = z.object({
+  code: agentCodeSchema,
+  name: z.string(),
+  description: z.string(),
+  defaultSystemPrompt: z.string(),
+  disciplineCodes: z.array(z.string()),
+  projectInstructions: z.string(),
+  updatedAt: z.string().nullable(),
+})
+export type AgentTemplate = z.output<typeof agentTemplateSchema>
+
 export const workgroupSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -175,6 +186,17 @@ export type BatchAddWorkgroupMembersBody = z.input<typeof batchAddWorkgroupMembe
 
 export const updateWorkgroupMemberBodySchema = z.object({ role: workgroupRoleSchema })
 export type UpdateWorkgroupMemberBody = z.input<typeof updateWorkgroupMemberBodySchema>
+
+export const updateOrganizationAgentTemplateBodySchema = z.object({
+  agentCode: agentCodeSchema,
+  projectInstructions: z
+    .string()
+    .trim()
+    .max(4000, 'Project instructions must be 4000 characters or fewer'),
+})
+export type UpdateOrganizationAgentTemplateBody = z.input<
+  typeof updateOrganizationAgentTemplateBodySchema
+>
 
 export const createPersonalWorkspaceBodySchema = z.object({
   name: z.string().trim().min(1, 'Canvas name is required').max(120),
@@ -501,6 +523,27 @@ export const createOrganizationWorkgroupContract = defineRouteContract({
         teamWorkspaceId: z.string(),
       }),
     }),
+  },
+})
+
+export const listOrganizationAgentTemplatesContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/agent-templates',
+  params: organizationParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ templates: z.array(agentTemplateSchema) }),
+  },
+})
+
+export const updateOrganizationAgentTemplateContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/organizations/[id]/agent-templates',
+  params: organizationParamsSchema,
+  body: updateOrganizationAgentTemplateBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ template: agentTemplateSchema }),
   },
 })
 
