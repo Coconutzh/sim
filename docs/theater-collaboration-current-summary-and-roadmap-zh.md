@@ -16,9 +16,9 @@
 - 原主界面 `/workspace/[workspaceId]` 已成为主要承载外壳，不再维护新的独立 `/workbench` shell。
 - 普通成员可以在当前团队上下文中创建多个个人草稿画布，并进入默认节点图。
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
-- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明。
+- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明和项目级发布状态树治理。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档和项目级 Agent 模板首批能力；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板和项目级发布治理首批能力；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `0e79d8334` | Phase 10 项目管理员中心增加项目级发布治理写操作 |
 | `e49f51318` | Phase 10 项目管理员中心增加项目级 Agent 模板 |
 | `e32b0f1cf` | Phase 10 项目管理员中心增加团队归档操作 |
 | `0dbb16899` | 项目级 activity 增加批量成员分配聚合事件 |
@@ -196,7 +197,7 @@
 
 - `/workspace/[workspaceId]/project-admin` 已在原 shell 下新增首个只读项目管理员中心。
 - Sidebar 会在当前用户具备组织 owner/admin 语义时显示 `Project admin` 入口；普通团队管理员仍使用 `Team management`。
-- 项目管理员中心复用现有 `useMyWorkgroups`、`useOrganizationWorkgroups`、`useDisciplines`、`useAgentProfiles` 和 `useShowcasePublications`，不新增写 API，也不改变权限边界。
+- 项目管理员中心复用现有 `useMyWorkgroups`、`useOrganizationWorkgroups`、`useDisciplines`、`useAgentProfiles`，并新增组织级 publication list 读取能力；写操作继续走合约路由和服务层权限判断。
 - 首版概览显示工种覆盖率、团队数量、成员数量、当前可见展示发布数量，以及 critical risk、未审核发布、缺失 team canvas 的治理 watchlist。
 - 项目管理员可在中心页创建新的工种团队；创建动作复用现有 `useCreateWorkgroup`、`POST /api/organizations/[id]/workgroups` 和 `createWorkgroup` 服务，仍由 `assertOrganizationAdmin` 保护，并自动生成 team canvas 与默认 workflow graph。
 - 项目管理员可在中心页从组织 roster 选择既有用户，或按 email/user ID 手动输入，把用户分配到任意团队并选择普通成员或团队管理员角色；成员分配表单会基于 roster 成员当前 team canvas access 和团队人数推荐一个尚未加入且人数最少的团队，并自动作为默认目标；动作复用 `useOrganizationRoster`、`useAddWorkgroupMember`、`POST /api/workgroups/[workgroupId]/members`、`addWorkgroupMember`，仍走既有 workgroup admin/org admin 权限判断。
@@ -205,6 +206,7 @@
 - 项目管理员中心已补团队归档首版：新增 `POST /api/workgroups/[workgroupId]/archive` 合约路由和 `archiveWorkgroup` 服务，仅组织 owner/admin 可将 workgroup 与对应 team workspace 一起标记 archived；用户团队列表、团队画布权限和发布权限默认排除已归档团队，并写入 `workgroup.archived` activity。
 - 项目管理员中心已补项目级 Agent 模板首版：新增 `organization_agent_template` 表、`GET/PATCH /api/organizations/[id]/agent-templates` 合约路由、React Query hook 和 UI 区块；项目管理员可按 Agent 查看关联工种、预览基础 system prompt，并维护会追加到 `resolveAgentForWorkspace` 返回 prompt 的项目级补充说明。
 - 项目级 Agent 模板更新会写入 `agent_template.updated` 审计事件；项目级 activity 支持按该动作筛选，且项目级审计行仅在未按团队/工种下钻时进入全项目 activity。
+- 项目管理员中心已补项目级发布状态树治理写操作首版：新增 `GET /api/organizations/[id]/publications` 合约路由和 `useOrganizationPublications`，组织管理员可跨全组织读取 published、superseded、archived、retracted 发布版本；中心页可直接维护 review/risk，执行 archive、retract、restore，底层复用既有 publication lifecycle/review 服务审计和权限边界。
 - 项目管理员批量分配已补首版建议填充：基于 organization roster 和当前所选团队的 team canvas access map，提示尚未拥有该团队画布访问权的 roster 成员，并可一键把建议 email 合并进批量输入框。
 - 项目管理员批量分配已补文件导入首版：可上传 CSV/TSV/TXT，前端提取 email 或 user ID 并合并进现有批量输入框，仍由管理员显式点击 `Assign batch transaction` 后才批量提交。
 - 项目管理员中心新增 `Project activity filters`，可在项目级入口按团队、工种、动作和搜索文本筛选 audit-backed 最近活动；该能力复用新的 `useOrganizationWorkgroupActivity` / `GET /api/organizations/[id]/workgroups/activity`，不走 enterprise audit subscription gate。
@@ -213,7 +215,7 @@
 
 仍需继续：
 
-- 这仍只是 Phase 10 的阶段性首版，不包含完整状态树治理写操作；批量导入目前仍只是前端文件解析。
+- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk 与 lifecycle 首批写操作，但仍缺少冲突处理、批量治理、版本 diff preview 和发布详情 drawer；批量导入目前仍只是前端文件解析。
 
 ### 3.9 权限与安全加固
 
@@ -233,14 +235,14 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 最近已通过或复跑的关键校验包括：
 
 ```powershell
-Set-Location apps\sim; bunx vitest run lib/collaboration/service.test.ts lib/collaboration/authz.test.ts
+Set-Location apps\sim; bunx vitest run lib/collaboration/service.test.ts app/api/publications/[publicationVersionId]/route.test.ts app/api/publications/[publicationVersionId]/review/route.test.ts app/api/publications/[publicationVersionId]/visibility/route.test.ts
 bun run check:api-validation:strict
 git diff --check
 ```
 
 已知情况：
 
-- `bun run check:api-validation:strict` 已因新增 organization agent template route 更新 route baseline 到 `total=753, zod=728, nonZod=25` 后通过。
+- `bun run check:api-validation:strict` 已因新增 organization publications route 更新 route baseline 到 `total=754, zod=729, nonZod=25` 后通过。
 - `bun run type-check` 仍退出 1，但按本轮触碰路径过滤没有匹配错误；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error；PowerShell 仍可能提示文档 CRLF/LF 警告。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
@@ -324,15 +326,15 @@ git diff --check
 
 建议任务：
 
-1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 首版已完成，并已补项目级创建团队、单用户成员分配、批量成员分配、团队归档、项目级 Agent 模板和 activity drilldown 入口；后续继续扩展其他项目级管理操作。
+1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 首版已完成，并已补项目级创建团队、单用户成员分配、批量成员分配、团队归档、项目级 Agent 模板、项目级发布治理和 activity drilldown 入口；后续继续扩展其他项目级管理操作。
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览，且项目级 Agent prompt 补充说明已按 Agent 维度落地；后续补工种启用/停用、显示名和更细的 Agent 策略。
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队和归档团队；后续补设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
-5. 全局状态树治理：查看所有团队发布、风险、冲突、过期、未提交团队，并补项目级治理写操作。
+5. 全局状态树治理：组织级读取所有团队发布版本和首批 review/risk/lifecycle 写操作已落地；后续补冲突处理、过期/未提交团队治理、批量操作和版本 diff preview。
 6. Agent 模板：项目级 prompt 附加说明首版已落地；后续补默认 Skill、风险 Skill 禁用策略和模板变更影响预览。
 7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围和 actor 精确筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件。
 
-建议提交：下一步可拆为 `Govern publication state tree from project admin` 或 `Add project Agent skill policies`。
+建议提交：下一步可拆为 `Add publication governance drawer` 或 `Add project Agent skill policies`。
 
 ### Phase 11：Legacy workspace 入口迁移
 
