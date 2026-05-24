@@ -301,6 +301,21 @@ const organizationInvitationListItemSchema = z.object({
   inviterEmail: z.string().nullable(),
 })
 
+export const organizationInvitationResultStatusSchema = z.enum([
+  'sent',
+  'existing_member',
+  'pending_invitation',
+  'invalid_email',
+  'failed',
+])
+
+export const organizationInvitationResultSchema = z.object({
+  email: z.string(),
+  status: organizationInvitationResultStatusSchema,
+  message: z.string(),
+  invitationId: z.string().optional(),
+})
+
 export const getOrganizationRosterContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/roster',
@@ -381,6 +396,7 @@ export const inviteOrganizationMembersContract = defineRouteContract({
             existingMembers: z.array(z.string()),
             pendingInvitations: z.array(z.string()),
             invalidEmails: z.array(z.string()),
+            emailResults: z.array(organizationInvitationResultSchema),
             workspaceGrantsPerInvite: z.number(),
             seatInfo: z
               .object({
@@ -670,3 +686,7 @@ export type RosterMember = z.infer<typeof rosterMemberSchema>
 export type RosterPendingInvitation = z.infer<typeof rosterPendingInvitationSchema>
 export type OrganizationMembersResponse = z.infer<typeof listOrganizationMembersResponseSchema>
 export type OrganizationMemberDetail = z.output<typeof organizationMemberDetailSchema>
+export type OrganizationInvitationResult = z.infer<typeof organizationInvitationResultSchema>
+export type OrganizationInvitationResultStatus = z.infer<
+  typeof organizationInvitationResultStatusSchema
+>

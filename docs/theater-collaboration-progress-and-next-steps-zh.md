@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -266,7 +266,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | --- | --- |
 | Phase 5 发布流程与全局状态树 | 完整发布流程、状态树更新、可见范围广播、发布版本生命周期 |
 | Phase 6 跨画布节点复制 | 已有个人/团队复制、ID 重写、敏感字段剥离、源读/目标写权限矩阵、显式 edgeIds；普通编辑器目标跳转/高亮仍可补 |
-| Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab；框选/触摸选择仍待补 |
+| Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
 | Phase 10 项目管理员中心 | 工种/团队/成员分配、全局状态树、Agent 模板、权限和审计 |
@@ -358,7 +358,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 当前分屏第一切片是“只读预览 + 显式复制”，还不是左右两侧完整可编辑 ReactFlow；后续如果要做真正双编辑器，需要拆分 workflow store / selection / viewport 为 pane-scoped 状态。
-- 当前复制选择已支持多节点点击、显式边选择、目标 pane 节点/边高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab；框选/触摸选择仍需继续做。
+- 当前复制选择已支持多节点点击、显式边选择、目标 pane 节点/边高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍需继续做。
 - 团队管理员入口需要继续从通用组织设置页迁出；下一切片先补团队成员/初始化页，Phase 9 再补发布和 Agent Skill 管理。
 
 ### 5.8 原 shell 团队管理入口切片
@@ -402,7 +402,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- 当前团队邀请已覆盖发送、批量发送、接受后加入 workgroup、pending 列表、取消、重发和过期状态视觉；后续仍可补更细的错误分类和批量结果逐项反馈。
+- 当前团队邀请已覆盖发送、批量发送、接受后加入 workgroup、pending 列表、取消、重发、过期状态视觉和批量结果逐项反馈；后续仍可补更细的投递失败根因与失败审计归因。
 - Phase 9 仍需补更完整的发布可见范围编辑和管理员闭环；发布创建表单与 Agent Skill 绑定已完成首个可用切片。
 
 ### 5.10 Phase 9 团队协作日志切片
@@ -516,7 +516,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 提交仍复用 `useInviteMember` 和 `POST /api/organizations/[id]/invitations?batch=true`，请求体一次发送 `emails` 数组和 team canvas workspace grant；没有新增 route，也没有改变服务端权限边界。
 - `usePendingInvitations` 现在保留 `expiresAt` / `createdAt`，团队管理页 pending invitation 列表能显示具体过期状态。
 - Pending invitation 行会标记 `Expired - resend or cancel`，48 小时内到期会标记 `Expires in Nh`，更远的邀请显示具体过期时间；管理员可以据此重发或取消。
-- 本切片补齐 Phase 9 “批量邀请和邀请过期状态”的首版能力；后续仍需逐项展示 invalid/existing/pending/failed 的批量结果分类。
+- 本切片补齐 Phase 9 “批量邀请和邀请过期状态”的首版能力；逐项展示 invalid/existing/pending/failed 的批量结果分类已在后续 5.21 切片补齐。
 
 ### 5.18 Phase 9 团队画布健康状态切片
 
@@ -547,6 +547,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - `SplitCanvasWorkbench` 的每个 pane header 新增 `Box select` 开关；开启后当前 pane 会显示 pointer-event 覆盖层和虚线选择框，拖拽结束后替换当前 selection。
 - 按 Shift/Ctrl/Cmd 开始拖拽时会把框选命中的节点追加到当前 pane selection；框选会清空显式 edge selection，避免复制 payload 中残留旧边。
 - 该切片覆盖鼠标和触摸 pointer 事件，完成 Phase 7 “框选/触摸选择优化”的首版；后续仍可继续做键盘快捷键、长按提示和真正双编辑器 store 隔离。
+
+### 5.21 Phase 9 批量邀请逐项结果反馈切片
+
+本轮继续收口团队管理员闭环里的批量邀请体验，仍然保持在原 `/workspace/[workspaceId]/team-management` 的 `Invites` tab 内：
+
+- `inviteOrganizationMembersContract` 新增 `emailResults` 响应数据，逐项返回 `sent`、`existing_member`、`pending_invitation`、`invalid_email`、`failed` 状态、说明文案和成功 invitationId。
+- `POST /api/organizations/[id]/invitations` 继续复用原 contract 与 `parseRequest`，在批量发送、跳过已有成员/已有 pending、无效 email、部分邮件投递失败和 seat 不足时都尽量返回逐项结果；非 2xx 错误仍通过 `ApiClientError.body.data.emailResults` 暴露给前端。
+- `useInviteMember` 对 207 partial failure 保留完整响应体并以 `ApiClientError` 抛出，避免团队管理页只能看到总错误而丢失单个邮箱的结果。
+- 团队管理页 `Send team invitation` 表单提交后显示 `Batch result` 摘要和逐邮箱卡片，管理员可以直接看到哪些邮箱已发送、哪些因为已是成员/pending/无效地址被跳过、哪些发送失败。
+- 已补 `apps/sim/app/api/organizations/[id]/invitations/route.test.ts` 覆盖 sent/existing/pending/invalid 混合结果和部分投递失败回滚 pending invitation 的结果明细。
+
+仍需继续：
+
+- 逐项反馈已经补齐 Phase 9 批量邀请的核心缺口；后续可继续设计失败操作是否进入 team activity/audit、seat 不足和权限拒绝的审计归因，以及健康修复历史。
 
 ## 6. 建议继续推进目标
 

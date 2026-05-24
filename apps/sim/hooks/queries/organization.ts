@@ -416,7 +416,11 @@ export function useInviteMember() {
       })
 
       if (result.success === false) {
-        throw new Error(result.error || result.message || 'Failed to invite member')
+        throw new ApiClientError({
+          status: 207,
+          message: result.error || result.message || 'Failed to invite member',
+          body: result,
+        })
       }
 
       return result

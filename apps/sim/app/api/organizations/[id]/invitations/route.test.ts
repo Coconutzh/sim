@@ -245,6 +245,115 @@ describe('POST /api/organizations/[id]/invitations', () => {
     expect(mockCancelPendingInvitation).toHaveBeenCalledWith('inv-1')
   })
 
+  it('returns per-email results for sent, existing, pending, and invalid invitations', async () => {
+    mockGetSession.mockResolvedValue(
+      createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
+    )
+    mockDbState.selectResults = [
+      [{ role: 'owner' }],
+      [{ name: 'Org One' }],
+      [{ userEmail: 'member@example.com' }],
+      [{ email: 'pending@example.com' }],
+      [{ name: 'Owner', email: 'owner@example.com' }],
+    ]
+
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        {
+          emails: ['sent@example.com', 'member@example.com', 'pending@example.com', 'not-an-email'],
+        },
+        {},
+        'http://localhost/api/organizations/org-1/invitations'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockCreatePendingInvitation).toHaveBeenCalledTimes(1)
+    expect(mockCreatePendingInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'sent@example.com' })
+    )
+    expect(data.data.emailResults).toEqual([
+      {
+        email: 'sent@example.com',
+        status: 'sent',
+        message: 'Invitation email sent',
+        invitationId: 'inv-1',
+      },
+      {
+        email: 'member@example.com',
+        status: 'existing_member',
+        message: 'Already a member of this organization',
+      },
+      {
+        email: 'pending@example.com',
+        status: 'pending_invitation',
+        message: 'A pending invitation already exists',
+      },
+      {
+        email: 'not-an-email',
+        status: 'invalid_email',
+        message: 'Invalid email address',
+      },
+    ])
+  })
+
+  it('returns per-email results when part of a batch fails delivery', async () => {
+    mockGetSession.mockResolvedValue(
+      createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })
+    )
+    mockDbState.selectResults = [
+      [{ role: 'owner' }],
+      [{ name: 'Org One' }],
+      [],
+      [],
+      [{ name: 'Owner', email: 'owner@example.com' }],
+    ]
+    mockCreatePendingInvitation.mockImplementation(({ email }: { email: string }) =>
+      Promise.resolve({
+        invitationId: email === 'fail@example.com' ? 'inv-fail' : 'inv-ok',
+        token: email === 'fail@example.com' ? 'tok-fail' : 'tok-ok',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      })
+    )
+    mockSendInvitationEmail.mockImplementation(({ email }: { email: string }) =>
+      Promise.resolve(
+        email === 'fail@example.com'
+          ? { success: false, error: 'mailer unavailable' }
+          : { success: true }
+      )
+    )
+
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        { emails: ['sent@example.com', 'fail@example.com'] },
+        {},
+        'http://localhost/api/organizations/org-1/invitations'
+      ),
+      { params: Promise.resolve({ id: 'org-1' }) }
+    )
+    const data = await response.json()
+
+    expect(response.status).toBe(207)
+    expect(mockCancelPendingInvitation).toHaveBeenCalledWith('inv-fail')
+    expect(data.data.emailResults).toEqual([
+      {
+        email: 'sent@example.com',
+        status: 'sent',
+        message: 'Invitation email sent',
+        invitationId: 'inv-ok',
+      },
+      {
+        email: 'fail@example.com',
+        status: 'failed',
+        message: 'mailer unavailable',
+      },
+    ])
+  })
+
   it('rejects batch grants for personal workspaces', async () => {
     mockGetSession.mockResolvedValue(
       createSession({ userId: 'user-1', email: 'owner@example.com', name: 'Owner' })

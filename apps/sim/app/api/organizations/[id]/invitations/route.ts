@@ -7,6 +7,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import {
   inviteOrganizationMembersContract,
   listOrganizationInvitationsContract,
+  type OrganizationInvitationResult,
 } from '@/lib/api/contracts/organization'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
@@ -34,6 +35,20 @@ const logger = createLogger('OrganizationInvitations')
 interface WorkspaceGrantPayload {
   workspaceId: string
   permission: 'admin' | 'write' | 'read'
+}
+
+function createInvitationResult(
+  email: string,
+  status: OrganizationInvitationResult['status'],
+  message: string,
+  invitationId?: string
+): OrganizationInvitationResult {
+  return {
+    email,
+    status,
+    message,
+    ...(invitationId ? { invitationId } : {}),
+  }
 }
 
 export const GET = withRouteHandler(
@@ -157,22 +172,50 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
       }
 
-      const processedEmails = Array.from(
+      const validGrants: WorkspaceGrantPayload[] = []
+      const normalizedInvitationEmails = Array.from(
         new Set(
           invitationEmails
             .map((raw) => {
               const normalized = raw.trim().toLowerCase()
-              return quickValidateEmail(normalized).isValid ? normalized : null
+              return normalized.length > 0 ? normalized : null
             })
             .filter((email): email is string => !!email)
         )
       )
+      const invalidEmails = normalizedInvitationEmails.filter(
+        (email) => !quickValidateEmail(email).isValid
+      )
+      const processedEmails = normalizedInvitationEmails.filter(
+        (email) => quickValidateEmail(email).isValid
+      )
 
       if (processedEmails.length === 0) {
-        return NextResponse.json({ error: 'No valid emails provided' }, { status: 400 })
+        return NextResponse.json(
+          {
+            error: 'No valid emails provided',
+            data: {
+              invitationsSent: 0,
+              invitedEmails: [],
+              failedInvitations: [],
+              existingMembers: [],
+              pendingInvitations: [],
+              invalidEmails,
+              emailResults: invalidEmails.map((email) =>
+                createInvitationResult(email, 'invalid_email', 'Invalid email address')
+              ),
+              workspaceGrantsPerInvite: validGrants.length,
+              seatInfo: {
+                seatsUsed: 0,
+                maxSeats: 0,
+                availableSeats: 0,
+              },
+            },
+          },
+          { status: 400 }
+        )
       }
 
-      const validGrants: WorkspaceGrantPayload[] = []
       if (isBatch) {
         if (!Array.isArray(workspaceInvitations) || workspaceInvitations.length === 0) {
           return NextResponse.json(
@@ -261,11 +304,45 @@ export const POST = withRouteHandler(
         const pendingInvitationEmails = processedEmails.filter((email) =>
           pendingEmails.includes(email)
         )
+        const skippedResponseData = {
+          invitationsSent: 0,
+          invitedEmails: [],
+          failedInvitations: [],
+          existingMembers: existingMembersEmails,
+          pendingInvitations: pendingInvitationEmails,
+          invalidEmails,
+          emailResults: normalizedInvitationEmails.map((email) => {
+            if (invalidEmails.includes(email)) {
+              return createInvitationResult(email, 'invalid_email', 'Invalid email address')
+            }
+            if (existingEmails.includes(email)) {
+              return createInvitationResult(
+                email,
+                'existing_member',
+                'Already a member of this organization'
+              )
+            }
+            return createInvitationResult(
+              email,
+              'pending_invitation',
+              'A pending invitation already exists'
+            )
+          }),
+          workspaceGrantsPerInvite: validGrants.length,
+          seatInfo: {
+            seatsUsed: 0,
+            maxSeats: 0,
+            availableSeats: 0,
+          },
+        }
 
         if (isSingleEmail) {
           if (existingMembersEmails.length > 0) {
             return NextResponse.json(
-              { error: 'Failed to send invitation. User is already a part of the organization.' },
+              {
+                error: 'Failed to send invitation. User is already a part of the organization.',
+                data: skippedResponseData,
+              },
               { status: 400 }
             )
           }
@@ -274,6 +351,7 @@ export const POST = withRouteHandler(
               {
                 error:
                   'Failed to send invitation. A pending invitation already exists for this email.',
+                data: skippedResponseData,
               },
               { status: 400 }
             )
@@ -287,6 +365,7 @@ export const POST = withRouteHandler(
               existingMembers: existingMembersEmails,
               pendingInvitations: pendingInvitationEmails,
             },
+            data: skippedResponseData,
           },
           { status: 400 }
         )
@@ -294,9 +373,44 @@ export const POST = withRouteHandler(
 
       const seatValidation = await validateSeatAvailability(organizationId, emailsToInvite.length)
       if (!seatValidation.canInvite) {
+        const reason = seatValidation.reason || 'No seats are available for these invitations.'
         return NextResponse.json(
           {
-            error: seatValidation.reason,
+            error: reason,
+            data: {
+              invitationsSent: 0,
+              invitedEmails: [],
+              failedInvitations: emailsToInvite.map((email) => ({ email, error: reason })),
+              existingMembers: processedEmails.filter((email) => existingEmails.includes(email)),
+              pendingInvitations: processedEmails.filter((email) => pendingEmails.includes(email)),
+              invalidEmails,
+              emailResults: normalizedInvitationEmails.map((email) => {
+                if (invalidEmails.includes(email)) {
+                  return createInvitationResult(email, 'invalid_email', 'Invalid email address')
+                }
+                if (existingEmails.includes(email)) {
+                  return createInvitationResult(
+                    email,
+                    'existing_member',
+                    'Already a member of this organization'
+                  )
+                }
+                if (pendingEmails.includes(email)) {
+                  return createInvitationResult(
+                    email,
+                    'pending_invitation',
+                    'A pending invitation already exists'
+                  )
+                }
+                return createInvitationResult(email, 'failed', reason)
+              }),
+              workspaceGrantsPerInvite: validGrants.length,
+              seatInfo: {
+                seatsUsed: seatValidation.currentSeats,
+                maxSeats: seatValidation.maxSeats,
+                availableSeats: seatValidation.availableSeats,
+              },
+            },
             seatInfo: {
               currentSeats: seatValidation.currentSeats,
               maxSeats: seatValidation.maxSeats,
@@ -389,15 +503,51 @@ export const POST = withRouteHandler(
       }
 
       const sentEmails = sentInvitations.map((inv) => inv.email)
+      const sentInvitationByEmail = new Map(sentInvitations.map((inv) => [inv.email, inv.id]))
+      const failedInvitationByEmail = new Map(
+        failedInvitations.map((inv) => [inv.email, inv.error])
+      )
+      const existingMembersEmails = processedEmails.filter((email) =>
+        existingEmails.includes(email)
+      )
+      const pendingInvitationEmails = processedEmails.filter((email) =>
+        pendingEmails.includes(email)
+      )
       const responseData = {
         invitationsSent: sentInvitations.length,
         invitedEmails: sentEmails,
         failedInvitations,
-        existingMembers: processedEmails.filter((email) => existingEmails.includes(email)),
-        pendingInvitations: processedEmails.filter((email) => pendingEmails.includes(email)),
-        invalidEmails: invitationEmails.filter(
-          (email) => !quickValidateEmail(email.trim().toLowerCase()).isValid
-        ),
+        existingMembers: existingMembersEmails,
+        pendingInvitations: pendingInvitationEmails,
+        invalidEmails,
+        emailResults: normalizedInvitationEmails.map((email) => {
+          const invitationId = sentInvitationByEmail.get(email)
+          if (invitationId) {
+            return createInvitationResult(email, 'sent', 'Invitation email sent', invitationId)
+          }
+          if (invalidEmails.includes(email)) {
+            return createInvitationResult(email, 'invalid_email', 'Invalid email address')
+          }
+          if (existingEmails.includes(email)) {
+            return createInvitationResult(
+              email,
+              'existing_member',
+              'Already a member of this organization'
+            )
+          }
+          if (pendingEmails.includes(email)) {
+            return createInvitationResult(
+              email,
+              'pending_invitation',
+              'A pending invitation already exists'
+            )
+          }
+          return createInvitationResult(
+            email,
+            'failed',
+            failedInvitationByEmail.get(email) || 'Failed to send invitation'
+          )
+        }),
         workspaceGrantsPerInvite: validGrants.length,
         seatInfo: {
           seatsUsed: seatValidation.currentSeats + sentInvitations.length,

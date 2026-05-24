@@ -19,10 +19,15 @@ import {
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Input, Loader, Switch } from '@/components/emcn'
+import { isApiClientError } from '@/lib/api/client/errors'
 import type {
   PublicationReviewState,
   PublicationRiskLevel,
 } from '@/lib/api/contracts/collaboration'
+import type {
+  OrganizationInvitationResult,
+  OrganizationInvitationResultStatus,
+} from '@/lib/api/contracts/organization'
 import { cn } from '@/lib/core/utils/cn'
 import {
   useAddWorkgroupMember,
@@ -57,6 +62,22 @@ type RiskLevelDraft = PublicationRiskLevel | 'unset'
 type TeamManagementTab = 'members' | 'invites' | 'publications' | 'agent' | 'activity'
 type TeamHealthTone = 'healthy' | 'warning' | 'loading'
 type TeamWorkspaceRepairPermission = 'admin' | 'write'
+
+const INVITATION_RESULT_STATUSES: OrganizationInvitationResultStatus[] = [
+  'sent',
+  'existing_member',
+  'pending_invitation',
+  'invalid_email',
+  'failed',
+]
+
+const INVITATION_RESULT_LABELS: Record<OrganizationInvitationResultStatus, string> = {
+  sent: 'Sent',
+  existing_member: 'Already member',
+  pending_invitation: 'Pending invite',
+  invalid_email: 'Invalid email',
+  failed: 'Failed',
+}
 
 const TEAM_MANAGEMENT_TABS: {
   id: TeamManagementTab
@@ -200,6 +221,62 @@ function getInvitationExpiryState(expiresAt?: string) {
   } as const
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isInvitationResultStatus(value: unknown): value is OrganizationInvitationResultStatus {
+  return (
+    typeof value === 'string' &&
+    INVITATION_RESULT_STATUSES.includes(value as OrganizationInvitationResultStatus)
+  )
+}
+
+function isOrganizationInvitationResult(value: unknown): value is OrganizationInvitationResult {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.email === 'string' &&
+    isInvitationResultStatus(value.status) &&
+    typeof value.message === 'string' &&
+    (value.invitationId === undefined || typeof value.invitationId === 'string')
+  )
+}
+
+function readInvitationResults(value: unknown): OrganizationInvitationResult[] {
+  if (!isRecord(value) || !isRecord(value.data) || !Array.isArray(value.data.emailResults)) {
+    return []
+  }
+  return value.data.emailResults.filter(isOrganizationInvitationResult)
+}
+
+function readInvitationResultsFromError(error: unknown): OrganizationInvitationResult[] {
+  return isApiClientError(error) ? readInvitationResults(error.body) : []
+}
+
+function summarizeInvitationResults(results: OrganizationInvitationResult[]) {
+  const sentCount = results.filter((result) => result.status === 'sent').length
+  const skippedCount = results.filter((result) =>
+    ['existing_member', 'pending_invitation', 'invalid_email'].includes(result.status)
+  ).length
+  const failedCount = results.filter((result) => result.status === 'failed').length
+  const parts = [
+    sentCount > 0 ? `${sentCount} sent` : null,
+    skippedCount > 0 ? `${skippedCount} skipped` : null,
+    failedCount > 0 ? `${failedCount} failed` : null,
+  ].filter((part): part is string => !!part)
+  return parts.length > 0 ? parts.join(', ') : 'No invitation result'
+}
+
+function getInvitationResultClassName(status: OrganizationInvitationResultStatus) {
+  if (status === 'sent') {
+    return 'border-green-500/25 bg-green-500/10 text-green-700'
+  }
+  if (status === 'failed' || status === 'invalid_email') {
+    return 'border-red-500/25 bg-red-500/10 text-red-700'
+  }
+  return 'border-amber-500/25 bg-amber-500/10 text-amber-700'
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -261,6 +338,9 @@ export function WorkgroupTeamManagement() {
   const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
   const [emailInvitationValue, setEmailInvitationValue] = useState('')
+  const [emailInvitationResults, setEmailInvitationResults] = useState<
+    OrganizationInvitationResult[]
+  >([])
   const [inviteRole, setInviteRole] = useState<WorkgroupRole>('member')
   const [publishWorkflowId, setPublishWorkflowId] = useState('')
   const [publishTitle, setPublishTitle] = useState('')
@@ -311,6 +391,10 @@ export function WorkgroupTeamManagement() {
   const agentSkills = agentSkillsData?.skills ?? []
   const activity = activityData?.activity ?? []
   const emailInvitationEmails = parseInvitationEmails(emailInvitationValue)
+  const emailInvitationResultSummary = useMemo(
+    () => summarizeInvitationResults(emailInvitationResults),
+    [emailInvitationResults]
+  )
   const teamWorkspacePermissionUsers = teamWorkspacePermissions?.users ?? []
   const teamWorkspacePermissionByUserId = useMemo(
     () => new Map(teamWorkspacePermissionUsers.map((user) => [user.userId, user.permissionType])),
@@ -571,7 +655,7 @@ export function WorkgroupTeamManagement() {
       return
     }
     try {
-      await inviteMember.mutateAsync({
+      const result = await inviteMember.mutateAsync({
         orgId: activeWorkgroup.organizationId,
         emails: emailInvitationEmails,
         workspaceInvitations: [
@@ -581,14 +665,20 @@ export function WorkgroupTeamManagement() {
           },
         ],
       })
-      setEmailInvitationValue('')
-      setStatusMessage(
-        emailInvitationEmails.length === 1
-          ? 'Invitation email sent for the team canvas.'
-          : `${emailInvitationEmails.length} invitation emails sent for the team canvas.`
-      )
+      const results = readInvitationResults(result)
+      setEmailInvitationResults(results)
+      if (results.length === 0 || results.every((item) => item.status === 'sent')) {
+        setEmailInvitationValue('')
+      }
+      setStatusMessage(`Team invitation results: ${summarizeInvitationResults(results)}.`)
     } catch (error) {
-      setStatusMessage(readErrorMessage(error))
+      const results = readInvitationResultsFromError(error)
+      setEmailInvitationResults(results)
+      setStatusMessage(
+        results.length > 0
+          ? `Team invitation results: ${summarizeInvitationResults(results)}.`
+          : readErrorMessage(error)
+      )
     }
   }
 
@@ -1043,7 +1133,10 @@ export function WorkgroupTeamManagement() {
               <div className='grid gap-1'>
                 <textarea
                   value={emailInvitationValue}
-                  onChange={(event) => setEmailInvitationValue(event.target.value)}
+                  onChange={(event) => {
+                    setEmailInvitationValue(event.target.value)
+                    setEmailInvitationResults([])
+                  }}
                   placeholder='name@example.com, teammate@example.com'
                   rows={3}
                   disabled={isBusy || !teamWorkspaceId}
@@ -1060,7 +1153,10 @@ export function WorkgroupTeamManagement() {
               </div>
               <select
                 value={inviteRole}
-                onChange={(event) => setInviteRole(event.target.value as WorkgroupRole)}
+                onChange={(event) => {
+                  setInviteRole(event.target.value as WorkgroupRole)
+                  setEmailInvitationResults([])
+                }}
                 disabled={isBusy || !teamWorkspaceId}
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
               >
@@ -1078,6 +1174,39 @@ export function WorkgroupTeamManagement() {
                 {emailInvitationEmails.length > 1 ? 'Send invites' : 'Send invite'}
               </Button>
             </div>
+            {emailInvitationResults.length > 0 && (
+              <div className='border-[var(--border)] border-t px-4 py-3'>
+                <div className='mb-2 flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <AlertTriangle className='h-[13px] w-[13px]' />
+                  Batch result: {emailInvitationResultSummary}
+                </div>
+                <div className='grid gap-2 md:grid-cols-2'>
+                  {emailInvitationResults.map((result) => (
+                    <div
+                      key={`${result.email}-${result.status}`}
+                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'
+                    >
+                      <div className='flex min-w-0 items-center justify-between gap-2'>
+                        <span className='truncate font-medium text-[12px] text-[var(--text-primary)]'>
+                          {result.email}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-[8px] border px-2 py-0.5 text-[11px]',
+                            getInvitationResultClassName(result.status)
+                          )}
+                        >
+                          {INVITATION_RESULT_LABELS[result.status]}
+                        </span>
+                      </div>
+                      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {result.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {!teamWorkspaceId && (
               <div className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'>
                 Initialize the team canvas before sending a team invitation.
