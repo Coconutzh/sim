@@ -219,6 +219,7 @@ vi.mock('@sim/audit', () => ({
     SKILL_UPDATED: 'skill.updated',
     WORKSPACE_CREATED: 'workspace.created',
     NOTIFICATION_CREATED: 'notification.created',
+    PROJECT_ADMIN_FAILURE_RECORDED: 'project_admin_failure.recorded',
   },
   AuditResourceType: {
     ORGANIZATION: 'organization',
@@ -287,6 +288,7 @@ import {
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
+  recordProjectAdminFailureAudit,
   resolveAgentForWorkspace,
   updateOrganizationAgentSkillPolicy,
   updateOrganizationAgentTemplate,
@@ -1306,6 +1308,46 @@ describe('collaboration service', () => {
           outboxEventId: 'outbox-event-1',
           notificationEvent: 'publication.review_notifications.digest',
           notificationCount: 2,
+        }),
+      })
+    )
+  })
+
+  it('records project admin failures as persistent organization audit entries', async () => {
+    mockResultsQueue.push([{ role: 'admin' }])
+
+    await expect(
+      recordProjectAdminFailureAudit({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        scope: 'team',
+        operation: 'Archive team',
+        target: 'Stage',
+        message: 'Archive failed',
+      })
+    ).resolves.toMatchObject({
+      id: 'short-id',
+      scope: 'team',
+      operation: 'Archive team',
+      target: 'Stage',
+      message: 'Archive failed',
+    })
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'org-admin-1',
+        action: 'project_admin_failure.recorded',
+        resourceType: 'organization',
+        resourceId: 'org-1',
+        resourceName: 'Stage',
+        description: 'Archive team failed for Stage',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          failureId: 'short-id',
+          scope: 'team',
+          operation: 'Archive team',
+          target: 'Stage',
+          message: 'Archive failed',
         }),
       })
     )

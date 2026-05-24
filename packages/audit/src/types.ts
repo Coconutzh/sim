@@ -116,6 +116,9 @@ export const AuditAction = {
   NOTIFICATION_UPDATED: 'notification.updated',
   NOTIFICATION_DELETED: 'notification.deleted',
 
+  // Project admin
+  PROJECT_ADMIN_FAILURE_RECORDED: 'project_admin_failure.recorded',
+
   // OAuth / Credentials
   OAUTH_DISCONNECTED: 'oauth.disconnected',
   CREDENTIAL_CREATED: 'credential.created',

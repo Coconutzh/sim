@@ -117,6 +117,23 @@ export interface PublicationNotificationDeliveryResult {
   outboxEventId: string | null
 }
 
+export interface ProjectAdminFailureAuditResult {
+  id: string
+  scope: ProjectAdminFailureScope
+  operation: string
+  target: string
+  message: string
+  recordedAt: string
+}
+
+type ProjectAdminFailureScope =
+  | 'team'
+  | 'agent'
+  | 'publication'
+  | 'member'
+  | 'activity'
+  | 'notification'
+
 function toSlug(name: string): string {
   const slug = name
     .trim()
@@ -2099,6 +2116,50 @@ export async function deliverOrganizationPublicationNotifications(params: {
     warningCount: draft.payload.warningCount,
     publicationIds,
     outboxEventId,
+  }
+}
+
+export async function recordProjectAdminFailureAudit(params: {
+  userId: string
+  organizationId: string
+  scope: ProjectAdminFailureScope
+  operation: string
+  target: string
+  message: string
+}): Promise<ProjectAdminFailureAuditResult> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const recordedAt = new Date().toISOString()
+  const failureId = generateShortId()
+  const operation = params.operation.trim() || 'Unknown operation'
+  const target = params.target.trim() || 'Unknown target'
+  const message = params.message.trim() || 'Unknown error'
+
+  recordAudit({
+    actorId: params.userId,
+    action: AuditAction.PROJECT_ADMIN_FAILURE_RECORDED,
+    resourceType: AuditResourceType.ORGANIZATION,
+    resourceId: params.organizationId,
+    resourceName: target,
+    description: `${operation} failed for ${target}`,
+    metadata: {
+      organizationId: params.organizationId,
+      failureId,
+      scope: params.scope,
+      operation,
+      target,
+      message,
+      recordedAt,
+    },
+  })
+
+  return {
+    id: failureId,
+    scope: params.scope,
+    operation,
+    target,
+    message,
+    recordedAt,
   }
 }
 

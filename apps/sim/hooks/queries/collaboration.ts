@@ -32,6 +32,8 @@ import {
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
   type PublicationSummary,
+  type RecordProjectAdminFailureBody,
+  recordProjectAdminFailureContract,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
   type UpdateOrganizationAgentSkillPolicyBody,
@@ -639,6 +641,27 @@ export function useDeliverPublicationNotifications() {
         body,
       })
     },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+    },
+  })
+}
+
+export function useRecordProjectAdminFailureAudit() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & RecordProjectAdminFailureBody) =>
+      requestJson(recordProjectAdminFailureContract, {
+        params: { id: variables.organizationId },
+        body: {
+          scope: variables.scope,
+          operation: variables.operation,
+          target: variables.target,
+          message: variables.message,
+        },
+      }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationActivity(variables.organizationId),

@@ -68,6 +68,7 @@ import {
   useOrganizationWorkgroups,
   usePublication,
   usePublicationTree,
+  useRecordProjectAdminFailureAudit,
   useUpdateOrganizationAgentSkillPolicy,
   useUpdateOrganizationAgentTemplate,
   useUpdatePublicationDetails,
@@ -83,6 +84,11 @@ const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
 const PROJECT_ADMIN_FAILURE_AUDIT_LIMIT = 12
+const PROJECT_ADMIN_FAILURE_TEXT_MAX = {
+  operation: 160,
+  target: 160,
+  message: 500,
+} as const
 const PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS: {
   scope: ProjectAdminFailureScope
   label: string
@@ -121,6 +127,7 @@ const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: 'publication.retracted', label: 'Retracted publication' },
   { value: 'publication.restored', label: 'Restored publication' },
   { value: 'notification.created', label: 'Notification delivery' },
+  { value: 'project_admin_failure.recorded', label: 'Project admin failure' },
   { value: 'skill.updated', label: 'Agent skill updated' },
   { value: 'workspace.created', label: 'Team canvas initialized' },
 ] as const
@@ -473,6 +480,10 @@ function SnapshotDiffRows({
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+}
+
+function truncateAuditValue(value: string, maxLength: number) {
+  return value.length > maxLength ? value.slice(0, maxLength) : value
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1184,6 +1195,7 @@ export function ProjectAdminCenter() {
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const updatePublicationDetails = useUpdatePublicationDetails()
   const deliverPublicationNotifications = useDeliverPublicationNotifications()
+  const recordProjectAdminFailureAudit = useRecordProjectAdminFailureAudit()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const addNotification = useNotificationStore((state) => state.addNotification)
@@ -1634,18 +1646,25 @@ export function ProjectAdminCenter() {
     error: unknown
   ) => {
     const message = readErrorMessage(error)
+    const entry = buildProjectAdminFailureAuditEntry({
+      id: generateShortId(),
+      scope,
+      operation,
+      target,
+      message,
+    })
     setProjectAdminFailureAudit((entries) =>
-      [
-        buildProjectAdminFailureAuditEntry({
-          id: generateShortId(),
-          scope,
-          operation,
-          target,
-          message,
-        }),
-        ...entries,
-      ].slice(0, PROJECT_ADMIN_FAILURE_AUDIT_LIMIT)
+      [entry, ...entries].slice(0, PROJECT_ADMIN_FAILURE_AUDIT_LIMIT)
     )
+    if (organizationId) {
+      recordProjectAdminFailureAudit.mutate({
+        organizationId,
+        scope: entry.scope,
+        operation: truncateAuditValue(entry.operation, PROJECT_ADMIN_FAILURE_TEXT_MAX.operation),
+        target: truncateAuditValue(entry.target, PROJECT_ADMIN_FAILURE_TEXT_MAX.target),
+        message: truncateAuditValue(entry.message, PROJECT_ADMIN_FAILURE_TEXT_MAX.message),
+      })
+    }
     return message
   }
 
@@ -4068,7 +4087,8 @@ export function ProjectAdminCenter() {
                       Failure audit
                     </h2>
                     <p className='text-[12px] text-[var(--text-muted)]'>
-                      Local project-admin operation failures captured during this session.
+                      Project-admin operation failures are shown locally and mirrored to server
+                      audit when organization context is available.
                     </p>
                   </div>
                 </div>

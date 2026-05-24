@@ -40,6 +40,15 @@ export const publicationRiskLevelSchema = z.enum(['low', 'medium', 'high', 'crit
 export type PublicationRiskLevel = z.output<typeof publicationRiskLevelSchema>
 export const publicationNotificationChannelSchema = z.enum(['in_app', 'email', 'webhook'])
 export type PublicationNotificationChannel = z.output<typeof publicationNotificationChannelSchema>
+export const projectAdminFailureScopeSchema = z.enum([
+  'team',
+  'agent',
+  'publication',
+  'member',
+  'activity',
+  'notification',
+])
+export type ProjectAdminFailureScope = z.output<typeof projectAdminFailureScopeSchema>
 export const publicationReviewerSchema = z.object({
   userId: nonEmptyIdSchema,
   assignedBy: z.string().nullable(),
@@ -376,6 +385,24 @@ export const publicationNotificationDeliverySchema = z.object({
   outboxEventId: nonEmptyIdSchema.nullable(),
 })
 export type PublicationNotificationDelivery = z.output<typeof publicationNotificationDeliverySchema>
+
+export const recordProjectAdminFailureBodySchema = z.object({
+  scope: projectAdminFailureScopeSchema,
+  operation: z.string().trim().min(1, 'operation cannot be empty').max(160),
+  target: z.string().trim().min(1, 'target cannot be empty').max(160),
+  message: z.string().trim().min(1, 'message cannot be empty').max(500),
+})
+export type RecordProjectAdminFailureBody = z.input<typeof recordProjectAdminFailureBodySchema>
+
+export const projectAdminFailureRecordSchema = z.object({
+  id: nonEmptyIdSchema,
+  scope: projectAdminFailureScopeSchema,
+  operation: z.string(),
+  target: z.string(),
+  message: z.string(),
+  recordedAt: z.string(),
+})
+export type ProjectAdminFailureRecord = z.output<typeof projectAdminFailureRecordSchema>
 
 export const agentSkillBindingSchema = z.object({
   id: z.string().nullable(),
@@ -845,6 +872,19 @@ export const deliverOrganizationPublicationNotificationsContract = defineRouteCo
     mode: 'json',
     schema: z.object({
       delivery: publicationNotificationDeliverySchema,
+    }),
+  },
+})
+
+export const recordProjectAdminFailureContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/organizations/[id]/project-admin/failures',
+  params: organizationParamsSchema,
+  body: recordProjectAdminFailureBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      failure: projectAdminFailureRecordSchema,
     }),
   },
 })

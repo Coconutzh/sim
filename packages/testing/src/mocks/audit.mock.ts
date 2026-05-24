@@ -104,6 +104,7 @@ export const auditMock = {
     NOTIFICATION_CREATED: 'notification.created',
     NOTIFICATION_UPDATED: 'notification.updated',
     NOTIFICATION_DELETED: 'notification.deleted',
+    PROJECT_ADMIN_FAILURE_RECORDED: 'project_admin_failure.recorded',
     OAUTH_DISCONNECTED: 'oauth.disconnected',
     PASSWORD_RESET: 'password.reset',
     PASSWORD_RESET_REQUESTED: 'password.reset_requested',
