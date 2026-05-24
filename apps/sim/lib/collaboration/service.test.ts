@@ -1532,6 +1532,49 @@ describe('collaboration service', () => {
             status: 'archived',
           },
         },
+        {
+          id: 'audit-member-management-1',
+          action: 'member.batch_assigned',
+          resourceName: 'Stage',
+          description: 'Batch assigned 3 team members as member',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            workgroupId: 'workgroup-1',
+            role: 'member',
+            targetCount: 3,
+          },
+        },
+        {
+          id: 'audit-team-management-1',
+          action: 'workgroup.archived',
+          resourceName: 'Props',
+          description: 'Archived team Props',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            workgroupId: 'workgroup-2',
+            archivedAt: '2026-05-25T10:00:00Z',
+          },
+        },
+        {
+          id: 'audit-agent-policy-1',
+          action: 'agent_template.updated',
+          resourceName: 'Chief Director',
+          description: 'Updated project instructions for Chief Director',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            agentCode: 'chief_director',
+            hasProjectInstructions: true,
+          },
+        },
       ]
     )
 
@@ -1551,6 +1594,24 @@ describe('collaboration service', () => {
           severity: 'warning',
           title: 'Publication archived: Lighting cues v3',
         },
+        {
+          id: 'audit-member-management-1',
+          kind: 'member_management',
+          severity: 'info',
+          title: 'Batch assigned members: Stage',
+        },
+        {
+          id: 'audit-team-management-1',
+          kind: 'team_management',
+          severity: 'warning',
+          title: 'Team archived: Props',
+        },
+        {
+          id: 'audit-agent-policy-1',
+          kind: 'agent_policy',
+          severity: 'info',
+          title: 'Agent template updated: Chief Director',
+        },
       ],
       nextOffset: null,
     })
@@ -1564,7 +1625,7 @@ describe('collaboration service', () => {
         userId: 'org-admin-1',
         organizationId: 'org-1',
         markAll: true,
-        kind: 'publication_governance',
+        kind: 'member_management',
       })
     ).resolves.toEqual({
       readAt: expect.any(String),

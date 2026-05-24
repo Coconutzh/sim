@@ -18,11 +18,20 @@ import {
 const CENTER_QUERY = { limit: 10 } as const
 
 function formatProjectNotificationBadge(
-  kind: 'publication_review' | 'project_admin_failure' | 'publication_governance',
+  kind:
+    | 'publication_review'
+    | 'project_admin_failure'
+    | 'publication_governance'
+    | 'member_management'
+    | 'team_management'
+    | 'agent_policy',
   channel?: string | null
 ) {
   if (kind === 'publication_review') return channel?.replace('_', ' ') ?? 'publication'
   if (kind === 'publication_governance') return 'governance'
+  if (kind === 'member_management') return 'members'
+  if (kind === 'team_management') return 'team'
+  if (kind === 'agent_policy') return 'agent'
   return 'failure'
 }
 

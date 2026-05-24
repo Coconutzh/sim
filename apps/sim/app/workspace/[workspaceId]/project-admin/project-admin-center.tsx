@@ -122,6 +122,9 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: 'publication_review', label: 'Publication review' },
   { value: 'project_admin_failure', label: 'Project admin failure' },
   { value: 'publication_governance', label: 'Publication governance' },
+  { value: 'member_management', label: 'Member management' },
+  { value: 'team_management', label: 'Team management' },
+  { value: 'agent_policy', label: 'Agent policy' },
 ]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',

@@ -91,6 +91,17 @@ const PUBLICATION_GOVERNANCE_AUDIT_ACTIONS = [
   AuditAction.PUBLICATION_RETRACTED,
   AuditAction.PUBLICATION_RESTORED,
 ] as const
+type MemberManagementAuditAction =
+  | typeof AuditAction.MEMBER_INVITED
+  | typeof AuditAction.MEMBER_BATCH_ASSIGNED
+  | typeof AuditAction.MEMBER_ROLE_CHANGED
+  | typeof AuditAction.MEMBER_REMOVED
+const MEMBER_MANAGEMENT_AUDIT_ACTIONS = [
+  AuditAction.MEMBER_INVITED,
+  AuditAction.MEMBER_BATCH_ASSIGNED,
+  AuditAction.MEMBER_ROLE_CHANGED,
+  AuditAction.MEMBER_REMOVED,
+] as const
 
 interface PublicationBroadcastParams {
   actorUserId: string
@@ -146,6 +157,9 @@ type ProjectNotificationCenterKind =
   | 'publication_review'
   | 'project_admin_failure'
   | 'publication_governance'
+  | 'member_management'
+  | 'team_management'
+  | 'agent_policy'
 
 export interface ProjectNotificationCenterEntry {
   id: string
@@ -917,6 +931,7 @@ export async function archiveWorkgroup(params: { actorUserId: string; workgroupI
       resourceName: row.name,
       description: `Archived team ${row.name}`,
       metadata: {
+        organizationId: row.organizationId,
         workgroupId: row.id,
         teamWorkspaceId: row.teamWorkspaceId,
         archivedAt: archivedAt.toISOString(),
@@ -1012,7 +1027,12 @@ export async function addWorkgroupMember(params: {
     resourceId: wg.id,
     resourceName: wg.name,
     description: `Added team member as ${params.role}`,
-    metadata: { workgroupId: wg.id, targetUserId, role: params.role },
+    metadata: {
+      organizationId: wg.organizationId,
+      workgroupId: wg.id,
+      targetUserId,
+      role: params.role,
+    },
   })
 }
 
@@ -1095,6 +1115,7 @@ export async function addWorkgroupMembersBatch(params: {
     resourceName: wg.name,
     description: `Batch assigned ${assigned.length} team member${assigned.length === 1 ? '' : 's'} as ${params.role}`,
     metadata: {
+      organizationId: wg.organizationId,
       workgroupId: wg.id,
       role: params.role,
       targetCount: assigned.length,
@@ -1113,6 +1134,7 @@ export async function addWorkgroupMembersBatch(params: {
       resourceName: wg.name,
       description: `Batch added team member as ${params.role}`,
       metadata: {
+        organizationId: wg.organizationId,
         workgroupId: wg.id,
         targetUserId: target.userId,
         role: params.role,
@@ -1172,7 +1194,12 @@ export async function updateWorkgroupMemberRole(params: {
     resourceId: wg.id,
     resourceName: wg.name,
     description: `Changed team member role to ${params.role}`,
-    metadata: { workgroupId: wg.id, targetUserId: params.userId, role: params.role },
+    metadata: {
+      organizationId: wg.organizationId,
+      workgroupId: wg.id,
+      targetUserId: params.userId,
+      role: params.role,
+    },
   })
 }
 
@@ -1224,7 +1251,11 @@ export async function removeWorkgroupMember(params: {
     resourceId: wg.id,
     resourceName: wg.name,
     description: 'Removed team member',
-    metadata: { workgroupId: wg.id, targetUserId: params.userId },
+    metadata: {
+      organizationId: wg.organizationId,
+      workgroupId: wg.id,
+      targetUserId: params.userId,
+    },
   })
 }
 
@@ -1408,7 +1439,7 @@ export async function createTeamWorkspace(params: { userId: string; workgroupId:
     resourceId: ws.id,
     resourceName: ws.name,
     description: 'Initialized team canvas',
-    metadata: { workgroupId: wg.id, canvasScope: 'team' },
+    metadata: { organizationId: wg.organizationId, workgroupId: wg.id, canvasScope: 'team' },
   })
   return { workspace: workspaceDto(ws), defaultWorkflowId }
 }
@@ -1567,10 +1598,35 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     auditLog.action,
     PUBLICATION_GOVERNANCE_AUDIT_ACTIONS
   )
+  const memberManagementCondition = inArray(auditLog.action, MEMBER_MANAGEMENT_AUDIT_ACTIONS)
+  const teamManagementCondition = or(
+    eq(auditLog.action, AuditAction.WORKGROUP_ARCHIVED),
+    and(
+      eq(auditLog.action, AuditAction.WORKSPACE_CREATED),
+      sql`${auditLog.metadata}->>'canvasScope' = 'team'`
+    )
+  )
+  const agentPolicyCondition = or(
+    eq(auditLog.action, AuditAction.AGENT_TEMPLATE_UPDATED),
+    and(
+      eq(auditLog.action, AuditAction.SKILL_UPDATED),
+      sql`${auditLog.metadata}->>'scope' = 'agent_template'`
+    )
+  )
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
   if (kind === 'publication_governance') return publicationGovernanceCondition
-  return or(publicationReviewCondition, failureCondition, publicationGovernanceCondition)
+  if (kind === 'member_management') return memberManagementCondition
+  if (kind === 'team_management') return teamManagementCondition
+  if (kind === 'agent_policy') return agentPolicyCondition
+  return or(
+    publicationReviewCondition,
+    failureCondition,
+    publicationGovernanceCondition,
+    memberManagementCondition,
+    teamManagementCondition,
+    agentPolicyCondition
+  )
 }
 
 function isPublicationGovernanceAction(action: string): action is PublicationAuditAction {
@@ -1602,6 +1658,73 @@ function getPublicationGovernanceSeverity(action: PublicationAuditAction) {
   return action === AuditAction.PUBLICATION_ARCHIVED || action === AuditAction.PUBLICATION_RETRACTED
     ? 'warning'
     : 'info'
+}
+
+function isMemberManagementAction(action: string): action is MemberManagementAuditAction {
+  return MEMBER_MANAGEMENT_AUDIT_ACTIONS.some((memberAction) => memberAction === action)
+}
+
+function getMemberManagementTitle(
+  action: MemberManagementAuditAction,
+  resourceName: string | null
+) {
+  const teamName = resourceName?.trim()
+  switch (action) {
+    case AuditAction.MEMBER_INVITED:
+      return teamName ? `Team member added: ${teamName}` : 'Team member added'
+    case AuditAction.MEMBER_BATCH_ASSIGNED:
+      return teamName ? `Batch assigned members: ${teamName}` : 'Batch assigned members'
+    case AuditAction.MEMBER_ROLE_CHANGED:
+      return teamName ? `Team member role changed: ${teamName}` : 'Team member role changed'
+    case AuditAction.MEMBER_REMOVED:
+      return teamName ? `Team member removed: ${teamName}` : 'Team member removed'
+  }
+}
+
+function getMemberManagementSeverity(
+  action: MemberManagementAuditAction
+): ProjectNotificationCenterEntry['severity'] {
+  return action === AuditAction.MEMBER_REMOVED ? 'warning' : 'info'
+}
+
+function isTeamManagementAction(action: string, metadata: unknown) {
+  if (action === AuditAction.WORKGROUP_ARCHIVED) return true
+  if (action !== AuditAction.WORKSPACE_CREATED) return false
+  return Boolean(
+    metadata &&
+      typeof metadata === 'object' &&
+      (metadata as Record<string, unknown>).canvasScope === 'team'
+  )
+}
+
+function getTeamManagementTitle(action: string, resourceName: string | null) {
+  const teamName = resourceName?.trim()
+  if (action === AuditAction.WORKGROUP_ARCHIVED) {
+    return teamName ? `Team archived: ${teamName}` : 'Team archived'
+  }
+  return teamName ? `Team canvas initialized: ${teamName}` : 'Team canvas initialized'
+}
+
+function getTeamManagementSeverity(action: string): ProjectNotificationCenterEntry['severity'] {
+  return action === AuditAction.WORKGROUP_ARCHIVED ? 'warning' : 'info'
+}
+
+function isAgentPolicyAction(action: string, metadata: unknown) {
+  if (action === AuditAction.AGENT_TEMPLATE_UPDATED) return true
+  if (action !== AuditAction.SKILL_UPDATED) return false
+  return Boolean(
+    metadata &&
+      typeof metadata === 'object' &&
+      (metadata as Record<string, unknown>).scope === 'agent_template'
+  )
+}
+
+function getAgentPolicyTitle(action: string, resourceName: string | null) {
+  const name = resourceName?.trim()
+  if (action === AuditAction.AGENT_TEMPLATE_UPDATED) {
+    return name ? `Agent template updated: ${name}` : 'Agent template updated'
+  }
+  return name ? `Agent skill policy updated: ${name}` : 'Agent skill policy updated'
 }
 
 function getProjectNotificationCenterEntry(
@@ -1670,6 +1793,69 @@ function getProjectNotificationCenterEntry(
       kind: 'publication_governance',
       severity: getPublicationGovernanceSeverity(row.action),
       title: getPublicationGovernanceTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isMemberManagementAction(row.action)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'member_management',
+      severity: getMemberManagementSeverity(row.action),
+      title: getMemberManagementTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isTeamManagementAction(row.action, row.metadata)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'team_management',
+      severity: getTeamManagementSeverity(row.action),
+      title: getTeamManagementTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isAgentPolicyAction(row.action, row.metadata)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'agent_policy',
+      severity: 'info',
+      title: getAgentPolicyTitle(row.action, row.resourceName),
       detail: row.description ?? '',
       channel: null,
       body: row.resourceName,
