@@ -20,6 +20,8 @@ import type {
   AgentProfile,
   Discipline,
   OrganizationWorkgroupActivityEntry,
+  PublicationReviewState,
+  PublicationRiskLevel,
   PublicationSummary,
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
@@ -34,10 +36,12 @@ import {
   useDisciplines,
   useMyWorkgroups,
   useOrganizationAgentTemplates,
+  useOrganizationPublications,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
-  useShowcasePublications,
   useUpdateOrganizationAgentTemplate,
+  useUpdatePublicationLifecycle,
+  useUpdatePublicationReview,
 } from '@/hooks/queries/collaboration'
 import { type RosterMember, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
@@ -75,11 +79,31 @@ const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: 'skill.updated', label: 'Agent skill updated' },
   { value: 'workspace.created', label: 'Team canvas initialized' },
 ] as const
+const PUBLICATION_REVIEW_OPTIONS: { value: PublicationReviewState | ''; label: string }[] = [
+  { value: '', label: 'No review state' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'in_review', label: 'In review' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'changes_requested', label: 'Changes requested' },
+  { value: 'rejected', label: 'Rejected' },
+]
+const PUBLICATION_RISK_OPTIONS: { value: PublicationRiskLevel | ''; label: string }[] = [
+  { value: '', label: 'No risk level' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
+]
 
 interface BatchAssignmentResult {
   target: string
   status: 'assigned' | 'failed'
   message: string
+}
+
+interface PublicationReviewDraft {
+  reviewState: PublicationReviewState | ''
+  riskLevel: PublicationRiskLevel | ''
 }
 
 function formatAgentCode(agentCode: string) {
@@ -326,6 +350,8 @@ export function ProjectAdminCenter() {
   const createWorkgroup = useCreateWorkgroup()
   const archiveWorkgroup = useArchiveWorkgroup()
   const updateAgentTemplate = useUpdateOrganizationAgentTemplate()
+  const updatePublicationReview = useUpdatePublicationReview()
+  const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const [newTeamName, setNewTeamName] = useState('')
@@ -335,6 +361,12 @@ export function ProjectAdminCenter() {
   const [selectedAgentTemplateCode, setSelectedAgentTemplateCode] = useState('')
   const [agentTemplateDrafts, setAgentTemplateDrafts] = useState<Record<string, string>>({})
   const [agentTemplateStatus, setAgentTemplateStatus] = useState<string | null>(null)
+  const [publicationReviewDrafts, setPublicationReviewDrafts] = useState<
+    Record<string, PublicationReviewDraft>
+  >({})
+  const [publicationGovernanceStatus, setPublicationGovernanceStatus] = useState<string | null>(
+    null
+  )
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
   const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
@@ -364,7 +396,6 @@ export function ProjectAdminCenter() {
     workgroupsData?.defaultWorkgroupId
   )
   const organizationId = activeWorkgroup?.organizationId
-  const activeWorkgroupId = activeWorkgroup?.id
   const { data: organizationWorkgroupsData, isLoading: isLoadingOrganizationWorkgroups } =
     useOrganizationWorkgroups(organizationId)
   const { data: agentTemplatesData, isLoading: isLoadingAgentTemplates } =
@@ -373,8 +404,8 @@ export function ProjectAdminCenter() {
     useOrganizationRoster(organizationId)
   const { data: disciplinesData, isLoading: isLoadingDisciplines } = useDisciplines()
   const { data: agentsData, isLoading: isLoadingAgents } = useAgentProfiles()
-  const { data: publicationsData, isLoading: isLoadingPublications } = useShowcasePublications(
-    activeWorkgroupId,
+  const { data: publicationsData, isLoading: isLoadingPublications } = useOrganizationPublications(
+    organizationId,
     PUBLICATION_FILTERS
   )
 
@@ -578,6 +609,69 @@ export function ProjectAdminCenter() {
       }))
     } catch (error) {
       setAgentTemplateStatus(readErrorMessage(error))
+    }
+  }
+
+  const getPublicationReviewDraft = (publication: PublicationSummary): PublicationReviewDraft => ({
+    reviewState:
+      publicationReviewDrafts[publication.id]?.reviewState ?? publication.reviewState ?? '',
+    riskLevel: publicationReviewDrafts[publication.id]?.riskLevel ?? publication.riskLevel ?? '',
+  })
+
+  const handlePublicationReviewChange = (
+    publication: PublicationSummary,
+    field: keyof PublicationReviewDraft,
+    value: PublicationReviewDraft[keyof PublicationReviewDraft]
+  ) => {
+    setPublicationReviewDrafts((drafts) => ({
+      ...drafts,
+      [publication.id]: {
+        reviewState: publication.reviewState ?? '',
+        riskLevel: publication.riskLevel ?? '',
+        ...drafts[publication.id],
+        [field]: value,
+      },
+    }))
+    setPublicationGovernanceStatus(null)
+  }
+
+  const handleSavePublicationReview = async (publication: PublicationSummary) => {
+    const draft = getPublicationReviewDraft(publication)
+    try {
+      const result = await updatePublicationReview.mutateAsync({
+        publicationVersionId: publication.id,
+        reviewState: draft.reviewState || null,
+        riskLevel: draft.riskLevel || null,
+        reason: 'Project admin state tree governance update',
+      })
+      setPublicationGovernanceStatus(`Updated review metadata for ${result.publication.title}.`)
+      setPublicationReviewDrafts((drafts) => ({
+        ...drafts,
+        [publication.id]: {
+          reviewState: result.publication.reviewState ?? '',
+          riskLevel: result.publication.riskLevel ?? '',
+        },
+      }))
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
+  const handlePublicationLifecycle = async (
+    publication: PublicationSummary,
+    action: 'archive' | 'retract' | 'restore'
+  ) => {
+    try {
+      const result = await updatePublicationLifecycle.mutateAsync({
+        publicationVersionId: publication.id,
+        action,
+        reason: `Project admin ${action} from state tree governance`,
+      })
+      setPublicationGovernanceStatus(
+        `${result.publication.title} is now ${result.publication.status}.`
+      )
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
     }
   }
 
@@ -820,6 +914,152 @@ export function ProjectAdminCenter() {
                 : 'default'
             }
           />
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Network className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                Project publication governance
+              </h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Organization-wide state tree controls for review, risk, archive, retract, and
+                restore actions.
+              </p>
+            </div>
+          </div>
+          {publicationGovernanceStatus && (
+            <div
+              className='border-[var(--border)] border-b px-4 py-3 text-[12px] text-[var(--text-muted)]'
+              aria-live='polite'
+            >
+              {publicationGovernanceStatus}
+            </div>
+          )}
+          <div className='divide-y divide-[var(--border)]'>
+            {publications.length === 0 ? (
+              <EmptyState>
+                No organization publication versions match the current project view.
+              </EmptyState>
+            ) : (
+              publications.map((publication) => {
+                const draft = getPublicationReviewDraft(publication)
+                const hasReviewChanges =
+                  draft.reviewState !== (publication.reviewState ?? '') ||
+                  draft.riskLevel !== (publication.riskLevel ?? '')
+                const canArchive =
+                  publication.status === 'published' || publication.status === 'superseded'
+                const canRetract = publication.status !== 'retracted'
+                const canRestore =
+                  publication.status === 'archived' || publication.status === 'superseded'
+
+                return (
+                  <div
+                    key={publication.id}
+                    className='grid gap-3 px-4 py-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.8fr)_auto]'
+                  >
+                    <div className='min-w-0'>
+                      <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                        {publication.title}
+                      </div>
+                      <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                        <span>v{publication.versionNumber}</span>
+                        <span>{publication.sourceWorkgroup.name}</span>
+                        <span>{publication.sourceDiscipline.name}</span>
+                        <span>{publication.status}</span>
+                        <span>{publication.visibility}</span>
+                      </div>
+                      {publication.dependsOnPublicationIds.length > 0 && (
+                        <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                          Depends on {publication.dependsOnPublicationIds.length} visible version
+                          {publication.dependsOnPublicationIds.length === 1 ? '' : 's'}.
+                        </div>
+                      )}
+                    </div>
+                    <div className='grid gap-2 sm:grid-cols-2'>
+                      <select
+                        value={draft.reviewState}
+                        onChange={(event) =>
+                          handlePublicationReviewChange(
+                            publication,
+                            'reviewState',
+                            event.target.value as PublicationReviewDraft['reviewState']
+                          )
+                        }
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                        aria-label={`Review state for ${publication.title}`}
+                      >
+                        {PUBLICATION_REVIEW_OPTIONS.map((option) => (
+                          <option key={option.value || 'none'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={draft.riskLevel}
+                        onChange={(event) =>
+                          handlePublicationReviewChange(
+                            publication,
+                            'riskLevel',
+                            event.target.value as PublicationReviewDraft['riskLevel']
+                          )
+                        }
+                        className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                        aria-label={`Risk level for ${publication.title}`}
+                      >
+                        {PUBLICATION_RISK_OPTIONS.map((option) => (
+                          <option key={option.value || 'none'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className='flex flex-wrap items-center gap-2 xl:justify-end'>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        disabled={!hasReviewChanges || updatePublicationReview.isPending}
+                        onClick={() => void handleSavePublicationReview(publication)}
+                      >
+                        {updatePublicationReview.isPending ? (
+                          <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                        ) : null}
+                        Save review
+                      </button>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        disabled={!canArchive || updatePublicationLifecycle.isPending}
+                        onClick={() => void handlePublicationLifecycle(publication, 'archive')}
+                      >
+                        Archive
+                      </button>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        disabled={!canRestore || updatePublicationLifecycle.isPending}
+                        onClick={() => void handlePublicationLifecycle(publication, 'restore')}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type='button'
+                        className={cn(
+                          buttonVariants({ size: 'sm', variant: 'default' }),
+                          'border-red-500/30 text-red-500 hover:bg-red-500/10'
+                        )}
+                        disabled={!canRetract || updatePublicationLifecycle.isPending}
+                        onClick={() => void handlePublicationLifecycle(publication, 'retract')}
+                      >
+                        Retract
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </section>
 
         <section className='grid gap-5 xl:grid-cols-2'>

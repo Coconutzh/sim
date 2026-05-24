@@ -22,6 +22,7 @@ import {
   listDisciplinesContract,
   listMyWorkgroupsContract,
   listOrganizationAgentTemplatesContract,
+  listOrganizationPublicationsContract,
   listOrganizationWorkgroupActivityContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
@@ -53,6 +54,14 @@ export const collaborationKeys = {
     [...collaborationKeys.organizationWorkgroupLists(), organizationId ?? ''] as const,
   organizationAgentTemplates: (organizationId?: string) =>
     [...collaborationKeys.organizations(), 'agent-templates', organizationId ?? ''] as const,
+  organizationPublicationLists: () =>
+    [...collaborationKeys.organizations(), 'publications'] as const,
+  organizationPublicationList: (organizationId?: string, filters?: PublicationFilters) =>
+    [
+      ...collaborationKeys.organizationPublicationLists(),
+      organizationId ?? '',
+      filters ?? {},
+    ] as const,
   workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
   workgroupLists: () => [...collaborationKeys.workgroups(), 'list'] as const,
   myWorkgroups: () => [...collaborationKeys.workgroupLists(), 'me'] as const,
@@ -94,6 +103,7 @@ function invalidateActiveWorkgroupQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() }),
     queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroupDetails() }),
     queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() }),
+    queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() }),
     queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() }),
   ])
 }
@@ -547,6 +557,21 @@ export function useShowcasePublications(workgroupId?: string, filters?: Publicat
   })
 }
 
+export function useOrganizationPublications(organizationId?: string, filters?: PublicationFilters) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationPublicationList(organizationId, filters),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationPublicationsContract, {
+        params: { id: organizationId as string },
+        query: filters ?? {},
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function usePublication(publicationVersionId?: string) {
   return useQuery({
     queryKey: collaborationKeys.publication(publicationVersionId),
@@ -587,6 +612,7 @@ export function useUpdatePublicationLifecycle() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.publication(variables.publicationVersionId),
       })
@@ -613,6 +639,7 @@ export function useUpdatePublicationVisibility() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.publication(variables.publicationVersionId),
       })
@@ -639,6 +666,7 @@ export function useUpdatePublicationReview() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.publication(variables.publicationVersionId),
       })

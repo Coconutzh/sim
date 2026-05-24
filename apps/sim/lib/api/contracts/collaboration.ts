@@ -722,6 +722,20 @@ export const listShowcasePublicationsContract = defineRouteContract({
   },
 })
 
+export const listOrganizationPublicationsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/publications',
+  params: organizationParamsSchema,
+  query: publicationListQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      publications: z.array(publicationSummarySchema),
+      nextCursor: z.string().nullable(),
+    }),
+  },
+})
+
 export const listOrganizationWorkgroupActivityContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/workgroups/activity',

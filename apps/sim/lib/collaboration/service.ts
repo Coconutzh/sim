@@ -1624,7 +1624,14 @@ export async function listVisiblePublications(params: {
   if (params.status) {
     conditions.push(eq(workflowPublicationVersion.status, params.status))
   } else {
-    conditions.push(inArray(workflowPublicationVersion.status, ['published', 'superseded']))
+    conditions.push(
+      inArray(workflowPublicationVersion.status, [
+        'published',
+        'superseded',
+        'archived',
+        'retracted',
+      ])
+    )
   }
 
   const visibilityCondition = or(
@@ -1652,6 +1659,93 @@ export async function listVisiblePublications(params: {
     .where(and(...conditions, visibilityCondition, isNull(workgroup.archivedAt)))
     .orderBy(desc(workflowPublicationVersion.publishedAt))
     .limit(params.limit ?? 50)
+
+  const scopeTargets = await listPublicationScopeTargets(
+    rows.flatMap((row) =>
+      row.publication.publishedWorkflowId ? [row.publication.publishedWorkflowId] : []
+    )
+  )
+  const visibleVersionIds = new Set(rows.map((row) => row.publication.id))
+
+  return rows.map((row) => ({
+    id: row.publication.id,
+    title: row.publication.title,
+    description: row.publication.description,
+    sourceWorkgroup: { id: row.publication.sourceWorkgroupId, name: row.sourceWorkgroupName },
+    sourceDiscipline: {
+      code: row.sourceDisciplineCode ?? 'chief_director',
+      name: row.sourceDisciplineName ?? '总导演',
+    },
+    agentCode: row.publication.agentCode,
+    versionNumber: row.publication.versionNumber,
+    parentVersionId:
+      row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
+        ? row.publication.parentVersionId
+        : null,
+    status: row.publication.status,
+    visibility: row.publication.visibility,
+    reviewState: row.publication.reviewState as PublicationReviewState | null,
+    riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+    dependsOnPublicationIds:
+      row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
+        ? [row.publication.parentVersionId]
+        : [],
+    targetWorkgroupIds: row.publication.publishedWorkflowId
+      ? (scopeTargets.get(row.publication.publishedWorkflowId) ?? [])
+      : [],
+    publishedBy: {
+      id: row.publisherId ?? '',
+      name: row.publisherName ?? 'Unknown',
+      avatarUrl: row.publisherAvatarUrl,
+    },
+    publishedAt: row.publication.publishedAt.toISOString(),
+  }))
+}
+
+export async function listOrganizationPublications(params: {
+  userId: string
+  organizationId: string
+  disciplineCode?: string
+  sourceWorkgroupId?: string
+  agentCode?: string
+  status?: PublicationStatus
+  limit?: number
+}) {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const conditions = [eq(workflowPublicationVersion.organizationId, params.organizationId)]
+  if (params.sourceWorkgroupId) {
+    conditions.push(eq(workflowPublicationVersion.sourceWorkgroupId, params.sourceWorkgroupId))
+  }
+  if (params.agentCode) {
+    conditions.push(eq(workflowPublicationVersion.agentCode, params.agentCode))
+  }
+  if (params.disciplineCode) {
+    conditions.push(eq(discipline.code, params.disciplineCode))
+  }
+  if (params.status) {
+    conditions.push(eq(workflowPublicationVersion.status, params.status))
+  } else {
+    conditions.push(inArray(workflowPublicationVersion.status, ['published', 'superseded']))
+  }
+
+  const rows = await db
+    .select({
+      publication: workflowPublicationVersion,
+      sourceWorkgroupName: workgroup.name,
+      sourceDisciplineCode: discipline.code,
+      sourceDisciplineName: discipline.name,
+      publisherId: user.id,
+      publisherName: user.name,
+      publisherAvatarUrl: user.image,
+    })
+    .from(workflowPublicationVersion)
+    .innerJoin(workgroup, eq(workflowPublicationVersion.sourceWorkgroupId, workgroup.id))
+    .leftJoin(discipline, eq(workflowPublicationVersion.sourceDisciplineId, discipline.id))
+    .leftJoin(user, eq(workflowPublicationVersion.publishedBy, user.id))
+    .where(and(...conditions, isNull(workgroup.archivedAt)))
+    .orderBy(desc(workflowPublicationVersion.publishedAt))
+    .limit(params.limit ?? 100)
 
   const scopeTargets = await listPublicationScopeTargets(
     rows.flatMap((row) =>

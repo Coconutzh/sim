@@ -270,6 +270,7 @@ import {
   getPublicationTree,
   getTeamWorkspace,
   listOrganizationAgentTemplates,
+  listOrganizationPublications,
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
@@ -1132,6 +1133,84 @@ describe('collaboration service', () => {
         id: 'publication-v4',
         parentVersionId: null,
         dependsOnPublicationIds: [],
+      },
+    ])
+  })
+
+  it('lists organization publication versions for project admins without viewer scope filtering', async () => {
+    const publishedAt = new Date('2026-05-24T00:00:00Z')
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          publication: {
+            id: 'publication-v1',
+            title: 'Organization root',
+            description: null,
+            sourceWorkgroupId: 'workgroup-1',
+            sourceDisciplineId: 'discipline-1',
+            agentCode: 'lighting_sound',
+            versionNumber: 1,
+            parentVersionId: null,
+            publishedWorkflowId: 'published-workflow-1',
+            status: 'superseded',
+            visibility: 'organization',
+            reviewState: 'approved',
+            riskLevel: 'low',
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+        {
+          publication: {
+            id: 'publication-v2',
+            title: 'Scoped child',
+            description: null,
+            sourceWorkgroupId: 'workgroup-2',
+            sourceDisciplineId: 'discipline-2',
+            agentCode: 'stage_design',
+            versionNumber: 2,
+            parentVersionId: 'publication-v1',
+            publishedWorkflowId: 'published-workflow-2',
+            status: 'published',
+            visibility: 'selected_workgroups',
+            reviewState: 'pending',
+            riskLevel: 'critical',
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Stage',
+          sourceDisciplineCode: 'stage_design',
+          sourceDisciplineName: 'Stage design',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+      ],
+      [{ workflowId: 'published-workflow-2', viewerWorkgroupId: 'workgroup-3' }]
+    )
+
+    await expect(
+      listOrganizationPublications({ userId: 'org-admin-1', organizationId: 'org-1' })
+    ).resolves.toMatchObject([
+      {
+        id: 'publication-v1',
+        parentVersionId: null,
+        dependsOnPublicationIds: [],
+        reviewState: 'approved',
+        riskLevel: 'low',
+      },
+      {
+        id: 'publication-v2',
+        parentVersionId: 'publication-v1',
+        dependsOnPublicationIds: ['publication-v1'],
+        targetWorkgroupIds: ['workgroup-3'],
+        reviewState: 'pending',
+        riskLevel: 'critical',
       },
     ])
   })
