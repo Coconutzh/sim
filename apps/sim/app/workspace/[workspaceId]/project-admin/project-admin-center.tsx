@@ -586,6 +586,10 @@ export function ProjectAdminCenter() {
     () => buildPublicationStateGroups(publications),
     [publications]
   )
+  const publicationById = useMemo(
+    () => new Map(publications.map((publication) => [publication.id, publication])),
+    [publications]
+  )
   const publicationGovernanceAlertGroups = publicationStateGroups.filter(
     (group) => group.governanceAlerts.length > 0
   )
@@ -619,6 +623,50 @@ export function ProjectAdminCenter() {
   const selectedPublicationAlertCodes = new Set(
     selectedPublicationGovernanceGroup?.governanceAlerts.map((alert) => alert.code) ?? []
   )
+  const batchUnapprovedCurrentPublications = publicationStateGroups
+    .filter((group) =>
+      group.governanceAlerts.some((alert) => alert.code === 'unapproved_current_version')
+    )
+    .map((group) => publicationById.get(group.current?.id ?? ''))
+    .filter((publication): publication is PublicationSummary => Boolean(publication))
+  const batchCriticalCurrentPublications = publicationStateGroups
+    .filter((group) =>
+      group.governanceAlerts.some((alert) => alert.code === 'critical_risk_current_version')
+    )
+    .map((group) => publicationById.get(group.current?.id ?? ''))
+    .filter((publication): publication is PublicationSummary => Boolean(publication))
+  const batchStaleCurrentPublications = publicationStateGroups
+    .filter((group) =>
+      group.governanceAlerts.some((alert) => alert.code === 'stale_current_version')
+    )
+    .map((group) => publicationById.get(group.current?.id ?? ''))
+    .filter((publication): publication is PublicationSummary => Boolean(publication))
+  const batchExtraCurrentPublications = publicationStateGroups.flatMap((group) => {
+    if (!group.governanceAlerts.some((alert) => alert.code === 'multiple_current_versions')) {
+      return []
+    }
+    return group.versions
+      .filter((version) => version.status === 'published' && version.id !== group.current?.id)
+      .map((version) => publicationById.get(version.id))
+      .filter((publication): publication is PublicationSummary => Boolean(publication))
+  })
+  const batchRestoreCandidatePublications = publicationStateGroups
+    .filter((group) => group.governanceAlerts.some((alert) => alert.code === 'no_current_version'))
+    .map((group) => publicationById.get(group.current?.id ?? ''))
+    .filter(
+      (publication): publication is PublicationSummary =>
+        Boolean(publication) &&
+        publication.status !== 'published' &&
+        publication.status !== 'retracted'
+    )
+  const hasPublicationBatchTargets =
+    batchUnapprovedCurrentPublications.length > 0 ||
+    batchCriticalCurrentPublications.length > 0 ||
+    batchStaleCurrentPublications.length > 0 ||
+    batchExtraCurrentPublications.length > 0 ||
+    batchRestoreCandidatePublications.length > 0
+  const isPublicationBatchPending =
+    updatePublicationReview.isPending || updatePublicationLifecycle.isPending
   const selectedNewTeamDisciplineId = newTeamDisciplineId || disciplines[0]?.id || ''
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
@@ -901,6 +949,57 @@ export function ProjectAdminCenter() {
     }
   }
 
+  const handleBatchPublicationReviewResolution = async (
+    publicationsToUpdate: PublicationSummary[],
+    getReviewState: (publication: PublicationSummary) => PublicationReviewState | null,
+    getRiskLevel: (publication: PublicationSummary) => PublicationRiskLevel | null,
+    reason: string,
+    successMessage: string
+  ) => {
+    if (publicationsToUpdate.length === 0) return
+    try {
+      for (const publication of publicationsToUpdate) {
+        const result = await updatePublicationReview.mutateAsync({
+          publicationVersionId: publication.id,
+          reviewState: getReviewState(publication),
+          riskLevel: getRiskLevel(publication),
+          reason,
+        })
+        setPublicationReviewDrafts((drafts) => ({
+          ...drafts,
+          [publication.id]: {
+            reviewState: result.publication.reviewState ?? '',
+            riskLevel: result.publication.riskLevel ?? '',
+          },
+        }))
+      }
+      setPublicationGovernanceStatus(successMessage)
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleBatchPublicationLifecycle = async (
+    publicationsToUpdate: PublicationSummary[],
+    action: 'archive' | 'restore',
+    reason: string,
+    successMessage: string
+  ) => {
+    if (publicationsToUpdate.length === 0) return
+    try {
+      for (const publication of publicationsToUpdate) {
+        await updatePublicationLifecycle.mutateAsync({
+          publicationVersionId: publication.id,
+          action,
+          reason,
+        })
+      }
+      setPublicationGovernanceStatus(successMessage)
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
   const handleAssignMember = async () => {
     if (!organizationId || !selectedAssignmentTeamId || !assignmentValue.trim()) return
     const trimmed = assignmentValue.trim()
@@ -1170,6 +1269,115 @@ export function ProjectAdminCenter() {
               {publicationGovernanceStatus}
             </div>
           )}
+          <div className='border-[var(--border)] border-b bg-[var(--surface-2)] px-4 py-3'>
+            <div className='flex flex-wrap items-start justify-between gap-3'>
+              <div>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Batch governance actions
+                </h3>
+                <p className='mt-1 max-w-[780px] text-[12px] text-[var(--text-muted)]'>
+                  Apply low-risk fixes across the current state tree without opening each
+                  publication drawer. Destructive lifecycle changes still reuse the existing
+                  publication audit trail.
+                </p>
+              </div>
+              <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                {publicationGovernanceAlertCount} state-tree alerts
+              </span>
+            </div>
+            {hasPublicationBatchTargets ? (
+              <div className='mt-3 flex flex-wrap gap-2'>
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={
+                    batchUnapprovedCurrentPublications.length === 0 || isPublicationBatchPending
+                  }
+                  onClick={() =>
+                    void handleBatchPublicationReviewResolution(
+                      batchUnapprovedCurrentPublications,
+                      () => 'approved',
+                      (publication) => publication.riskLevel,
+                      'Project admin batch approved current publications',
+                      `Approved ${batchUnapprovedCurrentPublications.length} current publication${batchUnapprovedCurrentPublications.length === 1 ? '' : 's'}.`
+                    )
+                  }
+                >
+                  Approve current ({batchUnapprovedCurrentPublications.length})
+                </button>
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={batchStaleCurrentPublications.length === 0 || isPublicationBatchPending}
+                  onClick={() =>
+                    void handleBatchPublicationReviewResolution(
+                      batchStaleCurrentPublications,
+                      () => 'in_review',
+                      (publication) => publication.riskLevel,
+                      'Project admin batch started refresh review',
+                      `Started refresh review for ${batchStaleCurrentPublications.length} stale current publication${batchStaleCurrentPublications.length === 1 ? '' : 's'}.`
+                    )
+                  }
+                >
+                  Start refresh review ({batchStaleCurrentPublications.length})
+                </button>
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={
+                    batchCriticalCurrentPublications.length === 0 || isPublicationBatchPending
+                  }
+                  onClick={() =>
+                    void handleBatchPublicationReviewResolution(
+                      batchCriticalCurrentPublications,
+                      (publication) => publication.reviewState,
+                      () => 'high',
+                      'Project admin batch reduced critical current risk markers',
+                      `Reduced ${batchCriticalCurrentPublications.length} critical current risk marker${batchCriticalCurrentPublications.length === 1 ? '' : 's'} to high.`
+                    )
+                  }
+                >
+                  Lower critical risk ({batchCriticalCurrentPublications.length})
+                </button>
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={batchExtraCurrentPublications.length === 0 || isPublicationBatchPending}
+                  onClick={() =>
+                    void handleBatchPublicationLifecycle(
+                      batchExtraCurrentPublications,
+                      'archive',
+                      'Project admin batch archived duplicate current publications',
+                      `Archived ${batchExtraCurrentPublications.length} duplicate current publication${batchExtraCurrentPublications.length === 1 ? '' : 's'}.`
+                    )
+                  }
+                >
+                  Archive duplicate current ({batchExtraCurrentPublications.length})
+                </button>
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={
+                    batchRestoreCandidatePublications.length === 0 || isPublicationBatchPending
+                  }
+                  onClick={() =>
+                    void handleBatchPublicationLifecycle(
+                      batchRestoreCandidatePublications,
+                      'restore',
+                      'Project admin batch restored latest visible publications',
+                      `Restored ${batchRestoreCandidatePublications.length} latest visible publication${batchRestoreCandidatePublications.length === 1 ? '' : 's'}.`
+                    )
+                  }
+                >
+                  Restore missing current ({batchRestoreCandidatePublications.length})
+                </button>
+              </div>
+            ) : (
+              <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
+                No eligible batch governance actions are currently available.
+              </p>
+            )}
+          </div>
           <div className='divide-y divide-[var(--border)]'>
             {publications.length === 0 ? (
               <EmptyState>
