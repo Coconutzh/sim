@@ -20,6 +20,7 @@ import { useParams } from 'next/navigation'
 import { buttonVariants, Loader } from '@/components/emcn'
 import type {
   AgentProfile,
+  AgentTemplate,
   Discipline,
   OrganizationAgentSkillPolicy,
   OrganizationWorkgroupActivityEntry,
@@ -161,6 +162,18 @@ interface PublicationDependencyImpact {
   riskFlags: PublicationDependencyImpactRow[]
 }
 
+interface AgentPolicyImpact {
+  disciplineNames: string[]
+  teams: WorkgroupAdminSummary[]
+  currentPublications: PublicationSummary[]
+  riskPublications: PublicationSummary[]
+  unapprovedPublications: PublicationSummary[]
+  disabledPolicies: OrganizationAgentSkillPolicy[]
+  enabledPolicies: OrganizationAgentSkillPolicy[]
+  promptChanged: boolean
+  promptCharacterDelta: number
+}
+
 function formatAgentCode(agentCode: string) {
   return agentCode
     .split('_')
@@ -284,6 +297,43 @@ function DependencyImpactList({
           </div>
         ))
       )}
+    </div>
+  )
+}
+
+function ImpactMetric({
+  label,
+  value,
+  detail,
+  tone = 'default',
+}: {
+  label: string
+  value: string | number
+  detail: string
+  tone?: 'default' | 'warning' | 'danger'
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-[8px] border bg-[var(--surface-2)] p-3',
+        tone === 'danger'
+          ? 'border-red-500/30'
+          : tone === 'warning'
+            ? 'border-amber-500/30'
+            : 'border-[var(--border)]'
+      )}
+    >
+      <div className='text-[11px] text-[var(--text-muted)]'>{label}</div>
+      <div
+        className={cn(
+          'mt-1 font-medium text-[20px] text-[var(--text-primary)]',
+          tone === 'danger' && 'text-red-500',
+          tone === 'warning' && 'text-amber-500'
+        )}
+      >
+        {value}
+      </div>
+      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>{detail}</div>
     </div>
   )
 }
@@ -521,6 +571,54 @@ function buildPublicationDependencyImpact(
     dependentPublications: dependentRows,
     treeLinks,
     riskFlags,
+  }
+}
+
+function buildAgentPolicyImpact(params: {
+  template: AgentTemplate | undefined
+  draftInstructions: string
+  disciplines: Discipline[]
+  teams: WorkgroupAdminSummary[]
+  publications: PublicationSummary[]
+  policies: OrganizationAgentSkillPolicy[]
+}): AgentPolicyImpact | null {
+  if (!params.template) return null
+
+  const disciplineNames = params.disciplines
+    .filter((discipline) => discipline.agentCode === params.template?.code)
+    .map((discipline) => discipline.name)
+    .sort((left, right) => left.localeCompare(right))
+  const teams = params.teams
+    .filter((team) => team.agentCode === params.template?.code)
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const agentPublications = params.publications.filter(
+    (publication) => publication.agentCode === params.template?.code
+  )
+  const currentPublications = agentPublications.filter(
+    (publication) => publication.status === 'published'
+  )
+  const agentPolicies = params.policies.filter(
+    (policy) => policy.agentCode === params.template?.code
+  )
+  const disabledPolicies = agentPolicies.filter((policy) => !policy.enabled)
+  const enabledPolicies = agentPolicies.filter((policy) => policy.enabled)
+  const savedInstructions = params.template.projectInstructions.trim()
+  const draftInstructions = params.draftInstructions.trim()
+
+  return {
+    disciplineNames,
+    teams,
+    currentPublications,
+    riskPublications: currentPublications.filter(
+      (publication) => publication.riskLevel === 'critical'
+    ),
+    unapprovedPublications: currentPublications.filter(
+      (publication) => publication.reviewState !== 'approved'
+    ),
+    disabledPolicies,
+    enabledPolicies,
+    promptChanged: draftInstructions !== savedInstructions,
+    promptCharacterDelta: draftInstructions.length - savedInstructions.length,
   }
 }
 
@@ -921,6 +1019,25 @@ export function ProjectAdminCenter() {
     agentTemplateDrafts[selectedAgentTemplateCodeValue] ??
     selectedAgentTemplate?.projectInstructions ??
     ''
+  const selectedAgentPolicyImpact = useMemo(
+    () =>
+      buildAgentPolicyImpact({
+        template: selectedAgentTemplate,
+        draftInstructions: selectedAgentTemplateDraft,
+        disciplines,
+        teams: organizationWorkgroups,
+        publications,
+        policies: agentSkillPolicies,
+      }),
+    [
+      agentSkillPolicies,
+      disciplines,
+      organizationWorkgroups,
+      publications,
+      selectedAgentTemplate,
+      selectedAgentTemplateDraft,
+    ]
+  )
   const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
@@ -2262,6 +2379,115 @@ export function ProjectAdminCenter() {
               {agentTemplateStatus && (
                 <div className='text-[12px] text-[var(--text-muted)]' aria-live='polite'>
                   {agentTemplateStatus}
+                </div>
+              )}
+              {selectedAgentPolicyImpact && (
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                  <div className='flex items-start justify-between gap-3'>
+                    <div>
+                      <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                        Agent policy impact preview
+                      </h3>
+                      <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                        Estimate which disciplines, team canvases, current publications, and project
+                        skill defaults would be affected by this Agent policy.
+                      </p>
+                    </div>
+                    <ShieldCheck className='h-[15px] w-[15px] text-[var(--text-muted)]' />
+                  </div>
+                  <div className='mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
+                    <ImpactMetric
+                      label='Matching teams'
+                      value={selectedAgentPolicyImpact.teams.length}
+                      detail={`${selectedAgentPolicyImpact.disciplineNames.length} discipline${
+                        selectedAgentPolicyImpact.disciplineNames.length === 1 ? '' : 's'
+                      } use this Agent.`}
+                    />
+                    <ImpactMetric
+                      label='Current publications'
+                      value={selectedAgentPolicyImpact.currentPublications.length}
+                      detail={`${selectedAgentPolicyImpact.unapprovedPublications.length} not approved.`}
+                      tone={
+                        selectedAgentPolicyImpact.unapprovedPublications.length > 0
+                          ? 'warning'
+                          : 'default'
+                      }
+                    />
+                    <ImpactMetric
+                      label='Critical risk'
+                      value={selectedAgentPolicyImpact.riskPublications.length}
+                      detail='Current publications marked critical.'
+                      tone={
+                        selectedAgentPolicyImpact.riskPublications.length > 0 ? 'danger' : 'default'
+                      }
+                    />
+                    <ImpactMetric
+                      label='Prompt delta'
+                      value={
+                        selectedAgentPolicyImpact.promptCharacterDelta === 0
+                          ? '0'
+                          : `${
+                              selectedAgentPolicyImpact.promptCharacterDelta > 0 ? '+' : ''
+                            }${selectedAgentPolicyImpact.promptCharacterDelta}`
+                      }
+                      detail={
+                        selectedAgentPolicyImpact.promptChanged
+                          ? 'Draft differs from saved instructions.'
+                          : 'Draft matches saved instructions.'
+                      }
+                      tone={selectedAgentPolicyImpact.promptChanged ? 'warning' : 'default'}
+                    />
+                  </div>
+                  <div className='mt-3 grid gap-3 lg:grid-cols-3'>
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                      <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                        Affected disciplines
+                      </div>
+                      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {selectedAgentPolicyImpact.disciplineNames.length > 0
+                          ? selectedAgentPolicyImpact.disciplineNames.join(', ')
+                          : 'No discipline currently maps to this Agent.'}
+                      </div>
+                    </div>
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                      <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                        Team canvases
+                      </div>
+                      <div className='mt-1 grid gap-1 text-[11px] text-[var(--text-muted)]'>
+                        {selectedAgentPolicyImpact.teams.length === 0 ? (
+                          <span>No active team canvas uses this Agent.</span>
+                        ) : (
+                          selectedAgentPolicyImpact.teams.slice(0, 4).map((team) => (
+                            <span key={team.id}>
+                              {team.name} / {team.memberCount} member
+                              {team.memberCount === 1 ? '' : 's'}
+                            </span>
+                          ))
+                        )}
+                        {selectedAgentPolicyImpact.teams.length > 4 && (
+                          <span>+{selectedAgentPolicyImpact.teams.length - 4} more teams</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                      <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                        Skill default posture
+                      </div>
+                      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {selectedAgentPolicyImpact.enabledPolicies.length} enabled /{' '}
+                        {selectedAgentPolicyImpact.disabledPolicies.length} disabled defaults.
+                      </div>
+                      {selectedAgentPolicyImpact.disabledPolicies.length > 0 && (
+                        <div className='mt-1 line-clamp-2 text-[11px] text-amber-500'>
+                          Disabled:{' '}
+                          {selectedAgentPolicyImpact.disabledPolicies
+                            .slice(0, 3)
+                            .map((policy) => `${policy.name} (${policy.sourceWorkgroup.name})`)
+                            .join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
