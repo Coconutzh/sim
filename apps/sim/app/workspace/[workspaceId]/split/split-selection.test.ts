@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  computePaneBoxSelectedBlockIds,
   computeViewportCenteredPlacement,
   describePaneSelection,
   mapCopiedTargetBlockIds,
@@ -130,6 +131,93 @@ describe('split canvas pane selection', () => {
         fallback: { offsetX: 120, offsetY: 80 },
       })
     ).toEqual({ offsetX: -100, offsetY: -110 })
+  })
+
+  it('selects blocks intersecting a pane box selection rectangle', () => {
+    const workflowState = {
+      blocks: {
+        'block-a': {
+          id: 'block-a',
+          type: 'agent',
+          name: 'Agent',
+          position: { x: 100, y: 100 },
+          layout: { measuredWidth: 200, measuredHeight: 100 },
+        },
+        'block-b': {
+          id: 'block-b',
+          type: 'function',
+          name: 'Function',
+          position: { x: 360, y: 100 },
+          layout: { measuredWidth: 180, measuredHeight: 100 },
+        },
+        'block-c': {
+          id: 'block-c',
+          type: 'api',
+          name: 'API',
+          position: { x: 700, y: 100 },
+          layout: { measuredWidth: 180, measuredHeight: 100 },
+        },
+      },
+    } as WorkflowState
+
+    expect(
+      computePaneBoxSelectedBlockIds({
+        workflowState,
+        viewport: { x: -50, y: -20, zoom: 2, width: 800, height: 600 },
+        rectangle: { left: 230, top: 180, right: 850, bottom: 420 },
+      })
+    ).toEqual(['block-a', 'block-b'])
+  })
+
+  it('resolves nested block positions when box selecting subflow children', () => {
+    const workflowState = {
+      blocks: {
+        parent: {
+          id: 'parent',
+          type: 'loop',
+          name: 'Loop',
+          position: { x: 100, y: 100 },
+          data: { width: 500, height: 300 },
+        },
+        child: {
+          id: 'child',
+          type: 'agent',
+          name: 'Agent',
+          position: { x: 80, y: 60 },
+          data: { parentId: 'parent' },
+          layout: { measuredWidth: 200, measuredHeight: 100 },
+        },
+      },
+    } as WorkflowState
+
+    expect(
+      computePaneBoxSelectedBlockIds({
+        workflowState,
+        viewport: { x: 0, y: 0, zoom: 1, width: 800, height: 600 },
+        rectangle: { left: 170, top: 150, right: 400, bottom: 260 },
+      })
+    ).toEqual(['parent', 'child'])
+  })
+
+  it('ignores tiny drag boxes to avoid accidental pane selections', () => {
+    const workflowState = {
+      blocks: {
+        'block-a': {
+          id: 'block-a',
+          type: 'agent',
+          name: 'Agent',
+          position: { x: 100, y: 100 },
+        },
+      },
+    } as WorkflowState
+
+    expect(
+      computePaneBoxSelectedBlockIds({
+        workflowState,
+        viewport: { x: 0, y: 0, zoom: 1, width: 800, height: 600 },
+        rectangle: { left: 100, top: 100, right: 102, bottom: 104 },
+      })
+    ).toEqual([])
   })
 
   it('falls back to fixed offset when viewport state is not ready', () => {

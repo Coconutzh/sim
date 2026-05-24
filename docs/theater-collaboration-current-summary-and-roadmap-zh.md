@@ -137,11 +137,12 @@
 - 分屏复制结果已支持自动定位动画：目标 pane 在 workflow state 刷新出新节点后，会把新复制节点 fit 到可见区域，同时继续上报 viewport 给下一次 placement 使用。
 - 分屏 pane 已支持按 pane/workflow 维度持久化 viewport：左右 pane 的 pan/zoom 会分别写入本地存储，重新打开同一 workflow 时优先恢复该 pane 的视口；未保存过视口的 workflow 仍走自动 fit。
 - 分屏移动端已从上下堆叠改为 tab：一次只显示一个 pane，切换 tab 会同步复制源 pane，复制成功后自动切到目标 pane 查看高亮结果。
+- 分屏 pane 已新增 `Box select` 模式：管理员/成员可在个人草稿或团队画布预览中拖拽框选多个节点，支持触摸指针事件，并可按 Shift/Ctrl/Cmd 叠加到当前 selection。
 
 仍需继续：
 
 - 当前分屏是“只读预览 + 显式复制”，不是两个完整可编辑 ReactFlow 编辑器。
-- 框选、完整双编辑器 store 隔离仍需 Phase 7 后续实现。
+- 完整双编辑器 store 隔离仍需 Phase 7 后续实现；框选已完成首版，后续可继续补键盘快捷键和更细的触摸提示。
 
 ### 3.6 团队管理闭环
 
@@ -331,7 +332,7 @@ git diff --check
 推荐短期按以下顺序继续，避免范围过大：
 
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
-2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab”已补首版；下一步继续框选或触摸选择优化。
+2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
 4. 接着启动 Phase 10 项目管理员中心，优先做工种/团队/成员分配，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。

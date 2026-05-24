@@ -28,6 +28,13 @@ export interface CopyPlacement {
   offsetY: number
 }
 
+export interface PaneSelectionRectangle {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
 export function selectPaneBlock({
   currentBlockIds,
   blockId,
@@ -97,6 +104,74 @@ function getBlockDimensions(block: WorkflowState['blocks'][string]): {
     height:
       block.layout?.measuredHeight ?? block.data?.height ?? block.height ?? DEFAULT_BLOCK_HEIGHT,
   }
+}
+
+function getAbsoluteBlockPosition(
+  block: WorkflowState['blocks'][string],
+  blocks: WorkflowState['blocks'],
+  visited = new Set<string>()
+): { x: number; y: number } {
+  const parentId = block.data?.parentId
+  if (!parentId || visited.has(parentId)) return block.position
+
+  const parent = blocks[parentId]
+  if (!parent) return block.position
+
+  visited.add(parentId)
+  const parentPosition = getAbsoluteBlockPosition(parent, blocks, visited)
+  return {
+    x: parentPosition.x + block.position.x,
+    y: parentPosition.y + block.position.y,
+  }
+}
+
+function rectanglesIntersect(a: PaneSelectionRectangle, b: PaneSelectionRectangle): boolean {
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top
+}
+
+export function computePaneBoxSelectedBlockIds(params: {
+  workflowState?: WorkflowState | null
+  viewport?: PaneViewportSnapshot | null
+  rectangle: PaneSelectionRectangle
+  minSize?: number
+}): string[] {
+  if (!params.workflowState || !params.viewport) return []
+  const { workflowState, viewport } = params
+
+  const minSize = params.minSize ?? 6
+  const screenRectangle = {
+    left: Math.min(params.rectangle.left, params.rectangle.right),
+    top: Math.min(params.rectangle.top, params.rectangle.bottom),
+    right: Math.max(params.rectangle.left, params.rectangle.right),
+    bottom: Math.max(params.rectangle.top, params.rectangle.bottom),
+  }
+
+  if (
+    screenRectangle.right - screenRectangle.left < minSize ||
+    screenRectangle.bottom - screenRectangle.top < minSize
+  ) {
+    return []
+  }
+
+  const workflowRectangle = {
+    left: (screenRectangle.left - viewport.x) / viewport.zoom,
+    top: (screenRectangle.top - viewport.y) / viewport.zoom,
+    right: (screenRectangle.right - viewport.x) / viewport.zoom,
+    bottom: (screenRectangle.bottom - viewport.y) / viewport.zoom,
+  }
+
+  return Object.entries(workflowState.blocks)
+    .filter(([, block]) => {
+      const position = getAbsoluteBlockPosition(block, workflowState.blocks)
+      const dimensions = getBlockDimensions(block)
+      return rectanglesIntersect(workflowRectangle, {
+        left: position.x,
+        top: position.y,
+        right: position.x + dimensions.width,
+        bottom: position.y + dimensions.height,
+      })
+    })
+    .map(([blockId]) => blockId)
 }
 
 export function computeViewportCenteredPlacement(params: {

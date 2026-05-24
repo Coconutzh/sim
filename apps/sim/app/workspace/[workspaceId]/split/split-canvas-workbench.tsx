@@ -1,5 +1,6 @@
 'use client'
 
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, ExternalLink, PenLine, Users } from 'lucide-react'
 import Link from 'next/link'
@@ -7,10 +8,12 @@ import { useParams } from 'next/navigation'
 import { Button, Loader } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
+  computePaneBoxSelectedBlockIds,
   computeViewportCenteredPlacement,
   describePaneSelection,
   mapCopiedTargetBlockIds,
   mapCopiedTargetEdgeIds,
+  type PaneSelectionRectangle,
   type PaneViewportSnapshot,
   selectPaneBlock,
   selectPaneEdge,
@@ -46,11 +49,23 @@ interface PaneConfig {
   selectedEdgeIds: string[]
   copiedBlockIds: string[]
   copiedEdgeIds: string[]
+  boxSelectionEnabled: boolean
   onSelectBlock: (blockId: string, additive: boolean) => void
   onSelectEdge: (edgeId: string, additive: boolean) => void
+  onBoxSelect: (blockIds: string[], additive: boolean) => void
+  onToggleBoxSelection: () => void
   onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
   onViewportChange: (viewport: PaneViewportSnapshot) => void
+}
+
+interface PaneBoxSelectionDrag {
+  pointerId: number
+  additive: boolean
+  startX: number
+  startY: number
+  currentX: number
+  currentY: number
 }
 
 function getPaneViewportStorageKey(kind: CanvasPaneKind, workflowId?: string): string | null {
@@ -144,16 +159,34 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
             </div>
           </div>
         </div>
-        {pane.workspaceId && pane.workflowId && (
-          <Link
-            href={`/workspace/${pane.workspaceId}/w/${pane.workflowId}`}
-            className='flex h-[28px] items-center gap-1.5 rounded-[6px] border border-[var(--border)] px-2 text-[12px] text-[var(--text-body)] transition-colors hover-hover:bg-[var(--surface-hover)]'
-          >
-            <ExternalLink className='h-[13px] w-[13px]' />
-            Open
-          </Link>
-        )}
+        <div className='flex shrink-0 items-center gap-2'>
+          {pane.workflowState && (
+            <Button
+              variant={pane.boxSelectionEnabled ? 'active' : 'default'}
+              size='sm'
+              className='h-[28px] px-2'
+              onClick={pane.onToggleBoxSelection}
+            >
+              Box select
+            </Button>
+          )}
+          {pane.workspaceId && pane.workflowId && (
+            <Link
+              href={`/workspace/${pane.workspaceId}/w/${pane.workflowId}`}
+              className='flex h-[28px] items-center gap-1.5 rounded-[6px] border border-[var(--border)] px-2 text-[12px] text-[var(--text-body)] transition-colors hover-hover:bg-[var(--surface-hover)]'
+            >
+              <ExternalLink className='h-[13px] w-[13px]' />
+              Open
+            </Link>
+          )}
+        </div>
       </div>
+      {pane.boxSelectionEnabled && (
+        <div className='rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+          Drag inside the pane to box-select nodes. Hold Shift/Ctrl/Cmd while starting the drag to
+          add to the current selection.
+        </div>
+      )}
       <select
         value={pane.workflowId ?? ''}
         onChange={(event) => pane.onSelectWorkflow(event.target.value)}
@@ -174,6 +207,119 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
   )
 }
 
+function getPointerRelativePosition(event: ReactPointerEvent<HTMLDivElement>) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  }
+}
+
+function getDragRectangle(drag: PaneBoxSelectionDrag): PaneSelectionRectangle {
+  return {
+    left: Math.min(drag.startX, drag.currentX),
+    top: Math.min(drag.startY, drag.currentY),
+    right: Math.max(drag.startX, drag.currentX),
+    bottom: Math.max(drag.startY, drag.currentY),
+  }
+}
+
+function isMeaningfulDrag(rectangle: PaneSelectionRectangle) {
+  return rectangle.right - rectangle.left >= 6 && rectangle.bottom - rectangle.top >= 6
+}
+
+function BoxSelectionOverlay({ pane }: { pane: PaneConfig }) {
+  const [drag, setDrag] = useState<PaneBoxSelectionDrag | null>(null)
+  const rectangle = drag ? getDragRectangle(drag) : null
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pane.workflowState || event.button !== 0) return
+
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const point = getPointerRelativePosition(event)
+    setDrag({
+      pointerId: event.pointerId,
+      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+      startX: point.x,
+      startY: point.y,
+      currentX: point.x,
+      currentY: point.y,
+    })
+  }
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    event.preventDefault()
+    const point = getPointerRelativePosition(event)
+    setDrag((current) =>
+      current
+        ? {
+            ...current,
+            currentX: point.x,
+            currentY: point.y,
+          }
+        : current
+    )
+  }
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    event.preventDefault()
+    const point = getPointerRelativePosition(event)
+    const finalDrag = { ...drag, currentX: point.x, currentY: point.y }
+    const finalRectangle = getDragRectangle(finalDrag)
+    setDrag(null)
+
+    if (!pane.workflowState || !isMeaningfulDrag(finalRectangle)) return
+
+    const containerRect = event.currentTarget.getBoundingClientRect()
+    const viewport = pane.viewport ?? {
+      x: 0,
+      y: 0,
+      zoom: 0.8,
+      width: containerRect.width,
+      height: containerRect.height,
+    }
+    const blockIds = computePaneBoxSelectedBlockIds({
+      workflowState: pane.workflowState,
+      viewport,
+      rectangle: finalRectangle,
+    })
+    pane.onBoxSelect(blockIds, finalDrag.additive)
+  }
+
+  return (
+    <div
+      className='absolute inset-0 z-20 cursor-crosshair touch-none'
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={() => setDrag(null)}
+    >
+      <div className='pointer-events-none absolute top-3 left-3 rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[11px] text-[var(--text-muted)] shadow-sm'>
+        Box select active
+      </div>
+      {rectangle && (
+        <svg className='pointer-events-none absolute inset-0 h-full w-full'>
+          <rect
+            x={rectangle.left}
+            y={rectangle.top}
+            width={rectangle.right - rectangle.left}
+            height={rectangle.bottom - rectangle.top}
+            rx='6'
+            className='fill-blue-500/10 stroke-[1.5] stroke-blue-500 [stroke-dasharray:4_3]'
+          >
+            <title>Split pane box selection</title>
+          </rect>
+        </svg>
+      )}
+    </div>
+  )
+}
+
 function CanvasPane({ pane }: { pane: PaneConfig }) {
   const isLoading = pane.isWorkflowsLoading || pane.isWorkflowStateLoading
 
@@ -187,29 +333,32 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
           </div>
         )}
         {!isLoading && pane.workflowState && pane.workspaceId ? (
-          <PreviewWorkflow
-            key={`${pane.kind}:${pane.workflowId ?? 'none'}`}
-            workflowState={pane.workflowState}
-            workspaceId={pane.workspaceId}
-            selectedBlockIds={pane.selectedBlockIds}
-            selectedEdgeIds={pane.selectedEdgeIds}
-            focusNodeIds={pane.copiedBlockIds}
-            defaultPosition={pane.viewport}
-            defaultZoom={pane.viewport?.zoom}
-            autoFitView={!pane.hasStoredViewport}
-            zoomOnScroll
-            onNodeClick={(blockId, _mousePosition, modifiers) =>
-              pane.onSelectBlock(blockId, modifiers?.additive ?? false)
-            }
-            onEdgeClick={(edgeId, modifiers) =>
-              pane.onSelectEdge(edgeId, modifiers?.additive ?? false)
-            }
-            onPaneClick={pane.onClearSelection}
-            cursorStyle='pointer'
-            fitPadding={0.2}
-            onViewportChange={pane.onViewportChange}
-            lightweight
-          />
+          <>
+            <PreviewWorkflow
+              key={`${pane.kind}:${pane.workflowId ?? 'none'}`}
+              workflowState={pane.workflowState}
+              workspaceId={pane.workspaceId}
+              selectedBlockIds={pane.selectedBlockIds}
+              selectedEdgeIds={pane.selectedEdgeIds}
+              focusNodeIds={pane.copiedBlockIds}
+              defaultPosition={pane.viewport}
+              defaultZoom={pane.viewport?.zoom}
+              autoFitView={!pane.hasStoredViewport}
+              zoomOnScroll
+              onNodeClick={(blockId, _mousePosition, modifiers) =>
+                pane.onSelectBlock(blockId, modifiers?.additive ?? false)
+              }
+              onEdgeClick={(edgeId, modifiers) =>
+                pane.onSelectEdge(edgeId, modifiers?.additive ?? false)
+              }
+              onPaneClick={pane.onClearSelection}
+              cursorStyle='pointer'
+              fitPadding={0.2}
+              onViewportChange={pane.onViewportChange}
+              lightweight
+            />
+            {pane.boxSelectionEnabled && <BoxSelectionOverlay pane={pane} />}
+          </>
         ) : (
           !isLoading && (
             <div className='flex h-full items-center justify-center px-6 text-center text-[13px] text-[var(--text-muted)] leading-5'>
@@ -264,6 +413,8 @@ export function SplitCanvasWorkbench() {
   const [personalHasStoredViewport, setPersonalHasStoredViewport] = useState(false)
   const [teamHasStoredViewport, setTeamHasStoredViewport] = useState(false)
   const [activeMobilePane, setActiveMobilePane] = useState<CanvasPaneKind>('personal')
+  const [personalBoxSelectionEnabled, setPersonalBoxSelectionEnabled] = useState(false)
+  const [teamBoxSelectionEnabled, setTeamBoxSelectionEnabled] = useState(false)
   const copySelection = useCopySelection()
 
   useEffect(() => {
@@ -294,6 +445,7 @@ export function SplitCanvasWorkbench() {
       selectedEdgeIds: selectedPersonalEdgeIds,
       copiedBlockIds: copiedPersonalBlockIds,
       copiedEdgeIds: copiedPersonalEdgeIds,
+      boxSelectionEnabled: personalBoxSelectionEnabled,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('personal')
         setActiveMobilePane('personal')
@@ -312,6 +464,20 @@ export function SplitCanvasWorkbench() {
         )
         setCopiedPersonalBlockIds([])
         setCopiedPersonalEdgeIds([])
+      },
+      onBoxSelect: (blockIds, additive) => {
+        setSelectedPane('personal')
+        setActiveMobilePane('personal')
+        setSelectedPersonalBlockIds((currentBlockIds) =>
+          additive ? Array.from(new Set([...currentBlockIds, ...blockIds])) : blockIds
+        )
+        setSelectedPersonalEdgeIds([])
+        setCopiedPersonalBlockIds([])
+        setCopiedPersonalEdgeIds([])
+      },
+      onToggleBoxSelection: () => {
+        setPersonalBoxSelectionEnabled((enabled) => !enabled)
+        setTeamBoxSelectionEnabled(false)
       },
       onClearSelection: () => {
         setSelectedPersonalBlockIds([])
@@ -349,6 +515,7 @@ export function SplitCanvasWorkbench() {
       selectedEdgeIds: selectedTeamEdgeIds,
       copiedBlockIds: copiedTeamBlockIds,
       copiedEdgeIds: copiedTeamEdgeIds,
+      boxSelectionEnabled: teamBoxSelectionEnabled,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('team')
         setActiveMobilePane('team')
@@ -367,6 +534,20 @@ export function SplitCanvasWorkbench() {
         )
         setCopiedTeamBlockIds([])
         setCopiedTeamEdgeIds([])
+      },
+      onBoxSelect: (blockIds, additive) => {
+        setSelectedPane('team')
+        setActiveMobilePane('team')
+        setSelectedTeamBlockIds((currentBlockIds) =>
+          additive ? Array.from(new Set([...currentBlockIds, ...blockIds])) : blockIds
+        )
+        setSelectedTeamEdgeIds([])
+        setCopiedTeamBlockIds([])
+        setCopiedTeamEdgeIds([])
+      },
+      onToggleBoxSelection: () => {
+        setTeamBoxSelectionEnabled((enabled) => !enabled)
+        setPersonalBoxSelectionEnabled(false)
       },
       onClearSelection: () => {
         setSelectedTeamBlockIds([])
@@ -402,6 +583,7 @@ export function SplitCanvasWorkbench() {
     personalWorkflowId,
     personalWorkflowState,
     personalWorkflows,
+    personalBoxSelectionEnabled,
     personalWorkspaceId,
     personalViewport,
     personalHasStoredViewport,
@@ -414,6 +596,7 @@ export function SplitCanvasWorkbench() {
     teamWorkflowId,
     teamWorkflowState,
     teamWorkflows,
+    teamBoxSelectionEnabled,
     teamWorkspaceId,
     teamViewport,
     teamHasStoredViewport,

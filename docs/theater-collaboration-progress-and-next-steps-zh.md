@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -340,6 +340,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 复制结果会按 `mappings.blockIds` / `mappings.edgeIds` 同时高亮新节点和新连接，边选择不会在预览里显示编辑器删除按钮。
 - 复制结果会把目标 pane 的新节点作为 `focusNodeIds` 传给 `PreviewWorkflow`；等目标 workflow state 刷新出这些节点后，预览会以动画 fit 到复制结果，同时继续上报 viewport 给下一次 placement 使用。
 - 分屏 pane 的 viewport 会按 `pane kind + workflowId` 写入本地存储；再次打开同一 pane/workflow 时会优先恢复 x/y/zoom，未保存过的 workflow 才自动 fit。左右 pane 不共享 viewport，避免个人草稿和团队画布 pan/zoom 串线。
+- 分屏 pane 新增 `Box select` 模式，使用 pointer events 覆盖层在当前 pane 内拖拽框选节点；拖拽命中计算按当前 viewport 的 pan/zoom 从屏幕坐标反算 workflow 坐标，并支持 Shift/Ctrl/Cmd 叠加选择。
 - 新增 `split-selection.ts` 和对应测试，覆盖点击替换、多选 toggle、边选择 toggle、复制映射保持源选择顺序和 selection 文案。
 
 本轮同时继续收敛原主界面的画布语义：
@@ -537,6 +538,16 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 若成员权限不同步，修复动作复用 `useUpdateWorkspacePermissions` 批量 PATCH 可修复用户；owner 或 billing account 等通用权限 route 不允许自动降级的特殊 mismatch 会留作人工提示。
 - 本切片让 Phase 9 “健康可见性”升级为“健康可操作性”首版；后续仍需补更细的失败操作 audit/activity 规则和健康修复历史。
 
+### 5.20 Phase 7 分屏 Box select 框选切片
+
+本轮回到 Phase 7，继续完善“只读预览 + 显式复制”的分屏选择体验：
+
+- `split-selection.ts` 新增 `computePaneBoxSelectedBlockIds`，用当前 pane viewport 的 `x/y/zoom` 把拖拽矩形从屏幕坐标转换到 workflow 坐标，再与节点 bounds 做相交判断。
+- 框选支持普通节点和 subflow 内子节点：子节点会按 `data.parentId` 递归计算绝对位置，避免框选命中和预览渲染位置脱节。
+- `SplitCanvasWorkbench` 的每个 pane header 新增 `Box select` 开关；开启后当前 pane 会显示 pointer-event 覆盖层和虚线选择框，拖拽结束后替换当前 selection。
+- 按 Shift/Ctrl/Cmd 开始拖拽时会把框选命中的节点追加到当前 pane selection；框选会清空显式 edge selection，避免复制 payload 中残留旧边。
+- 该切片覆盖鼠标和触摸 pointer 事件，完成 Phase 7 “框选/触摸选择优化”的首版；后续仍可继续做键盘快捷键、长按提示和真正双编辑器 store 隔离。
+
 ## 6. 建议继续推进目标
 
 ### 6.1 立即继续：收口 Phase 6 前端入口并进入 Phase 7 分屏
@@ -552,6 +563,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
    - 在原 `/workspace/[workspaceId]` 布局下新增分屏入口，避免回到独立 `/workbench` 外壳。
    - 左右 pane 已独立保存 workflowId、节点/边 selection、目标侧和 pane/workflow 维度 viewport，复制动作显式传 source/target。
    - 移动端已降级为顶部 tab，不强制左右分屏或上下堆叠。
+   - Box select 框选已完成首版，后续继续补完整双编辑器 store 隔离、键盘快捷键和更细触摸提示。
 
 3. **publication state tree 后续切片**
    - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由、历史版本恢复、审核/风险字段、审计动作和首版 team activity 广播；后续继续补全站内通知、reviewer 指派、审批流和前端治理操作。
