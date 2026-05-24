@@ -57,6 +57,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { useOrganizationRetention } from '@/ee/data-retention/hooks/data-retention'
 import {
   fetchOrganizationWorkgroupActivity,
+  fetchProjectNotificationCenter,
   useAddWorkgroupMember,
   useAgentProfiles,
   useArchiveWorkgroup,
@@ -87,6 +88,8 @@ import { useNotificationStore } from '@/stores/notifications'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
 const PROJECT_NOTIFICATION_CENTER_LIMIT = 8
+const PROJECT_NOTIFICATION_EXPORT_PAGE_SIZE = 50
+const PROJECT_NOTIFICATION_EXPORT_MAX_PAGES = 1000
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
@@ -1331,6 +1334,49 @@ function downloadProjectFailureHistoryCsv(
   URL.revokeObjectURL(url)
 }
 
+function downloadProjectNotificationsCsv(
+  entries: ProjectNotificationCenterEntry[],
+  scope: 'page' | 'filtered' = 'page'
+) {
+  const rows = [
+    [
+      'Audit row ID',
+      'Type',
+      'Severity',
+      'Title',
+      'Detail',
+      'Channel',
+      'Body',
+      'Notification count',
+      'Actor name',
+      'Actor email',
+      'Created at',
+      'Read at',
+    ],
+    ...entries.map((entry) => [
+      entry.id,
+      formatProjectNotificationKind(entry.kind),
+      entry.severity,
+      entry.title,
+      entry.detail,
+      entry.channel?.replace('_', ' ') ?? 'Audit',
+      entry.body ?? '',
+      String(entry.notificationCount),
+      entry.actorName ?? '',
+      entry.actorEmail ?? '',
+      entry.createdAt,
+      entry.readAt ?? '',
+    ]),
+  ]
+  const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `project-notifications-${scope}-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
@@ -1399,6 +1445,10 @@ export function ProjectAdminCenter() {
     ProjectNotificationCenterKind | ''
   >('')
   const [projectNotificationOffset, setProjectNotificationOffset] = useState(0)
+  const [isExportingProjectNotifications, setIsExportingProjectNotifications] = useState(false)
+  const [projectNotificationExportStatus, setProjectNotificationExportStatus] = useState<
+    string | null
+  >(null)
   const [selectedProjectNotificationId, setSelectedProjectNotificationId] = useState<string | null>(
     null
   )
@@ -1897,6 +1947,7 @@ export function ProjectAdminCenter() {
       : 'No persisted failures to show.'
   const canExportActivity = Boolean(organizationId && !isExportingActivity)
   const canExportFailureHistory = Boolean(organizationId && !isExportingFailureHistory)
+  const canExportProjectNotifications = Boolean(organizationId && !isExportingProjectNotifications)
   const projectAdminFailureAuditSummary = useMemo(
     () => buildProjectAdminFailureAuditSummary(projectAdminFailureAudit),
     [projectAdminFailureAudit]
@@ -1939,6 +1990,12 @@ export function ProjectAdminCenter() {
   const resetFailureHistoryPage = () => {
     setFailureHistoryOffset(0)
     setFailureHistoryExportStatus(null)
+  }
+
+  const resetProjectNotificationPage = () => {
+    setProjectNotificationOffset(0)
+    setSelectedProjectNotificationId(null)
+    setProjectNotificationExportStatus(null)
   }
 
   const handleCreateTeam = async () => {
@@ -2431,6 +2488,54 @@ export function ProjectAdminCenter() {
           error
         )
       )
+    }
+  }
+
+  const handleExportFilteredProjectNotifications = async () => {
+    if (!organizationId) return
+
+    setIsExportingProjectNotifications(true)
+    setProjectNotificationExportStatus(null)
+    try {
+      const notifications: ProjectNotificationCenterEntry[] = []
+      let offset = 0
+      let nextOffset: number | null = 0
+      let pageCount = 0
+
+      while (nextOffset != null && pageCount < PROJECT_NOTIFICATION_EXPORT_MAX_PAGES) {
+        const result = await fetchProjectNotificationCenter(organizationId, {
+          limit: PROJECT_NOTIFICATION_EXPORT_PAGE_SIZE,
+          offset,
+          kind: projectNotificationKind || undefined,
+        })
+        notifications.push(...result.notifications)
+        nextOffset = result.nextOffset
+        offset = nextOffset ?? offset
+        pageCount += 1
+      }
+
+      if (notifications.length === 0) {
+        setProjectNotificationExportStatus('No project notifications matched the current filter.')
+        return
+      }
+
+      downloadProjectNotificationsCsv(notifications, 'filtered')
+      setProjectNotificationExportStatus(
+        nextOffset == null
+          ? `Exported ${notifications.length} project notification row${notifications.length === 1 ? '' : 's'}.`
+          : `Exported the first ${notifications.length} project notification rows. Narrow filters to export more.`
+      )
+    } catch (error) {
+      setProjectNotificationExportStatus(
+        recordProjectAdminFailure(
+          'notification',
+          'Export project notifications',
+          projectNotificationKind || 'all',
+          error
+        )
+      )
+    } finally {
+      setIsExportingProjectNotifications(false)
     }
   }
 
@@ -3160,8 +3265,7 @@ export function ProjectAdminCenter() {
                     setProjectNotificationKind(
                       event.target.value as ProjectNotificationCenterKind | ''
                     )
-                    setProjectNotificationOffset(0)
-                    setSelectedProjectNotificationId(null)
+                    resetProjectNotificationPage()
                   }}
                   className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                 >
@@ -3172,6 +3276,28 @@ export function ProjectAdminCenter() {
                   ))}
                 </select>
                 <div className='flex flex-wrap items-center gap-2'>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={projectNotifications.length === 0}
+                    onClick={() => downloadProjectNotificationsCsv(projectNotifications)}
+                  >
+                    <Download className='mr-2 h-[13px] w-[13px]' />
+                    Export page
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={!canExportProjectNotifications}
+                    onClick={() => void handleExportFilteredProjectNotifications()}
+                  >
+                    {isExportingProjectNotifications ? (
+                      <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                    ) : (
+                      <Download className='mr-2 h-[13px] w-[13px]' />
+                    )}
+                    Export filtered
+                  </button>
                   <button
                     type='button'
                     className={buttonVariants({ size: 'sm', variant: 'default' })}
@@ -3205,6 +3331,11 @@ export function ProjectAdminCenter() {
               <div className='mt-2 text-[11px] text-[var(--text-muted)]'>
                 {projectNotificationRangeLabel}
               </div>
+              {projectNotificationExportStatus && (
+                <div className='mt-1 text-[11px] text-[var(--text-muted)]' aria-live='polite'>
+                  {projectNotificationExportStatus}
+                </div>
+              )}
               {projectNotifications.length > 0 ? (
                 <div className='mt-3 grid gap-2'>
                   {projectNotifications.map((entry) => (

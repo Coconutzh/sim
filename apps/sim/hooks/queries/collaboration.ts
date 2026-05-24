@@ -708,14 +708,22 @@ export function useProjectNotificationCenter(
   return useQuery({
     queryKey: collaborationKeys.organizationProjectNotificationCenter(organizationId, query),
     queryFn: ({ signal }) =>
-      requestJson(listOrganizationProjectNotificationCenterContract, {
-        params: { id: organizationId as string },
-        query,
-        signal,
-      }),
+      fetchProjectNotificationCenter(organizationId as string, query, signal),
     enabled: Boolean(organizationId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function fetchProjectNotificationCenter(
+  organizationId: string,
+  query: ProjectNotificationCenterQuery = {},
+  signal?: AbortSignal
+) {
+  return requestJson(listOrganizationProjectNotificationCenterContract, {
+    params: { id: organizationId },
+    query,
+    signal,
   })
 }
 
