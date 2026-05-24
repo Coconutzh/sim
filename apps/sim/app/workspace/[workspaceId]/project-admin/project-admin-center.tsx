@@ -85,6 +85,9 @@ const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
 const PROJECT_ADMIN_FAILURE_AUDIT_LIMIT = 12
 const PROJECT_ADMIN_FAILURE_HISTORY_LIMIT = 5
+const PROJECT_ADMIN_FAILURE_STATS_SAMPLE_LIMIT = 100
+const PROJECT_ADMIN_FAILURE_RECENT_HOURS = 24
+const PROJECT_ADMIN_FAILURE_TREND_DAYS = 7
 const PROJECT_ADMIN_FAILURE_TEXT_MAX = {
   operation: 160,
   target: 160,
@@ -222,6 +225,17 @@ interface SnapshotNodeLevelDiff {
   removedEdges: SnapshotEdgeDiffRow[]
   changedEdges: SnapshotEdgeDiffRow[]
   changedVariables: string[]
+}
+
+interface ProjectAdminFailureHistoryStats {
+  sampleSize: number
+  recentFailures: number
+  trendFailures: number
+  uniqueActors: number
+  topScopeLabel: string
+  topScopeCount: number
+  oldestLoadedAt: string | null
+  newestLoadedAt: string | null
 }
 
 interface PublicationDependencyImpactRow {
@@ -1155,6 +1169,66 @@ function formatDateTime(value: string) {
   }).format(new Date(value))
 }
 
+function formatProjectAdminFailureScope(scope: string | null | undefined) {
+  if (!scope) return 'Project'
+  return (
+    PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.find((option) => option.scope === scope)?.label ?? scope
+  )
+}
+
+function buildProjectAdminFailureHistoryStats(
+  entries: OrganizationWorkgroupActivityEntry[]
+): ProjectAdminFailureHistoryStats {
+  const now = Date.now()
+  const recentCutoff = now - PROJECT_ADMIN_FAILURE_RECENT_HOURS * 60 * 60 * 1000
+  const trendCutoff = now - PROJECT_ADMIN_FAILURE_TREND_DAYS * 24 * 60 * 60 * 1000
+  const actors = new Set<string>()
+  const scopeCounts = new Map<string, number>()
+  let recentFailures = 0
+  let trendFailures = 0
+  let oldestLoadedAt: string | null = null
+  let newestLoadedAt: string | null = null
+  let oldestTime = Number.POSITIVE_INFINITY
+  let newestTime = Number.NEGATIVE_INFINITY
+
+  for (const entry of entries) {
+    const failure = entry.projectAdminFailure
+    const recordedAt = failure?.recordedAt ?? entry.createdAt
+    const recordedTime = Date.parse(recordedAt)
+    if (!Number.isNaN(recordedTime)) {
+      if (recordedTime >= recentCutoff) recentFailures += 1
+      if (recordedTime >= trendCutoff) trendFailures += 1
+      if (recordedTime < oldestTime) {
+        oldestTime = recordedTime
+        oldestLoadedAt = recordedAt
+      }
+      if (recordedTime > newestTime) {
+        newestTime = recordedTime
+        newestLoadedAt = recordedAt
+      }
+    }
+
+    const actor = entry.actorEmail || entry.actorName
+    if (actor) actors.add(actor)
+
+    const scope = failure?.scope ?? 'project'
+    scopeCounts.set(scope, (scopeCounts.get(scope) ?? 0) + 1)
+  }
+
+  const topScope = [...scopeCounts.entries()].sort((left, right) => right[1] - left[1])[0]
+
+  return {
+    sampleSize: entries.length,
+    recentFailures,
+    trendFailures,
+    uniqueActors: actors.size,
+    topScopeLabel: topScope ? formatProjectAdminFailureScope(topScope[0]) : 'None',
+    topScopeCount: topScope?.[1] ?? 0,
+    oldestLoadedAt,
+    newestLoadedAt,
+  }
+}
+
 function escapeCsvValue(value: string | null | undefined) {
   const normalized = value ?? ''
   if (!/[",\r\n]/.test(normalized)) return normalized
@@ -1684,13 +1758,31 @@ export function ProjectAdminCenter() {
     }),
     [failureHistoryFilterBase, failureHistoryOffset]
   )
+  const failureHistoryStatsFilters = useMemo(
+    () => ({
+      action: 'project_admin_failure.recorded',
+      limit: PROJECT_ADMIN_FAILURE_STATS_SAMPLE_LIMIT,
+      offset: 0,
+    }),
+    []
+  )
   const { data: serverFailureHistoryData, isLoading: isLoadingServerFailureHistory } =
     useOrganizationWorkgroupActivity(
       isProjectAdmin ? organizationId : undefined,
       serverFailureHistoryFilters
     )
+  const { data: failureHistoryStatsData, isLoading: isLoadingFailureHistoryStats } =
+    useOrganizationWorkgroupActivity(
+      isProjectAdmin ? organizationId : undefined,
+      failureHistoryStatsFilters
+    )
   const projectActivity = activityData?.activity ?? []
   const serverFailureHistory = serverFailureHistoryData?.activity ?? []
+  const failureHistoryStatsSample = failureHistoryStatsData?.activity ?? []
+  const failureHistoryStats = useMemo(
+    () => buildProjectAdminFailureHistoryStats(failureHistoryStatsSample),
+    [failureHistoryStatsSample]
+  )
   const hasPreviousActivityPage = activityOffset > 0
   const hasNextActivityPage = activityData?.nextOffset != null
   const hasPreviousFailureHistoryPage = failureHistoryOffset > 0
@@ -4303,6 +4395,69 @@ export function ProjectAdminCenter() {
                       {serverFailureHistory.length} recent
                     </span>
                   </div>
+                  <div className='mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                    <div className='flex flex-wrap items-start justify-between gap-2'>
+                      <div>
+                        <h4 className='font-medium text-[12px] text-[var(--text-primary)]'>
+                          Retention and trend window
+                        </h4>
+                        <p className='mt-1 max-w-[680px] text-[11px] text-[var(--text-muted)]'>
+                          Sampled from the latest {PROJECT_ADMIN_FAILURE_STATS_SAMPLE_LIMIT}{' '}
+                          persisted failures in organization audit logs. Export filtered history
+                          before organization retention cleanup removes older evidence.
+                        </p>
+                      </div>
+                      {isLoadingFailureHistoryStats && (
+                        <span className='flex items-center gap-1 text-[11px] text-[var(--text-muted)]'>
+                          <Loader className='h-[12px] w-[12px]' animate />
+                          Loading trends
+                        </span>
+                      )}
+                    </div>
+                    <div className='mt-3 grid gap-2 md:grid-cols-3'>
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
+                        <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                          24h
+                        </div>
+                        <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                          {failureHistoryStats.recentFailures}
+                        </div>
+                        <div className='text-[11px] text-[var(--text-muted)]'>
+                          failures in the last {PROJECT_ADMIN_FAILURE_RECENT_HOURS}h
+                        </div>
+                      </div>
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
+                        <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                          {PROJECT_ADMIN_FAILURE_TREND_DAYS}d trend
+                        </div>
+                        <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                          {failureHistoryStats.trendFailures}
+                        </div>
+                        <div className='text-[11px] text-[var(--text-muted)]'>
+                          of {failureHistoryStats.sampleSize} sampled failures
+                        </div>
+                      </div>
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
+                        <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                          Top scope
+                        </div>
+                        <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                          {failureHistoryStats.topScopeLabel}
+                        </div>
+                        <div className='text-[11px] text-[var(--text-muted)]'>
+                          {failureHistoryStats.topScopeCount} failures /{' '}
+                          {failureHistoryStats.uniqueActors} actor
+                          {failureHistoryStats.uniqueActors === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className='mt-2 text-[11px] text-[var(--text-muted)]'>
+                      Loaded range:{' '}
+                      {failureHistoryStats.oldestLoadedAt && failureHistoryStats.newestLoadedAt
+                        ? `${formatDateTime(failureHistoryStats.oldestLoadedAt)} - ${formatDateTime(failureHistoryStats.newestLoadedAt)}`
+                        : 'No persisted failure sample yet.'}
+                    </div>
+                  </div>
                   <div className='mt-3 grid gap-2'>
                     <div className='grid gap-2 md:grid-cols-2'>
                       <select
@@ -4431,11 +4586,7 @@ export function ProjectAdminCenter() {
                           >
                             <div className='flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]'>
                               <span className='rounded-[8px] border border-red-500/30 px-2 py-0.5 text-red-500'>
-                                {failure?.scope
-                                  ? (PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.find(
-                                      (option) => option.scope === failure.scope
-                                    )?.label ?? failure.scope)
-                                  : 'Project'}
+                                {formatProjectAdminFailureScope(failure?.scope)}
                               </span>
                               <span>{formatDateTime(failure?.recordedAt ?? entry.createdAt)}</span>
                               <span>{entry.actorName || entry.actorEmail || 'Unknown actor'}</span>
