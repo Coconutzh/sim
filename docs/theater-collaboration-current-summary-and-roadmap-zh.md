@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `037cb78d8` | 项目级 activity drilldown 增加 offset 分页、当前页 CSV 导出、服务测试和接手文档更新 |
 | `3747a0071` | 新增团队协作活动日志 API、React Query hook、团队管理页日志区块，并把个人草稿删除弹窗文案从 workspace 改为 canvas |
 | `6b813eca6` | Sidebar 增加 workgroup canvas switcher，多团队用户可切换团队上下文并进入对应个人/团队画布 |
 | `3ecddd26c` | 团队管理页增加团队发布创建控件，可从团队 workflow 发布 showcase |
