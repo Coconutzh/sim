@@ -27,6 +27,10 @@ import type {
   PublicationSummary,
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
+import {
+  buildPublicationStateGroups,
+  type PublicationGovernanceAlertSeverity,
+} from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
 import {
   fetchOrganizationWorkgroupActivity,
@@ -98,6 +102,17 @@ const PUBLICATION_RISK_OPTIONS: { value: PublicationRiskLevel | ''; label: strin
   { value: 'high', label: 'High' },
   { value: 'critical', label: 'Critical' },
 ]
+
+function governanceAlertClass(severity: PublicationGovernanceAlertSeverity): string {
+  switch (severity) {
+    case 'danger':
+      return 'border-red-500/30 bg-red-500/10 text-red-500'
+    case 'warning':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+    case 'info':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-500'
+  }
+}
 
 interface BatchAssignmentResult {
   target: string
@@ -558,6 +573,21 @@ export function ProjectAdminCenter() {
   }, [comparisonPublicationDetailData, selectedPublicationDetailData])
   const isLoadingSnapshotDiff =
     isLoadingSelectedPublicationDetail || isLoadingComparisonPublicationDetail
+  const publicationStateGroups = useMemo(
+    () => buildPublicationStateGroups(publications),
+    [publications]
+  )
+  const publicationGovernanceAlertGroups = publicationStateGroups.filter(
+    (group) => group.governanceAlerts.length > 0
+  )
+  const publicationGovernanceAlertCount = publicationGovernanceAlertGroups.reduce(
+    (sum, group) => sum + group.governanceAlerts.length,
+    0
+  )
+  const selectedPublicationGovernanceGroup =
+    publicationStateGroups.find((group) =>
+      group.versions.some((version) => version.id === selectedPublication?.id)
+    ) ?? null
   const selectedNewTeamDisciplineId = newTeamDisciplineId || disciplines[0]?.id || ''
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
@@ -1022,11 +1052,18 @@ export function ProjectAdminCenter() {
           <StatCard
             label='Governance alerts'
             value={
-              criticalPublicationCount + unreviewedPublicationCount + teamsWithoutCanvas.length
+              criticalPublicationCount +
+              unreviewedPublicationCount +
+              publicationGovernanceAlertCount +
+              teamsWithoutCanvas.length
             }
-            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${teamsWithoutCanvas.length} missing canvas`}
+            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${publicationGovernanceAlertCount} state-tree, ${teamsWithoutCanvas.length} missing canvas`}
             tone={
-              criticalPublicationCount + unreviewedPublicationCount + teamsWithoutCanvas.length > 0
+              criticalPublicationCount +
+                unreviewedPublicationCount +
+                publicationGovernanceAlertCount +
+                teamsWithoutCanvas.length >
+              0
                 ? 'warning'
                 : 'default'
             }
@@ -1070,6 +1107,9 @@ export function ProjectAdminCenter() {
                 const canRetract = publication.status !== 'retracted'
                 const canRestore =
                   publication.status === 'archived' || publication.status === 'superseded'
+                const publicationGroup = publicationStateGroups.find((group) =>
+                  group.versions.some((version) => version.id === publication.id)
+                )
 
                 return (
                   <div
@@ -1091,6 +1131,21 @@ export function ProjectAdminCenter() {
                         <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
                           Depends on {publication.dependsOnPublicationIds.length} visible version
                           {publication.dependsOnPublicationIds.length === 1 ? '' : 's'}.
+                        </div>
+                      )}
+                      {publicationGroup && publicationGroup.governanceAlerts.length > 0 && (
+                        <div className='mt-2 flex flex-wrap gap-1'>
+                          {publicationGroup.governanceAlerts.slice(0, 2).map((alert) => (
+                            <span
+                              key={alert.code}
+                              className={cn(
+                                'rounded-[8px] border px-2 py-0.5 text-[10px]',
+                                governanceAlertClass(alert.severity)
+                              )}
+                            >
+                              {alert.message}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1770,13 +1825,14 @@ export function ProjectAdminCenter() {
                     Governance watchlist
                   </h2>
                   <p className='text-[12px] text-[var(--text-muted)]'>
-                    First read-only pass over risks, review gaps, and canvas setup.
+                    Risks, review gaps, state-tree conflicts, and canvas setup.
                   </p>
                 </div>
               </div>
               <div className='grid gap-3 p-4'>
                 {criticalPublicationCount === 0 &&
                 unreviewedPublicationCount === 0 &&
+                publicationGovernanceAlertCount === 0 &&
                 teamsWithoutCanvas.length === 0 ? (
                   <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
                     No project-level watchlist items in the currently visible data.
@@ -1801,6 +1857,30 @@ export function ProjectAdminCenter() {
                         </div>
                       </div>
                     )}
+                    {publicationGovernanceAlertGroups.map((group) => (
+                      <div
+                        key={group.id}
+                        className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+                      >
+                        <div className='font-medium text-[13px] text-[var(--text-primary)]'>
+                          {group.sourceDiscipline.name} / {group.sourceWorkgroup.name}
+                        </div>
+                        <div className='mt-2 grid gap-2'>
+                          {group.governanceAlerts.map((alert) => (
+                            <div
+                              key={alert.code}
+                              className={cn(
+                                'flex items-center gap-2 rounded-[8px] border px-2 py-1 text-[11px]',
+                                governanceAlertClass(alert.severity)
+                              )}
+                            >
+                              <AlertTriangle className='h-[12px] w-[12px]' />
+                              {alert.message}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                     {teamsWithoutCanvas.length > 0 && (
                       <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
                         <div className='flex items-center gap-2 text-[13px] text-amber-500'>
@@ -2067,6 +2147,33 @@ export function ProjectAdminCenter() {
                     </span>
                   </div>
                 </div>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Conflict detection
+                </h3>
+                {selectedPublicationGovernanceGroup &&
+                selectedPublicationGovernanceGroup.governanceAlerts.length > 0 ? (
+                  <div className='mt-3 grid gap-2'>
+                    {selectedPublicationGovernanceGroup.governanceAlerts.map((alert) => (
+                      <div
+                        key={alert.code}
+                        className={cn(
+                          'flex items-center gap-2 rounded-[8px] border px-2 py-1 text-[12px]',
+                          governanceAlertClass(alert.severity)
+                        )}
+                      >
+                        <AlertTriangle className='h-[13px] w-[13px]' />
+                        {alert.message}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className='mt-2 text-[12px] text-[var(--text-muted)]'>
+                    No state-tree conflict was detected for this publication group.
+                  </p>
+                )}
               </section>
 
               <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
