@@ -1,7 +1,15 @@
 ﻿'use client'
 
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Compass, Network, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  Compass,
+  Network,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { buttonVariants, Loader } from '@/components/emcn'
@@ -20,6 +28,7 @@ import {
   useMyWorkgroups,
   useOrganizationWorkgroups,
   useShowcasePublications,
+  useWorkgroupActivity,
 } from '@/hooks/queries/collaboration'
 import { useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
@@ -112,6 +121,42 @@ function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
 
+function formatActivityAction(action: string) {
+  switch (action) {
+    case 'member.invited':
+      return 'Member added'
+    case 'member.role_changed':
+      return 'Role updated'
+    case 'member.removed':
+      return 'Member removed'
+    case 'publication.created':
+      return 'Published showcase'
+    case 'publication.updated':
+      return 'Updated publication'
+    case 'publication.archived':
+      return 'Archived publication'
+    case 'publication.retracted':
+      return 'Retracted publication'
+    case 'publication.restored':
+      return 'Restored publication'
+    case 'skill.updated':
+      return 'Agent skill updated'
+    case 'workspace.created':
+      return 'Team canvas initialized'
+    default:
+      return action
+  }
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
@@ -124,6 +169,7 @@ export function ProjectAdminCenter() {
   const [assignmentValue, setAssignmentValue] = useState('')
   const [assignmentRole, setAssignmentRole] = useState<'member' | 'admin'>('member')
   const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null)
+  const [activityTeamId, setActivityTeamId] = useState('')
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -185,6 +231,7 @@ export function ProjectAdminCenter() {
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
   )
+  const selectedActivityTeamId = activityTeamId || organizationWorkgroups[0]?.id || ''
   const selectedRosterMember = rosterMembers.find(
     (member) => member.userId === selectedRosterUserId
   )
@@ -200,6 +247,11 @@ export function ProjectAdminCenter() {
       assignmentValue.trim() &&
       !addWorkgroupMember.isPending
   )
+  const { data: activityData, isLoading: isLoadingActivity } = useWorkgroupActivity(
+    isProjectAdmin ? selectedActivityTeamId : undefined,
+    8
+  )
+  const projectActivity = activityData?.activity ?? []
 
   const handleCreateTeam = async () => {
     if (!organizationId || !selectedNewTeamDisciplineId || !newTeamName.trim()) return
@@ -621,56 +673,117 @@ export function ProjectAdminCenter() {
             </div>
           </div>
 
-          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
-            <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
-              <Compass className='h-[15px] w-[15px] text-[var(--text-icon)]' />
-              <div>
-                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Governance watchlist
-                </h2>
-                <p className='text-[12px] text-[var(--text-muted)]'>
-                  First read-only pass over risks, review gaps, and canvas setup.
-                </p>
+          <div className='grid gap-5'>
+            <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+              <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+                <Compass className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+                <div>
+                  <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                    Governance watchlist
+                  </h2>
+                  <p className='text-[12px] text-[var(--text-muted)]'>
+                    First read-only pass over risks, review gaps, and canvas setup.
+                  </p>
+                </div>
+              </div>
+              <div className='grid gap-3 p-4'>
+                {criticalPublicationCount === 0 &&
+                unreviewedPublicationCount === 0 &&
+                teamsWithoutCanvas.length === 0 ? (
+                  <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
+                    No project-level watchlist items in the currently visible data.
+                  </div>
+                ) : (
+                  <>
+                    {criticalPublicationCount > 0 && (
+                      <div className='rounded-[8px] border border-red-500/30 bg-red-500/10 p-3'>
+                        <div className='flex items-center gap-2 text-[13px] text-red-500'>
+                          <AlertTriangle className='h-[14px] w-[14px]' />
+                          {criticalPublicationCount} critical-risk showcase version
+                          {criticalPublicationCount === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                    )}
+                    {unreviewedPublicationCount > 0 && (
+                      <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
+                        <div className='flex items-center gap-2 text-[13px] text-amber-500'>
+                          <AlertTriangle className='h-[14px] w-[14px]' />
+                          {unreviewedPublicationCount} publication
+                          {unreviewedPublicationCount === 1 ? '' : 's'} pending review
+                        </div>
+                      </div>
+                    )}
+                    {teamsWithoutCanvas.length > 0 && (
+                      <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
+                        <div className='flex items-center gap-2 text-[13px] text-amber-500'>
+                          <AlertTriangle className='h-[14px] w-[14px]' />
+                          {teamsWithoutCanvas.length} team
+                          {teamsWithoutCanvas.length === 1 ? '' : 's'} missing team canvas
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-            <div className='grid gap-3 p-4'>
-              {criticalPublicationCount === 0 &&
-              unreviewedPublicationCount === 0 &&
-              teamsWithoutCanvas.length === 0 ? (
-                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
-                  No project-level watchlist items in the currently visible data.
+
+            <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+              <div className='flex items-center justify-between gap-3 border-[var(--border)] border-b px-4 py-3'>
+                <div className='flex items-center gap-2'>
+                  <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+                  <div>
+                    <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                      Project activity drilldown
+                    </h2>
+                    <p className='text-[12px] text-[var(--text-muted)]'>
+                      Inspect recent audit-backed activity for any team.
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <>
-                  {criticalPublicationCount > 0 && (
-                    <div className='rounded-[8px] border border-red-500/30 bg-red-500/10 p-3'>
-                      <div className='flex items-center gap-2 text-[13px] text-red-500'>
-                        <AlertTriangle className='h-[14px] w-[14px]' />
-                        {criticalPublicationCount} critical-risk showcase version
-                        {criticalPublicationCount === 1 ? '' : 's'}
+                <select
+                  value={selectedActivityTeamId}
+                  onChange={(event) => setActivityTeamId(event.target.value)}
+                  className='h-[32px] max-w-[180px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                >
+                  {organizationWorkgroups.length === 0 ? (
+                    <option value=''>No team</option>
+                  ) : (
+                    organizationWorkgroups.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div className='divide-y divide-[var(--border)]'>
+                {isLoadingActivity ? (
+                  <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                    <Loader className='h-[14px] w-[14px]' animate />
+                    Loading team activity...
+                  </div>
+                ) : projectActivity.length === 0 ? (
+                  <EmptyState>No activity has been recorded for this team yet.</EmptyState>
+                ) : (
+                  projectActivity.map((entry) => (
+                    <div key={entry.id} className='grid gap-2 px-4 py-3'>
+                      <div className='flex min-w-0 items-center justify-between gap-2'>
+                        <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                          {formatActivityAction(entry.action)}
+                        </span>
+                        <span className='shrink-0 text-[11px] text-[var(--text-muted)]'>
+                          {formatDateTime(entry.createdAt)}
+                        </span>
+                      </div>
+                      <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                        {entry.resourceName ? `${entry.resourceName} / ` : ''}
+                        {entry.description?.trim() || 'No additional details'} by{' '}
+                        {entry.actorName || entry.actorEmail || 'Unknown actor'}
                       </div>
                     </div>
-                  )}
-                  {unreviewedPublicationCount > 0 && (
-                    <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
-                      <div className='flex items-center gap-2 text-[13px] text-amber-500'>
-                        <AlertTriangle className='h-[14px] w-[14px]' />
-                        {unreviewedPublicationCount} publication
-                        {unreviewedPublicationCount === 1 ? '' : 's'} pending review
-                      </div>
-                    </div>
-                  )}
-                  {teamsWithoutCanvas.length > 0 && (
-                    <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-3'>
-                      <div className='flex items-center gap-2 text-[13px] text-amber-500'>
-                        <AlertTriangle className='h-[14px] w-[14px]' />
-                        {teamsWithoutCanvas.length} team{teamsWithoutCanvas.length === 1 ? '' : 's'}
-                        missing team canvas
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </section>
