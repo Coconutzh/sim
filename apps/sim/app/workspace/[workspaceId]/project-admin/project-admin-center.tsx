@@ -34,9 +34,11 @@ import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
+  buildPublicationDependencyResolutionActions,
   buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
+  type PublicationDependencyResolutionAction,
   type PublicationGovernanceAlertSeverity,
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
@@ -1334,6 +1336,23 @@ export function ProjectAdminCenter() {
     () => new Map(publications.map((publication) => [publication.id, publication])),
     [publications]
   )
+  const publicationDependencyResolutionActions = useMemo(
+    () =>
+      buildPublicationDependencyResolutionActions(
+        publicationDependencyConflictAlerts,
+        publications
+      ),
+    [publicationDependencyConflictAlerts, publications]
+  )
+  const publicationDependencyResolutionActionsByAlertId = useMemo(() => {
+    const actionsByAlertId = new Map<string, PublicationDependencyResolutionAction[]>()
+    for (const action of publicationDependencyResolutionActions) {
+      const actions = actionsByAlertId.get(action.alertId) ?? []
+      actions.push(action)
+      actionsByAlertId.set(action.alertId, actions)
+    }
+    return actionsByAlertId
+  }, [publicationDependencyResolutionActions])
   const selectedPublicationDependencyImpact = useMemo(
     () =>
       buildPublicationDependencyImpact(
@@ -1865,6 +1884,36 @@ export function ProjectAdminCenter() {
     }
   }
 
+  const handlePublicationDependencyResolutionAction = async (
+    action: PublicationDependencyResolutionAction
+  ) => {
+    const targetPublication = publicationById.get(action.targetPublicationId)
+    if (!targetPublication) {
+      setPublicationGovernanceStatus(`Could not find ${action.targetTitle} in the loaded list.`)
+      return
+    }
+
+    if (action.operation === 'open') {
+      setSelectedPublicationId(action.targetPublicationId)
+      setPublicationGovernanceStatus(action.successMessage)
+      return
+    }
+
+    if (action.operation === 'lifecycle' && action.lifecycleAction) {
+      await handlePublicationLifecycle(targetPublication, action.lifecycleAction)
+      return
+    }
+
+    if (action.operation === 'review') {
+      await handlePublicationReviewResolution(
+        targetPublication,
+        action.reviewState,
+        action.riskLevel,
+        action.successMessage
+      )
+    }
+  }
+
   const handleBatchPublicationReviewResolution = async (
     publicationsToUpdate: PublicationSummary[],
     getReviewState: (publication: PublicationSummary) => PublicationReviewState | null,
@@ -2204,6 +2253,7 @@ export function ProjectAdminCenter() {
               <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
                 {publicationGovernanceAlertCount} state-tree alerts /{' '}
                 {publicationDependencyConflictAlerts.length} dependency alerts /{' '}
+                {publicationDependencyResolutionActions.length} resolution actions /{' '}
                 {publicationReviewNotifications.length} review notifications
               </span>
             </div>
@@ -2392,56 +2442,89 @@ export function ProjectAdminCenter() {
                   </span>
                 </div>
                 <div className='mt-3 grid gap-2'>
-                  {publicationDependencyConflictAlerts.slice(0, 6).map((alert) => (
-                    <div
-                      key={alert.id}
-                      className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
-                    >
-                      <div className='min-w-0'>
-                        <div className='flex flex-wrap items-center gap-2'>
-                          <span className='font-medium text-[12px] text-[var(--text-primary)]'>
-                            {alert.publicationWorkgroupName} v{alert.publicationVersionNumber}
-                          </span>
-                          <span
-                            className={cn(
-                              'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
-                              governanceAlertClass(alert.severity)
-                            )}
-                          >
-                            {alert.code.replaceAll('_', ' ')}
-                          </span>
+                  {publicationDependencyConflictAlerts.slice(0, 6).map((alert) => {
+                    const resolutionActions =
+                      publicationDependencyResolutionActionsByAlertId.get(alert.id) ?? []
+                    return (
+                      <div
+                        key={alert.id}
+                        className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                      >
+                        <div className='min-w-0'>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              {alert.publicationWorkgroupName} v{alert.publicationVersionNumber}
+                            </span>
+                            <span
+                              className={cn(
+                                'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                                governanceAlertClass(alert.severity)
+                              )}
+                            >
+                              {alert.code.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                            {alert.publicationTitle} depends on {alert.dependencyTitle}.{' '}
+                            {alert.detail}
+                          </p>
+                          <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                            <span>Source: {alert.publicationWorkgroupName}</span>
+                            {alert.dependencyWorkgroupName ? (
+                              <span>Dependency: {alert.dependencyWorkgroupName}</span>
+                            ) : null}
+                            {alert.currentDependencyVersionNumber ? (
+                              <span>
+                                Current dependency: v{alert.currentDependencyVersionNumber}
+                              </span>
+                            ) : null}
+                          </div>
+                          {resolutionActions.length > 0 && (
+                            <div className='mt-2 grid gap-1'>
+                              {resolutionActions.slice(0, 3).map((action) => (
+                                <div
+                                  key={action.id}
+                                  className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[11px] text-[var(--text-muted)]'
+                                >
+                                  <span className='font-medium text-[var(--text-primary)]'>
+                                    {action.actionLabel}
+                                  </span>{' '}
+                                  {action.detail}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
-                          {alert.publicationTitle} depends on {alert.dependencyTitle}.{' '}
-                          {alert.detail}
-                        </p>
-                        <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
-                          <span>Source: {alert.publicationWorkgroupName}</span>
-                          {alert.dependencyWorkgroupName ? (
-                            <span>Dependency: {alert.dependencyWorkgroupName}</span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className='flex items-center gap-2 md:justify-end'>
-                        <button
-                          type='button'
-                          className={buttonVariants({ size: 'sm', variant: 'default' })}
-                          onClick={() => setSelectedPublicationId(alert.publicationId)}
-                        >
-                          Open publication
-                        </button>
-                        {alert.dependencyPublicationId ? (
+                        <div className='flex flex-wrap items-center gap-2 md:justify-end'>
                           <button
                             type='button'
                             className={buttonVariants({ size: 'sm', variant: 'default' })}
-                            onClick={() => setSelectedPublicationId(alert.dependencyPublicationId)}
+                            onClick={() => setSelectedPublicationId(alert.publicationId)}
                           >
-                            {alert.actionLabel}
+                            Open publication
                           </button>
-                        ) : null}
+                          {resolutionActions.slice(0, 3).map((action) => (
+                            <button
+                              key={action.id}
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={
+                                (action.operation === 'review' &&
+                                  updatePublicationReview.isPending) ||
+                                (action.operation === 'lifecycle' &&
+                                  updatePublicationLifecycle.isPending)
+                              }
+                              onClick={() =>
+                                void handlePublicationDependencyResolutionAction(action)
+                              }
+                            >
+                              {action.actionLabel}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {publicationDependencyConflictAlerts.length > 6 && (
                     <div className='text-[11px] text-[var(--text-muted)]'>
                       +{publicationDependencyConflictAlerts.length - 6} more dependency alert

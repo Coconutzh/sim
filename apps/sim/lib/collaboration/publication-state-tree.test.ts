@@ -7,6 +7,7 @@ import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
+  buildPublicationDependencyResolutionActions,
   buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
@@ -338,6 +339,8 @@ describe('publication state tree grouping', () => {
     })
     expect(alerts.find((alert) => alert.code === 'non_current_dependency')).toMatchObject({
       dependencyPublicationId: 'lighting-v1',
+      currentDependencyPublicationId: 'lighting-v2',
+      currentDependencyVersionNumber: 2,
       detail: 'Depends on v1, but v2 is the current Lighting baseline.',
     })
   })
@@ -359,6 +362,92 @@ describe('publication state tree grouping', () => {
     ])
 
     expect(alerts).toEqual([])
+  })
+
+  it('builds dependency conflict resolution actions for source and dependency fixes', () => {
+    const publications = [
+      publication({
+        id: 'stage-v2',
+        title: 'Stage current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+        sourceDiscipline: { code: 'stage', name: 'Stage' },
+        agentCode: 'stage',
+        dependsOnPublicationIds: ['lighting-v1', 'missing-v1'],
+      }),
+      publication({
+        id: 'lighting-v1',
+        title: 'Lighting old',
+        versionNumber: 1,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+        reviewState: 'changes_requested',
+        riskLevel: 'critical',
+        status: 'superseded',
+      }),
+      publication({
+        id: 'lighting-v2',
+        title: 'Lighting current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+      }),
+    ]
+    const alerts = buildPublicationDependencyConflictAlerts(publications)
+
+    const actions = buildPublicationDependencyResolutionActions(alerts, publications)
+
+    expect(actions.map((action) => action.type)).toEqual([
+      'triage_dependency_risk',
+      'request_source_update',
+      'approve_dependency',
+      'open_current_dependency',
+    ])
+    expect(actions.find((action) => action.type === 'request_source_update')).toMatchObject({
+      targetRole: 'source',
+      targetPublicationId: 'stage-v2',
+      reviewState: 'changes_requested',
+    })
+    expect(actions.find((action) => action.type === 'approve_dependency')).toMatchObject({
+      targetRole: 'dependency',
+      targetPublicationId: 'lighting-v1',
+      reviewState: 'approved',
+    })
+    expect(actions.find((action) => action.type === 'triage_dependency_risk')).toMatchObject({
+      targetPublicationId: 'lighting-v1',
+      riskLevel: 'high',
+    })
+    expect(actions.find((action) => action.type === 'open_current_dependency')).toMatchObject({
+      operation: 'open',
+      targetPublicationId: 'lighting-v2',
+    })
+  })
+
+  it('builds a restore action when a dependency has no current replacement', () => {
+    const publications = [
+      publication({
+        id: 'stage-v2',
+        title: 'Stage current',
+        sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+        sourceDiscipline: { code: 'stage', name: 'Stage' },
+        agentCode: 'stage',
+        dependsOnPublicationIds: ['lighting-v1'],
+      }),
+      publication({
+        id: 'lighting-v1',
+        title: 'Lighting archived',
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+        status: 'archived',
+      }),
+    ]
+
+    const actions = buildPublicationDependencyResolutionActions(
+      buildPublicationDependencyConflictAlerts(publications),
+      publications
+    )
+
+    expect(actions).toEqual([
+      expect.objectContaining({ type: 'restore_dependency', lifecycleAction: 'restore' }),
+      expect.objectContaining({ type: 'request_source_update' }),
+    ])
   })
 
   it('builds a review notification queue from reviewer, risk, and dependency signals', () => {

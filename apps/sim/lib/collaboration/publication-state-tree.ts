@@ -74,8 +74,32 @@ export interface PublicationDependencyConflictAlert {
   dependencyPublicationId: string | null
   dependencyTitle: string
   dependencyWorkgroupName: string | null
+  currentDependencyPublicationId: string | null
+  currentDependencyVersionNumber: number | null
   detail: string
   actionLabel: string
+}
+
+export interface PublicationDependencyResolutionAction {
+  id: string
+  alertId: string
+  operation: 'open' | 'review' | 'lifecycle'
+  type:
+    | 'open_current_dependency'
+    | 'request_source_update'
+    | 'approve_dependency'
+    | 'triage_dependency_risk'
+    | 'restore_dependency'
+  severity: PublicationGovernanceAlertSeverity
+  targetRole: 'source' | 'dependency'
+  targetPublicationId: string
+  targetTitle: string
+  actionLabel: string
+  detail: string
+  reviewState: PublicationSummary['reviewState'] | null
+  riskLevel: PublicationSummary['riskLevel'] | null
+  lifecycleAction: 'restore' | null
+  successMessage: string
 }
 
 export interface PublicationReviewNotification {
@@ -401,6 +425,8 @@ export function buildPublicationDependencyConflictAlerts(
           dependencyPublicationId: null,
           dependencyTitle: dependencyId,
           dependencyWorkgroupName: null,
+          currentDependencyPublicationId: null,
+          currentDependencyVersionNumber: null,
           detail:
             'Current publication depends on a version that is not visible in the project publication list.',
           actionLabel: 'Resolve missing dependency',
@@ -411,7 +437,8 @@ export function buildPublicationDependencyConflictAlerts(
       if (dependency.sourceWorkgroup.id === publication.sourceWorkgroup.id) continue
 
       const dependencyGroup = groupById.get(getPublicationGroupId(dependency))
-      const currentDependency = dependencyGroup?.current ?? null
+      const currentDependency =
+        dependencyGroup?.versions.find((version) => version.status === 'published') ?? null
       const dependencyIsCurrent =
         dependency.status === 'published' && currentDependency?.id === dependency.id
 
@@ -427,6 +454,8 @@ export function buildPublicationDependencyConflictAlerts(
           dependencyPublicationId: dependency.id,
           dependencyTitle: dependency.title,
           dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          currentDependencyPublicationId: currentDependency?.id ?? null,
+          currentDependencyVersionNumber: currentDependency?.versionNumber ?? null,
           detail: currentDependency
             ? `Depends on v${dependency.versionNumber}, but v${currentDependency.versionNumber} is the current ${dependency.sourceWorkgroup.name} baseline.`
             : `Depends on v${dependency.versionNumber}, which is ${dependency.status} and has no current baseline in this state tree.`,
@@ -446,6 +475,8 @@ export function buildPublicationDependencyConflictAlerts(
           dependencyPublicationId: dependency.id,
           dependencyTitle: dependency.title,
           dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          currentDependencyPublicationId: currentDependency?.id ?? null,
+          currentDependencyVersionNumber: currentDependency?.versionNumber ?? null,
           detail: `Dependency v${dependency.versionNumber} is ${formatGovernanceReviewState(dependency.reviewState)}.`,
           actionLabel: 'Review dependency approval',
         })
@@ -463,6 +494,8 @@ export function buildPublicationDependencyConflictAlerts(
           dependencyPublicationId: dependency.id,
           dependencyTitle: dependency.title,
           dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          currentDependencyPublicationId: currentDependency?.id ?? null,
+          currentDependencyVersionNumber: currentDependency?.versionNumber ?? null,
           detail: `Dependency v${dependency.versionNumber} is marked critical risk.`,
           actionLabel: 'Triage dependency risk',
         })
@@ -477,6 +510,162 @@ export function buildPublicationDependencyConflictAlerts(
       left.publicationWorkgroupName.localeCompare(right.publicationWorkgroupName) ||
       left.publicationTitle.localeCompare(right.publicationTitle) ||
       left.code.localeCompare(right.code)
+  )
+}
+
+export function buildPublicationDependencyResolutionActions(
+  alerts: PublicationDependencyConflictAlert[],
+  publications: PublicationSummary[]
+): PublicationDependencyResolutionAction[] {
+  const publicationById = new Map(publications.map((publication) => [publication.id, publication]))
+  const actions: PublicationDependencyResolutionAction[] = []
+  const sourceUpdateActionIds = new Set<string>()
+
+  for (const alert of alerts) {
+    const sourcePublication = publicationById.get(alert.publicationId)
+    const dependencyPublication = alert.dependencyPublicationId
+      ? publicationById.get(alert.dependencyPublicationId)
+      : null
+    const currentDependencyPublication = alert.currentDependencyPublicationId
+      ? publicationById.get(alert.currentDependencyPublicationId)
+      : null
+
+    if (!sourcePublication) continue
+
+    if (
+      (alert.code === 'missing_dependency' || alert.code === 'non_current_dependency') &&
+      sourcePublication.reviewState !== 'changes_requested' &&
+      !sourceUpdateActionIds.has(sourcePublication.id)
+    ) {
+      sourceUpdateActionIds.add(sourcePublication.id)
+      actions.push({
+        id: `${alert.id}:request-source-update`,
+        alertId: alert.id,
+        operation: 'review',
+        type: 'request_source_update',
+        severity: alert.severity,
+        targetRole: 'source',
+        targetPublicationId: sourcePublication.id,
+        targetTitle: sourcePublication.title,
+        actionLabel: 'Request source update',
+        detail:
+          alert.code === 'missing_dependency'
+            ? 'Mark the source publication as changes requested so the source team republishes with a visible dependency.'
+            : 'Mark the source publication as changes requested so the source team repoints to the current dependency baseline.',
+        reviewState: 'changes_requested',
+        riskLevel: sourcePublication.riskLevel,
+        lifecycleAction: null,
+        successMessage: `Requested dependency update for ${sourcePublication.title}.`,
+      })
+    }
+
+    if (alert.code === 'non_current_dependency' && currentDependencyPublication) {
+      actions.push({
+        id: `${alert.id}:open-current-dependency`,
+        alertId: alert.id,
+        operation: 'open',
+        type: 'open_current_dependency',
+        severity: 'info',
+        targetRole: 'dependency',
+        targetPublicationId: currentDependencyPublication.id,
+        targetTitle: currentDependencyPublication.title,
+        actionLabel: `Open current v${currentDependencyPublication.versionNumber}`,
+        detail:
+          'Open the current dependency baseline before deciding whether the source should repoint.',
+        reviewState: null,
+        riskLevel: null,
+        lifecycleAction: null,
+        successMessage: `Opened current dependency ${currentDependencyPublication.title}.`,
+      })
+    }
+
+    if (
+      alert.code === 'non_current_dependency' &&
+      !currentDependencyPublication &&
+      dependencyPublication &&
+      (dependencyPublication.status === 'archived' || dependencyPublication.status === 'superseded')
+    ) {
+      actions.push({
+        id: `${alert.id}:restore-dependency`,
+        alertId: alert.id,
+        operation: 'lifecycle',
+        type: 'restore_dependency',
+        severity: alert.severity,
+        targetRole: 'dependency',
+        targetPublicationId: dependencyPublication.id,
+        targetTitle: dependencyPublication.title,
+        actionLabel: 'Restore dependency baseline',
+        detail: 'Restore this visible dependency version when no newer current baseline exists.',
+        reviewState: null,
+        riskLevel: null,
+        lifecycleAction: 'restore',
+        successMessage: `Restored dependency baseline ${dependencyPublication.title}.`,
+      })
+    }
+
+    if (
+      alert.code === 'unapproved_dependency' &&
+      dependencyPublication &&
+      dependencyPublication.reviewState !== 'approved'
+    ) {
+      actions.push({
+        id: `${alert.id}:approve-dependency`,
+        alertId: alert.id,
+        operation: 'review',
+        type: 'approve_dependency',
+        severity: alert.severity,
+        targetRole: 'dependency',
+        targetPublicationId: dependencyPublication.id,
+        targetTitle: dependencyPublication.title,
+        actionLabel: 'Approve dependency',
+        detail:
+          'Approve the dependency publication so downstream source versions can pass sign-off.',
+        reviewState: 'approved',
+        riskLevel: dependencyPublication.riskLevel,
+        lifecycleAction: null,
+        successMessage: `Approved dependency ${dependencyPublication.title}.`,
+      })
+    }
+
+    if (
+      alert.code === 'critical_dependency' &&
+      dependencyPublication &&
+      dependencyPublication.riskLevel === 'critical'
+    ) {
+      actions.push({
+        id: `${alert.id}:triage-dependency-risk`,
+        alertId: alert.id,
+        operation: 'review',
+        type: 'triage_dependency_risk',
+        severity: alert.severity,
+        targetRole: 'dependency',
+        targetPublicationId: dependencyPublication.id,
+        targetTitle: dependencyPublication.title,
+        actionLabel: 'Lower dependency risk',
+        detail:
+          'Lower the dependency risk marker after the critical blocker has a mitigation or accepted-risk decision.',
+        reviewState: dependencyPublication.reviewState,
+        riskLevel: 'high',
+        lifecycleAction: null,
+        successMessage: `Lowered dependency risk for ${dependencyPublication.title}.`,
+      })
+    }
+  }
+
+  const severityOrder = { danger: 0, warning: 1, info: 2 }
+  const typeOrder: Record<PublicationDependencyResolutionAction['type'], number> = {
+    triage_dependency_risk: 0,
+    restore_dependency: 1,
+    approve_dependency: 2,
+    request_source_update: 3,
+    open_current_dependency: 4,
+  }
+
+  return actions.sort(
+    (left, right) =>
+      severityOrder[left.severity] - severityOrder[right.severity] ||
+      typeOrder[left.type] - typeOrder[right.type] ||
+      left.targetTitle.localeCompare(right.targetTitle)
   )
 }
 
