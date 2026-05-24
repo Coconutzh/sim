@@ -2067,6 +2067,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
   organizationId: string
   channel: PublicationNotificationChannel
   projectName?: string
+  webhookUrl?: string
 }): Promise<PublicationNotificationDeliveryResult> {
   const publications = await listOrganizationPublications({
     userId: params.userId,
@@ -2078,6 +2079,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
   const [draft] = buildPublicationNotificationDeliveryDrafts(notifications, {
     projectName: params.projectName,
   }).filter((item) => item.channel === params.channel)
+  const webhookUrl = params.webhookUrl?.trim()
 
   if (!draft) {
     return {
@@ -2092,6 +2094,10 @@ export async function deliverOrganizationPublicationNotifications(params: {
       publicationIds: [],
       outboxEventId: null,
     }
+  }
+
+  if (draft.channel === 'webhook' && !webhookUrl) {
+    throw new Error('Webhook URL is required for webhook delivery')
   }
 
   const publicationIds = [
@@ -2112,6 +2118,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
     warningCount: draft.payload.warningCount,
     publicationIds,
     notifications: draft.payload.notifications,
+    webhookUrl: draft.channel === 'webhook' ? webhookUrl : null,
     enqueuedAt: new Date().toISOString(),
   })
 

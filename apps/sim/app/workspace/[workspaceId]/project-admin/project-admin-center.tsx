@@ -1324,6 +1324,7 @@ export function ProjectAdminCenter() {
   const [publicationGovernanceStatus, setPublicationGovernanceStatus] = useState<string | null>(
     null
   )
+  const [publicationWebhookUrl, setPublicationWebhookUrl] = useState('')
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null)
   const [publicationDetailDrafts, setPublicationDetailDrafts] = useState<
     Record<string, { title: string; description: string }>
@@ -2257,12 +2258,18 @@ export function ProjectAdminCenter() {
       setPublicationGovernanceStatus('Select a project organization before delivery.')
       return
     }
+    const webhookUrl = publicationWebhookUrl.trim()
+    if (draft.channel === 'webhook' && !webhookUrl) {
+      setPublicationGovernanceStatus('Enter a webhook URL before queuing provider delivery.')
+      return
+    }
 
     try {
       const result = await deliverPublicationNotifications.mutateAsync({
         organizationId,
         channel: draft.channel,
         projectName: activeWorkgroup?.name ?? workspaceId,
+        webhookUrl: draft.channel === 'webhook' ? webhookUrl : undefined,
       })
       const { delivery } = result
       if (delivery.status === 'skipped') {
@@ -2277,6 +2284,14 @@ export function ProjectAdminCenter() {
         })
         setPublicationGovernanceStatus(
           `Persisted digest outbox ${delivery.outboxEventId ?? 'record'} and queued ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'} in the in-app bell.`
+        )
+        resetActivityPage()
+        return
+      }
+
+      if (delivery.channel === 'webhook') {
+        setPublicationGovernanceStatus(
+          `Persisted webhook outbox ${delivery.outboxEventId ?? 'record'} for provider delivery of ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'}.`
         )
         resetActivityPage()
         return
@@ -2889,8 +2904,8 @@ export function ProjectAdminCenter() {
                           Delivery channels
                         </h4>
                         <p className='mt-1 max-w-[720px] text-[11px] text-[var(--text-muted)]'>
-                          Persist a server-side outbox delivery record, queue an in-app digest, or
-                          copy email and webhook payloads for external delivery setup.
+                          Persist a server-side outbox delivery record, queue an in-app digest, copy
+                          email drafts, or queue webhook payloads for provider delivery.
                         </p>
                       </div>
                       <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
@@ -2919,13 +2934,26 @@ export function ProjectAdminCenter() {
                           <p className='mt-2 text-[11px] text-[var(--text-muted)]'>
                             {draft.detail}
                           </p>
+                          {draft.channel === 'webhook' && (
+                            <input
+                              type='url'
+                              value={publicationWebhookUrl}
+                              onChange={(event) => setPublicationWebhookUrl(event.target.value)}
+                              placeholder='https://example.com/publication-review-webhook'
+                              className='mt-3 h-[32px] w-full rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                              aria-label='Publication review webhook URL'
+                            />
+                          )}
                           <button
                             type='button'
                             className={cn(
                               buttonVariants({ size: 'sm', variant: 'default' }),
                               'mt-3'
                             )}
-                            disabled={deliverPublicationNotifications.isPending}
+                            disabled={
+                              deliverPublicationNotifications.isPending ||
+                              (draft.channel === 'webhook' && !publicationWebhookUrl.trim())
+                            }
                             onClick={() => void handlePublicationNotificationDelivery(draft)}
                           >
                             {deliverPublicationNotifications.isPending

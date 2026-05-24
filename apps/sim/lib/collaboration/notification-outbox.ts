@@ -6,6 +6,7 @@ import {
   type OutboxHandler,
   type OutboxHandlerRegistry,
 } from '@/lib/core/outbox/service'
+import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
 
 const logger = createLogger('CollaborationNotificationOutbox')
 
@@ -41,6 +42,7 @@ const publicationNotificationPayloadSchema = z.object({
       actionLabel: z.string().min(1),
     })
   ),
+  webhookUrl: z.string().url().nullable().optional(),
   enqueuedAt: z.string().min(1),
 })
 
@@ -62,6 +64,55 @@ export async function enqueuePublicationNotificationDelivery(
 
 const publicationReviewDigestHandler: OutboxHandler<unknown> = async (payload, context) => {
   const parsed = publicationNotificationPayloadSchema.parse(payload)
+
+  if (parsed.channel === 'webhook') {
+    if (!parsed.webhookUrl) {
+      throw new Error('Webhook delivery requires webhookUrl')
+    }
+
+    const response = await secureFetchWithValidation(
+      parsed.webhookUrl,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-sim-event': parsed.event,
+          'x-sim-outbox-event-id': context.eventId,
+        },
+        body: JSON.stringify({
+          eventId: context.eventId,
+          id: parsed.id,
+          event: parsed.event,
+          organizationId: parsed.organizationId,
+          projectName: parsed.projectName,
+          title: parsed.title,
+          detail: parsed.detail,
+          notificationCount: parsed.notificationCount,
+          dangerCount: parsed.dangerCount,
+          warningCount: parsed.warningCount,
+          publicationIds: parsed.publicationIds,
+          notifications: parsed.notifications,
+          enqueuedAt: parsed.enqueuedAt,
+        }),
+        timeout: 10_000,
+        maxResponseBytes: 16 * 1024,
+      },
+      'webhookUrl'
+    )
+    if (!response.ok) {
+      const responseBody = await response.text().catch(() => '')
+      const suffix = responseBody.trim() ? `: ${responseBody.slice(0, 300)}` : ''
+      throw new Error(`Webhook delivery failed with status ${response.status}${suffix}`)
+    }
+
+    logger.info('Delivered publication review digest webhook', {
+      eventId: context.eventId,
+      organizationId: parsed.organizationId,
+      notificationCount: parsed.notificationCount,
+      status: response.status,
+    })
+    return
+  }
 
   logger.info('Completed publication review digest outbox delivery record', {
     eventId: context.eventId,

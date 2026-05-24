@@ -3,16 +3,26 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockEnqueueOutboxEvent, mockLoggerInfo } = vi.hoisted(() => ({
-  mockEnqueueOutboxEvent: vi.fn(async () => 'outbox-event-1'),
-  mockLoggerInfo: vi.fn(),
-}))
+const { mockEnqueueOutboxEvent, mockLoggerInfo, mockSecureFetchWithValidation } = vi.hoisted(
+  () => ({
+    mockEnqueueOutboxEvent: vi.fn(async () => 'outbox-event-1'),
+    mockLoggerInfo: vi.fn(),
+    mockSecureFetchWithValidation: vi.fn(async () => ({
+      ok: true,
+      status: 202,
+      text: async () => '',
+    })),
+  })
+)
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() }),
 }))
 vi.mock('@/lib/core/outbox/service', () => ({
   enqueueOutboxEvent: mockEnqueueOutboxEvent,
+}))
+vi.mock('@/lib/core/security/input-validation.server', () => ({
+  secureFetchWithValidation: mockSecureFetchWithValidation,
 }))
 
 import {
@@ -94,5 +104,45 @@ describe('collaboration notification outbox', () => {
         notificationCount: 2,
       })
     )
+  })
+
+  it('posts webhook publication notification deliveries through SSRF-safe fetch', async () => {
+    const handler =
+      collaborationNotificationOutboxHandlers[
+        COLLABORATION_NOTIFICATION_OUTBOX_EVENTS.PUBLICATION_REVIEW_DIGEST
+      ]
+    const webhookPayload = {
+      ...payload,
+      channel: 'webhook' as const,
+      webhookUrl: 'https://hooks.example.com/publication-review',
+    }
+
+    await expect(
+      handler(webhookPayload, {
+        eventId: 'outbox-event-2',
+        eventType: COLLABORATION_NOTIFICATION_OUTBOX_EVENTS.PUBLICATION_REVIEW_DIGEST,
+        attempts: 0,
+      })
+    ).resolves.toBeUndefined()
+
+    expect(mockSecureFetchWithValidation).toHaveBeenCalledWith(
+      'https://hooks.example.com/publication-review',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'content-type': 'application/json',
+          'x-sim-event': 'publication.review_notifications.digest',
+          'x-sim-outbox-event-id': 'outbox-event-2',
+        }),
+      }),
+      'webhookUrl'
+    )
+    const requestBody = JSON.parse(mockSecureFetchWithValidation.mock.calls[0][1].body)
+    expect(requestBody).toMatchObject({
+      eventId: 'outbox-event-2',
+      organizationId: 'org-1',
+      notificationCount: 2,
+      publicationIds: ['publication-1'],
+    })
   })
 })

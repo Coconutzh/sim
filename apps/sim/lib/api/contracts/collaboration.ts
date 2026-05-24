@@ -364,10 +364,27 @@ export const publicationReviewUpdateSchema = z.object({
 })
 export type PublicationReviewUpdate = z.output<typeof publicationReviewUpdateSchema>
 
-export const deliverPublicationNotificationsBodySchema = z.object({
-  channel: publicationNotificationChannelSchema,
-  projectName: z.string().trim().min(1, 'projectName cannot be empty').max(120).optional(),
-})
+export const deliverPublicationNotificationsBodySchema = z
+  .object({
+    channel: publicationNotificationChannelSchema,
+    projectName: z.string().trim().min(1, 'projectName cannot be empty').max(120).optional(),
+    webhookUrl: z
+      .string()
+      .trim()
+      .url('webhookUrl must be a valid URL')
+      .refine((value) => value.startsWith('https://'), 'webhookUrl must use HTTPS')
+      .max(2048, 'webhookUrl must be 2048 characters or fewer')
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.channel === 'webhook' && !value.webhookUrl) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['webhookUrl'],
+        message: 'webhookUrl is required for webhook delivery',
+      })
+    }
+  })
 export type DeliverPublicationNotificationsBody = z.input<
   typeof deliverPublicationNotificationsBodySchema
 >
