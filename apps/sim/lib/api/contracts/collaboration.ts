@@ -344,6 +344,35 @@ export const updateAgentSkillBindingBodySchema = z.object({
 })
 export type UpdateAgentSkillBindingBody = z.input<typeof updateAgentSkillBindingBodySchema>
 
+export const organizationAgentSkillPolicyQuerySchema = z.object({
+  agentCode: agentCodeSchema.optional(),
+})
+export type OrganizationAgentSkillPolicyQuery = z.output<
+  typeof organizationAgentSkillPolicyQuerySchema
+>
+
+export const organizationAgentSkillPolicySchema = z.object({
+  id: z.string().nullable(),
+  agentCode: agentCodeSchema,
+  skillId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  enabled: z.boolean(),
+  scope: z.literal('agent_template'),
+  sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),
+  teamWorkspaceId: z.string(),
+})
+export type OrganizationAgentSkillPolicy = z.output<typeof organizationAgentSkillPolicySchema>
+
+export const updateOrganizationAgentSkillPolicyBodySchema = z.object({
+  agentCode: agentCodeSchema,
+  skillId: nonEmptyIdSchema,
+  enabled: z.boolean(),
+})
+export type UpdateOrganizationAgentSkillPolicyBody = z.input<
+  typeof updateOrganizationAgentSkillPolicyBodySchema
+>
+
 export const workgroupActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional(),
 })
@@ -544,6 +573,28 @@ export const updateOrganizationAgentTemplateContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: z.object({ template: agentTemplateSchema }),
+  },
+})
+
+export const listOrganizationAgentSkillPoliciesContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/agent-skills',
+  params: organizationParamsSchema,
+  query: organizationAgentSkillPolicyQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ policies: z.array(organizationAgentSkillPolicySchema) }),
+  },
+})
+
+export const updateOrganizationAgentSkillPolicyContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/organizations/[id]/agent-skills',
+  params: organizationParamsSchema,
+  body: updateOrganizationAgentSkillPolicyBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ policy: organizationAgentSkillPolicySchema }),
   },
 })
 

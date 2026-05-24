@@ -295,6 +295,187 @@ export async function updateOrganizationAgentTemplate(params: {
   )
 }
 
+export async function listOrganizationAgentSkillPolicies(params: {
+  userId: string
+  organizationId: string
+  agentCode?: string
+}) {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+  if (params.agentCode && !isAgentCode(params.agentCode)) throw new Error('Agent not found')
+
+  const rows = await db
+    .select({
+      workgroupId: workgroup.id,
+      workgroupName: workgroup.name,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+      disciplineAgentCode: discipline.agentCode,
+      skillId: skill.id,
+      name: skill.name,
+      description: skill.description,
+    })
+    .from(workgroup)
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .innerJoin(skill, eq(skill.workspaceId, workgroup.teamWorkspaceId))
+    .where(and(eq(workgroup.organizationId, params.organizationId), isNull(workgroup.archivedAt)))
+    .orderBy(asc(workgroup.name), asc(skill.name))
+
+  const filteredRows = rows.filter(
+    (row) => !params.agentCode || (row.disciplineAgentCode ?? 'chief_director') === params.agentCode
+  )
+  const skillIds = Array.from(new Set(filteredRows.map((row) => row.skillId)))
+  const agentCodes = Array.from(
+    new Set(filteredRows.map((row) => row.disciplineAgentCode ?? 'chief_director'))
+  )
+  const bindingRows =
+    skillIds.length > 0 && agentCodes.length > 0
+      ? await db
+          .select({
+            id: agentSkillBinding.id,
+            agentCode: agentSkillBinding.agentCode,
+            skillId: agentSkillBinding.skillId,
+            enabled: agentSkillBinding.enabled,
+          })
+          .from(agentSkillBinding)
+          .where(
+            and(
+              eq(agentSkillBinding.organizationId, params.organizationId),
+              eq(agentSkillBinding.scope, 'agent_template'),
+              isNull(agentSkillBinding.workgroupId),
+              inArray(agentSkillBinding.skillId, skillIds),
+              inArray(agentSkillBinding.agentCode, agentCodes)
+            )
+          )
+      : []
+  const bindingByAgentSkill = new Map(
+    bindingRows.map((row) => [`${row.agentCode}:${row.skillId}`, row])
+  )
+
+  return filteredRows.map((row) => {
+    const agentCode = row.disciplineAgentCode ?? 'chief_director'
+    const binding = bindingByAgentSkill.get(`${agentCode}:${row.skillId}`)
+    return {
+      id: binding?.id ?? null,
+      agentCode,
+      skillId: row.skillId,
+      name: row.name,
+      description: row.description,
+      enabled: binding?.enabled ?? true,
+      scope: 'agent_template' as const,
+      sourceWorkgroup: { id: row.workgroupId, name: row.workgroupName },
+      teamWorkspaceId: row.teamWorkspaceId ?? '',
+    }
+  })
+}
+
+export async function updateOrganizationAgentSkillPolicy(params: {
+  actorUserId: string
+  organizationId: string
+  agentCode: string
+  skillId: string
+  enabled: boolean
+}) {
+  await assertOrganizationAdmin(params.actorUserId, params.organizationId)
+  if (!isAgentCode(params.agentCode)) throw new Error('Agent not found')
+
+  const [skillRow] = await db
+    .select({
+      workgroupId: workgroup.id,
+      workgroupName: workgroup.name,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+      disciplineAgentCode: discipline.agentCode,
+      skillId: skill.id,
+      name: skill.name,
+      description: skill.description,
+    })
+    .from(workgroup)
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .innerJoin(skill, eq(skill.workspaceId, workgroup.teamWorkspaceId))
+    .where(
+      and(
+        eq(workgroup.organizationId, params.organizationId),
+        isNull(workgroup.archivedAt),
+        eq(skill.id, params.skillId)
+      )
+    )
+    .limit(1)
+  if (!skillRow) throw new Error('Skill not found')
+  const skillAgentCode = skillRow.disciplineAgentCode ?? 'chief_director'
+  if (skillAgentCode !== params.agentCode) throw new Error('Skill does not belong to this Agent')
+
+  const now = new Date()
+  const [existingBinding] = await db
+    .select({ id: agentSkillBinding.id })
+    .from(agentSkillBinding)
+    .where(
+      and(
+        eq(agentSkillBinding.organizationId, params.organizationId),
+        eq(agentSkillBinding.agentCode, params.agentCode),
+        eq(agentSkillBinding.skillId, params.skillId),
+        eq(agentSkillBinding.scope, 'agent_template'),
+        isNull(agentSkillBinding.workgroupId)
+      )
+    )
+    .limit(1)
+  const bindingId = existingBinding?.id ?? generateId()
+
+  if (existingBinding) {
+    await db
+      .update(agentSkillBinding)
+      .set({ enabled: params.enabled, updatedAt: now })
+      .where(
+        and(
+          eq(agentSkillBinding.organizationId, params.organizationId),
+          eq(agentSkillBinding.agentCode, params.agentCode),
+          eq(agentSkillBinding.skillId, params.skillId),
+          eq(agentSkillBinding.scope, 'agent_template'),
+          isNull(agentSkillBinding.workgroupId)
+        )
+      )
+  } else {
+    await db.insert(agentSkillBinding).values({
+      id: bindingId,
+      organizationId: params.organizationId,
+      agentCode: params.agentCode,
+      workgroupId: null,
+      skillId: params.skillId,
+      enabled: params.enabled,
+      scope: 'agent_template',
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action: AuditAction.SKILL_UPDATED,
+    resourceType: AuditResourceType.SKILL,
+    resourceId: params.skillId,
+    resourceName: skillRow.name,
+    description: params.enabled
+      ? `Enabled by default for ${getAgentProfile(params.agentCode).name}`
+      : `Disabled by default for ${getAgentProfile(params.agentCode).name}`,
+    metadata: {
+      organizationId: params.organizationId,
+      agentCode: params.agentCode,
+      sourceWorkgroupId: skillRow.workgroupId,
+      scope: 'agent_template',
+      enabled: params.enabled,
+    },
+  })
+
+  return {
+    id: bindingId,
+    agentCode: params.agentCode,
+    skillId: skillRow.skillId,
+    name: skillRow.name,
+    description: skillRow.description,
+    enabled: params.enabled,
+    scope: 'agent_template' as const,
+    sourceWorkgroup: { id: skillRow.workgroupId, name: skillRow.workgroupName },
+    teamWorkspaceId: skillRow.teamWorkspaceId ?? '',
+  }
+}
+
 async function getDisciplineById(disciplineId: string) {
   const [row] = await db.select().from(discipline).where(eq(discipline.id, disciplineId)).limit(1)
   if (row) return row

@@ -21,6 +21,7 @@ import {
   listAgentProfilesContract,
   listDisciplinesContract,
   listMyWorkgroupsContract,
+  listOrganizationAgentSkillPoliciesContract,
   listOrganizationAgentTemplatesContract,
   listOrganizationPublicationsContract,
   listOrganizationWorkgroupActivityContract,
@@ -31,7 +32,9 @@ import {
   type PublicationSummary,
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
+  type UpdateOrganizationAgentSkillPolicyBody,
   type UpdateOrganizationAgentTemplateBody,
+  updateOrganizationAgentSkillPolicyContract,
   updateOrganizationAgentTemplateContract,
   updatePublicationLifecycleContract,
   updatePublicationReviewContract,
@@ -54,6 +57,13 @@ export const collaborationKeys = {
     [...collaborationKeys.organizationWorkgroupLists(), organizationId ?? ''] as const,
   organizationAgentTemplates: (organizationId?: string) =>
     [...collaborationKeys.organizations(), 'agent-templates', organizationId ?? ''] as const,
+  organizationAgentSkills: (organizationId?: string, agentCode?: string) =>
+    [
+      ...collaborationKeys.organizations(),
+      'agent-skills',
+      organizationId ?? '',
+      agentCode ?? '',
+    ] as const,
   organizationPublicationLists: () =>
     [...collaborationKeys.organizations(), 'publications'] as const,
   organizationPublicationList: (organizationId?: string, filters?: PublicationFilters) =>
@@ -233,6 +243,48 @@ export function useUpdateOrganizationAgentTemplate() {
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationAgentTemplates(variables.organizationId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() })
+    },
+  })
+}
+
+export function useOrganizationAgentSkillPolicies(organizationId?: string, agentCode?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationAgentSkills(organizationId, agentCode),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationAgentSkillPoliciesContract, {
+        params: { id: organizationId as string },
+        query: { agentCode },
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useUpdateOrganizationAgentSkillPolicy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & UpdateOrganizationAgentSkillPolicyBody) =>
+      requestJson(updateOrganizationAgentSkillPolicyContract, {
+        params: { id: variables.organizationId },
+        body: {
+          agentCode: variables.agentCode,
+          skillId: variables.skillId,
+          enabled: variables.enabled,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationAgentSkills(
+          variables.organizationId,
+          variables.agentCode
+        ),
       })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationActivity(variables.organizationId),

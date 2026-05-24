@@ -269,12 +269,14 @@ import {
   getPublication,
   getPublicationTree,
   getTeamWorkspace,
+  listOrganizationAgentSkillPolicies,
   listOrganizationAgentTemplates,
   listOrganizationPublications,
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
   resolveAgentForWorkspace,
+  updateOrganizationAgentSkillPolicy,
   updateOrganizationAgentTemplate,
   updatePublicationLifecycleStatus,
   updatePublicationReview,
@@ -1678,6 +1680,107 @@ describe('collaboration service', () => {
         ),
       },
     })
+  })
+
+  it('lists project Agent skill policies for organization admins', async () => {
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          workgroupId: 'workgroup-1',
+          workgroupName: 'Stage team',
+          teamWorkspaceId: 'workspace-team-1',
+          disciplineAgentCode: 'stage_design',
+          skillId: 'skill-1',
+          name: 'Stage cue checker',
+          description: 'Reviews cue timing',
+        },
+        {
+          workgroupId: 'workgroup-2',
+          workgroupName: 'Lighting team',
+          teamWorkspaceId: 'workspace-team-2',
+          disciplineAgentCode: 'lighting_sound',
+          skillId: 'skill-2',
+          name: 'Lighting risk scan',
+          description: 'Reviews lighting risk',
+        },
+      ],
+      [
+        {
+          id: 'binding-1',
+          agentCode: 'stage_design',
+          skillId: 'skill-1',
+          enabled: false,
+        },
+      ]
+    )
+
+    await expect(
+      listOrganizationAgentSkillPolicies({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        agentCode: 'stage_design',
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'binding-1',
+        agentCode: 'stage_design',
+        skillId: 'skill-1',
+        enabled: false,
+        scope: 'agent_template',
+        sourceWorkgroup: { id: 'workgroup-1', name: 'Stage team' },
+      }),
+    ])
+  })
+
+  it('updates a project Agent skill policy and records an audit event', async () => {
+    mockResultsQueue.push(
+      [{ role: 'owner' }],
+      [
+        {
+          workgroupId: 'workgroup-1',
+          workgroupName: 'Stage team',
+          teamWorkspaceId: 'workspace-team-1',
+          disciplineAgentCode: 'stage_design',
+          skillId: 'skill-1',
+          name: 'Stage cue checker',
+          description: 'Reviews cue timing',
+        },
+      ],
+      [{ id: 'binding-existing' }]
+    )
+
+    await expect(
+      updateOrganizationAgentSkillPolicy({
+        actorUserId: 'org-admin-1',
+        organizationId: 'org-1',
+        agentCode: 'stage_design',
+        skillId: 'skill-1',
+        enabled: false,
+      })
+    ).resolves.toMatchObject({
+      id: 'binding-existing',
+      agentCode: 'stage_design',
+      skillId: 'skill-1',
+      enabled: false,
+      scope: 'agent_template',
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.agentSkillBinding)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'org-admin-1',
+        action: 'skill.updated',
+        resourceType: 'skill',
+        resourceId: 'skill-1',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          agentCode: 'stage_design',
+          scope: 'agent_template',
+          enabled: false,
+        }),
+      })
+    )
   })
 
   it('upserts team agent skill overrides and records an audit event', async () => {

@@ -21,6 +21,7 @@ import { buttonVariants, Loader } from '@/components/emcn'
 import type {
   AgentProfile,
   Discipline,
+  OrganizationAgentSkillPolicy,
   OrganizationWorkgroupActivityEntry,
   PublicationReviewState,
   PublicationRiskLevel,
@@ -41,12 +42,14 @@ import {
   useCreateWorkgroup,
   useDisciplines,
   useMyWorkgroups,
+  useOrganizationAgentSkillPolicies,
   useOrganizationAgentTemplates,
   useOrganizationPublications,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
   usePublication,
   usePublicationTree,
+  useUpdateOrganizationAgentSkillPolicy,
   useUpdateOrganizationAgentTemplate,
   useUpdatePublicationLifecycle,
   useUpdatePublicationReview,
@@ -446,6 +449,7 @@ export function ProjectAdminCenter() {
   const createWorkgroup = useCreateWorkgroup()
   const archiveWorkgroup = useArchiveWorkgroup()
   const updateAgentTemplate = useUpdateOrganizationAgentTemplate()
+  const updateAgentSkillPolicy = useUpdateOrganizationAgentSkillPolicy()
   const updatePublicationReview = useUpdatePublicationReview()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const addWorkgroupMember = useAddWorkgroupMember()
@@ -457,6 +461,7 @@ export function ProjectAdminCenter() {
   const [selectedAgentTemplateCode, setSelectedAgentTemplateCode] = useState('')
   const [agentTemplateDrafts, setAgentTemplateDrafts] = useState<Record<string, string>>({})
   const [agentTemplateStatus, setAgentTemplateStatus] = useState<string | null>(null)
+  const [agentSkillPolicyStatus, setAgentSkillPolicyStatus] = useState<string | null>(null)
   const [publicationReviewDrafts, setPublicationReviewDrafts] = useState<
     Record<string, PublicationReviewDraft>
   >({})
@@ -511,6 +516,10 @@ export function ProjectAdminCenter() {
   const disciplines = disciplinesData?.disciplines ?? []
   const agents = agentsData?.agents ?? []
   const agentTemplates = agentTemplatesData?.templates ?? []
+  const selectedAgentTemplateCodeValue = selectedAgentTemplateCode || agentTemplates[0]?.code || ''
+  const { data: agentSkillPoliciesData, isLoading: isLoadingAgentSkillPolicies } =
+    useOrganizationAgentSkillPolicies(organizationId, selectedAgentTemplateCodeValue || undefined)
+  const agentSkillPolicies = agentSkillPoliciesData?.policies ?? []
   const publications = publicationsData?.publications ?? []
   const selectedPublication =
     publications.find((publication) => publication.id === selectedPublicationId) ?? null
@@ -614,7 +623,6 @@ export function ProjectAdminCenter() {
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
   )
-  const selectedAgentTemplateCodeValue = selectedAgentTemplateCode || agentTemplates[0]?.code || ''
   const selectedAgentTemplate = agentTemplates.find(
     (template) => template.code === selectedAgentTemplateCodeValue
   )
@@ -778,6 +786,29 @@ export function ProjectAdminCenter() {
       }))
     } catch (error) {
       setAgentTemplateStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleUpdateAgentSkillPolicy = async (
+    policy: OrganizationAgentSkillPolicy,
+    enabled: boolean
+  ) => {
+    if (!organizationId) return
+    setAgentSkillPolicyStatus(null)
+    try {
+      const result = await updateAgentSkillPolicy.mutateAsync({
+        organizationId,
+        agentCode: policy.agentCode,
+        skillId: policy.skillId,
+        enabled,
+      })
+      setAgentSkillPolicyStatus(
+        `${enabled ? 'Enabled' : 'Disabled'} ${result.policy.name} by default for ${
+          selectedAgentTemplate?.name ?? formatAgentCode(policy.agentCode)
+        }.`
+      )
+    } catch (error) {
+      setAgentSkillPolicyStatus(readErrorMessage(error))
     }
   }
 
@@ -1781,6 +1812,77 @@ export function ProjectAdminCenter() {
                 <div className='text-[12px] text-[var(--text-muted)]' aria-live='polite'>
                   {agentTemplateStatus}
                 </div>
+              )}
+            </div>
+          </div>
+          <div className='border-[var(--border)] border-t p-4'>
+            <div className='flex flex-wrap items-start justify-between gap-3'>
+              <div>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Project Agent skill policies
+                </h3>
+                <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                  Set the default skill availability for this Agent across matching team canvases.
+                  Team admins can still apply local overrides from Team management.
+                </p>
+              </div>
+              <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                {agentSkillPolicies.filter((policy) => !policy.enabled).length} disabled defaults
+              </span>
+            </div>
+            {agentSkillPolicyStatus && (
+              <div className='mt-3 text-[12px] text-[var(--text-muted)]' aria-live='polite'>
+                {agentSkillPolicyStatus}
+              </div>
+            )}
+            <div className='mt-3 grid gap-2'>
+              {isLoadingAgentSkillPolicies ? (
+                <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <Loader className='h-[13px] w-[13px]' animate />
+                  Loading project skill policies...
+                </div>
+              ) : agentSkillPolicies.length === 0 ? (
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] text-[var(--text-muted)]'>
+                  No team canvas skills are available for this Agent yet.
+                </div>
+              ) : (
+                agentSkillPolicies.map((policy) => (
+                  <div
+                    key={`${policy.sourceWorkgroup.id}:${policy.skillId}`}
+                    className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                  >
+                    <div className='min-w-0'>
+                      <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                        {policy.name}
+                      </div>
+                      <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                        {policy.description || 'No description provided.'}
+                      </div>
+                      <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                        <span>{policy.sourceWorkgroup.name}</span>
+                        <span>{policy.enabled ? 'Default enabled' : 'Default disabled'}</span>
+                      </div>
+                    </div>
+                    <div className='flex items-center gap-2 md:justify-end'>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        disabled={!policy.enabled || updateAgentSkillPolicy.isPending}
+                        onClick={() => void handleUpdateAgentSkillPolicy(policy, false)}
+                      >
+                        Disable default
+                      </button>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        disabled={policy.enabled || updateAgentSkillPolicy.isPending}
+                        onClick={() => void handleUpdateAgentSkillPolicy(policy, true)}
+                      >
+                        Enable default
+                      </button>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
