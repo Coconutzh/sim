@@ -2,6 +2,7 @@
 
 import type { ChangeEvent } from 'react'
 import { useMemo, useState } from 'react'
+import { generateShortId } from '@sim/utils/id'
 import {
   Activity,
   AlertTriangle,
@@ -30,6 +31,12 @@ import type {
   PublicationTree,
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
+import {
+  buildProjectAdminFailureAuditEntry,
+  buildProjectAdminFailureAuditSummary,
+  type ProjectAdminFailureAuditEntry,
+  type ProjectAdminFailureScope,
+} from '@/lib/collaboration/project-admin-failure-audit'
 import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
@@ -74,6 +81,18 @@ const PUBLICATION_FILTERS = { limit: 100 } as const
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
+const PROJECT_ADMIN_FAILURE_AUDIT_LIMIT = 12
+const PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS: {
+  scope: ProjectAdminFailureScope
+  label: string
+}[] = [
+  { scope: 'team', label: 'Team' },
+  { scope: 'agent', label: 'Agent' },
+  { scope: 'publication', label: 'Publication' },
+  { scope: 'member', label: 'Member' },
+  { scope: 'activity', label: 'Activity' },
+  { scope: 'notification', label: 'Notification' },
+]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',
   'emails',
@@ -1199,6 +1218,9 @@ export function ProjectAdminCenter() {
   const [activityOffset, setActivityOffset] = useState(0)
   const [isExportingActivity, setIsExportingActivity] = useState(false)
   const [activityExportStatus, setActivityExportStatus] = useState<string | null>(null)
+  const [projectAdminFailureAudit, setProjectAdminFailureAudit] = useState<
+    ProjectAdminFailureAuditEntry[]
+  >([])
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -1595,6 +1617,32 @@ export function ProjectAdminCenter() {
       ? `Showing ${activityOffset + 1}-${activityOffset + projectActivity.length} of filtered project activity.`
       : 'No filtered project activity to show.'
   const canExportActivity = Boolean(organizationId && !isExportingActivity)
+  const projectAdminFailureAuditSummary = useMemo(
+    () => buildProjectAdminFailureAuditSummary(projectAdminFailureAudit),
+    [projectAdminFailureAudit]
+  )
+
+  const recordProjectAdminFailure = (
+    scope: ProjectAdminFailureScope,
+    operation: string,
+    target: string,
+    error: unknown
+  ) => {
+    const message = readErrorMessage(error)
+    setProjectAdminFailureAudit((entries) =>
+      [
+        buildProjectAdminFailureAuditEntry({
+          id: generateShortId(),
+          scope,
+          operation,
+          target,
+          message,
+        }),
+        ...entries,
+      ].slice(0, PROJECT_ADMIN_FAILURE_AUDIT_LIMIT)
+    )
+    return message
+  }
 
   const resetActivityPage = () => {
     setActivityOffset(0)
@@ -1616,7 +1664,9 @@ export function ProjectAdminCenter() {
         }.`
       )
     } catch (error) {
-      setCreateTeamStatus(readErrorMessage(error))
+      setCreateTeamStatus(
+        recordProjectAdminFailure('team', 'Create team', newTeamName.trim(), error)
+      )
     }
   }
 
@@ -1638,7 +1688,7 @@ export function ProjectAdminCenter() {
         resetActivityPage()
       }
     } catch (error) {
-      setArchiveTeamStatus(readErrorMessage(error))
+      setArchiveTeamStatus(recordProjectAdminFailure('team', 'Archive team', team.name, error))
     }
   }
 
@@ -1656,7 +1706,14 @@ export function ProjectAdminCenter() {
         [result.template.code]: result.template.projectInstructions,
       }))
     } catch (error) {
-      setAgentTemplateStatus(readErrorMessage(error))
+      setAgentTemplateStatus(
+        recordProjectAdminFailure(
+          'agent',
+          'Update project Agent instructions',
+          selectedAgentTemplate.name,
+          error
+        )
+      )
     }
   }
 
@@ -1679,7 +1736,9 @@ export function ProjectAdminCenter() {
         }.`
       )
     } catch (error) {
-      setAgentSkillPolicyStatus(readErrorMessage(error))
+      setAgentSkillPolicyStatus(
+        recordProjectAdminFailure('agent', 'Update Agent skill policy', policy.name, error)
+      )
     }
   }
 
@@ -1707,7 +1766,14 @@ export function ProjectAdminCenter() {
         `Copied ${policy.enabled ? 'enabled' : 'disabled'} default for ${policy.name} to ${targets.length} matching team canvas${targets.length === 1 ? '' : 'es'}.`
       )
     } catch (error) {
-      setAgentSkillPolicyStatus(readErrorMessage(error))
+      setAgentSkillPolicyStatus(
+        recordProjectAdminFailure(
+          'agent',
+          'Copy Agent skill policy',
+          `${policy.name} / ${targets.length} target${targets.length === 1 ? '' : 's'}`,
+          error
+        )
+      )
     }
   }
 
@@ -1727,7 +1793,14 @@ export function ProjectAdminCenter() {
         `Disabled ${agentSkillRiskGuardrails.length} risky project-default skill${agentSkillRiskGuardrails.length === 1 ? '' : 's'} for ${selectedAgentTemplate?.name ?? 'this Agent'}.`
       )
     } catch (error) {
-      setAgentSkillPolicyStatus(readErrorMessage(error))
+      setAgentSkillPolicyStatus(
+        recordProjectAdminFailure(
+          'agent',
+          'Disable risky Agent skill defaults',
+          selectedAgentTemplate?.name ?? 'Selected Agent',
+          error
+        )
+      )
     }
   }
 
@@ -1775,7 +1848,14 @@ export function ProjectAdminCenter() {
         },
       }))
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          'Update publication details',
+          publication.title,
+          error
+        )
+      )
     }
   }
 
@@ -1814,7 +1894,14 @@ export function ProjectAdminCenter() {
         },
       }))
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          'Update publication review metadata',
+          publication.title,
+          error
+        )
+      )
     }
   }
 
@@ -1847,7 +1934,14 @@ export function ProjectAdminCenter() {
         },
       }))
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          reviewerUserId ? 'Assign publication reviewer' : 'Clear publication reviewer',
+          publication.title,
+          error
+        )
+      )
     }
   }
 
@@ -1865,7 +1959,9 @@ export function ProjectAdminCenter() {
         `${result.publication.title} is now ${result.publication.status}.`
       )
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure('publication', `Publication ${action}`, publication.title, error)
+      )
     }
   }
 
@@ -1891,7 +1987,14 @@ export function ProjectAdminCenter() {
         },
       }))
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          'Publication conflict resolution',
+          publication.title,
+          error
+        )
+      )
     }
   }
 
@@ -1900,7 +2003,14 @@ export function ProjectAdminCenter() {
   ) => {
     const targetPublication = publicationById.get(action.targetPublicationId)
     if (!targetPublication) {
-      setPublicationGovernanceStatus(`Could not find ${action.targetTitle} in the loaded list.`)
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          action.actionLabel,
+          action.targetTitle,
+          new Error(`Could not find ${action.targetTitle} in the loaded list.`)
+        )
+      )
       return
     }
 
@@ -1941,7 +2051,9 @@ export function ProjectAdminCenter() {
       await navigator.clipboard.writeText(draft.body)
       setPublicationGovernanceStatus(`${draft.title} copied to clipboard.`)
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure('notification', draft.title, draft.channel, error)
+      )
     }
   }
 
@@ -1971,7 +2083,14 @@ export function ProjectAdminCenter() {
       }
       setPublicationGovernanceStatus(successMessage)
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          'Batch publication review resolution',
+          `${publicationsToUpdate.length} publication${publicationsToUpdate.length === 1 ? '' : 's'}`,
+          error
+        )
+      )
     }
   }
 
@@ -1992,7 +2111,14 @@ export function ProjectAdminCenter() {
       }
       setPublicationGovernanceStatus(successMessage)
     } catch (error) {
-      setPublicationGovernanceStatus(readErrorMessage(error))
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'publication',
+          `Batch publication ${action}`,
+          `${publicationsToUpdate.length} publication${publicationsToUpdate.length === 1 ? '' : 's'}`,
+          error
+        )
+      )
     }
   }
 
@@ -2019,7 +2145,14 @@ export function ProjectAdminCenter() {
         }.`
       )
     } catch (error) {
-      setAssignmentStatus(readErrorMessage(error))
+      setAssignmentStatus(
+        recordProjectAdminFailure(
+          'member',
+          'Assign team member',
+          `${trimmed} / ${selectedAssignmentTeam?.name ?? 'selected team'}`,
+          error
+        )
+      )
     }
   }
 
@@ -2051,7 +2184,12 @@ export function ProjectAdminCenter() {
       )
       setBatchAssignmentValue('')
     } catch (error) {
-      const message = readErrorMessage(error)
+      const message = recordProjectAdminFailure(
+        'member',
+        'Batch assign team members',
+        selectedAssignmentTeam?.name ?? 'selected team',
+        error
+      )
       setBatchAssignmentResults(
         batchAssignmentTargets.map((target) => ({ target, status: 'failed', message }))
       )
@@ -2090,7 +2228,9 @@ export function ProjectAdminCenter() {
       setAssignmentStatus(null)
       setBatchImportStatus(`Imported ${importedTargets.length} target(s) from ${file.name}.`)
     } catch (error) {
-      setBatchImportStatus(readErrorMessage(error))
+      setBatchImportStatus(
+        recordProjectAdminFailure('member', 'Import batch targets', file.name, error)
+      )
     }
   }
 
@@ -2129,7 +2269,9 @@ export function ProjectAdminCenter() {
           : `Exported the first ${entries.length} filtered activity rows. Narrow filters to export more.`
       )
     } catch (error) {
-      setActivityExportStatus(readErrorMessage(error))
+      setActivityExportStatus(
+        recordProjectAdminFailure('activity', 'Export filtered activity', 'Project activity', error)
+      )
     } finally {
       setIsExportingActivity(false)
     }
@@ -3882,6 +4024,95 @@ export function ProjectAdminCenter() {
                         </div>
                       </div>
                     )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+              <div className='flex flex-wrap items-start justify-between gap-3 border-[var(--border)] border-b px-4 py-3'>
+                <div className='flex items-center gap-2'>
+                  <AlertTriangle className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+                  <div>
+                    <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                      Failure audit
+                    </h2>
+                    <p className='text-[12px] text-[var(--text-muted)]'>
+                      Local project-admin operation failures captured during this session.
+                    </p>
+                  </div>
+                </div>
+                {projectAdminFailureAuditSummary.total > 0 && (
+                  <button
+                    type='button'
+                    className={cn(buttonVariants({ size: 'sm', variant: 'default' }), 'h-[30px]')}
+                    onClick={() => setProjectAdminFailureAudit([])}
+                  >
+                    <X className='mr-2 h-[13px] w-[13px]' />
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className='grid gap-3 p-4'>
+                {projectAdminFailureAuditSummary.total === 0 ? (
+                  <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
+                    No failed project-admin operations have been recorded in this session.
+                  </div>
+                ) : (
+                  <>
+                    <div className='grid gap-2 md:grid-cols-2'>
+                      <div className='rounded-[8px] border border-red-500/30 bg-red-500/10 p-3'>
+                        <div className='text-[11px] text-red-500'>Failures</div>
+                        <div className='mt-1 font-semibold text-[18px] text-red-500'>
+                          {projectAdminFailureAuditSummary.total}
+                        </div>
+                      </div>
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                        <div className='text-[11px] text-[var(--text-muted)]'>Latest</div>
+                        <div className='mt-1 truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                          {projectAdminFailureAuditSummary.latest?.operation}
+                        </div>
+                        <div className='truncate text-[11px] text-[var(--text-muted)]'>
+                          {projectAdminFailureAuditSummary.latest?.target}
+                        </div>
+                      </div>
+                    </div>
+                    <div className='grid grid-cols-2 gap-2 md:grid-cols-3'>
+                      {PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.map((option) => (
+                        <div
+                          key={option.scope}
+                          className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'
+                        >
+                          <div className='text-[11px] text-[var(--text-muted)]'>{option.label}</div>
+                          <div className='font-medium text-[13px] text-[var(--text-primary)]'>
+                            {projectAdminFailureAuditSummary.scopeCounts[option.scope]}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className='grid gap-2'>
+                      {projectAdminFailureAudit.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+                        >
+                          <div className='flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]'>
+                            <span className='rounded-[8px] border border-red-500/30 px-2 py-0.5 text-red-500'>
+                              {PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.find(
+                                (option) => option.scope === entry.scope
+                              )?.label ?? entry.scope}
+                            </span>
+                            <span>{formatDateTime(entry.occurredAt)}</span>
+                          </div>
+                          <div className='mt-2 font-medium text-[13px] text-[var(--text-primary)]'>
+                            {entry.operation} / {entry.target}
+                          </div>
+                          <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                            {entry.message}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </>
                 )}
               </div>
