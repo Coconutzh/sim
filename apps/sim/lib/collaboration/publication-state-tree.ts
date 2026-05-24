@@ -42,6 +42,15 @@ export interface PublicationStateGroup {
   governanceAlerts: PublicationGovernanceAlert[]
 }
 
+export interface PublicationConflictRepairGuideStep {
+  alertCode: PublicationGovernanceAlert['code']
+  severity: PublicationGovernanceAlertSeverity
+  title: string
+  detail: string
+  actionLabel: string
+  reason: string
+}
+
 export interface PublicationStateGroupOptions {
   now?: Date
   staleDays?: number
@@ -79,6 +88,10 @@ function emptyStatusCounts(): Record<PublicationSummary['status'], number> {
     archived: 0,
     retracted: 0,
   }
+}
+
+function formatVersionNumbers(versions: PublicationStateNode[]): string {
+  return versions.map((version) => `v${version.versionNumber}`).join(', ')
 }
 
 function formatGovernanceReviewState(reviewState: PublicationSummary['reviewState']): string {
@@ -152,6 +165,87 @@ function buildGovernanceAlerts(params: {
   }
 
   return alerts
+}
+
+export function buildPublicationConflictRepairGuide(
+  group: PublicationStateGroup | null
+): PublicationConflictRepairGuideStep[] {
+  if (!group) return []
+  const alertByCode = new Map(group.governanceAlerts.map((alert) => [alert.code, alert]))
+  const steps: PublicationConflictRepairGuideStep[] = []
+  const currentVersions = group.versions.filter((version) => version.status === 'published')
+
+  const multipleCurrentAlert = alertByCode.get('multiple_current_versions')
+  if (multipleCurrentAlert) {
+    const extraCurrentVersions = currentVersions.filter(
+      (version) => version.id !== group.current?.id
+    )
+    steps.push({
+      alertCode: 'multiple_current_versions',
+      severity: multipleCurrentAlert.severity,
+      title: 'Resolve duplicate current versions first',
+      detail: `Keep ${group.current ? `v${group.current.versionNumber}` : 'the newest version'} as the canonical current publication and archive ${formatVersionNumbers(extraCurrentVersions) || 'the extra current versions'}.`,
+      actionLabel: 'Archive duplicate current',
+      reason:
+        'Showcase readers and dependent teams need exactly one current version before review or risk metadata is meaningful.',
+    })
+  }
+
+  const noCurrentAlert = alertByCode.get('no_current_version')
+  if (noCurrentAlert) {
+    steps.push({
+      alertCode: 'no_current_version',
+      severity: noCurrentAlert.severity,
+      title: 'Restore a visible version',
+      detail: group.current
+        ? `Restore v${group.current.versionNumber} so the team has a current showcase baseline.`
+        : 'Restore the latest visible non-retracted version so the team has a current showcase baseline.',
+      actionLabel: 'Restore latest visible',
+      reason:
+        'Downstream dependency checks and status-tree governance rely on a current publication node.',
+    })
+  }
+
+  const unapprovedAlert = alertByCode.get('unapproved_current_version')
+  if (unapprovedAlert && group.current) {
+    steps.push({
+      alertCode: 'unapproved_current_version',
+      severity: unapprovedAlert.severity,
+      title: 'Close the review gap',
+      detail: `Move v${group.current.versionNumber} from ${formatGovernanceReviewState(group.current.reviewState)} to approved after project review is complete.`,
+      actionLabel: 'Approve current version',
+      reason:
+        'Approval should happen after structural conflicts are resolved so the approval reflects the final current version.',
+    })
+  }
+
+  const staleAlert = alertByCode.get('stale_current_version')
+  if (staleAlert && group.current) {
+    steps.push({
+      alertCode: 'stale_current_version',
+      severity: staleAlert.severity,
+      title: 'Start a refresh review',
+      detail: `Mark v${group.current.versionNumber} as in review and ask the source team to confirm whether a newer team canvas state should be published.`,
+      actionLabel: 'Start refresh review',
+      reason:
+        'Stale current versions are not necessarily wrong, but they need an explicit review trail before project sign-off.',
+    })
+  }
+
+  const criticalRiskAlert = alertByCode.get('critical_risk_current_version')
+  if (criticalRiskAlert && group.current) {
+    steps.push({
+      alertCode: 'critical_risk_current_version',
+      severity: criticalRiskAlert.severity,
+      title: 'Triage the critical risk marker',
+      detail: `Lower v${group.current.versionNumber} to high only after the critical blocker has an owner, mitigation, or accepted risk decision.`,
+      actionLabel: 'Set risk to high',
+      reason:
+        'Critical risk should not remain on the project current baseline unless it blocks downstream teams.',
+    })
+  }
+
+  return steps
 }
 
 export function buildPublicationStateGroups(

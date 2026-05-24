@@ -31,6 +31,7 @@ import type {
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
 import {
+  buildPublicationConflictRepairGuide,
   buildPublicationStateGroups,
   type PublicationGovernanceAlertSeverity,
 } from '@/lib/collaboration/publication-state-tree'
@@ -1255,6 +1256,10 @@ export function ProjectAdminCenter() {
       : null
   const selectedPublicationAlertCodes = new Set(
     selectedPublicationGovernanceGroup?.governanceAlerts.map((alert) => alert.code) ?? []
+  )
+  const selectedPublicationRepairGuide = useMemo(
+    () => buildPublicationConflictRepairGuide(selectedPublicationGovernanceGroup),
+    [selectedPublicationGovernanceGroup]
   )
   const batchUnapprovedCurrentPublications = publicationStateGroups
     .filter((group) =>
@@ -3395,6 +3400,46 @@ export function ProjectAdminCenter() {
                         </div>
                       ))}
                     </div>
+                    {selectedPublicationRepairGuide.length > 0 && (
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
+                        <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                          Repair guide
+                        </div>
+                        <div className='mt-2 grid gap-2'>
+                          {selectedPublicationRepairGuide.map((step, index) => (
+                            <div
+                              key={step.alertCode}
+                              className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'
+                            >
+                              <div className='flex flex-wrap items-center justify-between gap-2'>
+                                <div className='flex items-center gap-2'>
+                                  <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
+                                    Step {index + 1}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                                      governanceAlertClass(step.severity)
+                                    )}
+                                  >
+                                    {step.actionLabel}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className='mt-2 font-medium text-[12px] text-[var(--text-primary)]'>
+                                {step.title}
+                              </div>
+                              <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                                {step.detail}
+                              </p>
+                              <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                                {step.reason}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
                       <div className='font-medium text-[11px] text-[var(--text-primary)]'>
                         Resolution actions

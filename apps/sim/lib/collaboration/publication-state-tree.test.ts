@@ -3,7 +3,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { PublicationSummary } from '@/lib/api/contracts/collaboration'
-import { buildPublicationStateGroups } from '@/lib/collaboration/publication-state-tree'
+import {
+  buildPublicationConflictRepairGuide,
+  buildPublicationStateGroups,
+} from '@/lib/collaboration/publication-state-tree'
 
 function publication(overrides: Partial<PublicationSummary>): PublicationSummary {
   return {
@@ -170,6 +173,60 @@ describe('publication state tree grouping', () => {
         code: 'critical_risk_current_version',
         severity: 'danger',
       }),
+    ])
+  })
+
+  it('builds an ordered repair guide from publication governance alerts', () => {
+    const [group] = buildPublicationStateGroups(
+      [
+        publication({
+          id: 'current-v1',
+          versionNumber: 1,
+          publishedAt: '2026-05-01T00:00:00.000Z',
+          reviewState: 'pending',
+          riskLevel: 'critical',
+        }),
+        publication({
+          id: 'current-v2',
+          versionNumber: 2,
+          publishedAt: '2026-05-03T00:00:00.000Z',
+        }),
+      ],
+      { now: new Date('2026-05-24T00:00:00.000Z'), staleDays: 14 }
+    )
+
+    expect(buildPublicationConflictRepairGuide(group).map((step) => step.alertCode)).toEqual([
+      'multiple_current_versions',
+      'stale_current_version',
+    ])
+    expect(buildPublicationConflictRepairGuide(group)[0]).toMatchObject({
+      title: 'Resolve duplicate current versions first',
+      actionLabel: 'Archive duplicate current',
+    })
+  })
+
+  it('builds restore, approval, and risk repair steps for single-current groups', () => {
+    const [noCurrentGroup] = buildPublicationStateGroups([
+      publication({ id: 'archived-v1', status: 'archived' }),
+    ])
+    expect(buildPublicationConflictRepairGuide(noCurrentGroup)).toEqual([
+      expect.objectContaining({
+        alertCode: 'no_current_version',
+        actionLabel: 'Restore latest visible',
+      }),
+    ])
+
+    const [reviewGroup] = buildPublicationStateGroups([
+      publication({
+        id: 'published-v1',
+        reviewState: 'changes_requested',
+        riskLevel: 'critical',
+      }),
+    ])
+
+    expect(buildPublicationConflictRepairGuide(reviewGroup).map((step) => step.alertCode)).toEqual([
+      'unapproved_current_version',
+      'critical_risk_current_version',
     ])
   })
 })
