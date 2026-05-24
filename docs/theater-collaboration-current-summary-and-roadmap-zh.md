@@ -16,9 +16,9 @@
 - 原主界面 `/workspace/[workspaceId]` 已成为主要承载外壳，不再维护新的独立 `/workbench` shell。
 - 普通成员可以在当前团队上下文中创建多个个人草稿画布，并进入默认节点图。
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
-- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明、项目级 Agent Skill 默认策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布状态树治理、发布详情编辑和 reviewer 指派。
+- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明、项目级 Agent Skill 默认策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布状态树治理、发布详情编辑、reviewer 指派和 approval workflow。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、Agent Skill 跨团队策略复制、风险 Skill guardrails、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑、reviewer 指派、冲突修复向导和过期/未提交团队发布 nudges；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、Agent Skill 跨团队策略复制、风险 Skill guardrails、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑、reviewer 指派、approval workflow、冲突修复向导和过期/未提交团队发布 nudges；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `84132a953` | Phase 10 项目管理员中心增加发布 approval workflow |
 | `cb6531c5d` | Phase 10 项目管理员中心增加发布 reviewer 指派 |
 | `fb1c909d7` | Phase 10 项目管理员中心增加风险 Skill guardrails |
 | `116dec10b` | Phase 10 项目管理员中心增加过期/未提交团队发布 nudges |
@@ -144,7 +145,7 @@
 仍需继续：
 
 - 全局状态树目前已有首版聚合视图，但还不是完整项目级治理视图。
-- 发布通知/广播已有首版 team activity 事件，版本回滚已有“恢复为当前版本”首版能力，审核/风险字段和 reviewer 指派已有管理入口；站内铃铛、邮件/外部推送、审批流、跨团队依赖冲突提示仍未完成。
+- 发布通知/广播已有首版 team activity 事件，版本回滚已有“恢复为当前版本”首版能力，审核/风险字段和 reviewer 指派、approval workflow 已有管理入口；站内铃铛、邮件/外部推送、跨团队依赖冲突提示仍未完成。
 
 ### 3.5 跨画布复制与分屏
 
@@ -238,6 +239,7 @@
 - 发布治理 drawer 已补依赖影响预览首版：基于组织级 publication list 和当前 publication tree，在恢复、归档或撤回前展示直接依赖、直接依赖当前版本的下游发布、同一版本家族中的 parent/dependsOn 链路，并把 current 下游、critical risk 下游、未 approved 下游和无法解析的直接依赖标成风险提示。
 - 发布治理 drawer 已补发布详情编辑首版：项目管理员可在详情 drawer 中编辑发布 title/description，新的 `PATCH /api/publications/[publicationVersionId]/details` 走合约、服务层 workgroup/org admin 权限、审计和 team activity 广播，并同步镜像到 published workflow shell。
 - 项目管理员中心已补发布 reviewer 指派首版：`workflow_publication_version` 新增 reviewer assignment 字段，`PATCH /api/publications/[publicationVersionId]/review` 可在保留 review/risk 的同时指派或清空组织 roster 成员作为 reviewer；项目级发布治理列表和详情 drawer 会显示当前 reviewer，服务层校验 reviewer 必须属于同一组织，并继续写入 `publication.updated` 审计。
+- 项目管理员中心已补发布 approval workflow 首版：详情 drawer 新增 reviewer / review / critical-risk / decision gates 审批门禁，展示 complete/ready/blocked 状态，并复用现有 review/risk mutation 执行 start review、set risk high、approve、request changes、reject。
 - 项目管理员批量分配已补首版建议填充：基于 organization roster 和当前所选团队的 team canvas access map，提示尚未拥有该团队画布访问权的 roster 成员，并可一键把建议 email 合并进批量输入框。
 - 项目管理员批量分配已补文件导入首版：可上传 CSV/TSV/TXT，前端提取 email 或 user ID 并合并进现有批量输入框，仍由管理员显式点击 `Assign batch transaction` 后才批量提交。
 - 项目管理员中心新增 `Project activity filters`，可在项目级入口按团队、工种、动作和搜索文本筛选 audit-backed 最近活动；该能力复用新的 `useOrganizationWorkgroupActivity` / `GET /api/organizations/[id]/workgroups/activity`，不走 enterprise audit subscription gate。
@@ -246,7 +248,7 @@
 
 仍需继续：
 
-- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、reviewer 指派、lifecycle 写操作、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、首批冲突处理动作、发布批量治理、过期/未提交团队 nudges 和跨团队依赖影响预览，Agent Skill 默认策略已有跨团队复制和风险关键词 guardrails；批量导入目前仍只是前端文件解析。
+- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、reviewer 指派、approval workflow、lifecycle 写操作、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、首批冲突处理动作、发布批量治理、过期/未提交团队 nudges 和跨团队依赖影响预览，Agent Skill 默认策略已有跨团队复制和风险关键词 guardrails；批量导入目前仍只是前端文件解析。
 
 ### 3.9 权限与安全加固
 
@@ -294,7 +296,7 @@ git diff --check
 3. 版本关系治理：展示 superseded 链路、parent/dependsOn 关系、当前有效版本和历史版本。
 4. 发布通知/广播首版已补：发布、归档、撤回、恢复当前版本、可见范围更新后，对当前可见的其他团队写入 `publication.*` team activity 事件；后续再接站内铃铛、邮件或外部推送。
 5. 版本回滚首版已补：团队管理员可把未撤回的历史版本恢复为当前 `published`，服务层会把其他当前版本标记为 `superseded` 并用该版本 snapshot 重写 published workflow state。
-6. 审核/风险首版已补：新增 `PATCH /api/publications/[publicationVersionId]/review`、团队管理页 review/risk 控件、状态树未审核/critical risk 治理提示，以及项目级 reviewer 指派；后续继续补审批流、通知和更完整项目级治理。
+6. 审核/风险首版已补：新增 `PATCH /api/publications/[publicationVersionId]/review`、团队管理页 review/risk 控件、状态树未审核/critical risk 治理提示，以及项目级 reviewer 指派、approval workflow；后续继续补通知和更完整项目级治理。
 
 建议提交：`Implement publication state tree workflow` 或拆成 `Edit showcase publication visibility`、`Add publication state tree view`。
 
@@ -364,11 +366,11 @@ git diff --check
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览，且项目级 Agent prompt 补充说明已按 Agent 维度落地；后续补工种启用/停用、显示名和更细的 Agent 策略。
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队和归档团队；后续补设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
-5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、reviewer 指派、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、冲突处理动作、批量治理、过期/未提交团队 nudges 和依赖影响预览已落地；后续补更完整的通知/审批闭环。
+5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、reviewer 指派、approval workflow、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、冲突处理动作、批量治理、过期/未提交团队 nudges 和依赖影响预览已落地；后续补更完整的通知/审批联动。
 6. Agent 模板与 Skill 策略：项目级 prompt 附加说明、默认 Skill 启用/禁用策略、Agent 策略影响预览、跨团队策略复制和风险 Skill guardrails 首版已落地；后续补更细的风险分级、白名单和 reviewer 审批联动。
 7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围和 actor 精确筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件。
 
-建议提交：下一步可拆为 `Add publication approval workflow` 或 `Add publication review notifications`。
+建议提交：下一步可拆为 `Add publication review notifications` 或 `Add publication dependency conflict alerts`。
 
 ### Phase 11：Legacy workspace 入口迁移
 
@@ -402,10 +404,10 @@ git diff --check
 
 推荐短期按以下顺序继续，避免范围过大：
 
-1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚、review/risk 管理和 reviewer 指派已补齐；下一步可继续 Phase 5 审批流/通知，或继续 Phase 7 框选。
+1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚、review/risk 管理和 reviewer 指派、approval workflow 已补齐；下一步可继续 Phase 5 通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
-4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布治理、发布详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理、发布详情编辑、reviewer 指派、冲突修复向导、过期/未提交团队 nudges 和发布依赖影响预览。下一步可继续做 approval workflow / review notifications，不要一开始就做复杂图形编辑器。
+4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布治理、发布详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理、发布详情编辑、reviewer 指派、approval workflow、冲突修复向导、过期/未提交团队 nudges 和发布依赖影响预览。下一步可继续做 review notifications / dependency conflict alerts，不要一开始就做复杂图形编辑器。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：
