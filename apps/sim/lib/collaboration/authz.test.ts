@@ -144,6 +144,7 @@ describe('collaboration authz helpers', () => {
           publishedWorkflowId: 'published-workflow-1',
         },
       ],
+      [],
       [{ id: 'source-membership-1' }]
     )
 
@@ -160,11 +161,27 @@ describe('collaboration authz helpers', () => {
           publishedWorkflowId: 'published-workflow-1',
         },
       ],
-      [],
-      [{ id: 'org-member-1' }]
+      [{ role: 'member' }],
+      []
     )
 
     await expect(canReadPublication('viewer-1', 'publication-1')).resolves.toBe(true)
+  })
+
+  it('allows organization admins to read selected publication versions', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'source-workgroup',
+          visibility: 'selected_workgroups',
+          publishedWorkflowId: 'published-workflow-1',
+        },
+      ],
+      [{ role: 'admin' }]
+    )
+
+    await expect(canReadPublication('project-admin-1', 'publication-1')).resolves.toBe(true)
   })
 
   it('allows selected publication reads for explicitly scoped workgroups', async () => {
@@ -177,6 +194,7 @@ describe('collaboration authz helpers', () => {
           publishedWorkflowId: 'published-workflow-1',
         },
       ],
+      [],
       [],
       [{ id: 'scope-1' }]
     )
@@ -194,6 +212,7 @@ describe('collaboration authz helpers', () => {
           publishedWorkflowId: 'published-workflow-1',
         },
       ],
+      [],
       [],
       []
     )

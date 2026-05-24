@@ -8,10 +8,12 @@ import {
   Archive,
   Compass,
   Download,
+  GitBranch,
   Network,
   ShieldCheck,
   Sparkles,
   Users,
+  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -39,6 +41,7 @@ import {
   useOrganizationPublications,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
+  usePublicationTree,
   useUpdateOrganizationAgentTemplate,
   useUpdatePublicationLifecycle,
   useUpdatePublicationReview,
@@ -367,6 +370,7 @@ export function ProjectAdminCenter() {
   const [publicationGovernanceStatus, setPublicationGovernanceStatus] = useState<string | null>(
     null
   )
+  const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null)
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
   const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
@@ -415,6 +419,14 @@ export function ProjectAdminCenter() {
   const agents = agentsData?.agents ?? []
   const agentTemplates = agentTemplatesData?.templates ?? []
   const publications = publicationsData?.publications ?? []
+  const selectedPublication =
+    publications.find((publication) => publication.id === selectedPublicationId) ?? null
+  const { data: selectedPublicationTree, isLoading: isLoadingSelectedPublicationTree } =
+    usePublicationTree(
+      selectedPublicationId && selectedPublication?.status !== 'retracted'
+        ? selectedPublicationId
+        : undefined
+    )
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
   )
@@ -1016,6 +1028,13 @@ export function ProjectAdminCenter() {
                       </select>
                     </div>
                     <div className='flex flex-wrap items-center gap-2 xl:justify-end'>
+                      <button
+                        type='button'
+                        className={buttonVariants({ size: 'sm', variant: 'default' })}
+                        onClick={() => setSelectedPublicationId(publication.id)}
+                      >
+                        Details
+                      </button>
                       <button
                         type='button'
                         className={buttonVariants({ size: 'sm', variant: 'default' })}
@@ -1885,6 +1904,139 @@ export function ProjectAdminCenter() {
           </div>
         </section>
       </div>
+      {selectedPublication && (
+        <div className='fixed inset-0 z-50 flex justify-end bg-black/20'>
+          <aside className='flex h-full w-full max-w-[520px] flex-col border-[var(--border)] border-l bg-[var(--bg)] shadow-xl'>
+            <div className='flex items-start justify-between gap-3 border-[var(--border)] border-b p-4'>
+              <div className='min-w-0'>
+                <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <GitBranch className='h-[14px] w-[14px]' />
+                  Publication governance drawer
+                </div>
+                <h2 className='mt-1 truncate font-medium text-[18px] text-[var(--text-primary)]'>
+                  {selectedPublication.title}
+                </h2>
+                <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                  <span>v{selectedPublication.versionNumber}</span>
+                  <span>{selectedPublication.status}</span>
+                  <span>{selectedPublication.visibility}</span>
+                  <span>{selectedPublication.sourceWorkgroup.name}</span>
+                </div>
+              </div>
+              <button
+                type='button'
+                className={cn(buttonVariants({ size: 'sm', variant: 'default' }), 'h-[30px]')}
+                onClick={() => setSelectedPublicationId(null)}
+                aria-label='Close publication governance drawer'
+              >
+                <X className='h-[13px] w-[13px]' />
+              </button>
+            </div>
+            <div className='grid flex-1 gap-4 overflow-auto p-4'>
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Governance summary
+                </h3>
+                <div className='mt-3 grid gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span>Review</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {selectedPublication.reviewState ?? 'None'}
+                    </span>
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span>Risk</span>
+                    <span
+                      className={cn(
+                        'text-[var(--text-primary)]',
+                        selectedPublication.riskLevel === 'critical' && 'text-red-500'
+                      )}
+                    >
+                      {selectedPublication.riskLevel ?? 'None'}
+                    </span>
+                  </div>
+                  <div className='flex items-center justify-between gap-3'>
+                    <span>Published</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {formatDateTime(selectedPublication.publishedAt)}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Restore impact preview
+                </h3>
+                <p className='mt-2 text-[12px] text-[var(--text-muted)]'>
+                  Restoring this version will make v{selectedPublication.versionNumber} the current
+                  published snapshot for {selectedPublication.sourceWorkgroup.name}; existing
+                  current versions for the same source workflow are superseded by the service layer.
+                </p>
+                {selectedPublication.status === 'retracted' && (
+                  <div className='mt-3 rounded-[8px] border border-red-500/30 bg-red-500/10 p-2 text-[12px] text-red-500'>
+                    Retracted versions cannot be restored or loaded into the state tree preview.
+                  </div>
+                )}
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+                <div className='border-[var(--border)] border-b p-3'>
+                  <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                    Version state tree
+                  </h3>
+                  <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                    Visible parent and dependency chain for this publication family.
+                  </p>
+                </div>
+                <div className='divide-y divide-[var(--border)]'>
+                  {selectedPublication.status === 'retracted' ? (
+                    <EmptyState>
+                      State tree is unavailable for retracted publication versions.
+                    </EmptyState>
+                  ) : isLoadingSelectedPublicationTree ? (
+                    <div className='flex items-center gap-2 p-3 text-[12px] text-[var(--text-muted)]'>
+                      <Loader className='h-[13px] w-[13px]' animate />
+                      Loading state tree...
+                    </div>
+                  ) : !selectedPublicationTree || selectedPublicationTree.versions.length === 0 ? (
+                    <EmptyState>No visible state tree versions were returned.</EmptyState>
+                  ) : (
+                    selectedPublicationTree.versions.map((version) => (
+                      <div
+                        key={version.id}
+                        className={cn(
+                          'grid gap-1 p-3',
+                          version.id === selectedPublication.id && 'bg-[var(--surface-2)]'
+                        )}
+                      >
+                        <div className='flex min-w-0 items-center justify-between gap-2'>
+                          <span className='truncate font-medium text-[12px] text-[var(--text-primary)]'>
+                            v{version.versionNumber} / {version.title}
+                          </span>
+                          <span className='shrink-0 rounded-[8px] border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]'>
+                            {version.status}
+                          </span>
+                        </div>
+                        <div className='text-[11px] text-[var(--text-muted)]'>
+                          {version.sourceWorkgroup.name} / {version.sourceDiscipline.name} /{' '}
+                          {formatDateTime(version.publishedAt)}
+                        </div>
+                        <div className='text-[11px] text-[var(--text-muted)]'>
+                          Parent: {version.parentVersionId ?? 'None'} / Depends:{' '}
+                          {version.dependsOnPublicationIds.length > 0
+                            ? version.dependsOnPublicationIds.join(', ')
+                            : 'None'}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }

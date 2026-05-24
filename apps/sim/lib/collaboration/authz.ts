@@ -102,6 +102,16 @@ export async function canReadPublication(
 
   if (!publication || publication.status === 'retracted') return false
 
+  const [organizationMembership] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, publication.organizationId)))
+    .limit(1)
+
+  if (organizationMembership?.role === 'owner' || organizationMembership?.role === 'admin') {
+    return true
+  }
+
   const [sourceMembership] = await db
     .select({ id: workgroupMember.id })
     .from(workgroupMember)
@@ -118,13 +128,7 @@ export async function canReadPublication(
   if (sourceMembership) return true
 
   if (publication.visibility === 'organization') {
-    const [organizationMember] = await db
-      .select({ id: member.id })
-      .from(member)
-      .where(and(eq(member.userId, userId), eq(member.organizationId, publication.organizationId)))
-      .limit(1)
-
-    return Boolean(organizationMember)
+    return Boolean(organizationMembership)
   }
 
   if (!publication.publishedWorkflowId) return false
