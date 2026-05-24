@@ -34,7 +34,7 @@ import {
   useOrganizationWorkgroups,
   useShowcasePublications,
 } from '@/hooks/queries/collaboration'
-import { useOrganizationRoster } from '@/hooks/queries/organization'
+import { type RosterMember, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
@@ -209,6 +209,37 @@ function extractBatchAssignmentTargetsFromImport(value: string) {
   return parseBatchAssignmentTargets(candidates.join('\n'))
 }
 
+function memberHasTeamCanvasAccess(member: RosterMember, team: WorkgroupAdminSummary) {
+  if (!team.teamWorkspaceId) return false
+  return member.workspaces.some(
+    (workspaceAccess) => workspaceAccess.workspaceId === team.teamWorkspaceId
+  )
+}
+
+function getAssignmentCandidateMember(
+  rosterMembers: RosterMember[],
+  selectedRosterUserId: string,
+  assignmentValue: string
+) {
+  const trimmed = assignmentValue.trim().toLowerCase()
+  return (
+    rosterMembers.find((member) => member.userId === selectedRosterUserId) ??
+    rosterMembers.find(
+      (member) => member.email.toLowerCase() === trimmed || member.userId.toLowerCase() === trimmed
+    )
+  )
+}
+
+function buildRecommendedAssignmentTeams(
+  member: RosterMember | undefined,
+  teams: WorkgroupAdminSummary[]
+) {
+  if (!member) return []
+  return [...teams]
+    .filter((team) => team.teamWorkspaceId && !memberHasTeamCanvasAccess(member, team))
+    .sort((a, b) => a.memberCount - b.memberCount || a.name.localeCompare(b.name))
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -362,9 +393,15 @@ export function ProjectAdminCenter() {
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
   )
-  const selectedRosterMember = rosterMembers.find(
-    (member) => member.userId === selectedRosterUserId
+  const selectedRosterMember = useMemo(
+    () => getAssignmentCandidateMember(rosterMembers, selectedRosterUserId, assignmentValue),
+    [assignmentValue, rosterMembers, selectedRosterUserId]
   )
+  const recommendedAssignmentTeams = useMemo(
+    () => buildRecommendedAssignmentTeams(selectedRosterMember, organizationWorkgroups),
+    [organizationWorkgroups, selectedRosterMember]
+  )
+  const recommendedAssignmentTeam = recommendedAssignmentTeams[0]
   const canCreateTeam = Boolean(
     organizationId &&
       selectedNewTeamDisciplineId &&
@@ -781,8 +818,13 @@ export function ProjectAdminCenter() {
                 onChange={(event) => {
                   const userId = event.target.value
                   const member = rosterMembers.find((item) => item.userId === userId)
+                  const recommendedTeam = buildRecommendedAssignmentTeams(
+                    member,
+                    organizationWorkgroups
+                  )[0]
                   setSelectedRosterUserId(userId)
                   setAssignmentValue(member?.email ?? '')
+                  if (recommendedTeam) setAssignmentTeamId(recommendedTeam.id)
                   setAssignmentStatus(null)
                 }}
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
@@ -800,8 +842,15 @@ export function ProjectAdminCenter() {
                 <input
                   value={assignmentValue}
                   onChange={(event) => {
-                    setAssignmentValue(event.target.value)
+                    const value = event.target.value
+                    const member = getAssignmentCandidateMember(rosterMembers, '', value)
+                    const recommendedTeam = buildRecommendedAssignmentTeams(
+                      member,
+                      organizationWorkgroups
+                    )[0]
+                    setAssignmentValue(value)
                     setSelectedRosterUserId('')
+                    if (recommendedTeam) setAssignmentTeamId(recommendedTeam.id)
                     setAssignmentStatus(null)
                   }}
                   placeholder='User email or ID'
@@ -855,6 +904,52 @@ export function ProjectAdminCenter() {
               <div className='text-[11px] text-[var(--text-muted)]'>
                 {rosterMembers.length} organization member{rosterMembers.length === 1 ? '' : 's'}{' '}
                 available for project team assignment.
+              </div>
+              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <div>
+                    <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                      Smart team suggestion
+                    </div>
+                    <p className='text-[11px] text-[var(--text-muted)]'>
+                      {selectedRosterMember
+                        ? recommendedAssignmentTeam
+                          ? `${selectedRosterMember.name || selectedRosterMember.email} has no access to ${recommendedAssignmentTeam.name}; it is the least staffed eligible team.`
+                          : `${selectedRosterMember.name || selectedRosterMember.email} already has access to every initialized team canvas.`
+                        : 'Select or type a roster member to suggest the least staffed team they do not already access.'}
+                    </p>
+                  </div>
+                  <button
+                    type='button'
+                    className={buttonVariants({ variant: 'default' })}
+                    disabled={!recommendedAssignmentTeam}
+                    onClick={() => {
+                      if (!recommendedAssignmentTeam) return
+                      setAssignmentTeamId(recommendedAssignmentTeam.id)
+                      setAssignmentStatus(null)
+                    }}
+                  >
+                    Use suggestion
+                  </button>
+                </div>
+                {recommendedAssignmentTeams.length > 1 && (
+                  <div className='mt-2 flex flex-wrap gap-2'>
+                    {recommendedAssignmentTeams.slice(0, 4).map((team) => (
+                      <button
+                        key={team.id}
+                        type='button'
+                        className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--surface-1)] hover:text-[var(--text-primary)]'
+                        onClick={() => {
+                          setAssignmentTeamId(team.id)
+                          setAssignmentStatus(null)
+                        }}
+                      >
+                        {team.name} / {team.disciplineName} / {team.memberCount} member
+                        {team.memberCount === 1 ? '' : 's'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className='grid gap-2 border-[var(--border)] border-t pt-3'>
                 <div>
