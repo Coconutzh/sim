@@ -22,6 +22,7 @@ import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, max, ne, or, sql } from 'drizzle-orm'
+import { ORGANIZATION_BILLING_LIFECYCLE_EVENTS } from '@/lib/billing/billing-lifecycle-audit'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
   AGENT_PROFILES,
@@ -147,6 +148,7 @@ const BILLING_MANAGEMENT_EVENTS = [
   'organization.seats_updated',
   'organization.plan_switched',
   'organization.credits_purchased',
+  ...ORGANIZATION_BILLING_LIFECYCLE_EVENTS,
 ] as const
 const CLEANUP_EXECUTION_AUDIT_EVENT = 'cleanup.execution_completed'
 type OrganizationSettingsEvent = (typeof ORGANIZATION_SETTINGS_EVENTS)[number]
@@ -1955,6 +1957,16 @@ function getBillingManagementTitle(event: BillingManagementEvent, resourceName: 
   if (event === 'organization.credits_purchased') {
     return name ? `Organization credits purchased: ${name}` : 'Organization credits purchased'
   }
+  if (event === 'organization.invoice_payment_failed') {
+    return name
+      ? `Organization invoice payment failed: ${name}`
+      : 'Organization invoice payment failed'
+  }
+  if (event === 'organization.invoice_payment_recovered') {
+    return name
+      ? `Organization invoice payment recovered: ${name}`
+      : 'Organization invoice payment recovered'
+  }
   return name ? `Billing updated: ${name}` : 'Billing updated'
 }
 
@@ -1962,6 +1974,9 @@ function getBillingManagementSeverity(
   metadata: unknown
 ): ProjectNotificationCenterEntry['severity'] {
   const record = getMetadataRecord(metadata)
+  if (record?.billingEvent === 'organization.invoice_payment_failed') {
+    return 'warning'
+  }
   const previousSeats = record?.previousSeats
   const seats = record?.seats
   return typeof previousSeats === 'number' && typeof seats === 'number' && seats < previousSeats

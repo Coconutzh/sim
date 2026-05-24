@@ -15,9 +15,20 @@ import {
 import type Stripe from 'stripe'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockBlockOrgMembers, mockUnblockOrgMembers } = vi.hoisted(() => ({
+const { mockBlockOrgMembers, mockRecordAudit, mockUnblockOrgMembers } = vi.hoisted(() => ({
   mockBlockOrgMembers: vi.fn(),
+  mockRecordAudit: vi.fn(),
   mockUnblockOrgMembers: vi.fn(),
+}))
+
+vi.mock('@sim/audit', () => ({
+  AuditAction: {
+    ORGANIZATION_UPDATED: 'organization.updated',
+  },
+  AuditResourceType: {
+    ORGANIZATION: 'organization',
+  },
+  recordAudit: mockRecordAudit,
 }))
 
 vi.mock('@sim/db', () => dbChainMock)
@@ -167,6 +178,9 @@ describe('invoice billing recovery', () => {
         },
       ],
     })
+    queueSelectResponse({
+      limitResult: [{ name: 'Theater Project' }],
+    })
 
     await handleInvoicePaymentFailed(
       createInvoiceEvent('invoice.payment_failed', {
@@ -186,6 +200,21 @@ describe('invoice billing recovery', () => {
 
     expect(mockBlockOrgMembers).toHaveBeenCalledWith('org-1', 'payment_failed')
     expect(mockUnblockOrgMembers).not.toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'system:stripe',
+        action: 'organization.updated',
+        resourceId: 'org-1',
+        resourceName: 'Theater Project',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          billingEvent: 'organization.invoice_payment_failed',
+          invoiceId: 'in_123',
+          amountDollars: 35.82,
+          attemptCount: 2,
+        }),
+      })
+    )
   })
 
   it('unblocks org members when the matching metadata-backed invoice payment succeeds', async () => {
@@ -209,7 +238,7 @@ describe('invoice billing recovery', () => {
     await handleInvoicePaymentSucceeded(
       createInvoiceEvent('invoice.payment_succeeded', {
         amount_paid: 3582,
-        billing_reason: 'manual',
+        billing_reason: 'subscription_update',
         customer: 'cus_123',
         id: 'in_123',
         metadata: {
@@ -222,5 +251,61 @@ describe('invoice billing recovery', () => {
 
     expect(mockUnblockOrgMembers).toHaveBeenCalledWith('org-1', 'payment_failed')
     expect(mockBlockOrgMembers).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it('records a recovery audit when a blocked org invoice payment succeeds', async () => {
+    queueSelectResponse({
+      limitResult: [
+        {
+          id: 'sub-db-1',
+          plan: 'team_8000',
+          referenceId: 'org-1',
+          stripeSubscriptionId: 'sub_stripe_1',
+        },
+      ],
+    })
+    queueSelectResponse({
+      whereResult: [{ userId: 'owner-1' }, { userId: 'member-1' }],
+    })
+    queueSelectResponse({
+      whereResult: [{ blocked: true }, { blocked: false }],
+    })
+    queueSelectResponse({
+      limitResult: [{ name: 'Theater Project' }],
+    })
+
+    await handleInvoicePaymentSucceeded(
+      createInvoiceEvent('invoice.payment_succeeded', {
+        amount_paid: 3582,
+        attempt_count: 2,
+        billing_reason: 'subscription_update',
+        customer: 'cus_123',
+        hosted_invoice_url: 'https://stripe.test/invoices/in_123',
+        id: 'in_123',
+        metadata: {
+          billingPeriod: '2026-04',
+          subscriptionId: 'sub_stripe_1',
+          type: 'overage_threshold_billing_org',
+        },
+      })
+    )
+
+    expect(mockUnblockOrgMembers).toHaveBeenCalledWith('org-1', 'payment_failed')
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'system:stripe',
+        action: 'organization.updated',
+        resourceId: 'org-1',
+        resourceName: 'Theater Project',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          billingEvent: 'organization.invoice_payment_recovered',
+          invoiceId: 'in_123',
+          amountDollars: 35.82,
+          attemptCount: 2,
+        }),
+      })
+    )
   })
 })

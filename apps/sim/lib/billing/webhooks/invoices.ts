@@ -11,6 +11,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import type Stripe from 'stripe'
 import { getEmailSubject, PaymentFailedEmail, renderCreditPurchaseEmail } from '@/components/emails'
+import { recordOrganizationBillingLifecycleAudit } from '@/lib/billing/billing-lifecycle-audit'
 import { calculateSubscriptionOverage, isSubscriptionOrgScoped } from '@/lib/billing/core/billing'
 import { addCredits, getCreditBalanceForEntity } from '@/lib/billing/credits/balance'
 import { setUsageLimitForCredits } from '@/lib/billing/credits/purchase'
@@ -644,7 +645,7 @@ export async function handleInvoicePaymentSucceeded(event: Stripe.Event) {
           return
         }
 
-        const { sub } = resolvedInvoice
+        const { stripeSubscriptionId, sub } = resolvedInvoice
         const subIsOrgScoped = await isSubscriptionOrgScoped(sub)
 
         let wasBlocked = false
@@ -677,6 +678,20 @@ export async function handleInvoicePaymentSucceeded(event: Stripe.Event) {
         if (shouldUnblock) {
           if (subIsOrgScoped) {
             await unblockOrgMembers(sub.referenceId, 'payment_failed')
+            if (wasBlocked) {
+              await recordOrganizationBillingLifecycleAudit({
+                organizationId: sub.referenceId,
+                billingEvent: 'organization.invoice_payment_recovered',
+                subscriptionId: sub.id,
+                stripeSubscriptionId,
+                invoiceId: invoice.id,
+                invoiceType: resolvedInvoice.invoiceType,
+                billingPeriod: invoice.metadata?.billingPeriod ?? null,
+                amountDollars: invoice.amount_paid / 100,
+                attemptCount: invoice.attempt_count ?? null,
+                hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+              })
+            }
           } else {
             await db
               .update(userStats)
@@ -767,6 +782,18 @@ export async function handleInvoicePaymentFailed(event: Stripe.Event) {
               invoiceType: invoiceType ?? 'subscription',
               memberCount,
               organizationId: sub.referenceId,
+            })
+            await recordOrganizationBillingLifecycleAudit({
+              organizationId: sub.referenceId,
+              billingEvent: 'organization.invoice_payment_failed',
+              subscriptionId: sub.id,
+              stripeSubscriptionId,
+              invoiceId: invoice.id,
+              invoiceType,
+              billingPeriod,
+              amountDollars: failedAmount,
+              attemptCount,
+              hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
             })
           } else {
             await db

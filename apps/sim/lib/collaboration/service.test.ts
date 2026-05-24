@@ -1696,6 +1696,38 @@ describe('collaboration service', () => {
           },
         },
         {
+          id: 'audit-billing-management-4',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Organization invoice payment failed for $42.50',
+          actorName: 'Stripe webhook',
+          actorEmail: null,
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.invoice_payment_failed',
+            invoiceId: 'in-failed-1',
+            amountDollars: 42.5,
+            attemptCount: 1,
+          },
+        },
+        {
+          id: 'audit-billing-management-5',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Organization invoice payment recovered for $42.50',
+          actorName: 'Stripe webhook',
+          actorEmail: null,
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.invoice_payment_recovered',
+            invoiceId: 'in-recovered-1',
+            amountDollars: 42.5,
+            attemptCount: 2,
+          },
+        },
+        {
           id: 'audit-cleanup-execution-1',
           action: 'organization.updated',
           resourceName: 'Theater Project',
@@ -1719,7 +1751,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 15,
+        limit: 17,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1790,6 +1822,18 @@ describe('collaboration service', () => {
           kind: 'billing_management',
           severity: 'info',
           title: 'Organization credits purchased: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-4',
+          kind: 'billing_management',
+          severity: 'warning',
+          title: 'Organization invoice payment failed: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-5',
+          kind: 'billing_management',
+          severity: 'info',
+          title: 'Organization invoice payment recovered: Theater Project',
         },
         {
           id: 'audit-cleanup-execution-1',
