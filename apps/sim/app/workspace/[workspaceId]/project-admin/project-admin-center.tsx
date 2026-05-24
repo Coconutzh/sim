@@ -26,6 +26,8 @@ import type {
   Discipline,
   OrganizationAgentSkillPolicy,
   OrganizationWorkgroupActivityEntry,
+  ProjectNotificationCenterEntry,
+  ProjectNotificationCenterKind,
   PublicationReviewState,
   PublicationRiskLevel,
   PublicationSummary,
@@ -62,15 +64,15 @@ import {
   useCreateWorkgroup,
   useDeliverPublicationNotifications,
   useDisciplines,
-  useMarkPublicationNotificationInboxRead,
+  useMarkProjectNotificationCenterRead,
   useMyWorkgroups,
   useOrganizationAgentSkillPolicies,
   useOrganizationAgentTemplates,
   useOrganizationPublications,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
+  useProjectNotificationCenter,
   usePublication,
-  usePublicationNotificationInbox,
   usePublicationTree,
   useRecordProjectAdminFailureAudit,
   useUpdateOrganizationAgentSkillPolicy,
@@ -84,7 +86,7 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useNotificationStore } from '@/stores/notifications'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
-const PUBLICATION_NOTIFICATION_INBOX_QUERY = { limit: 5 } as const
+const PROJECT_NOTIFICATION_CENTER_LIMIT = 8
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
@@ -108,6 +110,14 @@ const PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS: {
   { scope: 'member', label: 'Member' },
   { scope: 'activity', label: 'Activity' },
   { scope: 'notification', label: 'Notification' },
+]
+const PROJECT_NOTIFICATION_KIND_OPTIONS: {
+  value: ProjectNotificationCenterKind | ''
+  label: string
+}[] = [
+  { value: '', label: 'All notification types' },
+  { value: 'publication_review', label: 'Publication review' },
+  { value: 'project_admin_failure', label: 'Project admin failure' },
 ]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',
@@ -1192,6 +1202,24 @@ function formatProjectAdminFailureScope(scope: string | null | undefined) {
   )
 }
 
+function formatProjectNotificationKind(kind: ProjectNotificationCenterKind) {
+  return (
+    PROJECT_NOTIFICATION_KIND_OPTIONS.find((option) => option.value === kind)?.label ??
+    kind.replaceAll('_', ' ')
+  )
+}
+
+function projectNotificationSeverityClass(severity: ProjectNotificationCenterEntry['severity']) {
+  switch (severity) {
+    case 'danger':
+      return 'border-red-500/30 bg-red-500/10 text-red-500'
+    case 'warning':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+    case 'info':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-500'
+  }
+}
+
 function buildProjectAdminFailureHistoryStats(
   entries: OrganizationWorkgroupActivityEntry[]
 ): ProjectAdminFailureHistoryStats {
@@ -1313,7 +1341,7 @@ export function ProjectAdminCenter() {
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const updatePublicationDetails = useUpdatePublicationDetails()
   const deliverPublicationNotifications = useDeliverPublicationNotifications()
-  const markPublicationNotificationInboxRead = useMarkPublicationNotificationInboxRead()
+  const markProjectNotificationCenterRead = useMarkProjectNotificationCenterRead()
   const recordProjectAdminFailureAudit = useRecordProjectAdminFailureAudit()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
@@ -1367,6 +1395,13 @@ export function ProjectAdminCenter() {
   const [isExportingFailureHistory, setIsExportingFailureHistory] = useState(false)
   const [failureHistoryExportStatus, setFailureHistoryExportStatus] = useState<string | null>(null)
   const [selectedFailureHistoryId, setSelectedFailureHistoryId] = useState<string | null>(null)
+  const [projectNotificationKind, setProjectNotificationKind] = useState<
+    ProjectNotificationCenterKind | ''
+  >('')
+  const [projectNotificationOffset, setProjectNotificationOffset] = useState(0)
+  const [selectedProjectNotificationId, setSelectedProjectNotificationId] = useState<string | null>(
+    null
+  )
   const [projectAdminFailureAudit, setProjectAdminFailureAudit] = useState<
     ProjectAdminFailureAuditEntry[]
   >([])
@@ -1441,17 +1476,31 @@ export function ProjectAdminCenter() {
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
   )
-  const {
-    data: publicationNotificationInboxData,
-    isLoading: isLoadingPublicationNotificationInbox,
-  } = usePublicationNotificationInbox(
-    isProjectAdmin ? organizationId : undefined,
-    PUBLICATION_NOTIFICATION_INBOX_QUERY
+  const projectNotificationCenterQuery = useMemo(
+    () => ({
+      limit: PROJECT_NOTIFICATION_CENTER_LIMIT,
+      offset: projectNotificationOffset,
+      kind: projectNotificationKind || undefined,
+    }),
+    [projectNotificationKind, projectNotificationOffset]
   )
-  const publicationNotificationInbox = publicationNotificationInboxData?.inbox ?? []
-  const unreadPublicationNotificationCount = publicationNotificationInbox.filter(
+  const { data: projectNotificationCenterData, isLoading: isLoadingProjectNotificationCenter } =
+    useProjectNotificationCenter(
+      isProjectAdmin ? organizationId : undefined,
+      projectNotificationCenterQuery
+    )
+  const projectNotifications = projectNotificationCenterData?.notifications ?? []
+  const unreadProjectNotificationCount = projectNotifications.filter(
     (entry) => !entry.readAt
   ).length
+  const selectedProjectNotification =
+    projectNotifications.find((entry) => entry.id === selectedProjectNotificationId) ?? null
+  const hasPreviousProjectNotificationPage = projectNotificationOffset > 0
+  const hasNextProjectNotificationPage = projectNotificationCenterData?.nextOffset != null
+  const projectNotificationRangeLabel =
+    projectNotifications.length > 0
+      ? `Showing ${projectNotificationOffset + 1}-${projectNotificationOffset + projectNotifications.length} project notifications.`
+      : 'No project notifications in this filter.'
   const {
     data: organizationRetention,
     error: organizationRetentionError,
@@ -2353,29 +2402,32 @@ export function ProjectAdminCenter() {
     }
   }
 
-  const handleMarkPublicationNotificationRead = async (notificationId?: string) => {
+  const handleMarkProjectNotificationRead = async (
+    notification?: ProjectNotificationCenterEntry
+  ) => {
     if (!organizationId) {
       setPublicationGovernanceStatus('Select a project organization before marking notifications.')
       return
     }
 
     try {
-      await markPublicationNotificationInboxRead.mutateAsync({
+      await markProjectNotificationCenterRead.mutateAsync({
         organizationId,
-        notificationId,
-        markAll: notificationId ? undefined : true,
+        notificationId: notification?.id,
+        markAll: notification ? undefined : true,
+        kind: notification?.kind ?? (projectNotificationKind || undefined),
       })
       setPublicationGovernanceStatus(
-        notificationId
-          ? 'Marked publication notification as read.'
-          : 'Marked all recent publication notifications as read.'
+        notification
+          ? 'Marked project notification as read.'
+          : 'Marked current project notification filter as read.'
       )
     } catch (error) {
       setPublicationGovernanceStatus(
         recordProjectAdminFailure(
           'notification',
-          'Mark publication notifications read',
-          notificationId ?? 'all',
+          'Mark project notifications read',
+          notification?.id ?? (projectNotificationKind || 'all'),
           error
         )
       )
@@ -3075,39 +3127,91 @@ export function ProjectAdminCenter() {
               <div className='flex flex-wrap items-start justify-between gap-3'>
                 <div>
                   <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
-                    Persistent notification inbox
+                    Project notification center
                   </h3>
                   <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
-                    Server-backed publication review notification deliveries that remain visible
-                    across project admin sessions.
+                    Filter and inspect server-backed project notifications across publication review
+                    digests and project-admin failure audits.
                   </p>
                 </div>
                 <div className='flex flex-wrap items-center gap-2'>
                   <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
-                    {isLoadingPublicationNotificationInbox
+                    {isLoadingProjectNotificationCenter
                       ? 'Loading'
-                      : `${unreadPublicationNotificationCount} unread / ${publicationNotificationInbox.length} recent`}
+                      : `${unreadProjectNotificationCount} unread / ${projectNotifications.length} shown`}
                   </span>
                   <button
                     type='button'
                     className={buttonVariants({ size: 'sm', variant: 'default' })}
                     disabled={
-                      unreadPublicationNotificationCount === 0 ||
-                      markPublicationNotificationInboxRead.isPending
+                      unreadProjectNotificationCount === 0 ||
+                      markProjectNotificationCenterRead.isPending
                     }
-                    onClick={() => void handleMarkPublicationNotificationRead()}
+                    onClick={() => void handleMarkProjectNotificationRead()}
                   >
-                    Mark all read
+                    Mark filter read
                   </button>
                 </div>
               </div>
-              {publicationNotificationInbox.length > 0 ? (
+              <div className='mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]'>
+                <select
+                  value={projectNotificationKind}
+                  onChange={(event) => {
+                    setProjectNotificationKind(
+                      event.target.value as ProjectNotificationCenterKind | ''
+                    )
+                    setProjectNotificationOffset(0)
+                    setSelectedProjectNotificationId(null)
+                  }}
+                  className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                >
+                  {PROJECT_NOTIFICATION_KIND_OPTIONS.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      !hasPreviousProjectNotificationPage || isLoadingProjectNotificationCenter
+                    }
+                    onClick={() => {
+                      setProjectNotificationOffset((currentOffset) =>
+                        Math.max(0, currentOffset - PROJECT_NOTIFICATION_CENTER_LIMIT)
+                      )
+                      setSelectedProjectNotificationId(null)
+                    }}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={!hasNextProjectNotificationPage || isLoadingProjectNotificationCenter}
+                    onClick={() => {
+                      if (projectNotificationCenterData?.nextOffset != null) {
+                        setProjectNotificationOffset(projectNotificationCenterData.nextOffset)
+                        setSelectedProjectNotificationId(null)
+                      }
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+              <div className='mt-2 text-[11px] text-[var(--text-muted)]'>
+                {projectNotificationRangeLabel}
+              </div>
+              {projectNotifications.length > 0 ? (
                 <div className='mt-3 grid gap-2'>
-                  {publicationNotificationInbox.map((entry) => (
+                  {projectNotifications.map((entry) => (
                     <div
                       key={entry.id}
                       className={cn(
-                        'rounded-[8px] border p-3',
+                        'w-full rounded-[8px] border p-3',
                         entry.readAt
                           ? 'border-[var(--border)] bg-[var(--surface-2)]'
                           : 'border-amber-500/30 bg-amber-500/10'
@@ -3118,9 +3222,22 @@ export function ProjectAdminCenter() {
                           <span className='font-medium text-[12px] text-[var(--text-primary)]'>
                             {entry.title}
                           </span>
-                          <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
-                            {entry.channel.replace('_', ' ')}
+                          <span
+                            className={cn(
+                              'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                              projectNotificationSeverityClass(entry.severity)
+                            )}
+                          >
+                            {entry.severity}
                           </span>
+                          <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
+                            {formatProjectNotificationKind(entry.kind)}
+                          </span>
+                          {entry.channel && (
+                            <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
+                              {entry.channel.replace('_', ' ')}
+                            </span>
+                          )}
                           {!entry.readAt && (
                             <span className='rounded-[6px] border border-amber-500/30 px-1.5 py-0.5 font-medium text-[10px] text-amber-500'>
                               Unread
@@ -3131,39 +3248,47 @@ export function ProjectAdminCenter() {
                           <span className='text-[11px] text-[var(--text-muted)]'>
                             {formatDateTime(entry.createdAt)}
                           </span>
+                          <button
+                            type='button'
+                            className={buttonVariants({ size: 'sm', variant: 'default' })}
+                            onClick={() => setSelectedProjectNotificationId(entry.id)}
+                          >
+                            Details
+                          </button>
                           {!entry.readAt && (
                             <button
                               type='button'
                               className={buttonVariants({ size: 'sm', variant: 'default' })}
-                              disabled={markPublicationNotificationInboxRead.isPending}
-                              onClick={() => void handleMarkPublicationNotificationRead(entry.id)}
+                              disabled={markProjectNotificationCenterRead.isPending}
+                              onClick={() => void handleMarkProjectNotificationRead(entry)}
                             >
                               Mark read
                             </button>
                           )}
                         </div>
                       </div>
-                      <p className='mt-2 text-[11px] text-[var(--text-muted)]'>{entry.detail}</p>
+                      <p className='mt-2 line-clamp-2 text-[11px] text-[var(--text-muted)]'>
+                        {entry.detail || entry.body || 'No detail recorded for this notification.'}
+                      </p>
                       <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
-                        <span>{entry.notificationCount} notifications</span>
-                        <span>{entry.dangerCount} danger</span>
-                        <span>{entry.warningCount} warning</span>
-                        <span>{entry.publicationIds.length} publications</span>
                         <span>
-                          Queued by {entry.actorName || entry.actorEmail || 'unknown admin'}
+                          {entry.notificationCount} item{entry.notificationCount === 1 ? '' : 's'}
                         </span>
+                        <span>By {entry.actorName || entry.actorEmail || 'unknown admin'}</span>
+                        {entry.readAt && <span>Read {formatDateTime(entry.readAt)}</span>}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
-                  {isLoadingPublicationNotificationInbox
-                    ? 'Loading persistent notification deliveries...'
-                    : 'No persistent publication notification deliveries have been queued yet.'}
+                  {isLoadingProjectNotificationCenter
+                    ? 'Loading project notifications...'
+                    : 'No project notifications match this filter yet.'}
                 </p>
               )}
             </div>
+
             {publicationDependencyConflictAlerts.length > 0 && (
               <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
                 <div className='flex flex-wrap items-start justify-between gap-3'>
@@ -5870,6 +5995,124 @@ export function ProjectAdminCenter() {
                   )}
                 </div>
               </section>
+            </div>
+          </aside>
+        </div>
+      )}
+      {selectedProjectNotification && (
+        <div className='fixed inset-0 z-50 flex justify-end bg-black/20'>
+          <aside className='flex h-full w-full max-w-[480px] flex-col border-[var(--border)] border-l bg-[var(--bg)] shadow-xl'>
+            <div className='flex items-start justify-between gap-3 border-[var(--border)] border-b p-4'>
+              <div className='min-w-0'>
+                <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <AlertTriangle className='h-[14px] w-[14px]' />
+                  Project notification detail
+                </div>
+                <h2 className='mt-1 truncate font-medium text-[18px] text-[var(--text-primary)]'>
+                  {selectedProjectNotification.title}
+                </h2>
+                <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                  <span>{formatProjectNotificationKind(selectedProjectNotification.kind)}</span>
+                  <span>{formatDateTime(selectedProjectNotification.createdAt)}</span>
+                  <span>{selectedProjectNotification.readAt ? 'Read' : 'Unread'}</span>
+                </div>
+              </div>
+              <button
+                type='button'
+                className={cn(buttonVariants({ size: 'sm', variant: 'default' }), 'h-[30px]')}
+                onClick={() => setSelectedProjectNotificationId(null)}
+                aria-label='Close project notification detail drawer'
+              >
+                <X className='h-[13px] w-[13px]' />
+              </button>
+            </div>
+            <div className='grid flex-1 gap-4 overflow-auto p-4'>
+              <section
+                className={cn(
+                  'rounded-[8px] border p-3',
+                  projectNotificationSeverityClass(selectedProjectNotification.severity)
+                )}
+              >
+                <div className='text-[11px] uppercase tracking-[0.08em]'>
+                  {selectedProjectNotification.severity} notification
+                </div>
+                <p className='mt-2 whitespace-pre-wrap text-[13px] text-[var(--text-primary)]'>
+                  {selectedProjectNotification.detail ||
+                    'No detail recorded for this notification.'}
+                </p>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Notification context
+                </h3>
+                <div className='mt-3 grid gap-2 text-[12px]'>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Type</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {formatProjectNotificationKind(selectedProjectNotification.kind)}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Channel</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {selectedProjectNotification.channel?.replace('_', ' ') ?? 'Audit'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Count</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {selectedProjectNotification.notificationCount}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Actor</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedProjectNotification.actorName ||
+                        selectedProjectNotification.actorEmail ||
+                        'Unknown admin'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Read state</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {selectedProjectNotification.readAt
+                        ? formatDateTime(selectedProjectNotification.readAt)
+                        : 'Unread'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Audit row ID</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedProjectNotification.id}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              {selectedProjectNotification.body && (
+                <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                  <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                    Delivery body
+                  </h3>
+                  <p className='mt-2 whitespace-pre-wrap text-[12px] text-[var(--text-muted)]'>
+                    {selectedProjectNotification.body}
+                  </p>
+                </section>
+              )}
+
+              {!selectedProjectNotification.readAt && (
+                <button
+                  type='button'
+                  className={buttonVariants({ size: 'sm', variant: 'default' })}
+                  disabled={markProjectNotificationCenterRead.isPending}
+                  onClick={() =>
+                    void handleMarkProjectNotificationRead(selectedProjectNotification)
+                  }
+                >
+                  Mark notification read
+                </button>
+              )}
             </div>
           </aside>
         </div>
