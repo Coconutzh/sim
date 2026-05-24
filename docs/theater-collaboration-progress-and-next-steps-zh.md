@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」继续在原 `/workspace` 外壳下收口团队发布管理、Agent Skill 绑定和协作日志；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
 
 ## 1. 当前结论
 
@@ -385,6 +385,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队管理页复用现有 workspace invitation 查询/取消/重发 hooks，发送邀请后会刷新 pending invitation 列表，避免管理员离开当前 shell 才能确认状态。
 - 团队发布管理先接入本团队 publication 列表和生命周期操作，复用 `useShowcasePublications` 与 `useUpdatePublicationLifecycle`，管理员可从原 shell 直接归档/撤回展示版本并跳转到展示画布。
 - 团队管理页新增发布创建表单，管理员可选择团队画布内 workflow、填写标题/说明，并选择组织可见或指定团队可见；提交后复用现有 `POST /api/workflows/[id]/publish` 发布快照并刷新本团队展示列表。
+- 团队管理页后续已拆成 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个本地 tab，沿用 `var(--bg)`、`var(--surface-*)`、`var(--border)`、8px 圆角和原页面状态，不引入独立工作台外壳。
 
 ### 5.9 Phase 9 Team Agent Skill 绑定切片
 
@@ -493,6 +494,16 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 该切片只是审核状态/风险等级的首版治理字段，不是完整审批工作流；后续还需要 reviewer 指派、审批备注历史、恢复前 diff preview、跨团队通知和项目级审批视图。
+
+### 5.16 Phase 9 团队管理页 tab 信息架构切片
+
+本轮继续收口团队管理员闭环，把过长的单页管理区块拆成原 shell 内的本地 tab：
+
+- `apps/sim/app/workspace/[workspaceId]/team-management/workgroup-team-management.tsx` 新增 `TeamManagementTab`、`TEAM_MANAGEMENT_TABS` 和 `activeTab` 状态。
+- 页面顶部新增 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个 tab，每个 tab 显示对应数据数量，视觉继续使用 `var(--surface-2)` 容器、`var(--surface-1)` 选中态、`var(--border)` 和 8px 圆角。
+- `Members` tab 承载添加已有用户和成员角色/移除列表；`Invites` tab 承载发送邮件邀请和 pending invitation 重发/取消；`Publications` tab 承载发布表单、可见范围、生命周期、恢复当前版本和审核/风险控件；`Agent Skill` 与 `Activity` 分别承载技能开关和团队活动日志。
+- 本切片不改 API、contract、React Query hook 或权限边界；所有原有 mutation、refetch 和 status message 继续复用，只改变页面信息架构。
+- 该切片解决 Phase 9 “团队管理页过长，需要 tabs/drawer” 的首版问题；后续仍可为批量邀请、邀请过期状态、失败审计和复杂发布治理补 drawer。
 
 ## 6. 建议继续推进目标
 
