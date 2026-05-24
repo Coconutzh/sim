@@ -18,7 +18,7 @@
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
 - 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明和项目级发布状态树治理。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级发布治理、发布详情 drawer 和发布版本 diff preview 首批能力；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级发布治理、发布详情 drawer、发布版本 diff preview 和发布冲突检测首批能力；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `bde7e2885` | Phase 10 项目管理员中心增加发布冲突检测 |
 | `3989ab628` | Phase 10 项目管理员中心增加发布版本 diff preview |
 | `a097b0956` | Phase 10 项目管理员中心增加发布治理详情 drawer |
 | `0e79d8334` | Phase 10 项目管理员中心增加项目级发布治理写操作 |
@@ -211,6 +212,7 @@
 - 项目管理员中心已补项目级发布状态树治理写操作首版：新增 `GET /api/organizations/[id]/publications` 合约路由和 `useOrganizationPublications`，组织管理员可跨全组织读取 published、superseded、archived、retracted 发布版本；中心页可直接维护 review/risk，执行 archive、retract、restore，底层复用既有 publication lifecycle/review 服务审计和权限边界。
 - 项目管理员中心已补发布治理详情 drawer 首版：每个发布版本可打开右侧详情面板，查看 review/risk/status/visibility、restore 影响说明、父版本和 dependsOn 链路；同时 `canReadPublication` 已允许组织 owner/admin 读取 selected-workgroups 发布的 tree 详情，保证项目管理员能进行跨团队状态树审阅。
 - 发布治理 drawer 已补真实 snapshot diff preview 首版：打开非 retracted 版本时会加载 restore candidate 与当前 published 版本详情，比较 blocks、edges、loops、parallels、variables、workflow metadata 和 block type 计数差异，用于恢复前快速评估结构变化。
+- 项目管理员中心已补发布冲突检测首版：复用 publication state tree 分组逻辑，在 KPI、Governance watchlist、发布列表和发布详情 drawer 中标出多 current version、无 current version、过期 current、未 approved current、critical-risk current 等状态树治理告警。
 - 项目管理员批量分配已补首版建议填充：基于 organization roster 和当前所选团队的 team canvas access map，提示尚未拥有该团队画布访问权的 roster 成员，并可一键把建议 email 合并进批量输入框。
 - 项目管理员批量分配已补文件导入首版：可上传 CSV/TSV/TXT，前端提取 email 或 user ID 并合并进现有批量输入框，仍由管理员显式点击 `Assign batch transaction` 后才批量提交。
 - 项目管理员中心新增 `Project activity filters`，可在项目级入口按团队、工种、动作和搜索文本筛选 audit-backed 最近活动；该能力复用新的 `useOrganizationWorkgroupActivity` / `GET /api/organizations/[id]/workgroups/activity`，不走 enterprise audit subscription gate。
@@ -219,7 +221,7 @@
 
 仍需继续：
 
-- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、lifecycle 写操作、详情 drawer 和结构 diff preview，但仍缺少冲突处理、批量治理、节点级 diff 展示和发布详情编辑；批量导入目前仍只是前端文件解析。
+- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、lifecycle 写操作、详情 drawer、结构 diff preview 和冲突检测，但仍缺少批量治理、节点级 diff 展示、冲突修复向导和发布详情编辑；批量导入目前仍只是前端文件解析。
 
 ### 3.9 权限与安全加固
 
@@ -334,11 +336,11 @@ git diff --check
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览，且项目级 Agent prompt 补充说明已按 Agent 维度落地；后续补工种启用/停用、显示名和更细的 Agent 策略。
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队和归档团队；后续补设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
-5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、详情 drawer 和结构 diff preview 已落地；后续补冲突处理、过期/未提交团队治理、批量操作、节点级 diff 展示和详情编辑。
+5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、详情 drawer、结构 diff preview 和冲突检测已落地；后续补冲突修复向导、过期/未提交团队治理、批量操作、节点级 diff 展示和详情编辑。
 6. Agent 模板：项目级 prompt 附加说明首版已落地；后续补默认 Skill、风险 Skill 禁用策略和模板变更影响预览。
 7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围和 actor 精确筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件。
 
-建议提交：下一步可拆为 `Add publication conflict detection` 或 `Add project Agent skill policies`。
+建议提交：下一步可拆为 `Add publication conflict resolution` 或 `Add project Agent skill policies`。
 
 ### Phase 11：Legacy workspace 入口迁移
 
