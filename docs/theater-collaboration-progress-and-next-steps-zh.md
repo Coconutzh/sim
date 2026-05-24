@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动只读项目管理员中心首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -269,7 +269,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
-| Phase 10 项目管理员中心 | 工种/团队/成员分配、全局状态树、Agent 模板、权限和审计 |
+| Phase 10 项目管理员中心 | 已有原 shell 只读概览首版；后续继续工种/团队/成员分配、全局状态树、Agent 模板、权限和审计 |
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
@@ -561,6 +561,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 逐项反馈已经补齐 Phase 9 批量邀请的核心缺口；后续可继续设计失败操作是否进入 team activity/audit、seat 不足和权限拒绝的审计归因，以及健康修复历史。
+
+### 5.22 Phase 10 项目管理员中心只读概览切片
+
+本轮启动 Phase 10，但仍保持首切片只读、原 shell 集成、不新增复杂治理写操作：
+
+- 新增 `/workspace/[workspaceId]/project-admin`，页面继续运行在原 `/workspace/[workspaceId]` layout、Sidebar、Provider 内，不回到独立 `/workbench` 外壳。
+- Sidebar 在检测到当前用户对当前组织具备 `org_admin` 语义时显示 `Project admin` 入口；普通团队管理员继续使用 `Team management`，手动访问项目中心时会看到权限说明。
+- `ProjectAdminCenter` 复用现有 React Query hooks：`useMyWorkgroups` 定位当前组织上下文，`useOrganizationWorkgroups` 读取项目团队清单，`useDisciplines` / `useAgentProfiles` 展示工种与 Agent 映射，`useShowcasePublications` 读取当前可见展示发布治理数据。
+- 首版统计卡展示工种覆盖率、团队数/成员数、当前展示发布数量和治理告警数量；工种表展示每个工种对应 Agent、团队数、成员数、当前发布数和 critical risk 数。
+- 团队清单提供跳转到团队管理页的入口；governance watchlist 首版提示 critical-risk publication、pending/unreviewed publication 和缺失 team canvas 的团队。
+
+仍需继续：
+
+- 该切片只是 Phase 10 的只读项目总览，不包含创建/归档团队、项目级成员批量分配、Agent 模板、全局审计筛选、跨团队状态树写操作或权限拒绝审计归因。
 
 ## 6. 建议继续推进目标
 

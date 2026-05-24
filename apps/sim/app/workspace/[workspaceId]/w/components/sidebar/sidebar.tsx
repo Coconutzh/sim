@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react'
 import { createLogger } from '@sim/logger'
-import { Compass, MoreHorizontal, PenLine, Users } from 'lucide-react'
+import { Compass, MoreHorizontal, PenLine, ShieldCheck, Users } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -96,6 +96,7 @@ import {
   useCreatePersonalWorkspace,
   useCreateTeamWorkspace,
   useMyWorkgroups,
+  useOrganizationWorkgroups,
   usePersonalWorkspace,
   useSetActiveWorkgroup,
   useTeamWorkspace,
@@ -493,6 +494,9 @@ export const Sidebar = memo(function Sidebar() {
   const activeWorkgroupId = activeWorkgroup?.id
   const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
   const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
+  const { data: organizationWorkgroupsData } = useOrganizationWorkgroups(
+    activeWorkgroup?.organizationId
+  )
   const { mutateAsync: createPersonalWorkspace, isPending: isCreatingPersonalWorkspace } =
     useCreatePersonalWorkspace()
   const { mutateAsync: createTeamWorkspace, isPending: isCreatingTeamWorkspace } =
@@ -500,6 +504,10 @@ export const Sidebar = memo(function Sidebar() {
   const personalCanvasWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
   const teamCanvasWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
+  const isProjectAdmin =
+    organizationWorkgroupsData?.workgroups.some(
+      (workgroup) => workgroup.currentUserRole === 'org_admin'
+    ) ?? false
 
   const personalDraftWorkspaces = useMemo(() => {
     return workspaces.filter((workspace) => {
@@ -859,10 +867,20 @@ export const Sidebar = memo(function Sidebar() {
       })
     }
 
+    if (isProjectAdmin) {
+      items.push({
+        id: 'project-admin',
+        label: 'Project admin',
+        icon: ShieldCheck,
+        href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/project-admin`,
+      })
+    }
+
     return items
   }, [
     handleInitializeTeamCanvas,
     isActiveWorkgroupAdmin,
+    isProjectAdmin,
     personalCanvasWorkspaceId,
     teamCanvasWorkspaceId,
     workspaceId,
