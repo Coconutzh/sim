@@ -504,6 +504,22 @@ export const createOrganizationWorkgroupContract = defineRouteContract({
   },
 })
 
+export const archiveWorkgroupContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/archive',
+  params: workgroupParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      workgroup: z.object({
+        id: z.string(),
+        name: z.string(),
+        archivedAt: z.string(),
+      }),
+    }),
+  },
+})
+
 export const getWorkgroupMembersContract = defineRouteContract({
   method: 'GET',
   path: '/api/workgroups/[workgroupId]/members',

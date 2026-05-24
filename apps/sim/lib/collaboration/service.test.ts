@@ -58,6 +58,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
       transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
         callback({
           insert: vi.fn(() => createInsertChain()),
+          update: vi.fn(() => createWriteChain()),
         })
       ),
     },
@@ -108,6 +109,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         organizationId: 'workgroup.organizationId',
         disciplineId: 'workgroup.disciplineId',
         teamWorkspaceId: 'workgroup.teamWorkspaceId',
+        archivedAt: 'workgroup.archivedAt',
       },
       workgroupMember: {
         id: 'workgroupMember.id',
@@ -197,6 +199,7 @@ vi.mock('@sim/audit', () => ({
     MEMBER_BATCH_ASSIGNED: 'member.batch_assigned',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     MEMBER_REMOVED: 'member.removed',
+    WORKGROUP_ARCHIVED: 'workgroup.archived',
     SKILL_UPDATED: 'skill.updated',
     WORKSPACE_CREATED: 'workspace.created',
   },
@@ -242,6 +245,7 @@ import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   addWorkgroupMember,
   addWorkgroupMembersBatch,
+  archiveWorkgroup,
   assertWorkgroupAdmin,
   createPersonalWorkspace,
   createTeamWorkspace,
@@ -511,6 +515,40 @@ describe('collaboration service', () => {
     ).rejects.toThrow('User not found')
     expect(mockDb.transaction).not.toHaveBeenCalled()
     expect(recordAudit).not.toHaveBeenCalled()
+  })
+
+  it('archives a workgroup and its team workspace for organization admins', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'workgroup-1',
+          name: 'Lighting',
+          organizationId: 'org-1',
+          teamWorkspaceId: 'team-workspace-1',
+          archivedAt: null,
+        },
+      ],
+      [{ role: 'admin' }]
+    )
+
+    await expect(
+      archiveWorkgroup({ actorUserId: 'org-admin-1', workgroupId: 'workgroup-1' })
+    ).resolves.toMatchObject({
+      id: 'workgroup-1',
+      name: 'Lighting',
+    })
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'workgroup.archived',
+        resourceId: 'workgroup-1',
+        description: 'Archived team Lighting',
+        metadata: expect.objectContaining({
+          workgroupId: 'workgroup-1',
+          teamWorkspaceId: 'team-workspace-1',
+        }),
+      })
+    )
   })
 
   it('creates additional personal draft canvases with a default workflow', async () => {

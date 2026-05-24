@@ -132,7 +132,14 @@ export async function getWorkgroupMembership(userId: string, workgroupId: string
       workgroupId: workgroupMember.workgroupId,
     })
     .from(workgroupMember)
-    .where(and(eq(workgroupMember.userId, userId), eq(workgroupMember.workgroupId, workgroupId)))
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .where(
+      and(
+        eq(workgroupMember.userId, userId),
+        eq(workgroupMember.workgroupId, workgroupId),
+        isNull(workgroup.archivedAt)
+      )
+    )
     .limit(1)
 
   return row ?? null
@@ -142,7 +149,7 @@ async function getWorkgroupOrganizationId(workgroupId: string): Promise<string |
   const [row] = await db
     .select({ organizationId: workgroup.organizationId })
     .from(workgroup)
-    .where(eq(workgroup.id, workgroupId))
+    .where(and(eq(workgroup.id, workgroupId), isNull(workgroup.archivedAt)))
     .limit(1)
 
   return row?.organizationId ?? null
@@ -215,7 +222,7 @@ export async function listUserWorkgroups(userId: string) {
     .from(workgroupMember)
     .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
     .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
-    .where(eq(workgroupMember.userId, userId))
+    .where(and(eq(workgroupMember.userId, userId), isNull(workgroup.archivedAt)))
     .orderBy(asc(workgroup.name))
 
   const countRows = rows.length
@@ -455,9 +462,10 @@ export async function listOrganizationWorkgroups(params: {
     )
     .where(
       isOrgAdmin
-        ? eq(workgroup.organizationId, params.organizationId)
+        ? and(eq(workgroup.organizationId, params.organizationId), isNull(workgroup.archivedAt))
         : and(
             eq(workgroup.organizationId, params.organizationId),
+            isNull(workgroup.archivedAt),
             eq(workgroupMember.userId, params.userId)
           )
     )
@@ -487,6 +495,57 @@ export async function listOrganizationWorkgroups(params: {
     memberCount: countMap.get(row.id) ?? 0,
     currentUserRole: isOrgAdmin ? 'org_admin' : row.memberRole,
   }))
+}
+
+export async function archiveWorkgroup(params: { actorUserId: string; workgroupId: string }) {
+  const [row] = await db
+    .select({
+      id: workgroup.id,
+      name: workgroup.name,
+      organizationId: workgroup.organizationId,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+      archivedAt: workgroup.archivedAt,
+    })
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
+  if (!row) throw new Error('Workgroup not found')
+
+  await assertOrganizationAdmin(params.actorUserId, row.organizationId)
+  const archivedAt = row.archivedAt ?? new Date()
+
+  if (!row.archivedAt) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(workgroup)
+        .set({ archivedAt, updatedAt: archivedAt })
+        .where(eq(workgroup.id, row.id))
+
+      if (row.teamWorkspaceId) {
+        await tx
+          .update(workspace)
+          .set({ archivedAt, updatedAt: archivedAt })
+          .where(eq(workspace.id, row.teamWorkspaceId))
+      }
+    })
+
+    recordAudit({
+      workspaceId: row.teamWorkspaceId,
+      actorId: params.actorUserId,
+      action: AuditAction.WORKGROUP_ARCHIVED,
+      resourceType: AuditResourceType.WORKSPACE,
+      resourceId: row.id,
+      resourceName: row.name,
+      description: `Archived team ${row.name}`,
+      metadata: {
+        workgroupId: row.id,
+        teamWorkspaceId: row.teamWorkspaceId,
+        archivedAt: archivedAt.toISOString(),
+      },
+    })
+  }
+
+  return { id: row.id, name: row.name, archivedAt: archivedAt.toISOString() }
 }
 
 export async function getWorkgroupMembers(params: { userId: string; workgroupId: string }) {
@@ -1336,7 +1395,10 @@ async function listPublicationScopeTargets(publishedWorkflowIds: string[]) {
       viewerWorkgroupId: workflowPublicationScope.viewerWorkgroupId,
     })
     .from(workflowPublicationScope)
-    .where(inArray(workflowPublicationScope.workflowId, uniqueIds))
+    .innerJoin(workgroup, eq(workflowPublicationScope.viewerWorkgroupId, workgroup.id))
+    .where(
+      and(inArray(workflowPublicationScope.workflowId, uniqueIds), isNull(workgroup.archivedAt))
+    )
 
   const result = new Map<string, string[]>()
   for (const row of rows) {
@@ -1354,7 +1416,10 @@ async function listPublicationBroadcastTargets(params: {
   visibility: PublicationVisibility
   targetWorkgroupIds?: string[]
 }) {
-  const conditions = [eq(workgroup.organizationId, params.organizationId)]
+  const conditions = [
+    eq(workgroup.organizationId, params.organizationId),
+    isNull(workgroup.archivedAt),
+  ]
 
   if (params.visibility === 'selected_workgroups') {
     const targetIds =
@@ -1485,7 +1550,7 @@ export async function listVisiblePublications(params: {
     .innerJoin(workgroup, eq(workflowPublicationVersion.sourceWorkgroupId, workgroup.id))
     .leftJoin(discipline, eq(workflowPublicationVersion.sourceDisciplineId, discipline.id))
     .leftJoin(user, eq(workflowPublicationVersion.publishedBy, user.id))
-    .where(and(...conditions, visibilityCondition))
+    .where(and(...conditions, visibilityCondition, isNull(workgroup.archivedAt)))
     .orderBy(desc(workflowPublicationVersion.publishedAt))
     .limit(params.limit ?? 50)
 

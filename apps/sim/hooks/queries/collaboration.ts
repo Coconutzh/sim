@@ -4,6 +4,7 @@ import { requestJson } from '@/lib/api/client/request'
 import type { WorkspacesResponse } from '@/lib/api/contracts'
 import {
   addWorkgroupMemberContract,
+  archiveWorkgroupContract,
   type BatchAddWorkgroupMembersBody,
   batchAddWorkgroupMembersContract,
   type CopySelectionBody,
@@ -185,6 +186,28 @@ export function useCreateWorkgroup() {
         queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
       })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+    },
+  })
+}
+
+export function useArchiveWorkgroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; organizationId?: string }) =>
+      requestJson(archiveWorkgroupContract, {
+        params: { workgroupId: variables.workgroupId },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroupDetails() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+        })
+      }
     },
   })
 }

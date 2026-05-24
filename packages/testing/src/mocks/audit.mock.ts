@@ -99,6 +99,7 @@ export const auditMock = {
     MEMBER_BATCH_ASSIGNED: 'member.batch_assigned',
     MEMBER_REMOVED: 'member.removed',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
+    WORKGROUP_ARCHIVED: 'workgroup.archived',
     NOTIFICATION_CREATED: 'notification.created',
     NOTIFICATION_UPDATED: 'notification.updated',
     NOTIFICATION_DELETED: 'notification.deleted',

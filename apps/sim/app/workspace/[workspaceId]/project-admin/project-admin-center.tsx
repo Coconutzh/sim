@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
+  Archive,
   Compass,
   Download,
   Network,
@@ -27,6 +28,7 @@ import {
   fetchOrganizationWorkgroupActivity,
   useAddWorkgroupMember,
   useAgentProfiles,
+  useArchiveWorkgroup,
   useBatchAddWorkgroupMembers,
   useCreateWorkgroup,
   useDisciplines,
@@ -61,6 +63,7 @@ const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: 'member.batch_assigned', label: 'Batch member assignment' },
   { value: 'member.role_changed', label: 'Role updated' },
   { value: 'member.removed', label: 'Member removed' },
+  { value: 'workgroup.archived', label: 'Team archived' },
   { value: 'publication.created', label: 'Published showcase' },
   { value: 'publication.updated', label: 'Updated publication' },
   { value: 'publication.archived', label: 'Archived publication' },
@@ -252,6 +255,8 @@ function formatActivityAction(action: string) {
       return 'Role updated'
     case 'member.removed':
       return 'Member removed'
+    case 'workgroup.archived':
+      return 'Team archived'
     case 'publication.created':
       return 'Published showcase'
     case 'publication.updated':
@@ -314,11 +319,13 @@ function downloadProjectActivityCsv(
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
+  const archiveWorkgroup = useArchiveWorkgroup()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
+  const [archiveTeamStatus, setArchiveTeamStatus] = useState<string | null>(null)
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
   const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
@@ -504,6 +511,28 @@ export function ProjectAdminCenter() {
       )
     } catch (error) {
       setCreateTeamStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleArchiveTeam = async (team: WorkgroupAdminSummary) => {
+    if (!organizationId || archiveWorkgroup.isPending) return
+    if (!window.confirm(`Archive ${team.name}? Members will lose this team from active lists.`)) {
+      return
+    }
+    setArchiveTeamStatus(null)
+    try {
+      const result = await archiveWorkgroup.mutateAsync({
+        workgroupId: team.id,
+        organizationId,
+      })
+      setArchiveTeamStatus(`Archived ${result.workgroup.name}.`)
+      if (assignmentTeamId === team.id) setAssignmentTeamId('')
+      if (activityTeamId === team.id) {
+        setActivityTeamId('')
+        resetActivityPage()
+      }
+    } catch (error) {
+      setArchiveTeamStatus(readErrorMessage(error))
     }
   }
 
@@ -1152,10 +1181,18 @@ export function ProjectAdminCenter() {
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>Teams</h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Organization-level team inventory with current member counts.
+                  Organization-level team inventory with member counts and archive controls.
                 </p>
               </div>
             </div>
+            {archiveTeamStatus && (
+              <div
+                className='border-[var(--border)] border-b px-4 py-3 text-[12px] text-[var(--text-muted)]'
+                aria-live='polite'
+              >
+                {archiveTeamStatus}
+              </div>
+            )}
             <div className='divide-y divide-[var(--border)]'>
               {organizationWorkgroups.length === 0 ? (
                 <EmptyState>No teams have been created for this organization.</EmptyState>
@@ -1176,21 +1213,39 @@ export function ProjectAdminCenter() {
                     <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
                       {team.memberCount} member{team.memberCount === 1 ? '' : 's'}
                     </span>
-                    {team.teamWorkspaceId ? (
-                      <Link
+                    <div className='flex flex-wrap items-center gap-2 md:justify-end'>
+                      {team.teamWorkspaceId ? (
+                        <Link
+                          className={cn(
+                            buttonVariants({ size: 'sm', variant: 'default' }),
+                            'h-[30px]'
+                          )}
+                          href={`/workspace/${team.teamWorkspaceId}/team-management`}
+                        >
+                          Manage
+                        </Link>
+                      ) : (
+                        <span className='rounded-[8px] border border-amber-500/30 px-2 py-1 text-[11px] text-amber-500'>
+                          Needs canvas
+                        </span>
+                      )}
+                      <button
+                        type='button'
                         className={cn(
                           buttonVariants({ size: 'sm', variant: 'default' }),
-                          'h-[30px]'
+                          'h-[30px] border-red-500/30 text-red-500 hover:bg-red-500/10'
                         )}
-                        href={`/workspace/${team.teamWorkspaceId}/team-management`}
+                        disabled={archiveWorkgroup.isPending}
+                        onClick={() => void handleArchiveTeam(team)}
                       >
-                        Manage
-                      </Link>
-                    ) : (
-                      <span className='rounded-[8px] border border-amber-500/30 px-2 py-1 text-[11px] text-amber-500'>
-                        Needs canvas
-                      </span>
-                    )}
+                        {archiveWorkgroup.isPending ? (
+                          <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                        ) : (
+                          <Archive className='mr-2 h-[13px] w-[13px]' />
+                        )}
+                        Archive
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

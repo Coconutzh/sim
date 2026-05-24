@@ -7,7 +7,7 @@ import {
   workgroup,
   workgroupMember,
 } from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 
 /** Checks whether the user owns the personal canvas workspace. */
 export async function canReadPersonalCanvas(userId: string, workspaceId: string): Promise<boolean> {
@@ -38,7 +38,14 @@ export async function canReadTeamCanvas(userId: string, workgroupId: string): Pr
   const [row] = await db
     .select({ id: workgroupMember.id })
     .from(workgroupMember)
-    .where(and(eq(workgroupMember.userId, userId), eq(workgroupMember.workgroupId, workgroupId)))
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .where(
+      and(
+        eq(workgroupMember.userId, userId),
+        eq(workgroupMember.workgroupId, workgroupId),
+        isNull(workgroup.archivedAt)
+      )
+    )
     .limit(1)
 
   return Boolean(row)
@@ -54,7 +61,7 @@ export async function canPublishTeamCanvas(userId: string, workgroupId: string):
   const [team] = await db
     .select({ organizationId: workgroup.organizationId })
     .from(workgroup)
-    .where(eq(workgroup.id, workgroupId))
+    .where(and(eq(workgroup.id, workgroupId), isNull(workgroup.archivedAt)))
     .limit(1)
 
   if (!team) return false
@@ -98,10 +105,12 @@ export async function canReadPublication(
   const [sourceMembership] = await db
     .select({ id: workgroupMember.id })
     .from(workgroupMember)
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
     .where(
       and(
         eq(workgroupMember.userId, userId),
-        eq(workgroupMember.workgroupId, publication.sourceWorkgroupId)
+        eq(workgroupMember.workgroupId, publication.sourceWorkgroupId),
+        isNull(workgroup.archivedAt)
       )
     )
     .limit(1)
@@ -127,10 +136,12 @@ export async function canReadPublication(
       workgroupMember,
       eq(workflowPublicationScope.viewerWorkgroupId, workgroupMember.workgroupId)
     )
+    .innerJoin(workgroup, eq(workflowPublicationScope.viewerWorkgroupId, workgroup.id))
     .where(
       and(
         eq(workflowPublicationScope.workflowId, publication.publishedWorkflowId),
-        eq(workgroupMember.userId, userId)
+        eq(workgroupMember.userId, userId),
+        isNull(workgroup.archivedAt)
       )
     )
     .limit(1)

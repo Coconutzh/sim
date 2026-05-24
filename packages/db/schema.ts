@@ -1198,12 +1198,14 @@ export const workgroup = pgTable(
     teamWorkspaceId: text('team_workspace_id').references(() => workspace.id, {
       onDelete: 'set null',
     }),
+    archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     organizationIdIdx: index('workgroup_organization_id_idx').on(table.organizationId),
     disciplineIdIdx: index('workgroup_discipline_id_idx').on(table.disciplineId),
+    archivedAtIdx: index('workgroup_archived_at_idx').on(table.archivedAt),
     teamWorkspaceUnique: uniqueIndex('workgroup_team_workspace_unique').on(table.teamWorkspaceId),
     organizationSlugUnique: uniqueIndex('workgroup_org_slug_unique').on(
       table.organizationId,

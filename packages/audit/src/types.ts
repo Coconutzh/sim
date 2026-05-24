@@ -105,6 +105,9 @@ export const AuditAction = {
   MEMBER_REMOVED: 'member.removed',
   MEMBER_ROLE_CHANGED: 'member.role_changed',
 
+  // Workgroups
+  WORKGROUP_ARCHIVED: 'workgroup.archived',
+
   // Notifications
   NOTIFICATION_CREATED: 'notification.created',
   NOTIFICATION_UPDATED: 'notification.updated',

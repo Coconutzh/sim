@@ -49,7 +49,11 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         publishedWorkflowId: 'workflowPublicationVersion.publishedWorkflowId',
         status: 'workflowPublicationVersion.status',
       },
-      workgroup: { id: 'workgroup.id', organizationId: 'workgroup.organizationId' },
+      workgroup: {
+        id: 'workgroup.id',
+        organizationId: 'workgroup.organizationId',
+        archivedAt: 'workgroup.archivedAt',
+      },
       workgroupMember: {
         id: 'workgroupMember.id',
         userId: 'workgroupMember.userId',
@@ -65,6 +69,7 @@ vi.mock('@sim/db/schema', () => schemaMock)
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ kind: 'and', args })),
   eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
+  isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
 }))
 
 import {
