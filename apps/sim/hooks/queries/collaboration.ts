@@ -214,6 +214,18 @@ export function useWorkgroupActivity(workgroupId?: string, limit = 10) {
   })
 }
 
+export function fetchOrganizationWorkgroupActivity(
+  organizationId: string,
+  filters: OrganizationWorkgroupActivityFilters = {},
+  signal?: AbortSignal
+) {
+  return requestJson(listOrganizationWorkgroupActivityContract, {
+    params: { id: organizationId },
+    query: filters,
+    signal,
+  })
+}
+
 export function useOrganizationWorkgroupActivity(
   organizationId?: string,
   filters: OrganizationWorkgroupActivityFilters = {}
@@ -221,11 +233,7 @@ export function useOrganizationWorkgroupActivity(
   return useQuery({
     queryKey: collaborationKeys.organizationActivity(organizationId, filters),
     queryFn: ({ signal }) =>
-      requestJson(listOrganizationWorkgroupActivityContract, {
-        params: { id: organizationId as string },
-        query: filters,
-        signal,
-      }),
+      fetchOrganizationWorkgroupActivity(organizationId as string, filters, signal),
     enabled: Boolean(organizationId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,

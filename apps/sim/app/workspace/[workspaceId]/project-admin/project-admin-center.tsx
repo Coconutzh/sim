@@ -24,6 +24,7 @@ import type {
 } from '@/lib/api/contracts/collaboration'
 import { cn } from '@/lib/core/utils/cn'
 import {
+  fetchOrganizationWorkgroupActivity,
   useAddWorkgroupMember,
   useAgentProfiles,
   useCreateWorkgroup,
@@ -38,6 +39,8 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
+const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
+const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',
   'emails',
@@ -248,7 +251,10 @@ function escapeCsvValue(value: string | null | undefined) {
   return `"${normalized.replace(/"/g, '""')}"`
 }
 
-function downloadProjectActivityCsv(entries: OrganizationWorkgroupActivityEntry[]) {
+function downloadProjectActivityCsv(
+  entries: OrganizationWorkgroupActivityEntry[],
+  scope: 'page' | 'filtered' = 'page'
+) {
   const rows = [
     ['Created at', 'Action', 'Team', 'Discipline', 'Resource', 'Description', 'Actor'],
     ...entries.map((entry) => [
@@ -265,7 +271,7 @@ function downloadProjectActivityCsv(entries: OrganizationWorkgroupActivityEntry[
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `project-activity-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.download = `project-activity-${scope}-${new Date().toISOString().slice(0, 10)}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -293,6 +299,8 @@ export function ProjectAdminCenter() {
   const [activityStartDate, setActivityStartDate] = useState('')
   const [activityEndDate, setActivityEndDate] = useState('')
   const [activityOffset, setActivityOffset] = useState(0)
+  const [isExportingActivity, setIsExportingActivity] = useState(false)
+  const [activityExportStatus, setActivityExportStatus] = useState<string | null>(null)
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -391,10 +399,8 @@ export function ProjectAdminCenter() {
       batchAssignmentTargets.length > 0 &&
       !addWorkgroupMember.isPending
   )
-  const activityFilters = useMemo(
+  const activityFilterBase = useMemo(
     () => ({
-      limit: PROJECT_ACTIVITY_PAGE_SIZE,
-      offset: activityOffset,
       workgroupId: activityTeamId || undefined,
       disciplineId: activityTeamId ? undefined : activityDisciplineId || undefined,
       action: activityAction || undefined,
@@ -408,11 +414,18 @@ export function ProjectAdminCenter() {
       activityActor,
       activityDisciplineId,
       activityEndDate,
-      activityOffset,
       activitySearch,
       activityStartDate,
       activityTeamId,
     ]
+  )
+  const activityFilters = useMemo(
+    () => ({
+      ...activityFilterBase,
+      limit: PROJECT_ACTIVITY_PAGE_SIZE,
+      offset: activityOffset,
+    }),
+    [activityFilterBase, activityOffset]
   )
   const { data: activityData, isLoading: isLoadingActivity } = useOrganizationWorkgroupActivity(
     isProjectAdmin ? organizationId : undefined,
@@ -425,6 +438,12 @@ export function ProjectAdminCenter() {
     projectActivity.length > 0
       ? `Showing ${activityOffset + 1}-${activityOffset + projectActivity.length} of filtered project activity.`
       : 'No filtered project activity to show.'
+  const canExportActivity = Boolean(organizationId && !isExportingActivity)
+
+  const resetActivityPage = () => {
+    setActivityOffset(0)
+    setActivityExportStatus(null)
+  }
 
   const handleCreateTeam = async () => {
     if (!organizationId || !selectedNewTeamDisciplineId || !newTeamName.trim()) return
@@ -534,6 +553,47 @@ export function ProjectAdminCenter() {
       setBatchImportStatus(`Imported ${importedTargets.length} target(s) from ${file.name}.`)
     } catch (error) {
       setBatchImportStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleExportFilteredActivity = async () => {
+    if (!organizationId) return
+
+    setIsExportingActivity(true)
+    setActivityExportStatus(null)
+    try {
+      const entries: OrganizationWorkgroupActivityEntry[] = []
+      let offset = 0
+      let nextOffset: number | null = 0
+      let pageCount = 0
+
+      while (nextOffset != null && pageCount < PROJECT_ACTIVITY_EXPORT_MAX_PAGES) {
+        const result = await fetchOrganizationWorkgroupActivity(organizationId, {
+          ...activityFilterBase,
+          limit: PROJECT_ACTIVITY_EXPORT_PAGE_SIZE,
+          offset,
+        })
+        entries.push(...result.activity)
+        nextOffset = result.nextOffset
+        offset = nextOffset ?? offset
+        pageCount += 1
+      }
+
+      if (entries.length === 0) {
+        setActivityExportStatus('No activity matched the current filters.')
+        return
+      }
+
+      downloadProjectActivityCsv(entries, 'filtered')
+      setActivityExportStatus(
+        nextOffset == null
+          ? `Exported ${entries.length} filtered activity row${entries.length === 1 ? '' : 's'}.`
+          : `Exported the first ${entries.length} filtered activity rows. Narrow filters to export more.`
+      )
+    } catch (error) {
+      setActivityExportStatus(readErrorMessage(error))
+    } finally {
+      setIsExportingActivity(false)
     }
   }
 
@@ -1103,7 +1163,7 @@ export function ProjectAdminCenter() {
                     value={activityTeamId}
                     onChange={(event) => {
                       setActivityTeamId(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                   >
@@ -1118,7 +1178,7 @@ export function ProjectAdminCenter() {
                     value={activityDisciplineId}
                     onChange={(event) => {
                       setActivityDisciplineId(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     disabled={Boolean(activityTeamId)}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none disabled:opacity-60'
@@ -1134,7 +1194,7 @@ export function ProjectAdminCenter() {
                     value={activityAction}
                     onChange={(event) => {
                       setActivityAction(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                   >
@@ -1148,7 +1208,7 @@ export function ProjectAdminCenter() {
                     value={activitySearch}
                     onChange={(event) => {
                       setActivitySearch(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     placeholder='Search actor, action, resource...'
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
@@ -1157,7 +1217,7 @@ export function ProjectAdminCenter() {
                     value={activityActor}
                     onChange={(event) => {
                       setActivityActor(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     placeholder='Exact actor email or name'
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
@@ -1168,7 +1228,7 @@ export function ProjectAdminCenter() {
                     max={activityEndDate || undefined}
                     onChange={(event) => {
                       setActivityStartDate(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                     aria-label='Project activity start date'
@@ -1179,7 +1239,7 @@ export function ProjectAdminCenter() {
                     min={activityStartDate || undefined}
                     onChange={(event) => {
                       setActivityEndDate(event.target.value)
-                      setActivityOffset(0)
+                      resetActivityPage()
                     }}
                     className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                     aria-label='Project activity end date'
@@ -1196,6 +1256,19 @@ export function ProjectAdminCenter() {
                     >
                       <Download className='mr-2 h-[13px] w-[13px]' />
                       Export page
+                    </button>
+                    <button
+                      type='button'
+                      className={buttonVariants({ variant: 'default' })}
+                      disabled={!canExportActivity}
+                      onClick={() => void handleExportFilteredActivity()}
+                    >
+                      {isExportingActivity ? (
+                        <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                      ) : (
+                        <Download className='mr-2 h-[13px] w-[13px]' />
+                      )}
+                      Export filtered
                     </button>
                     <button
                       type='button'
@@ -1223,6 +1296,11 @@ export function ProjectAdminCenter() {
                     </button>
                   </div>
                 </div>
+                {activityExportStatus && (
+                  <div className='text-[11px] text-[var(--text-muted)]' aria-live='polite'>
+                    {activityExportStatus}
+                  </div>
+                )}
               </div>
               <div className='divide-y divide-[var(--border)]'>
                 {isLoadingActivity ? (
