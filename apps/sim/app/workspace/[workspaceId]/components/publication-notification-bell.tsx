@@ -50,8 +50,8 @@ export function PublicationNotificationBell({
         <button
           type='button'
           className='relative flex h-[30px] w-[30px] items-center justify-center rounded-lg transition-colors hover-hover:bg-[var(--surface-hover)]'
-          aria-label='Publication notification inbox'
-          title='Publication notification inbox'
+          aria-label='Project notification center'
+          title='Project notification center'
         >
           <Bell className='h-[16px] w-[16px] text-[var(--text-icon)]' />
           {unreadCount > 0 && (
@@ -110,7 +110,7 @@ export function PublicationNotificationBell({
                   if (!entry.readAt && !markRead.isPending) {
                     markRead.mutate({ organizationId, notificationId: entry.id })
                   }
-                  router.push(`/workspace/${workspaceId}/project-admin`)
+                  router.push(`/workspace/${workspaceId}/project-notifications`)
                 }}
               >
                 <div className='flex items-start justify-between gap-2'>
@@ -135,6 +135,15 @@ export function PublicationNotificationBell({
             ))
           )}
         </div>
+        <Button
+          type='button'
+          variant='ghost'
+          size='sm'
+          className='mt-2 h-[28px] w-full rounded-[6px] text-[11px]'
+          onClick={() => router.push(`/workspace/${workspaceId}/project-notifications`)}
+        >
+          Open full notification center
+        </Button>
       </DropdownMenuContent>
     </DropdownMenu>
   )

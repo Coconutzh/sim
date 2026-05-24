@@ -3240,6 +3240,12 @@ export function ProjectAdminCenter() {
                   </p>
                 </div>
                 <div className='flex flex-wrap items-center gap-2'>
+                  <Link
+                    className={cn(buttonVariants({ size: 'sm', variant: 'default' }), 'h-[30px]')}
+                    href={`/workspace/${workspaceId}/project-notifications`}
+                  >
+                    Open full center
+                  </Link>
                   <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
                     {isLoadingProjectNotificationCenter
                       ? 'Loading'
