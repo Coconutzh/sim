@@ -29,6 +29,7 @@ import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 type CanvasPaneKind = 'personal' | 'team'
 const FALLBACK_COPY_PLACEMENT = { offsetX: 120, offsetY: 80 } as const
+const SPLIT_VIEWPORT_STORAGE_PREFIX = 'sim:split-canvas:viewport'
 
 interface PaneConfig {
   kind: CanvasPaneKind
@@ -40,6 +41,7 @@ interface PaneConfig {
   isWorkflowsLoading: boolean
   isWorkflowStateLoading: boolean
   viewport?: PaneViewportSnapshot
+  hasStoredViewport: boolean
   selectedBlockIds: string[]
   selectedEdgeIds: string[]
   copiedBlockIds: string[]
@@ -49,6 +51,62 @@ interface PaneConfig {
   onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
   onViewportChange: (viewport: PaneViewportSnapshot) => void
+}
+
+function getPaneViewportStorageKey(kind: CanvasPaneKind, workflowId?: string): string | null {
+  return workflowId ? `${SPLIT_VIEWPORT_STORAGE_PREFIX}:${kind}:${workflowId}` : null
+}
+
+function isPaneViewportSnapshot(value: unknown): value is PaneViewportSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const viewport = value as Record<string, unknown>
+  return (
+    typeof viewport.x === 'number' &&
+    Number.isFinite(viewport.x) &&
+    typeof viewport.y === 'number' &&
+    Number.isFinite(viewport.y) &&
+    typeof viewport.zoom === 'number' &&
+    Number.isFinite(viewport.zoom) &&
+    viewport.zoom > 0 &&
+    typeof viewport.width === 'number' &&
+    Number.isFinite(viewport.width) &&
+    viewport.width > 0 &&
+    typeof viewport.height === 'number' &&
+    Number.isFinite(viewport.height) &&
+    viewport.height > 0
+  )
+}
+
+function readStoredPaneViewport(
+  kind: CanvasPaneKind,
+  workflowId?: string
+): PaneViewportSnapshot | undefined {
+  if (typeof window === 'undefined') return undefined
+  const key = getPaneViewportStorageKey(kind, workflowId)
+  if (!key) return undefined
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? 'null')
+    return isPaneViewportSnapshot(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredPaneViewport(
+  kind: CanvasPaneKind,
+  workflowId: string | undefined,
+  viewport: PaneViewportSnapshot
+) {
+  if (typeof window === 'undefined') return
+  const key = getPaneViewportStorageKey(kind, workflowId)
+  if (!key) return
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(viewport))
+  } catch {
+    return
+  }
 }
 
 function useDefaultWorkflowSelection(workflows: WorkflowMetadata[], preferredId?: string) {
@@ -130,11 +188,16 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
         )}
         {!isLoading && pane.workflowState && pane.workspaceId ? (
           <PreviewWorkflow
+            key={`${pane.kind}:${pane.workflowId ?? 'none'}`}
             workflowState={pane.workflowState}
             workspaceId={pane.workspaceId}
             selectedBlockIds={pane.selectedBlockIds}
             selectedEdgeIds={pane.selectedEdgeIds}
             focusNodeIds={pane.copiedBlockIds}
+            defaultPosition={pane.viewport}
+            defaultZoom={pane.viewport?.zoom}
+            autoFitView={!pane.hasStoredViewport}
+            zoomOnScroll
             onNodeClick={(blockId, _mousePosition, modifiers) =>
               pane.onSelectBlock(blockId, modifiers?.additive ?? false)
             }
@@ -198,7 +261,21 @@ export function SplitCanvasWorkbench() {
   const [copiedTeamEdgeIds, setCopiedTeamEdgeIds] = useState<string[]>([])
   const [personalViewport, setPersonalViewport] = useState<PaneViewportSnapshot | undefined>()
   const [teamViewport, setTeamViewport] = useState<PaneViewportSnapshot | undefined>()
+  const [personalHasStoredViewport, setPersonalHasStoredViewport] = useState(false)
+  const [teamHasStoredViewport, setTeamHasStoredViewport] = useState(false)
   const copySelection = useCopySelection()
+
+  useEffect(() => {
+    const storedViewport = readStoredPaneViewport('personal', personalWorkflowId)
+    setPersonalViewport(storedViewport)
+    setPersonalHasStoredViewport(Boolean(storedViewport))
+  }, [personalWorkflowId])
+
+  useEffect(() => {
+    const storedViewport = readStoredPaneViewport('team', teamWorkflowId)
+    setTeamViewport(storedViewport)
+    setTeamHasStoredViewport(Boolean(storedViewport))
+  }, [teamWorkflowId])
 
   const panes = useMemo(() => {
     const personalPane: PaneConfig = {
@@ -211,6 +288,7 @@ export function SplitCanvasWorkbench() {
       isWorkflowsLoading: isPersonalWorkflowsLoading,
       isWorkflowStateLoading: isPersonalWorkflowStateLoading,
       viewport: personalViewport,
+      hasStoredViewport: personalHasStoredViewport,
       selectedBlockIds: selectedPersonalBlockIds,
       selectedEdgeIds: selectedPersonalEdgeIds,
       copiedBlockIds: copiedPersonalBlockIds,
@@ -244,9 +322,14 @@ export function SplitCanvasWorkbench() {
         setSelectedPersonalEdgeIds([])
         setCopiedPersonalBlockIds([])
         setCopiedPersonalEdgeIds([])
-        setPersonalViewport(undefined)
+        const storedViewport = readStoredPaneViewport('personal', workflowId)
+        setPersonalViewport(storedViewport)
+        setPersonalHasStoredViewport(Boolean(storedViewport))
       },
-      onViewportChange: setPersonalViewport,
+      onViewportChange: (viewport) => {
+        setPersonalViewport(viewport)
+        writeStoredPaneViewport('personal', personalWorkflowId, viewport)
+      },
     }
     const teamPane: PaneConfig = {
       kind: 'team',
@@ -258,6 +341,7 @@ export function SplitCanvasWorkbench() {
       isWorkflowsLoading: isTeamWorkflowsLoading,
       isWorkflowStateLoading: isTeamWorkflowStateLoading,
       viewport: teamViewport,
+      hasStoredViewport: teamHasStoredViewport,
       selectedBlockIds: selectedTeamBlockIds,
       selectedEdgeIds: selectedTeamEdgeIds,
       copiedBlockIds: copiedTeamBlockIds,
@@ -291,9 +375,14 @@ export function SplitCanvasWorkbench() {
         setSelectedTeamEdgeIds([])
         setCopiedTeamBlockIds([])
         setCopiedTeamEdgeIds([])
-        setTeamViewport(undefined)
+        const storedViewport = readStoredPaneViewport('team', workflowId)
+        setTeamViewport(storedViewport)
+        setTeamHasStoredViewport(Boolean(storedViewport))
       },
-      onViewportChange: setTeamViewport,
+      onViewportChange: (viewport) => {
+        setTeamViewport(viewport)
+        writeStoredPaneViewport('team', teamWorkflowId, viewport)
+      },
     }
     return { personal: personalPane, team: teamPane }
   }, [
@@ -310,6 +399,7 @@ export function SplitCanvasWorkbench() {
     personalWorkflows,
     personalWorkspaceId,
     personalViewport,
+    personalHasStoredViewport,
     selectedPersonalBlockIds,
     selectedPersonalEdgeIds,
     selectedTeamBlockIds,
@@ -321,6 +411,7 @@ export function SplitCanvasWorkbench() {
     teamWorkflows,
     teamWorkspaceId,
     teamViewport,
+    teamHasStoredViewport,
   ])
 
   const sourcePane = panes[selectedPane]

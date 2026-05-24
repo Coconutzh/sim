@@ -168,6 +168,8 @@ interface PreviewWorkflowProps {
   defaultPosition?: { x: number; y: number }
   defaultZoom?: number
   fitPadding?: number
+  autoFitView?: boolean
+  zoomOnScroll?: boolean
   onNodeClick?: (
     blockId: string,
     mousePosition: { x: number; y: number },
@@ -215,6 +217,7 @@ interface FitViewOnChangeProps {
   containerRef: React.RefObject<HTMLDivElement | null>
   focusNodeIds?: string[]
   onViewportChange?: (viewport: PreviewWorkflowViewport) => void
+  autoFitView: boolean
 }
 
 /** Calls fitView on node changes or container resize. */
@@ -224,6 +227,7 @@ function FitViewOnChange({
   containerRef,
   focusNodeIds,
   onViewportChange,
+  autoFitView,
 }: FitViewOnChangeProps) {
   const { fitView, getViewport } = useReactFlow()
   const lastNodeIdsRef = useRef<string | null>(null)
@@ -238,6 +242,7 @@ function FitViewOnChange({
   )
 
   useEffect(() => {
+    if (!autoFitView) return
     if (!nodeIds.length) return
     const shouldFit = lastNodeIdsRef.current !== nodeIds
     if (!shouldFit) return
@@ -248,7 +253,7 @@ function FitViewOnChange({
       setTimeout(emitViewport, 220)
     }, 50)
     return () => clearTimeout(timeoutId)
-  }, [nodeIds, fitPadding, fitView, emitViewport])
+  }, [autoFitView, nodeIds, fitPadding, fitView, emitViewport])
 
   useEffect(() => {
     if (!focusNodeIds?.length || !nodeIds.length) return
@@ -275,6 +280,7 @@ function FitViewOnChange({
   }, [focusNodeIds, nodeIds, fitPadding, fitView, emitViewport])
 
   useEffect(() => {
+    if (!autoFitView) return
     const container = containerRef.current
     if (!container) return
 
@@ -293,7 +299,7 @@ function FitViewOnChange({
       if (timeoutId) clearTimeout(timeoutId)
       resizeObserver.disconnect()
     }
-  }, [containerRef, fitPadding, fitView, emitViewport])
+  }, [autoFitView, containerRef, fitPadding, fitView, emitViewport])
 
   return null
 }
@@ -309,6 +315,8 @@ export function PreviewWorkflow({
   defaultPosition,
   defaultZoom = 0.8,
   fitPadding = 0.25,
+  autoFitView = true,
+  zoomOnScroll = false,
   onNodeClick,
   onEdgeClick,
   onNodeContextMenu,
@@ -704,11 +712,11 @@ export function PreviewWorkflow({
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionLineType={ConnectionLineType.SmoothStep}
-          fitView
+          fitView={autoFitView}
           fitViewOptions={{ padding: fitPadding }}
           panOnScroll={isPannable}
           panOnDrag={isPannable}
-          zoomOnScroll={false}
+          zoomOnScroll={zoomOnScroll}
           draggable={false}
           defaultViewport={{
             x: defaultPosition?.x ?? 0,
@@ -763,6 +771,7 @@ export function PreviewWorkflow({
           containerRef={containerRef}
           focusNodeIds={focusNodeIds}
           onViewportChange={onViewportChange}
+          autoFitView={autoFitView}
         />
       </div>
     </ReactFlowProvider>
