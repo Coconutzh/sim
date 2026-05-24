@@ -368,6 +368,17 @@ export const deliverPublicationNotificationsBodySchema = z
   .object({
     channel: publicationNotificationChannelSchema,
     projectName: z.string().trim().min(1, 'projectName cannot be empty').max(120).optional(),
+    emailRecipients: z
+      .array(
+        z
+          .string()
+          .trim()
+          .email('emailRecipients must contain valid email addresses')
+          .max(254, 'emailRecipients must be 254 characters or fewer')
+      )
+      .min(1, 'emailRecipients must contain at least one recipient')
+      .max(20, 'emailRecipients cannot contain more than 20 recipients')
+      .optional(),
     webhookUrl: z
       .string()
       .trim()
@@ -377,6 +388,16 @@ export const deliverPublicationNotificationsBodySchema = z
       .optional(),
   })
   .superRefine((value, context) => {
+    if (
+      value.channel === 'email' &&
+      (!value.emailRecipients || value.emailRecipients.length === 0)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['emailRecipients'],
+        message: 'emailRecipients is required for email delivery',
+      })
+    }
     if (value.channel === 'webhook' && !value.webhookUrl) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

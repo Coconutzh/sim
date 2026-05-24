@@ -25,6 +25,7 @@ export const POST = withRouteHandler(async (request, context) => {
       organizationId: parsed.data.params.id,
       channel: parsed.data.body.channel,
       projectName: parsed.data.body.projectName,
+      emailRecipients: parsed.data.body.emailRecipients,
       webhookUrl: parsed.data.body.webhookUrl,
     })
 

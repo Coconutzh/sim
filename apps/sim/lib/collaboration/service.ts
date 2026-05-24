@@ -1470,6 +1470,18 @@ function isPublicationNotificationChannel(value: unknown): value is PublicationN
   return value === 'in_app' || value === 'email' || value === 'webhook'
 }
 
+function normalizeEmailRecipients(recipients: string[] | undefined): string[] {
+  const seen = new Set<string>()
+  return (recipients ?? [])
+    .map((recipient) => recipient.trim())
+    .filter((recipient) => {
+      const key = recipient.toLowerCase()
+      if (!recipient || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 function getMetadataString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key]
   return typeof value === 'string' && value.trim() ? value : null
@@ -2185,6 +2197,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
   organizationId: string
   channel: PublicationNotificationChannel
   projectName?: string
+  emailRecipients?: string[]
   webhookUrl?: string
 }): Promise<PublicationNotificationDeliveryResult> {
   const publications = await listOrganizationPublications({
@@ -2198,6 +2211,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
     projectName: params.projectName,
   }).filter((item) => item.channel === params.channel)
   const webhookUrl = params.webhookUrl?.trim()
+  const emailRecipients = normalizeEmailRecipients(params.emailRecipients)
 
   if (!draft) {
     return {
@@ -2218,6 +2232,10 @@ export async function deliverOrganizationPublicationNotifications(params: {
     throw new Error('Webhook URL is required for webhook delivery')
   }
 
+  if (draft.channel === 'email' && emailRecipients.length === 0) {
+    throw new Error('Email recipients are required for email delivery')
+  }
+
   const publicationIds = [
     ...new Set(draft.payload.notifications.map((notification) => notification.publicationId)),
   ]
@@ -2236,6 +2254,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
     warningCount: draft.payload.warningCount,
     publicationIds,
     notifications: draft.payload.notifications,
+    emailRecipients: draft.channel === 'email' ? emailRecipients : undefined,
     webhookUrl: draft.channel === 'webhook' ? webhookUrl : null,
     enqueuedAt: new Date().toISOString(),
   })
@@ -2260,6 +2279,7 @@ export async function deliverOrganizationPublicationNotifications(params: {
       dangerCount: draft.payload.dangerCount,
       warningCount: draft.payload.warningCount,
       publicationIds,
+      emailRecipientCount: draft.channel === 'email' ? emailRecipients.length : 0,
     },
   })
 

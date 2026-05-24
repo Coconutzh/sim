@@ -1061,6 +1061,10 @@ function parseBatchAssignmentTargets(value: string) {
     })
 }
 
+function isValidPublicationEmailRecipient(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 function mergeBatchAssignmentTargets(currentValue: string, additions: string[]) {
   return parseBatchAssignmentTargets([currentValue, ...additions].join('\n')).join('\n')
 }
@@ -1326,6 +1330,7 @@ export function ProjectAdminCenter() {
   const [publicationGovernanceStatus, setPublicationGovernanceStatus] = useState<string | null>(
     null
   )
+  const [publicationEmailRecipients, setPublicationEmailRecipients] = useState('')
   const [publicationWebhookUrl, setPublicationWebhookUrl] = useState('')
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null)
   const [publicationDetailDrafts, setPublicationDetailDrafts] = useState<
@@ -1516,6 +1521,13 @@ export function ProjectAdminCenter() {
         projectName: activeWorkgroup?.name ?? workspaceId,
       }),
     [activeWorkgroup?.name, publicationReviewNotifications, workspaceId]
+  )
+  const publicationEmailRecipientList = useMemo(
+    () => parseBatchAssignmentTargets(publicationEmailRecipients),
+    [publicationEmailRecipients]
+  )
+  const hasInvalidPublicationEmailRecipient = publicationEmailRecipientList.some(
+    (recipient) => !isValidPublicationEmailRecipient(recipient)
   )
   const neverPublishedNudgeCount = publicationTeamNudges.filter(
     (nudge) => nudge.type === 'never_published'
@@ -2273,12 +2285,21 @@ export function ProjectAdminCenter() {
       setPublicationGovernanceStatus('Enter a webhook URL before queuing provider delivery.')
       return
     }
+    if (draft.channel === 'email' && publicationEmailRecipientList.length === 0) {
+      setPublicationGovernanceStatus('Enter at least one email recipient before queuing delivery.')
+      return
+    }
+    if (draft.channel === 'email' && hasInvalidPublicationEmailRecipient) {
+      setPublicationGovernanceStatus('Fix invalid email recipients before queuing delivery.')
+      return
+    }
 
     try {
       const result = await deliverPublicationNotifications.mutateAsync({
         organizationId,
         channel: draft.channel,
         projectName: activeWorkgroup?.name ?? workspaceId,
+        emailRecipients: draft.channel === 'email' ? publicationEmailRecipientList : undefined,
         webhookUrl: draft.channel === 'webhook' ? webhookUrl : undefined,
       })
       const { delivery } = result
@@ -2302,6 +2323,14 @@ export function ProjectAdminCenter() {
       if (delivery.channel === 'webhook') {
         setPublicationGovernanceStatus(
           `Persisted webhook outbox ${delivery.outboxEventId ?? 'record'} for provider delivery of ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'}.`
+        )
+        resetActivityPage()
+        return
+      }
+
+      if (delivery.channel === 'email') {
+        setPublicationGovernanceStatus(
+          `Persisted email outbox ${delivery.outboxEventId ?? 'record'} for provider delivery to ${publicationEmailRecipientList.length} recipient${publicationEmailRecipientList.length === 1 ? '' : 's'}.`
         )
         resetActivityPage()
         return
@@ -2914,8 +2943,9 @@ export function ProjectAdminCenter() {
                           Delivery channels
                         </h4>
                         <p className='mt-1 max-w-[720px] text-[11px] text-[var(--text-muted)]'>
-                          Persist a server-side outbox delivery record, queue an in-app digest, copy
-                          email drafts, or queue webhook payloads for provider delivery.
+                          Persist a server-side outbox delivery record, queue an in-app digest,
+                          queue provider email digests, or queue webhook payloads for provider
+                          delivery.
                         </p>
                       </div>
                       <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
@@ -2944,6 +2974,33 @@ export function ProjectAdminCenter() {
                           <p className='mt-2 text-[11px] text-[var(--text-muted)]'>
                             {draft.detail}
                           </p>
+                          {draft.channel === 'email' && (
+                            <div className='mt-3 grid gap-1'>
+                              <textarea
+                                value={publicationEmailRecipients}
+                                onChange={(event) =>
+                                  setPublicationEmailRecipients(event.target.value)
+                                }
+                                placeholder={'reviewer@example.com\nproducer@example.com'}
+                                className='min-h-[64px] w-full rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                                aria-label='Publication review email recipients'
+                              />
+                              <span
+                                className={cn(
+                                  'text-[11px]',
+                                  hasInvalidPublicationEmailRecipient
+                                    ? 'text-red-500'
+                                    : 'text-[var(--text-muted)]'
+                                )}
+                              >
+                                {publicationEmailRecipientList.length} recipient
+                                {publicationEmailRecipientList.length === 1 ? '' : 's'} parsed
+                                {hasInvalidPublicationEmailRecipient
+                                  ? '; fix invalid email addresses before delivery.'
+                                  : '; comma, space, or newline separated.'}
+                              </span>
+                            </div>
+                          )}
                           {draft.channel === 'webhook' && (
                             <input
                               type='url'
@@ -2962,6 +3019,9 @@ export function ProjectAdminCenter() {
                             )}
                             disabled={
                               deliverPublicationNotifications.isPending ||
+                              (draft.channel === 'email' &&
+                                (publicationEmailRecipientList.length === 0 ||
+                                  hasInvalidPublicationEmailRecipient)) ||
                               (draft.channel === 'webhook' && !publicationWebhookUrl.trim())
                             }
                             onClick={() => void handlePublicationNotificationDelivery(draft)}

@@ -7,6 +7,7 @@ import {
   type OutboxHandlerRegistry,
 } from '@/lib/core/outbox/service'
 import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
+import { sendEmail } from '@/lib/messaging/email/mailer'
 
 const logger = createLogger('CollaborationNotificationOutbox')
 
@@ -42,6 +43,7 @@ const publicationNotificationPayloadSchema = z.object({
       actionLabel: z.string().min(1),
     })
   ),
+  emailRecipients: z.array(z.string().trim().email()).min(1).max(20).optional(),
   webhookUrl: z.string().url().nullable().optional(),
   enqueuedAt: z.string().min(1),
 })
@@ -62,8 +64,55 @@ export async function enqueuePublicationNotificationDelivery(
   )
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function renderPublicationDigestHtml(parsed: PublicationNotificationOutboxPayload): string {
+  return [
+    '<div>',
+    `<h1>${escapeHtml(parsed.title)}</h1>`,
+    `<p>${escapeHtml(parsed.detail)}</p>`,
+    '<pre>',
+    escapeHtml(parsed.body),
+    '</pre>',
+    '</div>',
+  ].join('')
+}
+
 const publicationReviewDigestHandler: OutboxHandler<unknown> = async (payload, context) => {
   const parsed = publicationNotificationPayloadSchema.parse(payload)
+
+  if (parsed.channel === 'email') {
+    if (!parsed.emailRecipients || parsed.emailRecipients.length === 0) {
+      throw new Error('Email delivery requires emailRecipients')
+    }
+
+    const result = await sendEmail({
+      to: parsed.emailRecipients,
+      subject: `Publication review digest: ${parsed.projectName}`,
+      text: parsed.body,
+      html: renderPublicationDigestHtml(parsed),
+      emailType: 'transactional',
+    })
+
+    if (!result.success) {
+      throw new Error(`Email delivery failed: ${result.message}`)
+    }
+
+    logger.info('Delivered publication review digest email', {
+      eventId: context.eventId,
+      organizationId: parsed.organizationId,
+      recipientCount: parsed.emailRecipients.length,
+      notificationCount: parsed.notificationCount,
+    })
+    return
+  }
 
   if (parsed.channel === 'webhook') {
     if (!parsed.webhookUrl) {

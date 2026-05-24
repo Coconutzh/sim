@@ -3,8 +3,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockEnqueueOutboxEvent, mockLoggerInfo, mockSecureFetchWithValidation } = vi.hoisted(
-  () => ({
+const { mockEnqueueOutboxEvent, mockLoggerInfo, mockSecureFetchWithValidation, mockSendEmail } =
+  vi.hoisted(() => ({
     mockEnqueueOutboxEvent: vi.fn(async () => 'outbox-event-1'),
     mockLoggerInfo: vi.fn(),
     mockSecureFetchWithValidation: vi.fn(async () => ({
@@ -12,8 +12,8 @@ const { mockEnqueueOutboxEvent, mockLoggerInfo, mockSecureFetchWithValidation } 
       status: 202,
       text: async () => '',
     })),
-  })
-)
+    mockSendEmail: vi.fn(async () => ({ success: true, message: 'sent' })),
+  }))
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() }),
@@ -23,6 +23,9 @@ vi.mock('@/lib/core/outbox/service', () => ({
 }))
 vi.mock('@/lib/core/security/input-validation.server', () => ({
   secureFetchWithValidation: mockSecureFetchWithValidation,
+}))
+vi.mock('@/lib/messaging/email/mailer', () => ({
+  sendEmail: mockSendEmail,
 }))
 
 import {
@@ -39,8 +42,8 @@ const payload: PublicationNotificationOutboxPayload = {
   channel: 'email',
   event: 'publication.review_notifications.digest',
   projectName: 'Opening Night',
-  title: 'Email digest draft',
-  detail: 'Copy a reviewer-ready digest for an email delivery channel.',
+  title: 'Email provider delivery',
+  detail: 'Queue a reviewer-ready digest through the configured email provider.',
   body: 'Digest body',
   notificationCount: 2,
   dangerCount: 1,
@@ -58,6 +61,7 @@ const payload: PublicationNotificationOutboxPayload = {
       actionLabel: 'Start review',
     },
   ],
+  emailRecipients: ['reviewer@example.com', 'producer@example.com'],
   enqueuedAt: '2026-05-25T00:00:00.000Z',
 }
 
@@ -81,7 +85,7 @@ describe('collaboration notification outbox', () => {
     )
   })
 
-  it('validates and completes publication notification delivery records', async () => {
+  it('delivers publication notification emails through the mailer', async () => {
     const handler =
       collaborationNotificationOutboxHandlers[
         COLLABORATION_NOTIFICATION_OUTBOX_EVENTS.PUBLICATION_REVIEW_DIGEST
@@ -95,12 +99,19 @@ describe('collaboration notification outbox', () => {
       })
     ).resolves.toBeUndefined()
 
+    expect(mockSendEmail).toHaveBeenCalledWith({
+      to: ['reviewer@example.com', 'producer@example.com'],
+      subject: 'Publication review digest: Opening Night',
+      text: 'Digest body',
+      html: expect.stringContaining('Digest body'),
+      emailType: 'transactional',
+    })
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      'Completed publication review digest outbox delivery record',
+      'Delivered publication review digest email',
       expect.objectContaining({
         eventId: 'outbox-event-1',
         organizationId: 'org-1',
-        channel: 'email',
+        recipientCount: 2,
         notificationCount: 2,
       })
     )

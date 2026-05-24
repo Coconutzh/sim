@@ -668,6 +668,7 @@ export function useDeliverPublicationNotifications() {
     mutationFn: (variables: { organizationId: string } & DeliverPublicationNotificationsBody) => {
       const body: DeliverPublicationNotificationsBody = { channel: variables.channel }
       if (variables.projectName) body.projectName = variables.projectName
+      if (variables.emailRecipients) body.emailRecipients = variables.emailRecipients
       if (variables.webhookUrl) body.webhookUrl = variables.webhookUrl
       return requestJson(deliverOrganizationPublicationNotificationsContract, {
         params: { id: variables.organizationId },

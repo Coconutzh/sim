@@ -1301,6 +1301,7 @@ describe('collaboration service', () => {
         organizationId: 'org-1',
         channel: 'email',
         projectName: 'Opening Night',
+        emailRecipients: ['reviewer@example.com', 'producer@example.com', 'reviewer@example.com'],
       })
     ).resolves.toMatchObject({
       channel: 'email',
@@ -1321,6 +1322,7 @@ describe('collaboration service', () => {
         event: 'publication.review_notifications.digest',
         notificationCount: 2,
         publicationIds: ['publication-review-1'],
+        emailRecipients: ['reviewer@example.com', 'producer@example.com'],
       })
     )
     expect(recordAudit).toHaveBeenCalledWith(
@@ -1336,9 +1338,57 @@ describe('collaboration service', () => {
           outboxEventId: 'outbox-event-1',
           notificationEvent: 'publication.review_notifications.digest',
           notificationCount: 2,
+          emailRecipientCount: 2,
         }),
       })
     )
+  })
+
+  it('requires recipients before queuing email publication notifications', async () => {
+    const publishedAt = new Date('2026-05-24T00:00:00Z')
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          publication: {
+            id: 'publication-review-1',
+            title: 'Lighting current',
+            description: null,
+            sourceWorkgroupId: 'workgroup-lighting',
+            sourceDisciplineId: 'discipline-lighting',
+            agentCode: 'lighting_sound',
+            versionNumber: 3,
+            parentVersionId: null,
+            publishedWorkflowId: null,
+            status: 'published',
+            visibility: 'organization',
+            reviewState: 'pending',
+            riskLevel: 'critical',
+            reviewerUserId: null,
+            reviewerAssignedBy: null,
+            reviewerAssignedAt: null,
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+      ]
+    )
+
+    await expect(
+      deliverOrganizationPublicationNotifications({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        channel: 'email',
+        projectName: 'Opening Night',
+      })
+    ).rejects.toThrow('Email recipients are required for email delivery')
+
+    expect(mockEnqueuePublicationNotificationDelivery).not.toHaveBeenCalled()
   })
 
   it('lists persistent publication notification inbox deliveries', async () => {
