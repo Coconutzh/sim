@@ -6,6 +6,7 @@ import type { PublicationSummary, WorkgroupAdminSummary } from '@/lib/api/contra
 import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
+  buildPublicationDependencyConflictAlerts,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
 } from '@/lib/collaboration/publication-state-tree'
@@ -290,6 +291,73 @@ describe('publication state tree grouping', () => {
         })
       ).at(-1)
     ).toMatchObject({ id: 'approved', status: 'complete' })
+  })
+
+  it('builds cross-team dependency conflict alerts for current publications', () => {
+    const publications = [
+      publication({
+        id: 'stage-v2',
+        title: 'Stage current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+        sourceDiscipline: { code: 'stage', name: 'Stage' },
+        agentCode: 'stage',
+        dependsOnPublicationIds: ['lighting-v1', 'missing-v1'],
+      }),
+      publication({
+        id: 'lighting-v1',
+        title: 'Lighting old',
+        versionNumber: 1,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+        reviewState: 'changes_requested',
+        riskLevel: 'critical',
+        status: 'superseded',
+      }),
+      publication({
+        id: 'lighting-v2',
+        title: 'Lighting current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+      }),
+    ]
+
+    const alerts = buildPublicationDependencyConflictAlerts(publications)
+
+    expect(alerts.map((alert) => alert.code)).toEqual([
+      'critical_dependency',
+      'missing_dependency',
+      'non_current_dependency',
+      'unapproved_dependency',
+    ])
+    expect(alerts.find((alert) => alert.code === 'missing_dependency')).toMatchObject({
+      severity: 'danger',
+      publicationId: 'stage-v2',
+      dependencyPublicationId: null,
+      actionLabel: 'Resolve missing dependency',
+    })
+    expect(alerts.find((alert) => alert.code === 'non_current_dependency')).toMatchObject({
+      dependencyPublicationId: 'lighting-v1',
+      detail: 'Depends on v1, but v2 is the current Lighting baseline.',
+    })
+  })
+
+  it('ignores same-team dependency conflicts in the cross-team alert list', () => {
+    const alerts = buildPublicationDependencyConflictAlerts([
+      publication({
+        id: 'lighting-v2',
+        versionNumber: 2,
+        dependsOnPublicationIds: ['lighting-v1'],
+      }),
+      publication({
+        id: 'lighting-v1',
+        versionNumber: 1,
+        reviewState: 'changes_requested',
+        riskLevel: 'critical',
+        status: 'superseded',
+      }),
+    ])
+
+    expect(alerts).toEqual([])
   })
 
   it('builds team publication nudges for stale, missing, and never-published teams', () => {

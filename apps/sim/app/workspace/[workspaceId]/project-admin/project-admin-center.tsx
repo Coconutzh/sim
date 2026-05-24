@@ -33,6 +33,7 @@ import type {
 import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
+  buildPublicationDependencyConflictAlerts,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
   type PublicationGovernanceAlertSeverity,
@@ -1312,6 +1313,10 @@ export function ProjectAdminCenter() {
       buildPublicationTeamNudges({ teams: organizationWorkgroups, groups: publicationStateGroups }),
     [organizationWorkgroups, publicationStateGroups]
   )
+  const publicationDependencyConflictAlerts = useMemo(
+    () => buildPublicationDependencyConflictAlerts(publications, publicationStateGroups),
+    [publicationStateGroups, publications]
+  )
   const neverPublishedNudgeCount = publicationTeamNudges.filter(
     (nudge) => nudge.type === 'never_published'
   ).length
@@ -2185,7 +2190,8 @@ export function ProjectAdminCenter() {
                 </p>
               </div>
               <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
-                {publicationGovernanceAlertCount} state-tree alerts
+                {publicationGovernanceAlertCount} state-tree alerts /{' '}
+                {publicationDependencyConflictAlerts.length} dependency alerts
               </span>
             </div>
             {hasPublicationBatchTargets ? (
@@ -2279,6 +2285,82 @@ export function ProjectAdminCenter() {
               <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
                 No eligible batch governance actions are currently available.
               </p>
+            )}
+            {publicationDependencyConflictAlerts.length > 0 && (
+              <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Dependency conflict alerts
+                    </h3>
+                    <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
+                      Review current publications that depend on missing, outdated, unapproved, or
+                      critical-risk cross-team baselines before project sign-off.
+                    </p>
+                  </div>
+                  <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                    {publicationDependencyConflictAlerts.length} alerts
+                  </span>
+                </div>
+                <div className='mt-3 grid gap-2'>
+                  {publicationDependencyConflictAlerts.slice(0, 6).map((alert) => (
+                    <div
+                      key={alert.id}
+                      className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                    >
+                      <div className='min-w-0'>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                            {alert.publicationWorkgroupName} v{alert.publicationVersionNumber}
+                          </span>
+                          <span
+                            className={cn(
+                              'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                              governanceAlertClass(alert.severity)
+                            )}
+                          >
+                            {alert.code.replaceAll('_', ' ')}
+                          </span>
+                        </div>
+                        <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                          {alert.publicationTitle} depends on {alert.dependencyTitle}.{' '}
+                          {alert.detail}
+                        </p>
+                        <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                          <span>Source: {alert.publicationWorkgroupName}</span>
+                          {alert.dependencyWorkgroupName ? (
+                            <span>Dependency: {alert.dependencyWorkgroupName}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className='flex items-center gap-2 md:justify-end'>
+                        <button
+                          type='button'
+                          className={buttonVariants({ size: 'sm', variant: 'default' })}
+                          onClick={() => setSelectedPublicationId(alert.publicationId)}
+                        >
+                          Open publication
+                        </button>
+                        {alert.dependencyPublicationId ? (
+                          <button
+                            type='button'
+                            className={buttonVariants({ size: 'sm', variant: 'default' })}
+                            onClick={() => setSelectedPublicationId(alert.dependencyPublicationId)}
+                          >
+                            {alert.actionLabel}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                  {publicationDependencyConflictAlerts.length > 6 && (
+                    <div className='text-[11px] text-[var(--text-muted)]'>
+                      +{publicationDependencyConflictAlerts.length - 6} more dependency alert
+                      {publicationDependencyConflictAlerts.length - 6 === 1 ? '' : 's'}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
             {publicationTeamNudges.length > 0 && (
               <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
@@ -3437,6 +3519,7 @@ export function ProjectAdminCenter() {
                 {criticalPublicationCount === 0 &&
                 unreviewedPublicationCount === 0 &&
                 publicationGovernanceAlertCount === 0 &&
+                publicationDependencyConflictAlerts.length === 0 &&
                 teamsWithoutCanvas.length === 0 ? (
                   <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
                     No project-level watchlist items in the currently visible data.
@@ -3458,6 +3541,29 @@ export function ProjectAdminCenter() {
                           <AlertTriangle className='h-[14px] w-[14px]' />
                           {unreviewedPublicationCount} publication
                           {unreviewedPublicationCount === 1 ? '' : 's'} pending review
+                        </div>
+                      </div>
+                    )}
+                    {publicationDependencyConflictAlerts.length > 0 && (
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                        <div className='flex items-center gap-2 text-[13px] text-[var(--text-primary)]'>
+                          <AlertTriangle className='h-[14px] w-[14px] text-amber-500' />
+                          {publicationDependencyConflictAlerts.length} cross-team dependency alert
+                          {publicationDependencyConflictAlerts.length === 1 ? '' : 's'}
+                        </div>
+                        <div className='mt-2 grid gap-2'>
+                          {publicationDependencyConflictAlerts.slice(0, 3).map((alert) => (
+                            <div
+                              key={alert.id}
+                              className={cn(
+                                'rounded-[8px] border px-2 py-1 text-[11px]',
+                                governanceAlertClass(alert.severity)
+                              )}
+                            >
+                              {alert.publicationWorkgroupName} / {alert.dependencyTitle}:{' '}
+                              {alert.detail}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

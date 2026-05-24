@@ -59,6 +59,25 @@ export interface PublicationApprovalWorkflowStep {
   actionLabel: string | null
 }
 
+export interface PublicationDependencyConflictAlert {
+  id: string
+  code:
+    | 'missing_dependency'
+    | 'non_current_dependency'
+    | 'unapproved_dependency'
+    | 'critical_dependency'
+  severity: PublicationGovernanceAlertSeverity
+  publicationId: string
+  publicationTitle: string
+  publicationVersionNumber: number
+  publicationWorkgroupName: string
+  dependencyPublicationId: string | null
+  dependencyTitle: string
+  dependencyWorkgroupName: string | null
+  detail: string
+  actionLabel: string
+}
+
 export interface PublicationTeamNudge {
   id: string
   type: 'never_published' | 'missing_current' | 'stale_current'
@@ -77,6 +96,14 @@ export interface PublicationTeamNudge {
 export interface PublicationStateGroupOptions {
   now?: Date
   staleDays?: number
+}
+
+function getPublicationGroupId(publication: PublicationSummary): string {
+  return [
+    publication.sourceDiscipline.code,
+    publication.sourceWorkgroup.id,
+    publication.agentCode,
+  ].join(':')
 }
 
 function toStateNode(publication: PublicationSummary): PublicationStateNode {
@@ -331,6 +358,110 @@ export function buildPublicationApprovalWorkflow(
   ]
 }
 
+export function buildPublicationDependencyConflictAlerts(
+  publications: PublicationSummary[],
+  groups: PublicationStateGroup[] = buildPublicationStateGroups(publications)
+): PublicationDependencyConflictAlert[] {
+  const publicationById = new Map(publications.map((publication) => [publication.id, publication]))
+  const groupById = new Map(groups.map((group) => [group.id, group]))
+  const alerts: PublicationDependencyConflictAlert[] = []
+
+  for (const publication of publications) {
+    if (publication.status !== 'published') continue
+
+    for (const dependencyId of publication.dependsOnPublicationIds) {
+      const dependency = publicationById.get(dependencyId)
+      if (!dependency) {
+        alerts.push({
+          id: `${publication.id}:${dependencyId}:missing`,
+          code: 'missing_dependency',
+          severity: 'danger',
+          publicationId: publication.id,
+          publicationTitle: publication.title,
+          publicationVersionNumber: publication.versionNumber,
+          publicationWorkgroupName: publication.sourceWorkgroup.name,
+          dependencyPublicationId: null,
+          dependencyTitle: dependencyId,
+          dependencyWorkgroupName: null,
+          detail:
+            'Current publication depends on a version that is not visible in the project publication list.',
+          actionLabel: 'Resolve missing dependency',
+        })
+        continue
+      }
+
+      if (dependency.sourceWorkgroup.id === publication.sourceWorkgroup.id) continue
+
+      const dependencyGroup = groupById.get(getPublicationGroupId(dependency))
+      const currentDependency = dependencyGroup?.current ?? null
+      const dependencyIsCurrent =
+        dependency.status === 'published' && currentDependency?.id === dependency.id
+
+      if (!dependencyIsCurrent) {
+        alerts.push({
+          id: `${publication.id}:${dependency.id}:non-current`,
+          code: 'non_current_dependency',
+          severity: dependency.status === 'retracted' ? 'danger' : 'warning',
+          publicationId: publication.id,
+          publicationTitle: publication.title,
+          publicationVersionNumber: publication.versionNumber,
+          publicationWorkgroupName: publication.sourceWorkgroup.name,
+          dependencyPublicationId: dependency.id,
+          dependencyTitle: dependency.title,
+          dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          detail: currentDependency
+            ? `Depends on v${dependency.versionNumber}, but v${currentDependency.versionNumber} is the current ${dependency.sourceWorkgroup.name} baseline.`
+            : `Depends on v${dependency.versionNumber}, which is ${dependency.status} and has no current baseline in this state tree.`,
+          actionLabel: 'Review dependency baseline',
+        })
+      }
+
+      if (dependency.reviewState !== 'approved') {
+        alerts.push({
+          id: `${publication.id}:${dependency.id}:unapproved`,
+          code: 'unapproved_dependency',
+          severity: 'warning',
+          publicationId: publication.id,
+          publicationTitle: publication.title,
+          publicationVersionNumber: publication.versionNumber,
+          publicationWorkgroupName: publication.sourceWorkgroup.name,
+          dependencyPublicationId: dependency.id,
+          dependencyTitle: dependency.title,
+          dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          detail: `Dependency v${dependency.versionNumber} is ${formatGovernanceReviewState(dependency.reviewState)}.`,
+          actionLabel: 'Review dependency approval',
+        })
+      }
+
+      if (dependency.riskLevel === 'critical') {
+        alerts.push({
+          id: `${publication.id}:${dependency.id}:critical-risk`,
+          code: 'critical_dependency',
+          severity: 'danger',
+          publicationId: publication.id,
+          publicationTitle: publication.title,
+          publicationVersionNumber: publication.versionNumber,
+          publicationWorkgroupName: publication.sourceWorkgroup.name,
+          dependencyPublicationId: dependency.id,
+          dependencyTitle: dependency.title,
+          dependencyWorkgroupName: dependency.sourceWorkgroup.name,
+          detail: `Dependency v${dependency.versionNumber} is marked critical risk.`,
+          actionLabel: 'Triage dependency risk',
+        })
+      }
+    }
+  }
+
+  const severityOrder = { danger: 0, warning: 1, info: 2 }
+  return alerts.sort(
+    (left, right) =>
+      severityOrder[left.severity] - severityOrder[right.severity] ||
+      left.publicationWorkgroupName.localeCompare(right.publicationWorkgroupName) ||
+      left.publicationTitle.localeCompare(right.publicationTitle) ||
+      left.code.localeCompare(right.code)
+  )
+}
+
 export function buildPublicationTeamNudges(params: {
   teams: WorkgroupAdminSummary[]
   groups: PublicationStateGroup[]
@@ -422,11 +553,7 @@ export function buildPublicationStateGroups(
   const staleDays = options.staleDays ?? DEFAULT_STALE_DAYS
 
   for (const publication of publications) {
-    const groupId = [
-      publication.sourceDiscipline.code,
-      publication.sourceWorkgroup.id,
-      publication.agentCode,
-    ].join(':')
+    const groupId = getPublicationGroupId(publication)
     const group =
       groups.get(groupId) ??
       ({
