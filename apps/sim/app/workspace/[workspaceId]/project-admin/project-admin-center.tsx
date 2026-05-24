@@ -147,6 +147,31 @@ interface SnapshotSummary {
   metadataDescription: string | null
 }
 
+interface SnapshotBlockDiffRow {
+  id: string
+  label: string
+  type: string
+  change: 'added' | 'removed' | 'changed'
+  detail: string
+}
+
+interface SnapshotEdgeDiffRow {
+  id: string
+  label: string
+  change: 'added' | 'removed' | 'changed'
+  detail: string
+}
+
+interface SnapshotNodeLevelDiff {
+  addedBlocks: SnapshotBlockDiffRow[]
+  removedBlocks: SnapshotBlockDiffRow[]
+  changedBlocks: SnapshotBlockDiffRow[]
+  addedEdges: SnapshotEdgeDiffRow[]
+  removedEdges: SnapshotEdgeDiffRow[]
+  changedEdges: SnapshotEdgeDiffRow[]
+  changedVariables: string[]
+}
+
 interface PublicationDependencyImpactRow {
   id: string
   title: string
@@ -338,6 +363,57 @@ function ImpactMetric({
   )
 }
 
+function SnapshotDiffRows({
+  title,
+  rows,
+  empty,
+}: {
+  title: string
+  rows: Array<SnapshotBlockDiffRow | SnapshotEdgeDiffRow>
+  empty: string
+}) {
+  return (
+    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+      <div className='font-medium text-[11px] text-[var(--text-primary)]'>{title}</div>
+      {rows.length === 0 ? (
+        <div className='mt-1 text-[11px] text-[var(--text-muted)]'>{empty}</div>
+      ) : (
+        <div className='mt-2 grid gap-1'>
+          {rows.slice(0, 6).map((row) => (
+            <div
+              key={`${row.change}:${row.id}`}
+              className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1'
+            >
+              <div className='flex items-center justify-between gap-2'>
+                <span className='truncate text-[11px] text-[var(--text-primary)]'>{row.label}</span>
+                <span
+                  className={cn(
+                    'shrink-0 text-[10px]',
+                    row.change === 'added' && 'text-emerald-500',
+                    row.change === 'removed' && 'text-red-500',
+                    row.change === 'changed' && 'text-amber-500'
+                  )}
+                >
+                  {row.change}
+                </span>
+              </div>
+              <div className='mt-0.5 truncate text-[10px] text-[var(--text-muted)]'>
+                {'type' in row ? `${row.type} / ` : ''}
+                {row.detail}
+              </div>
+            </div>
+          ))}
+          {rows.length > 6 && (
+            <div className='text-[10px] text-[var(--text-muted)]'>
+              +{rows.length - 6} more change{rows.length - 6 === 1 ? '' : 's'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
@@ -352,6 +428,87 @@ function countRecordItems(value: unknown) {
 
 function countArrayItems(value: unknown) {
   return Array.isArray(value) ? value.length : 0
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value) ?? String(value)
+}
+
+function getRecordString(value: Record<string, unknown>, key: string) {
+  return typeof value[key] === 'string' ? value[key] : null
+}
+
+function getBlockLabel(blockId: string, block: unknown) {
+  if (!isRecord(block)) return blockId
+  const metadata = isRecord(block.metadata) ? block.metadata : {}
+  const config = isRecord(block.config) ? block.config : {}
+  return (
+    getRecordString(block, 'name') ??
+    getRecordString(block, 'title') ??
+    getRecordString(metadata, 'name') ??
+    getRecordString(config, 'name') ??
+    blockId
+  )
+}
+
+function getBlockType(block: unknown) {
+  return isRecord(block) && typeof block.type === 'string' ? block.type : 'unknown'
+}
+
+function getChangedTopLevelKeys(candidate: unknown, current: unknown) {
+  if (!isRecord(candidate) || !isRecord(current)) return []
+  const keys = new Set([...Object.keys(candidate), ...Object.keys(current)])
+  return [...keys]
+    .filter((key) => stableStringify(candidate[key]) !== stableStringify(current[key]))
+    .sort((left, right) => left.localeCompare(right))
+}
+
+function getSnapshotBlocks(snapshot: unknown) {
+  const root = isRecord(snapshot) ? snapshot : {}
+  return isRecord(root.blocks) ? root.blocks : {}
+}
+
+function getSnapshotVariables(snapshot: unknown) {
+  const root = isRecord(snapshot) ? snapshot : {}
+  return isRecord(root.variables) ? root.variables : {}
+}
+
+function getEdgeKey(edge: unknown, index: number) {
+  if (!isRecord(edge)) return `edge-${index}`
+  const id = getRecordString(edge, 'id')
+  if (id) return id
+  const source =
+    getRecordString(edge, 'source') ?? getRecordString(edge, 'sourceBlockId') ?? 'source'
+  const target =
+    getRecordString(edge, 'target') ?? getRecordString(edge, 'targetBlockId') ?? 'target'
+  return `${source}->${target}:${index}`
+}
+
+function getEdgeLabel(edge: unknown, fallbackId: string) {
+  if (!isRecord(edge)) return fallbackId
+  const source = getRecordString(edge, 'source') ?? getRecordString(edge, 'sourceBlockId') ?? '?'
+  const target = getRecordString(edge, 'target') ?? getRecordString(edge, 'targetBlockId') ?? '?'
+  return `${source} -> ${target}`
+}
+
+function getSnapshotEdges(snapshot: unknown) {
+  const root = isRecord(snapshot) ? snapshot : {}
+  const edges = Array.isArray(root.edges) ? root.edges : []
+  return new Map(
+    edges.map((edge, index) => {
+      const key = getEdgeKey(edge, index)
+      return [key, edge] as const
+    })
+  )
 }
 
 function summarizeSnapshot(snapshot: unknown): SnapshotSummary {
@@ -400,6 +557,119 @@ function buildBlockTypeDiff(candidate: SnapshotSummary, current: SnapshotSummary
     }))
     .filter((entry) => entry.candidate !== entry.current)
     .sort((a, b) => a.type.localeCompare(b.type))
+}
+
+function buildNodeLevelSnapshotDiff(
+  candidateSnapshot: unknown,
+  currentSnapshot: unknown
+): SnapshotNodeLevelDiff {
+  const candidateBlocks = getSnapshotBlocks(candidateSnapshot)
+  const currentBlocks = getSnapshotBlocks(currentSnapshot)
+  const blockIds = new Set([...Object.keys(candidateBlocks), ...Object.keys(currentBlocks)])
+  const addedBlocks: SnapshotBlockDiffRow[] = []
+  const removedBlocks: SnapshotBlockDiffRow[] = []
+  const changedBlocks: SnapshotBlockDiffRow[] = []
+
+  for (const blockId of [...blockIds].sort((left, right) => left.localeCompare(right))) {
+    const candidate = candidateBlocks[blockId]
+    const current = currentBlocks[blockId]
+    if (candidate && !current) {
+      addedBlocks.push({
+        id: blockId,
+        label: getBlockLabel(blockId, candidate),
+        type: getBlockType(candidate),
+        change: 'added',
+        detail: 'Present only in the restore candidate.',
+      })
+      continue
+    }
+    if (!candidate && current) {
+      removedBlocks.push({
+        id: blockId,
+        label: getBlockLabel(blockId, current),
+        type: getBlockType(current),
+        change: 'removed',
+        detail: 'Present only in the current published snapshot.',
+      })
+      continue
+    }
+    if (stableStringify(candidate) !== stableStringify(current)) {
+      const candidateType = getBlockType(candidate)
+      const currentType = getBlockType(current)
+      const changedKeys = getChangedTopLevelKeys(candidate, current)
+      changedBlocks.push({
+        id: blockId,
+        label: getBlockLabel(blockId, candidate),
+        type: candidateType,
+        change: 'changed',
+        detail:
+          candidateType !== currentType
+            ? `Type changed from ${currentType} to ${candidateType}.`
+            : `Changed fields: ${changedKeys.slice(0, 5).join(', ') || 'unknown'}.`,
+      })
+    }
+  }
+
+  const candidateEdges = getSnapshotEdges(candidateSnapshot)
+  const currentEdges = getSnapshotEdges(currentSnapshot)
+  const edgeIds = new Set([...candidateEdges.keys(), ...currentEdges.keys()])
+  const addedEdges: SnapshotEdgeDiffRow[] = []
+  const removedEdges: SnapshotEdgeDiffRow[] = []
+  const changedEdges: SnapshotEdgeDiffRow[] = []
+
+  for (const edgeId of [...edgeIds].sort((left, right) => left.localeCompare(right))) {
+    const candidate = candidateEdges.get(edgeId)
+    const current = currentEdges.get(edgeId)
+    if (candidate && !current) {
+      addedEdges.push({
+        id: edgeId,
+        label: getEdgeLabel(candidate, edgeId),
+        change: 'added',
+        detail: 'Connection exists only in the restore candidate.',
+      })
+      continue
+    }
+    if (!candidate && current) {
+      removedEdges.push({
+        id: edgeId,
+        label: getEdgeLabel(current, edgeId),
+        change: 'removed',
+        detail: 'Connection exists only in the current published snapshot.',
+      })
+      continue
+    }
+    if (stableStringify(candidate) !== stableStringify(current)) {
+      changedEdges.push({
+        id: edgeId,
+        label: getEdgeLabel(candidate, edgeId),
+        change: 'changed',
+        detail: `Changed fields: ${getChangedTopLevelKeys(candidate, current).slice(0, 5).join(', ') || 'unknown'}.`,
+      })
+    }
+  }
+
+  const candidateVariables = getSnapshotVariables(candidateSnapshot)
+  const currentVariables = getSnapshotVariables(currentSnapshot)
+  const variableNames = new Set([
+    ...Object.keys(candidateVariables),
+    ...Object.keys(currentVariables),
+  ])
+  const changedVariables = [...variableNames]
+    .filter(
+      (name) =>
+        stableStringify(candidateVariables[name]) !== stableStringify(currentVariables[name])
+    )
+    .sort((left, right) => left.localeCompare(right))
+
+  return {
+    addedBlocks,
+    removedBlocks,
+    changedBlocks,
+    addedEdges,
+    removedEdges,
+    changedEdges,
+    changedVariables,
+  }
 }
 
 function getPublicationImpactTone(
@@ -909,6 +1179,7 @@ export function ProjectAdminCenter() {
       current: currentSummary,
       metrics: buildSnapshotMetricRows(candidateSummary, currentSummary),
       blockTypeDiffs: buildBlockTypeDiff(candidateSummary, currentSummary),
+      nodeLevelDiff: buildNodeLevelSnapshotDiff(candidate, current),
     }
   }, [comparisonPublicationDetailData, selectedPublicationDetailData])
   const isLoadingSnapshotDiff =
@@ -3193,6 +3464,68 @@ export function ProjectAdminCenter() {
                             No block type count changes detected.
                           </div>
                         )}
+                        <div className='grid gap-2'>
+                          <div className='flex items-center justify-between gap-2'>
+                            <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                              Node-level changes
+                            </div>
+                            <span className='rounded-[8px] border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]'>
+                              {snapshotDiff.nodeLevelDiff.addedBlocks.length +
+                                snapshotDiff.nodeLevelDiff.removedBlocks.length +
+                                snapshotDiff.nodeLevelDiff.changedBlocks.length}{' '}
+                              blocks /{' '}
+                              {snapshotDiff.nodeLevelDiff.addedEdges.length +
+                                snapshotDiff.nodeLevelDiff.removedEdges.length +
+                                snapshotDiff.nodeLevelDiff.changedEdges.length}{' '}
+                              edges
+                            </span>
+                          </div>
+                          <div className='grid gap-2 md:grid-cols-3'>
+                            <SnapshotDiffRows
+                              title='Added blocks'
+                              rows={snapshotDiff.nodeLevelDiff.addedBlocks}
+                              empty='No added blocks.'
+                            />
+                            <SnapshotDiffRows
+                              title='Removed blocks'
+                              rows={snapshotDiff.nodeLevelDiff.removedBlocks}
+                              empty='No removed blocks.'
+                            />
+                            <SnapshotDiffRows
+                              title='Changed blocks'
+                              rows={snapshotDiff.nodeLevelDiff.changedBlocks}
+                              empty='No changed blocks.'
+                            />
+                          </div>
+                          <div className='grid gap-2 md:grid-cols-3'>
+                            <SnapshotDiffRows
+                              title='Added edges'
+                              rows={snapshotDiff.nodeLevelDiff.addedEdges}
+                              empty='No added edges.'
+                            />
+                            <SnapshotDiffRows
+                              title='Removed edges'
+                              rows={snapshotDiff.nodeLevelDiff.removedEdges}
+                              empty='No removed edges.'
+                            />
+                            <SnapshotDiffRows
+                              title='Changed edges'
+                              rows={snapshotDiff.nodeLevelDiff.changedEdges}
+                              empty='No changed edges.'
+                            />
+                          </div>
+                          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 text-[11px] text-[var(--text-muted)]'>
+                            <span className='font-medium text-[var(--text-primary)]'>
+                              Variables changed:
+                            </span>{' '}
+                            {snapshotDiff.nodeLevelDiff.changedVariables.length > 0
+                              ? snapshotDiff.nodeLevelDiff.changedVariables.slice(0, 8).join(', ')
+                              : 'None'}
+                            {snapshotDiff.nodeLevelDiff.changedVariables.length > 8
+                              ? `, +${snapshotDiff.nodeLevelDiff.changedVariables.length - 8} more`
+                              : ''}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div className='p-3 text-[12px] text-[var(--text-muted)]'>
