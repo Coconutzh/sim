@@ -34,6 +34,7 @@ import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
+  buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
   type PublicationGovernanceAlertSeverity,
@@ -1317,6 +1318,15 @@ export function ProjectAdminCenter() {
     () => buildPublicationDependencyConflictAlerts(publications, publicationStateGroups),
     [publicationStateGroups, publications]
   )
+  const publicationReviewNotifications = useMemo(
+    () =>
+      buildPublicationReviewNotifications(
+        publications,
+        publicationStateGroups,
+        publicationDependencyConflictAlerts
+      ),
+    [publicationDependencyConflictAlerts, publicationStateGroups, publications]
+  )
   const neverPublishedNudgeCount = publicationTeamNudges.filter(
     (nudge) => nudge.type === 'never_published'
   ).length
@@ -2139,14 +2149,16 @@ export function ProjectAdminCenter() {
               criticalPublicationCount +
               unreviewedPublicationCount +
               publicationGovernanceAlertCount +
+              publicationReviewNotifications.length +
               neverPublishedNudgeCount +
               teamsWithoutCanvas.length
             }
-            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${publicationGovernanceAlertCount} state-tree, ${neverPublishedNudgeCount} unpublished, ${teamsWithoutCanvas.length} missing canvas`}
+            detail={`${criticalPublicationCount} critical, ${unreviewedPublicationCount} unreviewed, ${publicationGovernanceAlertCount} state-tree, ${publicationReviewNotifications.length} review notifications, ${neverPublishedNudgeCount} unpublished, ${teamsWithoutCanvas.length} missing canvas`}
             tone={
               criticalPublicationCount +
                 unreviewedPublicationCount +
                 publicationGovernanceAlertCount +
+                publicationReviewNotifications.length +
                 neverPublishedNudgeCount +
                 teamsWithoutCanvas.length >
               0
@@ -2191,7 +2203,8 @@ export function ProjectAdminCenter() {
               </div>
               <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
                 {publicationGovernanceAlertCount} state-tree alerts /{' '}
-                {publicationDependencyConflictAlerts.length} dependency alerts
+                {publicationDependencyConflictAlerts.length} dependency alerts /{' '}
+                {publicationReviewNotifications.length} review notifications
               </span>
             </div>
             {hasPublicationBatchTargets ? (
@@ -2285,6 +2298,82 @@ export function ProjectAdminCenter() {
               <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
                 No eligible batch governance actions are currently available.
               </p>
+            )}
+            {publicationReviewNotifications.length > 0 && (
+              <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Review notification queue
+                    </h3>
+                    <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
+                      Project-admin delivery queue for reviewer assignment, pending decisions,
+                      critical risk, and dependency follow-up. Bell, email, and external push
+                      channels can subscribe to this queue later.
+                    </p>
+                  </div>
+                  <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                    {publicationReviewNotifications.length} notifications
+                  </span>
+                </div>
+                <div className='mt-3 grid gap-2'>
+                  {publicationReviewNotifications.slice(0, 6).map((notification) => {
+                    const reviewer = notification.reviewerUserId
+                      ? rosterMembers.find(
+                          (member) => member.userId === notification.reviewerUserId
+                        )
+                      : undefined
+                    return (
+                      <div
+                        key={notification.id}
+                        className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                      >
+                        <div className='min-w-0'>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              {notification.publicationWorkgroupName} v
+                              {notification.publicationVersionNumber}
+                            </span>
+                            <span
+                              className={cn(
+                                'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                                governanceAlertClass(notification.severity)
+                              )}
+                            >
+                              {notification.type.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                            {notification.publicationTitle}: {notification.detail}
+                          </p>
+                          <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                            <span>
+                              Reviewer:{' '}
+                              {formatRosterMemberLabel(reviewer, notification.reviewerUserId)}
+                            </span>
+                            <span>Action: {notification.actionLabel}</span>
+                          </div>
+                        </div>
+                        <div className='flex items-center gap-2 md:justify-end'>
+                          <button
+                            type='button'
+                            className={buttonVariants({ size: 'sm', variant: 'default' })}
+                            onClick={() => setSelectedPublicationId(notification.publicationId)}
+                          >
+                            Open publication
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {publicationReviewNotifications.length > 6 && (
+                    <div className='text-[11px] text-[var(--text-muted)]'>
+                      +{publicationReviewNotifications.length - 6} more review notification
+                      {publicationReviewNotifications.length - 6 === 1 ? '' : 's'}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
             {publicationDependencyConflictAlerts.length > 0 && (
               <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
@@ -3519,6 +3608,7 @@ export function ProjectAdminCenter() {
                 {criticalPublicationCount === 0 &&
                 unreviewedPublicationCount === 0 &&
                 publicationGovernanceAlertCount === 0 &&
+                publicationReviewNotifications.length === 0 &&
                 publicationDependencyConflictAlerts.length === 0 &&
                 teamsWithoutCanvas.length === 0 ? (
                   <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[13px] text-[var(--text-muted)]'>
@@ -3563,6 +3653,31 @@ export function ProjectAdminCenter() {
                               {alert.publicationWorkgroupName} / {alert.dependencyTitle}:{' '}
                               {alert.detail}
                             </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {publicationReviewNotifications.length > 0 && (
+                      <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                        <div className='flex items-center gap-2 text-[13px] text-[var(--text-primary)]'>
+                          <AlertTriangle className='h-[14px] w-[14px] text-amber-500' />
+                          {publicationReviewNotifications.length} review notification
+                          {publicationReviewNotifications.length === 1 ? '' : 's'}
+                        </div>
+                        <div className='mt-2 grid gap-2'>
+                          {publicationReviewNotifications.slice(0, 3).map((notification) => (
+                            <button
+                              key={notification.id}
+                              type='button'
+                              className={cn(
+                                'rounded-[8px] border px-2 py-1 text-left text-[11px]',
+                                governanceAlertClass(notification.severity)
+                              )}
+                              onClick={() => setSelectedPublicationId(notification.publicationId)}
+                            >
+                              {notification.publicationWorkgroupName} /{' '}
+                              {notification.publicationTitle}: {notification.actionLabel}
+                            </button>
                           ))}
                         </div>
                       </div>

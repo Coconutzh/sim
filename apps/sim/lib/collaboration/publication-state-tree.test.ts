@@ -7,6 +7,7 @@ import {
   buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
+  buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
 } from '@/lib/collaboration/publication-state-tree'
@@ -358,6 +359,97 @@ describe('publication state tree grouping', () => {
     ])
 
     expect(alerts).toEqual([])
+  })
+
+  it('builds a review notification queue from reviewer, risk, and dependency signals', () => {
+    const publications = [
+      publication({
+        id: 'stage-v2',
+        title: 'Stage current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+        sourceDiscipline: { code: 'stage', name: 'Stage' },
+        agentCode: 'stage',
+        reviewState: 'pending',
+        dependsOnPublicationIds: ['lighting-v1'],
+      }),
+      publication({
+        id: 'lighting-v1',
+        title: 'Lighting old',
+        versionNumber: 1,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+        reviewState: 'changes_requested',
+        riskLevel: 'critical',
+        status: 'superseded',
+      }),
+      publication({
+        id: 'lighting-v2',
+        title: 'Lighting current',
+        versionNumber: 2,
+        sourceWorkgroup: { id: 'workgroup-lighting', name: 'Lighting' },
+      }),
+      publication({
+        id: 'sound-v1',
+        title: 'Sound mix',
+        sourceWorkgroup: { id: 'workgroup-sound', name: 'Sound' },
+        reviewState: 'in_review',
+        reviewer: {
+          userId: 'reviewer-1',
+          assignedBy: 'admin-1',
+          assignedAt: '2026-05-24T00:00:00.000Z',
+        },
+      }),
+      publication({
+        id: 'visual-v1',
+        title: 'Visual plan',
+        sourceWorkgroup: { id: 'workgroup-visual', name: 'Visual' },
+        reviewState: 'changes_requested',
+        reviewer: {
+          userId: 'reviewer-2',
+          assignedBy: 'admin-1',
+          assignedAt: '2026-05-24T00:00:00.000Z',
+        },
+      }),
+      publication({
+        id: 'safety-v1',
+        title: 'Safety plan',
+        sourceWorkgroup: { id: 'workgroup-safety', name: 'Safety' },
+        riskLevel: 'critical',
+        reviewer: {
+          userId: 'reviewer-3',
+          assignedBy: 'admin-1',
+          assignedAt: '2026-05-24T00:00:00.000Z',
+        },
+      }),
+    ]
+
+    const notifications = buildPublicationReviewNotifications(publications)
+
+    expect(notifications.map((notification) => notification.type)).toEqual([
+      'critical_risk',
+      'dependency_conflict',
+      'reviewer_unassigned',
+      'reviewer_action_required',
+      'changes_requested',
+    ])
+    expect(
+      notifications.find((notification) => notification.type === 'dependency_conflict')
+    ).toMatchObject({
+      publicationId: 'stage-v2',
+      severity: 'danger',
+      actionLabel: 'Review dependencies',
+    })
+    expect(
+      notifications.find((notification) => notification.type === 'reviewer_action_required')
+    ).toMatchObject({
+      publicationId: 'sound-v1',
+      reviewerUserId: 'reviewer-1',
+      actionLabel: 'Record decision',
+    })
+  })
+
+  it('does not notify on approved low-risk current publications without dependency conflicts', () => {
+    expect(buildPublicationReviewNotifications([publication({ id: 'clean-v1' })])).toEqual([])
   })
 
   it('builds team publication nudges for stale, missing, and never-published teams', () => {

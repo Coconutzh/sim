@@ -78,6 +78,24 @@ export interface PublicationDependencyConflictAlert {
   actionLabel: string
 }
 
+export interface PublicationReviewNotification {
+  id: string
+  type:
+    | 'reviewer_unassigned'
+    | 'reviewer_action_required'
+    | 'changes_requested'
+    | 'critical_risk'
+    | 'dependency_conflict'
+  severity: PublicationGovernanceAlertSeverity
+  publicationId: string
+  publicationTitle: string
+  publicationVersionNumber: number
+  publicationWorkgroupName: string
+  reviewerUserId: string | null
+  detail: string
+  actionLabel: string
+}
+
 export interface PublicationTeamNudge {
   id: string
   type: 'never_published' | 'missing_current' | 'stale_current'
@@ -459,6 +477,154 @@ export function buildPublicationDependencyConflictAlerts(
       left.publicationWorkgroupName.localeCompare(right.publicationWorkgroupName) ||
       left.publicationTitle.localeCompare(right.publicationTitle) ||
       left.code.localeCompare(right.code)
+  )
+}
+
+export function buildPublicationReviewNotifications(
+  publications: PublicationSummary[],
+  groups: PublicationStateGroup[] = buildPublicationStateGroups(publications),
+  dependencyAlerts: PublicationDependencyConflictAlert[] = buildPublicationDependencyConflictAlerts(
+    publications,
+    groups
+  )
+): PublicationReviewNotification[] {
+  const currentPublicationIds = new Set(
+    groups.flatMap((group) =>
+      group.versions
+        .filter((version) => version.status === 'published')
+        .map((version) => version.id)
+    )
+  )
+  const dependencyAlertSummaryByPublicationId = new Map<
+    string,
+    { count: number; severity: PublicationGovernanceAlertSeverity }
+  >()
+  const severityOrder = { danger: 0, warning: 1, info: 2 }
+
+  for (const alert of dependencyAlerts) {
+    const summary = dependencyAlertSummaryByPublicationId.get(alert.publicationId)
+    if (!summary) {
+      dependencyAlertSummaryByPublicationId.set(alert.publicationId, {
+        count: 1,
+        severity: alert.severity,
+      })
+      continue
+    }
+    summary.count += 1
+    if (severityOrder[alert.severity] < severityOrder[summary.severity]) {
+      summary.severity = alert.severity
+    }
+  }
+
+  const notifications: PublicationReviewNotification[] = []
+
+  for (const publication of publications) {
+    if (!currentPublicationIds.has(publication.id)) continue
+
+    const reviewerUserId = publication.reviewer?.userId ?? null
+    const dependencySummary = dependencyAlertSummaryByPublicationId.get(publication.id)
+    const hasOpenReview = publication.reviewState !== 'approved'
+    const hasCriticalRisk = publication.riskLevel === 'critical'
+    const needsReviewer = hasOpenReview || hasCriticalRisk || Boolean(dependencySummary)
+
+    if (!reviewerUserId && needsReviewer) {
+      notifications.push({
+        id: `${publication.id}:reviewer-unassigned`,
+        type: 'reviewer_unassigned',
+        severity: hasCriticalRisk ? 'danger' : 'warning',
+        publicationId: publication.id,
+        publicationTitle: publication.title,
+        publicationVersionNumber: publication.versionNumber,
+        publicationWorkgroupName: publication.sourceWorkgroup.name,
+        reviewerUserId,
+        detail: hasOpenReview
+          ? `v${publication.versionNumber} is ${formatGovernanceReviewState(publication.reviewState)} and needs an explicit reviewer owner.`
+          : `v${publication.versionNumber} needs a reviewer owner before dependency or risk follow-up closes.`,
+        actionLabel: 'Assign reviewer',
+      })
+    }
+
+    if (
+      reviewerUserId &&
+      (publication.reviewState === 'pending' || publication.reviewState === 'in_review')
+    ) {
+      notifications.push({
+        id: `${publication.id}:reviewer-action`,
+        type: 'reviewer_action_required',
+        severity: 'warning',
+        publicationId: publication.id,
+        publicationTitle: publication.title,
+        publicationVersionNumber: publication.versionNumber,
+        publicationWorkgroupName: publication.sourceWorkgroup.name,
+        reviewerUserId,
+        detail:
+          publication.reviewState === 'pending'
+            ? `v${publication.versionNumber} is assigned but review has not started.`
+            : `v${publication.versionNumber} is in review and needs a recorded decision.`,
+        actionLabel: publication.reviewState === 'pending' ? 'Start review' : 'Record decision',
+      })
+    }
+
+    if (publication.reviewState === 'changes_requested') {
+      notifications.push({
+        id: `${publication.id}:changes-requested`,
+        type: 'changes_requested',
+        severity: 'warning',
+        publicationId: publication.id,
+        publicationTitle: publication.title,
+        publicationVersionNumber: publication.versionNumber,
+        publicationWorkgroupName: publication.sourceWorkgroup.name,
+        reviewerUserId,
+        detail: `v${publication.versionNumber} has requested changes that should be resolved before approval.`,
+        actionLabel: 'Review requested changes',
+      })
+    }
+
+    if (hasCriticalRisk) {
+      notifications.push({
+        id: `${publication.id}:critical-risk`,
+        type: 'critical_risk',
+        severity: 'danger',
+        publicationId: publication.id,
+        publicationTitle: publication.title,
+        publicationVersionNumber: publication.versionNumber,
+        publicationWorkgroupName: publication.sourceWorkgroup.name,
+        reviewerUserId,
+        detail: `v${publication.versionNumber} is marked critical risk and blocks clean approval.`,
+        actionLabel: 'Triage critical risk',
+      })
+    }
+
+    if (dependencySummary) {
+      notifications.push({
+        id: `${publication.id}:dependency-conflict`,
+        type: 'dependency_conflict',
+        severity: dependencySummary.severity,
+        publicationId: publication.id,
+        publicationTitle: publication.title,
+        publicationVersionNumber: publication.versionNumber,
+        publicationWorkgroupName: publication.sourceWorkgroup.name,
+        reviewerUserId,
+        detail: `${dependencySummary.count} cross-team dependency alert${dependencySummary.count === 1 ? '' : 's'} should be resolved before project sign-off.`,
+        actionLabel: 'Review dependencies',
+      })
+    }
+  }
+
+  const typeOrder: Record<PublicationReviewNotification['type'], number> = {
+    critical_risk: 0,
+    dependency_conflict: 1,
+    reviewer_unassigned: 2,
+    reviewer_action_required: 3,
+    changes_requested: 4,
+  }
+
+  return notifications.sort(
+    (left, right) =>
+      severityOrder[left.severity] - severityOrder[right.severity] ||
+      typeOrder[left.type] - typeOrder[right.type] ||
+      left.publicationWorkgroupName.localeCompare(right.publicationWorkgroupName) ||
+      left.publicationTitle.localeCompare(right.publicationTitle)
   )
 }
 
