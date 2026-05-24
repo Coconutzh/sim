@@ -99,6 +99,11 @@ export interface PurchaseCreditsParams {
 export interface PurchaseResult {
   success: boolean
   error?: string
+  entityType?: 'user' | 'organization'
+  entityId?: string
+  entityName?: string | null
+  subscriptionId?: string
+  subscriptionPlan?: string | null
 }
 
 export async function purchaseCredits(params: PurchaseCreditsParams): Promise<PurchaseResult> {
@@ -125,6 +130,7 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
 
   let entityType: 'user' | 'organization' = 'user'
   let entityId = userId
+  let entityName: string | null = null
 
   // Org-scoped subs route credit purchases to the organization and must be authorized
   // by an org owner/admin. We've already rejected enterprise above.
@@ -135,6 +141,13 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
     }
     entityType = 'organization'
     entityId = subscription.referenceId
+
+    const orgRows = await db
+      .select({ name: organization.name })
+      .from(organization)
+      .where(eq(organization.id, subscription.referenceId))
+      .limit(1)
+    entityName = orgRows[0]?.name ?? null
   }
 
   try {
@@ -223,7 +236,14 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
       purchasedBy: userId,
     })
 
-    return { success: true }
+    return {
+      success: true,
+      entityType,
+      entityId,
+      entityName,
+      subscriptionId: subscription.id,
+      subscriptionPlan: subscription.plan,
+    }
   } catch (error) {
     logger.error('Failed to purchase credits', { error, userId, amountDollars })
     const message = error instanceof Error ? error.message : 'Failed to process payment'

@@ -223,6 +223,7 @@ vi.mock('@sim/audit', () => ({
     DATA_DRAIN_DELETED: 'data_drain.deleted',
     DATA_DRAIN_RAN: 'data_drain.ran',
     DATA_DRAIN_TESTED: 'data_drain.tested',
+    CREDIT_PURCHASED: 'credit.purchased',
     ORGANIZATION_UPDATED: 'organization.updated',
     ORG_MEMBER_ADDED: 'org_member.added',
     ORG_MEMBER_REMOVED: 'org_member.removed',
@@ -1664,6 +1665,37 @@ describe('collaboration service', () => {
           },
         },
         {
+          id: 'audit-billing-management-2',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Switched organization plan from team_25000 to team_50000',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.plan_switched',
+            subscriptionId: 'sub-1',
+            fromPlan: 'team_25000',
+            toPlan: 'team_50000',
+          },
+        },
+        {
+          id: 'audit-billing-management-3',
+          action: 'credit.purchased',
+          resourceName: 'Theater Project',
+          description: 'Purchased $100 in credits',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.credits_purchased',
+            amountDollars: 100,
+            requestId: 'credit-request-1',
+          },
+        },
+        {
           id: 'audit-cleanup-execution-1',
           action: 'organization.updated',
           resourceName: 'Theater Project',
@@ -1687,7 +1719,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 13,
+        limit: 15,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1746,6 +1778,18 @@ describe('collaboration service', () => {
           kind: 'billing_management',
           severity: 'warning',
           title: 'Organization seats updated: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-2',
+          kind: 'billing_management',
+          severity: 'info',
+          title: 'Organization plan switched: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-3',
+          kind: 'billing_management',
+          severity: 'info',
+          title: 'Organization credits purchased: Theater Project',
         },
         {
           id: 'audit-cleanup-execution-1',

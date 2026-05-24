@@ -1,5 +1,6 @@
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { subscription as subscriptionTable } from '@sim/db/schema'
+import { organization, subscription as subscriptionTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
@@ -85,11 +86,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    if (isOrgScopedSubscription(sub, userId)) {
+    const isOrganizationSubscription = isOrgScopedSubscription(sub, userId)
+    let organizationName: string | null = null
+
+    if (isOrganizationSubscription) {
       const hasPermission = await isOrganizationOwnerOrAdmin(userId, sub.referenceId)
       if (!hasPermission) {
         return NextResponse.json({ error: 'Only team admins can change the plan' }, { status: 403 })
       }
+
+      const [organizationRow] = await db
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, sub.referenceId))
+        .limit(1)
+      organizationName = organizationRow?.name ?? null
     }
 
     const stripe = requireStripeClient()
@@ -173,6 +184,32 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       { from_plan: sub.plan ?? 'unknown', to_plan: targetPlanName, interval: targetInterval },
       { set: { plan: targetPlanName } }
     )
+
+    if (isOrganizationSubscription) {
+      recordAudit({
+        actorId: userId,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.ORGANIZATION_UPDATED,
+        resourceType: AuditResourceType.ORGANIZATION,
+        resourceId: sub.referenceId,
+        resourceName: organizationName ?? sub.referenceId,
+        description: `Switched organization plan from ${sub.plan ?? 'unknown'} to ${targetPlanName}`,
+        metadata: {
+          organizationId: sub.referenceId,
+          billingEvent: 'organization.plan_switched',
+          subscriptionId: sub.id,
+          stripeSubscriptionId: sub.stripeSubscriptionId,
+          fromPlan: sub.plan,
+          toPlan: targetPlanName,
+          fromInterval: currentInterval,
+          toInterval: targetInterval,
+          stripePriceUpdated: !alreadyOnStripePrice,
+          databasePlanUpdated: !alreadyInDb,
+        },
+        request,
+      })
+    }
 
     return NextResponse.json({ success: true, plan: targetPlanName, interval: targetInterval })
   } catch (error) {

@@ -66,10 +66,23 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       action: AuditAction.CREDIT_PURCHASED,
       resourceType: AuditResourceType.BILLING,
       resourceId: parsed.data.body.requestId,
+      resourceName:
+        result.entityType === 'organization' ? (result.entityName ?? result.entityId) : undefined,
       description: `Purchased $${parsed.data.body.amount} in credits`,
       metadata: {
         amountDollars: parsed.data.body.amount,
         requestId: parsed.data.body.requestId,
+        entityType: result.entityType,
+        entityId: result.entityId,
+        entityName: result.entityName,
+        subscriptionId: result.subscriptionId,
+        subscriptionPlan: result.subscriptionPlan,
+        ...(result.entityType === 'organization'
+          ? {
+              organizationId: result.entityId,
+              billingEvent: 'organization.credits_purchased',
+            }
+          : {}),
       },
       request,
     })

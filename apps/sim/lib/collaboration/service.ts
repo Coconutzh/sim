@@ -143,7 +143,11 @@ const ORGANIZATION_SETTINGS_EVENTS = [
   'organization.settings_updated',
   'organization.whitelabel_updated',
 ] as const
-const BILLING_MANAGEMENT_EVENTS = ['organization.seats_updated'] as const
+const BILLING_MANAGEMENT_EVENTS = [
+  'organization.seats_updated',
+  'organization.plan_switched',
+  'organization.credits_purchased',
+] as const
 const CLEANUP_EXECUTION_AUDIT_EVENT = 'cleanup.execution_completed'
 type OrganizationSettingsEvent = (typeof ORGANIZATION_SETTINGS_EVENTS)[number]
 type BillingManagementEvent = (typeof BILLING_MANAGEMENT_EVENTS)[number]
@@ -1682,7 +1686,10 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     )
   )
   const billingManagementCondition = and(
-    eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+    or(
+      eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+      eq(auditLog.action, AuditAction.CREDIT_PURCHASED)
+    ),
     or(
       ...BILLING_MANAGEMENT_EVENTS.map(
         (event) => sql`${auditLog.metadata}->>'billingEvent' = ${event}`
@@ -1941,6 +1948,12 @@ function getBillingManagementTitle(event: BillingManagementEvent, resourceName: 
   const name = resourceName?.trim()
   if (event === 'organization.seats_updated') {
     return name ? `Organization seats updated: ${name}` : 'Organization seats updated'
+  }
+  if (event === 'organization.plan_switched') {
+    return name ? `Organization plan switched: ${name}` : 'Organization plan switched'
+  }
+  if (event === 'organization.credits_purchased') {
+    return name ? `Organization credits purchased: ${name}` : 'Organization credits purchased'
   }
   return name ? `Billing updated: ${name}` : 'Billing updated'
 }
@@ -2213,7 +2226,9 @@ function getProjectNotificationCenterEntry(
   }
 
   const billingManagementEvent =
-    row.action === AuditAction.ORGANIZATION_UPDATED ? getBillingManagementEvent(row.metadata) : null
+    row.action === AuditAction.ORGANIZATION_UPDATED || row.action === AuditAction.CREDIT_PURCHASED
+      ? getBillingManagementEvent(row.metadata)
+      : null
   if (billingManagementEvent) {
     const readAt =
       row.metadata && typeof row.metadata === 'object'
