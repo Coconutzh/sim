@@ -1186,6 +1186,33 @@ function downloadProjectActivityCsv(
   URL.revokeObjectURL(url)
 }
 
+function downloadProjectFailureHistoryCsv(
+  entries: OrganizationWorkgroupActivityEntry[],
+  scope: 'page' | 'filtered' = 'page'
+) {
+  const rows = [
+    ['Created at', 'Scope', 'Operation', 'Target', 'Message', 'Actor'],
+    ...entries.map((entry) => {
+      const failure = entry.projectAdminFailure
+      return [
+        failure?.recordedAt ?? entry.createdAt,
+        failure?.scope ?? '',
+        failure?.operation ?? formatActivityAction(entry.action),
+        failure?.target ?? entry.resourceName ?? 'Project',
+        failure?.message ?? entry.description ?? '',
+        entry.actorName || entry.actorEmail || 'Unknown actor',
+      ]
+    }),
+  ]
+  const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `project-admin-failures-${scope}-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
@@ -1229,6 +1256,9 @@ export function ProjectAdminCenter() {
   const [activityTeamId, setActivityTeamId] = useState('')
   const [activityDisciplineId, setActivityDisciplineId] = useState('')
   const [activityAction, setActivityAction] = useState('')
+  const [activityFailureScope, setActivityFailureScope] = useState<ProjectAdminFailureScope | ''>(
+    ''
+  )
   const [activitySearch, setActivitySearch] = useState('')
   const [activityActor, setActivityActor] = useState('')
   const [activityStartDate, setActivityStartDate] = useState('')
@@ -1240,6 +1270,9 @@ export function ProjectAdminCenter() {
   const [failureHistoryActor, setFailureHistoryActor] = useState('')
   const [failureHistoryStartDate, setFailureHistoryStartDate] = useState('')
   const [failureHistoryEndDate, setFailureHistoryEndDate] = useState('')
+  const [failureHistoryOffset, setFailureHistoryOffset] = useState(0)
+  const [isExportingFailureHistory, setIsExportingFailureHistory] = useState(false)
+  const [failureHistoryExportStatus, setFailureHistoryExportStatus] = useState<string | null>(null)
   const [projectAdminFailureAudit, setProjectAdminFailureAudit] = useState<
     ProjectAdminFailureAuditEntry[]
   >([])
@@ -1604,6 +1637,7 @@ export function ProjectAdminCenter() {
       workgroupId: activityTeamId || undefined,
       disciplineId: activityTeamId ? undefined : activityDisciplineId || undefined,
       action: activityAction || undefined,
+      failureScope: activityFailureScope || undefined,
       search: activitySearch.trim() || undefined,
       actor: activityActor.trim() || undefined,
       startDate: activityStartDate || undefined,
@@ -1614,6 +1648,7 @@ export function ProjectAdminCenter() {
       activityActor,
       activityDisciplineId,
       activityEndDate,
+      activityFailureScope,
       activitySearch,
       activityStartDate,
       activityTeamId,
@@ -1631,17 +1666,23 @@ export function ProjectAdminCenter() {
     isProjectAdmin ? organizationId : undefined,
     activityFilters
   )
-  const serverFailureHistoryFilters = useMemo(
+  const failureHistoryFilterBase = useMemo(
     () => ({
       action: 'project_admin_failure.recorded',
       failureScope: failureHistoryScope || undefined,
       actor: failureHistoryActor.trim() || undefined,
       startDate: failureHistoryStartDate || undefined,
       endDate: failureHistoryEndDate || undefined,
-      limit: PROJECT_ADMIN_FAILURE_HISTORY_LIMIT,
-      offset: 0,
     }),
     [failureHistoryActor, failureHistoryEndDate, failureHistoryScope, failureHistoryStartDate]
+  )
+  const serverFailureHistoryFilters = useMemo(
+    () => ({
+      ...failureHistoryFilterBase,
+      limit: PROJECT_ADMIN_FAILURE_HISTORY_LIMIT,
+      offset: failureHistoryOffset,
+    }),
+    [failureHistoryFilterBase, failureHistoryOffset]
   )
   const { data: serverFailureHistoryData, isLoading: isLoadingServerFailureHistory } =
     useOrganizationWorkgroupActivity(
@@ -1652,11 +1693,18 @@ export function ProjectAdminCenter() {
   const serverFailureHistory = serverFailureHistoryData?.activity ?? []
   const hasPreviousActivityPage = activityOffset > 0
   const hasNextActivityPage = activityData?.nextOffset != null
+  const hasPreviousFailureHistoryPage = failureHistoryOffset > 0
+  const hasNextFailureHistoryPage = serverFailureHistoryData?.nextOffset != null
   const activityRangeLabel =
     projectActivity.length > 0
       ? `Showing ${activityOffset + 1}-${activityOffset + projectActivity.length} of filtered project activity.`
       : 'No filtered project activity to show.'
+  const failureHistoryRangeLabel =
+    serverFailureHistory.length > 0
+      ? `Showing ${failureHistoryOffset + 1}-${failureHistoryOffset + serverFailureHistory.length} of persisted failures.`
+      : 'No persisted failures to show.'
   const canExportActivity = Boolean(organizationId && !isExportingActivity)
+  const canExportFailureHistory = Boolean(organizationId && !isExportingFailureHistory)
   const projectAdminFailureAuditSummary = useMemo(
     () => buildProjectAdminFailureAuditSummary(projectAdminFailureAudit),
     [projectAdminFailureAudit]
@@ -1694,6 +1742,11 @@ export function ProjectAdminCenter() {
   const resetActivityPage = () => {
     setActivityOffset(0)
     setActivityExportStatus(null)
+  }
+
+  const resetFailureHistoryPage = () => {
+    setFailureHistoryOffset(0)
+    setFailureHistoryExportStatus(null)
   }
 
   const handleCreateTeam = async () => {
@@ -2343,6 +2396,54 @@ export function ProjectAdminCenter() {
       )
     } finally {
       setIsExportingActivity(false)
+    }
+  }
+
+  const handleExportFilteredFailureHistory = async () => {
+    if (!organizationId) return
+
+    setIsExportingFailureHistory(true)
+    setFailureHistoryExportStatus(null)
+    try {
+      const entries: OrganizationWorkgroupActivityEntry[] = []
+      let offset = 0
+      let nextOffset: number | null = 0
+      let pageCount = 0
+
+      while (nextOffset != null && pageCount < PROJECT_ACTIVITY_EXPORT_MAX_PAGES) {
+        const result = await fetchOrganizationWorkgroupActivity(organizationId, {
+          ...failureHistoryFilterBase,
+          limit: PROJECT_ACTIVITY_EXPORT_PAGE_SIZE,
+          offset,
+        })
+        entries.push(...result.activity)
+        nextOffset = result.nextOffset
+        offset = nextOffset ?? offset
+        pageCount += 1
+      }
+
+      if (entries.length === 0) {
+        setFailureHistoryExportStatus('No persisted failures matched the current filters.')
+        return
+      }
+
+      downloadProjectFailureHistoryCsv(entries, 'filtered')
+      setFailureHistoryExportStatus(
+        nextOffset == null
+          ? `Exported ${entries.length} persisted failure row${entries.length === 1 ? '' : 's'}.`
+          : `Exported the first ${entries.length} persisted failure rows. Narrow filters to export more.`
+      )
+    } catch (error) {
+      setFailureHistoryExportStatus(
+        recordProjectAdminFailure(
+          'activity',
+          'Export failure audit history',
+          'Persisted project-admin failures',
+          error
+        )
+      )
+    } finally {
+      setIsExportingFailureHistory(false)
     }
   }
 
@@ -4206,11 +4307,12 @@ export function ProjectAdminCenter() {
                     <div className='grid gap-2 md:grid-cols-2'>
                       <select
                         value={failureHistoryScope}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setFailureHistoryScope(
                             event.target.value as ProjectAdminFailureScope | ''
                           )
-                        }
+                          resetFailureHistoryPage()
+                        }}
                         className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                       >
                         <option value=''>All failure scopes</option>
@@ -4222,7 +4324,10 @@ export function ProjectAdminCenter() {
                       </select>
                       <input
                         value={failureHistoryActor}
-                        onChange={(event) => setFailureHistoryActor(event.target.value)}
+                        onChange={(event) => {
+                          setFailureHistoryActor(event.target.value)
+                          resetFailureHistoryPage()
+                        }}
                         placeholder='Exact actor email or name'
                         className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
                       />
@@ -4230,7 +4335,10 @@ export function ProjectAdminCenter() {
                         type='date'
                         value={failureHistoryStartDate}
                         max={failureHistoryEndDate || undefined}
-                        onChange={(event) => setFailureHistoryStartDate(event.target.value)}
+                        onChange={(event) => {
+                          setFailureHistoryStartDate(event.target.value)
+                          resetFailureHistoryPage()
+                        }}
                         className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                         aria-label='Failure audit history start date'
                       />
@@ -4238,11 +4346,72 @@ export function ProjectAdminCenter() {
                         type='date'
                         value={failureHistoryEndDate}
                         min={failureHistoryStartDate || undefined}
-                        onChange={(event) => setFailureHistoryEndDate(event.target.value)}
+                        onChange={(event) => {
+                          setFailureHistoryEndDate(event.target.value)
+                          resetFailureHistoryPage()
+                        }}
                         className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
                         aria-label='Failure audit history end date'
                       />
                     </div>
+                    <div className='flex flex-wrap items-center justify-between gap-2'>
+                      <span className='text-[11px] text-[var(--text-muted)]'>
+                        {failureHistoryRangeLabel}
+                      </span>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <button
+                          type='button'
+                          className={buttonVariants({ variant: 'default' })}
+                          disabled={serverFailureHistory.length === 0}
+                          onClick={() => downloadProjectFailureHistoryCsv(serverFailureHistory)}
+                        >
+                          <Download className='mr-2 h-[13px] w-[13px]' />
+                          Export page
+                        </button>
+                        <button
+                          type='button'
+                          className={buttonVariants({ variant: 'default' })}
+                          disabled={!canExportFailureHistory}
+                          onClick={() => void handleExportFilteredFailureHistory()}
+                        >
+                          {isExportingFailureHistory ? (
+                            <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                          ) : (
+                            <Download className='mr-2 h-[13px] w-[13px]' />
+                          )}
+                          Export filtered
+                        </button>
+                        <button
+                          type='button'
+                          className={buttonVariants({ variant: 'default' })}
+                          disabled={!hasPreviousFailureHistoryPage || isLoadingServerFailureHistory}
+                          onClick={() =>
+                            setFailureHistoryOffset((currentOffset) =>
+                              Math.max(0, currentOffset - PROJECT_ADMIN_FAILURE_HISTORY_LIMIT)
+                            )
+                          }
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type='button'
+                          className={buttonVariants({ variant: 'default' })}
+                          disabled={!hasNextFailureHistoryPage || isLoadingServerFailureHistory}
+                          onClick={() => {
+                            if (serverFailureHistoryData?.nextOffset != null) {
+                              setFailureHistoryOffset(serverFailureHistoryData.nextOffset)
+                            }
+                          }}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                    {failureHistoryExportStatus && (
+                      <div className='text-[11px] text-[var(--text-muted)]' aria-live='polite'>
+                        {failureHistoryExportStatus}
+                      </div>
+                    )}
                     {isLoadingServerFailureHistory ? (
                       <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
                         <Loader className='h-[13px] w-[13px]' animate />
@@ -4345,6 +4514,21 @@ export function ProjectAdminCenter() {
                   >
                     {PROJECT_ACTIVITY_ACTION_OPTIONS.map((option) => (
                       <option key={option.value || 'all'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={activityFailureScope}
+                    onChange={(event) => {
+                      setActivityFailureScope(event.target.value as ProjectAdminFailureScope | '')
+                      resetActivityPage()
+                    }}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                  >
+                    <option value=''>All failure scopes</option>
+                    {PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.map((option) => (
+                      <option key={option.scope} value={option.scope}>
                         {option.label}
                       </option>
                     ))}
