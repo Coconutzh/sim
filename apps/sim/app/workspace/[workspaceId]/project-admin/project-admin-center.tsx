@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Archive,
   Compass,
+  Database,
   Download,
   GitBranch,
   Network,
@@ -51,6 +52,7 @@ import {
   type PublicationNotificationDeliveryDraft,
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
+import { useOrganizationRetention } from '@/ee/data-retention/hooks/data-retention'
 import {
   fetchOrganizationWorkgroupActivity,
   useAddWorkgroupMember,
@@ -1169,6 +1171,13 @@ function formatDateTime(value: string) {
   }).format(new Date(value))
 }
 
+function formatRetentionHours(hours: number | null | undefined) {
+  if (hours == null) return 'Disabled'
+  if (hours < 48) return `${hours}h`
+  const days = hours / 24
+  return Number.isInteger(days) ? `${days}d` : `${hours}h`
+}
+
 function formatProjectAdminFailureScope(scope: string | null | undefined) {
   if (!scope) return 'Project'
   return (
@@ -1422,6 +1431,11 @@ export function ProjectAdminCenter() {
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
   )
+  const {
+    data: organizationRetention,
+    error: organizationRetentionError,
+    isLoading: isLoadingOrganizationRetention,
+  } = useOrganizationRetention(isProjectAdmin ? organizationId : undefined)
   const isLoading =
     isLoadingMyWorkgroups ||
     isLoadingOrganizationWorkgroups ||
@@ -4465,6 +4479,87 @@ export function ProjectAdminCenter() {
                       {failureHistoryStats.oldestLoadedAt && failureHistoryStats.newestLoadedAt
                         ? `${formatDateTime(failureHistoryStats.oldestLoadedAt)} - ${formatDateTime(failureHistoryStats.newestLoadedAt)}`
                         : 'No persisted failure sample yet.'}
+                    </div>
+                    <div className='mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                      <div className='flex flex-wrap items-start justify-between gap-3'>
+                        <div>
+                          <div className='flex items-center gap-2'>
+                            <Database className='h-[13px] w-[13px] text-[var(--text-muted)]' />
+                            <h5 className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              Audit retention controls
+                            </h5>
+                          </div>
+                          <p className='mt-1 max-w-[680px] text-[11px] text-[var(--text-muted)]'>
+                            Project-admin failure evidence is stored in organization audit logs and
+                            follows the same log retention policy.
+                          </p>
+                        </div>
+                        <Link
+                          className={buttonVariants({ size: 'sm', variant: 'default' })}
+                          href={`/workspace/${workspaceId}/settings/data-retention`}
+                        >
+                          Manage retention
+                        </Link>
+                      </div>
+                      {isLoadingOrganizationRetention ? (
+                        <div className='mt-3 flex items-center gap-2 text-[11px] text-[var(--text-muted)]'>
+                          <Loader className='h-[12px] w-[12px]' animate />
+                          Loading organization retention policy...
+                        </div>
+                      ) : organizationRetention ? (
+                        <div className='mt-3 grid gap-2 md:grid-cols-3'>
+                          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                            <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                              Effective log retention
+                            </div>
+                            <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                              {formatRetentionHours(
+                                organizationRetention.effective.logRetentionHours
+                              )}
+                            </div>
+                            <div className='text-[11px] text-[var(--text-muted)]'>
+                              {organizationRetention.effective.logRetentionHours == null
+                                ? 'Automatic audit log cleanup is not configured.'
+                                : 'Failure rows older than this window may be removed.'}
+                            </div>
+                          </div>
+                          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                            <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                              Configured override
+                            </div>
+                            <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                              {formatRetentionHours(
+                                organizationRetention.configured.logRetentionHours
+                              )}
+                            </div>
+                            <div className='text-[11px] text-[var(--text-muted)]'>
+                              Enterprise organization-level setting for audit logs.
+                            </div>
+                          </div>
+                          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'>
+                            <div className='text-[10px] text-[var(--text-muted)] uppercase tracking-[0.08em]'>
+                              Default policy
+                            </div>
+                            <div className='mt-1 font-semibold text-[16px] text-[var(--text-primary)]'>
+                              {formatRetentionHours(
+                                organizationRetention.defaults.logRetentionHours
+                              )}
+                            </div>
+                            <div className='text-[11px] text-[var(--text-muted)]'>
+                              {organizationRetention.isEnterprise
+                                ? 'Enterprise plan can manage the override above.'
+                                : 'Data retention management may require Enterprise access.'}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className='mt-3 rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-500'>
+                          Retention policy is unavailable
+                          {organizationRetentionError instanceof Error
+                            ? `: ${organizationRetentionError.message}`
+                            : '. Manage it from Data Retention settings when enabled.'}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className='mt-3 grid gap-2'>
