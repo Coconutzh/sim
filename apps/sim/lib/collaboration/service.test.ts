@@ -1650,6 +1650,22 @@ describe('collaboration service', () => {
           },
         },
         {
+          id: 'audit-organization-settings-2',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Configured SAML SSO provider theater-saml',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            organizationEvent: 'organization.security_sso_configured',
+            providerId: 'theater-saml',
+            providerType: 'saml',
+            domain: 'theater.example.com',
+          },
+        },
+        {
           id: 'audit-billing-management-1',
           action: 'organization.updated',
           resourceName: 'Theater Project',
@@ -1768,7 +1784,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 18,
+        limit: 19,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1821,6 +1837,12 @@ describe('collaboration service', () => {
           kind: 'organization_settings',
           severity: 'info',
           title: 'Organization branding updated: Theater Project',
+        },
+        {
+          id: 'audit-organization-settings-2',
+          kind: 'organization_settings',
+          severity: 'info',
+          title: 'Organization SSO settings updated: Theater Project',
         },
         {
           id: 'audit-billing-management-1',

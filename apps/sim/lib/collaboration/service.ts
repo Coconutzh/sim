@@ -143,6 +143,7 @@ const DATA_RETENTION_AUDIT_EVENT = 'data_retention.settings_updated'
 const ORGANIZATION_SETTINGS_EVENTS = [
   'organization.settings_updated',
   'organization.whitelabel_updated',
+  'organization.security_sso_configured',
 ] as const
 const BILLING_MANAGEMENT_EVENTS = [
   'organization.seats_updated',
@@ -1937,6 +1938,9 @@ function getOrganizationSettingsTitle(
   const name = resourceName?.trim()
   if (event === 'organization.whitelabel_updated') {
     return name ? `Organization branding updated: ${name}` : 'Organization branding updated'
+  }
+  if (event === 'organization.security_sso_configured') {
+    return name ? `Organization SSO settings updated: ${name}` : 'Organization SSO settings updated'
   }
   return name ? `Organization settings updated: ${name}` : 'Organization settings updated'
 }

@@ -1,4 +1,5 @@
-import { db, member, ssoProvider } from '@sim/db'
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import { db, member, organization, ssoProvider } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -52,6 +53,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const body = parsed.data.body
     const { providerId, issuer, domain, providerType, mapping, orgId } = body
 
+    let organizationName: string | null = null
+
     if (orgId) {
       const [membership] = await db
         .select({ organizationId: member.organizationId, role: member.role })
@@ -64,6 +67,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       if (membership.role !== 'owner' && membership.role !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
+
+      const [organizationRow] = await db
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, orgId))
+        .limit(1)
+      organizationName = organizationRow?.name ?? null
     }
 
     const headers: Record<string, string> = {}
@@ -417,6 +427,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       providerType,
       domain,
     })
+
+    if (orgId) {
+      recordAudit({
+        workspaceId: null,
+        actorId: session.user.id,
+        action: AuditAction.ORGANIZATION_UPDATED,
+        resourceType: AuditResourceType.ORGANIZATION,
+        resourceId: orgId,
+        actorName: session.user.name ?? undefined,
+        actorEmail: session.user.email ?? undefined,
+        resourceName: organizationName ?? orgId,
+        description: `Configured ${providerType.toUpperCase()} SSO provider ${providerId}`,
+        metadata: {
+          organizationId: orgId,
+          organizationEvent: 'organization.security_sso_configured',
+          providerId,
+          providerType,
+          domain,
+          issuer,
+        },
+        request,
+      })
+    }
 
     return NextResponse.json({
       success: true,
