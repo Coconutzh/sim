@@ -1347,6 +1347,7 @@ export function ProjectAdminCenter() {
   const [failureHistoryOffset, setFailureHistoryOffset] = useState(0)
   const [isExportingFailureHistory, setIsExportingFailureHistory] = useState(false)
   const [failureHistoryExportStatus, setFailureHistoryExportStatus] = useState<string | null>(null)
+  const [selectedFailureHistoryId, setSelectedFailureHistoryId] = useState<string | null>(null)
   const [projectAdminFailureAudit, setProjectAdminFailureAudit] = useState<
     ProjectAdminFailureAuditEntry[]
   >([])
@@ -1783,6 +1784,14 @@ export function ProjectAdminCenter() {
     () => buildProjectAdminFailureHistoryStats(failureHistoryStatsSample),
     [failureHistoryStatsSample]
   )
+  const selectedFailureHistory = useMemo(
+    () =>
+      [...serverFailureHistory, ...failureHistoryStatsSample].find(
+        (entry) => entry.id === selectedFailureHistoryId
+      ) ?? null,
+    [failureHistoryStatsSample, selectedFailureHistoryId, serverFailureHistory]
+  )
+  const selectedFailure = selectedFailureHistory?.projectAdminFailure ?? null
   const hasPreviousActivityPage = activityOffset > 0
   const hasNextActivityPage = activityData?.nextOffset != null
   const hasPreviousFailureHistoryPage = failureHistoryOffset > 0
@@ -4580,9 +4589,11 @@ export function ProjectAdminCenter() {
                       serverFailureHistory.map((entry) => {
                         const failure = entry.projectAdminFailure
                         return (
-                          <div
+                          <button
+                            type='button'
                             key={entry.id}
-                            className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'
+                            className='w-full rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3 text-left transition-colors hover:border-red-500/30 hover:bg-red-500/5'
+                            onClick={() => setSelectedFailureHistoryId(entry.id)}
                           >
                             <div className='flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]'>
                               <span className='rounded-[8px] border border-red-500/30 px-2 py-0.5 text-red-500'>
@@ -4600,7 +4611,7 @@ export function ProjectAdminCenter() {
                                 entry.description?.trim() ??
                                 'No persisted failure details'}
                             </div>
-                          </div>
+                          </button>
                         )
                       })
                     )}
@@ -5537,6 +5548,127 @@ export function ProjectAdminCenter() {
                       </div>
                     ))
                   )}
+                </div>
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
+      {selectedFailureHistory && (
+        <div className='fixed inset-0 z-50 flex justify-end bg-black/20'>
+          <aside className='flex h-full w-full max-w-[480px] flex-col border-[var(--border)] border-l bg-[var(--bg)] shadow-xl'>
+            <div className='flex items-start justify-between gap-3 border-[var(--border)] border-b p-4'>
+              <div className='min-w-0'>
+                <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                  <AlertTriangle className='h-[14px] w-[14px]' />
+                  Persisted failure detail
+                </div>
+                <h2 className='mt-1 truncate font-medium text-[18px] text-[var(--text-primary)]'>
+                  {selectedFailure?.operation ??
+                    formatActivityAction(selectedFailureHistory.action)}
+                </h2>
+                <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                  <span>{formatProjectAdminFailureScope(selectedFailure?.scope)}</span>
+                  <span>
+                    {formatDateTime(
+                      selectedFailure?.recordedAt ?? selectedFailureHistory.createdAt
+                    )}
+                  </span>
+                </div>
+              </div>
+              <button
+                type='button'
+                className={cn(buttonVariants({ size: 'sm', variant: 'default' }), 'h-[30px]')}
+                onClick={() => setSelectedFailureHistoryId(null)}
+                aria-label='Close failure audit detail drawer'
+              >
+                <X className='h-[13px] w-[13px]' />
+              </button>
+            </div>
+            <div className='grid flex-1 gap-4 overflow-auto p-4'>
+              <section className='rounded-[8px] border border-red-500/30 bg-red-500/10 p-3'>
+                <div className='text-[11px] text-red-500'>Failure message</div>
+                <p className='mt-2 whitespace-pre-wrap text-[13px] text-[var(--text-primary)]'>
+                  {selectedFailure?.message ??
+                    selectedFailureHistory.description?.trim() ??
+                    'No persisted failure details'}
+                </p>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Operation context
+                </h3>
+                <div className='mt-3 grid gap-2 text-[12px]'>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Failure ID</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailure?.failureId ?? 'Not recorded'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Scope</span>
+                    <span className='text-[var(--text-primary)]'>
+                      {formatProjectAdminFailureScope(selectedFailure?.scope)}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Target</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailure?.target ?? selectedFailureHistory.resourceName ?? 'Project'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Actor</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.actorName ||
+                        selectedFailureHistory.actorEmail ||
+                        'Unknown actor'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Team</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.workgroupName ?? 'Project-wide'}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Discipline</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.disciplineName ?? 'None'}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>Audit row</h3>
+                <div className='mt-3 grid gap-2 text-[12px]'>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Audit row ID</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.id}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Action</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.action}
+                    </span>
+                  </div>
+                  <div className='flex justify-between gap-3'>
+                    <span className='text-[var(--text-muted)]'>Resource</span>
+                    <span className='truncate text-[var(--text-primary)]'>
+                      {selectedFailureHistory.resourceType}
+                      {selectedFailureHistory.resourceId
+                        ? ` / ${selectedFailureHistory.resourceId}`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--text-muted)]'>
+                    Use page or filtered CSV export to preserve this row before audit retention
+                    cleanup removes older project-admin failure evidence.
+                  </div>
                 </div>
               </section>
             </div>
