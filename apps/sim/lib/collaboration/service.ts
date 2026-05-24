@@ -30,6 +30,12 @@ import {
   isAgentCode,
   workspacePermissionForWorkgroupRole,
 } from '@/lib/collaboration/definitions'
+import {
+  buildPublicationDependencyConflictAlerts,
+  buildPublicationNotificationDeliveryDrafts,
+  buildPublicationReviewNotifications,
+  buildPublicationStateGroups,
+} from '@/lib/collaboration/publication-state-tree'
 import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import {
@@ -64,6 +70,8 @@ function formatPublicationReviewer(publication: {
 }
 
 type PublicationVisibility = 'organization' | 'selected_workgroups'
+type PublicationNotificationChannel = 'in_app' | 'email' | 'webhook'
+type PublicationNotificationDeliveryStatus = 'queued' | 'skipped'
 type WorkgroupMemberTarget = {
   userId?: string
   email?: string
@@ -93,6 +101,18 @@ interface PublicationBroadcastParams {
   publishedWorkflowId: string | null
   visibility: PublicationVisibility
   targetWorkgroupIds?: string[]
+}
+
+export interface PublicationNotificationDeliveryResult {
+  channel: PublicationNotificationChannel
+  status: PublicationNotificationDeliveryStatus
+  title: string
+  detail: string
+  body: string
+  notificationCount: number
+  dangerCount: number
+  warningCount: number
+  publicationIds: string[]
 }
 
 function toSlug(name: string): string {
@@ -1991,6 +2011,71 @@ export async function listOrganizationPublications(params: {
     },
     publishedAt: row.publication.publishedAt.toISOString(),
   }))
+}
+
+export async function deliverOrganizationPublicationNotifications(params: {
+  userId: string
+  organizationId: string
+  channel: PublicationNotificationChannel
+  projectName?: string
+}): Promise<PublicationNotificationDeliveryResult> {
+  const publications = await listOrganizationPublications({
+    userId: params.userId,
+    organizationId: params.organizationId,
+  })
+  const groups = buildPublicationStateGroups(publications)
+  const dependencyAlerts = buildPublicationDependencyConflictAlerts(publications, groups)
+  const notifications = buildPublicationReviewNotifications(publications, groups, dependencyAlerts)
+  const [draft] = buildPublicationNotificationDeliveryDrafts(notifications, {
+    projectName: params.projectName,
+  }).filter((item) => item.channel === params.channel)
+
+  if (!draft) {
+    return {
+      channel: params.channel,
+      status: 'skipped',
+      title: 'Publication review digest',
+      detail: 'No publication review notifications require delivery.',
+      body: '',
+      notificationCount: 0,
+      dangerCount: 0,
+      warningCount: 0,
+      publicationIds: [],
+    }
+  }
+
+  const publicationIds = [
+    ...new Set(draft.payload.notifications.map((notification) => notification.publicationId)),
+  ]
+  recordAudit({
+    actorId: params.userId,
+    action: AuditAction.NOTIFICATION_CREATED,
+    resourceType: AuditResourceType.NOTIFICATION,
+    resourceId: draft.id,
+    resourceName: draft.title,
+    description: `Queued ${draft.title} for publication review notifications`,
+    metadata: {
+      organizationId: params.organizationId,
+      channel: draft.channel,
+      notificationEvent: draft.payload.event,
+      notificationCount: draft.payload.notificationCount,
+      dangerCount: draft.payload.dangerCount,
+      warningCount: draft.payload.warningCount,
+      publicationIds,
+    },
+  })
+
+  return {
+    channel: draft.channel,
+    status: 'queued',
+    title: draft.title,
+    detail: draft.detail,
+    body: draft.body,
+    notificationCount: draft.payload.notificationCount,
+    dangerCount: draft.payload.dangerCount,
+    warningCount: draft.payload.warningCount,
+    publicationIds,
+  }
 }
 
 export async function updatePublicationVisibility(params: {

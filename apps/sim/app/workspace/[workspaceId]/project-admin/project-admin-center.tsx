@@ -58,6 +58,7 @@ import {
   useArchiveWorkgroup,
   useBatchAddWorkgroupMembers,
   useCreateWorkgroup,
+  useDeliverPublicationNotifications,
   useDisciplines,
   useMyWorkgroups,
   useOrganizationAgentSkillPolicies,
@@ -119,6 +120,7 @@ const PROJECT_ACTIVITY_ACTION_OPTIONS = [
   { value: 'publication.archived', label: 'Archived publication' },
   { value: 'publication.retracted', label: 'Retracted publication' },
   { value: 'publication.restored', label: 'Restored publication' },
+  { value: 'notification.created', label: 'Notification delivery' },
   { value: 'skill.updated', label: 'Agent skill updated' },
   { value: 'workspace.created', label: 'Team canvas initialized' },
 ] as const
@@ -1121,6 +1123,8 @@ function formatActivityAction(action: string) {
       return 'Retracted publication'
     case 'publication.restored':
       return 'Restored publication'
+    case 'notification.created':
+      return 'Notification delivery'
     case 'skill.updated':
       return 'Agent skill updated'
     case 'workspace.created':
@@ -1179,6 +1183,7 @@ export function ProjectAdminCenter() {
   const updatePublicationReview = useUpdatePublicationReview()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const updatePublicationDetails = useUpdatePublicationDetails()
+  const deliverPublicationNotifications = useDeliverPublicationNotifications()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const addNotification = useNotificationStore((state) => state.addNotification)
@@ -2038,18 +2043,40 @@ export function ProjectAdminCenter() {
   const handlePublicationNotificationDelivery = async (
     draft: PublicationNotificationDeliveryDraft
   ) => {
-    if (draft.channel === 'in_app') {
-      addNotification({
-        level: draft.severity === 'danger' ? 'error' : 'info',
-        message: draft.body,
-      })
-      setPublicationGovernanceStatus('Queued publication review digest in the in-app bell.')
+    if (!organizationId) {
+      setPublicationGovernanceStatus('Select a project organization before delivery.')
       return
     }
 
     try {
-      await navigator.clipboard.writeText(draft.body)
-      setPublicationGovernanceStatus(`${draft.title} copied to clipboard.`)
+      const result = await deliverPublicationNotifications.mutateAsync({
+        organizationId,
+        channel: draft.channel,
+        projectName: activeWorkgroup?.name ?? workspaceId,
+      })
+      const { delivery } = result
+      if (delivery.status === 'skipped') {
+        setPublicationGovernanceStatus(delivery.detail)
+        return
+      }
+
+      if (delivery.channel === 'in_app') {
+        addNotification({
+          level: delivery.dangerCount > 0 ? 'error' : 'info',
+          message: delivery.body,
+        })
+        setPublicationGovernanceStatus(
+          `Recorded server-side digest delivery and queued ${delivery.notificationCount} publication review notification${delivery.notificationCount === 1 ? '' : 's'} in the in-app bell.`
+        )
+        resetActivityPage()
+        return
+      }
+
+      await navigator.clipboard.writeText(delivery.body)
+      setPublicationGovernanceStatus(
+        `Recorded server-side ${delivery.channel.replace('_', ' ')} delivery and copied ${delivery.title.toLowerCase()} to clipboard.`
+      )
+      resetActivityPage()
     } catch (error) {
       setPublicationGovernanceStatus(
         recordProjectAdminFailure('notification', draft.title, draft.channel, error)
@@ -2604,8 +2631,8 @@ export function ProjectAdminCenter() {
                           Delivery channels
                         </h4>
                         <p className='mt-1 max-w-[720px] text-[11px] text-[var(--text-muted)]'>
-                          Send a project-admin bell digest now, or copy email and webhook drafts for
-                          external delivery setup.
+                          Record server-side project-admin delivery, queue an in-app digest, or copy
+                          email and webhook payloads for external delivery setup.
                         </p>
                       </div>
                       <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
@@ -2640,9 +2667,12 @@ export function ProjectAdminCenter() {
                               buttonVariants({ size: 'sm', variant: 'default' }),
                               'mt-3'
                             )}
+                            disabled={deliverPublicationNotifications.isPending}
                             onClick={() => void handlePublicationNotificationDelivery(draft)}
                           >
-                            {draft.actionLabel}
+                            {deliverPublicationNotifications.isPending
+                              ? 'Delivering...'
+                              : draft.actionLabel}
                           </button>
                         </div>
                       ))}

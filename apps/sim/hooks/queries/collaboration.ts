@@ -12,6 +12,8 @@ import {
   createOrganizationWorkgroupContract,
   createPersonalWorkspaceContract,
   createTeamWorkspaceContract,
+  type DeliverPublicationNotificationsBody,
+  deliverOrganizationPublicationNotificationsContract,
   getCopilotAgentProfileContract,
   getPersonalWorkspaceContract,
   getPublicationContract,
@@ -623,6 +625,25 @@ export function useOrganizationPublications(organizationId?: string, filters?: P
     enabled: Boolean(organizationId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useDeliverPublicationNotifications() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & DeliverPublicationNotificationsBody) => {
+      const body: DeliverPublicationNotificationsBody = { channel: variables.channel }
+      if (variables.projectName) body.projectName = variables.projectName
+      return requestJson(deliverOrganizationPublicationNotificationsContract, {
+        params: { id: variables.organizationId },
+        body,
+      })
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+    },
   })
 }
 

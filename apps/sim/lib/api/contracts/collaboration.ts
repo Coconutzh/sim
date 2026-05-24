@@ -38,6 +38,8 @@ export const publicationReviewStateSchema = z.enum([
 export type PublicationReviewState = z.output<typeof publicationReviewStateSchema>
 export const publicationRiskLevelSchema = z.enum(['low', 'medium', 'high', 'critical'])
 export type PublicationRiskLevel = z.output<typeof publicationRiskLevelSchema>
+export const publicationNotificationChannelSchema = z.enum(['in_app', 'email', 'webhook'])
+export type PublicationNotificationChannel = z.output<typeof publicationNotificationChannelSchema>
 export const publicationReviewerSchema = z.object({
   userId: nonEmptyIdSchema,
   assignedBy: z.string().nullable(),
@@ -352,6 +354,27 @@ export const publicationReviewUpdateSchema = z.object({
   updatedAt: z.string(),
 })
 export type PublicationReviewUpdate = z.output<typeof publicationReviewUpdateSchema>
+
+export const deliverPublicationNotificationsBodySchema = z.object({
+  channel: publicationNotificationChannelSchema,
+  projectName: z.string().trim().min(1, 'projectName cannot be empty').max(120).optional(),
+})
+export type DeliverPublicationNotificationsBody = z.input<
+  typeof deliverPublicationNotificationsBodySchema
+>
+
+export const publicationNotificationDeliverySchema = z.object({
+  channel: publicationNotificationChannelSchema,
+  status: z.enum(['queued', 'skipped']),
+  title: z.string(),
+  detail: z.string(),
+  body: z.string(),
+  notificationCount: z.number().int().min(0),
+  dangerCount: z.number().int().min(0),
+  warningCount: z.number().int().min(0),
+  publicationIds: z.array(nonEmptyIdSchema),
+})
+export type PublicationNotificationDelivery = z.output<typeof publicationNotificationDeliverySchema>
 
 export const agentSkillBindingSchema = z.object({
   id: z.string().nullable(),
@@ -808,6 +831,19 @@ export const listOrganizationPublicationsContract = defineRouteContract({
     schema: z.object({
       publications: z.array(publicationSummarySchema),
       nextCursor: z.string().nullable(),
+    }),
+  },
+})
+
+export const deliverOrganizationPublicationNotificationsContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/organizations/[id]/publications/notifications',
+  params: organizationParamsSchema,
+  body: deliverPublicationNotificationsBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      delivery: publicationNotificationDeliverySchema,
     }),
   },
 })

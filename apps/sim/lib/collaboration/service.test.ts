@@ -216,12 +216,14 @@ vi.mock('@sim/audit', () => ({
     AGENT_TEMPLATE_UPDATED: 'agent_template.updated',
     SKILL_UPDATED: 'skill.updated',
     WORKSPACE_CREATED: 'workspace.created',
+    NOTIFICATION_CREATED: 'notification.created',
   },
   AuditResourceType: {
     ORGANIZATION: 'organization',
     PUBLICATION: 'publication',
     SKILL: 'skill',
     WORKSPACE: 'workspace',
+    NOTIFICATION: 'notification',
   },
   recordAudit: vi.fn(),
 }))
@@ -268,6 +270,7 @@ import {
   assertWorkgroupAdmin,
   createPersonalWorkspace,
   createTeamWorkspace,
+  deliverOrganizationPublicationNotifications,
   getNextPublicationVersionNumber,
   getOrCreatePersonalWorkspace,
   getPublication,
@@ -1220,6 +1223,72 @@ describe('collaboration service', () => {
         riskLevel: 'critical',
       },
     ])
+  })
+
+  it('records a server-side publication notification delivery audit', async () => {
+    const publishedAt = new Date('2026-05-24T00:00:00Z')
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          publication: {
+            id: 'publication-review-1',
+            title: 'Lighting current',
+            description: null,
+            sourceWorkgroupId: 'workgroup-lighting',
+            sourceDisciplineId: 'discipline-lighting',
+            agentCode: 'lighting_sound',
+            versionNumber: 3,
+            parentVersionId: null,
+            publishedWorkflowId: null,
+            status: 'published',
+            visibility: 'organization',
+            reviewState: 'pending',
+            riskLevel: 'critical',
+            reviewerUserId: null,
+            reviewerAssignedBy: null,
+            reviewerAssignedAt: null,
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+      ]
+    )
+
+    await expect(
+      deliverOrganizationPublicationNotifications({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        channel: 'email',
+        projectName: 'Opening Night',
+      })
+    ).resolves.toMatchObject({
+      channel: 'email',
+      status: 'queued',
+      notificationCount: 2,
+      dangerCount: 2,
+      publicationIds: ['publication-review-1'],
+    })
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'org-admin-1',
+        action: 'notification.created',
+        resourceType: 'notification',
+        resourceId: 'publication-review-email-digest',
+        metadata: expect.objectContaining({
+          organizationId: 'org-1',
+          channel: 'email',
+          notificationEvent: 'publication.review_notifications.digest',
+          notificationCount: 2,
+        }),
+      })
+    )
   })
 
   it('updates publication visibility and filters target workgroups to the same organization', async () => {
