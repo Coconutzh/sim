@@ -69,6 +69,7 @@ import {
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
   usePublication,
+  usePublicationNotificationInbox,
   usePublicationTree,
   useRecordProjectAdminFailureAudit,
   useUpdateOrganizationAgentSkillPolicy,
@@ -82,6 +83,7 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useNotificationStore } from '@/stores/notifications'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
+const PUBLICATION_NOTIFICATION_INBOX_QUERY = { limit: 5 } as const
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
@@ -1432,6 +1434,14 @@ export function ProjectAdminCenter() {
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
   )
+  const {
+    data: publicationNotificationInboxData,
+    isLoading: isLoadingPublicationNotificationInbox,
+  } = usePublicationNotificationInbox(
+    isProjectAdmin ? organizationId : undefined,
+    PUBLICATION_NOTIFICATION_INBOX_QUERY
+  )
+  const publicationNotificationInbox = publicationNotificationInboxData?.inbox ?? []
   const {
     data: organizationRetention,
     error: organizationRetentionError,
@@ -2967,6 +2977,64 @@ export function ProjectAdminCenter() {
                 )}
               </div>
             )}
+            <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+              <div className='flex flex-wrap items-start justify-between gap-3'>
+                <div>
+                  <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                    Persistent notification inbox
+                  </h3>
+                  <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
+                    Server-backed publication review notification deliveries that remain visible
+                    across project admin sessions.
+                  </p>
+                </div>
+                <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                  {isLoadingPublicationNotificationInbox
+                    ? 'Loading'
+                    : `${publicationNotificationInbox.length} recent`}
+                </span>
+              </div>
+              {publicationNotificationInbox.length > 0 ? (
+                <div className='mt-3 grid gap-2'>
+                  {publicationNotificationInbox.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+                    >
+                      <div className='flex flex-wrap items-center justify-between gap-2'>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                            {entry.title}
+                          </span>
+                          <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
+                            {entry.channel.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <span className='text-[11px] text-[var(--text-muted)]'>
+                          {formatDateTime(entry.createdAt)}
+                        </span>
+                      </div>
+                      <p className='mt-2 text-[11px] text-[var(--text-muted)]'>{entry.detail}</p>
+                      <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                        <span>{entry.notificationCount} notifications</span>
+                        <span>{entry.dangerCount} danger</span>
+                        <span>{entry.warningCount} warning</span>
+                        <span>{entry.publicationIds.length} publications</span>
+                        <span>
+                          Queued by {entry.actorName || entry.actorEmail || 'unknown admin'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className='mt-3 text-[12px] text-[var(--text-muted)]'>
+                  {isLoadingPublicationNotificationInbox
+                    ? 'Loading persistent notification deliveries...'
+                    : 'No persistent publication notification deliveries have been queued yet.'}
+                </p>
+              )}
+            </div>
             {publicationDependencyConflictAlerts.length > 0 && (
               <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
                 <div className='flex flex-wrap items-start justify-between gap-3'>

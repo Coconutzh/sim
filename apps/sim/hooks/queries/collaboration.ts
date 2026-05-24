@@ -25,6 +25,7 @@ import {
   listMyWorkgroupsContract,
   listOrganizationAgentSkillPoliciesContract,
   listOrganizationAgentTemplatesContract,
+  listOrganizationPublicationNotificationInboxContract,
   listOrganizationPublicationsContract,
   listOrganizationWorkgroupActivityContract,
   listOrganizationWorkgroupsContract,
@@ -32,6 +33,7 @@ import {
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
   type ProjectAdminFailureScope,
+  type PublicationNotificationInboxQuery,
   type PublicationSummary,
   type RecordProjectAdminFailureBody,
   recordProjectAdminFailureContract,
@@ -78,6 +80,16 @@ export const collaborationKeys = {
       ...collaborationKeys.organizationPublicationLists(),
       organizationId ?? '',
       filters ?? {},
+    ] as const,
+  organizationPublicationNotificationInbox: (
+    organizationId?: string,
+    query?: PublicationNotificationInboxQuery
+  ) =>
+    [
+      ...collaborationKeys.organizationPublicationLists(),
+      organizationId ?? '',
+      'notification-inbox',
+      query ?? {},
     ] as const,
   workgroups: () => [...collaborationKeys.all, 'workgroups'] as const,
   workgroupLists: () => [...collaborationKeys.workgroups(), 'list'] as const,
@@ -632,6 +644,24 @@ export function useOrganizationPublications(organizationId?: string, filters?: P
   })
 }
 
+export function usePublicationNotificationInbox(
+  organizationId?: string,
+  query: PublicationNotificationInboxQuery = {}
+) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationPublicationNotificationInbox(organizationId, query),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationPublicationNotificationInboxContract, {
+        params: { id: organizationId as string },
+        query,
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useDeliverPublicationNotifications() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -647,6 +677,11 @@ export function useDeliverPublicationNotifications() {
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationPublicationNotificationInbox(
+          variables.organizationId
+        ),
       })
     },
   })

@@ -284,6 +284,7 @@ import {
   getTeamWorkspace,
   listOrganizationAgentSkillPolicies,
   listOrganizationAgentTemplates,
+  listOrganizationPublicationNotificationInbox,
   listOrganizationPublications,
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
@@ -1338,6 +1339,64 @@ describe('collaboration service', () => {
         }),
       })
     )
+  })
+
+  it('lists persistent publication notification inbox deliveries', async () => {
+    const createdAt = new Date('2026-05-25T08:30:00Z')
+    mockResultsQueue.push(
+      [{ role: 'admin' }],
+      [
+        {
+          id: 'audit-notification-1',
+          resourceId: 'outbox-event-1',
+          resourceName: 'In-app bell digest',
+          description: 'Queued In-app bell digest for publication review notifications',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            channel: 'in_app',
+            notificationEvent: 'publication.review_notifications.digest',
+            title: 'In-app bell digest',
+            detail: 'Queue a local in-app digest for the project admin session.',
+            body: '2 publication review notifications need attention.',
+            notificationCount: 2,
+            dangerCount: 1,
+            warningCount: 1,
+            publicationIds: ['publication-1', 'publication-2'],
+            outboxEventId: 'outbox-event-1',
+          },
+        },
+      ]
+    )
+
+    await expect(
+      listOrganizationPublicationNotificationInbox({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        limit: 5,
+      })
+    ).resolves.toEqual({
+      inbox: [
+        {
+          id: 'audit-notification-1',
+          channel: 'in_app',
+          title: 'In-app bell digest',
+          detail: 'Queue a local in-app digest for the project admin session.',
+          body: '2 publication review notifications need attention.',
+          notificationCount: 2,
+          dangerCount: 1,
+          warningCount: 1,
+          publicationIds: ['publication-1', 'publication-2'],
+          outboxEventId: 'outbox-event-1',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt: createdAt.toISOString(),
+        },
+      ],
+      nextOffset: null,
+    })
   })
 
   it('records project admin failures as persistent organization audit entries', async () => {

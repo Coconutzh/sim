@@ -403,6 +403,33 @@ export const publicationNotificationDeliverySchema = z.object({
 })
 export type PublicationNotificationDelivery = z.output<typeof publicationNotificationDeliverySchema>
 
+export const publicationNotificationInboxQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
+})
+export type PublicationNotificationInboxQuery = z.output<
+  typeof publicationNotificationInboxQuerySchema
+>
+
+export const publicationNotificationInboxEntrySchema = z.object({
+  id: nonEmptyIdSchema,
+  channel: publicationNotificationChannelSchema,
+  title: z.string(),
+  detail: z.string(),
+  body: z.string(),
+  notificationCount: z.number().int().min(0),
+  dangerCount: z.number().int().min(0),
+  warningCount: z.number().int().min(0),
+  publicationIds: z.array(nonEmptyIdSchema),
+  outboxEventId: nonEmptyIdSchema.nullable(),
+  actorName: z.string().nullable(),
+  actorEmail: z.string().nullable(),
+  createdAt: z.string(),
+})
+export type PublicationNotificationInboxEntry = z.output<
+  typeof publicationNotificationInboxEntrySchema
+>
+
 export const recordProjectAdminFailureBodySchema = z.object({
   scope: projectAdminFailureScopeSchema,
   operation: z.string().trim().min(1, 'operation cannot be empty').max(160),
@@ -903,6 +930,20 @@ export const deliverOrganizationPublicationNotificationsContract = defineRouteCo
     mode: 'json',
     schema: z.object({
       delivery: publicationNotificationDeliverySchema,
+    }),
+  },
+})
+
+export const listOrganizationPublicationNotificationInboxContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/publications/notifications/inbox',
+  params: organizationParamsSchema,
+  query: publicationNotificationInboxQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      inbox: z.array(publicationNotificationInboxEntrySchema),
+      nextOffset: z.number().nullable(),
     }),
   },
 })

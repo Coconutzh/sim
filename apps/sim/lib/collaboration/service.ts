@@ -117,6 +117,22 @@ export interface PublicationNotificationDeliveryResult {
   outboxEventId: string | null
 }
 
+export interface PublicationNotificationInboxEntry {
+  id: string
+  channel: PublicationNotificationChannel
+  title: string
+  detail: string
+  body: string
+  notificationCount: number
+  dangerCount: number
+  warningCount: number
+  publicationIds: string[]
+  outboxEventId: string | null
+  actorName: string | null
+  actorEmail: string | null
+  createdAt: string
+}
+
 export interface ProjectAdminFailureAuditResult {
   id: string
   scope: ProjectAdminFailureScope
@@ -1450,6 +1466,45 @@ function getProjectAdminFailureMetadata(metadata: unknown) {
   }
 }
 
+function isPublicationNotificationChannel(value: unknown): value is PublicationNotificationChannel {
+  return value === 'in_app' || value === 'email' || value === 'webhook'
+}
+
+function getMetadataString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key]
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function getMetadataNumber(record: Record<string, unknown>, key: string): number {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function getMetadataStringArray(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key]
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+}
+
+function getPublicationNotificationInboxMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object') return null
+  const record = metadata as Record<string, unknown>
+  if (record.notificationEvent !== 'publication.review_notifications.digest') return null
+  if (!isPublicationNotificationChannel(record.channel)) return null
+
+  return {
+    channel: record.channel,
+    title: getMetadataString(record, 'title'),
+    detail: getMetadataString(record, 'detail'),
+    body: getMetadataString(record, 'body'),
+    notificationCount: getMetadataNumber(record, 'notificationCount'),
+    dangerCount: getMetadataNumber(record, 'dangerCount'),
+    warningCount: getMetadataNumber(record, 'warningCount'),
+    publicationIds: getMetadataStringArray(record, 'publicationIds'),
+    outboxEventId: getMetadataString(record, 'outboxEventId'),
+  }
+}
+
 export async function listOrganizationWorkgroupActivity(params: {
   userId: string
   organizationId: string
@@ -2062,6 +2117,69 @@ export async function listOrganizationPublications(params: {
   }))
 }
 
+export async function listOrganizationPublicationNotificationInbox(params: {
+  userId: string
+  organizationId: string
+  limit?: number
+  offset?: number
+}): Promise<{ inbox: PublicationNotificationInboxEntry[]; nextOffset: number | null }> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const pageSize = params.limit ?? 10
+  const offset = params.offset ?? 0
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      resourceId: auditLog.resourceId,
+      resourceName: auditLog.resourceName,
+      description: auditLog.description,
+      actorName: auditLog.actorName,
+      actorEmail: auditLog.actorEmail,
+      metadata: auditLog.metadata,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.action, AuditAction.NOTIFICATION_CREATED),
+        sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
+        sql`${auditLog.metadata}->>'notificationEvent' = ${'publication.review_notifications.digest'}`
+      )
+    )
+    .orderBy(desc(auditLog.createdAt))
+    .limit(pageSize + 1)
+    .offset(offset)
+
+  const pageRows = rows.slice(0, pageSize)
+  const inbox = pageRows.flatMap((row): PublicationNotificationInboxEntry[] => {
+    const metadata = getPublicationNotificationInboxMetadata(row.metadata)
+    if (!metadata) return []
+
+    return [
+      {
+        id: row.id,
+        channel: metadata.channel,
+        title: metadata.title ?? row.resourceName ?? 'Publication review digest',
+        detail: metadata.detail ?? row.description ?? '',
+        body: metadata.body ?? '',
+        notificationCount: metadata.notificationCount,
+        dangerCount: metadata.dangerCount,
+        warningCount: metadata.warningCount,
+        publicationIds: metadata.publicationIds,
+        outboxEventId: metadata.outboxEventId ?? row.resourceId,
+        actorName: row.actorName,
+        actorEmail: row.actorEmail,
+        createdAt: row.createdAt.toISOString(),
+      },
+    ]
+  })
+
+  return {
+    inbox,
+    nextOffset: rows.length > pageSize ? offset + pageSize : null,
+  }
+}
+
 export async function deliverOrganizationPublicationNotifications(params: {
   userId: string
   organizationId: string
@@ -2135,6 +2253,9 @@ export async function deliverOrganizationPublicationNotifications(params: {
       deliveryDraftId: draft.id,
       outboxEventId,
       notificationEvent: draft.payload.event,
+      title: draft.title,
+      detail: draft.detail,
+      body: draft.body,
       notificationCount: draft.payload.notificationCount,
       dangerCount: draft.payload.dangerCount,
       warningCount: draft.payload.warningCount,
