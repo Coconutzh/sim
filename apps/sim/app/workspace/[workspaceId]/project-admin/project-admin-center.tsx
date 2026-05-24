@@ -894,6 +894,49 @@ function buildAgentPolicyImpact(params: {
   }
 }
 
+function getAgentSkillPolicyCopyTargets(
+  sourcePolicy: OrganizationAgentSkillPolicy,
+  policies: OrganizationAgentSkillPolicy[]
+) {
+  const sourceName = sourcePolicy.name.trim().toLowerCase()
+  return policies.filter(
+    (policy) =>
+      policy.agentCode === sourcePolicy.agentCode &&
+      policy.skillId !== sourcePolicy.skillId &&
+      policy.name.trim().toLowerCase() === sourceName &&
+      policy.enabled !== sourcePolicy.enabled
+  )
+}
+
+function buildAgentSkillPolicyCopyGroups(policies: OrganizationAgentSkillPolicy[]) {
+  const groups = new Map<
+    string,
+    { name: string; total: number; enabled: number; disabled: number; teams: string[] }
+  >()
+  for (const policy of policies) {
+    const key = `${policy.agentCode}:${policy.name.trim().toLowerCase()}`
+    const group = groups.get(key) ?? {
+      name: policy.name,
+      total: 0,
+      enabled: 0,
+      disabled: 0,
+      teams: [],
+    }
+    group.total += 1
+    if (policy.enabled) {
+      group.enabled += 1
+    } else {
+      group.disabled += 1
+    }
+    group.teams.push(policy.sourceWorkgroup.name)
+    groups.set(key, group)
+  }
+
+  return Array.from(groups.values())
+    .filter((group) => group.total > 1)
+    .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name))
+}
+
 function parseBatchAssignmentTargets(value: string) {
   const seen = new Set<string>()
   return value
@@ -1335,6 +1378,10 @@ export function ProjectAdminCenter() {
       selectedAgentTemplateDraft,
     ]
   )
+  const agentSkillPolicyCopyGroups = useMemo(
+    () => buildAgentSkillPolicyCopyGroups(agentSkillPolicies),
+    [agentSkillPolicies]
+  )
   const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
@@ -1511,6 +1558,34 @@ export function ProjectAdminCenter() {
         `${enabled ? 'Enabled' : 'Disabled'} ${result.policy.name} by default for ${
           selectedAgentTemplate?.name ?? formatAgentCode(policy.agentCode)
         }.`
+      )
+    } catch (error) {
+      setAgentSkillPolicyStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleCopyAgentSkillPolicyAcrossTeams = async (policy: OrganizationAgentSkillPolicy) => {
+    if (!organizationId) return
+    const targets = getAgentSkillPolicyCopyTargets(policy, agentSkillPolicies)
+    if (targets.length === 0) {
+      setAgentSkillPolicyStatus(
+        `No matching ${policy.name} defaults need to be ${policy.enabled ? 'enabled' : 'disabled'}.`
+      )
+      return
+    }
+
+    setAgentSkillPolicyStatus(null)
+    try {
+      for (const target of targets) {
+        await updateAgentSkillPolicy.mutateAsync({
+          organizationId,
+          agentCode: target.agentCode,
+          skillId: target.skillId,
+          enabled: policy.enabled,
+        })
+      }
+      setAgentSkillPolicyStatus(
+        `Copied ${policy.enabled ? 'enabled' : 'disabled'} default for ${policy.name} to ${targets.length} matching team canvas${targets.length === 1 ? '' : 'es'}.`
       )
     } catch (error) {
       setAgentSkillPolicyStatus(readErrorMessage(error))
@@ -2851,6 +2926,43 @@ export function ProjectAdminCenter() {
                 {agentSkillPolicyStatus}
               </div>
             )}
+            {agentSkillPolicyCopyGroups.length > 0 && (
+              <div className='mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                      Cross-team copy candidates
+                    </div>
+                    <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                      Repeated skill names can be copied across matching team canvases from any row
+                      below. Only teams whose default differs are updated.
+                    </p>
+                  </div>
+                  <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                    {agentSkillPolicyCopyGroups.length} grouped skills
+                  </span>
+                </div>
+                <div className='mt-2 grid gap-2 md:grid-cols-2'>
+                  {agentSkillPolicyCopyGroups.slice(0, 4).map((group) => (
+                    <div
+                      key={group.name}
+                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2'
+                    >
+                      <div className='truncate font-medium text-[12px] text-[var(--text-primary)]'>
+                        {group.name}
+                      </div>
+                      <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        {group.enabled} enabled / {group.disabled} disabled across {group.total}{' '}
+                        team canvas skills.
+                      </div>
+                      <div className='mt-1 line-clamp-1 text-[11px] text-[var(--text-muted)]'>
+                        {group.teams.join(', ')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className='mt-3 grid gap-2'>
               {isLoadingAgentSkillPolicies ? (
                 <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
@@ -2865,37 +2977,51 @@ export function ProjectAdminCenter() {
                 agentSkillPolicies.map((policy) => (
                   <div
                     key={`${policy.sourceWorkgroup.id}:${policy.skillId}`}
-                    className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'
+                    className='grid gap-2'
                   >
-                    <div className='min-w-0'>
-                      <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
-                        {policy.name}
+                    <div className='grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_auto]'>
+                      <div className='min-w-0'>
+                        <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                          {policy.name}
+                        </div>
+                        <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                          {policy.description || 'No description provided.'}
+                        </div>
+                        <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
+                          <span>{policy.sourceWorkgroup.name}</span>
+                          <span>{policy.enabled ? 'Default enabled' : 'Default disabled'}</span>
+                        </div>
                       </div>
-                      <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
-                        {policy.description || 'No description provided.'}
+                      <div className='flex flex-wrap items-center gap-2 md:justify-end'>
+                        <button
+                          type='button'
+                          className={buttonVariants({ size: 'sm', variant: 'default' })}
+                          disabled={!policy.enabled || updateAgentSkillPolicy.isPending}
+                          onClick={() => void handleUpdateAgentSkillPolicy(policy, false)}
+                        >
+                          Disable default
+                        </button>
+                        <button
+                          type='button'
+                          className={buttonVariants({ size: 'sm', variant: 'default' })}
+                          disabled={policy.enabled || updateAgentSkillPolicy.isPending}
+                          onClick={() => void handleUpdateAgentSkillPolicy(policy, true)}
+                        >
+                          Enable default
+                        </button>
+                        <button
+                          type='button'
+                          className={buttonVariants({ size: 'sm', variant: 'secondary' })}
+                          disabled={
+                            getAgentSkillPolicyCopyTargets(policy, agentSkillPolicies).length ===
+                              0 || updateAgentSkillPolicy.isPending
+                          }
+                          onClick={() => void handleCopyAgentSkillPolicyAcrossTeams(policy)}
+                        >
+                          Copy to matches (
+                          {getAgentSkillPolicyCopyTargets(policy, agentSkillPolicies).length})
+                        </button>
                       </div>
-                      <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>
-                        <span>{policy.sourceWorkgroup.name}</span>
-                        <span>{policy.enabled ? 'Default enabled' : 'Default disabled'}</span>
-                      </div>
-                    </div>
-                    <div className='flex items-center gap-2 md:justify-end'>
-                      <button
-                        type='button'
-                        className={buttonVariants({ size: 'sm', variant: 'default' })}
-                        disabled={!policy.enabled || updateAgentSkillPolicy.isPending}
-                        onClick={() => void handleUpdateAgentSkillPolicy(policy, false)}
-                      >
-                        Disable default
-                      </button>
-                      <button
-                        type='button'
-                        className={buttonVariants({ size: 'sm', variant: 'default' })}
-                        disabled={policy.enabled || updateAgentSkillPolicy.isPending}
-                        onClick={() => void handleUpdateAgentSkillPolicy(policy, true)}
-                      >
-                        Enable default
-                      </button>
                     </div>
                   </div>
                 ))
