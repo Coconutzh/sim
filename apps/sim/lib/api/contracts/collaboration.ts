@@ -303,6 +303,22 @@ export const workgroupActivityQuerySchema = z.object({
 })
 export type WorkgroupActivityQuery = z.output<typeof workgroupActivityQuerySchema>
 
+const optionalTrimmedQuerySchema = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined)
+
+export const organizationWorkgroupActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  workgroupId: optionalTrimmedQuerySchema,
+  disciplineId: optionalTrimmedQuerySchema,
+  action: optionalTrimmedQuerySchema,
+  search: optionalTrimmedQuerySchema,
+})
+export type OrganizationWorkgroupActivityQuery = z.output<
+  typeof organizationWorkgroupActivityQuerySchema
+>
+
 export const workgroupActivityEntrySchema = z.object({
   id: z.string(),
   action: z.string(),
@@ -315,6 +331,15 @@ export const workgroupActivityEntrySchema = z.object({
   createdAt: z.string(),
 })
 export type WorkgroupActivityEntry = z.output<typeof workgroupActivityEntrySchema>
+
+export const organizationWorkgroupActivityEntrySchema = workgroupActivityEntrySchema.extend({
+  workgroupId: z.string().nullable(),
+  workgroupName: z.string().nullable(),
+  disciplineName: z.string().nullable(),
+})
+export type OrganizationWorkgroupActivityEntry = z.output<
+  typeof organizationWorkgroupActivityEntrySchema
+>
 
 export const copySelectionBodySchema = z.object({
   source: z.object({
@@ -563,6 +588,17 @@ export const listShowcasePublicationsContract = defineRouteContract({
       publications: z.array(publicationSummarySchema),
       nextCursor: z.string().nullable(),
     }),
+  },
+})
+
+export const listOrganizationWorkgroupActivityContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/workgroups/activity',
+  params: organizationParamsSchema,
+  query: organizationWorkgroupActivityQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ activity: z.array(organizationWorkgroupActivityEntrySchema) }),
   },
 })
 

@@ -20,7 +20,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { and, asc, desc, eq, inArray, isNull, max, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, or, sql } from 'drizzle-orm'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
   AGENT_PROFILES,
@@ -901,6 +901,132 @@ export async function listWorkgroupActivity(params: {
     ...row,
     createdAt: row.createdAt.toISOString(),
   }))
+}
+
+function getAuditMetadataValue(metadata: unknown, keys: string[]) {
+  if (!metadata || typeof metadata !== 'object') return null
+  const record = metadata as Record<string, unknown>
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+export async function listOrganizationWorkgroupActivity(params: {
+  userId: string
+  organizationId: string
+  workgroupId?: string
+  disciplineId?: string
+  action?: string
+  search?: string
+  limit?: number
+}) {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+  const orgWorkgroups = await db
+    .select({
+      id: workgroup.id,
+      name: workgroup.name,
+      disciplineId: workgroup.disciplineId,
+      disciplineName: discipline.name,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroup)
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(eq(workgroup.organizationId, params.organizationId))
+
+  let scopedWorkgroups = orgWorkgroups
+  if (params.workgroupId) {
+    scopedWorkgroups = scopedWorkgroups.filter((entry) => entry.id === params.workgroupId)
+    if (scopedWorkgroups.length === 0) throw new Error('Workgroup not found')
+  } else if (params.disciplineId) {
+    scopedWorkgroups = scopedWorkgroups.filter(
+      (entry) => entry.disciplineId === params.disciplineId
+    )
+  }
+  if (scopedWorkgroups.length === 0) return []
+
+  const workgroupIds = scopedWorkgroups.map((entry) => entry.id)
+  const workspaceIds = scopedWorkgroups
+    .map((entry) => entry.teamWorkspaceId)
+    .filter((workspaceId): workspaceId is string => Boolean(workspaceId))
+  const scopeConditions = [
+    ...workgroupIds.map(
+      (workgroupId) => sql`${auditLog.metadata}->>'workgroupId' = ${workgroupId}`
+    ),
+    ...workgroupIds.map(
+      (workgroupId) => sql`${auditLog.metadata}->>'sourceWorkgroupId' = ${workgroupId}`
+    ),
+  ]
+  if (workspaceIds.length > 0) {
+    scopeConditions.push(inArray(auditLog.workspaceId, workspaceIds))
+  }
+
+  const filters = [or(...scopeConditions)!]
+  if (params.action) filters.push(eq(auditLog.action, params.action))
+  if (params.search) {
+    const escapedSearch = params.search.replace(/[%_\\]/g, '\\$&')
+    const searchTerm = `%${escapedSearch}%`
+    filters.push(
+      or(
+        ilike(auditLog.action, searchTerm),
+        ilike(auditLog.actorEmail, searchTerm),
+        ilike(auditLog.actorName, searchTerm),
+        ilike(auditLog.resourceName, searchTerm),
+        ilike(auditLog.description, searchTerm)
+      )!
+    )
+  }
+
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      workspaceId: auditLog.workspaceId,
+      action: auditLog.action,
+      resourceType: auditLog.resourceType,
+      resourceId: auditLog.resourceId,
+      resourceName: auditLog.resourceName,
+      description: auditLog.description,
+      actorName: auditLog.actorName,
+      actorEmail: auditLog.actorEmail,
+      metadata: auditLog.metadata,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .where(and(...filters))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(params.limit ?? 20)
+
+  const workgroupById = new Map(scopedWorkgroups.map((entry) => [entry.id, entry]))
+  const workgroupByWorkspaceId = new Map(
+    scopedWorkgroups
+      .filter((entry) => entry.teamWorkspaceId)
+      .map((entry) => [entry.teamWorkspaceId as string, entry])
+  )
+
+  return rows.map((row) => {
+    const metadataWorkgroupId = getAuditMetadataValue(row.metadata, [
+      'workgroupId',
+      'sourceWorkgroupId',
+    ])
+    const rowWorkgroup =
+      (metadataWorkgroupId ? workgroupById.get(metadataWorkgroupId) : undefined) ??
+      (row.workspaceId ? workgroupByWorkspaceId.get(row.workspaceId) : undefined)
+    return {
+      id: row.id,
+      action: row.action,
+      resourceType: row.resourceType,
+      resourceId: row.resourceId,
+      resourceName: row.resourceName,
+      description: row.description,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      workgroupId: rowWorkgroup?.id ?? null,
+      workgroupName: rowWorkgroup?.name ?? null,
+      disciplineName: rowWorkgroup?.disciplineName ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }
+  })
 }
 
 export async function getNextPublicationVersionNumber(sourceWorkflowId: string): Promise<number> {

@@ -27,9 +27,9 @@ import {
   useCreateWorkgroup,
   useDisciplines,
   useMyWorkgroups,
+  useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
   useShowcasePublications,
-  useWorkgroupActivity,
 } from '@/hooks/queries/collaboration'
 import { useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
@@ -48,6 +48,19 @@ const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'team',
   'workgroup',
 ])
+const PROJECT_ACTIVITY_ACTION_OPTIONS = [
+  { value: '', label: 'All actions' },
+  { value: 'member.invited', label: 'Member added' },
+  { value: 'member.role_changed', label: 'Role updated' },
+  { value: 'member.removed', label: 'Member removed' },
+  { value: 'publication.created', label: 'Published showcase' },
+  { value: 'publication.updated', label: 'Updated publication' },
+  { value: 'publication.archived', label: 'Archived publication' },
+  { value: 'publication.retracted', label: 'Retracted publication' },
+  { value: 'publication.restored', label: 'Restored publication' },
+  { value: 'skill.updated', label: 'Agent skill updated' },
+  { value: 'workspace.created', label: 'Team canvas initialized' },
+] as const
 
 interface BatchAssignmentResult {
   target: string
@@ -242,6 +255,9 @@ export function ProjectAdminCenter() {
   const [batchAssignmentResults, setBatchAssignmentResults] = useState<BatchAssignmentResult[]>([])
   const [batchImportStatus, setBatchImportStatus] = useState<string | null>(null)
   const [activityTeamId, setActivityTeamId] = useState('')
+  const [activityDisciplineId, setActivityDisciplineId] = useState('')
+  const [activityAction, setActivityAction] = useState('')
+  const [activitySearch, setActivitySearch] = useState('')
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -303,7 +319,6 @@ export function ProjectAdminCenter() {
   const selectedAssignmentTeam = organizationWorkgroups.find(
     (team) => team.id === selectedAssignmentTeamId
   )
-  const selectedActivityTeamId = activityTeamId || organizationWorkgroups[0]?.id || ''
   const selectedRosterMember = rosterMembers.find(
     (member) => member.userId === selectedRosterUserId
   )
@@ -341,9 +356,19 @@ export function ProjectAdminCenter() {
       batchAssignmentTargets.length > 0 &&
       !addWorkgroupMember.isPending
   )
-  const { data: activityData, isLoading: isLoadingActivity } = useWorkgroupActivity(
-    isProjectAdmin ? selectedActivityTeamId : undefined,
-    8
+  const activityFilters = useMemo(
+    () => ({
+      limit: 12,
+      workgroupId: activityTeamId || undefined,
+      disciplineId: activityTeamId ? undefined : activityDisciplineId || undefined,
+      action: activityAction || undefined,
+      search: activitySearch.trim() || undefined,
+    }),
+    [activityAction, activityDisciplineId, activitySearch, activityTeamId]
+  )
+  const { data: activityData, isLoading: isLoadingActivity } = useOrganizationWorkgroupActivity(
+    isProjectAdmin ? organizationId : undefined,
+    activityFilters
   )
   const projectActivity = activityData?.activity ?? []
 
@@ -1006,42 +1031,72 @@ export function ProjectAdminCenter() {
             </div>
 
             <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
-              <div className='flex items-center justify-between gap-3 border-[var(--border)] border-b px-4 py-3'>
+              <div className='grid gap-3 border-[var(--border)] border-b px-4 py-3'>
                 <div className='flex items-center gap-2'>
                   <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
                   <div>
                     <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                      Project activity drilldown
+                      Project activity filters
                     </h2>
                     <p className='text-[12px] text-[var(--text-muted)]'>
-                      Inspect recent audit-backed activity for any team.
+                      Filter audit-backed activity by team, discipline, action, or actor/resource
+                      text.
                     </p>
                   </div>
                 </div>
-                <select
-                  value={selectedActivityTeamId}
-                  onChange={(event) => setActivityTeamId(event.target.value)}
-                  className='h-[32px] max-w-[180px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
-                >
-                  {organizationWorkgroups.length === 0 ? (
-                    <option value=''>No team</option>
-                  ) : (
-                    organizationWorkgroups.map((team) => (
+                <div className='grid gap-2 md:grid-cols-2'>
+                  <select
+                    value={activityTeamId}
+                    onChange={(event) => setActivityTeamId(event.target.value)}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                  >
+                    <option value=''>All teams</option>
+                    {organizationWorkgroups.map((team) => (
                       <option key={team.id} value={team.id}>
                         {team.name}
                       </option>
-                    ))
-                  )}
-                </select>
+                    ))}
+                  </select>
+                  <select
+                    value={activityDisciplineId}
+                    onChange={(event) => setActivityDisciplineId(event.target.value)}
+                    disabled={Boolean(activityTeamId)}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none disabled:opacity-60'
+                  >
+                    <option value=''>All disciplines</option>
+                    {disciplines.map((discipline) => (
+                      <option key={discipline.id} value={discipline.id}>
+                        {discipline.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={activityAction}
+                    onChange={(event) => setActivityAction(event.target.value)}
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                  >
+                    {PROJECT_ACTIVITY_ACTION_OPTIONS.map((option) => (
+                      <option key={option.value || 'all'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={activitySearch}
+                    onChange={(event) => setActivitySearch(event.target.value)}
+                    placeholder='Search actor, action, resource...'
+                    className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                  />
+                </div>
               </div>
               <div className='divide-y divide-[var(--border)]'>
                 {isLoadingActivity ? (
                   <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                     <Loader className='h-[14px] w-[14px]' animate />
-                    Loading team activity...
+                    Loading project activity...
                   </div>
                 ) : projectActivity.length === 0 ? (
-                  <EmptyState>No activity has been recorded for this team yet.</EmptyState>
+                  <EmptyState>No activity matches the current project filters.</EmptyState>
                 ) : (
                   projectActivity.map((entry) => (
                     <div key={entry.id} className='grid gap-2 px-4 py-3'>
@@ -1052,6 +1107,10 @@ export function ProjectAdminCenter() {
                         <span className='shrink-0 text-[11px] text-[var(--text-muted)]'>
                           {formatDateTime(entry.createdAt)}
                         </span>
+                      </div>
+                      <div className='truncate text-[11px] text-[var(--text-muted)]'>
+                        {entry.workgroupName ?? 'Project'}{' '}
+                        {entry.disciplineName ? `/ ${entry.disciplineName}` : ''}
                       </div>
                       <div className='truncate text-[12px] text-[var(--text-muted)]'>
                         {entry.resourceName ? `${entry.resourceName} / ` : ''}

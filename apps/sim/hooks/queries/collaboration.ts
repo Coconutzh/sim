@@ -18,6 +18,7 @@ import {
   listAgentProfilesContract,
   listDisciplinesContract,
   listMyWorkgroupsContract,
+  listOrganizationWorkgroupActivityContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
   listWorkgroupActivityContract,
@@ -54,6 +55,12 @@ export const collaborationKeys = {
     [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
   activity: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'activity'] as const,
+  organizationActivity: (organizationId?: string, filters?: OrganizationWorkgroupActivityFilters) =>
+    [
+      ...collaborationKeys.organizationWorkgroups(organizationId),
+      'activity',
+      filters ?? {},
+    ] as const,
   agentSkills: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'agent-skills'] as const,
   personalWorkspace: (workgroupId?: string) =>
@@ -99,6 +106,14 @@ export interface PublicationFilters {
     | 'production'
   limit?: number
   status?: 'draft' | 'published' | 'superseded' | 'archived' | 'retracted'
+}
+
+export interface OrganizationWorkgroupActivityFilters {
+  workgroupId?: string
+  disciplineId?: string
+  action?: string
+  search?: string
+  limit?: number
 }
 
 export function useDisciplines() {
@@ -195,6 +210,24 @@ export function useWorkgroupActivity(workgroupId?: string, limit = 10) {
   })
 }
 
+export function useOrganizationWorkgroupActivity(
+  organizationId?: string,
+  filters: OrganizationWorkgroupActivityFilters = {}
+) {
+  return useQuery({
+    queryKey: collaborationKeys.organizationActivity(organizationId, filters),
+    queryFn: ({ signal }) =>
+      requestJson(listOrganizationWorkgroupActivityContract, {
+        params: { id: organizationId as string },
+        query: filters,
+        signal,
+      }),
+    enabled: Boolean(organizationId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useAddWorkgroupMember() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -214,6 +247,9 @@ export function useAddWorkgroupMember() {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
       if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+        })
         queryClient.invalidateQueries({
           queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
         })

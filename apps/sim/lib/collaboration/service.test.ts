@@ -105,6 +105,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         id: 'workgroup.id',
         name: 'workgroup.name',
         organizationId: 'workgroup.organizationId',
+        disciplineId: 'workgroup.disciplineId',
         teamWorkspaceId: 'workgroup.teamWorkspaceId',
       },
       workgroupMember: {
@@ -212,6 +213,7 @@ vi.mock('drizzle-orm', () => ({
   asc: vi.fn((value: unknown) => ({ kind: 'asc', value })),
   desc: vi.fn((value: unknown) => ({ kind: 'desc', value })),
   eq: vi.fn((left: unknown, right: unknown) => ({ kind: 'eq', left, right })),
+  ilike: vi.fn((left: unknown, right: unknown) => ({ kind: 'ilike', left, right })),
   inArray: vi.fn((left: unknown, right: unknown[]) => ({ kind: 'inArray', left, right })),
   isNull: vi.fn((value: unknown) => ({ kind: 'isNull', value })),
   max: vi.fn((value: unknown) => ({ kind: 'max', value })),

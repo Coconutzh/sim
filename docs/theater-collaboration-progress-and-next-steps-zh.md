@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器、按团队 activity drilldown、批量成员分配、文件导入和建议填充首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器、项目级 activity filters、批量成员分配、文件导入和建议填充首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -269,7 +269,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
-| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器、按团队 activity drilldown、批量成员分配、文件导入和建议填充首版；后续继续团队归档、更智能的工种/默认团队建议、事务性 bulk API、全局状态树、Agent 模板、权限和完整审计筛选 |
+| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器、项目级 activity filters、批量成员分配、文件导入和建议填充首版；后续继续团队归档、更智能的工种/默认团队建议、事务性 bulk API、全局状态树、Agent 模板、权限和审计分页/导出 |
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
@@ -665,7 +665,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- 该切片不是严格 CSV 解析器，也没有事务性 bulk API、批量操作 audit 聚合、seat 预检查或失败原因分类；Phase 10 仍需团队归档/恢复、全局审计筛选、项目级 Agent 模板策略和完整状态树治理。
+- 该切片不是严格 CSV 解析器，也没有事务性 bulk API、批量操作 audit 聚合、seat 预检查或失败原因分类；后续 5.30 已补项目级 activity filters 首版，Phase 10 仍需团队归档/恢复、审计分页/导出、项目级 Agent 模板策略和完整状态树治理。
+
+### 5.30 Phase 10 项目级 activity filters 切片
+
+本轮把项目管理员中心从“单团队 activity drilldown”推进到项目级审计筛选首版：
+
+- 新增 `GET /api/organizations/[id]/workgroups/activity` contract、route、service 和 `useOrganizationWorkgroupActivity` hook；路由先校验 session，再用 `parseRequest` 解析 query，服务端通过 `assertOrganizationAdmin` 限制为组织 owner/admin。
+- 服务端按组织内 workgroup 的 `metadata.workgroupId`、`metadata.sourceWorkgroupId` 和 team workspaceId 组合限定 audit scope，不复用 `/api/audit-logs` 的 enterprise subscription gate，也不会开放整站 enterprise audit 查询。
+- `ProjectAdminCenter` 的活动区块改为 `Project activity filters`，支持按团队、工种、动作和搜索文本筛选最近活动，并在结果中显示团队和工种上下文。
+- 成员分配变更时会同步 invalidate organization activity 查询，使项目中心的审计视图能随成员操作刷新。
+
+仍需继续：
+
+- 该切片仍是最近活动筛选，不含分页、导出、时间范围、actor 精确筛选、批量操作聚合和完整 enterprise audit parity；Phase 10 仍需团队归档/恢复、项目级 Agent 模板策略和完整状态树治理。
 
 ## 6. 建议继续推进目标
 
