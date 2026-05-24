@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉和团队画布健康概览；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化和移动端 tab，仍保留框选/触摸选择优化待办
 
 ## 1. 当前结论
 
@@ -387,6 +387,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 团队管理页新增发布创建表单，管理员可选择团队画布内 workflow、填写标题/说明，并选择组织可见或指定团队可见；提交后复用现有 `POST /api/workflows/[id]/publish` 发布快照并刷新本团队展示列表。
 - 团队管理页后续已拆成 `Members`、`Invites`、`Publications`、`Agent Skill`、`Activity` 五个本地 tab，沿用 `var(--bg)`、`var(--surface-*)`、`var(--border)`、8px 圆角和原页面状态，不引入独立工作台外壳。
 - 团队管理页顶部新增 `Team canvas health`，复用现有 team workspace、workflow list、workspace permissions 和 publication list hooks，展示团队画布初始化、workflow graph、成员权限同步和最近发布状态。
+- `Team canvas health` 已补 `Repair health` 一键修复：team canvas 缺失时复用 `useCreateTeamWorkspace` 初始化，已有 team workspace 缺少 workflow graph 时复用 `useCreateWorkflow` 创建默认 `Team canvas` graph，成员权限不同步时复用 `useUpdateWorkspacePermissions` 按 `admin -> admin`、`member -> write` 同步可修复用户。
 
 ### 5.9 Phase 9 Team Agent Skill 绑定切片
 
@@ -524,7 +525,17 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 - 健康数据复用现有 hooks：`useTeamWorkspace`、`useWorkflows`、`useWorkspacePermissionsQuery` 和 `useShowcasePublications`，不新增 API route，也不改变权限边界。
 - 成员权限同步检查按 workgroup role 推导期望 workspace permission：`admin -> admin`、`member -> write`；若 team workspace permission 缺失或不匹配，会显示需要同步的人数。
 - 最近发布状态会显示最新 publication 版本号、生命周期状态、review state 和 risk level；没有发布、没有当前 published 版本或最新版本为 critical risk 时显示 warning。
-- 本切片完成 Phase 9 “默认 workflow 是否存在、成员权限是否同步、最近发布状态”的首版可见性；后续可继续补一键修复成员权限、默认 workflow 自动修复和失败操作审计。
+- 本切片完成 Phase 9 “默认 workflow 是否存在、成员权限是否同步、最近发布状态”的首版可见性；后续继续补一键修复和失败操作审计。
+
+### 5.19 Phase 9 团队画布健康一键修复切片
+
+本轮继续在原 `/workspace/[workspaceId]/team-management` shell 内补齐健康状态的可执行闭环：
+
+- `Team canvas health` header 新增 `Repair health` 按钮，按钮会根据当前健康状态显示可修复项：初始化 team canvas、创建默认 workflow graph、同步成员权限。
+- 若当前 workgroup 还没有 team workspace，修复动作复用现有 `createTeamWorkspace` mutation；该后端路径已经负责写入 team workspace、同步 workgroup members 的 workspace permission，并创建默认 workflow。
+- 若 team workspace 已存在但 workflow list 为空，修复动作复用 `useCreateWorkflow` 创建名为 `Team canvas` 的默认 graph；该 route 已有 workspace 写权限校验、默认 blocks 生成和 `WORKFLOW_CREATED` audit。
+- 若成员权限不同步，修复动作复用 `useUpdateWorkspacePermissions` 批量 PATCH 可修复用户；owner 或 billing account 等通用权限 route 不允许自动降级的特殊 mismatch 会留作人工提示。
+- 本切片让 Phase 9 “健康可见性”升级为“健康可操作性”首版；后续仍需补更细的失败操作 audit/activity 规则和健康修复历史。
 
 ## 6. 建议继续推进目标
 

@@ -44,9 +44,10 @@ import {
   useCancelWorkspaceInvitation,
   usePendingInvitations,
   useResendWorkspaceInvitation,
+  useUpdateWorkspacePermissions,
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
-import { usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
+import { useCreateWorkflow, usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
@@ -55,6 +56,7 @@ type ReviewStateDraft = PublicationReviewState | 'unreviewed'
 type RiskLevelDraft = PublicationRiskLevel | 'unset'
 type TeamManagementTab = 'members' | 'invites' | 'publications' | 'agent' | 'activity'
 type TeamHealthTone = 'healthy' | 'warning' | 'loading'
+type TeamWorkspaceRepairPermission = 'admin' | 'write'
 
 const TEAM_MANAGEMENT_TABS: {
   id: TeamManagementTab
@@ -253,6 +255,8 @@ export function WorkgroupTeamManagement() {
   const updatePublicationVisibility = useUpdatePublicationVisibility()
   const updateAgentSkill = useUpdateWorkgroupAgentSkill()
   const publishWorkflow = usePublishWorkflow()
+  const createWorkflow = useCreateWorkflow()
+  const updateWorkspacePermissions = useUpdateWorkspacePermissions()
   const cancelInvitation = useCancelWorkspaceInvitation()
   const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
@@ -314,10 +318,53 @@ export function WorkgroupTeamManagement() {
   )
   const permissionMismatches = teamWorkspacePermissions
     ? members.filter((member) => {
-        const expectedPermission = member.role === 'admin' ? 'admin' : 'write'
+        const expectedPermission: TeamWorkspaceRepairPermission =
+          member.role === 'admin' ? 'admin' : 'write'
         return teamWorkspacePermissionByUserId.get(member.userId) !== expectedPermission
       })
     : []
+  const permissionRepairUpdates = permissionMismatches
+    .filter((member) => {
+      const expectedPermission: TeamWorkspaceRepairPermission =
+        member.role === 'admin' ? 'admin' : 'write'
+      const workspaceOwnerId = teamWorkspaceData?.workspace.ownerId
+      const billedAccountUserId = teamWorkspaceData?.workspace.billedAccountUserId
+      if (member.userId === workspaceOwnerId) return false
+      if (member.userId === billedAccountUserId && expectedPermission !== 'admin') return false
+      return true
+    })
+    .map((member) => ({
+      userId: member.userId,
+      permissions: (member.role === 'admin' ? 'admin' : 'write') as TeamWorkspaceRepairPermission,
+    }))
+  const needsCanvasRepair = !teamWorkspaceId
+  const needsWorkflowRepair =
+    Boolean(teamWorkspaceId) && !isLoadingTeamWorkflows && teamWorkflows.length === 0
+  const needsPermissionRepair =
+    Boolean(teamWorkspaceId) &&
+    !isLoadingTeamWorkspacePermissions &&
+    permissionRepairUpdates.length > 0
+  const manualPermissionMismatchCount = Math.max(
+    permissionMismatches.length - permissionRepairUpdates.length,
+    0
+  )
+  const repairTargets = [
+    needsCanvasRepair ? 'initialize team canvas' : null,
+    needsWorkflowRepair ? 'create default workflow graph' : null,
+    needsPermissionRepair
+      ? `sync ${permissionRepairUpdates.length} member permission${
+          permissionRepairUpdates.length === 1 ? '' : 's'
+        }`
+      : null,
+  ].filter(Boolean)
+  const canRepairTeamHealth = repairTargets.length > 0
+  const teamHealthRepairSummary = canRepairTeamHealth
+    ? `Repair can ${repairTargets.join(', ')}.`
+    : manualPermissionMismatchCount > 0
+      ? `${manualPermissionMismatchCount} owner or billing-account permission mismatch${
+          manualPermissionMismatchCount === 1 ? '' : 'es'
+        } need manual review.`
+      : 'No automatic repair is currently needed for canvas setup, graph, or permissions.'
   const latestPublication = useMemo(
     () =>
       publications.reduce<(typeof publications)[number] | null>((latest, publication) => {
@@ -421,6 +468,8 @@ export function WorkgroupTeamManagement() {
     updatePublicationVisibility.isPending ||
     updateAgentSkill.isPending ||
     publishWorkflow.isPending ||
+    createWorkflow.isPending ||
+    updateWorkspacePermissions.isPending ||
     cancelInvitation.isPending ||
     resendInvitation.isPending ||
     updateMember.isPending ||
@@ -443,6 +492,60 @@ export function WorkgroupTeamManagement() {
         ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
         : `/workspace/${result.workspace.id}/home`
     )
+  }
+
+  const handleRepairTeamHealth = async () => {
+    if (!activeWorkgroupId) return
+
+    const repaired: string[] = []
+    let repairedWorkspaceId = teamWorkspaceId
+    let initializedDefaultWorkflowId: string | null = null
+
+    try {
+      if (!repairedWorkspaceId) {
+        const result = await createTeamWorkspace.mutateAsync({ workgroupId: activeWorkgroupId })
+        repairedWorkspaceId = result.workspace.id
+        initializedDefaultWorkflowId = result.defaultWorkflowId
+        repaired.push('initialized the team canvas')
+      }
+
+      if (
+        repairedWorkspaceId &&
+        teamWorkspaceId &&
+        !initializedDefaultWorkflowId &&
+        needsWorkflowRepair
+      ) {
+        await createWorkflow.mutateAsync({
+          workspaceId: repairedWorkspaceId,
+          name: 'Team canvas',
+          description: `Default node graph for ${activeWorkgroup?.name ?? 'team canvas'}`,
+          color: '#3972F6',
+        })
+        repaired.push('created a default workflow graph')
+      }
+
+      if (repairedWorkspaceId && needsPermissionRepair) {
+        await updateWorkspacePermissions.mutateAsync({
+          workspaceId: repairedWorkspaceId,
+          organizationId: activeWorkgroup?.organizationId,
+          updates: permissionRepairUpdates,
+        })
+        repaired.push(
+          `synced ${permissionRepairUpdates.length} member permission${
+            permissionRepairUpdates.length === 1 ? '' : 's'
+          }`
+        )
+      }
+
+      await refetchActivity()
+      setStatusMessage(
+        repaired.length > 0
+          ? `Health repair completed: ${repaired.join(', ')}.`
+          : 'No automatic team canvas health repair is needed.'
+      )
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
   }
 
   const handleInvite = async () => {
@@ -826,17 +929,36 @@ export function WorkgroupTeamManagement() {
         </div>
 
         <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
-          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
-            <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
-            <div>
-              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                Team canvas health
-              </h2>
-              <p className='text-[12px] text-[var(--text-muted)]'>
-                Verify the shared canvas, workflow graph, member permission sync, and latest
-                showcase status.
-              </p>
+          <div className='flex flex-col gap-3 border-[var(--border)] border-b px-4 py-3 md:flex-row md:items-start md:justify-between'>
+            <div className='flex items-start gap-2'>
+              <Activity className='mt-0.5 h-[15px] w-[15px] text-[var(--text-icon)]' />
+              <div>
+                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                  Team canvas health
+                </h2>
+                <p className='text-[12px] text-[var(--text-muted)]'>
+                  Verify the shared canvas, workflow graph, member permission sync, and latest
+                  showcase status.
+                </p>
+                <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                  {teamHealthRepairSummary}
+                </p>
+              </div>
             </div>
+            <Button
+              className='h-[32px] shrink-0'
+              onClick={() => void handleRepairTeamHealth()}
+              disabled={!canRepairTeamHealth || isBusy}
+            >
+              {createTeamWorkspace.isPending ||
+              createWorkflow.isPending ||
+              updateWorkspacePermissions.isPending ? (
+                <Loader className='mr-2 h-[14px] w-[14px]' animate />
+              ) : (
+                <RotateCcw className='mr-2 h-[14px] w-[14px]' />
+              )}
+              Repair health
+            </Button>
           </div>
           <div className='grid gap-2 p-4 md:grid-cols-2 xl:grid-cols-4'>
             {teamHealthItems.map((item) => (
