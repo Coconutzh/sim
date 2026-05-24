@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器和按团队 activity drilldown；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版，并补项目级创建团队、成员分配、组织 roster 选择器、按团队 activity drilldown 和批量成员分配首版；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -269,7 +269,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
-| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器和按团队 activity drilldown；后续继续团队归档、批量分配、全局状态树、Agent 模板、权限和完整审计筛选 |
+| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口、既有用户成员分配入口、组织 roster 选择器、按团队 activity drilldown 和批量成员分配首版；后续继续团队归档、默认团队建议、文件导入式批量分配、全局状态树、Agent 模板、权限和完整审计筛选 |
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
@@ -600,7 +600,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- Phase 10 仍缺团队归档/恢复、批量分配和 roster 选择器、项目级 Agent 模板策略、全局审计筛选和完整状态树治理；本切片只覆盖单用户加入任意团队。
+- Phase 10 后续已补 roster 选择器和批量成员分配首版；仍缺团队归档/恢复、默认团队建议、文件导入式批量分配、项目级 Agent 模板策略、全局审计筛选和完整状态树治理。
 
 ### 5.25 Phase 10 组织 roster 选择器切片
 
@@ -613,7 +613,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- Phase 10 仍缺批量导入/批量分配、团队归档/恢复、默认团队建议、项目级 Agent 模板策略、全局审计筛选和完整状态树治理。
+- Phase 10 已补 textarea 批量分配首版；仍缺文件导入式批量导入、团队归档/恢复、默认团队建议、项目级 Agent 模板策略、全局审计筛选和完整状态树治理。
 
 ### 5.26 Phase 10 项目 activity drilldown 切片
 
@@ -626,7 +626,20 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- Phase 10 仍缺按组织/工种/用户/动作的全局审计筛选、批量成员分配、团队归档/恢复、默认团队建议、项目级 Agent 模板策略和完整状态树治理。
+- Phase 10 已补批量成员分配首版；仍缺按组织/工种/用户/动作的全局审计筛选、团队归档/恢复、默认团队建议、文件导入式批量导入、项目级 Agent 模板策略和完整状态树治理。
+
+### 5.27 Phase 10 项目级批量成员分配切片
+
+本轮继续推进项目管理员中心的成员操作效率，仍保持复用既有 workgroup 成员 API：
+
+- `ProjectAdminCenter` 的 `Assign project member` 卡片新增 `Batch assign` textarea，支持把 email 或 user ID 按逗号、空格、分号或换行分隔输入，并在前端按大小写不敏感规则去重。
+- 批量分配使用同一张卡片上已选择的目标团队和 `member` / `admin` 角色；如果目标能在 organization roster 中按 userId 或 email 命中，则提交 userId，否则按 email 或 userId 原样提交。
+- 每个目标逐项调用既有 `useAddWorkgroupMember` / `POST /api/workgroups/[workgroupId]/members`，不新增项目级 bulk route、route-local schema 或新权限边界。
+- 提交后按目标展示 assigned / failed 结果卡片，并汇总成功数量；全部成功时清空 textarea，部分失败时保留输入便于项目管理员修正重试。
+
+仍需继续：
+
+- 该切片是“顺序逐项调用”的首版批量分配，不具备事务性、并发控制、文件导入、默认团队建议、批量操作审计聚合或失败原因细分；Phase 10 仍需团队归档/恢复、全局审计筛选、项目级 Agent 模板策略和完整状态树治理。
 
 ## 6. 建议继续推进目标
 

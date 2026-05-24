@@ -35,6 +35,12 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
 
+interface BatchAssignmentResult {
+  target: string
+  status: 'assigned' | 'failed'
+  message: string
+}
+
 function formatAgentCode(agentCode: string) {
   return agentCode
     .split('_')
@@ -121,6 +127,18 @@ function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
 
+function parseBatchAssignmentTargets(value: string) {
+  const seen = new Set<string>()
+  return value
+    .split(/[\s,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item.toLowerCase())) return false
+      seen.add(item.toLowerCase())
+      return true
+    })
+}
+
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
@@ -169,6 +187,8 @@ export function ProjectAdminCenter() {
   const [assignmentValue, setAssignmentValue] = useState('')
   const [assignmentRole, setAssignmentRole] = useState<'member' | 'admin'>('member')
   const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null)
+  const [batchAssignmentValue, setBatchAssignmentValue] = useState('')
+  const [batchAssignmentResults, setBatchAssignmentResults] = useState<BatchAssignmentResult[]>([])
   const [activityTeamId, setActivityTeamId] = useState('')
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
@@ -247,6 +267,16 @@ export function ProjectAdminCenter() {
       assignmentValue.trim() &&
       !addWorkgroupMember.isPending
   )
+  const batchAssignmentTargets = useMemo(
+    () => parseBatchAssignmentTargets(batchAssignmentValue),
+    [batchAssignmentValue]
+  )
+  const canBatchAssignMembers = Boolean(
+    organizationId &&
+      selectedAssignmentTeamId &&
+      batchAssignmentTargets.length > 0 &&
+      !addWorkgroupMember.isPending
+  )
   const { data: activityData, isLoading: isLoadingActivity } = useWorkgroupActivity(
     isProjectAdmin ? selectedActivityTeamId : undefined,
     8
@@ -297,6 +327,38 @@ export function ProjectAdminCenter() {
     } catch (error) {
       setAssignmentStatus(readErrorMessage(error))
     }
+  }
+
+  const handleBatchAssignMembers = async () => {
+    if (!organizationId || !selectedAssignmentTeamId || batchAssignmentTargets.length === 0) return
+    const results: BatchAssignmentResult[] = []
+    for (const target of batchAssignmentTargets) {
+      const rosterMember = rosterMembers.find(
+        (member) => member.userId === target || member.email.toLowerCase() === target.toLowerCase()
+      )
+      const isEmail = target.includes('@')
+      try {
+        await addWorkgroupMember.mutateAsync({
+          workgroupId: selectedAssignmentTeamId,
+          organizationId,
+          role: assignmentRole,
+          ...(rosterMember
+            ? { userId: rosterMember.userId }
+            : isEmail
+              ? { email: target }
+              : { userId: target }),
+        })
+        results.push({ target, status: 'assigned', message: `Assigned as ${assignmentRole}` })
+      } catch (error) {
+        results.push({ target, status: 'failed', message: readErrorMessage(error) })
+      }
+    }
+    setBatchAssignmentResults(results)
+    const assignedCount = results.filter((result) => result.status === 'assigned').length
+    setAssignmentStatus(
+      `Batch assignment completed for ${selectedAssignmentTeam?.name ?? 'the selected team'}: ${assignedCount}/${results.length} assigned.`
+    )
+    if (assignedCount === results.length) setBatchAssignmentValue('')
   }
 
   if (isLoading) {
@@ -514,6 +576,7 @@ export function ProjectAdminCenter() {
                   onChange={(event) => {
                     setAssignmentTeamId(event.target.value)
                     setAssignmentStatus(null)
+                    setBatchAssignmentResults([])
                   }}
                   className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                 >
@@ -532,6 +595,7 @@ export function ProjectAdminCenter() {
                   onChange={(event) => {
                     setAssignmentRole(event.target.value as 'member' | 'admin')
                     setAssignmentStatus(null)
+                    setBatchAssignmentResults([])
                   }}
                   className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                 >
@@ -553,6 +617,61 @@ export function ProjectAdminCenter() {
               <div className='text-[11px] text-[var(--text-muted)]'>
                 {rosterMembers.length} organization member{rosterMembers.length === 1 ? '' : 's'}{' '}
                 available for project team assignment.
+              </div>
+              <div className='grid gap-2 border-[var(--border)] border-t pt-3'>
+                <div>
+                  <div className='font-medium text-[12px] text-[var(--text-primary)]'>
+                    Batch assign
+                  </div>
+                  <p className='text-[11px] text-[var(--text-muted)]'>
+                    Paste emails or user IDs separated by commas, spaces, or new lines. Batch uses
+                    the selected team and role above.
+                  </p>
+                </div>
+                <textarea
+                  value={batchAssignmentValue}
+                  onChange={(event) => {
+                    setBatchAssignmentValue(event.target.value)
+                    setBatchAssignmentResults([])
+                    setAssignmentStatus(null)
+                  }}
+                  placeholder={'alice@example.com\nbob@example.com'}
+                  className='min-h-[76px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                />
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <span className='text-[11px] text-[var(--text-muted)]'>
+                    {batchAssignmentTargets.length} unique target
+                    {batchAssignmentTargets.length === 1 ? '' : 's'} parsed.
+                  </span>
+                  <button
+                    type='button'
+                    className={buttonVariants({ variant: 'primary' })}
+                    disabled={!canBatchAssignMembers}
+                    onClick={() => void handleBatchAssignMembers()}
+                  >
+                    {addWorkgroupMember.isPending ? (
+                      <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                    ) : null}
+                    Assign batch
+                  </button>
+                </div>
+                {batchAssignmentResults.length > 0 && (
+                  <div className='grid gap-2'>
+                    {batchAssignmentResults.map((result) => (
+                      <div
+                        key={result.target}
+                        className={cn(
+                          'rounded-[8px] border px-3 py-2 text-[12px]',
+                          result.status === 'assigned'
+                            ? 'border-green-500/25 bg-green-500/10 text-green-700'
+                            : 'border-red-500/25 bg-red-500/10 text-red-700'
+                        )}
+                      >
+                        <span className='font-medium'>{result.target}</span> / {result.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             {assignmentStatus && (

@@ -16,9 +16,9 @@
 - 原主界面 `/workspace/[workspaceId]` 已成为主要承载外壳，不再维护新的独立 `/workbench` shell。
 - 普通成员可以在当前团队上下文中创建多个个人草稿画布，并进入默认节点图。
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
-- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户分配到任意团队。
+- 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配和按团队 activity drilldown 首批能力；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配和按团队 activity drilldown 首批能力；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -192,12 +192,13 @@
 - 首版概览显示工种覆盖率、团队数量、成员数量、当前可见展示发布数量，以及 critical risk、未审核发布、缺失 team canvas 的治理 watchlist。
 - 项目管理员可在中心页创建新的工种团队；创建动作复用现有 `useCreateWorkgroup`、`POST /api/organizations/[id]/workgroups` 和 `createWorkgroup` 服务，仍由 `assertOrganizationAdmin` 保护，并自动生成 team canvas 与默认 workflow graph。
 - 项目管理员可在中心页从组织 roster 选择既有用户，或按 email/user ID 手动输入，把用户分配到任意团队并选择普通成员或团队管理员角色；动作复用 `useOrganizationRoster`、`useAddWorkgroupMember`、`POST /api/workgroups/[workgroupId]/members`、`addWorkgroupMember`，仍走既有 workgroup admin/org admin 权限判断。
+- 项目管理员成员分配表单已补批量分配首版：textarea 接收 email/user ID，按逗号、空格、分号或换行拆分并去重，使用当前选择的团队和角色逐项调用现有 `useAddWorkgroupMember`，并返回每个目标的成功/失败结果；当前不是新的 bulk API，也不提供事务性全量回滚。
 - 项目管理员中心新增 `Project activity drilldown`，可选择任意团队并复用 `useWorkgroupActivity` / `GET /api/workgroups/[workgroupId]/activity` 查看 audit-backed 最近活动；这仍是按团队查看，不是完整全局审计查询器。
 - 团队列表可从项目中心跳转到对应团队管理页，复杂写操作仍留在团队级页面。
 
 仍需继续：
 
-- 这仍只是 Phase 10 的早期首版，不包含归档团队、用户批量导入/默认建议分配、项目级 Agent 模板、完整全局审计筛选或完整状态树治理写操作。
+- 这仍只是 Phase 10 的早期首版，不包含归档团队、文件导入式批量导入/默认建议分配、项目级 Agent 模板、完整全局审计筛选或完整状态树治理写操作。
 
 ### 3.9 权限与安全加固
 
@@ -307,10 +308,10 @@ git diff --check
 
 建议任务：
 
-1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 首版已完成，并已补项目级创建团队和成员分配入口；后续继续扩展其他项目级管理操作。
+1. 原 shell 下 `/workspace/[workspaceId]/project-admin` 首版已完成，并已补项目级创建团队、单用户成员分配、批量成员分配和 activity drilldown 入口；后续继续扩展其他项目级管理操作。
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览；后续补启用/停用、显示名、Agent 模板策略。
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队；后续补归档团队、设置团队管理员、查看团队画布和发布详情 drawer。
-4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin；后续补批量导入和默认团队建议。
+4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 批量分配首版；后续补文件导入、默认团队建议和更完整的批处理审计。
 5. 全局状态树治理：查看所有团队发布、风险、冲突、过期、未提交团队。
 6. Agent 模板：项目级 prompt 附加说明、默认 Skill、风险 Skill 禁用策略。
 7. 审计日志：已有按团队 activity drilldown；后续补按组织、工种、用户、动作的全局筛选。
@@ -352,7 +353,7 @@ git diff --check
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
-4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器和按团队 activity drilldown；下一步继续做团队归档、批量分配或完整项目级审计筛选，不要一开始就做复杂图形状态树。
+4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配和按团队 activity drilldown；下一步继续做团队归档、默认团队建议、文件导入式批量分配或完整项目级审计筛选，不要一开始就做复杂图形状态树。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：
