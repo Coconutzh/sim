@@ -62,6 +62,7 @@ import {
   useCreateWorkgroup,
   useDeliverPublicationNotifications,
   useDisciplines,
+  useMarkPublicationNotificationInboxRead,
   useMyWorkgroups,
   useOrganizationAgentSkillPolicies,
   useOrganizationAgentTemplates,
@@ -1312,6 +1313,7 @@ export function ProjectAdminCenter() {
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
   const updatePublicationDetails = useUpdatePublicationDetails()
   const deliverPublicationNotifications = useDeliverPublicationNotifications()
+  const markPublicationNotificationInboxRead = useMarkPublicationNotificationInboxRead()
   const recordProjectAdminFailureAudit = useRecordProjectAdminFailureAudit()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
@@ -1447,6 +1449,9 @@ export function ProjectAdminCenter() {
     PUBLICATION_NOTIFICATION_INBOX_QUERY
   )
   const publicationNotificationInbox = publicationNotificationInboxData?.inbox ?? []
+  const unreadPublicationNotificationCount = publicationNotificationInbox.filter(
+    (entry) => !entry.readAt
+  ).length
   const {
     data: organizationRetention,
     error: organizationRetentionError,
@@ -2348,6 +2353,35 @@ export function ProjectAdminCenter() {
     }
   }
 
+  const handleMarkPublicationNotificationRead = async (notificationId?: string) => {
+    if (!organizationId) {
+      setPublicationGovernanceStatus('Select a project organization before marking notifications.')
+      return
+    }
+
+    try {
+      await markPublicationNotificationInboxRead.mutateAsync({
+        organizationId,
+        notificationId,
+        markAll: notificationId ? undefined : true,
+      })
+      setPublicationGovernanceStatus(
+        notificationId
+          ? 'Marked publication notification as read.'
+          : 'Marked all recent publication notifications as read.'
+      )
+    } catch (error) {
+      setPublicationGovernanceStatus(
+        recordProjectAdminFailure(
+          'notification',
+          'Mark publication notifications read',
+          notificationId ?? 'all',
+          error
+        )
+      )
+    }
+  }
+
   const handleBatchPublicationReviewResolution = async (
     publicationsToUpdate: PublicationSummary[],
     getReviewState: (publication: PublicationSummary) => PublicationReviewState | null,
@@ -3048,18 +3082,36 @@ export function ProjectAdminCenter() {
                     across project admin sessions.
                   </p>
                 </div>
-                <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
-                  {isLoadingPublicationNotificationInbox
-                    ? 'Loading'
-                    : `${publicationNotificationInbox.length} recent`}
-                </span>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                    {isLoadingPublicationNotificationInbox
+                      ? 'Loading'
+                      : `${unreadPublicationNotificationCount} unread / ${publicationNotificationInbox.length} recent`}
+                  </span>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      unreadPublicationNotificationCount === 0 ||
+                      markPublicationNotificationInboxRead.isPending
+                    }
+                    onClick={() => void handleMarkPublicationNotificationRead()}
+                  >
+                    Mark all read
+                  </button>
+                </div>
               </div>
               {publicationNotificationInbox.length > 0 ? (
                 <div className='mt-3 grid gap-2'>
                   {publicationNotificationInbox.map((entry) => (
                     <div
                       key={entry.id}
-                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+                      className={cn(
+                        'rounded-[8px] border p-3',
+                        entry.readAt
+                          ? 'border-[var(--border)] bg-[var(--surface-2)]'
+                          : 'border-amber-500/30 bg-amber-500/10'
+                      )}
                     >
                       <div className='flex flex-wrap items-center justify-between gap-2'>
                         <div className='flex flex-wrap items-center gap-2'>
@@ -3069,10 +3121,27 @@ export function ProjectAdminCenter() {
                           <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 font-medium text-[10px] text-[var(--text-muted)]'>
                             {entry.channel.replace('_', ' ')}
                           </span>
+                          {!entry.readAt && (
+                            <span className='rounded-[6px] border border-amber-500/30 px-1.5 py-0.5 font-medium text-[10px] text-amber-500'>
+                              Unread
+                            </span>
+                          )}
                         </div>
-                        <span className='text-[11px] text-[var(--text-muted)]'>
-                          {formatDateTime(entry.createdAt)}
-                        </span>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <span className='text-[11px] text-[var(--text-muted)]'>
+                            {formatDateTime(entry.createdAt)}
+                          </span>
+                          {!entry.readAt && (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={markPublicationNotificationInboxRead.isPending}
+                              onClick={() => void handleMarkPublicationNotificationRead(entry.id)}
+                            >
+                              Mark read
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className='mt-2 text-[11px] text-[var(--text-muted)]'>{entry.detail}</p>
                       <div className='mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]'>

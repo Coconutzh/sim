@@ -32,6 +32,8 @@ import {
   listShowcasePublicationsContract,
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
+  type MarkPublicationNotificationInboxReadBody,
+  markOrganizationPublicationNotificationInboxReadContract,
   type ProjectAdminFailureScope,
   type PublicationNotificationInboxQuery,
   type PublicationSummary,
@@ -659,6 +661,29 @@ export function usePublicationNotificationInbox(
     enabled: Boolean(organizationId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useMarkPublicationNotificationInboxRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (
+      variables: { organizationId: string } & MarkPublicationNotificationInboxReadBody
+    ) =>
+      requestJson(markOrganizationPublicationNotificationInboxReadContract, {
+        params: { id: variables.organizationId },
+        body: {
+          notificationId: variables.notificationId,
+          markAll: variables.markAll,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.organizationPublicationNotificationInbox(
+          variables.organizationId
+        ),
+      })
+    },
   })
 }
 

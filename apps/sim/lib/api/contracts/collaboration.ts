@@ -446,9 +446,28 @@ export const publicationNotificationInboxEntrySchema = z.object({
   actorName: z.string().nullable(),
   actorEmail: z.string().nullable(),
   createdAt: z.string(),
+  readAt: z.string().nullable(),
 })
 export type PublicationNotificationInboxEntry = z.output<
   typeof publicationNotificationInboxEntrySchema
+>
+
+export const markPublicationNotificationInboxReadBodySchema = z
+  .object({
+    notificationId: nonEmptyIdSchema.optional(),
+    markAll: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.notificationId && !value.markAll) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['notificationId'],
+        message: 'notificationId is required unless markAll is true',
+      })
+    }
+  })
+export type MarkPublicationNotificationInboxReadBody = z.input<
+  typeof markPublicationNotificationInboxReadBodySchema
 >
 
 export const recordProjectAdminFailureBodySchema = z.object({
@@ -965,6 +984,19 @@ export const listOrganizationPublicationNotificationInboxContract = defineRouteC
     schema: z.object({
       inbox: z.array(publicationNotificationInboxEntrySchema),
       nextOffset: z.number().nullable(),
+    }),
+  },
+})
+
+export const markOrganizationPublicationNotificationInboxReadContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/organizations/[id]/publications/notifications/inbox',
+  params: organizationParamsSchema,
+  body: markPublicationNotificationInboxReadBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      readAt: z.string(),
     }),
   },
 })

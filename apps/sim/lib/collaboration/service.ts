@@ -131,6 +131,7 @@ export interface PublicationNotificationInboxEntry {
   actorName: string | null
   actorEmail: string | null
   createdAt: string
+  readAt: string | null
 }
 
 export interface ProjectAdminFailureAuditResult {
@@ -1498,7 +1499,17 @@ function getMetadataStringArray(record: Record<string, unknown>, key: string): s
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
 }
 
-function getPublicationNotificationInboxMetadata(metadata: unknown) {
+function getPublicationNotificationReadAt(
+  record: Record<string, unknown>,
+  userId: string
+): string | null {
+  const readAtByUserId = record.readAtByUserId
+  if (!readAtByUserId || typeof readAtByUserId !== 'object') return null
+  const readAt = (readAtByUserId as Record<string, unknown>)[userId]
+  return typeof readAt === 'string' && readAt.trim() ? readAt : null
+}
+
+function getPublicationNotificationInboxMetadata(metadata: unknown, userId: string) {
   if (!metadata || typeof metadata !== 'object') return null
   const record = metadata as Record<string, unknown>
   if (record.notificationEvent !== 'publication.review_notifications.digest') return null
@@ -1514,6 +1525,7 @@ function getPublicationNotificationInboxMetadata(metadata: unknown) {
     warningCount: getMetadataNumber(record, 'warningCount'),
     publicationIds: getMetadataStringArray(record, 'publicationIds'),
     outboxEventId: getMetadataString(record, 'outboxEventId'),
+    readAt: getPublicationNotificationReadAt(record, userId),
   }
 }
 
@@ -2164,7 +2176,7 @@ export async function listOrganizationPublicationNotificationInbox(params: {
 
   const pageRows = rows.slice(0, pageSize)
   const inbox = pageRows.flatMap((row): PublicationNotificationInboxEntry[] => {
-    const metadata = getPublicationNotificationInboxMetadata(row.metadata)
+    const metadata = getPublicationNotificationInboxMetadata(row.metadata, params.userId)
     if (!metadata) return []
 
     return [
@@ -2182,6 +2194,7 @@ export async function listOrganizationPublicationNotificationInbox(params: {
         actorName: row.actorName,
         actorEmail: row.actorEmail,
         createdAt: row.createdAt.toISOString(),
+        readAt: metadata.readAt,
       },
     ]
   })
@@ -2190,6 +2203,34 @@ export async function listOrganizationPublicationNotificationInbox(params: {
     inbox,
     nextOffset: rows.length > pageSize ? offset + pageSize : null,
   }
+}
+
+export async function markOrganizationPublicationNotificationInboxRead(params: {
+  userId: string
+  organizationId: string
+  notificationId?: string
+  markAll?: boolean
+}): Promise<{ readAt: string }> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const readAt = new Date().toISOString()
+  const conditions = [
+    eq(auditLog.action, AuditAction.NOTIFICATION_CREATED),
+    sql`${auditLog.metadata}->>'organizationId' = ${params.organizationId}`,
+    sql`${auditLog.metadata}->>'notificationEvent' = ${'publication.review_notifications.digest'}`,
+  ]
+  if (!params.markAll && params.notificationId) {
+    conditions.push(eq(auditLog.id, params.notificationId))
+  }
+
+  await db
+    .update(auditLog)
+    .set({
+      metadata: sql`jsonb_set(coalesce(${auditLog.metadata}, '{}'::jsonb), array['readAtByUserId', ${params.userId}]::text[], to_jsonb(${readAt}::text), true)`,
+    })
+    .where(and(...conditions))
+
+  return { readAt }
 }
 
 export async function deliverOrganizationPublicationNotifications(params: {

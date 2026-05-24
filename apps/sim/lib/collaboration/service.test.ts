@@ -289,6 +289,7 @@ import {
   listOrganizationWorkgroupActivity,
   listVisiblePublications,
   listWorkgroupAgentSkills,
+  markOrganizationPublicationNotificationInboxRead,
   recordProjectAdminFailureAudit,
   resolveAgentForWorkspace,
   updateOrganizationAgentSkillPolicy,
@@ -1416,6 +1417,9 @@ describe('collaboration service', () => {
             warningCount: 1,
             publicationIds: ['publication-1', 'publication-2'],
             outboxEventId: 'outbox-event-1',
+            readAtByUserId: {
+              'org-admin-1': '2026-05-25T09:00:00.000Z',
+            },
           },
         },
       ]
@@ -1443,10 +1447,27 @@ describe('collaboration service', () => {
           actorName: 'Project Admin',
           actorEmail: 'admin@example.com',
           createdAt: createdAt.toISOString(),
+          readAt: '2026-05-25T09:00:00.000Z',
         },
       ],
       nextOffset: null,
     })
+  })
+
+  it('marks persistent publication notification inbox deliveries as read', async () => {
+    mockResultsQueue.push([{ role: 'admin' }])
+
+    await expect(
+      markOrganizationPublicationNotificationInboxRead({
+        userId: 'org-admin-1',
+        organizationId: 'org-1',
+        notificationId: 'audit-notification-1',
+      })
+    ).resolves.toEqual({
+      readAt: expect.any(String),
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.auditLog)
   })
 
   it('records project admin failures as persistent organization audit entries', async () => {

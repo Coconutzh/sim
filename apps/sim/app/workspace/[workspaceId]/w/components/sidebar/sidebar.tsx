@@ -58,6 +58,7 @@ import {
   START_NAV_TOUR_EVENT,
   START_WORKFLOW_TOUR_EVENT,
 } from '@/app/workspace/[workspaceId]/components/product-tour'
+import { PublicationNotificationBell } from '@/app/workspace/[workspaceId]/components/publication-notification-bell'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -1527,12 +1528,19 @@ export const Sidebar = memo(function Sidebar() {
                   </SidebarTooltip>
                 </div>
               </div>
+              <div className='sidebar-collapse-hide ml-auto'>
+                <PublicationNotificationBell
+                  organizationId={activeWorkgroup?.organizationId}
+                  workspaceId={teamCanvasWorkspaceId ?? workspaceId}
+                  enabled={isProjectAdmin}
+                />
+              </div>
               <SidebarTooltip label='Collapse sidebar' enabled={!isCollapsed} side='bottom'>
                 <button
                   type='button'
                   onClick={toggleCollapsed}
                   className={cn(
-                    'sidebar-collapse-btn ml-auto flex h-[30px] items-center justify-center overflow-hidden rounded-lg transition-all duration-200 hover-hover:bg-[var(--surface-hover)]',
+                    'sidebar-collapse-btn flex h-[30px] items-center justify-center overflow-hidden rounded-lg transition-all duration-200 hover-hover:bg-[var(--surface-hover)]',
                     isCollapsed ? 'w-0 opacity-0' : 'w-[30px] opacity-100'
                   )}
                   aria-label='Collapse sidebar'
