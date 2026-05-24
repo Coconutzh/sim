@@ -2,7 +2,7 @@
 
 > 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
-> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版并补项目级创建团队入口；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
+> 当前推进阶段：Phase 9「团队管理员闭环」已把团队管理页拆成成员、邀请、发布、Agent Skill、活动日志五个原 shell tab，并补齐批量邀请、逐项结果反馈、pending invitation 过期状态视觉、团队画布健康概览和健康一键修复；Phase 10 已启动项目管理员中心首版并补项目级创建团队和成员分配入口；Phase 7 分屏已补多节点、目标高亮、viewport-center placement、显式边选择、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选，仍保留完整双编辑器 store 隔离待办
 
 ## 1. 当前结论
 
@@ -269,7 +269,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 | Phase 7 分屏工作台 | 原 `/workspace/[workspaceId]/split` 已有双 pane、多节点、显式边选择、目标高亮、viewport-center placement、复制后自动定位动画、pane-scoped zoom/pan 持久化、移动端 tab 和 Box select 框选；完整双编辑器 store 隔离仍待补 |
 | Phase 8 Copilot 10 个 Agent 深度接入 | active workgroup/discipline 驱动 Agent、Skill、提示词、工具能力边界 |
 | Phase 9 团队管理员闭环 | 成员管理、发布管理、团队 Agent Skill 设置的完整日常闭环 |
-| Phase 10 项目管理员中心 | 已有原 shell 概览首版和项目级创建团队入口；后续继续团队归档、成员分配、全局状态树、Agent 模板、权限和审计 |
+| Phase 10 项目管理员中心 | 已有原 shell 概览首版、项目级创建团队入口和既有用户成员分配入口；后续继续团队归档、批量分配、全局状态树、Agent 模板、权限和审计 |
 | Phase 11 Legacy workspace 入口迁移 | 普通用户不再以 workspace 为主入口，旧链接兼容和创建入口收敛 |
 | Phase 12 测试、审计、发布与监控 | 自动化测试、手工验收脚本、审计日志、监控指标和发布/回滚策略 |
 
@@ -588,6 +588,19 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - Phase 10 仍缺团队归档、设置团队管理员、项目级成员批量分配、Agent 模板策略、全局审计筛选和完整状态树治理；创建团队只是项目级管理写操作的第一步。
+
+### 5.24 Phase 10 项目级成员分配切片
+
+本轮继续把项目管理员中心从项目级建队推进到项目级人员分配：
+
+- `ProjectAdminCenter` 新增 `Assign project member` 表单，项目管理员可输入既有用户 email 或 user ID，选择目标团队，并指定 `member` 或 `admin` 角色。
+- 分配动作复用现有 `useAddWorkgroupMember` hook、`POST /api/workgroups/[workgroupId]/members` contract 和 `addWorkgroupMember` 服务；后端仍走 `assertWorkgroupAdmin`，组织 owner/admin 可跨团队执行，团队管理员仍只管理自己的团队。
+- `useAddWorkgroupMember` 增加可选 `organizationId` 变量；项目管理员中心传入后会同时刷新组织团队列表，确保成员数量在操作后回到最新状态。
+- 表单继续保持在原 `/workspace/[workspaceId]/project-admin` shell 内，不新增 API route，不新增 route-local schema，不引入全局样式。
+
+仍需继续：
+
+- Phase 10 仍缺团队归档/恢复、批量分配和 roster 选择器、项目级 Agent 模板策略、全局审计筛选和完整状态树治理；本切片只覆盖单用户加入任意团队。
 
 ## 6. 建议继续推进目标
 

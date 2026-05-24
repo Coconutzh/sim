@@ -13,6 +13,7 @@ import type {
 } from '@/lib/api/contracts/collaboration'
 import { cn } from '@/lib/core/utils/cn'
 import {
+  useAddWorkgroupMember,
   useAgentProfiles,
   useCreateWorkgroup,
   useDisciplines,
@@ -113,9 +114,14 @@ function readErrorMessage(error: unknown) {
 export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
+  const addWorkgroupMember = useAddWorkgroupMember()
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
+  const [assignmentTeamId, setAssignmentTeamId] = useState('')
+  const [assignmentValue, setAssignmentValue] = useState('')
+  const [assignmentRole, setAssignmentRole] = useState<'member' | 'admin'>('member')
+  const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null)
   const { data: workgroupsData, isLoading: isLoadingMyWorkgroups } = useMyWorkgroups()
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
   const workgroups = workgroupsData?.workgroups ?? []
@@ -170,11 +176,21 @@ export function ProjectAdminCenter() {
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
   )
+  const selectedAssignmentTeamId = assignmentTeamId || organizationWorkgroups[0]?.id || ''
+  const selectedAssignmentTeam = organizationWorkgroups.find(
+    (team) => team.id === selectedAssignmentTeamId
+  )
   const canCreateTeam = Boolean(
     organizationId &&
       selectedNewTeamDisciplineId &&
       newTeamName.trim() &&
       !createWorkgroup.isPending
+  )
+  const canAssignMember = Boolean(
+    organizationId &&
+      selectedAssignmentTeamId &&
+      assignmentValue.trim() &&
+      !addWorkgroupMember.isPending
   )
 
   const handleCreateTeam = async () => {
@@ -193,6 +209,28 @@ export function ProjectAdminCenter() {
       )
     } catch (error) {
       setCreateTeamStatus(readErrorMessage(error))
+    }
+  }
+
+  const handleAssignMember = async () => {
+    if (!organizationId || !selectedAssignmentTeamId || !assignmentValue.trim()) return
+    const trimmed = assignmentValue.trim()
+    const isEmail = trimmed.includes('@')
+    try {
+      await addWorkgroupMember.mutateAsync({
+        workgroupId: selectedAssignmentTeamId,
+        organizationId,
+        role: assignmentRole,
+        ...(isEmail ? { email: trimmed } : { userId: trimmed }),
+      })
+      setAssignmentValue('')
+      setAssignmentStatus(
+        `Assigned ${trimmed} to ${selectedAssignmentTeam?.name ?? 'the selected team'} as ${
+          assignmentRole
+        }.`
+      )
+    } catch (error) {
+      setAssignmentStatus(readErrorMessage(error))
     }
   }
 
@@ -298,67 +336,142 @@ export function ProjectAdminCenter() {
           />
         </section>
 
-        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
-          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
-            <Users className='h-[15px] w-[15px] text-[var(--text-icon)]' />
-            <div>
-              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                Create project team
-              </h2>
-              <p className='text-[12px] text-[var(--text-muted)]'>
-                Organization admins can create a discipline team with its team canvas and default
-                workflow graph.
-              </p>
+        <section className='grid gap-5 xl:grid-cols-2'>
+          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+            <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+              <Users className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+              <div>
+                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                  Create project team
+                </h2>
+                <p className='text-[12px] text-[var(--text-muted)]'>
+                  Organization admins can create a discipline team with its team canvas and default
+                  workflow graph.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto]'>
-            <input
-              value={newTeamName}
-              onChange={(event) => {
-                setNewTeamName(event.target.value)
-                setCreateTeamStatus(null)
-              }}
-              placeholder='Team name, e.g. Lighting show control'
-              className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
-            />
-            <select
-              value={selectedNewTeamDisciplineId}
-              onChange={(event) => {
-                setNewTeamDisciplineId(event.target.value)
-                setCreateTeamStatus(null)
-              }}
-              className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
-            >
-              {disciplines.length === 0 ? (
-                <option value=''>No discipline available</option>
-              ) : (
-                disciplines.map((discipline) => (
-                  <option key={discipline.id} value={discipline.id}>
-                    {discipline.name}
-                  </option>
-                ))
-              )}
-            </select>
-            <button
-              type='button'
-              className={buttonVariants({ variant: 'primary' })}
-              disabled={!canCreateTeam}
-              onClick={() => void handleCreateTeam()}
-            >
-              {createWorkgroup.isPending ? (
-                <Loader className='mr-2 h-[14px] w-[14px]' animate />
-              ) : null}
-              Create team
-            </button>
-          </div>
-          {createTeamStatus && (
-            <div
-              className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'
-              aria-live='polite'
-            >
-              {createTeamStatus}
+            <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_220px_auto]'>
+              <input
+                value={newTeamName}
+                onChange={(event) => {
+                  setNewTeamName(event.target.value)
+                  setCreateTeamStatus(null)
+                }}
+                placeholder='Team name, e.g. Lighting show control'
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+              />
+              <select
+                value={selectedNewTeamDisciplineId}
+                onChange={(event) => {
+                  setNewTeamDisciplineId(event.target.value)
+                  setCreateTeamStatus(null)
+                }}
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+              >
+                {disciplines.length === 0 ? (
+                  <option value=''>No discipline available</option>
+                ) : (
+                  disciplines.map((discipline) => (
+                    <option key={discipline.id} value={discipline.id}>
+                      {discipline.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <button
+                type='button'
+                className={buttonVariants({ variant: 'primary' })}
+                disabled={!canCreateTeam}
+                onClick={() => void handleCreateTeam()}
+              >
+                {createWorkgroup.isPending ? (
+                  <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                ) : null}
+                Create team
+              </button>
             </div>
-          )}
+            {createTeamStatus && (
+              <div
+                className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'
+                aria-live='polite'
+              >
+                {createTeamStatus}
+              </div>
+            )}
+          </div>
+
+          <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+            <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+              <Users className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+              <div>
+                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
+                  Assign project member
+                </h2>
+                <p className='text-[12px] text-[var(--text-muted)]'>
+                  Add an existing user to any project team as member or team admin.
+                </p>
+              </div>
+            </div>
+            <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_160px_130px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_160px_130px_auto]'>
+              <input
+                value={assignmentValue}
+                onChange={(event) => {
+                  setAssignmentValue(event.target.value)
+                  setAssignmentStatus(null)
+                }}
+                placeholder='User email or ID'
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+              />
+              <select
+                value={selectedAssignmentTeamId}
+                onChange={(event) => {
+                  setAssignmentTeamId(event.target.value)
+                  setAssignmentStatus(null)
+                }}
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+              >
+                {organizationWorkgroups.length === 0 ? (
+                  <option value=''>No team available</option>
+                ) : (
+                  organizationWorkgroups.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <select
+                value={assignmentRole}
+                onChange={(event) => {
+                  setAssignmentRole(event.target.value as 'member' | 'admin')
+                  setAssignmentStatus(null)
+                }}
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+              >
+                <option value='member'>Member</option>
+                <option value='admin'>Team admin</option>
+              </select>
+              <button
+                type='button'
+                className={buttonVariants({ variant: 'primary' })}
+                disabled={!canAssignMember}
+                onClick={() => void handleAssignMember()}
+              >
+                {addWorkgroupMember.isPending ? (
+                  <Loader className='mr-2 h-[14px] w-[14px]' animate />
+                ) : null}
+                Assign
+              </button>
+            </div>
+            {assignmentStatus && (
+              <div
+                className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'
+                aria-live='polite'
+              >
+                {assignmentStatus}
+              </div>
+            )}
+          </div>
         </section>
 
         <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
@@ -369,7 +482,7 @@ export function ProjectAdminCenter() {
                 Discipline and Agent coverage
               </h2>
               <p className='text-[12px] text-[var(--text-muted)]'>
-                Project-level assignment overview before adding write controls.
+                Discipline-level coverage after project team and member operations.
               </p>
             </div>
           </div>

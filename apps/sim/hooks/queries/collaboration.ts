@@ -199,6 +199,7 @@ export function useAddWorkgroupMember() {
   return useMutation({
     mutationFn: (variables: {
       workgroupId: string
+      organizationId?: string
       userId?: string
       email?: string
       role: 'admin' | 'member'
@@ -211,6 +212,11 @@ export function useAddWorkgroupMember() {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+      }
     },
   })
 }
