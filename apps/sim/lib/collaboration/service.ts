@@ -102,6 +102,43 @@ const MEMBER_MANAGEMENT_AUDIT_ACTIONS = [
   AuditAction.MEMBER_ROLE_CHANGED,
   AuditAction.MEMBER_REMOVED,
 ] as const
+type DataDrainAuditAction =
+  | typeof AuditAction.DATA_DRAIN_CREATED
+  | typeof AuditAction.DATA_DRAIN_UPDATED
+  | typeof AuditAction.DATA_DRAIN_DELETED
+  | typeof AuditAction.DATA_DRAIN_RAN
+  | typeof AuditAction.DATA_DRAIN_TESTED
+const DATA_DRAIN_AUDIT_ACTIONS = [
+  AuditAction.DATA_DRAIN_CREATED,
+  AuditAction.DATA_DRAIN_UPDATED,
+  AuditAction.DATA_DRAIN_DELETED,
+  AuditAction.DATA_DRAIN_RAN,
+  AuditAction.DATA_DRAIN_TESTED,
+] as const
+type OrganizationManagementAuditAction =
+  | typeof AuditAction.ORG_MEMBER_ADDED
+  | typeof AuditAction.ORG_MEMBER_REMOVED
+  | typeof AuditAction.ORG_MEMBER_ROLE_CHANGED
+  | typeof AuditAction.ORG_INVITATION_CREATED
+  | typeof AuditAction.ORG_INVITATION_UPDATED
+  | typeof AuditAction.ORG_INVITATION_ACCEPTED
+  | typeof AuditAction.ORG_INVITATION_REJECTED
+  | typeof AuditAction.ORG_INVITATION_CANCELLED
+  | typeof AuditAction.ORG_INVITATION_REVOKED
+  | typeof AuditAction.ORG_INVITATION_RESENT
+const ORGANIZATION_MANAGEMENT_AUDIT_ACTIONS = [
+  AuditAction.ORG_MEMBER_ADDED,
+  AuditAction.ORG_MEMBER_REMOVED,
+  AuditAction.ORG_MEMBER_ROLE_CHANGED,
+  AuditAction.ORG_INVITATION_CREATED,
+  AuditAction.ORG_INVITATION_UPDATED,
+  AuditAction.ORG_INVITATION_ACCEPTED,
+  AuditAction.ORG_INVITATION_REJECTED,
+  AuditAction.ORG_INVITATION_CANCELLED,
+  AuditAction.ORG_INVITATION_REVOKED,
+  AuditAction.ORG_INVITATION_RESENT,
+] as const
+const DATA_RETENTION_AUDIT_EVENT = 'data_retention.settings_updated'
 
 interface PublicationBroadcastParams {
   actorUserId: string
@@ -1613,19 +1650,34 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
       sql`${auditLog.metadata}->>'scope' = 'agent_template'`
     )
   )
+  const retentionPolicyCondition = and(
+    eq(auditLog.action, AuditAction.ORGANIZATION_UPDATED),
+    sql`${auditLog.metadata}->>'retentionEvent' = ${DATA_RETENTION_AUDIT_EVENT}`
+  )
+  const dataDrainCondition = inArray(auditLog.action, DATA_DRAIN_AUDIT_ACTIONS)
+  const organizationManagementCondition = inArray(
+    auditLog.action,
+    ORGANIZATION_MANAGEMENT_AUDIT_ACTIONS
+  )
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
   if (kind === 'publication_governance') return publicationGovernanceCondition
   if (kind === 'member_management') return memberManagementCondition
   if (kind === 'team_management') return teamManagementCondition
   if (kind === 'agent_policy') return agentPolicyCondition
+  if (kind === 'retention_policy') return retentionPolicyCondition
+  if (kind === 'data_drain') return dataDrainCondition
+  if (kind === 'organization_management') return organizationManagementCondition
   return or(
     publicationReviewCondition,
     failureCondition,
     publicationGovernanceCondition,
     memberManagementCondition,
     teamManagementCondition,
-    agentPolicyCondition
+    agentPolicyCondition,
+    retentionPolicyCondition,
+    dataDrainCondition,
+    organizationManagementCondition
   )
 }
 
@@ -1725,6 +1777,99 @@ function getAgentPolicyTitle(action: string, resourceName: string | null) {
     return name ? `Agent template updated: ${name}` : 'Agent template updated'
   }
   return name ? `Agent skill policy updated: ${name}` : 'Agent skill policy updated'
+}
+
+function isRetentionPolicyAction(action: string, metadata: unknown) {
+  return Boolean(
+    action === AuditAction.ORGANIZATION_UPDATED &&
+      metadata &&
+      typeof metadata === 'object' &&
+      (metadata as Record<string, unknown>).retentionEvent === DATA_RETENTION_AUDIT_EVENT
+  )
+}
+
+function isDataDrainAction(action: string): action is DataDrainAuditAction {
+  return DATA_DRAIN_AUDIT_ACTIONS.some((dataDrainAction) => dataDrainAction === action)
+}
+
+function getDataDrainTitle(action: DataDrainAuditAction, resourceName: string | null) {
+  const name = resourceName?.trim()
+  switch (action) {
+    case AuditAction.DATA_DRAIN_CREATED:
+      return name ? `Data drain created: ${name}` : 'Data drain created'
+    case AuditAction.DATA_DRAIN_UPDATED:
+      return name ? `Data drain updated: ${name}` : 'Data drain updated'
+    case AuditAction.DATA_DRAIN_DELETED:
+      return name ? `Data drain deleted: ${name}` : 'Data drain deleted'
+    case AuditAction.DATA_DRAIN_RAN:
+      return name ? `Data drain run triggered: ${name}` : 'Data drain run triggered'
+    case AuditAction.DATA_DRAIN_TESTED:
+      return name ? `Data drain connection tested: ${name}` : 'Data drain connection tested'
+  }
+}
+
+function getDataDrainSeverity(
+  action: DataDrainAuditAction,
+  metadata: unknown
+): ProjectNotificationCenterEntry['severity'] {
+  if (action === AuditAction.DATA_DRAIN_DELETED) return 'warning'
+  if (
+    action === AuditAction.DATA_DRAIN_TESTED &&
+    metadata &&
+    typeof metadata === 'object' &&
+    (metadata as Record<string, unknown>).outcome === 'failed'
+  ) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+function isOrganizationManagementAction(
+  action: string
+): action is OrganizationManagementAuditAction {
+  return ORGANIZATION_MANAGEMENT_AUDIT_ACTIONS.some((orgAction) => orgAction === action)
+}
+
+function getOrganizationManagementTitle(
+  action: OrganizationManagementAuditAction,
+  resourceName: string | null
+) {
+  const name = resourceName?.trim()
+  switch (action) {
+    case AuditAction.ORG_MEMBER_ADDED:
+      return name ? `Organization member added: ${name}` : 'Organization member added'
+    case AuditAction.ORG_MEMBER_REMOVED:
+      return name ? `Organization member removed: ${name}` : 'Organization member removed'
+    case AuditAction.ORG_MEMBER_ROLE_CHANGED:
+      return name ? `Organization member role changed: ${name}` : 'Organization member role changed'
+    case AuditAction.ORG_INVITATION_CREATED:
+      return name ? `Organization invitation created: ${name}` : 'Organization invitation created'
+    case AuditAction.ORG_INVITATION_UPDATED:
+      return name ? `Organization invitation updated: ${name}` : 'Organization invitation updated'
+    case AuditAction.ORG_INVITATION_ACCEPTED:
+      return name ? `Organization invitation accepted: ${name}` : 'Organization invitation accepted'
+    case AuditAction.ORG_INVITATION_REJECTED:
+      return name ? `Organization invitation rejected: ${name}` : 'Organization invitation rejected'
+    case AuditAction.ORG_INVITATION_CANCELLED:
+      return name
+        ? `Organization invitation cancelled: ${name}`
+        : 'Organization invitation cancelled'
+    case AuditAction.ORG_INVITATION_REVOKED:
+      return name ? `Organization invitation revoked: ${name}` : 'Organization invitation revoked'
+    case AuditAction.ORG_INVITATION_RESENT:
+      return name ? `Organization invitation resent: ${name}` : 'Organization invitation resent'
+  }
+}
+
+function getOrganizationManagementSeverity(
+  action: OrganizationManagementAuditAction
+): ProjectNotificationCenterEntry['severity'] {
+  return action === AuditAction.ORG_MEMBER_REMOVED ||
+    action === AuditAction.ORG_INVITATION_REJECTED ||
+    action === AuditAction.ORG_INVITATION_CANCELLED ||
+    action === AuditAction.ORG_INVITATION_REVOKED
+    ? 'warning'
+    : 'info'
 }
 
 function getProjectNotificationCenterEntry(
@@ -1856,6 +2001,71 @@ function getProjectNotificationCenterEntry(
       kind: 'agent_policy',
       severity: 'info',
       title: getAgentPolicyTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isRetentionPolicyAction(row.action, row.metadata)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'retention_policy',
+      severity: 'info',
+      title: row.resourceName
+        ? `Retention policy updated: ${row.resourceName}`
+        : 'Retention policy updated',
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isDataDrainAction(row.action)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'data_drain',
+      severity: getDataDrainSeverity(row.action, row.metadata),
+      title: getDataDrainTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isOrganizationManagementAction(row.action)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'organization_management',
+      severity: getOrganizationManagementSeverity(row.action),
+      title: getOrganizationManagementTitle(row.action, row.resourceName),
       detail: row.description ?? '',
       channel: null,
       body: row.resourceName,

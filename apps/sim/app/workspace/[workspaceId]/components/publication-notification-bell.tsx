@@ -24,7 +24,10 @@ function formatProjectNotificationBadge(
     | 'publication_governance'
     | 'member_management'
     | 'team_management'
-    | 'agent_policy',
+    | 'agent_policy'
+    | 'retention_policy'
+    | 'data_drain'
+    | 'organization_management',
   channel?: string | null
 ) {
   if (kind === 'publication_review') return channel?.replace('_', ' ') ?? 'publication'
@@ -32,6 +35,9 @@ function formatProjectNotificationBadge(
   if (kind === 'member_management') return 'members'
   if (kind === 'team_management') return 'team'
   if (kind === 'agent_policy') return 'agent'
+  if (kind === 'retention_policy') return 'retention'
+  if (kind === 'data_drain') return 'drain'
+  if (kind === 'organization_management') return 'org'
   return 'failure'
 }
 

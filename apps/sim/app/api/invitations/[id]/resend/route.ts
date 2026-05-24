@@ -163,6 +163,7 @@ export const POST = withRouteHandler(
         resourceId: inv.organizationId ?? inv.grants[0]?.workspaceId ?? inv.id,
         description: `Resent ${inv.kind} invitation to ${inv.email}`,
         metadata: {
+          organizationId: inv.organizationId ?? undefined,
           invitationId: inv.id,
           targetEmail: inv.email,
           targetRole: inv.role,

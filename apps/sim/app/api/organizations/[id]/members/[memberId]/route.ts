@@ -278,6 +278,7 @@ export const PUT = withRouteHandler(
         actorEmail: session.user.email ?? undefined,
         description: `Changed role for member ${memberId} to ${role}`,
         metadata: {
+          organizationId,
           targetUserId: memberId,
           targetEmail: targetMember[0].email ?? undefined,
           targetName: targetMember[0].name ?? undefined,
@@ -408,6 +409,7 @@ export const DELETE = withRouteHandler(
           actorEmail: session.user.email ?? undefined,
           description: `Removed external workspace member ${targetUserId} from organization`,
           metadata: {
+            organizationId,
             targetUserId,
             targetEmail: targetUser.email ?? undefined,
             targetName: targetUser.name ?? undefined,
@@ -508,6 +510,7 @@ export const DELETE = withRouteHandler(
             ? 'Left the organization'
             : `Removed member ${targetUserId} from organization`,
         metadata: {
+          organizationId,
           targetUserId,
           targetEmail: targetMember[0].email ?? undefined,
           targetName: targetMember[0].name ?? undefined,

@@ -513,7 +513,7 @@ export const POST = withRouteHandler(
         actorName: session.user.name ?? undefined,
         actorEmail: session.user.email ?? undefined,
         description: `Invited ${normalizedEmail} to organization as ${role}`,
-        metadata: { invitationId, targetEmail: normalizedEmail, targetRole: role },
+        metadata: { organizationId, invitationId, targetEmail: normalizedEmail, targetRole: role },
         request,
       })
 

@@ -477,6 +477,9 @@ export const projectNotificationCenterKindSchema = z.enum([
   'member_management',
   'team_management',
   'agent_policy',
+  'retention_policy',
+  'data_drain',
+  'organization_management',
 ])
 export type ProjectNotificationCenterKind = z.output<typeof projectNotificationCenterKindSchema>
 export const projectNotificationCenterQuerySchema = z.object({

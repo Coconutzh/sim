@@ -492,6 +492,7 @@ export const POST = withRouteHandler(
           resourceName: organizationEntry.name,
           description: `Invited ${inv.email} to organization as ${role}`,
           metadata: {
+            organizationId,
             invitationId: inv.id,
             targetEmail: inv.email,
             targetRole: role,

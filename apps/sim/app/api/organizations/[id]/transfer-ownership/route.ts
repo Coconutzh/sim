@@ -102,6 +102,7 @@ export const POST = withRouteHandler(
         resourceId: organizationId,
         description: `Transferred ownership to ${targetMember.email}`,
         metadata: {
+          organizationId,
           targetUserId: newOwnerUserId,
           targetEmail: targetMember.email ?? undefined,
           targetName: targetMember.name ?? undefined,
@@ -190,6 +191,7 @@ export const POST = withRouteHandler(
         resourceId: organizationId,
         description: 'Left the organization after transferring ownership',
         metadata: {
+          organizationId,
           targetUserId: session.user.id,
           wasSelfRemoval: true,
           followedOwnershipTransfer: true,

@@ -125,6 +125,9 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: 'member_management', label: 'Member management' },
   { value: 'team_management', label: 'Team management' },
   { value: 'agent_policy', label: 'Agent policy' },
+  { value: 'retention_policy', label: 'Retention policy' },
+  { value: 'data_drain', label: 'Data drain' },
+  { value: 'organization_management', label: 'Organization management' },
 ]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',

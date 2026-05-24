@@ -19,9 +19,7 @@ import {
   normalizeEmail,
   summarizeInvitationGrantVisibility,
 } from '@/lib/invitations/core'
-import {
-  hasWorkspaceAdminAccess,
-} from '@/lib/workspaces/permissions/utils'
+import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('InvitationsAPI')
 
@@ -217,6 +215,7 @@ export const PATCH = withRouteHandler(
         resourceId: isOrgScoped ? (inv.organizationId ?? inv.id) : (primaryWorkspaceId ?? inv.id),
         description: `Updated ${inv.kind} invitation for ${inv.email}`,
         metadata: {
+          organizationId: inv.organizationId ?? undefined,
           invitationId: id,
           targetEmail: inv.email,
           kind: inv.kind,
@@ -305,6 +304,7 @@ export const DELETE = withRouteHandler(
         resourceId: inv.organizationId ?? inv.grants[0]?.workspaceId ?? id,
         description: `Cancelled ${inv.kind} invitation for ${inv.email}`,
         metadata: {
+          organizationId: inv.organizationId ?? undefined,
           invitationId: id,
           targetEmail: inv.email,
           targetRole: inv.role,

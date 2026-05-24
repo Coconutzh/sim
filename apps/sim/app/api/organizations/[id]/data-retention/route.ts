@@ -188,7 +188,11 @@ export const PUT = withRouteHandler(
       actorEmail: session.user.email ?? undefined,
       resourceName: currentOrg.name,
       description: 'Updated data retention settings',
-      metadata: { changes: body },
+      metadata: {
+        organizationId,
+        retentionEvent: 'data_retention.settings_updated',
+        changes: body,
+      },
       request,
     })
 
