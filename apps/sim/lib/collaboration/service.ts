@@ -1428,6 +1428,28 @@ function getAuditMetadataValue(metadata: unknown, keys: string[]) {
   return null
 }
 
+function getProjectAdminFailureMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object') return null
+  const record = metadata as Record<string, unknown>
+  const scope = record.scope
+  return {
+    failureId: typeof record.failureId === 'string' ? record.failureId : null,
+    scope:
+      scope === 'team' ||
+      scope === 'agent' ||
+      scope === 'publication' ||
+      scope === 'member' ||
+      scope === 'activity' ||
+      scope === 'notification'
+        ? scope
+        : null,
+    operation: typeof record.operation === 'string' ? record.operation : null,
+    target: typeof record.target === 'string' ? record.target : null,
+    message: typeof record.message === 'string' ? record.message : null,
+    recordedAt: typeof record.recordedAt === 'string' ? record.recordedAt : null,
+  }
+}
+
 export async function listOrganizationWorkgroupActivity(params: {
   userId: string
   organizationId: string
@@ -1563,6 +1585,10 @@ export async function listOrganizationWorkgroupActivity(params: {
       workgroupId: rowWorkgroup?.id ?? null,
       workgroupName: rowWorkgroup?.name ?? null,
       disciplineName: rowWorkgroup?.disciplineName ?? null,
+      projectAdminFailure:
+        row.action === AuditAction.PROJECT_ADMIN_FAILURE_RECORDED
+          ? getProjectAdminFailureMetadata(row.metadata)
+          : null,
       createdAt: row.createdAt.toISOString(),
     }
   })

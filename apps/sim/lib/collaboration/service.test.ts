@@ -378,14 +378,22 @@ describe('collaboration service', () => {
         {
           id: 'audit-2',
           workspaceId: 'team-workspace-1',
-          action: 'member.invited',
-          resourceType: 'member',
-          resourceId: 'user-1',
-          resourceName: 'Member',
-          description: 'Added member',
+          action: 'project_admin_failure.recorded',
+          resourceType: 'organization',
+          resourceId: 'org-1',
+          resourceName: 'Stage',
+          description: 'Archive team failed for Stage',
           actorName: 'Admin',
           actorEmail: 'admin@example.com',
-          metadata: { workgroupId: 'workgroup-1' },
+          metadata: {
+            organizationId: 'org-1',
+            failureId: 'failure-1',
+            scope: 'team',
+            operation: 'Archive team',
+            target: 'Stage',
+            message: 'Archive failed',
+            recordedAt: '2026-05-24T00:30:00.000Z',
+          },
           createdAt: new Date('2026-05-24T00:30:00.000Z'),
         },
         {
@@ -417,8 +425,25 @@ describe('collaboration service', () => {
     ).resolves.toMatchObject({
       nextOffset: 6,
       activity: [
-        { id: 'audit-1', workgroupName: 'Lighting', createdAt: '2026-05-24T01:00:00.000Z' },
-        { id: 'audit-2', workgroupName: 'Lighting', createdAt: '2026-05-24T00:30:00.000Z' },
+        {
+          id: 'audit-1',
+          workgroupName: 'Lighting',
+          projectAdminFailure: null,
+          createdAt: '2026-05-24T01:00:00.000Z',
+        },
+        {
+          id: 'audit-2',
+          workgroupName: 'Lighting',
+          projectAdminFailure: {
+            failureId: 'failure-1',
+            scope: 'team',
+            operation: 'Archive team',
+            target: 'Stage',
+            message: 'Archive failed',
+            recordedAt: '2026-05-24T00:30:00.000Z',
+          },
+          createdAt: '2026-05-24T00:30:00.000Z',
+        },
       ],
     })
   })

@@ -84,6 +84,7 @@ const PROJECT_ACTIVITY_PAGE_SIZE = 12
 const PROJECT_ACTIVITY_EXPORT_PAGE_SIZE = 100
 const PROJECT_ACTIVITY_EXPORT_MAX_PAGES = 1000
 const PROJECT_ADMIN_FAILURE_AUDIT_LIMIT = 12
+const PROJECT_ADMIN_FAILURE_HISTORY_LIMIT = 5
 const PROJECT_ADMIN_FAILURE_TEXT_MAX = {
   operation: 160,
   target: 160,
@@ -1626,7 +1627,21 @@ export function ProjectAdminCenter() {
     isProjectAdmin ? organizationId : undefined,
     activityFilters
   )
+  const serverFailureHistoryFilters = useMemo(
+    () => ({
+      action: 'project_admin_failure.recorded',
+      limit: PROJECT_ADMIN_FAILURE_HISTORY_LIMIT,
+      offset: 0,
+    }),
+    []
+  )
+  const { data: serverFailureHistoryData, isLoading: isLoadingServerFailureHistory } =
+    useOrganizationWorkgroupActivity(
+      isProjectAdmin ? organizationId : undefined,
+      serverFailureHistoryFilters
+    )
   const projectActivity = activityData?.activity ?? []
+  const serverFailureHistory = serverFailureHistoryData?.activity ?? []
   const hasPreviousActivityPage = activityOffset > 0
   const hasNextActivityPage = activityData?.nextOffset != null
   const activityRangeLabel =
@@ -4165,6 +4180,64 @@ export function ProjectAdminCenter() {
                     </div>
                   </>
                 )}
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                  <div className='flex flex-wrap items-start justify-between gap-2'>
+                    <div>
+                      <h3 className='font-medium text-[12px] text-[var(--text-primary)]'>
+                        Server audit history
+                      </h3>
+                      <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                        Latest persisted project-admin failures from organization audit logs.
+                      </p>
+                    </div>
+                    <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                      {serverFailureHistory.length} recent
+                    </span>
+                  </div>
+                  <div className='mt-3 grid gap-2'>
+                    {isLoadingServerFailureHistory ? (
+                      <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                        <Loader className='h-[13px] w-[13px]' animate />
+                        Loading persisted failures...
+                      </div>
+                    ) : serverFailureHistory.length === 0 ? (
+                      <div className='text-[12px] text-[var(--text-muted)]'>
+                        No persisted project-admin failures found yet.
+                      </div>
+                    ) : (
+                      serverFailureHistory.map((entry) => {
+                        const failure = entry.projectAdminFailure
+                        return (
+                          <div
+                            key={entry.id}
+                            className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'
+                          >
+                            <div className='flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]'>
+                              <span className='rounded-[8px] border border-red-500/30 px-2 py-0.5 text-red-500'>
+                                {failure?.scope
+                                  ? (PROJECT_ADMIN_FAILURE_SCOPE_OPTIONS.find(
+                                      (option) => option.scope === failure.scope
+                                    )?.label ?? failure.scope)
+                                  : 'Project'}
+                              </span>
+                              <span>{formatDateTime(failure?.recordedAt ?? entry.createdAt)}</span>
+                              <span>{entry.actorName || entry.actorEmail || 'Unknown actor'}</span>
+                            </div>
+                            <div className='mt-2 font-medium text-[13px] text-[var(--text-primary)]'>
+                              {failure?.operation ?? formatActivityAction(entry.action)} /{' '}
+                              {failure?.target ?? entry.resourceName ?? 'Project'}
+                            </div>
+                            <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                              {failure?.message ??
+                                entry.description?.trim() ??
+                                'No persisted failure details'}
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

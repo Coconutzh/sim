@@ -404,6 +404,18 @@ export const projectAdminFailureRecordSchema = z.object({
 })
 export type ProjectAdminFailureRecord = z.output<typeof projectAdminFailureRecordSchema>
 
+export const projectAdminFailureActivityMetadataSchema = z.object({
+  failureId: z.string().nullable(),
+  scope: projectAdminFailureScopeSchema.nullable(),
+  operation: z.string().nullable(),
+  target: z.string().nullable(),
+  message: z.string().nullable(),
+  recordedAt: z.string().nullable(),
+})
+export type ProjectAdminFailureActivityMetadata = z.output<
+  typeof projectAdminFailureActivityMetadataSchema
+>
+
 export const agentSkillBindingSchema = z.object({
   id: z.string().nullable(),
   skillId: z.string(),
@@ -515,6 +527,7 @@ export const organizationWorkgroupActivityEntrySchema = workgroupActivityEntrySc
   workgroupId: z.string().nullable(),
   workgroupName: z.string().nullable(),
   disciplineName: z.string().nullable(),
+  projectAdminFailure: projectAdminFailureActivityMetadataSchema.nullable(),
 })
 export type OrganizationWorkgroupActivityEntry = z.output<
   typeof organizationWorkgroupActivityEntrySchema
