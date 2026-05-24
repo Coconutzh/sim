@@ -41,6 +41,7 @@ import {
   useOrganizationPublications,
   useOrganizationWorkgroupActivity,
   useOrganizationWorkgroups,
+  usePublication,
   usePublicationTree,
   useUpdateOrganizationAgentTemplate,
   useUpdatePublicationLifecycle,
@@ -107,6 +108,23 @@ interface BatchAssignmentResult {
 interface PublicationReviewDraft {
   reviewState: PublicationReviewState | ''
   riskLevel: PublicationRiskLevel | ''
+}
+
+interface SnapshotMetric {
+  label: string
+  candidate: number
+  current: number
+}
+
+interface SnapshotSummary {
+  blockCount: number
+  edgeCount: number
+  loopCount: number
+  parallelCount: number
+  variableCount: number
+  blockTypes: Record<string, number>
+  metadataName: string | null
+  metadataDescription: string | null
 }
 
 function formatAgentCode(agentCode: string) {
@@ -193,6 +211,66 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function countRecordItems(value: unknown) {
+  return isRecord(value) ? Object.keys(value).length : 0
+}
+
+function countArrayItems(value: unknown) {
+  return Array.isArray(value) ? value.length : 0
+}
+
+function summarizeSnapshot(snapshot: unknown): SnapshotSummary {
+  const root = isRecord(snapshot) ? snapshot : {}
+  const blocks = isRecord(root.blocks) ? root.blocks : {}
+  const metadata = isRecord(root.metadata) ? root.metadata : {}
+  const blockTypes: Record<string, number> = {}
+
+  for (const block of Object.values(blocks)) {
+    if (!isRecord(block) || typeof block.type !== 'string') continue
+    blockTypes[block.type] = (blockTypes[block.type] ?? 0) + 1
+  }
+
+  return {
+    blockCount: Object.keys(blocks).length,
+    edgeCount: countArrayItems(root.edges),
+    loopCount: countRecordItems(root.loops),
+    parallelCount: countRecordItems(root.parallels),
+    variableCount: countRecordItems(root.variables),
+    blockTypes,
+    metadataName: typeof metadata.name === 'string' ? metadata.name : null,
+    metadataDescription: typeof metadata.description === 'string' ? metadata.description : null,
+  }
+}
+
+function buildSnapshotMetricRows(
+  candidate: SnapshotSummary,
+  current: SnapshotSummary
+): SnapshotMetric[] {
+  return [
+    { label: 'Blocks', candidate: candidate.blockCount, current: current.blockCount },
+    { label: 'Edges', candidate: candidate.edgeCount, current: current.edgeCount },
+    { label: 'Loops', candidate: candidate.loopCount, current: current.loopCount },
+    { label: 'Parallels', candidate: candidate.parallelCount, current: current.parallelCount },
+    { label: 'Variables', candidate: candidate.variableCount, current: current.variableCount },
+  ]
+}
+
+function buildBlockTypeDiff(candidate: SnapshotSummary, current: SnapshotSummary) {
+  const types = new Set([...Object.keys(candidate.blockTypes), ...Object.keys(current.blockTypes)])
+  return [...types]
+    .map((type) => ({
+      type,
+      candidate: candidate.blockTypes[type] ?? 0,
+      current: current.blockTypes[type] ?? 0,
+    }))
+    .filter((entry) => entry.candidate !== entry.current)
+    .sort((a, b) => a.type.localeCompare(b.type))
 }
 
 function parseBatchAssignmentTargets(value: string) {
@@ -421,12 +499,22 @@ export function ProjectAdminCenter() {
   const publications = publicationsData?.publications ?? []
   const selectedPublication =
     publications.find((publication) => publication.id === selectedPublicationId) ?? null
+  const selectedPublicationDetailId =
+    selectedPublication && selectedPublication.status !== 'retracted'
+      ? selectedPublication.id
+      : undefined
+  const { data: selectedPublicationDetailData, isLoading: isLoadingSelectedPublicationDetail } =
+    usePublication(selectedPublicationDetailId)
   const { data: selectedPublicationTree, isLoading: isLoadingSelectedPublicationTree } =
-    usePublicationTree(
-      selectedPublicationId && selectedPublication?.status !== 'retracted'
-        ? selectedPublicationId
-        : undefined
-    )
+    usePublicationTree(selectedPublicationDetailId)
+  const currentPublishedPublicationId =
+    selectedPublicationTree?.versions.find((version) => version.status === 'published')?.id ?? null
+  const comparisonPublicationId =
+    currentPublishedPublicationId && currentPublishedPublicationId !== selectedPublicationId
+      ? currentPublishedPublicationId
+      : undefined
+  const { data: comparisonPublicationDetailData, isLoading: isLoadingComparisonPublicationDetail } =
+    usePublication(comparisonPublicationId)
   const isProjectAdmin = organizationWorkgroups.some(
     (workgroup) => workgroup.currentUserRole === 'org_admin'
   )
@@ -453,6 +541,23 @@ export function ProjectAdminCenter() {
   const unreviewedPublicationCount = publications.filter(
     (publication) => !publication.reviewState || publication.reviewState === 'pending'
   ).length
+  const snapshotDiff = useMemo(() => {
+    const candidate = selectedPublicationDetailData?.publication.snapshotState
+    const current =
+      comparisonPublicationDetailData?.publication.snapshotState ??
+      selectedPublicationDetailData?.publication.snapshotState
+    if (!candidate || !current) return null
+    const candidateSummary = summarizeSnapshot(candidate)
+    const currentSummary = summarizeSnapshot(current)
+    return {
+      candidate: candidateSummary,
+      current: currentSummary,
+      metrics: buildSnapshotMetricRows(candidateSummary, currentSummary),
+      blockTypeDiffs: buildBlockTypeDiff(candidateSummary, currentSummary),
+    }
+  }, [comparisonPublicationDetailData, selectedPublicationDetailData])
+  const isLoadingSnapshotDiff =
+    isLoadingSelectedPublicationDetail || isLoadingComparisonPublicationDetail
   const selectedNewTeamDisciplineId = newTeamDisciplineId || disciplines[0]?.id || ''
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
@@ -1976,6 +2081,81 @@ export function ProjectAdminCenter() {
                 {selectedPublication.status === 'retracted' && (
                   <div className='mt-3 rounded-[8px] border border-red-500/30 bg-red-500/10 p-2 text-[12px] text-red-500'>
                     Retracted versions cannot be restored or loaded into the state tree preview.
+                  </div>
+                )}
+                {selectedPublication.status !== 'retracted' && (
+                  <div className='mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
+                    <div className='border-[var(--border)] border-b px-3 py-2 text-[12px] text-[var(--text-muted)]'>
+                      Comparing restore candidate against{' '}
+                      {comparisonPublicationId
+                        ? `current published version ${comparisonPublicationId}`
+                        : 'itself because this is already the current version'}
+                      .
+                    </div>
+                    {isLoadingSnapshotDiff ? (
+                      <div className='flex items-center gap-2 p-3 text-[12px] text-[var(--text-muted)]'>
+                        <Loader className='h-[13px] w-[13px]' animate />
+                        Loading snapshot diff...
+                      </div>
+                    ) : snapshotDiff ? (
+                      <div className='grid gap-3 p-3'>
+                        <div className='grid gap-2'>
+                          {snapshotDiff.metrics.map((metric) => {
+                            const delta = metric.candidate - metric.current
+                            return (
+                              <div
+                                key={metric.label}
+                                className='grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-[12px]'
+                              >
+                                <span className='text-[var(--text-muted)]'>{metric.label}</span>
+                                <span
+                                  className={cn(
+                                    'font-medium text-[var(--text-primary)]',
+                                    delta > 0 && 'text-emerald-500',
+                                    delta < 0 && 'text-amber-500'
+                                  )}
+                                >
+                                  {metric.candidate} vs {metric.current}
+                                  {delta === 0 ? '' : ` (${delta > 0 ? '+' : ''}${delta})`}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {(snapshotDiff.candidate.metadataName !==
+                          snapshotDiff.current.metadataName ||
+                          snapshotDiff.candidate.metadataDescription !==
+                            snapshotDiff.current.metadataDescription) && (
+                          <div className='rounded-[8px] border border-amber-500/30 bg-amber-500/10 p-2 text-[12px] text-amber-500'>
+                            Workflow metadata differs between the restore candidate and current
+                            published snapshot.
+                          </div>
+                        )}
+                        {snapshotDiff.blockTypeDiffs.length > 0 ? (
+                          <div className='grid gap-1 text-[11px] text-[var(--text-muted)]'>
+                            <div className='font-medium text-[var(--text-primary)]'>
+                              Block type changes
+                            </div>
+                            {snapshotDiff.blockTypeDiffs.map((entry) => (
+                              <div key={entry.type} className='flex justify-between gap-2'>
+                                <span>{entry.type}</span>
+                                <span>
+                                  {entry.candidate} vs {entry.current}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className='text-[11px] text-[var(--text-muted)]'>
+                            No block type count changes detected.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className='p-3 text-[12px] text-[var(--text-muted)]'>
+                        Snapshot diff is unavailable for this publication.
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
