@@ -53,6 +53,7 @@ import {
   usePublicationTree,
   useUpdateOrganizationAgentSkillPolicy,
   useUpdateOrganizationAgentTemplate,
+  useUpdatePublicationDetails,
   useUpdatePublicationLifecycle,
   useUpdatePublicationReview,
 } from '@/hooks/queries/collaboration'
@@ -1053,6 +1054,7 @@ export function ProjectAdminCenter() {
   const updateAgentSkillPolicy = useUpdateOrganizationAgentSkillPolicy()
   const updatePublicationReview = useUpdatePublicationReview()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
+  const updatePublicationDetails = useUpdatePublicationDetails()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const [newTeamName, setNewTeamName] = useState('')
@@ -1070,6 +1072,9 @@ export function ProjectAdminCenter() {
     null
   )
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null)
+  const [publicationDetailDrafts, setPublicationDetailDrafts] = useState<
+    Record<string, { title: string; description: string }>
+  >({})
   const [assignmentTeamId, setAssignmentTeamId] = useState('')
   const [selectedRosterUserId, setSelectedRosterUserId] = useState('')
   const [assignmentValue, setAssignmentValue] = useState('')
@@ -1124,6 +1129,22 @@ export function ProjectAdminCenter() {
   const publications = publicationsData?.publications ?? []
   const selectedPublication =
     publications.find((publication) => publication.id === selectedPublicationId) ?? null
+  const selectedPublicationDetailDraft = selectedPublication
+    ? (publicationDetailDrafts[selectedPublication.id] ?? {
+        title: selectedPublication.title,
+        description: selectedPublication.description ?? '',
+      })
+    : { title: '', description: '' }
+  const canSavePublicationDetails = Boolean(
+    selectedPublication &&
+      selectedPublicationDetailDraft.title.trim() &&
+      selectedPublicationDetailDraft.title.trim().length <= 160 &&
+      selectedPublicationDetailDraft.description.trim().length <= 2000 &&
+      (selectedPublicationDetailDraft.title.trim() !== selectedPublication.title ||
+        selectedPublicationDetailDraft.description.trim() !==
+          (selectedPublication.description ?? '')) &&
+      !updatePublicationDetails.isPending
+  )
   const selectedPublicationDetailId =
     selectedPublication && selectedPublication.status !== 'retracted'
       ? selectedPublication.id
@@ -1496,6 +1517,48 @@ export function ProjectAdminCenter() {
       publicationReviewDrafts[publication.id]?.reviewState ?? publication.reviewState ?? '',
     riskLevel: publicationReviewDrafts[publication.id]?.riskLevel ?? publication.riskLevel ?? '',
   })
+
+  const handlePublicationDetailDraftChange = (
+    publication: PublicationSummary,
+    field: 'title' | 'description',
+    value: string
+  ) => {
+    setPublicationDetailDrafts((drafts) => ({
+      ...drafts,
+      [publication.id]: {
+        title: publication.title,
+        description: publication.description ?? '',
+        ...drafts[publication.id],
+        [field]: value,
+      },
+    }))
+    setPublicationGovernanceStatus(null)
+  }
+
+  const handleSavePublicationDetails = async (publication: PublicationSummary) => {
+    const draft = publicationDetailDrafts[publication.id] ?? {
+      title: publication.title,
+      description: publication.description ?? '',
+    }
+    try {
+      const result = await updatePublicationDetails.mutateAsync({
+        publicationVersionId: publication.id,
+        title: draft.title,
+        description: draft.description.trim() || null,
+        reason: 'Project admin publication detail edit',
+      })
+      setPublicationGovernanceStatus(`Updated details for ${result.publication.title}.`)
+      setPublicationDetailDrafts((drafts) => ({
+        ...drafts,
+        [publication.id]: {
+          title: result.publication.title,
+          description: result.publication.description ?? '',
+        },
+      }))
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
 
   const handlePublicationReviewChange = (
     publication: PublicationSummary,
@@ -3243,6 +3306,70 @@ export function ProjectAdminCenter() {
                     <span className='text-[var(--text-primary)]'>
                       {formatDateTime(selectedPublication.publishedAt)}
                     </span>
+                  </div>
+                </div>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                  Publication details
+                </h3>
+                <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                  Edit the project-facing title and description shown in showcase governance and the
+                  published workflow shell.
+                </p>
+                <div className='mt-3 grid gap-3'>
+                  <label className='grid gap-1'>
+                    <span className='font-medium text-[11px] text-[var(--text-primary)]'>
+                      Title
+                    </span>
+                    <input
+                      value={selectedPublicationDetailDraft.title}
+                      onChange={(event) =>
+                        handlePublicationDetailDraftChange(
+                          selectedPublication,
+                          'title',
+                          event.target.value
+                        )
+                      }
+                      className='h-[34px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                      maxLength={160}
+                    />
+                  </label>
+                  <label className='grid gap-1'>
+                    <span className='font-medium text-[11px] text-[var(--text-primary)]'>
+                      Description
+                    </span>
+                    <textarea
+                      value={selectedPublicationDetailDraft.description}
+                      onChange={(event) =>
+                        handlePublicationDetailDraftChange(
+                          selectedPublication,
+                          'description',
+                          event.target.value
+                        )
+                      }
+                      className='min-h-[82px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-[12px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+                      maxLength={2000}
+                      placeholder='Describe the governance intent, review notes, or scope of this publication.'
+                    />
+                  </label>
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <span className='text-[11px] text-[var(--text-muted)]'>
+                      {selectedPublicationDetailDraft.title.trim().length}/160 title ·{' '}
+                      {selectedPublicationDetailDraft.description.trim().length}/2000 description
+                    </span>
+                    <button
+                      type='button'
+                      className={buttonVariants({ size: 'sm', variant: 'default' })}
+                      disabled={!canSavePublicationDetails}
+                      onClick={() => void handleSavePublicationDetails(selectedPublication)}
+                    >
+                      {updatePublicationDetails.isPending ? (
+                        <Loader className='mr-2 h-[13px] w-[13px]' animate />
+                      ) : null}
+                      Save details
+                    </button>
                   </div>
                 </div>
               </section>

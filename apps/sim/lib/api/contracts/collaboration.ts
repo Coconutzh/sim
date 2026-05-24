@@ -292,6 +292,13 @@ export const updatePublicationVisibilityBodySchema = z.object({
 })
 export type UpdatePublicationVisibilityBody = z.input<typeof updatePublicationVisibilityBodySchema>
 
+export const updatePublicationDetailsBodySchema = z.object({
+  title: z.string().trim().min(1, 'Publication title is required').max(160),
+  description: z.string().trim().max(2000).nullable(),
+  reason: z.string().trim().max(1000).optional(),
+})
+export type UpdatePublicationDetailsBody = z.input<typeof updatePublicationDetailsBodySchema>
+
 export const updatePublicationReviewBodySchema = z.object({
   reviewState: publicationReviewStateSchema.nullable(),
   riskLevel: publicationRiskLevelSchema.nullable(),
@@ -318,6 +325,14 @@ export const publicationVisibilityUpdateSchema = z.object({
   updatedAt: z.string(),
 })
 export type PublicationVisibilityUpdate = z.output<typeof publicationVisibilityUpdateSchema>
+
+export const publicationDetailsUpdateSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  updatedAt: z.string(),
+})
+export type PublicationDetailsUpdate = z.output<typeof publicationDetailsUpdateSchema>
 
 export const publicationReviewUpdateSchema = z.object({
   id: z.string(),
@@ -822,6 +837,14 @@ export const updatePublicationVisibilityContract = defineRouteContract({
   params: publicationParamsSchema,
   body: updatePublicationVisibilityBodySchema,
   response: { mode: 'json', schema: z.object({ publication: publicationVisibilityUpdateSchema }) },
+})
+
+export const updatePublicationDetailsContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/publications/[publicationVersionId]/details',
+  params: publicationParamsSchema,
+  body: updatePublicationDetailsBodySchema,
+  response: { mode: 'json', schema: z.object({ publication: publicationDetailsUpdateSchema }) },
 })
 
 export const updatePublicationReviewContract = defineRouteContract({

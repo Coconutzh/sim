@@ -278,6 +278,7 @@ import {
   resolveAgentForWorkspace,
   updateOrganizationAgentSkillPolicy,
   updateOrganizationAgentTemplate,
+  updatePublicationDetails,
   updatePublicationLifecycleStatus,
   updatePublicationReview,
   updatePublicationVisibility,
@@ -1326,6 +1327,67 @@ describe('collaboration service', () => {
           publicationEvent: 'visibility_updated',
           publicationBroadcast: true,
           targetWorkgroupIds: ['workgroup-2'],
+        }),
+      })
+    )
+  })
+
+  it('updates publication details and mirrors title to the published workflow', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          description: 'Old description',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'organization',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+    )
+
+    await expect(
+      updatePublicationDetails({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        title: 'Updated team plan',
+        description: 'Ready for project review',
+        reason: 'Clarified detail copy',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Updated team plan',
+      description: 'Ready for project review',
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflowPublicationVersion)
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflow)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.updated',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        resourceName: 'Updated team plan',
+        description: 'Clarified detail copy',
+        metadata: expect.objectContaining({
+          previousTitle: 'Team plan',
+          title: 'Updated team plan',
+          previousDescription: 'Old description',
+          description: 'Ready for project review',
+          sourceWorkgroupId: 'workgroup-1',
+          publishedWorkflowId: 'published-workflow-1',
+          publicationEvent: 'details_updated',
         }),
       })
     )

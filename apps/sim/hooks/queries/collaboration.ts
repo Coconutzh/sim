@@ -36,6 +36,7 @@ import {
   type UpdateOrganizationAgentTemplateBody,
   updateOrganizationAgentSkillPolicyContract,
   updateOrganizationAgentTemplateContract,
+  updatePublicationDetailsContract,
   updatePublicationLifecycleContract,
   updatePublicationReviewContract,
   updatePublicationVisibilityContract,
@@ -694,6 +695,36 @@ export function useUpdatePublicationVisibility() {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() })
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.publication(variables.publicationVersionId),
+      })
+    },
+  })
+}
+
+export function useUpdatePublicationDetails() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      publicationVersionId: string
+      title: string
+      description: string | null
+      reason?: string
+    }) =>
+      requestJson(updatePublicationDetailsContract, {
+        params: { publicationVersionId: variables.publicationVersionId },
+        body: {
+          title: variables.title,
+          description: variables.description,
+          reason: variables.reason,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.organizationPublicationLists() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.publication(variables.publicationVersionId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.publicationTree(variables.publicationVersionId),
       })
     },
   })
