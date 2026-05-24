@@ -18,7 +18,7 @@
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
 - 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明、项目级 Agent Skill 默认策略、Agent 策略影响预览和项目级发布状态树治理。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、项目级发布治理、发布详情 drawer、发布版本 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理和依赖影响预览；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理和依赖影响预览；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `2e56fadfb` | Phase 10 项目管理员中心增加节点级发布 diff preview |
 | `95fe059ec` | Phase 10 项目管理员中心增加 Agent 策略影响预览 |
 | `a66239ea2` | Phase 10 项目管理员中心增加发布依赖影响预览 |
 | `010cefa87` | Phase 10 项目管理员中心增加发布批量治理动作 |
@@ -220,6 +221,7 @@
 - 项目管理员中心已补项目级发布状态树治理写操作首版：新增 `GET /api/organizations/[id]/publications` 合约路由和 `useOrganizationPublications`，组织管理员可跨全组织读取 published、superseded、archived、retracted 发布版本；中心页可直接维护 review/risk，执行 archive、retract、restore，底层复用既有 publication lifecycle/review 服务审计和权限边界。
 - 项目管理员中心已补发布治理详情 drawer 首版：每个发布版本可打开右侧详情面板，查看 review/risk/status/visibility、restore 影响说明、父版本和 dependsOn 链路；同时 `canReadPublication` 已允许组织 owner/admin 读取 selected-workgroups 发布的 tree 详情，保证项目管理员能进行跨团队状态树审阅。
 - 发布治理 drawer 已补真实 snapshot diff preview 首版：打开非 retracted 版本时会加载 restore candidate 与当前 published 版本详情，比较 blocks、edges、loops、parallels、variables、workflow metadata 和 block type 计数差异，用于恢复前快速评估结构变化。
+- 发布治理 drawer 已补节点级 diff preview 首版：在 restore impact preview 中继续展开 added/removed/changed blocks、added/removed/changed edges 和变量变化清单，并展示 block type、连接端点和 top-level changed fields，方便项目管理员在恢复前定位具体节点和连线影响。
 - 项目管理员中心已补发布冲突检测首版：复用 publication state tree 分组逻辑，在 KPI、Governance watchlist、发布列表和发布详情 drawer 中标出多 current version、无 current version、过期 current、未 approved current、critical-risk current 等状态树治理告警。
 - 项目管理员中心已补发布冲突处理动作首版：在发布详情 drawer 的 `Conflict detection` 区块中可针对多 current version 逐个归档额外当前版本、针对无 current version 恢复最新可见版本、针对未审核 current 一键标记 approved、针对过期 current 发起 refresh review、针对 critical risk current 将风险降为 high；所有动作复用既有 publication lifecycle/review mutation、服务层审计和权限边界。
 - 项目管理员中心已补发布批量治理首版：在 `Project publication governance` 顶部新增 `Batch governance actions`，可跨全局状态树批量 approve 未审核 current、批量把 stale current 标记为 refresh review、批量把 critical risk current 降为 high、批量归档 duplicate current、批量恢复缺失 current 的最新可见版本；每个批量动作仍逐条复用既有 publication review/lifecycle mutation 和审计链路。
@@ -232,7 +234,7 @@
 
 仍需继续：
 
-- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、lifecycle 写操作、详情 drawer、结构 diff preview、冲突检测、首批冲突处理动作、发布批量治理和跨团队依赖影响预览，但仍缺少节点级 diff 展示、更完整的冲突修复向导和发布详情编辑；批量导入目前仍只是前端文件解析。
+- 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、lifecycle 写操作、详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理和跨团队依赖影响预览，但仍缺少更完整的冲突修复向导和发布详情编辑；批量导入目前仍只是前端文件解析。
 
 ### 3.9 权限与安全加固
 
@@ -349,11 +351,11 @@ git diff --check
 2. 工种管理：首版已展示工种、对应 Agent、团队数量和当前发布/风险概览，且项目级 Agent prompt 补充说明已按 Agent 维度落地；后续补工种启用/停用、显示名和更细的 Agent 策略。
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队和归档团队；后续补设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
-5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、详情 drawer、结构 diff preview、冲突检测、冲突处理动作、批量治理和依赖影响预览已落地；后续补更完整的冲突修复向导、过期/未提交团队治理、节点级 diff 展示和详情编辑。
+5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、冲突处理动作、批量治理和依赖影响预览已落地；后续补更完整的冲突修复向导、过期/未提交团队治理和详情编辑。
 6. Agent 模板与 Skill 策略：项目级 prompt 附加说明、默认 Skill 启用/禁用策略和 Agent 策略影响预览首版已落地；后续补风险 Skill 禁用策略和跨团队策略批量复制。
 7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围和 actor 精确筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件。
 
-建议提交：下一步可拆为 `Add publication detail editing`、`Add node-level publication diff preview` 或 `Copy Agent skill policy across teams`。
+建议提交：下一步可拆为 `Add publication detail editing`、`Add publication conflict repair guide` 或 `Copy Agent skill policy across teams`。
 
 ### Phase 11：Legacy workspace 入口迁移
 
@@ -390,7 +392,7 @@ git diff --check
 1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或继续 Phase 7 框选。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续失败操作审计或进入 Phase 10 项目管理员中心。
-4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、项目级发布治理、发布详情 drawer、结构 diff preview、冲突检测、首批冲突处理动作、发布批量治理和发布依赖影响预览。下一步可继续做发布详情编辑、节点级 diff preview 或 Agent Skill 跨团队策略复制，不要一开始就做复杂图形编辑器。
+4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、项目级发布治理、发布详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理和发布依赖影响预览。下一步可继续做发布详情编辑、冲突修复向导或 Agent Skill 跨团队策略复制，不要一开始就做复杂图形编辑器。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：
