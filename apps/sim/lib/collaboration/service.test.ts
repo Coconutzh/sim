@@ -1728,6 +1728,23 @@ describe('collaboration service', () => {
           },
         },
         {
+          id: 'audit-billing-management-6',
+          action: 'organization.updated',
+          resourceName: 'Theater Project',
+          description: 'Organization subscription cancelled',
+          actorName: 'Stripe webhook',
+          actorEmail: null,
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            billingEvent: 'organization.subscription_cancelled',
+            subscriptionId: 'sub-cancelled-1',
+            cancellationKind: 'standard',
+            totalOverage: 0,
+            remainingOverage: 0,
+          },
+        },
+        {
           id: 'audit-cleanup-execution-1',
           action: 'organization.updated',
           resourceName: 'Theater Project',
@@ -1751,7 +1768,7 @@ describe('collaboration service', () => {
       listOrganizationProjectNotificationCenter({
         userId: 'org-admin-1',
         organizationId: 'org-1',
-        limit: 17,
+        limit: 18,
       })
     ).resolves.toMatchObject({
       notifications: [
@@ -1834,6 +1851,12 @@ describe('collaboration service', () => {
           kind: 'billing_management',
           severity: 'info',
           title: 'Organization invoice payment recovered: Theater Project',
+        },
+        {
+          id: 'audit-billing-management-6',
+          kind: 'billing_management',
+          severity: 'warning',
+          title: 'Organization subscription cancelled: Theater Project',
         },
         {
           id: 'audit-cleanup-execution-1',

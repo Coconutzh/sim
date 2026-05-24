@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { member, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, ne } from 'drizzle-orm'
+import { recordOrganizationBillingLifecycleAudit } from '@/lib/billing/billing-lifecycle-audit'
 import { calculateSubscriptionOverage, isSubscriptionOrgScoped } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { restoreUserProSubscription } from '@/lib/billing/organizations/membership'
@@ -321,6 +322,19 @@ export async function handleSubscriptionDeleted(
             ...dormantResult,
           })
 
+          await recordOrganizationBillingLifecycleAudit({
+            organizationId: subscription.referenceId,
+            billingEvent: 'organization.subscription_cancelled',
+            subscriptionId: subscription.id,
+            stripeSubscriptionId,
+            cancellationKind: 'enterprise',
+            totalOverage: 0,
+            remainingOverage: 0,
+            restoredProCount: dormantResult.restoredProCount,
+            membersSynced: dormantResult.membersSynced,
+            workspacesDetached: dormantResult.workspacesDetached,
+          })
+
           captureServerEvent(subscription.referenceId, 'subscription_cancelled', {
             plan: subscription.plan ?? 'unknown',
             reference_id: subscription.referenceId,
@@ -426,6 +440,18 @@ export async function handleSubscriptionDeleted(
           restoredProCount = dormantResult.restoredProCount
           membersSynced = dormantResult.membersSynced
           workspacesDetached = dormantResult.workspacesDetached
+          await recordOrganizationBillingLifecycleAudit({
+            organizationId: subscription.referenceId,
+            billingEvent: 'organization.subscription_cancelled',
+            subscriptionId: subscription.id,
+            stripeSubscriptionId,
+            cancellationKind: 'standard',
+            totalOverage,
+            remainingOverage,
+            restoredProCount,
+            membersSynced,
+            workspacesDetached,
+          })
         } else if (isPro(subscription.plan)) {
           await syncUsageLimitsFromSubscription(subscription.referenceId)
           membersSynced = 1

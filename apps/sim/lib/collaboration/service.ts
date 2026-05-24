@@ -1967,6 +1967,11 @@ function getBillingManagementTitle(event: BillingManagementEvent, resourceName: 
       ? `Organization invoice payment recovered: ${name}`
       : 'Organization invoice payment recovered'
   }
+  if (event === 'organization.subscription_cancelled') {
+    return name
+      ? `Organization subscription cancelled: ${name}`
+      : 'Organization subscription cancelled'
+  }
   return name ? `Billing updated: ${name}` : 'Billing updated'
 }
 
@@ -1975,6 +1980,9 @@ function getBillingManagementSeverity(
 ): ProjectNotificationCenterEntry['severity'] {
   const record = getMetadataRecord(metadata)
   if (record?.billingEvent === 'organization.invoice_payment_failed') {
+    return 'warning'
+  }
+  if (record?.billingEvent === 'organization.subscription_cancelled') {
     return 'warning'
   }
   const previousSeats = record?.previousSeats

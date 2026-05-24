@@ -9,6 +9,7 @@ const logger = createLogger('BillingLifecycleAudit')
 export const ORGANIZATION_BILLING_LIFECYCLE_EVENTS = [
   'organization.invoice_payment_failed',
   'organization.invoice_payment_recovered',
+  'organization.subscription_cancelled',
 ] as const
 
 export type OrganizationBillingLifecycleEvent =
@@ -25,6 +26,12 @@ interface RecordOrganizationBillingLifecycleAuditParams {
   amountDollars?: number | null
   attemptCount?: number | null
   hostedInvoiceUrl?: string | null
+  cancellationKind?: string | null
+  totalOverage?: number | null
+  remainingOverage?: number | null
+  restoredProCount?: number | null
+  membersSynced?: number | null
+  workspacesDetached?: number | null
 }
 
 function getBillingLifecycleDescription(
@@ -34,6 +41,9 @@ function getBillingLifecycleDescription(
   const amount = typeof amountDollars === 'number' ? ` for $${amountDollars.toFixed(2)}` : ''
   if (event === 'organization.invoice_payment_failed') {
     return `Organization invoice payment failed${amount}`
+  }
+  if (event === 'organization.subscription_cancelled') {
+    return 'Organization subscription cancelled'
   }
   return `Organization invoice payment recovered${amount}`
 }
@@ -76,6 +86,12 @@ export async function recordOrganizationBillingLifecycleAudit(
       amountDollars: params.amountDollars,
       attemptCount: params.attemptCount,
       hostedInvoiceUrl: params.hostedInvoiceUrl,
+      cancellationKind: params.cancellationKind,
+      totalOverage: params.totalOverage,
+      remainingOverage: params.remainingOverage,
+      restoredProCount: params.restoredProCount,
+      membersSynced: params.membersSynced,
+      workspacesDetached: params.workspacesDetached,
     },
   })
 }
