@@ -18,7 +18,7 @@
 - 团队管理员可以初始化团队画布、邀请/添加成员、调整成员角色、移除成员、发布团队画布到展示画布、管理发布生命周期、管理团队 Agent Skill、查看团队活动日志。
 - 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明、项目级 Agent Skill 默认策略、Agent 策略影响预览、项目级发布状态树治理和发布详情编辑。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
-- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑和冲突修复向导；Phase 11 到 Phase 12 仍未完成。
+- Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、Agent Skill 跨团队策略复制、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑和冲突修复向导；Phase 11 到 Phase 12 仍未完成。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -33,6 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `c7b82e93e` | Phase 10 项目管理员中心增加 Agent Skill 跨团队策略复制 |
 | `57aced7ad` | Phase 10 项目管理员中心增加发布冲突修复向导 |
 | `8532fa28d` | Phase 10 项目管理员中心增加发布详情编辑 |
 | `2e56fadfb` | Phase 10 项目管理员中心增加节点级发布 diff preview |
@@ -220,6 +221,7 @@
 - 项目管理员中心已补项目级 Agent Skill 默认策略首版：新增 `GET/PATCH /api/organizations/[id]/agent-skills` 合约路由、`useOrganizationAgentSkillPolicies` / `useUpdateOrganizationAgentSkillPolicy` 和 UI 区块；项目管理员可按 Agent 查看匹配团队画布中的 Skill，并设置默认启用/禁用策略，团队管理员仍可在团队管理页用 team override 做本地调整。
 - 项目级 Agent Skill 策略更新复用 `agent_skill_binding` 的 `agent_template` scope、写入 `skill.updated` 审计事件，并同步更新 API validation route baseline 到 `total=755, zod=730, nonZod=25`。
 - 项目管理员中心已补 Agent 策略影响预览首版：在 Project Agent templates 内按当前 Agent 汇总受影响工种、团队画布、当前展示发布、未 approved current、critical risk current、Prompt 字符变化和项目级 Skill 默认启用/禁用姿态，方便保存模板或调整默认 Skill 前先判断影响面。
+- 项目管理员中心已补 Agent Skill 跨团队策略复制首版：在项目级 Skill 默认策略区展示重复 Skill 名称的 copy candidates，并可从任意行把 enabled/disabled 默认姿态复制到同名且当前姿态不同的匹配团队画布 Skill；底层仍逐条复用既有组织级 Skill policy mutation、React Query 失效和审计链路。
 - 项目管理员中心已补项目级发布状态树治理写操作首版：新增 `GET /api/organizations/[id]/publications` 合约路由和 `useOrganizationPublications`，组织管理员可跨全组织读取 published、superseded、archived、retracted 发布版本；中心页可直接维护 review/risk，执行 archive、retract、restore，底层复用既有 publication lifecycle/review 服务审计和权限边界。
 - 项目管理员中心已补发布治理详情 drawer 首版：每个发布版本可打开右侧详情面板，查看 review/risk/status/visibility、restore 影响说明、父版本和 dependsOn 链路；同时 `canReadPublication` 已允许组织 owner/admin 读取 selected-workgroups 发布的 tree 详情，保证项目管理员能进行跨团队状态树审阅。
 - 发布治理 drawer 已补真实 snapshot diff preview 首版：打开非 retracted 版本时会加载 restore candidate 与当前 published 版本详情，比较 blocks、edges、loops、parallels、variables、workflow metadata 和 block type 计数差异，用于恢复前快速评估结构变化。
@@ -357,10 +359,10 @@ git diff --check
 3. 团队管理：首版已展示团队、成员数量并跳转团队管理页，且已支持创建团队和归档团队；后续补设置团队管理员、查看团队画布和发布详情 drawer。
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
 5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、冲突处理动作、批量治理和依赖影响预览已落地；后续补过期/未提交团队治理。
-6. Agent 模板与 Skill 策略：项目级 prompt 附加说明、默认 Skill 启用/禁用策略和 Agent 策略影响预览首版已落地；后续补风险 Skill 禁用策略和跨团队策略批量复制。
+6. Agent 模板与 Skill 策略：项目级 prompt 附加说明、默认 Skill 启用/禁用策略、Agent 策略影响预览和跨团队策略复制首版已落地；后续补风险 Skill 禁用策略。
 7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围和 actor 精确筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件。
 
-建议提交：下一步可拆为 `Copy Agent skill policy across teams` 或 `Add stale team publication nudges`。
+建议提交：下一步可拆为 `Add stale team publication nudges` 或 `Add risk skill guardrails`。
 
 ### Phase 11：Legacy workspace 入口迁移
 
