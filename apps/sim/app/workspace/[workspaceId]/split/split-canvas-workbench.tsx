@@ -134,6 +134,7 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
             workspaceId={pane.workspaceId}
             selectedBlockIds={pane.selectedBlockIds}
             selectedEdgeIds={pane.selectedEdgeIds}
+            focusNodeIds={pane.copiedBlockIds}
             onNodeClick={(blockId, _mousePosition, modifiers) =>
               pane.onSelectBlock(blockId, modifiers?.additive ?? false)
             }
@@ -421,7 +422,7 @@ export function SplitCanvasWorkbench() {
           )}
         >
           {copiedTargetBlockIds.length > 0
-            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'}${copiedTargetEdgeIds.length > 0 ? ` and ${copiedTargetEdgeIds.length} edge${copiedTargetEdgeIds.length === 1 ? '' : 's'}` : ''} into ${targetPane.label}. New target selection is highlighted after refresh.`
+            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'}${copiedTargetEdgeIds.length > 0 ? ` and ${copiedTargetEdgeIds.length} edge${copiedTargetEdgeIds.length === 1 ? '' : 's'}` : ''} into ${targetPane.label}. New target selection is highlighted and focused after refresh.`
             : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, and click edges to limit which connections copy. Selected edges copy only when both endpoint nodes are selected.'}
         </div>
       </div>

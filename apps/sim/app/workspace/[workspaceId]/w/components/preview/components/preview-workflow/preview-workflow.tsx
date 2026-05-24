@@ -188,6 +188,8 @@ interface PreviewWorkflowProps {
   selectedBlockIds?: string[]
   /** Currently selected edge IDs for preview-only edge highlighting */
   selectedEdgeIds?: string[]
+  /** Node IDs to animate into view after an external action like split copy */
+  focusNodeIds?: string[]
   /** Reports the preview viewport for placement-aware copy targets */
   onViewportChange?: (viewport: PreviewWorkflowViewport) => void
   /** Skips expensive subblock computations for thumbnails/template previews */
@@ -211,6 +213,7 @@ interface FitViewOnChangeProps {
   nodeIds: string
   fitPadding: number
   containerRef: React.RefObject<HTMLDivElement | null>
+  focusNodeIds?: string[]
   onViewportChange?: (viewport: PreviewWorkflowViewport) => void
 }
 
@@ -219,10 +222,12 @@ function FitViewOnChange({
   nodeIds,
   fitPadding,
   containerRef,
+  focusNodeIds,
   onViewportChange,
 }: FitViewOnChangeProps) {
   const { fitView, getViewport } = useReactFlow()
   const lastNodeIdsRef = useRef<string | null>(null)
+  const lastFocusNodeIdsRef = useRef<string | null>(null)
   const emitViewport = useMemo(
     () => () => {
       const rect = containerRef.current?.getBoundingClientRect()
@@ -244,6 +249,30 @@ function FitViewOnChange({
     }, 50)
     return () => clearTimeout(timeoutId)
   }, [nodeIds, fitPadding, fitView, emitViewport])
+
+  useEffect(() => {
+    if (!focusNodeIds?.length || !nodeIds.length) return
+
+    const focusSignature = focusNodeIds.join(',')
+    if (lastFocusNodeIdsRef.current === focusSignature) return
+
+    const availableNodeIds = new Set(nodeIds.split(',').filter(Boolean))
+    const readyFocusNodeIds = focusNodeIds.filter((nodeId) => availableNodeIds.has(nodeId))
+    if (readyFocusNodeIds.length === 0) return
+
+    const timeoutId = setTimeout(() => {
+      const didFit = fitView({
+        nodes: readyFocusNodeIds.map((id) => ({ id })),
+        padding: Math.max(fitPadding, 0.35),
+        duration: 350,
+      })
+      if (!didFit) return
+      lastFocusNodeIdsRef.current = focusSignature
+      setTimeout(emitViewport, 370)
+    }, 80)
+
+    return () => clearTimeout(timeoutId)
+  }, [focusNodeIds, nodeIds, fitPadding, fitView, emitViewport])
 
   useEffect(() => {
     const container = containerRef.current
@@ -289,6 +318,7 @@ export function PreviewWorkflow({
   selectedBlockId,
   selectedBlockIds,
   selectedEdgeIds,
+  focusNodeIds,
   onViewportChange,
   lightweight = false,
 }: PreviewWorkflowProps) {
@@ -731,6 +761,7 @@ export function PreviewWorkflow({
           nodeIds={blocksStructure.ids}
           fitPadding={fitPadding}
           containerRef={containerRef}
+          focusNodeIds={focusNodeIds}
           onViewportChange={onViewportChange}
         />
       </div>
