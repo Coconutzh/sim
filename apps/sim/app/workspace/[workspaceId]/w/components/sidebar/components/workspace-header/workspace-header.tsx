@@ -727,7 +727,7 @@ function WorkspaceHeaderImpl({
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteWorkspace}
         isDeleting={isDeletingWorkspace}
-        itemType='workspace'
+        itemType='canvas'
         itemName={deleteTarget?.name || activeWorkspaceFull?.name || activeWorkspace?.name}
       />
       {/* Leave Confirmation Modal */}

@@ -390,7 +390,22 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 仍需继续：
 
 - 当前团队邀请已覆盖发送、接受后加入 workgroup、pending 列表、取消和重发；后续仍可补更细的错误分类、批量邀请和过期状态视觉。
-- Phase 9 仍需补团队协作日志、更完整的发布可见范围编辑和管理员闭环；发布创建表单与 Agent Skill 绑定已完成首个可用切片。
+- Phase 9 仍需补更完整的发布可见范围编辑和管理员闭环；发布创建表单与 Agent Skill 绑定已完成首个可用切片。
+
+### 5.10 Phase 9 团队协作日志切片
+
+本轮继续补齐团队管理员闭环里的协作日志入口，仍然保持在原 `/workspace/[workspaceId]/team-management` 外壳内：
+
+- 新增 `GET /api/workgroups/[workgroupId]/activity`，route 使用 `collaboration.ts` contract 与 `parseRequest`，并在服务层统一执行 `assertWorkgroupAdmin`，普通成员不能读取团队管理日志。
+- `listWorkgroupActivity` 从 `audit_log` 中按团队画布 `workspaceId`、`metadata.workgroupId`、`metadata.sourceWorkgroupId` 聚合最近活动，覆盖成员、团队画布初始化、发布生命周期和 Agent Skill 绑定等团队相关事件。
+- `addWorkgroupMember`、`updateWorkgroupMemberRole`、`removeWorkgroupMember` 和 `createTeamWorkspace` 开始写入团队上下文 audit metadata，后续团队日志可以看到成员加入、角色调整、移除和团队画布初始化。
+- `useWorkgroupActivity` 接入 React Query；成员、团队画布初始化、Agent Skill 更新会精准失效团队活动 query，发布和发布生命周期操作也会在团队管理页刷新活动列表。
+- 团队管理页新增原风格 `Team activity` 区块，使用 `var(--bg)`、`var(--surface-*)`、`var(--border)` 和 8px 圆角展示最近活动，不引入新的工作台视觉体系。
+
+仍需继续：
+
+- 发布版本可见范围编辑仍是下一步重点；当前发布时可选择组织可见或指定团队，发布后只能归档/撤回。
+- 协作日志当前聚合 audit 记录，后续可继续补更细的 diff、失败权限拒绝告警、批量邀请和过期邀请状态。
 
 ## 6. 建议继续推进目标
 

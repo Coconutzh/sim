@@ -24,7 +24,7 @@ interface DeleteModalProps {
    * Type of item being deleted
    * - 'mixed' is used when both workflows and folders are selected
    */
-  itemType: 'workflow' | 'folder' | 'workspace' | 'mixed' | 'task'
+  itemType: 'workflow' | 'folder' | 'workspace' | 'canvas' | 'mixed' | 'task'
   /**
    * Name(s) of the item(s) being deleted (optional, for display)
    * Can be a single name or an array of names for multiple items
@@ -62,9 +62,10 @@ export function DeleteModal({
 
   const displayNames = Array.isArray(itemName) ? itemName : itemName ? [itemName] : []
 
-  const isWorkspace = itemType === 'workspace'
-  const workspaceName = isWorkspace && displayNames.length > 0 ? displayNames[0] : ''
-  const isConfirmed = !isWorkspace || confirmationText === workspaceName
+  const isContainer = itemType === 'workspace' || itemType === 'canvas'
+  const isCanvas = itemType === 'canvas'
+  const containerName = isContainer && displayNames.length > 0 ? displayNames[0] : ''
+  const isConfirmed = !isContainer || confirmationText === containerName
 
   let title = ''
   if (itemType === 'workflow') {
@@ -76,7 +77,7 @@ export function DeleteModal({
   } else if (itemType === 'mixed') {
     title = 'Delete Items'
   } else {
-    title = 'Delete Workspace'
+    title = isCanvas ? 'Delete Canvas' : 'Delete Workspace'
   }
 
   const restorableTypes = new Set<string>(['workflow', 'folder', 'mixed'])
@@ -215,7 +216,6 @@ export function DeleteModal({
       )
     }
 
-    // workspace type
     if (isSingle && displayNames.length > 0) {
       return (
         <>
@@ -230,7 +230,7 @@ export function DeleteModal({
     }
     return (
       <>
-        Are you sure you want to delete this workspace?{' '}
+        Are you sure you want to delete this {isCanvas ? 'canvas' : 'workspace'}?{' '}
         <span className='text-[var(--text-error)]'>
           This will permanently remove all associated workflows, tables, files, logs, and knowledge
           bases.
@@ -255,13 +255,13 @@ export function DeleteModal({
               ? 'You can restore it from Recently Deleted in Settings.'
               : 'This action cannot be undone.'}
           </p>
-          {isWorkspace && workspaceName && (
+          {isContainer && containerName && (
             <div className='mt-3'>
               <label
                 htmlFor='workspace-delete-confirm'
                 className='mb-1.5 block text-[var(--text-secondary)] text-sm'
               >
-                Type <span className='font-medium text-[var(--text-primary)]'>{workspaceName}</span>{' '}
+                Type <span className='font-medium text-[var(--text-primary)]'>{containerName}</span>{' '}
                 to confirm
               </label>
               <input
@@ -270,7 +270,7 @@ export function DeleteModal({
                 value={confirmationText}
                 onChange={(e) => setConfirmationText(e.target.value)}
                 className='w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-[var(--text-primary)] text-sm placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-1)] focus:outline-none'
-                placeholder={workspaceName}
+                placeholder={containerName}
               />
             </div>
           )}

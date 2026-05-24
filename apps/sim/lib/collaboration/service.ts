@@ -2,6 +2,7 @@
 import { db } from '@sim/db'
 import {
   agentSkillBinding,
+  auditLog,
   discipline,
   member,
   permissions,
@@ -527,6 +528,16 @@ export async function addWorkgroupMember(params: {
       permissionType: workspacePermissionForWorkgroupRole(params.role),
     })
   }
+  recordAudit({
+    workspaceId: wg.teamWorkspaceId,
+    actorId: params.actorUserId,
+    action: AuditAction.MEMBER_INVITED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: wg.id,
+    resourceName: wg.name,
+    description: `Added team member as ${params.role}`,
+    metadata: { workgroupId: wg.id, targetUserId, role: params.role },
+  })
 }
 
 export async function updateWorkgroupMemberRole(params: {
@@ -569,6 +580,16 @@ export async function updateWorkgroupMemberRole(params: {
       permissionType: workspacePermissionForWorkgroupRole(params.role),
     })
   }
+  recordAudit({
+    workspaceId: wg.teamWorkspaceId,
+    actorId: params.actorUserId,
+    action: AuditAction.MEMBER_ROLE_CHANGED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: wg.id,
+    resourceName: wg.name,
+    description: `Changed team member role to ${params.role}`,
+    metadata: { workgroupId: wg.id, targetUserId: params.userId, role: params.role },
+  })
 }
 
 export async function removeWorkgroupMember(params: {
@@ -611,6 +632,16 @@ export async function removeWorkgroupMember(params: {
         )
       )
   }
+  recordAudit({
+    workspaceId: wg.teamWorkspaceId,
+    actorId: params.actorUserId,
+    action: AuditAction.MEMBER_REMOVED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: wg.id,
+    resourceName: wg.name,
+    description: 'Removed team member',
+    metadata: { workgroupId: wg.id, targetUserId: params.userId },
+  })
 }
 
 export async function getOrCreatePersonalWorkspace(params: {
@@ -785,7 +816,61 @@ export async function createTeamWorkspace(params: { userId: string; workgroupId:
     name: 'Team canvas',
     description: `Default node graph for ${wg.name}`,
   })
+  recordAudit({
+    workspaceId: ws.id,
+    actorId: params.userId,
+    action: AuditAction.WORKSPACE_CREATED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: ws.id,
+    resourceName: ws.name,
+    description: 'Initialized team canvas',
+    metadata: { workgroupId: wg.id, canvasScope: 'team' },
+  })
   return { workspace: workspaceDto(ws), defaultWorkflowId }
+}
+
+export async function listWorkgroupActivity(params: {
+  userId: string
+  workgroupId: string
+  limit?: number
+}) {
+  await assertWorkgroupAdmin(params.userId, params.workgroupId)
+  const [wg] = await db
+    .select({ teamWorkspaceId: workgroup.teamWorkspaceId })
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
+  if (!wg) throw new Error('Workgroup not found')
+
+  const scopeConditions = [
+    sql`${auditLog.metadata}->>'workgroupId' = ${params.workgroupId}`,
+    sql`${auditLog.metadata}->>'sourceWorkgroupId' = ${params.workgroupId}`,
+  ]
+  if (wg.teamWorkspaceId) {
+    scopeConditions.push(eq(auditLog.workspaceId, wg.teamWorkspaceId))
+  }
+
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      action: auditLog.action,
+      resourceType: auditLog.resourceType,
+      resourceId: auditLog.resourceId,
+      resourceName: auditLog.resourceName,
+      description: auditLog.description,
+      actorName: auditLog.actorName,
+      actorEmail: auditLog.actorEmail,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .where(or(...scopeConditions))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(params.limit ?? 10)
+
+  return rows.map((row) => ({
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+  }))
 }
 
 export async function getNextPublicationVersionNumber(sourceWorkflowId: string): Promise<number> {

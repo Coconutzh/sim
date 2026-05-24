@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import {
+  Activity,
   Archive,
   Crown,
   EyeOff,
@@ -26,6 +27,7 @@ import {
   useUpdatePublicationLifecycle,
   useUpdateWorkgroupAgentSkill,
   useUpdateWorkgroupMember,
+  useWorkgroupActivity,
   useWorkgroupAgentSkills,
   useWorkgroupMembers,
 } from '@/hooks/queries/collaboration'
@@ -71,6 +73,29 @@ function formatPublicationStatus(status: string) {
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+}
+
+function formatActivityAction(action: string) {
+  switch (action) {
+    case 'member.invited':
+      return 'Member added'
+    case 'member.role_changed':
+      return 'Role updated'
+    case 'member.removed':
+      return 'Member removed'
+    case 'publication.created':
+      return 'Published showcase'
+    case 'publication.archived':
+      return 'Archived publication'
+    case 'publication.retracted':
+      return 'Retracted publication'
+    case 'skill.updated':
+      return 'Agent skill updated'
+    case 'workspace.created':
+      return 'Team canvas initialized'
+    default:
+      return action
+  }
 }
 
 export function WorkgroupTeamManagement() {
@@ -135,10 +160,16 @@ export function WorkgroupTeamManagement() {
   const { data: agentSkillsData, isLoading: isLoadingAgentSkills } = useWorkgroupAgentSkills(
     isAdmin ? activeWorkgroupId : undefined
   )
+  const {
+    data: activityData,
+    isLoading: isLoadingActivity,
+    refetch: refetchActivity,
+  } = useWorkgroupActivity(isAdmin ? activeWorkgroupId : undefined, 10)
   const { data: pendingInvitations = [], isLoading: isLoadingPendingInvitations } =
     usePendingInvitations(isAdmin ? teamWorkspaceId : undefined)
   const publications = publicationsData?.publications ?? []
   const agentSkills = agentSkillsData?.skills ?? []
+  const activity = activityData?.activity ?? []
   const isBusy =
     addMember.isPending ||
     inviteMember.isPending ||
@@ -238,6 +269,7 @@ export function WorkgroupTeamManagement() {
         action,
         reason: `Updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
       })
+      await refetchActivity()
       setStatusMessage(action === 'archive' ? 'Publication archived.' : 'Publication retracted.')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
@@ -272,6 +304,7 @@ export function WorkgroupTeamManagement() {
         targetWorkgroupIds,
       })
       await refetchPublications()
+      await refetchActivity()
       setPublishTitle('')
       setPublishDescription('')
       setPublishTargetWorkgroupIds([])
@@ -780,6 +813,57 @@ export function WorkgroupTeamManagement() {
                         void handleAgentSkillToggle(skill.skillId, checked)
                       }
                     />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+          <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
+            <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
+            <div>
+              <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>Team activity</h2>
+              <p className='text-[12px] text-[var(--text-muted)]'>
+                Recent member, publication, canvas, and Agent Skill changes for this workgroup.
+              </p>
+            </div>
+          </div>
+          <div className='divide-y divide-[var(--border)]'>
+            {isLoadingActivity ? (
+              <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                <Loader className='h-[14px] w-[14px]' animate />
+                Loading team activity...
+              </div>
+            ) : activity.length === 0 ? (
+              <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
+                No team activity has been recorded yet.
+              </div>
+            ) : (
+              activity.map((entry) => (
+                <div
+                  key={entry.id}
+                  className='grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_160px]'
+                >
+                  <div className='min-w-0'>
+                    <div className='flex min-w-0 items-center gap-2'>
+                      <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                        {formatActivityAction(entry.action)}
+                      </span>
+                      {entry.resourceName && (
+                        <span className='truncate text-[12px] text-[var(--text-muted)]'>
+                          {entry.resourceName}
+                        </span>
+                      )}
+                    </div>
+                    <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                      {entry.description?.trim() || 'No additional details'} ·{' '}
+                      {entry.actorName || entry.actorEmail || 'Unknown actor'}
+                    </div>
+                  </div>
+                  <div className='text-[12px] text-[var(--text-muted)] md:text-right'>
+                    {formatPublicationDate(entry.createdAt)}
                   </div>
                 </div>
               ))

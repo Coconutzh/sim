@@ -250,6 +250,24 @@ export const updateAgentSkillBindingBodySchema = z.object({
 })
 export type UpdateAgentSkillBindingBody = z.input<typeof updateAgentSkillBindingBodySchema>
 
+export const workgroupActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+})
+export type WorkgroupActivityQuery = z.output<typeof workgroupActivityQuerySchema>
+
+export const workgroupActivityEntrySchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  resourceType: z.string(),
+  resourceId: z.string().nullable(),
+  resourceName: z.string().nullable(),
+  description: z.string().nullable(),
+  actorName: z.string().nullable(),
+  actorEmail: z.string().nullable(),
+  createdAt: z.string(),
+})
+export type WorkgroupActivityEntry = z.output<typeof workgroupActivityEntrySchema>
+
 export const copySelectionBodySchema = z.object({
   source: z.object({
     type: z.enum(['personal', 'team', 'showcase']),
@@ -453,6 +471,17 @@ export const updateWorkgroupAgentSkillContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: z.object({ binding: agentSkillBindingSchema }),
+  },
+})
+
+export const listWorkgroupActivityContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workgroups/[workgroupId]/activity',
+  params: workgroupParamsSchema,
+  query: workgroupActivityQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ activity: z.array(workgroupActivityEntrySchema) }),
   },
 })
 

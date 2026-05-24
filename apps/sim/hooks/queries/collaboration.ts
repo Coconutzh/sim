@@ -20,6 +20,7 @@ import {
   listMyWorkgroupsContract,
   listOrganizationWorkgroupsContract,
   listShowcasePublicationsContract,
+  listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
   type PublicationSummary,
   removeWorkgroupMemberContract,
@@ -48,6 +49,8 @@ export const collaborationKeys = {
     [...collaborationKeys.workgroupDetails(), workgroupId ?? ''] as const,
   members: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
+  activity: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'activity'] as const,
   agentSkills: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'agent-skills'] as const,
   personalWorkspace: (workgroupId?: string) =>
@@ -175,6 +178,20 @@ export function useWorkgroupMembers(workgroupId?: string) {
   })
 }
 
+export function useWorkgroupActivity(workgroupId?: string, limit = 10) {
+  return useQuery({
+    queryKey: [...collaborationKeys.activity(workgroupId), limit] as const,
+    queryFn: ({ signal }) =>
+      requestJson(listWorkgroupActivityContract, {
+        params: { workgroupId: workgroupId as string },
+        query: { limit },
+        signal,
+      }),
+    enabled: Boolean(workgroupId),
+    staleTime: 30 * 1000,
+  })
+}
+
 export function useAddWorkgroupMember() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -190,6 +207,7 @@ export function useAddWorkgroupMember() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
     },
   })
@@ -205,6 +223,7 @@ export function useUpdateWorkgroupMember() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
     },
   })
 }
@@ -218,6 +237,7 @@ export function useRemoveWorkgroupMember() {
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
     },
   })
@@ -248,6 +268,7 @@ export function useUpdateWorkgroupAgentSkill() {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.agentSkills(variables.workgroupId),
       })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() })
     },
   })
@@ -347,6 +368,7 @@ export function useCreateTeamWorkspace() {
       queryClient.invalidateQueries({
         queryKey: collaborationKeys.teamWorkspace(variables.workgroupId),
       })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
     },
   })
 }

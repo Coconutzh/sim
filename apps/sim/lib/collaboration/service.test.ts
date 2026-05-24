@@ -148,6 +148,19 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
         createdAt: 'agentSkillBinding.createdAt',
         updatedAt: 'agentSkillBinding.updatedAt',
       },
+      auditLog: {
+        id: 'auditLog.id',
+        workspaceId: 'auditLog.workspaceId',
+        action: 'auditLog.action',
+        resourceType: 'auditLog.resourceType',
+        resourceId: 'auditLog.resourceId',
+        resourceName: 'auditLog.resourceName',
+        description: 'auditLog.description',
+        actorName: 'auditLog.actorName',
+        actorEmail: 'auditLog.actorEmail',
+        metadata: 'auditLog.metadata',
+        createdAt: 'auditLog.createdAt',
+      },
     },
   }
 })
@@ -159,9 +172,13 @@ vi.mock('@sim/audit', () => ({
     PUBLICATION_CREATED: 'publication.created',
     PUBLICATION_ARCHIVED: 'publication.archived',
     PUBLICATION_RETRACTED: 'publication.retracted',
+    MEMBER_INVITED: 'member.invited',
+    MEMBER_ROLE_CHANGED: 'member.role_changed',
+    MEMBER_REMOVED: 'member.removed',
     SKILL_UPDATED: 'skill.updated',
+    WORKSPACE_CREATED: 'workspace.created',
   },
-  AuditResourceType: { PUBLICATION: 'publication', SKILL: 'skill' },
+  AuditResourceType: { PUBLICATION: 'publication', SKILL: 'skill', WORKSPACE: 'workspace' },
   recordAudit: vi.fn(),
 }))
 vi.mock('@sim/logger', () => ({
