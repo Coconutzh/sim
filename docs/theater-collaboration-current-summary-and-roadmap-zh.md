@@ -19,7 +19,7 @@
 - 组织/项目管理员已有项目管理员中心入口，可在原 `/workspace/[workspaceId]` shell 内查看工种、团队、成员数量、Agent 映射、展示发布治理 watchlist 和按团队筛选的 activity drilldown，并可创建新的工种团队、从组织 roster 中把既有用户单个或批量分配到任意团队，还可维护项目级 Agent prompt 补充说明、项目级 Agent Skill 默认策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布状态树治理、发布详情编辑、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook provider delivery、email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出首版和独立全屏页（发布评审 + 项目失败审计 + 发布治理审计 + 成员/团队/Agent 策略审计 + retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计）、项目管理员失败操作审计，以及失败审计历史筛选、分页、导出、趋势/保留窗口概览、组织日志 retention policy 控制入口和详情 drawer。
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
 - Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、Agent Skill 跨团队策略复制、风险 Skill guardrails、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook provider delivery、email provider delivery、持久通知 inbox、项目管理员顶部通知铃铛与已读状态首版、通用项目通知中心筛选/分页/详情/导出/全屏页首版和发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计类型扩展、项目管理员失败操作审计、失败审计历史筛选/分页/导出/趋势概览/详情 drawer/组织日志 retention controls、冲突修复向导和过期/未提交团队发布 nudges；Phase 11 到 Phase 12 仍未完成。
-- 最新补充的通用项目通知中心事件会把组织级 SSO provider 配置成功纳入 `organization_settings`，从而覆盖一类组织登录安全设置变更。
+- 最新补充的失败审计独立清理能力新增 `POST /api/organizations/[id]/project-admin/failures/cleanup`，可 dry-run 预览或按小时窗口删除旧的 `project_admin_failure.recorded` audit row，并把执行结果写回 `cleanup_execution` 项目通知类型。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -34,6 +34,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `b27b1794c` | Phase 10 项目管理员中心增加失败审计独立 retention cleanup |
 | `f39d9d9c1` | Phase 10 通用项目通知中心扩展 SSO 安全设置审计事件类型 |
 | `08149ec6f` | Phase 10 通用项目通知中心扩展 subscription cancellation billing 审计事件类型 |
 | `2b8fa3329` | Phase 10 通用项目通知中心扩展 invoice payment failed/recovered billing 审计事件类型 |
@@ -278,6 +279,7 @@
 - 通用项目通知中心最新补充 retention、data drain 和组织管理审计：`projectNotificationCenterKindSchema` 新增 `retention_policy`、`data_drain`、`organization_management`，服务层把 data retention 的 `organization.updated`（仅限 `metadata.retentionEvent = data_retention.settings_updated`）、`data_drain.created/updated/deleted/ran/tested`、`org_member.*` 和 `org_invitation.*` 映射进统一中心；前端项目管理员中心、全屏通知中心和 sidebar 顶部铃铛同步增加筛选/徽标文案。为保证组织级筛选和已读状态可复用，最新写入已在 data retention 更新、组织成员角色/移除、组织邀请创建/更新/接受/拒绝/撤销/重发、ownership transfer 等 audit metadata 中补 `organizationId`；data drain audit 之前已带 `organizationId`，历史 retention/org invitation/member audit 若缺少该字段不会被 retroactive 纳入中心，普通 organization settings update 也不会被误归为 retention。
 - 随后切片继续新增 `organization_settings` 与 `billing_management` 类型：组织基础设置更新写入 `metadata.organizationEvent = organization.settings_updated`，白标/品牌更新写入 `organization.whitelabel_updated`，seat 变更路由在 Stripe quantity 更新成功后写入 `billingEvent = organization.seats_updated` 并记录 `previousSeats` / `seats`；billing lifecycle 切片继续把组织订阅 plan switch 写入 `organization.plan_switched`，把组织 credit purchase 写入 `credit.purchased` + `billingEvent = organization.credits_purchased`，并通过 `metadata.organizationId` 纳入同一个 `billing_management` 通知类型；个人 credit purchase 刻意不写 `billingEvent` / `organizationId`，因此不会进入项目通知中心。webhook billing 切片新增 `recordOrganizationBillingLifecycleAudit`，在 Stripe `invoice.payment_failed` 阻断组织成员后写入 `organization.invoice_payment_failed`，在后续 `invoice.payment_succeeded` 发现组织从 payment_failed block 中恢复时写入 `organization.invoice_payment_recovered`；失败通知按 warning 展示，恢复通知按 info 展示，未被阻断的普通成功账单不会制造噪声。最新 subscription cancellation 切片让 `handleSubscriptionDeleted` 只在 org-scoped Team/Enterprise 取消时写入 `organization.subscription_cancelled`；个人 Pro cancellation 刻意不写 `billingEvent` / `organizationId`，因此不会进入项目通知中心。该事件在通知中心按 warning 展示，并在 metadata 中携带 `cancellationKind`、`totalOverage`、`remainingOverage`、`restoredProCount`、`membersSynced` 与 `workspacesDetached`，方便项目管理员判断取消订阅后的 dormant transition 影响范围。
 - 最新 SSO 安全设置切片继续复用 `organization_settings` 类型：`/api/auth/sso/register` 在组织级 SAML/OIDC provider 注册成功后写入 `metadata.organizationEvent = organization.security_sso_configured`，并记录 `providerId`、`providerType`、`domain`、`issuer` 和 `organizationId`；个人级 SSO provider 不会进入项目通知中心。通用通知中心据此展示 `Organization SSO settings updated`，severity 仍为 info，方便项目管理员在发布/失败/billing 之外看到组织登录安全配置变更。
+- 最新失败审计 retention cleanup 切片补齐独立清理入口：新增 `cleanupProjectAdminFailureContract`、`POST /api/organizations/[id]/project-admin/failures/cleanup`、服务层 `cleanupProjectAdminFailureAudit` 和 `useCleanupProjectAdminFailureAudit`。服务端先校验组织管理员，只匹配当前组织下 `action = project_admin_failure.recorded` 且 `createdAt` 早于 cutoff 的 audit row；dry-run 只返回 `matchedCount`，正式执行才删除匹配行，并记录 `organization.updated` + `metadata.cleanupEvent = cleanup.execution_completed` / `jobType = project_admin_failure_audit_retention`。Project Admin Center 的 Audit retention controls 下新增小时窗口输入、`Preview cleanup` 和 `Delete old failures`，删除前要求浏览器确认并提示先导出证据；通用通知中心继续复用 `cleanup_execution` 类型显示 dry-run / cleanup 结果，metadata 保留 `retentionHours`、`cutoff`、`matchedCount`、`deletedCount` 和 `dryRun`。
 - 上一切片继续新增 `cleanup_execution` 类型：enterprise cleanup runner 在 `cleanup-logs`、`cleanup-soft-deletes`、`cleanup-tasks` 完成后通过 `recordEnterpriseCleanupAudit` 写入 `organization.updated` audit，metadata 使用 `cleanupEvent = cleanup.execution_completed`，并保留 `jobType`、retention hours、workspaceIds、row/file 删除数量、失败数量和耗时；通用通知中心据此把 cleanup 成功归为 info，把 row/file failure 归为 warning。该能力只针对能解析到 `organizationId` 的 enterprise workspace cleanup scope，free/pro/team 全局 cleanup 不会出现在项目通知中心。
 - 项目管理员批量分配已补首版建议填充：基于 organization roster 和当前所选团队的 team canvas access map，提示尚未拥有该团队画布访问权的 roster 成员，并可一键把建议 email 合并进批量输入框。
 - 项目管理员批量分配已补文件导入首版：可上传 CSV/TSV/TXT，前端提取 email 或 user ID 并合并进现有批量输入框，仍由管理员显式点击 `Assign batch transaction` 后才批量提交。
@@ -288,6 +290,8 @@
 仍需继续：
 
 - 这仍只是 Phase 10 的阶段性首版；项目级状态树治理已有 review/risk、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛和项目中心筛选/详情/导出面板及独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地失败操作审计、服务端持久失败审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、失败详情 drawer、组织日志 retention policy 只读控制入口、lifecycle 写操作、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、首批冲突处理动作、发布批量治理、过期/未提交团队 nudges 和跨团队依赖影响预览，Agent Skill 默认策略已有跨团队复制和风险关键词 guardrails；批量导入目前仍只是前端文件解析，通知投递已进入通用 outbox 持久队列，webhook channel 已接入 SSRF-safe provider 发送，email channel 已接入通用邮件 provider 发送，项目管理员中心已有跨会话持久通知 inbox 首版，最近发布评审通知已有按用户持久化的已读/未读状态，顶部铃铛已扩展为通用项目通知中心首版，可同时显示发布评审 digest、项目管理员失败审计条目、发布治理审计条目、成员/团队管理条目、Agent 策略条目、retention policy 条目、data drain 条目、组织成员/邀请条目、组织设置条目、seat billing、plan switch、组织 credits purchase、invoice payment failed/recovered、subscription cancellation 条目和 cleanup 执行条目，项目管理员中心已支持通用通知筛选、分页、详情 drawer、当前页 CSV 导出、当前筛选 CSV 导出和独立全屏页，失败审计历史已支持 scope / actor / date 筛选、翻页、导出、最近 100 条趋势抽样、详情查看和组织日志保留策略跳转；但还没有失败审计专属的独立 retention mutation 或自动删除策略，通用通知中心后续可继续纳入产品确认需要更细粒度的其他 Stripe webhook billing 生命周期，以及组织安全设置变更分类等更多项目级事件。
+
+- 更新：`b27b1794c` 已补齐上一条中提到的“失败审计专属独立 retention mutation / cleanup policy”缺口；后续不应再把该项列为未完成，只需继续观察是否需要自动定时执行或更细的 cleanup 审批流。
 
 ### 3.9 权限与安全加固
 
@@ -306,6 +310,20 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 
 最近已通过或复跑的关键校验包括：
 
+最新失败审计 retention cleanup 切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/organizations/[id]/project-admin/failures/cleanup/route.ts" "app/api/organizations/[id]/project-admin/failures/cleanup/route.test.ts" "lib/api/contracts/collaboration.ts" "lib/collaboration/service.ts" "lib/collaboration/service.test.ts" "hooks/queries/collaboration.ts" "app/workspace/[workspaceId]/project-admin/project-admin-center.tsx"
+Set-Location apps\sim; bunx biome check "app/api/organizations/[id]/project-admin/failures/cleanup/route.ts" "app/api/organizations/[id]/project-admin/failures/cleanup/route.test.ts" "lib/api/contracts/collaboration.ts" "lib/collaboration/service.ts" "lib/collaboration/service.test.ts" "hooks/queries/collaboration.ts" "app/workspace/[workspaceId]/project-admin/project-admin-center.tsx"
+bunx biome check scripts\check-api-validation-contracts.ts
+Set-Location apps\sim; bunx vitest run app/api/organizations/[id]/project-admin/failures/route.test.ts app/api/organizations/[id]/project-admin/failures/cleanup/route.test.ts lib/collaboration/service.test.ts
+bun run check:api-validation:strict
+$patterns = @('cleanupProjectAdminFailure','ProjectAdminFailureCleanup','project-admin/failures/cleanup','Failure audit cleanup','project_admin_failure_audit_retention','cleanup.execution_completed','check-api-validation-contracts','project-admin-center','lib/collaboration/service','hooks/queries/collaboration','contracts/collaboration'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
+上一轮 SSO 切片验证：
+
 ```powershell
 Set-Location apps\sim; bunx biome check --write "app/api/auth/sso/register/route.ts" "app/api/auth/sso/register/route.test.ts" "lib/collaboration/service.ts" "lib/collaboration/service.test.ts"
 Set-Location apps\sim; bunx biome check "app/api/auth/sso/register/route.ts" "app/api/auth/sso/register/route.test.ts" "lib/collaboration/service.ts" "lib/collaboration/service.test.ts"
@@ -317,8 +335,8 @@ git diff --check
 
 已知情况：
 
-- `bun run check:api-validation:strict` 当前基线为 `total=760, zod=735, nonZod=25`，SSO route 继续走既有合约和 `parseRequest`，严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按本轮触碰路径（含 `organization.security_sso_configured`、security_sso_configured、`sso/register`、registerSSOProvider、`organization_settings`、OrganizationSettingsEvent、project notification center 相关符号、`notifications/center`、collaboration service）过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，新增 cleanup route 和 SSO route 都走既有合约和 `parseRequest`，严格校验继续通过。
+- `bun run type-check` 仍退出 2，但按本轮 cleanup 触碰路径（含 `cleanupProjectAdminFailure`、`ProjectAdminFailureCleanup`、`project-admin/failures/cleanup`、`project_admin_failure_audit_retention`、`cleanup.execution_completed`、project admin center、collaboration service / hook / contract）过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
@@ -407,9 +425,9 @@ git diff --check
 4. 用户分配：已支持从组织 roster 或手动 email/user ID 把既有用户加入任意工种团队并指定 member/admin，并已补 textarea 事务性批量分配、文件导入、基于团队画布访问权的建议填充和批量分配聚合审计首版；后续继续补更细的批处理失败归因。
 5. 全局状态树治理：组织级读取所有团队发布版本、首批 review/risk/lifecycle 写操作、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出面板和独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地和服务端失败操作审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、组织日志 retention policy 只读控制入口和失败详情 drawer、详情 drawer、详情编辑、结构 diff preview、节点级 diff preview、冲突检测、冲突修复向导、冲突处理动作、批量治理、过期/未提交团队 nudges 和依赖影响预览已落地；后续补更完整的审批联动，并继续扩展产品确认需要更细粒度的其他 Stripe webhook billing 生命周期和组织安全设置变更等通用通知中心事件类型。
 6. Agent 模板与 Skill 策略：项目级 prompt 附加说明、默认 Skill 启用/禁用策略、Agent 策略影响预览、跨团队策略复制和风险 Skill guardrails 首版已落地；后续补更细的风险分级、白名单和 reviewer 审批联动。
-7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围、actor 精确值和失败 scope 筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件；Failure audit 的服务端历史面板已复用这些筛选能力按 scope / actor / date 下钻，并支持独立分页、当前页 CSV、筛选全集 CSV 导出、最近 24 小时/7 天趋势、Top scope 统计、组织日志 retention policy 只读入口和单条失败详情 drawer。
+7. 审计日志：已有项目级 activity filters 首版，可按团队、工种、动作、搜索文本、时间范围、actor 精确值和失败 scope 筛选，并已补 offset 分页、当前页与全量 CSV 导出、批量成员分配聚合事件；Failure audit 的服务端历史面板已复用这些筛选能力按 scope / actor / date 下钻，并支持独立分页、当前页 CSV、筛选全集 CSV 导出、最近 24 小时/7 天趋势、Top scope 统计、组织日志 retention policy 只读入口、单条失败详情 drawer 和独立 retention cleanup。
 
-建议提交：下一步可继续做 failure audit 的独立 retention mutation / cleanup policy（如果产品确认需要脱离组织日志保留策略），或继续把产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更纳入通用项目通知中心。
+建议提交：下一步可继续把产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更纳入通用项目通知中心，或转入 Phase 11 legacy workspace 入口迁移。
 
 ### Phase 11：Legacy workspace 入口迁移
 
@@ -443,10 +461,10 @@ git diff --check
 
 推荐短期按以下顺序继续，避免范围过大：
 
-1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚、review/risk 管理和 reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出面板和独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地和服务端失败操作审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、组织日志 retention policy 控制入口和详情 drawer 已补齐；下一步可在产品确认后继续 Phase 10 失败审计专属 retention mutation，或补通用通知中心里产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更事件类型。
+1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚、review/risk 管理和 reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出面板和独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地和服务端失败操作审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、组织日志 retention policy 控制入口、详情 drawer 和失败审计专属 retention cleanup 已补齐；下一步可补通用通知中心里产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更事件类型。
 2. Phase 7 的“目标高亮 + pane-scoped selection + viewport-center placement + 显式边选择 + 复制后自动定位动画 + pane-scoped zoom/pan 持久化 + 移动端 tab + Box select 框选”已补首版；下一步继续完整双编辑器 store 隔离或触摸提示优化。
 3. Phase 9 的团队管理页结构优化、批量邀请、邀请过期状态、逐项结果反馈、团队画布健康状态和一键修复已完成首版；下一步可继续更深的失败归因审计或进入 Phase 10 项目管理员中心后续治理。
-4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布治理、发布详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理、发布详情编辑、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出面板和独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地和服务端失败操作审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、组织日志 retention policy 控制入口和详情 drawer、冲突修复向导、过期/未提交团队 nudges 和发布依赖影响预览。下一步可在产品确认后做 failure audit 独立 retention mutation，或继续做产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更的通用通知中心事件类型；不要一开始就做复杂图形编辑器。
+4. Phase 10 项目管理员中心已启动概览，并补创建团队、成员分配、roster 选择器、批量成员分配、文件导入、建议填充、项目级 activity filters、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、风险 Skill guardrails、项目级发布治理、发布详情 drawer、结构 diff preview、节点级 diff preview、冲突检测、首批冲突处理动作、发布批量治理、发布详情编辑、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook/email provider delivery、持久通知 inbox、通用项目通知中心顶部铃铛、项目中心筛选/详情/导出面板和独立全屏页、发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计通知类型、本地和服务端失败操作审计、历史面板、历史筛选、历史分页、CSV 导出、趋势/保留窗口概览、组织日志 retention policy 控制入口、详情 drawer、失败审计专属 retention cleanup、冲突修复向导、过期/未提交团队 nudges 和发布依赖影响预览。下一步可继续做产品确认需要更细粒度的其他 Stripe webhook billing 生命周期与组织安全设置变更的通用通知中心事件类型，或进入 Phase 11 legacy workspace 入口迁移；不要一开始就做复杂图形编辑器。
 5. 最后做 Phase 11/12 的 legacy 入口迁移和上线硬化。
 
 每个切片提交前建议至少运行：
