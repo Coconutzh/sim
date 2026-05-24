@@ -69,6 +69,47 @@ describe('Publication lifecycle API route', () => {
     })
   })
 
+  it('restores a superseded publication through the lifecycle route', async () => {
+    mockUpdatePublicationLifecycleStatus.mockResolvedValue({
+      id: 'publication-1',
+      title: 'Team plan',
+      status: 'published',
+      archivedAt: null,
+      retractedAt: null,
+      lifecycleUpdatedAt: '2026-05-24T00:00:00.000Z',
+      publishedAt: '2026-05-22T00:00:00.000Z',
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/publications/publication-1', {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'restore', reason: 'Rollback to approved cues' }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const response = await PATCH(request, {
+      params: Promise.resolve({ publicationVersionId: 'publication-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockUpdatePublicationLifecycleStatus).toHaveBeenCalledWith({
+      actorUserId: 'admin-1',
+      publicationVersionId: 'publication-1',
+      action: 'restore',
+      reason: 'Rollback to approved cues',
+    })
+    await expect(response.json()).resolves.toEqual({
+      publication: {
+        id: 'publication-1',
+        title: 'Team plan',
+        status: 'published',
+        archivedAt: null,
+        retractedAt: null,
+        lifecycleUpdatedAt: '2026-05-24T00:00:00.000Z',
+        publishedAt: '2026-05-22T00:00:00.000Z',
+      },
+    })
+  })
+
   it('returns 403 when the actor cannot manage the source team publication', async () => {
     mockUpdatePublicationLifecycleStatus.mockRejectedValueOnce(
       new Error('Workgroup admin access required')

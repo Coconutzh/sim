@@ -109,14 +109,17 @@
 - 发布树已扩展 `description`、`status`、`visibility`、`sourceWorkgroup`、`sourceDiscipline`、`agentCode`、`dependsOnPublicationIds` 等元数据。
 - 发布生命周期支持 `published`、`superseded`、`archived`、`retracted` 等状态。
 - 团队管理员可在团队管理页发布团队 workflow，并选择组织可见或指定团队可见。
-- 团队管理员可归档或撤回本团队发布。
-- 发布、归档、撤回已写入 audit。
+- 团队管理员可在发布后继续编辑可见范围，在组织可见和指定团队可见之间切换，并更新目标团队列表。
+- 团队管理员可归档、撤回，或把历史版本恢复为当前发布版本。
+- 团队管理员可维护发布版本的 `reviewState` 与 `riskLevel`，当前枚举为 `pending`、`in_review`、`approved`、`changes_requested`、`rejected` 以及 `low`、`medium`、`high`、`critical`。
+- 发布、可见范围更新、归档、撤回、恢复当前版本、审核/风险更新已写入 audit；对可见的其他团队会额外写入 team activity 广播事件。
+- `/workspace/[workspaceId]/showcase` 已新增首版全局状态树聚合面板，按工种、团队和 Agent 聚合可见发布，展示当前/最新版本、历史版本、状态、可见范围和可见依赖版本。
+- 状态树面板已补治理提示：同一工种/团队/Agent 下多个当前版本、critical risk 会标红；缺少当前 published 版本、当前版本超过默认 14 天未更新、当前版本未 approved 会标黄。
 
 仍需继续：
 
-- 发布后的可见范围编辑仍未完成。
-- 全局状态树目前有数据结构和展示基础，但还不是完整项目级治理视图。
-- 通知/广播、版本回滚、审核流、跨团队依赖冲突提示仍未完成。
+- 全局状态树目前已有首版聚合视图，但还不是完整项目级治理视图。
+- 发布通知/广播已有首版 team activity 事件，版本回滚已有“恢复为当前版本”首版能力，审核/风险字段已有管理入口；站内铃铛、邮件/外部推送、指派 reviewer、审批流、跨团队依赖冲突提示仍未完成。
 
 ### 3.5 跨画布复制与分屏
 
@@ -190,7 +193,7 @@ git diff --check
 
 已知情况：
 
-- `bun run check:api-validation:strict` 已因新增 `GET /api/workgroups/[workgroupId]/activity` 更新 route baseline 到 `total=747, zod=722, nonZod=25` 后通过。
+- `bun run check:api-validation:strict` 已因新增 publication visibility/review routes 更新 route baseline 到 `total=749, zod=724, nonZod=25` 后通过。
 - `bun run type-check` 仍退出 1，但按本轮触碰路径过滤没有匹配错误；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 仅提示 `docs/theater-collaboration-progress-and-next-steps-zh.md` 的 CRLF/LF warning，没有 whitespace error。
 
@@ -202,11 +205,12 @@ git diff --check
 
 建议任务：
 
-1. 发布版本可见范围编辑：新增 PATCH 能力，允许团队管理员或组织管理员调整 `organization` / `selected_workgroups`。
-2. 全局状态树聚合页：在原 shell 下增加项目级展示树视图，按工种、团队、Agent、状态、版本、依赖分组。
+1. 已补发布可见范围编辑的服务层和 route 测试：覆盖非管理员拒绝、跨组织目标团队过滤、组织可见清空 scope；后续继续推进全局状态树治理。
+2. 全局状态树聚合页首版已在原 shell 下落地，按工种、团队、Agent、状态、版本分组，并展示可见 parent/dependsOn 链路、多个当前版本冲突和过期提示；后续继续补治理操作。
 3. 版本关系治理：展示 superseded 链路、parent/dependsOn 关系、当前有效版本和历史版本。
-4. 发布通知/广播：发布、归档、撤回后对可见团队生成通知或事件。
-5. 服务测试：覆盖跨团队可见、未授权团队不可见、源团队可管理、撤回后详情不可读。
+4. 发布通知/广播首版已补：发布、归档、撤回、恢复当前版本、可见范围更新后，对当前可见的其他团队写入 `publication.*` team activity 事件；后续再接站内铃铛、邮件或外部推送。
+5. 版本回滚首版已补：团队管理员可把未撤回的历史版本恢复为当前 `published`，服务层会把其他当前版本标记为 `superseded` 并用该版本 snapshot 重写 published workflow state。
+6. 审核/风险首版已补：新增 `PATCH /api/publications/[publicationVersionId]/review`、团队管理页 review/risk 控件和状态树未审核/critical risk 治理提示；后续继续补 reviewer 指派、审批流、恢复前 diff preview 和项目级治理。
 
 建议提交：`Implement publication state tree workflow` 或拆成 `Edit showcase publication visibility`、`Add publication state tree view`。
 
@@ -258,7 +262,7 @@ git diff --check
 
 当前已完成成员、邀请、发布、生命周期、Agent Skill、团队活动日志的首版闭环。后续继续：
 
-1. 发布可见范围编辑和发布详情治理。
+1. 发布详情治理和更细的可见范围变更反馈。
 2. 团队管理页分区优化：成员、邀请、发布、Agent Skill、活动日志可拆成 tabs。
 3. 批量邀请和邀请过期状态。
 4. 权限拒绝/失败操作是否进入 activity 或 audit 的规则。
@@ -314,7 +318,7 @@ git diff --check
 
 推荐短期按以下顺序继续，避免范围过大：
 
-1. 先做 Phase 5 的“发布可见范围编辑”，因为团队管理页已经有发布创建和生命周期，差最后一个常用管理动作。
+1. 发布可见范围编辑、全局状态树首版视图、依赖链路、冲突/过期/未审核/critical risk 提示、回滚和 review/risk 管理已补齐；下一步可继续 Phase 5 reviewer/审批/diff/通知，或进入 Phase 7 “目标高亮 + pane-scoped 状态”。
 2. 再做 Phase 7 的“目标高亮 + pane-scoped 状态”，因为已有 split 首版和 copy-selection 后端。
 3. 然后收 Phase 9 的团队管理页结构优化，把成员/邀请/发布/Agent Skill/activity 拆成更清晰的信息架构。
 4. 接着启动 Phase 10 项目管理员中心，优先做工种/团队/成员分配，不要一开始就做复杂图形状态树。

@@ -19,6 +19,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId, generateShortId } from '@sim/utils/id'
+import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { and, asc, desc, eq, inArray, isNull, max, ne, or, sql } from 'drizzle-orm'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
@@ -39,6 +40,35 @@ const logger = createLogger('Collaboration')
 export type OrganizationRole = 'owner' | 'admin' | 'member' | null
 export type WorkgroupRole = 'admin' | 'member'
 export type PublicationStatus = 'draft' | 'published' | 'superseded' | 'archived' | 'retracted'
+export type PublicationReviewState =
+  | 'pending'
+  | 'in_review'
+  | 'approved'
+  | 'changes_requested'
+  | 'rejected'
+export type PublicationRiskLevel = 'low' | 'medium' | 'high' | 'critical'
+
+type PublicationVisibility = 'organization' | 'selected_workgroups'
+type PublicationAuditAction =
+  | typeof AuditAction.PUBLICATION_CREATED
+  | typeof AuditAction.PUBLICATION_UPDATED
+  | typeof AuditAction.PUBLICATION_ARCHIVED
+  | typeof AuditAction.PUBLICATION_RETRACTED
+  | typeof AuditAction.PUBLICATION_RESTORED
+
+interface PublicationBroadcastParams {
+  actorUserId: string
+  action: PublicationAuditAction
+  event: 'published' | 'visibility_updated' | 'archived' | 'retracted' | 'restored'
+  publicationVersionId: string
+  title: string
+  organizationId: string
+  sourceWorkgroupId: string
+  sourceWorkflowId: string
+  publishedWorkflowId: string | null
+  visibility: PublicationVisibility
+  targetWorkgroupIds?: string[]
+}
 
 function toSlug(name: string): string {
   const slug = name
@@ -968,7 +998,165 @@ export async function createPublicationVersion(params: {
       versionNumber: inserted.versionNumber,
     },
   })
+  await recordPublicationBroadcastEvents({
+    actorUserId: params.publishedBy,
+    action: AuditAction.PUBLICATION_CREATED,
+    event: 'published',
+    publicationVersionId: inserted.id,
+    title: inserted.title,
+    organizationId: source.organizationId,
+    sourceWorkgroupId: source.workgroupId,
+    sourceWorkflowId: params.sourceWorkflowId,
+    publishedWorkflowId: params.publishedWorkflowId,
+    visibility: params.visibility,
+  })
   return inserted
+}
+
+async function replacePublicationScopes(params: {
+  publishedWorkflowId: string | null
+  visibility: PublicationVisibility
+  targetWorkgroupIds: string[]
+  userId: string
+  organizationId: string
+}) {
+  if (!params.publishedWorkflowId) return []
+
+  await db
+    .delete(workflowPublicationScope)
+    .where(eq(workflowPublicationScope.workflowId, params.publishedWorkflowId))
+
+  if (params.visibility !== 'selected_workgroups') return []
+
+  const uniqueTargetIds = [...new Set(params.targetWorkgroupIds)]
+  if (uniqueTargetIds.length === 0) return []
+
+  const validTargets = await db
+    .select({ id: workgroup.id })
+    .from(workgroup)
+    .where(
+      and(
+        inArray(workgroup.id, uniqueTargetIds),
+        eq(workgroup.organizationId, params.organizationId)
+      )
+    )
+  const validTargetIds = validTargets.map((row) => row.id)
+  if (validTargetIds.length === 0) return []
+
+  await db.insert(workflowPublicationScope).values(
+    validTargetIds.map((viewerWorkgroupId) => ({
+      id: generateId(),
+      workflowId: params.publishedWorkflowId as string,
+      viewerWorkgroupId,
+      createdBy: params.userId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }))
+  )
+
+  return validTargetIds
+}
+
+async function listPublicationScopeTargets(publishedWorkflowIds: string[]) {
+  const uniqueIds = [...new Set(publishedWorkflowIds.filter(Boolean))]
+  if (uniqueIds.length === 0) return new Map<string, string[]>()
+  const rows = await db
+    .select({
+      workflowId: workflowPublicationScope.workflowId,
+      viewerWorkgroupId: workflowPublicationScope.viewerWorkgroupId,
+    })
+    .from(workflowPublicationScope)
+    .where(inArray(workflowPublicationScope.workflowId, uniqueIds))
+
+  const result = new Map<string, string[]>()
+  for (const row of rows) {
+    const existing = result.get(row.workflowId) ?? []
+    existing.push(row.viewerWorkgroupId)
+    result.set(row.workflowId, existing)
+  }
+  return result
+}
+
+async function listPublicationBroadcastTargets(params: {
+  organizationId: string
+  sourceWorkgroupId: string
+  publishedWorkflowId: string | null
+  visibility: PublicationVisibility
+  targetWorkgroupIds?: string[]
+}) {
+  const conditions = [eq(workgroup.organizationId, params.organizationId)]
+
+  if (params.visibility === 'selected_workgroups') {
+    const targetIds =
+      params.targetWorkgroupIds ??
+      (params.publishedWorkflowId
+        ? ((await listPublicationScopeTargets([params.publishedWorkflowId])).get(
+            params.publishedWorkflowId
+          ) ?? [])
+        : [])
+    const viewerIds = [...new Set(targetIds.filter((id) => id !== params.sourceWorkgroupId))]
+    if (viewerIds.length === 0) return []
+    conditions.push(inArray(workgroup.id, viewerIds))
+  } else {
+    conditions.push(ne(workgroup.id, params.sourceWorkgroupId))
+  }
+
+  return db
+    .select({
+      id: workgroup.id,
+      name: workgroup.name,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroup)
+    .where(and(...conditions))
+}
+
+function getPublicationBroadcastDescription(event: PublicationBroadcastParams['event']) {
+  switch (event) {
+    case 'published':
+      return 'Showcase publication is now visible to this team'
+    case 'visibility_updated':
+      return 'Publication visibility changed for this team'
+    case 'archived':
+      return 'Showcase publication was archived'
+    case 'retracted':
+      return 'Showcase publication was retracted'
+    case 'restored':
+      return 'Showcase publication was restored as current'
+  }
+}
+
+async function recordPublicationBroadcastEvents(params: PublicationBroadcastParams) {
+  try {
+    const targets = await listPublicationBroadcastTargets(params)
+    for (const target of targets) {
+      recordAudit({
+        workspaceId: target.teamWorkspaceId,
+        actorId: params.actorUserId,
+        action: params.action,
+        resourceType: AuditResourceType.PUBLICATION,
+        resourceId: params.publicationVersionId,
+        resourceName: params.title,
+        description: getPublicationBroadcastDescription(params.event),
+        metadata: {
+          workgroupId: target.id,
+          workgroupName: target.name,
+          sourceWorkgroupId: params.sourceWorkgroupId,
+          sourceWorkflowId: params.sourceWorkflowId,
+          publishedWorkflowId: params.publishedWorkflowId,
+          publicationEvent: params.event,
+          publicationBroadcast: true,
+          visibility: params.visibility,
+          targetWorkgroupIds: params.targetWorkgroupIds ?? [],
+        },
+      })
+    }
+  } catch (error) {
+    logger.warn('Failed to record publication broadcast events', {
+      error,
+      publicationVersionId: params.publicationVersionId,
+    })
+  }
 }
 
 export async function listVisiblePublications(params: {
@@ -1031,6 +1219,13 @@ export async function listVisiblePublications(params: {
     .orderBy(desc(workflowPublicationVersion.publishedAt))
     .limit(params.limit ?? 50)
 
+  const scopeTargets = await listPublicationScopeTargets(
+    rows.flatMap((row) =>
+      row.publication.publishedWorkflowId ? [row.publication.publishedWorkflowId] : []
+    )
+  )
+  const visibleVersionIds = new Set(rows.map((row) => row.publication.id))
+
   return rows.map((row) => ({
     id: row.publication.id,
     title: row.publication.title,
@@ -1042,8 +1237,21 @@ export async function listVisiblePublications(params: {
     },
     agentCode: row.publication.agentCode,
     versionNumber: row.publication.versionNumber,
+    parentVersionId:
+      row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
+        ? row.publication.parentVersionId
+        : null,
     status: row.publication.status,
     visibility: row.publication.visibility,
+    reviewState: row.publication.reviewState as PublicationReviewState | null,
+    riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
+    dependsOnPublicationIds:
+      row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)
+        ? [row.publication.parentVersionId]
+        : [],
+    targetWorkgroupIds: row.publication.publishedWorkflowId
+      ? (scopeTargets.get(row.publication.publishedWorkflowId) ?? [])
+      : [],
     publishedBy: {
       id: row.publisherId ?? '',
       name: row.publisherName ?? 'Unknown',
@@ -1051,6 +1259,157 @@ export async function listVisiblePublications(params: {
     },
     publishedAt: row.publication.publishedAt.toISOString(),
   }))
+}
+
+export async function updatePublicationVisibility(params: {
+  actorUserId: string
+  publicationVersionId: string
+  visibility: PublicationVisibility
+  targetWorkgroupIds: string[]
+  reason?: string
+}) {
+  const [row] = await db
+    .select({
+      id: workflowPublicationVersion.id,
+      title: workflowPublicationVersion.title,
+      organizationId: workflowPublicationVersion.organizationId,
+      sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
+      sourceWorkflowId: workflowPublicationVersion.sourceWorkflowId,
+      publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
+      visibility: workflowPublicationVersion.visibility,
+    })
+    .from(workflowPublicationVersion)
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+    .limit(1)
+  if (!row) throw new Error('Publication not found')
+  await assertWorkgroupAdmin(params.actorUserId, row.sourceWorkgroupId)
+
+  const now = new Date()
+  const targetWorkgroupIds = await replacePublicationScopes({
+    publishedWorkflowId: row.publishedWorkflowId,
+    visibility: params.visibility,
+    targetWorkgroupIds: params.targetWorkgroupIds,
+    userId: params.actorUserId,
+    organizationId: row.organizationId,
+  })
+
+  await db
+    .update(workflowPublicationVersion)
+    .set({
+      visibility: params.visibility,
+      lifecycleUpdatedBy: params.actorUserId,
+      lifecycleUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+
+  if (row.publishedWorkflowId) {
+    await db
+      .update(workflow)
+      .set({ visibility: params.visibility, updatedAt: now })
+      .where(eq(workflow.id, row.publishedWorkflowId))
+  }
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action: AuditAction.PUBLICATION_UPDATED,
+    resourceType: AuditResourceType.PUBLICATION,
+    resourceId: row.id,
+    resourceName: row.title,
+    description: params.reason,
+    metadata: {
+      previousVisibility: row.visibility,
+      visibility: params.visibility,
+      targetWorkgroupIds,
+      sourceWorkflowId: row.sourceWorkflowId,
+      sourceWorkgroupId: row.sourceWorkgroupId,
+      publishedWorkflowId: row.publishedWorkflowId,
+    },
+  })
+  await recordPublicationBroadcastEvents({
+    actorUserId: params.actorUserId,
+    action: AuditAction.PUBLICATION_UPDATED,
+    event: 'visibility_updated',
+    publicationVersionId: row.id,
+    title: row.title,
+    organizationId: row.organizationId,
+    sourceWorkgroupId: row.sourceWorkgroupId,
+    sourceWorkflowId: row.sourceWorkflowId,
+    publishedWorkflowId: row.publishedWorkflowId,
+    visibility: params.visibility,
+    targetWorkgroupIds,
+  })
+
+  return {
+    id: row.id,
+    title: row.title,
+    visibility: params.visibility,
+    targetWorkgroupIds,
+    updatedAt: now.toISOString(),
+  }
+}
+
+export async function updatePublicationReview(params: {
+  actorUserId: string
+  publicationVersionId: string
+  reviewState: PublicationReviewState | null
+  riskLevel: PublicationRiskLevel | null
+  reason?: string
+}) {
+  const [row] = await db
+    .select({
+      id: workflowPublicationVersion.id,
+      title: workflowPublicationVersion.title,
+      sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
+      sourceWorkflowId: workflowPublicationVersion.sourceWorkflowId,
+      publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
+      reviewState: workflowPublicationVersion.reviewState,
+      riskLevel: workflowPublicationVersion.riskLevel,
+    })
+    .from(workflowPublicationVersion)
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+    .limit(1)
+  if (!row) throw new Error('Publication not found')
+  await assertWorkgroupAdmin(params.actorUserId, row.sourceWorkgroupId)
+
+  const now = new Date()
+  await db
+    .update(workflowPublicationVersion)
+    .set({
+      reviewState: params.reviewState,
+      riskLevel: params.riskLevel,
+      lifecycleUpdatedBy: params.actorUserId,
+      lifecycleUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+
+  recordAudit({
+    actorId: params.actorUserId,
+    action: AuditAction.PUBLICATION_UPDATED,
+    resourceType: AuditResourceType.PUBLICATION,
+    resourceId: row.id,
+    resourceName: row.title,
+    description: params.reason,
+    metadata: {
+      previousReviewState: row.reviewState,
+      reviewState: params.reviewState,
+      previousRiskLevel: row.riskLevel,
+      riskLevel: params.riskLevel,
+      sourceWorkflowId: row.sourceWorkflowId,
+      sourceWorkgroupId: row.sourceWorkgroupId,
+      publishedWorkflowId: row.publishedWorkflowId,
+      publicationEvent: 'review_updated',
+    },
+  })
+
+  return {
+    id: row.id,
+    title: row.title,
+    reviewState: params.reviewState,
+    riskLevel: params.riskLevel,
+    updatedAt: now.toISOString(),
+  }
 }
 
 export async function getPublication(params: { userId: string; publicationVersionId: string }) {
@@ -1091,6 +1450,8 @@ export async function getPublication(params: { userId: string; publicationVersio
     agentCode: row.publication.agentCode,
     status: row.publication.status,
     visibility: row.publication.visibility,
+    reviewState: row.publication.reviewState as PublicationReviewState | null,
+    riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
     snapshotState: row.publication.snapshotState,
     snapshotMetadata: row.publication.snapshotMetadata,
     publishedAt: row.publication.publishedAt.toISOString(),
@@ -1144,6 +1505,8 @@ export async function getPublicationTree(params: { userId: string; publicationVe
       versionNumber: row.publication.versionNumber,
       status: row.publication.status,
       visibility: row.publication.visibility,
+      reviewState: row.publication.reviewState as PublicationReviewState | null,
+      riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
       sourceWorkgroup: {
         id: row.publication.sourceWorkgroupId,
         name: row.sourceWorkgroupName,
@@ -1166,20 +1529,24 @@ export async function getPublicationTree(params: { userId: string; publicationVe
 export async function updatePublicationLifecycleStatus(params: {
   actorUserId: string
   publicationVersionId: string
-  action: 'archive' | 'retract'
+  action: 'archive' | 'retract' | 'restore'
   reason?: string
 }) {
   const [row] = await db
     .select({
       id: workflowPublicationVersion.id,
       title: workflowPublicationVersion.title,
+      organizationId: workflowPublicationVersion.organizationId,
       sourceWorkgroupId: workflowPublicationVersion.sourceWorkgroupId,
       sourceWorkflowId: workflowPublicationVersion.sourceWorkflowId,
       publishedWorkflowId: workflowPublicationVersion.publishedWorkflowId,
+      visibility: workflowPublicationVersion.visibility,
       status: workflowPublicationVersion.status,
       archivedAt: workflowPublicationVersion.archivedAt,
       retractedAt: workflowPublicationVersion.retractedAt,
       publishedAt: workflowPublicationVersion.publishedAt,
+      snapshotState: workflowPublicationVersion.snapshotState,
+      description: workflowPublicationVersion.description,
     })
     .from(workflowPublicationVersion)
     .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
@@ -1188,6 +1555,102 @@ export async function updatePublicationLifecycleStatus(params: {
   await assertWorkgroupAdmin(params.actorUserId, row.sourceWorkgroupId)
 
   const now = new Date()
+  if (params.action === 'restore') {
+    if (row.status === 'retracted') {
+      throw new Error('Retracted publications cannot be restored')
+    }
+    if (!row.publishedWorkflowId) {
+      throw new Error('Published workflow not found')
+    }
+
+    const saveResult = await saveWorkflowToNormalizedTables(
+      row.publishedWorkflowId,
+      row.snapshotState as WorkflowState
+    )
+    if (saveResult?.success === false) {
+      throw new Error(saveResult.error ?? 'Failed to restore publication snapshot')
+    }
+
+    await db
+      .update(workflowPublicationVersion)
+      .set({
+        status: 'superseded',
+        lifecycleUpdatedBy: params.actorUserId,
+        lifecycleUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(workflowPublicationVersion.sourceWorkflowId, row.sourceWorkflowId),
+          eq(workflowPublicationVersion.status, 'published'),
+          ne(workflowPublicationVersion.id, row.id)
+        )
+      )
+
+    await db
+      .update(workflowPublicationVersion)
+      .set({
+        status: 'published',
+        archivedAt: null,
+        retractedAt: null,
+        lifecycleUpdatedBy: params.actorUserId,
+        lifecycleUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+
+    await db
+      .update(workflow)
+      .set({
+        name: row.title,
+        description: row.description,
+        visibility: row.visibility,
+        publishedAt: now,
+        publishedBy: params.actorUserId,
+        lastSynced: now,
+        updatedAt: now,
+      })
+      .where(eq(workflow.id, row.publishedWorkflowId))
+
+    recordAudit({
+      actorId: params.actorUserId,
+      action: AuditAction.PUBLICATION_RESTORED,
+      resourceType: AuditResourceType.PUBLICATION,
+      resourceId: row.id,
+      resourceName: row.title,
+      description: params.reason,
+      metadata: {
+        previousStatus: row.status,
+        status: 'published',
+        sourceWorkflowId: row.sourceWorkflowId,
+        sourceWorkgroupId: row.sourceWorkgroupId,
+        publishedWorkflowId: row.publishedWorkflowId,
+      },
+    })
+    await recordPublicationBroadcastEvents({
+      actorUserId: params.actorUserId,
+      action: AuditAction.PUBLICATION_RESTORED,
+      event: 'restored',
+      publicationVersionId: row.id,
+      title: row.title,
+      organizationId: row.organizationId,
+      sourceWorkgroupId: row.sourceWorkgroupId,
+      sourceWorkflowId: row.sourceWorkflowId,
+      publishedWorkflowId: row.publishedWorkflowId,
+      visibility: row.visibility,
+    })
+
+    return {
+      id: row.id,
+      title: row.title,
+      status: 'published' as const,
+      archivedAt: null,
+      retractedAt: null,
+      lifecycleUpdatedAt: now.toISOString(),
+      publishedAt: row.publishedAt.toISOString(),
+    }
+  }
+
   const status = params.action === 'archive' ? 'archived' : 'retracted'
   const archivedAt = params.action === 'archive' ? (row.archivedAt ?? now) : row.archivedAt
   const retractedAt = params.action === 'retract' ? (row.retractedAt ?? now) : row.retractedAt
@@ -1221,6 +1684,21 @@ export async function updatePublicationLifecycleStatus(params: {
       sourceWorkgroupId: row.sourceWorkgroupId,
       publishedWorkflowId: row.publishedWorkflowId,
     },
+  })
+  await recordPublicationBroadcastEvents({
+    actorUserId: params.actorUserId,
+    action:
+      params.action === 'archive'
+        ? AuditAction.PUBLICATION_ARCHIVED
+        : AuditAction.PUBLICATION_RETRACTED,
+    event: params.action === 'archive' ? 'archived' : 'retracted',
+    publicationVersionId: row.id,
+    title: row.title,
+    organizationId: row.organizationId,
+    sourceWorkgroupId: row.sourceWorkgroupId,
+    sourceWorkflowId: row.sourceWorkflowId,
+    publishedWorkflowId: row.publishedWorkflowId,
+    visibility: row.visibility,
   })
 
   return {

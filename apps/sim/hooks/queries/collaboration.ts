@@ -26,6 +26,8 @@ import {
   removeWorkgroupMemberContract,
   setActiveWorkgroupContract,
   updatePublicationLifecycleContract,
+  updatePublicationReviewContract,
+  updatePublicationVisibilityContract,
   updateWorkgroupAgentSkillContract,
   updateWorkgroupMemberContract,
 } from '@/lib/api/contracts/collaboration'
@@ -419,12 +421,64 @@ export function useUpdatePublicationLifecycle() {
   return useMutation({
     mutationFn: (variables: {
       publicationVersionId: string
-      action: 'archive' | 'retract'
+      action: 'archive' | 'retract' | 'restore'
       reason?: string
     }) =>
       requestJson(updatePublicationLifecycleContract, {
         params: { publicationVersionId: variables.publicationVersionId },
         body: { action: variables.action, reason: variables.reason },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.publication(variables.publicationVersionId),
+      })
+    },
+  })
+}
+
+export function useUpdatePublicationVisibility() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      publicationVersionId: string
+      visibility: 'organization' | 'selected_workgroups'
+      targetWorkgroupIds?: string[]
+      reason?: string
+    }) =>
+      requestJson(updatePublicationVisibilityContract, {
+        params: { publicationVersionId: variables.publicationVersionId },
+        body: {
+          visibility: variables.visibility,
+          targetWorkgroupIds: variables.targetWorkgroupIds ?? [],
+          reason: variables.reason,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.publication(variables.publicationVersionId),
+      })
+    },
+  })
+}
+
+export function useUpdatePublicationReview() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      publicationVersionId: string
+      reviewState: 'pending' | 'in_review' | 'approved' | 'changes_requested' | 'rejected' | null
+      riskLevel: 'low' | 'medium' | 'high' | 'critical' | null
+      reason?: string
+    }) =>
+      requestJson(updatePublicationReviewContract, {
+        params: { publicationVersionId: variables.publicationVersionId },
+        body: {
+          reviewState: variables.reviewState,
+          riskLevel: variables.riskLevel,
+          reason: variables.reason,
+        },
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() })

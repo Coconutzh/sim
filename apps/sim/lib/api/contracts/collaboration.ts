@@ -28,6 +28,16 @@ export const publicationStatusSchema = z.enum([
   'archived',
   'retracted',
 ])
+export const publicationReviewStateSchema = z.enum([
+  'pending',
+  'in_review',
+  'approved',
+  'changes_requested',
+  'rejected',
+])
+export type PublicationReviewState = z.output<typeof publicationReviewStateSchema>
+export const publicationRiskLevelSchema = z.enum(['low', 'medium', 'high', 'critical'])
+export type PublicationRiskLevel = z.output<typeof publicationRiskLevelSchema>
 
 export const organizationParamsSchema = z.object({ id: nonEmptyIdSchema })
 export const workgroupParamsSchema = z.object({ workgroupId: nonEmptyIdSchema })
@@ -172,8 +182,13 @@ export const publicationSummarySchema = z.object({
   sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
   agentCode: agentCodeSchema,
   versionNumber: z.number(),
+  parentVersionId: z.string().nullable(),
   status: publicationStatusSchema,
   visibility: publicationVisibilitySchema,
+  reviewState: publicationReviewStateSchema.nullable(),
+  riskLevel: publicationRiskLevelSchema.nullable(),
+  dependsOnPublicationIds: z.array(z.string()),
+  targetWorkgroupIds: z.array(z.string()).optional(),
   publishedBy: z.object({ id: z.string(), name: z.string(), avatarUrl: z.string().nullable() }),
   publishedAt: z.string(),
 })
@@ -188,7 +203,6 @@ export const publicationSnapshotMetadataSchema = z
 export type PublicationSnapshotMetadata = z.output<typeof publicationSnapshotMetadataSchema>
 
 export const publicationDetailSchema = publicationSummarySchema.omit({ publishedBy: true }).extend({
-  parentVersionId: z.string().nullable(),
   snapshotState: workflowStateSchema,
   snapshotMetadata: publicationSnapshotMetadataSchema,
 })
@@ -205,6 +219,8 @@ export const publicationTreeSchema = z.object({
       versionNumber: z.number(),
       status: publicationStatusSchema,
       visibility: publicationVisibilitySchema,
+      reviewState: publicationReviewStateSchema.nullable(),
+      riskLevel: publicationRiskLevelSchema.nullable(),
       sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),
       sourceDiscipline: z.object({ code: z.string(), name: z.string() }),
       agentCode: agentCodeSchema,
@@ -218,10 +234,24 @@ export const publicationTreeSchema = z.object({
 export type PublicationTree = z.output<typeof publicationTreeSchema>
 
 export const updatePublicationLifecycleBodySchema = z.object({
-  action: z.enum(['archive', 'retract']),
+  action: z.enum(['archive', 'retract', 'restore']),
   reason: z.string().trim().max(1000).optional(),
 })
 export type UpdatePublicationLifecycleBody = z.input<typeof updatePublicationLifecycleBodySchema>
+
+export const updatePublicationVisibilityBodySchema = z.object({
+  visibility: publicationVisibilitySchema,
+  targetWorkgroupIds: z.array(nonEmptyIdSchema).optional().default([]),
+  reason: z.string().trim().max(1000).optional(),
+})
+export type UpdatePublicationVisibilityBody = z.input<typeof updatePublicationVisibilityBodySchema>
+
+export const updatePublicationReviewBodySchema = z.object({
+  reviewState: publicationReviewStateSchema.nullable(),
+  riskLevel: publicationRiskLevelSchema.nullable(),
+  reason: z.string().trim().max(1000).optional(),
+})
+export type UpdatePublicationReviewBody = z.input<typeof updatePublicationReviewBodySchema>
 
 export const publicationLifecycleSchema = z.object({
   id: z.string(),
@@ -233,6 +263,24 @@ export const publicationLifecycleSchema = z.object({
   publishedAt: z.string(),
 })
 export type PublicationLifecycle = z.output<typeof publicationLifecycleSchema>
+
+export const publicationVisibilityUpdateSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  visibility: publicationVisibilitySchema,
+  targetWorkgroupIds: z.array(z.string()),
+  updatedAt: z.string(),
+})
+export type PublicationVisibilityUpdate = z.output<typeof publicationVisibilityUpdateSchema>
+
+export const publicationReviewUpdateSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  reviewState: publicationReviewStateSchema.nullable(),
+  riskLevel: publicationRiskLevelSchema.nullable(),
+  updatedAt: z.string(),
+})
+export type PublicationReviewUpdate = z.output<typeof publicationReviewUpdateSchema>
 
 export const agentSkillBindingSchema = z.object({
   id: z.string().nullable(),
@@ -531,6 +579,22 @@ export const updatePublicationLifecycleContract = defineRouteContract({
   params: publicationParamsSchema,
   body: updatePublicationLifecycleBodySchema,
   response: { mode: 'json', schema: z.object({ publication: publicationLifecycleSchema }) },
+})
+
+export const updatePublicationVisibilityContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/publications/[publicationVersionId]/visibility',
+  params: publicationParamsSchema,
+  body: updatePublicationVisibilityBodySchema,
+  response: { mode: 'json', schema: z.object({ publication: publicationVisibilityUpdateSchema }) },
+})
+
+export const updatePublicationReviewContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/publications/[publicationVersionId]/review',
+  params: publicationParamsSchema,
+  body: updatePublicationReviewBodySchema,
+  response: { mode: 'json', schema: z.object({ publication: publicationReviewUpdateSchema }) },
 })
 
 export const getPublicationTreeContract = defineRouteContract({

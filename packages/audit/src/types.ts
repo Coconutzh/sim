@@ -165,8 +165,10 @@ export const AuditAction = {
 
   // Publications
   PUBLICATION_CREATED: 'publication.created',
+  PUBLICATION_UPDATED: 'publication.updated',
   PUBLICATION_ARCHIVED: 'publication.archived',
   PUBLICATION_RETRACTED: 'publication.retracted',
+  PUBLICATION_RESTORED: 'publication.restored',
   PUBLICATION_SUPERSEDED: 'publication.superseded',
 
   // Webhooks

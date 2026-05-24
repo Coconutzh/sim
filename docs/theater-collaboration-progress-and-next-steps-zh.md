@@ -1,6 +1,6 @@
 ﻿# 剧场项目多团队画布协作系统进度与后续目标
 
-> 更新时间：2026-05-23
+> 更新时间：2026-05-24
 > 基准文档：`docs/theater-collaboration-phased-implementation-plan-zh.md`
 > 当前推进阶段：Phase 9「团队管理员闭环」继续在原 `/workspace` 外壳下收口团队发布管理、Agent Skill 绑定和协作日志；Phase 7 分屏仍保留目标高亮与双 pane 状态隔离待办
 
@@ -404,8 +404,86 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
 
 仍需继续：
 
-- 发布版本可见范围编辑仍是下一步重点；当前发布时可选择组织可见或指定团队，发布后只能归档/撤回。
 - 协作日志当前聚合 audit 记录，后续可继续补更细的 diff、失败权限拒绝告警、批量邀请和过期邀请状态。
+
+### 5.11 Phase 5 发布可见范围编辑切片
+
+本轮继续收口展示画布发布治理，把“发布时可选可见范围”推进到“发布后可编辑可见范围”：
+
+- 新增 `PATCH /api/publications/[publicationVersionId]/visibility`，route 使用 `collaboration.ts` contract 与 `parseRequest`，并在服务层执行 `assertWorkgroupAdmin`。
+- `updatePublicationVisibility` 会同步更新 `workflow_publication_version.visibility` 和对应 published workflow 的 `visibility`，并重建 `workflow_publication_scope`。
+- 指定团队可见时，服务层会按同一 organization 校验目标 workgroup，只写入合法团队 scope；组织可见时会清空 scoped viewers。
+- 发布列表响应新增 `targetWorkgroupIds`，团队管理页可以回显当前指定团队可见范围。
+- 团队管理页 `Team publications` 区块新增可见范围编辑控件：管理员可在 `Organization visible` 与 `Selected teams` 之间切换，并勾选可见团队后保存。
+- 可见范围更新写入 `publication.updated` audit 事件，团队活动日志可展示“Updated publication”。
+- 可见范围更新后，服务层会对当前可见的其他团队额外写入 `publication.updated` team activity 广播事件，metadata 标记 `publicationBroadcast` 与目标 `workgroupId`。
+- 已补 `apps/sim/lib/collaboration/service.test.ts` 和 `apps/sim/app/api/publications/[publicationVersionId]/visibility/route.test.ts`，覆盖非管理员拒绝、跨组织目标团队过滤、组织可见清空 scope、route contract 调用、默认空 target 列表和未登录拒绝。
+
+仍需继续：
+
+- 更完整的全局状态树治理、站内铃铛/邮件级通知、版本回滚和审核流仍是 Phase 5 后续任务。
+
+### 5.12 Phase 5 展示画布全局状态树首版视图
+
+本轮继续把 Phase 5 从“数据形态”推进到“原 shell 可见治理视图”：
+
+- 新增 `apps/sim/lib/collaboration/publication-state-tree.ts`，把 `PublicationSummary` 按工种、来源团队和 Agent 聚合成状态树分组。
+- `/workspace/[workspaceId]/showcase` 在原 Sidebar/Provider 外壳内新增 `Publication state tree` 面板，展示每组当前/最新可见版本、历史版本、状态、可见范围和目标团队数量。
+- 该面板复用 `useShowcasePublications`，不新增独立 `/workbench` 外壳，也不绕过现有发布可见性过滤。
+- 已补 `apps/sim/lib/collaboration/publication-state-tree.test.ts`，覆盖按工种/团队/Agent 分组、当前版本选择、历史版本和 selected team 计数。
+- `publicationSummarySchema` 和 `listVisiblePublications` 现在返回可见的 `parentVersionId` / `dependsOnPublicationIds`；若父版本不在当前可见集合中则不泄露 ID。
+- 状态树面板会把可见依赖版本展示为 `Depends on vN`，历史版本行也能看到对应父版本链路。
+- 已补 `apps/sim/lib/collaboration/service.test.ts`，覆盖展示列表只返回可见 publication dependency link，并继续保留 selected team scope 计数。
+- 状态树 helper 新增 governance alert：同一工种/团队/Agent 下多个 `published` 当前版本标记为 danger，缺少当前 `published` 版本或当前版本超过默认 14 天未更新标记为 warning。
+- 状态树现在也读取 `reviewState` / `riskLevel`，当前版本未 `approved` 时标黄，`critical` risk 当前版本标红。
+- `/workspace/[workspaceId]/showcase` 状态树卡片会以原 shell 风格显示这些治理提示，不新增路由或独立工作台外壳。
+
+仍需继续：
+
+- 状态树已接入首版发布广播事件、历史版本恢复当前能力和审核/风险治理提示；后续仍需要站内铃铛/邮件级通知、reviewer 指派、审批流和恢复前差异预览。
+
+### 5.13 Phase 5 发布广播事件切片
+
+本轮继续把 Phase 5 的“发布通知/广播”先落到可审计的团队活动事件：
+
+- `createPublicationVersion`、`updatePublicationVisibility`、`updatePublicationLifecycleStatus` 在写主团队 audit 后，会按发布当前可见范围解析其他可见团队并写入 `publication.*` 广播 audit。
+- 组织可见发布会广播给同组织内除源团队外的团队；指定团队可见发布只广播给合法 scoped viewer；归档/撤回会基于变更前的可见范围通知已有可见团队。
+- 广播事件写入目标团队 `teamWorkspaceId`，并在 metadata 中带上 `workgroupId`、`sourceWorkgroupId`、`publishedWorkflowId`、`publicationEvent`、`publicationBroadcast`，因此现有 `GET /api/workgroups/[workgroupId]/activity` 可以直接聚合。
+- 已补 `apps/sim/lib/collaboration/service.test.ts`，覆盖可见范围变更后给新可见团队写广播事件，以及 scoped publication 撤回前给 viewer 团队写广播事件。
+
+仍需继续：
+
+- 这只是 audit/team activity 级广播，不是完整站内铃铛、邮件或外部推送；版本回滚、审核流和更细的冲突通知仍需后续 Phase 5 切片。
+
+### 5.14 Phase 5 发布版本恢复 / 回滚切片
+
+本轮继续把 Phase 5 的“可回滚状态树”推进到可操作的首版版本恢复：
+
+- `PATCH /api/publications/[publicationVersionId]` 的 lifecycle action 新增 `restore`，仍复用 contract + `parseRequest`，不新增 route-local schema。
+- `updatePublicationLifecycleStatus` 在 `restore` 时会拒绝已撤回版本，要求源团队管理员权限，把同一源 workflow 的其他 `published` 版本标记为 `superseded`，并把目标版本恢复为 `published`。
+- 恢复时会把目标 publication 的 immutable `snapshotState` 写回对应 published workflow normalized tables，并同步 published workflow 的标题、说明、可见性、publishedBy、publishedAt、lastSynced。
+- 恢复动作写入 `publication.restored` audit，并沿用本轮发布广播机制给当前可见团队写 team activity 事件。
+- 团队管理页 `Team publications` 区块新增 `Make current` 操作，管理员可以直接把历史 `superseded` 版本恢复为当前版本。
+- 已补 `apps/sim/lib/collaboration/service.test.ts` 与 `apps/sim/app/api/publications/[publicationVersionId]/route.test.ts`，覆盖 route contract 调用、snapshot 写回、当前版本切换、audit 和广播事件。
+
+仍需继续：
+
+- 该切片是“恢复为当前版本”的首版回滚，不是完整审核流；reviewState/riskLevel 管理已在后续切片补齐，恢复前差异预览、站内铃铛/邮件通知和项目级审批仍需继续。
+
+### 5.15 Phase 5 发布审核 / 风险治理切片
+
+本轮继续把 Phase 5 的“审核流”先落到可编辑、可审计的发布版本治理字段：
+
+- 新增 `PATCH /api/publications/[publicationVersionId]/review`，route 复用 `updatePublicationReviewContract` 与 `parseRequest`，并保持登录校验先于 contract parse。
+- `apps/sim/lib/api/contracts/collaboration.ts` 新增 `publicationReviewStateSchema`、`publicationRiskLevelSchema`、`UpdatePublicationReviewBody` 和 `PublicationReviewUpdate`，同时让发布列表/详情/状态树响应带上 `reviewState` 与 `riskLevel`。
+- `updatePublicationReview` 要求源团队 admin 权限，写入 `reviewState`、`riskLevel`、`lifecycleUpdatedBy`、`lifecycleUpdatedAt`，并记录 `publication.updated` audit metadata（前后 review/risk、source workflow/workgroup、published workflow、`publicationEvent: 'review_updated'`）。
+- 团队管理页 `Team publications` 区块新增 review state 与 risk level 下拉控件，支持清空为 `Unreviewed` / `Risk unset`，保存后刷新发布列表和团队 activity。
+- 展示画布状态树会显示当前版本的审核/风险状态，并把未 approved 当前版本标为 warning、critical risk 当前版本标为 danger。
+- 已补 `apps/sim/app/api/publications/[publicationVersionId]/review/route.test.ts`、`apps/sim/lib/collaboration/service.test.ts` 与 `apps/sim/lib/collaboration/publication-state-tree.test.ts`，覆盖 route contract、清空字段、未登录拒绝、非管理员拒绝、audit 写入和状态树治理提示。
+
+仍需继续：
+
+- 该切片只是审核状态/风险等级的首版治理字段，不是完整审批工作流；后续还需要 reviewer 指派、审批备注历史、恢复前 diff preview、跨团队通知和项目级审批视图。
 
 ## 6. 建议继续推进目标
 
@@ -424,7 +502,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
    - 移动端降级为顶部 tab，不强制左右分屏。
 
 3. **publication state tree 后续切片**
-   - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由和审计动作；后续继续补全全局树聚合视图、通知/广播和前端发布管理入口。
+   - 已完成基础串联、状态树元数据、生命周期状态、归档/撤回路由、历史版本恢复、审核/风险字段、审计动作和首版 team activity 广播；后续继续补全站内通知、reviewer 指派、审批流和前端治理操作。
    - 发布版本生命周期已覆盖已发布、替换、归档、撤回；草稿和显式回滚可在管理入口阶段继续细化。
    - 确保发布版本不返回源团队画布的可写 workspace id。
 
@@ -433,7 +511,7 @@ Phase 4 文档要求排查以下路径。当前本轮已经完成加固、补证
    - 只读详情继续保留原 Sidebar，避免回到独立 `/workbench` 外壳。
 
 5. **审计和回滚切片**
-   - 发布、归档、撤回已经写 audit；取消发布/替换版本的前端管理入口和更完整端到端测试仍待补。
+   - 发布、可见范围更新、归档、撤回、恢复当前版本、审核/风险更新已经写 audit；取消发布/替换版本的前端管理入口、审批历史和更完整端到端测试仍待补。
    - 继续给 Phase 5 增加端到端路由/服务测试，验证跨团队只读、源团队可管理、未授权团队不可见和广播行为。
 
 ### 6.2 Phase 4 已满足的验收门槛

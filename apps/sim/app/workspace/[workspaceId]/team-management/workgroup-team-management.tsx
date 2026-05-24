@@ -17,6 +17,10 @@ import {
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Input, Loader, Switch } from '@/components/emcn'
+import type {
+  PublicationReviewState,
+  PublicationRiskLevel,
+} from '@/lib/api/contracts/collaboration'
 import {
   useAddWorkgroupMember,
   useCreateTeamWorkspace,
@@ -25,6 +29,8 @@ import {
   useShowcasePublications,
   useTeamWorkspace,
   useUpdatePublicationLifecycle,
+  useUpdatePublicationReview,
+  useUpdatePublicationVisibility,
   useUpdateWorkgroupAgentSkill,
   useUpdateWorkgroupMember,
   useWorkgroupActivity,
@@ -41,6 +47,19 @@ import { usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
+type PublicationVisibility = 'organization' | 'selected_workgroups'
+type ReviewStateDraft = PublicationReviewState | 'unreviewed'
+type RiskLevelDraft = PublicationRiskLevel | 'unset'
+
+interface PublicationVisibilityDraft {
+  visibility: PublicationVisibility
+  targetWorkgroupIds: string[]
+}
+
+interface PublicationReviewDraft {
+  reviewState: ReviewStateDraft
+  riskLevel: RiskLevelDraft
+}
 
 function roleLabel(role: WorkgroupRole) {
   return role === 'admin' ? 'Admin' : 'Member'
@@ -71,6 +90,38 @@ function formatPublicationStatus(status: string) {
   }
 }
 
+function formatPublicationReviewState(reviewState: string | null) {
+  switch (reviewState) {
+    case 'pending':
+      return 'Pending review'
+    case 'in_review':
+      return 'In review'
+    case 'approved':
+      return 'Approved'
+    case 'changes_requested':
+      return 'Changes requested'
+    case 'rejected':
+      return 'Rejected'
+    default:
+      return 'Unreviewed'
+  }
+}
+
+function formatPublicationRiskLevel(riskLevel: string | null) {
+  switch (riskLevel) {
+    case 'low':
+      return 'Low risk'
+    case 'medium':
+      return 'Medium risk'
+    case 'high':
+      return 'High risk'
+    case 'critical':
+      return 'Critical risk'
+    default:
+      return 'Risk unset'
+  }
+}
+
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
@@ -85,10 +136,14 @@ function formatActivityAction(action: string) {
       return 'Member removed'
     case 'publication.created':
       return 'Published showcase'
+    case 'publication.updated':
+      return 'Updated publication'
     case 'publication.archived':
       return 'Archived publication'
     case 'publication.retracted':
       return 'Retracted publication'
+    case 'publication.restored':
+      return 'Restored publication'
     case 'skill.updated':
       return 'Agent skill updated'
     case 'workspace.created':
@@ -122,6 +177,8 @@ export function WorkgroupTeamManagement() {
   const createTeamWorkspace = useCreateTeamWorkspace()
   const inviteMember = useInviteMember()
   const updatePublicationLifecycle = useUpdatePublicationLifecycle()
+  const updatePublicationReview = useUpdatePublicationReview()
+  const updatePublicationVisibility = useUpdatePublicationVisibility()
   const updateAgentSkill = useUpdateWorkgroupAgentSkill()
   const publishWorkflow = usePublishWorkflow()
   const cancelInvitation = useCancelWorkspaceInvitation()
@@ -132,10 +189,14 @@ export function WorkgroupTeamManagement() {
   const [publishWorkflowId, setPublishWorkflowId] = useState('')
   const [publishTitle, setPublishTitle] = useState('')
   const [publishDescription, setPublishDescription] = useState('')
-  const [publishVisibility, setPublishVisibility] = useState<
-    'organization' | 'selected_workgroups'
-  >('organization')
+  const [publishVisibility, setPublishVisibility] = useState<PublicationVisibility>('organization')
   const [publishTargetWorkgroupIds, setPublishTargetWorkgroupIds] = useState<string[]>([])
+  const [publicationVisibilityDrafts, setPublicationVisibilityDrafts] = useState<
+    Record<string, PublicationVisibilityDraft>
+  >({})
+  const [publicationReviewDrafts, setPublicationReviewDrafts] = useState<
+    Record<string, PublicationReviewDraft>
+  >({})
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const members = membersData?.members ?? []
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
@@ -174,6 +235,8 @@ export function WorkgroupTeamManagement() {
     addMember.isPending ||
     inviteMember.isPending ||
     updatePublicationLifecycle.isPending ||
+    updatePublicationReview.isPending ||
+    updatePublicationVisibility.isPending ||
     updateAgentSkill.isPending ||
     publishWorkflow.isPending ||
     cancelInvitation.isPending ||
@@ -261,7 +324,7 @@ export function WorkgroupTeamManagement() {
 
   const handlePublicationLifecycle = async (
     publicationVersionId: string,
-    action: 'archive' | 'retract'
+    action: 'archive' | 'retract' | 'restore'
   ) => {
     try {
       await updatePublicationLifecycle.mutateAsync({
@@ -270,7 +333,13 @@ export function WorkgroupTeamManagement() {
         reason: `Updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
       })
       await refetchActivity()
-      setStatusMessage(action === 'archive' ? 'Publication archived.' : 'Publication retracted.')
+      setStatusMessage(
+        action === 'archive'
+          ? 'Publication archived.'
+          : action === 'restore'
+            ? 'Publication restored as current.'
+            : 'Publication retracted.'
+      )
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -282,6 +351,120 @@ export function WorkgroupTeamManagement() {
         ? Array.from(new Set([...current, workgroupId]))
         : current.filter((item) => item !== workgroupId)
     )
+  }
+
+  const getPublicationVisibilityDraft = (publication: (typeof publications)[number]) =>
+    publicationVisibilityDrafts[publication.id] ?? {
+      visibility: publication.visibility,
+      targetWorkgroupIds: publication.targetWorkgroupIds ?? [],
+    }
+
+  const handlePublicationVisibilityChange = (
+    publicationId: string,
+    visibility: PublicationVisibility
+  ) => {
+    setPublicationVisibilityDrafts((current) => ({
+      ...current,
+      [publicationId]: {
+        visibility,
+        targetWorkgroupIds: current[publicationId]?.targetWorkgroupIds ?? [],
+      },
+    }))
+  }
+
+  const handlePublicationTargetToggle = (
+    publicationId: string,
+    workgroupId: string,
+    checked: boolean
+  ) => {
+    setPublicationVisibilityDrafts((current) => {
+      const draft = current[publicationId] ?? {
+        visibility: 'selected_workgroups' as PublicationVisibility,
+        targetWorkgroupIds: [],
+      }
+      return {
+        ...current,
+        [publicationId]: {
+          visibility: draft.visibility,
+          targetWorkgroupIds: checked
+            ? Array.from(new Set([...draft.targetWorkgroupIds, workgroupId]))
+            : draft.targetWorkgroupIds.filter((item) => item !== workgroupId),
+        },
+      }
+    })
+  }
+
+  const handleUpdatePublicationVisibility = async (publication: (typeof publications)[number]) => {
+    if (!activeWorkgroupId) return
+    const draft = getPublicationVisibilityDraft(publication)
+    const targetWorkgroupIds =
+      draft.visibility === 'selected_workgroups'
+        ? draft.targetWorkgroupIds.length > 0
+          ? draft.targetWorkgroupIds
+          : [activeWorkgroupId]
+        : []
+    try {
+      await updatePublicationVisibility.mutateAsync({
+        publicationVersionId: publication.id,
+        visibility: draft.visibility,
+        targetWorkgroupIds,
+        reason: `Visibility updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
+      })
+      await refetchPublications()
+      await refetchActivity()
+      setPublicationVisibilityDrafts((current) => {
+        const next = { ...current }
+        delete next[publication.id]
+        return next
+      })
+      setStatusMessage('Publication visibility updated.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
+  }
+
+  const getPublicationReviewDraft = (publication: (typeof publications)[number]) =>
+    publicationReviewDrafts[publication.id] ?? {
+      reviewState: publication.reviewState ?? 'unreviewed',
+      riskLevel: publication.riskLevel ?? 'unset',
+    }
+
+  const handlePublicationReviewDraftChange = (
+    publicationId: string,
+    patch: Partial<PublicationReviewDraft>
+  ) => {
+    setPublicationReviewDrafts((current) => {
+      const existing = current[publicationId] ?? {
+        reviewState: 'unreviewed' as ReviewStateDraft,
+        riskLevel: 'unset' as RiskLevelDraft,
+      }
+      return {
+        ...current,
+        [publicationId]: { ...existing, ...patch },
+      }
+    })
+  }
+
+  const handleUpdatePublicationReview = async (publication: (typeof publications)[number]) => {
+    const draft = getPublicationReviewDraft(publication)
+    try {
+      await updatePublicationReview.mutateAsync({
+        publicationVersionId: publication.id,
+        reviewState: draft.reviewState === 'unreviewed' ? null : draft.reviewState,
+        riskLevel: draft.riskLevel === 'unset' ? null : draft.riskLevel,
+        reason: `Review updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
+      })
+      await refetchPublications()
+      await refetchActivity()
+      setPublicationReviewDrafts((current) => {
+        const next = { ...current }
+        delete next[publication.id]
+        return next
+      })
+      setStatusMessage('Publication review updated.')
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
   }
 
   const handlePublishTeamWorkflow = async () => {
@@ -710,45 +893,162 @@ export function WorkgroupTeamManagement() {
                 No showcase publications from this team yet.
               </div>
             ) : (
-              publications.map((publication) => (
-                <div
-                  key={publication.id}
-                  className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
-                >
-                  <div className='min-w-0'>
-                    <div className='flex min-w-0 items-center gap-2'>
-                      <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
-                        {publication.title}
-                      </span>
-                      <span className='shrink-0 rounded-[8px] border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]'>
-                        v{publication.versionNumber} · {formatPublicationStatus(publication.status)}
-                      </span>
+              publications.map((publication) => {
+                const visibilityDraft = getPublicationVisibilityDraft(publication)
+                const reviewDraft = getPublicationReviewDraft(publication)
+                return (
+                  <div key={publication.id} className='grid gap-3 px-4 py-3'>
+                    <div className='grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]'>
+                      <div className='min-w-0'>
+                        <div className='flex min-w-0 items-center gap-2'>
+                          <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                            {publication.title}
+                          </span>
+                          <span className='shrink-0 rounded-[8px] border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]'>
+                            v{publication.versionNumber} ·{' '}
+                            {formatPublicationStatus(publication.status)}
+                          </span>
+                        </div>
+                        <div className='truncate text-[12px] text-[var(--text-muted)]'>
+                          {publication.description?.trim() || 'No description'} ·{' '}
+                          {formatPublicationDate(publication.publishedAt)}
+                        </div>
+                      </div>
+                      <Button
+                        variant='default'
+                        className='h-[32px]'
+                        onClick={() => void handlePublicationLifecycle(publication.id, 'restore')}
+                        disabled={isBusy || publication.status === 'published'}
+                      >
+                        <RotateCcw className='mr-2 h-[14px] w-[14px]' />
+                        Make current
+                      </Button>
+                      <Button
+                        variant='default'
+                        className='h-[32px]'
+                        onClick={() => void handlePublicationLifecycle(publication.id, 'archive')}
+                        disabled={isBusy}
+                      >
+                        <Archive className='mr-2 h-[14px] w-[14px]' />
+                        Archive
+                      </Button>
+                      <Button
+                        variant='default'
+                        className='h-[32px]'
+                        onClick={() => void handlePublicationLifecycle(publication.id, 'retract')}
+                        disabled={isBusy}
+                      >
+                        <EyeOff className='mr-2 h-[14px] w-[14px]' />
+                        Retract
+                      </Button>
                     </div>
-                    <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                      {publication.description?.trim() || 'No description'} ·{' '}
-                      {formatPublicationDate(publication.publishedAt)}
+
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                      <div className='grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]'>
+                        <select
+                          value={visibilityDraft.visibility}
+                          onChange={(event) =>
+                            handlePublicationVisibilityChange(
+                              publication.id,
+                              event.target.value as PublicationVisibility
+                            )
+                          }
+                          disabled={isBusy}
+                          className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                        >
+                          <option value='organization'>Organization visible</option>
+                          <option value='selected_workgroups'>Selected teams</option>
+                        </select>
+                        <Button
+                          variant='default'
+                          className='h-[32px]'
+                          onClick={() => void handleUpdatePublicationVisibility(publication)}
+                          disabled={isBusy}
+                        >
+                          Update visibility
+                        </Button>
+                      </div>
+                      {visibilityDraft.visibility === 'selected_workgroups' && (
+                        <div className='mt-3 grid gap-2 md:grid-cols-2'>
+                          {publishTargetWorkgroups.map((workgroup) => (
+                            <div
+                              key={workgroup.id}
+                              className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
+                            >
+                              <span className='truncate'>
+                                {workgroup.discipline.name} / {workgroup.name}
+                              </span>
+                              <Switch
+                                checked={visibilityDraft.targetWorkgroupIds.includes(workgroup.id)}
+                                disabled={isBusy}
+                                aria-label={`Toggle ${workgroup.name} publication visibility`}
+                                onCheckedChange={(checked) =>
+                                  handlePublicationTargetToggle(
+                                    publication.id,
+                                    workgroup.id,
+                                    checked
+                                  )
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                      <div className='mb-2 flex flex-wrap items-center gap-2 text-[12px] text-[var(--text-muted)]'>
+                        <span>{formatPublicationReviewState(publication.reviewState)}</span>
+                        <span>/</span>
+                        <span>{formatPublicationRiskLevel(publication.riskLevel)}</span>
+                      </div>
+                      <div className='grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]'>
+                        <select
+                          value={reviewDraft.reviewState}
+                          onChange={(event) =>
+                            handlePublicationReviewDraftChange(publication.id, {
+                              reviewState: event.target.value as ReviewStateDraft,
+                            })
+                          }
+                          disabled={isBusy}
+                          className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                        >
+                          <option value='unreviewed'>Unreviewed</option>
+                          <option value='pending'>Pending review</option>
+                          <option value='in_review'>In review</option>
+                          <option value='approved'>Approved</option>
+                          <option value='changes_requested'>Changes requested</option>
+                          <option value='rejected'>Rejected</option>
+                        </select>
+                        <select
+                          value={reviewDraft.riskLevel}
+                          onChange={(event) =>
+                            handlePublicationReviewDraftChange(publication.id, {
+                              riskLevel: event.target.value as RiskLevelDraft,
+                            })
+                          }
+                          disabled={isBusy}
+                          className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
+                        >
+                          <option value='unset'>Risk unset</option>
+                          <option value='low'>Low risk</option>
+                          <option value='medium'>Medium risk</option>
+                          <option value='high'>High risk</option>
+                          <option value='critical'>Critical risk</option>
+                        </select>
+                        <Button
+                          variant='default'
+                          className='h-[32px]'
+                          onClick={() => void handleUpdatePublicationReview(publication)}
+                          disabled={isBusy}
+                        >
+                          Update review
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <Button
-                    variant='default'
-                    className='h-[32px]'
-                    onClick={() => void handlePublicationLifecycle(publication.id, 'archive')}
-                    disabled={isBusy}
-                  >
-                    <Archive className='mr-2 h-[14px] w-[14px]' />
-                    Archive
-                  </Button>
-                  <Button
-                    variant='default'
-                    className='h-[32px]'
-                    onClick={() => void handlePublicationLifecycle(publication.id, 'retract')}
-                    disabled={isBusy}
-                  >
-                    <EyeOff className='mr-2 h-[14px] w-[14px]' />
-                    Retract
-                  </Button>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
           <div className='border-[var(--border)] border-t px-4 py-3'>

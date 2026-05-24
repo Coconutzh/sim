@@ -30,6 +30,14 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     return chain
   }
 
+  function createDeleteChain() {
+    const chain: Record<string, unknown> = {}
+
+    chain.where = vi.fn(() => Promise.resolve([]))
+
+    return chain
+  }
+
   function createInsertChain() {
     const chain: Record<string, unknown> = {}
 
@@ -45,6 +53,7 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
       select: vi.fn(() => createChain()),
       insert: vi.fn(() => createInsertChain()),
       update: vi.fn(() => createWriteChain()),
+      delete: vi.fn(() => createDeleteChain()),
       transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
         callback({
           insert: vi.fn(() => createInsertChain()),
@@ -54,10 +63,13 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
     schemaMock: {
       workflowPublicationVersion: {
         id: 'workflowPublicationVersion.id',
+        organizationId: 'workflowPublicationVersion.organizationId',
         title: 'workflowPublicationVersion.title',
         description: 'workflowPublicationVersion.description',
         status: 'workflowPublicationVersion.status',
         visibility: 'workflowPublicationVersion.visibility',
+        reviewState: 'workflowPublicationVersion.reviewState',
+        riskLevel: 'workflowPublicationVersion.riskLevel',
         parentVersionId: 'workflowPublicationVersion.parentVersionId',
         versionNumber: 'workflowPublicationVersion.versionNumber',
         sourceWorkflowId: 'workflowPublicationVersion.sourceWorkflowId',
@@ -131,6 +143,11 @@ const { mockDb, mockResultsQueue, schemaMock } = vi.hoisted(() => {
       workflow: {
         id: 'workflow.id',
       },
+      workflowPublicationScope: {
+        id: 'workflowPublicationScope.id',
+        workflowId: 'workflowPublicationScope.workflowId',
+        viewerWorkgroupId: 'workflowPublicationScope.viewerWorkgroupId',
+      },
       skill: {
         id: 'skill.id',
         workspaceId: 'skill.workspaceId',
@@ -170,8 +187,10 @@ vi.mock('@sim/db/schema', () => schemaMock)
 vi.mock('@sim/audit', () => ({
   AuditAction: {
     PUBLICATION_CREATED: 'publication.created',
+    PUBLICATION_UPDATED: 'publication.updated',
     PUBLICATION_ARCHIVED: 'publication.archived',
     PUBLICATION_RETRACTED: 'publication.retracted',
+    PUBLICATION_RESTORED: 'publication.restored',
     MEMBER_INVITED: 'member.invited',
     MEMBER_ROLE_CHANGED: 'member.role_changed',
     MEMBER_REMOVED: 'member.removed',
@@ -224,8 +243,11 @@ import {
   getPublication,
   getPublicationTree,
   getTeamWorkspace,
+  listVisiblePublications,
   listWorkgroupAgentSkills,
   updatePublicationLifecycleStatus,
+  updatePublicationReview,
+  updatePublicationVisibility,
   updateWorkgroupAgentSkill,
   updateWorkgroupMemberRole,
 } from '@/lib/collaboration/service'
@@ -705,6 +727,510 @@ describe('collaboration service', () => {
         description: 'Superseded by approved version',
       })
     )
+  })
+
+  it('restores a superseded publication as the current version and rewrites published workflow state', async () => {
+    const publishedAt = new Date('2026-05-23T00:00:00Z')
+    const snapshotState = {
+      blocks: {},
+      edges: [],
+      loops: {},
+      parallels: {},
+      lastSaved: 0,
+    }
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Approved cue plan',
+          description: 'Rollback target',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'selected_workgroups',
+          status: 'superseded',
+          archivedAt: null,
+          retractedAt: null,
+          publishedAt,
+          snapshotState,
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ workflowId: 'published-workflow-1', viewerWorkgroupId: 'workgroup-2' }],
+      [{ id: 'workgroup-2', name: 'Lighting', teamWorkspaceId: 'workspace-team-2' }]
+    )
+
+    await expect(
+      updatePublicationLifecycleStatus({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        action: 'restore',
+        reason: 'Rollback to approved cues',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Approved cue plan',
+      status: 'published',
+      archivedAt: null,
+      retractedAt: null,
+    })
+
+    expect(saveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'published-workflow-1',
+      snapshotState
+    )
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.restored',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Rollback to approved cues',
+        metadata: expect.objectContaining({
+          previousStatus: 'superseded',
+          status: 'published',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+        }),
+      })
+    )
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-team-2',
+        action: 'publication.restored',
+        description: 'Showcase publication was restored as current',
+        metadata: expect.objectContaining({
+          workgroupId: 'workgroup-2',
+          publicationEvent: 'restored',
+          publicationBroadcast: true,
+        }),
+      })
+    )
+  })
+
+  it('returns only visible publication dependency links in showcase summaries', async () => {
+    const publishedAt = new Date('2026-05-24T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'member',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [],
+      [
+        {
+          publication: {
+            id: 'publication-v1',
+            title: 'Visible root',
+            description: null,
+            sourceWorkgroupId: 'workgroup-1',
+            sourceDisciplineId: 'discipline-1',
+            agentCode: 'lighting_sound',
+            versionNumber: 1,
+            parentVersionId: null,
+            publishedWorkflowId: 'published-workflow-1',
+            status: 'superseded',
+            visibility: 'organization',
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+        {
+          publication: {
+            id: 'publication-v2',
+            title: 'Visible child',
+            description: null,
+            sourceWorkgroupId: 'workgroup-1',
+            sourceDisciplineId: 'discipline-1',
+            agentCode: 'lighting_sound',
+            versionNumber: 2,
+            parentVersionId: 'publication-v1',
+            publishedWorkflowId: 'published-workflow-2',
+            status: 'published',
+            visibility: 'selected_workgroups',
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+        {
+          publication: {
+            id: 'publication-v4',
+            title: 'Hidden parent child',
+            description: null,
+            sourceWorkgroupId: 'workgroup-1',
+            sourceDisciplineId: 'discipline-1',
+            agentCode: 'lighting_sound',
+            versionNumber: 4,
+            parentVersionId: 'publication-v3-hidden',
+            publishedWorkflowId: 'published-workflow-4',
+            status: 'published',
+            visibility: 'organization',
+            publishedAt,
+          },
+          sourceWorkgroupName: 'Lighting',
+          sourceDisciplineCode: 'lighting_sound',
+          sourceDisciplineName: 'Lighting & Sound',
+          publisherId: 'admin-1',
+          publisherName: 'Admin',
+          publisherAvatarUrl: null,
+        },
+      ],
+      [
+        { workflowId: 'published-workflow-2', viewerWorkgroupId: 'workgroup-2' },
+        { workflowId: 'published-workflow-2', viewerWorkgroupId: 'workgroup-3' },
+      ]
+    )
+
+    await expect(
+      listVisiblePublications({ userId: 'user-1', workgroupId: 'workgroup-1' })
+    ).resolves.toMatchObject([
+      {
+        id: 'publication-v1',
+        parentVersionId: null,
+        dependsOnPublicationIds: [],
+      },
+      {
+        id: 'publication-v2',
+        parentVersionId: 'publication-v1',
+        dependsOnPublicationIds: ['publication-v1'],
+        targetWorkgroupIds: ['workgroup-2', 'workgroup-3'],
+      },
+      {
+        id: 'publication-v4',
+        parentVersionId: null,
+        dependsOnPublicationIds: [],
+      },
+    ])
+  })
+
+  it('updates publication visibility and filters target workgroups to the same organization', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'organization',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-2' }]
+    )
+
+    await expect(
+      updatePublicationVisibility({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        visibility: 'selected_workgroups',
+        targetWorkgroupIds: ['workgroup-2', 'workgroup-2', 'other-org-workgroup'],
+        reason: 'Narrow review audience',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Team plan',
+      visibility: 'selected_workgroups',
+      targetWorkgroupIds: ['workgroup-2'],
+    })
+
+    expect(mockDb.delete).toHaveBeenCalledWith(schemaMock.workflowPublicationScope)
+    expect(mockDb.insert).toHaveBeenCalledWith(schemaMock.workflowPublicationScope)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.updated',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Narrow review audience',
+        metadata: expect.objectContaining({
+          previousVisibility: 'organization',
+          visibility: 'selected_workgroups',
+          targetWorkgroupIds: ['workgroup-2'],
+          sourceWorkgroupId: 'workgroup-1',
+          publishedWorkflowId: 'published-workflow-1',
+        }),
+      })
+    )
+  })
+
+  it('records publication visibility broadcast events for newly visible teams', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'organization',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-2' }],
+      [{ id: 'workgroup-2', name: 'Lighting', teamWorkspaceId: 'workspace-team-2' }]
+    )
+
+    await expect(
+      updatePublicationVisibility({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        visibility: 'selected_workgroups',
+        targetWorkgroupIds: ['workgroup-2'],
+      })
+    ).resolves.toMatchObject({
+      targetWorkgroupIds: ['workgroup-2'],
+    })
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-team-2',
+        actorId: 'admin-1',
+        action: 'publication.updated',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Publication visibility changed for this team',
+        metadata: expect.objectContaining({
+          workgroupId: 'workgroup-2',
+          sourceWorkgroupId: 'workgroup-1',
+          publicationEvent: 'visibility_updated',
+          publicationBroadcast: true,
+          targetWorkgroupIds: ['workgroup-2'],
+        }),
+      })
+    )
+  })
+
+  it('updates publication review governance fields for source team admins', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          reviewState: 'pending',
+          riskLevel: 'high',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+    )
+
+    await expect(
+      updatePublicationReview({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        reviewState: 'approved',
+        riskLevel: 'medium',
+        reason: 'Approved for project tree',
+      })
+    ).resolves.toMatchObject({
+      id: 'publication-1',
+      title: 'Team plan',
+      reviewState: 'approved',
+      riskLevel: 'medium',
+    })
+
+    expect(mockDb.update).toHaveBeenCalledWith(schemaMock.workflowPublicationVersion)
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'publication.updated',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Approved for project tree',
+        metadata: expect.objectContaining({
+          previousReviewState: 'pending',
+          reviewState: 'approved',
+          previousRiskLevel: 'high',
+          riskLevel: 'medium',
+          sourceWorkgroupId: 'workgroup-1',
+          publishedWorkflowId: 'published-workflow-1',
+          publicationEvent: 'review_updated',
+        }),
+      })
+    )
+  })
+
+  it('clears scoped publication viewers when changing visibility back to organization', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'selected_workgroups',
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ]
+    )
+
+    await expect(
+      updatePublicationVisibility({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        visibility: 'organization',
+        targetWorkgroupIds: ['workgroup-2'],
+      })
+    ).resolves.toMatchObject({
+      visibility: 'organization',
+      targetWorkgroupIds: [],
+    })
+
+    expect(mockDb.delete).toHaveBeenCalledWith(schemaMock.workflowPublicationScope)
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it('records lifecycle broadcast events for scoped viewer teams before retraction', async () => {
+    const publishedAt = new Date('2026-05-23T00:00:00Z')
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'selected_workgroups',
+          status: 'published',
+          archivedAt: null,
+          retractedAt: null,
+          publishedAt,
+        },
+      ],
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ workflowId: 'published-workflow-1', viewerWorkgroupId: 'workgroup-2' }],
+      [{ id: 'workgroup-2', name: 'Lighting', teamWorkspaceId: 'workspace-team-2' }]
+    )
+
+    await expect(
+      updatePublicationLifecycleStatus({
+        actorUserId: 'admin-1',
+        publicationVersionId: 'publication-1',
+        action: 'retract',
+      })
+    ).resolves.toMatchObject({
+      status: 'retracted',
+    })
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-team-2',
+        actorId: 'admin-1',
+        action: 'publication.retracted',
+        resourceType: 'publication',
+        resourceId: 'publication-1',
+        description: 'Showcase publication was retracted',
+        metadata: expect.objectContaining({
+          workgroupId: 'workgroup-2',
+          sourceWorkgroupId: 'workgroup-1',
+          publicationEvent: 'retracted',
+          publicationBroadcast: true,
+        }),
+      })
+    )
+  })
+
+  it('rejects publication visibility updates from non-admin team members', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'publication-1',
+          title: 'Team plan',
+          organizationId: 'org-1',
+          sourceWorkgroupId: 'workgroup-1',
+          sourceWorkflowId: 'workflow-1',
+          publishedWorkflowId: 'published-workflow-1',
+          visibility: 'organization',
+        },
+      ],
+      [],
+      [{ organizationId: 'org-1' }],
+      [{ role: 'member' }]
+    )
+
+    await expect(
+      updatePublicationVisibility({
+        actorUserId: 'member-1',
+        publicationVersionId: 'publication-1',
+        visibility: 'selected_workgroups',
+        targetWorkgroupIds: ['workgroup-2'],
+      })
+    ).rejects.toThrow('Workgroup membership required')
+
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(mockDb.update).not.toHaveBeenCalled()
   })
 
   it('lists team workspace skills with agent binding state for workgroup admins', async () => {
