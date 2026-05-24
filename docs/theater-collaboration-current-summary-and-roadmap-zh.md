@@ -33,7 +33,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
-| 待提交 | 项目管理员成员分配增加智能团队建议 |
+| `10cdf0d00` | 项目管理员成员分配增加智能团队建议 |
 | `ee0528e98` | 项目级 activity drilldown 增加当前筛选全量 CSV 导出 |
 | `8d6802782` | 项目级 activity drilldown 增加时间范围与 actor 精确筛选 |
 | `037cb78d8` | 项目级 activity drilldown 增加 offset 分页、当前页 CSV 导出、服务测试和接手文档更新 |
