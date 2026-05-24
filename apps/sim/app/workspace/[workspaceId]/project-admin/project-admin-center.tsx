@@ -35,11 +35,13 @@ import {
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
   buildPublicationDependencyResolutionActions,
+  buildPublicationNotificationDeliveryDrafts,
   buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
   type PublicationDependencyResolutionAction,
   type PublicationGovernanceAlertSeverity,
+  type PublicationNotificationDeliveryDraft,
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
 import {
@@ -66,6 +68,7 @@ import {
 } from '@/hooks/queries/collaboration'
 import { type RosterMember, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import { useNotificationStore } from '@/stores/notifications'
 
 const PUBLICATION_FILTERS = { limit: 100 } as const
 const PROJECT_ACTIVITY_PAGE_SIZE = 12
@@ -1159,6 +1162,7 @@ export function ProjectAdminCenter() {
   const updatePublicationDetails = useUpdatePublicationDetails()
   const addWorkgroupMember = useAddWorkgroupMember()
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
+  const addNotification = useNotificationStore((state) => state.addNotification)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
@@ -1328,6 +1332,13 @@ export function ProjectAdminCenter() {
         publicationDependencyConflictAlerts
       ),
     [publicationDependencyConflictAlerts, publicationStateGroups, publications]
+  )
+  const publicationNotificationDeliveryDrafts = useMemo(
+    () =>
+      buildPublicationNotificationDeliveryDrafts(publicationReviewNotifications, {
+        projectName: activeWorkgroup?.name ?? workspaceId,
+      }),
+    [activeWorkgroup?.name, publicationReviewNotifications, workspaceId]
   )
   const neverPublishedNudgeCount = publicationTeamNudges.filter(
     (nudge) => nudge.type === 'never_published'
@@ -1914,6 +1925,26 @@ export function ProjectAdminCenter() {
     }
   }
 
+  const handlePublicationNotificationDelivery = async (
+    draft: PublicationNotificationDeliveryDraft
+  ) => {
+    if (draft.channel === 'in_app') {
+      addNotification({
+        level: draft.severity === 'danger' ? 'error' : 'info',
+        message: draft.body,
+      })
+      setPublicationGovernanceStatus('Queued publication review digest in the in-app bell.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(draft.body)
+      setPublicationGovernanceStatus(`${draft.title} copied to clipboard.`)
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
   const handleBatchPublicationReviewResolution = async (
     publicationsToUpdate: PublicationSummary[],
     getReviewState: (publication: PublicationSummary) => PublicationReviewState | null,
@@ -2423,6 +2454,59 @@ export function ProjectAdminCenter() {
                     </div>
                   )}
                 </div>
+                {publicationNotificationDeliveryDrafts.length > 0 && (
+                  <div className='mt-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+                    <div className='flex flex-wrap items-start justify-between gap-3'>
+                      <div>
+                        <h4 className='font-medium text-[12px] text-[var(--text-primary)]'>
+                          Delivery channels
+                        </h4>
+                        <p className='mt-1 max-w-[720px] text-[11px] text-[var(--text-muted)]'>
+                          Send a project-admin bell digest now, or copy email and webhook drafts for
+                          external delivery setup.
+                        </p>
+                      </div>
+                      <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+                        {publicationNotificationDeliveryDrafts.length} channels
+                      </span>
+                    </div>
+                    <div className='mt-3 grid gap-2 md:grid-cols-3'>
+                      {publicationNotificationDeliveryDrafts.map((draft) => (
+                        <div
+                          key={draft.id}
+                          className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'
+                        >
+                          <div className='flex items-center justify-between gap-2'>
+                            <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                              {draft.title}
+                            </span>
+                            <span
+                              className={cn(
+                                'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                                governanceAlertClass(draft.severity)
+                              )}
+                            >
+                              {draft.channel.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <p className='mt-2 text-[11px] text-[var(--text-muted)]'>
+                            {draft.detail}
+                          </p>
+                          <button
+                            type='button'
+                            className={cn(
+                              buttonVariants({ size: 'sm', variant: 'default' }),
+                              'mt-3'
+                            )}
+                            onClick={() => void handlePublicationNotificationDelivery(draft)}
+                          >
+                            {draft.actionLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {publicationDependencyConflictAlerts.length > 0 && (

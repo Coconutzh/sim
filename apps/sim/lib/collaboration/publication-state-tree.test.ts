@@ -8,6 +8,7 @@ import {
   buildPublicationConflictRepairGuide,
   buildPublicationDependencyConflictAlerts,
   buildPublicationDependencyResolutionActions,
+  buildPublicationNotificationDeliveryDrafts,
   buildPublicationReviewNotifications,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
@@ -539,6 +540,50 @@ describe('publication state tree grouping', () => {
 
   it('does not notify on approved low-risk current publications without dependency conflicts', () => {
     expect(buildPublicationReviewNotifications([publication({ id: 'clean-v1' })])).toEqual([])
+  })
+
+  it('builds in-app, email, and webhook delivery drafts from review notifications', () => {
+    const notifications = buildPublicationReviewNotifications([
+      publication({
+        id: 'stage-v2',
+        title: 'Stage current',
+        sourceWorkgroup: { id: 'workgroup-stage', name: 'Stage' },
+        reviewState: 'pending',
+        reviewer: null,
+      }),
+      publication({
+        id: 'safety-v1',
+        title: 'Safety plan',
+        sourceWorkgroup: { id: 'workgroup-safety', name: 'Safety' },
+        riskLevel: 'critical',
+        reviewer: {
+          userId: 'reviewer-1',
+          assignedBy: 'admin-1',
+          assignedAt: '2026-05-24T00:00:00.000Z',
+        },
+      }),
+    ])
+
+    const drafts = buildPublicationNotificationDeliveryDrafts(notifications, {
+      projectName: 'Hamlet',
+    })
+
+    expect(drafts.map((draft) => draft.channel)).toEqual(['in_app', 'email', 'webhook'])
+    expect(drafts[0]).toMatchObject({
+      severity: 'danger',
+      actionLabel: 'Send bell digest',
+      payload: {
+        projectName: 'Hamlet',
+        notificationCount: 2,
+        dangerCount: 1,
+      },
+    })
+    expect(drafts[1].body).toContain('Safety / v1 / Safety plan')
+    expect(drafts[2].body).toContain('publication.review_notifications.digest')
+  })
+
+  it('does not build delivery drafts for an empty notification queue', () => {
+    expect(buildPublicationNotificationDeliveryDrafts([])).toEqual([])
   })
 
   it('builds team publication nudges for stale, missing, and never-published teams', () => {

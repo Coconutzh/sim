@@ -120,6 +120,33 @@ export interface PublicationReviewNotification {
   actionLabel: string
 }
 
+export interface PublicationNotificationDeliveryDraft {
+  id: string
+  channel: 'in_app' | 'email' | 'webhook'
+  severity: PublicationGovernanceAlertSeverity
+  title: string
+  detail: string
+  actionLabel: string
+  body: string
+  payload: {
+    event: 'publication.review_notifications.digest'
+    projectName: string
+    notificationCount: number
+    dangerCount: number
+    warningCount: number
+    notifications: {
+      id: string
+      type: PublicationReviewNotification['type']
+      severity: PublicationGovernanceAlertSeverity
+      publicationId: string
+      publicationTitle: string
+      publicationWorkgroupName: string
+      reviewerUserId: string | null
+      actionLabel: string
+    }[]
+  }
+}
+
 export interface PublicationTeamNudge {
   id: string
   type: 'never_published' | 'missing_current' | 'stale_current'
@@ -667,6 +694,95 @@ export function buildPublicationDependencyResolutionActions(
       typeOrder[left.type] - typeOrder[right.type] ||
       left.targetTitle.localeCompare(right.targetTitle)
   )
+}
+
+export function buildPublicationNotificationDeliveryDrafts(
+  notifications: PublicationReviewNotification[],
+  options: { projectName?: string } = {}
+): PublicationNotificationDeliveryDraft[] {
+  if (notifications.length === 0) return []
+
+  const projectName = options.projectName?.trim() || 'Project'
+  const dangerCount = notifications.filter(
+    (notification) => notification.severity === 'danger'
+  ).length
+  const warningCount = notifications.filter(
+    (notification) => notification.severity === 'warning'
+  ).length
+  const severity: PublicationGovernanceAlertSeverity = dangerCount > 0 ? 'danger' : 'warning'
+  const summary = `${notifications.length} publication review notification${notifications.length === 1 ? '' : 's'} need attention in ${projectName}.`
+  const bodyLines = [
+    summary,
+    '',
+    ...notifications
+      .slice(0, 10)
+      .map((notification, index) =>
+        [
+          `${index + 1}. ${notification.publicationWorkgroupName} / v${notification.publicationVersionNumber} / ${notification.publicationTitle}`,
+          `   Type: ${notification.type.replaceAll('_', ' ')}`,
+          `   Severity: ${notification.severity}`,
+          `   Action: ${notification.actionLabel}`,
+          `   Detail: ${notification.detail}`,
+        ].join('\n')
+      ),
+  ]
+  if (notifications.length > 10) {
+    bodyLines.push(
+      '',
+      `+${notifications.length - 10} more notifications in the project admin queue.`
+    )
+  }
+
+  const payload: PublicationNotificationDeliveryDraft['payload'] = {
+    event: 'publication.review_notifications.digest',
+    projectName,
+    notificationCount: notifications.length,
+    dangerCount,
+    warningCount,
+    notifications: notifications.map((notification) => ({
+      id: notification.id,
+      type: notification.type,
+      severity: notification.severity,
+      publicationId: notification.publicationId,
+      publicationTitle: notification.publicationTitle,
+      publicationWorkgroupName: notification.publicationWorkgroupName,
+      reviewerUserId: notification.reviewerUserId,
+      actionLabel: notification.actionLabel,
+    })),
+  }
+
+  return [
+    {
+      id: 'publication-review-in-app-digest',
+      channel: 'in_app',
+      severity,
+      title: 'In-app bell digest',
+      detail: 'Queue a local in-app digest for the project admin session.',
+      actionLabel: 'Send bell digest',
+      body: summary,
+      payload,
+    },
+    {
+      id: 'publication-review-email-digest',
+      channel: 'email',
+      severity,
+      title: 'Email digest draft',
+      detail: 'Copy a reviewer-ready digest for an email delivery channel.',
+      actionLabel: 'Copy email draft',
+      body: bodyLines.join('\n'),
+      payload,
+    },
+    {
+      id: 'publication-review-webhook-payload',
+      channel: 'webhook',
+      severity,
+      title: 'Webhook payload draft',
+      detail: 'Copy a structured payload for external notification routing.',
+      actionLabel: 'Copy webhook JSON',
+      body: JSON.stringify(payload, null, 2),
+      payload,
+    },
+  ]
 }
 
 export function buildPublicationReviewNotifications(
