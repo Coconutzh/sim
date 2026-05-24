@@ -51,6 +51,14 @@ export interface PublicationConflictRepairGuideStep {
   reason: string
 }
 
+export interface PublicationApprovalWorkflowStep {
+  id: 'assign_reviewer' | 'start_review' | 'resolve_critical_risk' | 'record_decision' | 'approved'
+  status: 'complete' | 'ready' | 'blocked'
+  title: string
+  detail: string
+  actionLabel: string | null
+}
+
 export interface PublicationTeamNudge {
   id: string
   type: 'never_published' | 'missing_current' | 'stale_current'
@@ -261,6 +269,66 @@ export function buildPublicationConflictRepairGuide(
   }
 
   return steps
+}
+
+export function buildPublicationApprovalWorkflow(
+  publication: PublicationSummary | null
+): PublicationApprovalWorkflowStep[] {
+  if (!publication) return []
+  const hasReviewer = Boolean(publication.reviewer?.userId)
+  const reviewStarted = Boolean(
+    publication.reviewState &&
+      ['in_review', 'approved', 'changes_requested', 'rejected'].includes(publication.reviewState)
+  )
+  const criticalRiskOpen = publication.riskLevel === 'critical'
+  const approved = publication.reviewState === 'approved'
+
+  return [
+    {
+      id: 'assign_reviewer',
+      status: hasReviewer ? 'complete' : 'ready',
+      title: 'Assign reviewer',
+      detail: hasReviewer
+        ? 'A reviewer owns the project decision for this publication.'
+        : 'Choose an organization roster member before moving the publication through approval.',
+      actionLabel: hasReviewer ? null : 'Assign reviewer',
+    },
+    {
+      id: 'start_review',
+      status: reviewStarted ? 'complete' : hasReviewer ? 'ready' : 'blocked',
+      title: 'Start review',
+      detail: reviewStarted
+        ? `Review is ${formatGovernanceReviewState(publication.reviewState)}.`
+        : hasReviewer
+          ? 'Move the publication into review so the reviewer has an explicit work queue.'
+          : 'Reviewer assignment is required before review starts.',
+      actionLabel: reviewStarted ? null : 'Start review',
+    },
+    {
+      id: 'resolve_critical_risk',
+      status: criticalRiskOpen ? (reviewStarted ? 'ready' : 'blocked') : 'complete',
+      title: 'Resolve critical risk',
+      detail: criticalRiskOpen
+        ? 'Critical risk must be triaged before this version can be approved for the project tree.'
+        : 'No critical risk marker blocks approval.',
+      actionLabel: criticalRiskOpen ? 'Set risk to high' : null,
+    },
+    {
+      id: approved ? 'approved' : 'record_decision',
+      status: approved
+        ? 'complete'
+        : hasReviewer && reviewStarted && !criticalRiskOpen
+          ? 'ready'
+          : 'blocked',
+      title: approved ? 'Approved' : 'Record decision',
+      detail: approved
+        ? 'The current publication has a recorded project approval.'
+        : hasReviewer && reviewStarted && !criticalRiskOpen
+          ? 'Approve, request changes, or reject the reviewed publication.'
+          : 'Complete reviewer, review, and critical-risk gates before recording a decision.',
+      actionLabel: approved ? null : 'Record decision',
+    },
+  ]
 }
 
 export function buildPublicationTeamNudges(params: {

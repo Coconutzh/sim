@@ -31,6 +31,7 @@ import type {
   WorkgroupAdminSummary,
 } from '@/lib/api/contracts/collaboration'
 import {
+  buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
@@ -1364,6 +1365,10 @@ export function ProjectAdminCenter() {
   const selectedPublicationRepairGuide = useMemo(
     () => buildPublicationConflictRepairGuide(selectedPublicationGovernanceGroup),
     [selectedPublicationGovernanceGroup]
+  )
+  const selectedPublicationApprovalWorkflow = useMemo(
+    () => buildPublicationApprovalWorkflow(selectedPublication),
+    [selectedPublication]
   )
   const batchUnapprovedCurrentPublications = publicationStateGroups
     .filter((group) =>
@@ -3756,6 +3761,165 @@ export function ProjectAdminCenter() {
                       {formatDateTime(selectedPublication.publishedAt)}
                     </span>
                   </div>
+                </div>
+              </section>
+
+              <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div>
+                    <h3 className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Approval workflow
+                    </h3>
+                    <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
+                      Move this publication through reviewer ownership, in-review state, critical
+                      risk triage, and a final approval decision.
+                    </p>
+                  </div>
+                  <select
+                    value={selectedPublication.reviewer?.userId ?? ''}
+                    onChange={(event) =>
+                      void handlePublicationReviewerAssignment(
+                        selectedPublication,
+                        event.target.value || null
+                      )
+                    }
+                    className='h-[32px] min-w-[220px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-body)] outline-none'
+                    disabled={updatePublicationReview.isPending}
+                  >
+                    <option value=''>Unassigned reviewer</option>
+                    {rosterMembers.map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {formatRosterMemberLabel(member)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className='mt-3 grid gap-2'>
+                  {selectedPublicationApprovalWorkflow.map((step, index) => (
+                    <div
+                      key={step.id}
+                      className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'
+                    >
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <span className='rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]'>
+                          {index + 1}
+                        </span>
+                        <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                          {step.title}
+                        </span>
+                        <span
+                          className={cn(
+                            'rounded-[6px] border px-1.5 py-0.5 font-medium text-[10px]',
+                            step.status === 'complete' &&
+                              'border-green-500/30 bg-green-500/10 text-green-500',
+                            step.status === 'ready' &&
+                              'border-blue-500/30 bg-blue-500/10 text-blue-500',
+                            step.status === 'blocked' &&
+                              'border-amber-500/30 bg-amber-500/10 text-amber-500'
+                          )}
+                        >
+                          {step.status}
+                        </span>
+                      </div>
+                      <p className='mt-1 text-[11px] text-[var(--text-muted)]'>{step.detail}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className='mt-3 flex flex-wrap gap-2'>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      updatePublicationReview.isPending ||
+                      !selectedPublication.reviewer?.userId ||
+                      selectedPublication.reviewState === 'in_review' ||
+                      selectedPublication.reviewState === 'approved'
+                    }
+                    onClick={() =>
+                      void handlePublicationReviewResolution(
+                        selectedPublication,
+                        'in_review',
+                        selectedPublication.riskLevel,
+                        `Started approval review for ${selectedPublication.title}.`
+                      )
+                    }
+                  >
+                    Start review
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      updatePublicationReview.isPending ||
+                      selectedPublication.riskLevel !== 'critical'
+                    }
+                    onClick={() =>
+                      void handlePublicationReviewResolution(
+                        selectedPublication,
+                        selectedPublication.reviewState,
+                        'high',
+                        `Reduced critical risk before approval for ${selectedPublication.title}.`
+                      )
+                    }
+                  >
+                    Set risk high
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      updatePublicationReview.isPending ||
+                      !selectedPublication.reviewer?.userId ||
+                      !['in_review', 'changes_requested', 'rejected'].includes(
+                        selectedPublication.reviewState ?? ''
+                      ) ||
+                      selectedPublication.riskLevel === 'critical'
+                    }
+                    onClick={() =>
+                      void handlePublicationReviewResolution(
+                        selectedPublication,
+                        'approved',
+                        selectedPublication.riskLevel,
+                        `Approved ${selectedPublication.title}.`
+                      )
+                    }
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      updatePublicationReview.isPending || !selectedPublication.reviewer?.userId
+                    }
+                    onClick={() =>
+                      void handlePublicationReviewResolution(
+                        selectedPublication,
+                        'changes_requested',
+                        selectedPublication.riskLevel,
+                        `Requested changes for ${selectedPublication.title}.`
+                      )
+                    }
+                  >
+                    Request changes
+                  </button>
+                  <button
+                    type='button'
+                    className={buttonVariants({ size: 'sm', variant: 'default' })}
+                    disabled={
+                      updatePublicationReview.isPending || !selectedPublication.reviewer?.userId
+                    }
+                    onClick={() =>
+                      void handlePublicationReviewResolution(
+                        selectedPublication,
+                        'rejected',
+                        selectedPublication.riskLevel,
+                        `Rejected ${selectedPublication.title}.`
+                      )
+                    }
+                  >
+                    Reject
+                  </button>
                 </div>
               </section>
 

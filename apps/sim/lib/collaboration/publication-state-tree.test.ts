@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PublicationSummary, WorkgroupAdminSummary } from '@/lib/api/contracts/collaboration'
 import {
+  buildPublicationApprovalWorkflow,
   buildPublicationConflictRepairGuide,
   buildPublicationStateGroups,
   buildPublicationTeamNudges,
@@ -26,6 +27,7 @@ function publication(overrides: Partial<PublicationSummary>): PublicationSummary
     dependsOnPublicationIds: [],
     targetWorkgroupIds: [],
     publishedBy: { id: 'user-1', name: 'Admin', avatarUrl: null },
+    reviewer: null,
     publishedAt: '2026-05-24T00:00:00.000Z',
     ...overrides,
   }
@@ -243,6 +245,51 @@ describe('publication state tree grouping', () => {
       'unapproved_current_version',
       'critical_risk_current_version',
     ])
+  })
+
+  it('builds approval workflow gates from reviewer, review, and risk state', () => {
+    expect(
+      buildPublicationApprovalWorkflow(
+        publication({ reviewState: 'pending', riskLevel: 'critical', reviewer: null })
+      ).map((step) => [step.id, step.status])
+    ).toEqual([
+      ['assign_reviewer', 'ready'],
+      ['start_review', 'blocked'],
+      ['resolve_critical_risk', 'blocked'],
+      ['record_decision', 'blocked'],
+    ])
+
+    expect(
+      buildPublicationApprovalWorkflow(
+        publication({
+          reviewState: 'in_review',
+          riskLevel: 'high',
+          reviewer: {
+            userId: 'reviewer-1',
+            assignedBy: 'admin-1',
+            assignedAt: '2026-05-24T00:00:00.000Z',
+          },
+        })
+      ).map((step) => [step.id, step.status])
+    ).toEqual([
+      ['assign_reviewer', 'complete'],
+      ['start_review', 'complete'],
+      ['resolve_critical_risk', 'complete'],
+      ['record_decision', 'ready'],
+    ])
+
+    expect(
+      buildPublicationApprovalWorkflow(
+        publication({
+          reviewState: 'approved',
+          reviewer: {
+            userId: 'reviewer-1',
+            assignedBy: 'admin-1',
+            assignedAt: '2026-05-24T00:00:00.000Z',
+          },
+        })
+      ).at(-1)
+    ).toMatchObject({ id: 'approved', status: 'complete' })
   })
 
   it('builds team publication nudges for stale, missing, and never-published teams', () => {
