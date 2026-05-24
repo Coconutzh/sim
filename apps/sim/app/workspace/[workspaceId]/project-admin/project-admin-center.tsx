@@ -27,6 +27,7 @@ import {
   fetchOrganizationWorkgroupActivity,
   useAddWorkgroupMember,
   useAgentProfiles,
+  useBatchAddWorkgroupMembers,
   useCreateWorkgroup,
   useDisciplines,
   useMyWorkgroups,
@@ -311,6 +312,7 @@ export function ProjectAdminCenter() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const createWorkgroup = useCreateWorkgroup()
   const addWorkgroupMember = useAddWorkgroupMember()
+  const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
@@ -434,7 +436,8 @@ export function ProjectAdminCenter() {
     organizationId &&
       selectedAssignmentTeamId &&
       batchAssignmentTargets.length > 0 &&
-      !addWorkgroupMember.isPending
+      !addWorkgroupMember.isPending &&
+      !batchAddWorkgroupMembers.isPending
   )
   const activityFilterBase = useMemo(
     () => ({
@@ -530,34 +533,40 @@ export function ProjectAdminCenter() {
 
   const handleBatchAssignMembers = async () => {
     if (!organizationId || !selectedAssignmentTeamId || batchAssignmentTargets.length === 0) return
-    const results: BatchAssignmentResult[] = []
-    for (const target of batchAssignmentTargets) {
-      const rosterMember = rosterMembers.find(
-        (member) => member.userId === target || member.email.toLowerCase() === target.toLowerCase()
+    try {
+      const result = await batchAddWorkgroupMembers.mutateAsync({
+        workgroupId: selectedAssignmentTeamId,
+        organizationId,
+        role: assignmentRole,
+        targets: batchAssignmentTargets.map((target) => {
+          const rosterMember = rosterMembers.find(
+            (member) =>
+              member.userId === target || member.email.toLowerCase() === target.toLowerCase()
+          )
+          if (rosterMember) return { userId: rosterMember.userId }
+          return target.includes('@') ? { email: target } : { userId: target }
+        }),
+      })
+      setBatchAssignmentResults(
+        result.assigned.map((assignment) => ({
+          target: assignment.target,
+          status: 'assigned',
+          message: `Assigned as ${assignment.role}`,
+        }))
       )
-      const isEmail = target.includes('@')
-      try {
-        await addWorkgroupMember.mutateAsync({
-          workgroupId: selectedAssignmentTeamId,
-          organizationId,
-          role: assignmentRole,
-          ...(rosterMember
-            ? { userId: rosterMember.userId }
-            : isEmail
-              ? { email: target }
-              : { userId: target }),
-        })
-        results.push({ target, status: 'assigned', message: `Assigned as ${assignmentRole}` })
-      } catch (error) {
-        results.push({ target, status: 'failed', message: readErrorMessage(error) })
-      }
+      setAssignmentStatus(
+        `Batch assignment committed for ${selectedAssignmentTeam?.name ?? 'the selected team'}: ${result.assigned.length}/${batchAssignmentTargets.length} unique target${batchAssignmentTargets.length === 1 ? '' : 's'} assigned.`
+      )
+      setBatchAssignmentValue('')
+    } catch (error) {
+      const message = readErrorMessage(error)
+      setBatchAssignmentResults(
+        batchAssignmentTargets.map((target) => ({ target, status: 'failed', message }))
+      )
+      setAssignmentStatus(
+        `Batch assignment was not committed for ${selectedAssignmentTeam?.name ?? 'the selected team'}: ${message}`
+      )
     }
-    setBatchAssignmentResults(results)
-    const assignedCount = results.filter((result) => result.status === 'assigned').length
-    setAssignmentStatus(
-      `Batch assignment completed for ${selectedAssignmentTeam?.name ?? 'the selected team'}: ${assignedCount}/${results.length} assigned.`
-    )
-    if (assignedCount === results.length) setBatchAssignmentValue('')
   }
 
   const handleLoadSuggestedAssignments = () => {
@@ -1042,10 +1051,10 @@ export function ProjectAdminCenter() {
                     disabled={!canBatchAssignMembers}
                     onClick={() => void handleBatchAssignMembers()}
                   >
-                    {addWorkgroupMember.isPending ? (
+                    {batchAddWorkgroupMembers.isPending ? (
                       <Loader className='mr-2 h-[14px] w-[14px]' animate />
                     ) : null}
-                    Assign batch
+                    Assign batch transaction
                   </button>
                 </div>
                 {batchAssignmentResults.length > 0 && (

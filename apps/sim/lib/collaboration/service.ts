@@ -49,6 +49,10 @@ export type PublicationReviewState =
 export type PublicationRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 type PublicationVisibility = 'organization' | 'selected_workgroups'
+type WorkgroupMemberTarget = {
+  userId?: string
+  email?: string
+}
 type PublicationAuditAction =
   | typeof AuditAction.PUBLICATION_CREATED
   | typeof AuditAction.PUBLICATION_UPDATED
@@ -520,6 +524,10 @@ async function resolveWorkgroupMemberTargetUserId(params: {
   return row.id
 }
 
+function getWorkgroupMemberTargetLabel(target: WorkgroupMemberTarget) {
+  return target.email?.trim() || target.userId || ''
+}
+
 export async function addWorkgroupMember(params: {
   actorUserId: string
   workgroupId: string
@@ -568,6 +576,91 @@ export async function addWorkgroupMember(params: {
     description: `Added team member as ${params.role}`,
     metadata: { workgroupId: wg.id, targetUserId, role: params.role },
   })
+}
+
+export async function addWorkgroupMembersBatch(params: {
+  actorUserId: string
+  workgroupId: string
+  role: WorkgroupRole
+  targets: WorkgroupMemberTarget[]
+}) {
+  await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
+  const [wg] = await db
+    .select()
+    .from(workgroup)
+    .where(eq(workgroup.id, params.workgroupId))
+    .limit(1)
+  if (!wg) throw new Error('Workgroup not found')
+
+  const resolvedTargets = new Map<string, { target: string; userId: string; role: WorkgroupRole }>()
+  for (const target of params.targets) {
+    const targetUserId = await resolveWorkgroupMemberTargetUserId(target)
+    if (!resolvedTargets.has(targetUserId)) {
+      resolvedTargets.set(targetUserId, {
+        target: getWorkgroupMemberTargetLabel(target),
+        userId: targetUserId,
+        role: params.role,
+      })
+    }
+  }
+  const assigned = Array.from(resolvedTargets.values())
+  const now = new Date()
+
+  await db.transaction(async (tx) => {
+    for (const target of assigned) {
+      await tx
+        .insert(workgroupMember)
+        .values({
+          id: generateId(),
+          organizationId: wg.organizationId,
+          workgroupId: wg.id,
+          userId: target.userId,
+          role: params.role,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [workgroupMember.workgroupId, workgroupMember.userId],
+          set: { role: params.role, updatedAt: now },
+        })
+
+      if (wg.teamWorkspaceId) {
+        await tx
+          .insert(permissions)
+          .values({
+            id: generateId(),
+            userId: target.userId,
+            entityType: 'workspace',
+            entityId: wg.teamWorkspaceId,
+            permissionType: workspacePermissionForWorkgroupRole(params.role),
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [permissions.userId, permissions.entityType, permissions.entityId],
+            set: {
+              permissionType: workspacePermissionForWorkgroupRole(params.role),
+              updatedAt: now,
+            },
+          })
+      }
+    }
+  })
+
+  for (const target of assigned) {
+    recordAudit({
+      workspaceId: wg.teamWorkspaceId,
+      actorId: params.actorUserId,
+      action: AuditAction.MEMBER_INVITED,
+      resourceType: AuditResourceType.WORKSPACE,
+      resourceId: wg.id,
+      resourceName: wg.name,
+      description: `Batch added team member as ${params.role}`,
+      metadata: { workgroupId: wg.id, targetUserId: target.userId, role: params.role },
+    })
+  }
+
+  return assigned
 }
 
 export async function updateWorkgroupMemberRole(params: {

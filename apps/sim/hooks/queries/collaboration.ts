@@ -4,6 +4,8 @@ import { requestJson } from '@/lib/api/client/request'
 import type { WorkspacesResponse } from '@/lib/api/contracts'
 import {
   addWorkgroupMemberContract,
+  type BatchAddWorkgroupMembersBody,
+  batchAddWorkgroupMembersContract,
   type CopySelectionBody,
   copySelectionContract,
   createOrganizationWorkgroupContract,
@@ -253,6 +255,38 @@ export function useAddWorkgroupMember() {
       requestJson(addWorkgroupMemberContract, {
         params: { workgroupId: variables.workgroupId },
         body: { userId: variables.userId, email: variables.email, role: variables.role },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationActivity(variables.organizationId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: organizationKeys.roster(variables.organizationId),
+        })
+      }
+    },
+  })
+}
+
+export function useBatchAddWorkgroupMembers() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      workgroupId: string
+      organizationId?: string
+      targets: BatchAddWorkgroupMembersBody['targets']
+      role: 'admin' | 'member'
+    }) =>
+      requestJson(batchAddWorkgroupMembersContract, {
+        params: { workgroupId: variables.workgroupId },
+        body: { targets: variables.targets, role: variables.role },
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })

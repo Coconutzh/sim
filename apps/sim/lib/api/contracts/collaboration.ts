@@ -149,6 +149,30 @@ export const upsertWorkgroupMemberBodySchema = z
   })
 export type UpsertWorkgroupMemberBody = z.input<typeof upsertWorkgroupMemberBodySchema>
 
+export const batchWorkgroupMemberTargetSchema = z
+  .object({
+    userId: nonEmptyIdSchema.optional(),
+    email: z.string().trim().email('Valid email is required').optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.userId && !value.email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'User ID or email is required',
+        path: ['userId'],
+      })
+    }
+  })
+
+export const batchAddWorkgroupMembersBodySchema = z.object({
+  targets: z
+    .array(batchWorkgroupMemberTargetSchema)
+    .min(1, 'At least one member target is required')
+    .max(100, 'Batch assignment is limited to 100 targets'),
+  role: workgroupRoleSchema,
+})
+export type BatchAddWorkgroupMembersBody = z.input<typeof batchAddWorkgroupMembersBodySchema>
+
 export const updateWorkgroupMemberBodySchema = z.object({ role: workgroupRoleSchema })
 export type UpdateWorkgroupMemberBody = z.input<typeof updateWorkgroupMemberBodySchema>
 
@@ -493,6 +517,26 @@ export const addWorkgroupMemberContract = defineRouteContract({
   params: workgroupParamsSchema,
   body: upsertWorkgroupMemberBodySchema,
   response: { mode: 'json', schema: z.object({ success: z.literal(true) }) },
+})
+
+export const batchAddWorkgroupMembersContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/members/batch',
+  params: workgroupParamsSchema,
+  body: batchAddWorkgroupMembersBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      assigned: z.array(
+        z.object({
+          target: z.string(),
+          userId: z.string(),
+          role: workgroupRoleSchema,
+        })
+      ),
+    }),
+  },
 })
 
 export const updateWorkgroupMemberContract = defineRouteContract({

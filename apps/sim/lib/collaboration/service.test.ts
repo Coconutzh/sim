@@ -240,6 +240,7 @@ import { recordAudit } from '@sim/audit'
 import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   addWorkgroupMember,
+  addWorkgroupMembersBatch,
   assertWorkgroupAdmin,
   createPersonalWorkspace,
   createTeamWorkspace,
@@ -443,6 +444,61 @@ describe('collaboration service', () => {
     ).resolves.toBeUndefined()
 
     expect(mockDb.insert).toHaveBeenCalled()
+  })
+
+  it('batch adds workgroup members in one transaction', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting', teamWorkspaceId: 'ws-1' }],
+      [{ id: 'user-2' }]
+    )
+
+    await expect(
+      addWorkgroupMembersBatch({
+        actorUserId: 'admin-1',
+        workgroupId: 'workgroup-1',
+        role: 'member',
+        targets: [{ userId: 'user-1' }, { email: 'user-2@example.com' }],
+      })
+    ).resolves.toEqual([
+      { target: 'user-1', userId: 'user-1', role: 'member' },
+      { target: 'user-2@example.com', userId: 'user-2', role: 'member' },
+    ])
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(recordAudit).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects a batch add before opening the transaction when a target is invalid', async () => {
+    mockResultsQueue.push(
+      [
+        {
+          id: 'membership-1',
+          role: 'admin',
+          organizationId: 'org-1',
+          workgroupId: 'workgroup-1',
+        },
+      ],
+      [{ id: 'workgroup-1', organizationId: 'org-1', name: 'Lighting', teamWorkspaceId: 'ws-1' }],
+      []
+    )
+
+    await expect(
+      addWorkgroupMembersBatch({
+        actorUserId: 'admin-1',
+        workgroupId: 'workgroup-1',
+        role: 'member',
+        targets: [{ email: 'missing@example.com' }],
+      })
+    ).rejects.toThrow('User not found')
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+    expect(recordAudit).not.toHaveBeenCalled()
   })
 
   it('creates additional personal draft canvases with a default workflow', async () => {
