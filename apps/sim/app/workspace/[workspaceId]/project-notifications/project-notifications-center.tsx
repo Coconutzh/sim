@@ -30,6 +30,7 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: '', label: 'All notification types' },
   { value: 'publication_review', label: 'Publication review' },
   { value: 'project_admin_failure', label: 'Project admin failure' },
+  { value: 'publication_governance', label: 'Publication governance' },
 ]
 
 function getActiveWorkgroup(

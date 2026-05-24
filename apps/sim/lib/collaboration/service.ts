@@ -84,6 +84,13 @@ type PublicationAuditAction =
   | typeof AuditAction.PUBLICATION_ARCHIVED
   | typeof AuditAction.PUBLICATION_RETRACTED
   | typeof AuditAction.PUBLICATION_RESTORED
+const PUBLICATION_GOVERNANCE_AUDIT_ACTIONS = [
+  AuditAction.PUBLICATION_CREATED,
+  AuditAction.PUBLICATION_UPDATED,
+  AuditAction.PUBLICATION_ARCHIVED,
+  AuditAction.PUBLICATION_RETRACTED,
+  AuditAction.PUBLICATION_RESTORED,
+] as const
 
 interface PublicationBroadcastParams {
   actorUserId: string
@@ -135,7 +142,10 @@ export interface PublicationNotificationInboxEntry {
   readAt: string | null
 }
 
-type ProjectNotificationCenterKind = 'publication_review' | 'project_admin_failure'
+type ProjectNotificationCenterKind =
+  | 'publication_review'
+  | 'project_admin_failure'
+  | 'publication_governance'
 
 export interface ProjectNotificationCenterEntry {
   id: string
@@ -1553,9 +1563,45 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     sql`${auditLog.metadata}->>'notificationEvent' = ${PUBLICATION_REVIEW_NOTIFICATION_EVENT}`
   )
   const failureCondition = eq(auditLog.action, AuditAction.PROJECT_ADMIN_FAILURE_RECORDED)
+  const publicationGovernanceCondition = inArray(
+    auditLog.action,
+    PUBLICATION_GOVERNANCE_AUDIT_ACTIONS
+  )
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
-  return or(publicationReviewCondition, failureCondition)
+  if (kind === 'publication_governance') return publicationGovernanceCondition
+  return or(publicationReviewCondition, failureCondition, publicationGovernanceCondition)
+}
+
+function isPublicationGovernanceAction(action: string): action is PublicationAuditAction {
+  return PUBLICATION_GOVERNANCE_AUDIT_ACTIONS.some(
+    (publicationAction) => publicationAction === action
+  )
+}
+
+function getPublicationGovernanceTitle(
+  action: PublicationAuditAction,
+  resourceName: string | null
+) {
+  const name = resourceName?.trim()
+  switch (action) {
+    case AuditAction.PUBLICATION_CREATED:
+      return name ? `Publication created: ${name}` : 'Publication created'
+    case AuditAction.PUBLICATION_UPDATED:
+      return name ? `Publication updated: ${name}` : 'Publication updated'
+    case AuditAction.PUBLICATION_ARCHIVED:
+      return name ? `Publication archived: ${name}` : 'Publication archived'
+    case AuditAction.PUBLICATION_RETRACTED:
+      return name ? `Publication retracted: ${name}` : 'Publication retracted'
+    case AuditAction.PUBLICATION_RESTORED:
+      return name ? `Publication restored: ${name}` : 'Publication restored'
+  }
+}
+
+function getPublicationGovernanceSeverity(action: PublicationAuditAction) {
+  return action === AuditAction.PUBLICATION_ARCHIVED || action === AuditAction.PUBLICATION_RETRACTED
+    ? 'warning'
+    : 'info'
 }
 
 function getProjectNotificationCenterEntry(
@@ -1606,6 +1652,27 @@ function getProjectNotificationCenterEntry(
       detail: metadata.message ?? row.description ?? '',
       channel: null,
       body: metadata.target ?? row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isPublicationGovernanceAction(row.action)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'publication_governance',
+      severity: getPublicationGovernanceSeverity(row.action),
+      title: getPublicationGovernanceTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
       notificationCount: 1,
       actorName: row.actorName,
       actorEmail: row.actorEmail,
@@ -1856,6 +1923,7 @@ export async function createPublicationVersion(params: {
     resourceId: inserted.id,
     resourceName: inserted.title,
     metadata: {
+      organizationId: source.organizationId,
       sourceWorkflowId: params.sourceWorkflowId,
       sourceWorkgroupId: source.workgroupId,
       visibility: params.visibility,
@@ -2597,6 +2665,7 @@ export async function updatePublicationVisibility(params: {
     resourceName: row.title,
     description: params.reason,
     metadata: {
+      organizationId: row.organizationId,
       previousVisibility: row.visibility,
       visibility: params.visibility,
       targetWorkgroupIds,
@@ -2681,6 +2750,7 @@ export async function updatePublicationDetails(params: {
     resourceName: title,
     description: params.reason,
     metadata: {
+      organizationId: row.organizationId,
       previousTitle: row.title,
       title,
       previousDescription: row.description,
@@ -2781,6 +2851,7 @@ export async function updatePublicationReview(params: {
     resourceName: row.title,
     description: params.reason,
     metadata: {
+      organizationId: row.organizationId,
       previousReviewState: row.reviewState,
       reviewState: params.reviewState,
       previousRiskLevel: row.riskLevel,
@@ -3024,6 +3095,7 @@ export async function updatePublicationLifecycleStatus(params: {
       resourceName: row.title,
       description: params.reason,
       metadata: {
+        organizationId: row.organizationId,
         previousStatus: row.status,
         status: 'published',
         sourceWorkflowId: row.sourceWorkflowId,
@@ -3082,6 +3154,7 @@ export async function updatePublicationLifecycleStatus(params: {
     resourceName: row.title,
     description: params.reason,
     metadata: {
+      organizationId: row.organizationId,
       previousStatus: row.status,
       status,
       sourceWorkflowId: row.sourceWorkflowId,

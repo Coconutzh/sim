@@ -1516,6 +1516,22 @@ describe('collaboration service', () => {
             message: 'Archive failed',
           },
         },
+        {
+          id: 'audit-publication-governance-1',
+          action: 'publication.archived',
+          resourceName: 'Lighting cues v3',
+          description: 'Showcase publication was archived',
+          actorName: 'Project Admin',
+          actorEmail: 'admin@example.com',
+          createdAt,
+          metadata: {
+            organizationId: 'org-1',
+            sourceWorkflowId: 'workflow-1',
+            sourceWorkgroupId: 'workgroup-1',
+            publishedWorkflowId: 'published-workflow-1',
+            status: 'archived',
+          },
+        },
       ]
     )
 
@@ -1529,6 +1545,12 @@ describe('collaboration service', () => {
       notifications: [
         { id: 'audit-notification-1', kind: 'publication_review', severity: 'danger' },
         { id: 'audit-failure-1', kind: 'project_admin_failure', severity: 'danger' },
+        {
+          id: 'audit-publication-governance-1',
+          kind: 'publication_governance',
+          severity: 'warning',
+          title: 'Publication archived: Lighting cues v3',
+        },
       ],
       nextOffset: null,
     })
@@ -1542,6 +1564,7 @@ describe('collaboration service', () => {
         userId: 'org-admin-1',
         organizationId: 'org-1',
         markAll: true,
+        kind: 'publication_governance',
       })
     ).resolves.toEqual({
       readAt: expect.any(String),

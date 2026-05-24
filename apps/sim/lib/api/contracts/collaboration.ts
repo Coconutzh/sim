@@ -473,6 +473,7 @@ export type MarkPublicationNotificationInboxReadBody = z.input<
 export const projectNotificationCenterKindSchema = z.enum([
   'publication_review',
   'project_admin_failure',
+  'publication_governance',
 ])
 export type ProjectNotificationCenterKind = z.output<typeof projectNotificationCenterKindSchema>
 export const projectNotificationCenterQuerySchema = z.object({

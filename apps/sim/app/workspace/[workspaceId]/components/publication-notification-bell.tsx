@@ -17,6 +17,15 @@ import {
 
 const CENTER_QUERY = { limit: 10 } as const
 
+function formatProjectNotificationBadge(
+  kind: 'publication_review' | 'project_admin_failure' | 'publication_governance',
+  channel?: string | null
+) {
+  if (kind === 'publication_review') return channel?.replace('_', ' ') ?? 'publication'
+  if (kind === 'publication_governance') return 'governance'
+  return 'failure'
+}
+
 interface PublicationNotificationBellProps {
   organizationId?: string
   workspaceId: string
@@ -118,9 +127,7 @@ export function PublicationNotificationBell({
                     {entry.title}
                   </span>
                   <span className='shrink-0 rounded-[6px] border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]'>
-                    {entry.kind === 'publication_review'
-                      ? (entry.channel?.replace('_', ' ') ?? 'publication')
-                      : 'failure'}
+                    {formatProjectNotificationBadge(entry.kind, entry.channel)}
                   </span>
                 </div>
                 <div className='mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]'>
