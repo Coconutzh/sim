@@ -588,6 +588,28 @@ export function ProjectAdminCenter() {
     publicationStateGroups.find((group) =>
       group.versions.some((version) => version.id === selectedPublication?.id)
     ) ?? null
+  const selectedPublicationCurrentVersion = selectedPublicationGovernanceGroup?.current ?? null
+  const selectedPublicationCurrentSummary =
+    publications.find((publication) => publication.id === selectedPublicationCurrentVersion?.id) ??
+    null
+  const selectedPublicationCurrentVersions =
+    selectedPublicationGovernanceGroup?.versions.filter(
+      (version) => version.status === 'published'
+    ) ?? []
+  const selectedPublicationExtraCurrentVersions = selectedPublicationCurrentVersions.filter(
+    (version) => version.id !== selectedPublicationCurrentVersion?.id
+  )
+  const selectedPublicationRestoreCandidate =
+    selectedPublicationGovernanceGroup?.current &&
+    selectedPublicationGovernanceGroup.current.status !== 'published' &&
+    selectedPublicationGovernanceGroup.current.status !== 'retracted'
+      ? (publications.find(
+          (publication) => publication.id === selectedPublicationGovernanceGroup.current?.id
+        ) ?? null)
+      : null
+  const selectedPublicationAlertCodes = new Set(
+    selectedPublicationGovernanceGroup?.governanceAlerts.map((alert) => alert.code) ?? []
+  )
   const selectedNewTeamDisciplineId = newTeamDisciplineId || disciplines[0]?.id || ''
   const selectedNewTeamDiscipline = disciplines.find(
     (discipline) => discipline.id === selectedNewTeamDisciplineId
@@ -817,6 +839,32 @@ export function ProjectAdminCenter() {
       setPublicationGovernanceStatus(
         `${result.publication.title} is now ${result.publication.status}.`
       )
+    } catch (error) {
+      setPublicationGovernanceStatus(readErrorMessage(error))
+    }
+  }
+
+  const handlePublicationReviewResolution = async (
+    publication: PublicationSummary,
+    reviewState: PublicationReviewState | null,
+    riskLevel: PublicationRiskLevel | null,
+    successMessage: string
+  ) => {
+    try {
+      const result = await updatePublicationReview.mutateAsync({
+        publicationVersionId: publication.id,
+        reviewState,
+        riskLevel,
+        reason: 'Project admin conflict resolution action',
+      })
+      setPublicationGovernanceStatus(successMessage)
+      setPublicationReviewDrafts((drafts) => ({
+        ...drafts,
+        [publication.id]: {
+          reviewState: result.publication.reviewState ?? '',
+          riskLevel: result.publication.riskLevel ?? '',
+        },
+      }))
     } catch (error) {
       setPublicationGovernanceStatus(readErrorMessage(error))
     }
@@ -2155,19 +2203,128 @@ export function ProjectAdminCenter() {
                 </h3>
                 {selectedPublicationGovernanceGroup &&
                 selectedPublicationGovernanceGroup.governanceAlerts.length > 0 ? (
-                  <div className='mt-3 grid gap-2'>
-                    {selectedPublicationGovernanceGroup.governanceAlerts.map((alert) => (
-                      <div
-                        key={alert.code}
-                        className={cn(
-                          'flex items-center gap-2 rounded-[8px] border px-2 py-1 text-[12px]',
-                          governanceAlertClass(alert.severity)
-                        )}
-                      >
-                        <AlertTriangle className='h-[13px] w-[13px]' />
-                        {alert.message}
+                  <div className='mt-3 grid gap-3'>
+                    <div className='grid gap-2'>
+                      {selectedPublicationGovernanceGroup.governanceAlerts.map((alert) => (
+                        <div
+                          key={alert.code}
+                          className={cn(
+                            'flex items-center gap-2 rounded-[8px] border px-2 py-1 text-[12px]',
+                            governanceAlertClass(alert.severity)
+                          )}
+                        >
+                          <AlertTriangle className='h-[13px] w-[13px]' />
+                          {alert.message}
+                        </div>
+                      ))}
+                    </div>
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2'>
+                      <div className='font-medium text-[11px] text-[var(--text-primary)]'>
+                        Resolution actions
                       </div>
-                    ))}
+                      <div className='mt-2 grid gap-2'>
+                        {selectedPublicationAlertCodes.has('multiple_current_versions') &&
+                          selectedPublicationExtraCurrentVersions.length > 0 && (
+                            <div className='grid gap-2'>
+                              <div className='text-[11px] text-[var(--text-muted)]'>
+                                Keep v{selectedPublicationCurrentVersion?.versionNumber} as the
+                                canonical current version and archive duplicate current versions.
+                              </div>
+                              <div className='flex flex-wrap gap-2'>
+                                {selectedPublicationExtraCurrentVersions.map((version) => {
+                                  const publication = publications.find(
+                                    (item) => item.id === version.id
+                                  )
+                                  if (!publication) return null
+                                  return (
+                                    <button
+                                      key={version.id}
+                                      type='button'
+                                      className={buttonVariants({ size: 'sm', variant: 'default' })}
+                                      disabled={updatePublicationLifecycle.isPending}
+                                      onClick={() =>
+                                        void handlePublicationLifecycle(publication, 'archive')
+                                      }
+                                    >
+                                      Archive extra v{version.versionNumber}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        {selectedPublicationAlertCodes.has('no_current_version') &&
+                          selectedPublicationRestoreCandidate && (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationLifecycle.isPending}
+                              onClick={() =>
+                                void handlePublicationLifecycle(
+                                  selectedPublicationRestoreCandidate,
+                                  'restore'
+                                )
+                              }
+                            >
+                              Restore latest visible version
+                            </button>
+                          )}
+                        {selectedPublicationCurrentSummary &&
+                          selectedPublicationAlertCodes.has('unapproved_current_version') && (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationReview.isPending}
+                              onClick={() =>
+                                void handlePublicationReviewResolution(
+                                  selectedPublicationCurrentSummary,
+                                  'approved',
+                                  selectedPublicationCurrentSummary.riskLevel,
+                                  `Approved current version for ${selectedPublicationGovernanceGroup.sourceWorkgroup.name}.`
+                                )
+                              }
+                            >
+                              Approve current version
+                            </button>
+                          )}
+                        {selectedPublicationCurrentSummary &&
+                          selectedPublicationAlertCodes.has('stale_current_version') && (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationReview.isPending}
+                              onClick={() =>
+                                void handlePublicationReviewResolution(
+                                  selectedPublicationCurrentSummary,
+                                  'in_review',
+                                  selectedPublicationCurrentSummary.riskLevel,
+                                  `Started refresh review for ${selectedPublicationGovernanceGroup.sourceWorkgroup.name}.`
+                                )
+                              }
+                            >
+                              Start refresh review
+                            </button>
+                          )}
+                        {selectedPublicationCurrentSummary &&
+                          selectedPublicationAlertCodes.has('critical_risk_current_version') && (
+                            <button
+                              type='button'
+                              className={buttonVariants({ size: 'sm', variant: 'default' })}
+                              disabled={updatePublicationReview.isPending}
+                              onClick={() =>
+                                void handlePublicationReviewResolution(
+                                  selectedPublicationCurrentSummary,
+                                  selectedPublicationCurrentSummary.reviewState,
+                                  'high',
+                                  `Reduced critical risk marker for ${selectedPublicationGovernanceGroup.sourceWorkgroup.name}.`
+                                )
+                              }
+                            >
+                              Set risk to high
+                            </button>
+                          )}
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <p className='mt-2 text-[12px] text-[var(--text-muted)]'>
