@@ -142,7 +142,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       if (!authorization.allowed) {
         if (authorization.status === 404) {
-          return NextResponse.json({ error: authorization.message || 'Workflow not found' }, { status: 404 })
+          return NextResponse.json(
+            { error: authorization.message || 'Workflow not found' },
+            { status: 404 }
+          )
         }
 
         return NextResponse.json({
@@ -175,7 +178,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             passed: false,
             validationType,
             input: input || '',
-            error: 'Workspace access is required for hallucination validation.',
+            error: 'Canvas access is required for hallucination validation.',
           },
         })
       }

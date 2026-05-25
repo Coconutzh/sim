@@ -92,7 +92,7 @@ describe('POST /api/guardrails/validate', () => {
         passed: false,
         validationType: 'hallucination',
         input: 'hello',
-        error: 'Workspace access is required for hallucination validation.',
+        error: 'Canvas access is required for hallucination validation.',
       },
     })
   })

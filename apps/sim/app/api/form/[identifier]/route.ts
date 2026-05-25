@@ -199,7 +199,7 @@ export const POST = withRouteHandler(
       if (!workspaceId) {
         logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
         return addCorsHeaders(
-          createErrorResponse('Workflow has no associated workspace', 500),
+          createErrorResponse('Workflow has no associated canvas', 500),
           request
         )
       }

@@ -716,7 +716,7 @@ async function maybeExportSandboxFileToWorkspace(args: {
       {
         success: false,
         error:
-          'outputSandboxPath requires outputPath. Set outputPath to the destination workspace file, e.g. "files/result.csv".',
+          'outputSandboxPath requires outputPath. Set outputPath to the destination canvas file, e.g. "files/result.csv".',
         output: { result: null, stdout: cleanStdout(stdout), executionTime },
       },
       { status: 400 }
@@ -730,12 +730,12 @@ async function maybeExportSandboxFileToWorkspace(args: {
   })
   if ('response' in workspaceResolution) {
     const errorBody = await workspaceResolution.response.json().catch(() => ({
-      error: 'Workspace context required to save sandbox file to workspace',
+      error: 'Canvas context required to save sandbox file to canvas',
     }))
     return NextResponse.json(
       {
         success: false,
-        error: errorBody.error || 'Workspace context required to save sandbox file to workspace',
+        error: errorBody.error || 'Canvas context required to save sandbox file to canvas',
         output: { result: null, stdout: cleanStdout(stdout), executionTime },
       },
       { status: workspaceResolution.response.status }
