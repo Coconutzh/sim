@@ -25,6 +25,7 @@
 - 最新 Phase 11 设置页切片已把 workflow MCP server 详情里的 `Add to Workspace` / `Added to Workspace` 迁移为 `Add to Canvas` / `Added to Canvas`，降低普通用户在画布设置里看到旧 workspace 心智的概率。
 - 最新 Phase 11 设置页扩展切片已继续迁移 API keys、BYOK、Inbox、team management invite/roster/no-organization/remove-member 对话中的用户可见 workspace 文案；底层 `workspaceId`、`workspaceKeys` 和权限 API 命名仍保留为内部资源边界。
 - 最新 Phase 11 邀请/团队管理切片已把原 sidebar header invite modal 和 team canvas health/Agent Skill 空态中的 “this workspace / workspace permissions / team workspace” 用户可见文案改为 canvas 语义。
+- 最新 Phase 11 `/workspace` 入口切片已把根入口重定向改为优先打开本地最近访问 canvas，其次 server last-active canvas，再回退默认团队画布；这避免已有团队画布时总是覆盖个人草稿最近访问，也让 `redirect_workflow` 继续使用同一 canvas fallback。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -39,6 +40,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `629062e92` | Phase 11 `/workspace` 根入口优先使用最近访问 canvas，并补选择器单测 |
 | `be6856618` | Phase 11 sidebar invite modal 与团队管理健康/Agent Skill 空态迁移为 canvas wording |
 | `ec67e90fe` | Phase 11 settings 中 API keys/BYOK/Inbox/team management 明显可见 workspace 文案迁移为 canvas wording |
 | `0af9de617` | Phase 11 workflow MCP server 设置页按钮和说明迁移为 canvas wording |
@@ -136,11 +138,12 @@
 - `0af9de617` 先迁移设置页中 workflow MCP server 详情区的普通用户可见按钮和提示：`Add to Workspace` / `Added to Workspace` / “add server to workspace” 已改为 canvas 语义；底层变量仍保留 `workspaceId`，因为 MCP server 绑定关系当前仍以 workspace/canvas 容器 ID 为内部资源键。
 - `ec67e90fe` 继续迁移 settings 内其他高频用户可见文案：API keys 的 `Workspace` 分组显示为 `Canvas`，创建 modal 说明改为“all workflows in this canvas”；BYOK 删除/保存说明、Inbox email task 说明、team management 的 invite dropdown、organization roster 空态/搜索提示、no-organization 空态和外部成员移除确认均改为 canvas 语义。该提交不改内部 keyType、workspace permission 或组织 roster 数据模型。
 - `be6856618` 补齐 sidebar header 的邀请弹窗和原 shell 团队管理页中的残留普通用户文案：外部邀请、已是成员、移除成员、fallback modal title、team canvas health permission 检查，以及 Agent Skill 空态均使用 canvas wording；权限 mutation、pending invitation 和 `teamWorkspaceId` 命名仍是内部实现。
+- `629062e92` 把 `/workspace` 根入口的 legacy workspace fallback 抽成 `selectCanvasLandingTarget`：选择顺序改为 local recency -> server last-active -> default workgroup team canvas -> default workgroup personal canvas -> 其他 team/personal/legacy canvas，并补单测覆盖“最近个人草稿不被默认团队画布覆盖”“local recency 失效时使用 server last-active”“首次进入仍回默认团队画布”。该切片修复了此前 default workgroup 有 team canvas 时过早 redirect、导致 `redirect_workflow` 和最近访问都无法参与决策的问题。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、team management invite/roster/no-organization/remove-member、团队健康检查和 Agent Skill 空态中的明显可见文案；settings 其他模块、recent、mobile nav 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、team management invite/roster/no-organization/remove-member、团队健康检查和 Agent Skill 空态中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；settings 其他模块、Recently Deleted、mobile nav 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -451,11 +454,11 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，仍需继续排查 recent、settings 其余模块和 mobile nav。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，仍需继续排查 Recently Deleted、settings 其余模块和 mobile nav。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
-5. `/api/workspaces` 已返回 `canvasScope`、`workgroupId`、`disciplineId`、`isInternalWorkspace`，并在 `dc6a30e75` 补上 `canvasCreationCapabilities.canCreatePersonalCanvas` / `canCreateTeamCanvas`；后续继续把 recent、search、command palette、settings 等深层入口消费这些字段。
+5. `/api/workspaces` 已返回 `canvasScope`、`workgroupId`、`disciplineId`、`isInternalWorkspace`，并在 `dc6a30e75` 补上 `canvasCreationCapabilities.canCreatePersonalCanvas` / `canCreateTeamCanvas`；search/command palette 已消费 canvas 元数据，`/workspace` 根入口已消费 recent/last-active/default workgroup canvas 选择顺序；后续继续把 Recently Deleted、settings 其余模块、mobile nav 等深层入口消费这些字段。
 
 建议提交：`Migrate legacy workspace entrypoints`。
 
