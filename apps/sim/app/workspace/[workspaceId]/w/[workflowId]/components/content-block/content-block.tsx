@@ -655,7 +655,7 @@ function MediaContentCard({
       }
 
       if (!params.workspaceId) {
-        setError('Missing workspace context for upload.')
+        setError('Missing canvas context for upload.')
         return
       }
 
