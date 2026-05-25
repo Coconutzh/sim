@@ -42,7 +42,7 @@ export async function executeVfsGrep(
 
   const workspaceId = context.workspaceId
   if (!workspaceId) {
-    return { success: false, error: 'No workspace context available' }
+    return { success: false, error: 'No canvas context available' }
   }
 
   try {
@@ -92,7 +92,7 @@ export async function executeVfsGlob(
 
   const workspaceId = context.workspaceId
   if (!workspaceId) {
-    return { success: false, error: 'No workspace context available' }
+    return { success: false, error: 'No canvas context available' }
   }
 
   try {
@@ -127,7 +127,7 @@ export async function executeVfsRead(
 
   const workspaceId = context.workspaceId
   if (!workspaceId) {
-    return { success: false, error: 'No workspace context available' }
+    return { success: false, error: 'No canvas context available' }
   }
 
   try {
@@ -282,7 +282,7 @@ export async function executeVfsList(
 
   const workspaceId = context.workspaceId
   if (!workspaceId) {
-    return { success: false, error: 'No workspace context available' }
+    return { success: false, error: 'No canvas context available' }
   }
 
   try {

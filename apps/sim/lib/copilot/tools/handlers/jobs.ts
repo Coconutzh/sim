@@ -81,7 +81,7 @@ export async function executeCreateJob(
   }
 
   if (!context.userId || !context.workspaceId) {
-    return { success: false, error: 'Missing user or workspace context' }
+    return { success: false, error: 'Missing user or canvas context' }
   }
 
   let taskName: string | null = null
@@ -230,7 +230,7 @@ export async function executeManageJob(
   const { operation, args } = rawParams
 
   if (!context.userId || !context.workspaceId) {
-    return { success: false, error: 'Missing user or workspace context' }
+    return { success: false, error: 'Missing user or canvas context' }
   }
 
   switch (operation) {
@@ -589,7 +589,7 @@ export async function executeUpdateJobHistory(
   }
 
   if (!context.workspaceId) {
-    return { success: false, error: 'Missing workspace context' }
+    return { success: false, error: 'Missing canvas context' }
   }
 
   try {

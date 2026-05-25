@@ -201,7 +201,7 @@ export async function executeMaterializeFile(
   }
 
   if (!context.workspaceId) {
-    return { success: false, error: 'No workspace context available for materialize_file' }
+    return { success: false, error: 'No canvas context available for materialize_file' }
   }
 
   const operation = (params.operation as string | undefined) || 'save'

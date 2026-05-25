@@ -21,7 +21,7 @@ vi.mock('./upload-file-reader', () => ({
   listChatUploads: vi.fn(),
 }))
 
-import { executeVfsGrep, executeVfsRead } from './vfs'
+import { executeVfsGlob, executeVfsGrep, executeVfsList, executeVfsRead } from './vfs'
 
 const OVERSIZED_INLINE_CONTENT = 'x'.repeat(TOOL_RESULT_MAX_INLINE_CHARS + 1)
 
@@ -126,5 +126,26 @@ describe('vfs handlers oversize policy', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('too large')
+  })
+})
+
+describe('vfs handlers context wording', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it.each([
+    ['grep', () => executeVfsGrep({ pattern: 'foo' }, { userId: 'user-1', workflowId: 'wf-1' })],
+    ['glob', () => executeVfsGlob({ pattern: '*' }, { userId: 'user-1', workflowId: 'wf-1' })],
+    [
+      'read',
+      () => executeVfsRead({ path: 'state.json' }, { userId: 'user-1', workflowId: 'wf-1' }),
+    ],
+    ['list', () => executeVfsList({ path: '/' }, { userId: 'user-1', workflowId: 'wf-1' })],
+  ])('returns canvas context wording for %s without a workspaceId', async (_name, execute) => {
+    const result = await execute()
+
+    expect(result).toEqual({ success: false, error: 'No canvas context available' })
+    expect(getOrMaterializeVFS).not.toHaveBeenCalled()
   })
 })
