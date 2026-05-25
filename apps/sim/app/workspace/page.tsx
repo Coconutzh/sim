@@ -8,6 +8,7 @@ import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
+import { selectCanvasLandingTarget } from '@/app/workspace/canvas-landing-target'
 import { getWorkflowRedirectPath } from '@/app/workspace/redirect-workflow'
 import { useMyWorkgroups } from '@/hooks/queries/collaboration'
 import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
@@ -36,17 +37,6 @@ export default function WorkspacePage() {
 
     hasRedirectedRef.current = true
 
-    const defaultWorkgroup =
-      workgroupData.workgroups.find(
-        (workgroup) => workgroup.id === workgroupData.defaultWorkgroupId
-      ) ?? workgroupData.workgroups[0]
-
-    if (defaultWorkgroup?.teamWorkspaceId) {
-      logger.info('Redirecting to team canvas inside the original workspace shell')
-      router.replace(`/workspace/${defaultWorkgroup.teamWorkspaceId}/home`)
-      return
-    }
-
     const urlParams = new URLSearchParams(window.location.search)
     const redirectWorkflowId = urlParams.get('redirect_workflow')
 
@@ -58,18 +48,28 @@ export default function WorkspacePage() {
     }
 
     const localRecentId = WorkspaceRecencyStorage.getMostRecent()
-    const findWorkspace = (id: string | null) =>
-      id ? workspaces.find((w) => w.id === id) : undefined
+    const targetWorkspace = selectCanvasLandingTarget({
+      workspaces,
+      workgroups: workgroupData.workgroups,
+      defaultWorkgroupId: workgroupData.defaultWorkgroupId,
+      localRecentWorkspaceId: localRecentId,
+      lastActiveWorkspaceId,
+    })
 
-    const targetWorkspace =
-      findWorkspace(localRecentId) ?? findWorkspace(lastActiveWorkspaceId) ?? workspaces[0]
+    if (!targetWorkspace) {
+      handleNoWorkspaces(router, creationPolicy)
+      return
+    }
 
     if (redirectWorkflowId) {
       handleWorkflowRedirect(redirectWorkflowId, targetWorkspace.id, router)
       return
     }
 
-    logger.info(`Redirecting to workspace: ${targetWorkspace.id}`)
+    logger.info('Redirecting to canvas inside the original workspace shell', {
+      workspaceId: targetWorkspace.id,
+      canvasScope: targetWorkspace.canvasScope ?? null,
+    })
     router.replace(`/workspace/${targetWorkspace.id}/home`)
   }, [
     session,
