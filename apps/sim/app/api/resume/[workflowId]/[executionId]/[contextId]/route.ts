@@ -61,7 +61,7 @@ export const POST = withRouteHandler(
       logger.error('Resume access validation returned a workflow without workspace context', {
         workflowId,
       })
-      return NextResponse.json({ error: 'Workflow workspace not found' }, { status: 500 })
+      return NextResponse.json({ error: 'Workflow canvas not found' }, { status: 500 })
     }
 
     let payload: unknown = {}
@@ -90,7 +90,7 @@ export const POST = withRouteHandler(
           workspaceId: workflow.workspaceId,
         })
         return NextResponse.json(
-          { error: 'Unable to resolve billing account for this workspace' },
+          { error: 'Unable to resolve billing account for this canvas' },
           { status: 500 }
         )
       }

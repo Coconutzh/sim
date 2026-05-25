@@ -209,10 +209,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           logger.warn(
             `[${requestId}] User ${session.user.id} cannot see workspace for workflow ${workflowId}`
           )
-          return NextResponse.json(
-            { success: false, error: 'Workflow not found' },
-            { status: 404 }
-          )
+          return NextResponse.json({ success: false, error: 'Workflow not found' }, { status: 404 })
         }
 
         if (!membership.canWrite) {
@@ -229,7 +226,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           {
             success: false,
             error:
-              'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+              'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
           },
           { status: 403 }
         )
@@ -244,7 +241,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           workspaceId,
         })
         return NextResponse.json(
-          { success: false, error: 'Unable to resolve billing account for this workspace' },
+          { success: false, error: 'Unable to resolve billing account for this canvas' },
           { status: 500 }
         )
       }

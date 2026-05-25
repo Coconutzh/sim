@@ -5,8 +5,9 @@ import { authMockFns, workflowsApiUtilsMock, workflowsApiUtilsMockFns } from '@s
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDbSelect } = vi.hoisted(() => ({
+const { mockDbSelect, mockGetWorkspaceBilledAccountUserId } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
+  mockGetWorkspaceBilledAccountUserId: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
@@ -39,7 +40,7 @@ vi.mock('@/lib/api-key/byok', () => ({
 }))
 
 vi.mock('@/lib/workspaces/utils', () => ({
-  getWorkspaceBilledAccountUserId: vi.fn(),
+  getWorkspaceBilledAccountUserId: mockGetWorkspaceBilledAccountUserId,
 }))
 
 vi.mock('@/lib/billing/core/usage-log', () => ({
@@ -87,6 +88,7 @@ describe('WandGenerateAPI POST', () => {
       permission: 'write',
       canWrite: true,
     })
+    mockGetWorkspaceBilledAccountUserId.mockResolvedValue('billing-user-1')
     mockDbSelect.mockReturnValue({
       from: () => ({
         where: () => ({
@@ -119,6 +121,55 @@ describe('WandGenerateAPI POST', () => {
     await expect(response.json()).resolves.toEqual({
       success: false,
       error: 'Workflow not found',
+    })
+  })
+
+  it('uses canvas wording when legacy workflows have no workspace container', async () => {
+    mockDbSelect.mockReturnValueOnce({
+      from: () => ({
+        where: () => ({
+          limit: () => [{ workspaceId: null }],
+        }),
+      }),
+    })
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/wand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'Generate a table schema',
+          workflowId: 'wf-legacy',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error:
+        'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
+    })
+  })
+
+  it('uses canvas wording when billing account lookup fails', async () => {
+    mockGetWorkspaceBilledAccountUserId.mockResolvedValueOnce(null)
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/wand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'Generate a table schema',
+          workflowId: 'wf-billing-missing',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Unable to resolve billing account for this canvas',
     })
   })
 })
