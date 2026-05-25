@@ -68,7 +68,7 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
       )
     }
     if (authorization.accessSource !== 'workspace') {
-      return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+      return NextResponse.json({ error: 'Canvas access required' }, { status: 403 })
     }
 
     logger.info(`[${requestId}] Getting schedule for workflow ${workflowId}`)
@@ -129,7 +129,7 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
 async function handleWorkspaceSchedules(requestId: string, userId: string, workspaceId: string) {
   const membership = await getWorkspaceMembershipAccess(userId, workspaceId)
   if (!membership.exists || !membership.hasAccess) {
-    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
   }
 
   logger.info(`[${requestId}] Getting all schedules for workspace ${workspaceId}`)
@@ -228,7 +228,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
     if (!membership.exists || !membership.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (!membership.canWrite) {

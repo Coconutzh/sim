@@ -3,12 +3,7 @@
  *
  * @vitest-environment node
  */
-import {
-  auditMock,
-  authMockFns,
-  databaseMock,
-  workflowAuthzMockFns,
-} from '@sim/testing'
+import { auditMock, authMockFns, databaseMock, workflowAuthzMockFns } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -246,7 +241,7 @@ describe('Schedule PUT API (Reactivate)', () => {
       const data = await res.json()
 
       expect(res.status).toBe(403)
-      expect(data.error).toBe('Workspace access required')
+      expect(data.error).toBe('Canvas access required')
     })
 
     it('allows workflow owner to reactivate', async () => {

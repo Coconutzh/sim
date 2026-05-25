@@ -40,7 +40,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     if (!workspaceId) {
       return NextResponse.json(
-        { success: false, error: { message: 'workspaceId parameter is required' } },
+        { success: false, error: { message: 'Canvas ID parameter is required' } },
         { status: 400 }
       )
     }
@@ -48,7 +48,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
     if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
-        { success: false, error: { message: 'Workspace not found' } },
+        { success: false, error: { message: 'Canvas not found' } },
         { status: 404 }
       )
     }
@@ -120,7 +120,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     if (!workspaceId) {
       return NextResponse.json(
-        { success: false, error: { message: 'workspaceId is required' } },
+        { success: false, error: { message: 'Canvas ID is required' } },
         { status: 400 }
       )
     }
@@ -128,14 +128,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
     if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
-        { success: false, error: { message: 'Workspace not found' } },
+        { success: false, error: { message: 'Canvas not found' } },
         { status: 404 }
       )
     }
 
     if (!access.canWrite) {
       return NextResponse.json(
-        { success: false, error: { message: 'Write access denied to this workspace' } },
+        { success: false, error: { message: 'Write access denied to this canvas' } },
         { status: 403 }
       )
     }
@@ -246,7 +246,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
 
     if (!workspaceId) {
       return NextResponse.json(
-        { success: false, error: { message: 'workspaceId parameter is required' } },
+        { success: false, error: { message: 'Canvas ID parameter is required' } },
         { status: 400 }
       )
     }
@@ -261,14 +261,14 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
     const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
     if (!access.exists || !access.hasAccess) {
       return NextResponse.json(
-        { success: false, error: { message: 'Workspace not found' } },
+        { success: false, error: { message: 'Canvas not found' } },
         { status: 404 }
       )
     }
 
     if (!access.canWrite) {
       return NextResponse.json(
-        { success: false, error: { message: 'Write access denied to this workspace' } },
+        { success: false, error: { message: 'Write access denied to this canvas' } },
         { status: 403 }
       )
     }

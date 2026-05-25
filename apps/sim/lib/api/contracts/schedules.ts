@@ -82,7 +82,7 @@ export const workspaceScheduleRowSchema = workflowScheduleRowSchema.extend({
 export type WorkspaceScheduleRow = z.output<typeof workspaceScheduleRowSchema>
 
 export const createScheduleBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   title: z.string().min(1, 'Title is required'),
   prompt: z.string().min(1, 'Prompt is required'),
   cronExpression: z.string().min(1, 'Cron expression is required'),

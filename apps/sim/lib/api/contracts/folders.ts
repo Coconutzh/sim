@@ -21,14 +21,14 @@ export const folderSchema = z.object({
 export type FolderApi = z.output<typeof folderSchema>
 
 export const listFoldersQuerySchema = z.object({
-  workspaceId: z.string({ error: 'Workspace ID is required' }).min(1, 'Workspace ID is required'),
+  workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
   scope: folderScopeSchema.default('active'),
 })
 
 export const createFolderBodySchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1, 'Name is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   /** Mirrors `updateFolderBodySchema.parentId` so explicit `null` (root folder) is accepted on create. */
   parentId: z.string().nullable().optional(),
   color: z.string().optional(),
@@ -49,7 +49,7 @@ export const updateFolderBodySchema = z.object({
 })
 
 export const restoreFolderBodySchema = z.object({
-  workspaceId: z.string({ error: 'Workspace ID is required' }).min(1, 'Workspace ID is required'),
+  workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
 })
 
 export const duplicateFolderBodySchema = z.object({

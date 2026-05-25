@@ -39,7 +39,7 @@ async function validateMemoryAccess(
 
   const access = await checkWorkspaceAccess(workspaceId, authResult.userId)
   if (!access.exists || !access.hasAccess) {
-    return { error: memoryEnvelopeError('Workspace not found', 404) }
+    return { error: memoryEnvelopeError('Canvas not found', 404) }
   }
 
   if (action === 'write' && !access.canWrite) {

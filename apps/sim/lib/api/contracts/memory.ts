@@ -6,7 +6,7 @@ export const memoryIdParamsSchema = z.object({
 })
 
 export const memoryWorkspaceQuerySchema = z.object({
-  workspaceId: z.string().uuid('Invalid workspace ID format'),
+  workspaceId: z.string().uuid('Invalid canvas ID format'),
 })
 
 const agentMemoryDataSchema = z.object({
@@ -22,7 +22,7 @@ export const memoryPutBodySchema = z.object({
   data: z.union([agentMemoryDataSchema, genericMemoryDataSchema], {
     error: 'Invalid memory data structure',
   }),
-  workspaceId: z.string().uuid('Invalid workspace ID format'),
+  workspaceId: z.string().uuid('Invalid canvas ID format'),
 })
 export type MemoryPutBody = z.input<typeof memoryPutBodySchema>
 

@@ -235,7 +235,7 @@ describe('Folders API Route', () => {
 
       const data = await response.json()
       expect(data).toHaveProperty('error', 'Validation error')
-      expect(data.details?.[0]?.message).toBe('Workspace ID is required')
+      expect(data.details?.[0]?.message).toBe('Canvas ID is required')
     })
 
     it('should return 404 when user has no workspace permissions', async () => {
@@ -254,7 +254,7 @@ describe('Folders API Route', () => {
       expect(response.status).toBe(404)
 
       const data = await response.json()
-      expect(data).toHaveProperty('error', 'Workspace not found')
+      expect(data).toHaveProperty('error', 'Canvas not found')
     })
 
     it('should hide foreign personal workspaces when stale permission rows no longer grant access', async () => {
@@ -278,7 +278,7 @@ describe('Folders API Route', () => {
       expect(response.status).toBe(404)
 
       const data = await response.json()
-      expect(data).toHaveProperty('error', 'Workspace not found')
+      expect(data).toHaveProperty('error', 'Canvas not found')
       expect(mockSelect).not.toHaveBeenCalled()
     })
 
@@ -484,7 +484,7 @@ describe('Folders API Route', () => {
       expect(response.status).toBe(404)
 
       const data = await response.json()
-      expect(data).toHaveProperty('error', 'Workspace not found')
+      expect(data).toHaveProperty('error', 'Canvas not found')
       expect(mockInsert).not.toHaveBeenCalled()
     })
 

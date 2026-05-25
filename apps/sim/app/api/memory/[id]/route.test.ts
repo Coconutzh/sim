@@ -82,7 +82,7 @@ describe('Memory by id visibility', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
       success: false,
-      error: { message: 'Workspace not found' },
+      error: { message: 'Canvas not found' },
     })
   })
 
@@ -116,7 +116,7 @@ describe('Memory by id visibility', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
       success: false,
-      error: { message: 'Workspace not found' },
+      error: { message: 'Canvas not found' },
     })
   })
 
@@ -148,7 +148,7 @@ describe('Memory by id visibility', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
       success: false,
-      error: { message: 'Workspace not found' },
+      error: { message: 'Canvas not found' },
     })
   })
 })

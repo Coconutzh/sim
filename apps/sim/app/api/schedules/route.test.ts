@@ -158,7 +158,7 @@ describe('Schedule GET API', () => {
     const data = await res.json()
 
     expect(res.status).toBe(403)
-    expect(data.error).toBe('Workspace access required')
+    expect(data.error).toBe('Canvas access required')
   })
 
   it('allows workspace members to view', async () => {
@@ -192,6 +192,6 @@ describe('Schedule GET API', () => {
     const data = await res.json()
 
     expect(res.status).toBe(404)
-    expect(data.error).toBe('Workspace not found')
+    expect(data.error).toBe('Canvas not found')
   })
 })
