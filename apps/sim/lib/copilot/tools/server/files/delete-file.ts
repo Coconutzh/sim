@@ -31,7 +31,7 @@ export const deleteFileServerTool: BaseServerTool<DeleteFileArgs, DeleteFileResu
     }
     const workspaceId = context.workspaceId
     if (!workspaceId) {
-      return { success: false, message: 'Workspace ID is required' }
+      return { success: false, message: 'Canvas ID is required' }
     }
 
     const nested = params.args

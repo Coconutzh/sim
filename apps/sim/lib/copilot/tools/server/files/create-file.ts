@@ -37,7 +37,7 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
     }
     const workspaceId = context.workspaceId
     if (!workspaceId) {
-      return { success: false, message: 'Workspace ID is required' }
+      return { success: false, message: 'Canvas ID is required' }
     }
 
     const nested = params.args
