@@ -235,7 +235,7 @@ async function fetchWorkspacePermissions(
     })
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 404) {
-      throw new Error('Workspace not found or access denied', { cause: error })
+      throw new Error('Canvas not found or access denied', { cause: error })
     }
     if (error instanceof ApiClientError && error.status === 401) {
       throw new Error('Authentication required', { cause: error })
