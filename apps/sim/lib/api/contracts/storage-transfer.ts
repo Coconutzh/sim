@@ -404,7 +404,7 @@ export const initiateMultipartBodySchema = z
     fileName: z.string(),
     contentType: z.string(),
     fileSize: z.number(),
-    workspaceId: z.string({ error: 'workspaceId is required' }).min(1, 'workspaceId is required'),
+    workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
     context: z.string().optional(),
   })
   .passthrough()

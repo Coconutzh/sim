@@ -525,7 +525,7 @@ export type WorkflowLogBody = z.input<typeof workflowLogBodySchema>
 
 export const importWorkflowAsSuperuserBodySchema = z.object({
   workflowId: z.string().min(1, 'Workflow ID is required'),
-  targetWorkspaceId: z.string().min(1, 'Target workspace ID is required'),
+  targetWorkspaceId: z.string().min(1, 'Target canvas ID is required'),
 })
 
 export type ImportWorkflowAsSuperuserBody = z.input<typeof importWorkflowAsSuperuserBodySchema>

@@ -86,8 +86,8 @@ export const adminExportWorkflowsBodySchema = z.object({
 
 export const adminWorkflowImportBodySchema = z.object({
   workspaceId: z
-    .string({ error: 'workspaceId is required' })
-    .min(1, { error: 'workspaceId is required' }),
+    .string({ error: 'Canvas ID is required' })
+    .min(1, { error: 'Canvas ID is required' }),
   folderId: z.string().optional(),
   name: z.string().optional(),
   workflow: z.union([

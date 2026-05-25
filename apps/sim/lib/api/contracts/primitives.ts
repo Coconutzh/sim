@@ -33,9 +33,9 @@ export const nonEmptyIdSchema = z.string().min(1)
 /**
  * Non-empty `workspaceId` field. Same constraint as `nonEmptyIdSchema` with a
  * stable, human-readable message. Use to deduplicate the
- * `z.string().min(1, 'Workspace ID is required')` pattern across contracts.
+ * `z.string().min(1, 'Canvas ID is required')` pattern across contracts.
  */
-export const workspaceIdSchema = z.string().min(1, 'Workspace ID is required')
+export const workspaceIdSchema = z.string().min(1, 'Canvas ID is required')
 
 /**
  * Non-empty `workflowId` field. Same constraint as `nonEmptyIdSchema` with a
