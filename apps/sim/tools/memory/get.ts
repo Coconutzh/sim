@@ -28,7 +28,7 @@ export const memoryGetTool: ToolConfig<any, MemoryResponse> = {
     url: (params) => {
       const workspaceId = params._context?.workspaceId
       if (!workspaceId) {
-        throw new Error('workspaceId is required in execution context')
+        throw new Error('Canvas ID is required in execution context')
       }
 
       const conversationId = params.conversationId || params.id

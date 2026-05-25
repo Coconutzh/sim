@@ -4,7 +4,7 @@ import type { ToolConfig } from '@/tools/types'
 export const logsQueryTool: ToolConfig<LogsQueryParams, LogsQueryResponse> = {
   id: 'logs_query',
   name: 'Query Logs',
-  description: 'Query workflow execution logs in the current workspace with filters.',
+  description: 'Query workflow execution logs in the current canvas with filters.',
   version: '1.0.0',
 
   params: {
@@ -81,7 +81,7 @@ export const logsQueryTool: ToolConfig<LogsQueryParams, LogsQueryResponse> = {
     url: (params) => {
       const workspaceId = params._context?.workspaceId
       if (!workspaceId) {
-        throw new Error('workspaceId is required in execution context')
+        throw new Error('Canvas ID is required in execution context')
       }
       const qs = new URLSearchParams({ workspaceId })
       if (params.workflowIds) qs.set('workflowIds', params.workflowIds)

@@ -4,7 +4,7 @@ import type { ToolConfig } from '@/tools/types'
 export const tableListTool: ToolConfig<TableListParams, TableListResponse> = {
   id: 'table_list',
   name: 'List Tables',
-  description: 'List all tables in the workspace',
+  description: 'List all tables in the canvas',
   version: '1.0.0',
 
   params: {},
@@ -13,7 +13,7 @@ export const tableListTool: ToolConfig<TableListParams, TableListResponse> = {
     url: (params: TableListParams) => {
       const workspaceId = params._context?.workspaceId
       if (!workspaceId) {
-        throw new Error('Workspace ID is required in execution context')
+        throw new Error('Canvas ID is required in execution context')
       }
       return `/api/table?workspaceId=${encodeURIComponent(workspaceId)}`
     },

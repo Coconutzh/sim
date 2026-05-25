@@ -20,7 +20,7 @@ export const logsGetTool: ToolConfig<LogsGetParams, LogsGetResponse> = {
     url: (params) => {
       const workspaceId = params._context?.workspaceId
       if (!workspaceId) {
-        throw new Error('workspaceId is required in execution context')
+        throw new Error('Canvas ID is required in execution context')
       }
       const qs = new URLSearchParams({ workspaceId })
       return `/api/logs/${encodeURIComponent(params.id)}?${qs.toString()}`

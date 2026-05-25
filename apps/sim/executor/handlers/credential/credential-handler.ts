@@ -20,7 +20,7 @@ export class CredentialBlockHandler implements BlockHandler {
     inputs: Record<string, unknown>
   ): Promise<BlockOutput> {
     if (!ctx.workspaceId) {
-      throw new Error('workspaceId is required for credential resolution')
+      throw new Error('Canvas ID is required for credential resolution')
     }
 
     const operation = typeof inputs.operation === 'string' ? inputs.operation : 'select'

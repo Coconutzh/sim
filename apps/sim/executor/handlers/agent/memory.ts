@@ -113,7 +113,7 @@ export class Memory {
 
   private requireWorkspaceId(ctx: ExecutionContext): string {
     if (!ctx.workspaceId) {
-      throw new Error('workspaceId is required for memory operations')
+      throw new Error('Canvas ID is required for memory operations')
     }
     return ctx.workspaceId
   }

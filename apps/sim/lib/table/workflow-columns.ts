@@ -442,7 +442,7 @@ export async function runWorkflowColumn(opts: {
   const { getTableById, batchUpdateRows } = await import('./service')
   const table = await getTableById(tableId)
   if (!table) throw new Error('Table not found')
-  if (table.workspaceId !== workspaceId) throw new Error('Invalid workspace ID')
+  if (table.workspaceId !== workspaceId) throw new Error('Invalid canvas ID')
 
   const allGroups = table.schema.workflowGroups ?? []
   const targetGroups = groupIds ? allGroups.filter((g) => groupIds.includes(g.id)) : allGroups

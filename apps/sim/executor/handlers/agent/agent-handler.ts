@@ -433,7 +433,7 @@ export class AgentBlockHandler implements BlockHandler {
    */
   private async discoverMcpToolsForServer(ctx: ExecutionContext, serverId: string): Promise<any[]> {
     if (!ctx.workspaceId) {
-      throw new Error('workspaceId is required for MCP tool discovery')
+      throw new Error('Canvas ID is required for MCP tool discovery')
     }
     if (!ctx.workflowId) {
       throw new Error('workflowId is required for internal JWT authentication')

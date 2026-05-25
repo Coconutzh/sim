@@ -88,7 +88,7 @@ async function validateMcpAuth(
       return {
         success: false,
         errorResponse: createMcpErrorResponse(
-          new Error('workspaceId is required'),
+          new Error('Canvas ID is required'),
           'Missing required parameter',
           400
         ),

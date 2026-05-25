@@ -37,7 +37,7 @@ export const tableCreateTool: ToolConfig<TableCreateParams, TableCreateResponse>
     body: (params) => {
       const workspaceId = params._context?.workspaceId
       if (!workspaceId) {
-        throw new Error('Workspace ID is required in execution context')
+        throw new Error('Canvas ID is required in execution context')
       }
 
       return {
