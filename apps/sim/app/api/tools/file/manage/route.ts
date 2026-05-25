@@ -36,18 +36,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
   const workspaceId = body.workspaceId || query.workspaceId
   if (!workspaceId) {
-    return NextResponse.json({ success: false, error: 'workspaceId is required' }, { status: 400 })
+    return NextResponse.json({ success: false, error: 'Canvas ID is required' }, { status: 400 })
   }
 
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
-    return NextResponse.json({ success: false, error: 'Workspace not found' }, { status: 404 })
+    return NextResponse.json({ success: false, error: 'Canvas not found' }, { status: 404 })
   }
 
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   if (permission !== 'admin' && permission !== 'write') {
     return NextResponse.json(
-      { success: false, error: 'Write or Admin access required for workspace files' },
+      { success: false, error: 'Write or Admin access required for canvas files' },
       { status: 403 }
     )
   }

@@ -16,10 +16,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { upsertCustomTools } from '@/lib/workflows/custom-tools/operations'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CustomToolsAPI')
 
@@ -65,7 +62,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           workflowId,
           userId,
         })
-        return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+        return NextResponse.json({ error: 'Canvas access required' }, { status: 403 })
       }
 
       resolvedWorkspaceId = workflowAuthorization.workflow?.workspaceId ?? null
@@ -78,7 +75,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         logger.warn(
           `[${requestId}] User ${userId} attempted to access hidden workspace ${resolvedWorkspaceId}`
         )
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const userPermission = await getUserEntityPermissions(
@@ -150,13 +147,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     if (!workspaceId) {
       logger.warn(`[${requestId}] Missing workspaceId in request body`)
-      return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
+      return NextResponse.json({ error: 'Canvas ID is required' }, { status: 400 })
     }
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      logger.warn(`[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`)
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`
+      )
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -268,7 +267,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
 
       if (!workspaceId) {
         logger.warn(`[${requestId}] Missing workspaceId for workspace-scoped tool`)
-        return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
+        return NextResponse.json({ error: 'Canvas ID is required' }, { status: 400 })
       }
 
       const userPermission = await getUserEntityPermissions(userId, 'workspace', tool.workspaceId)

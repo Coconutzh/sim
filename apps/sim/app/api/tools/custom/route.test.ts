@@ -324,7 +324,7 @@ describe('Custom Tools API Routes', () => {
       const data = await response.json()
 
       expect(response.status).toBe(403)
-      expect(data).toEqual({ error: 'Workspace access required' })
+      expect(data).toEqual({ error: 'Canvas access required' })
       expect(mockWhere).not.toHaveBeenCalled()
     })
 
@@ -351,7 +351,7 @@ describe('Custom Tools API Routes', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(data).toEqual({ error: 'Canvas not found' })
       expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
     })
   })

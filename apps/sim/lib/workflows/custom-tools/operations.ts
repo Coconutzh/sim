@@ -83,7 +83,7 @@ export async function upsertCustomTools(params: {
         .limit(1)
 
       if (duplicateTitle.length > 0) {
-        throw new Error(`A tool with the title "${tool.title}" already exists in this workspace`)
+        throw new Error(`A tool with the title "${tool.title}" already exists in this canvas`)
       }
 
       await tx.insert(customTools).values({
