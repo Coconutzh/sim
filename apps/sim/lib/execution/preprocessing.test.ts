@@ -5,7 +5,12 @@
 import { loggingSessionMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetWorkspaceBilledAccountUserId } = vi.hoisted(() => ({
+const { mockGetActiveWorkflowRecord, mockGetWorkspaceBilledAccountUserId } = vi.hoisted(() => ({
+  mockGetActiveWorkflowRecord: vi.fn().mockResolvedValue({
+    id: 'workflow-1',
+    workspaceId: 'workspace-1',
+    isDeployed: true,
+  }),
   mockGetWorkspaceBilledAccountUserId: vi.fn(),
 }))
 
@@ -29,11 +34,7 @@ vi.mock('@/lib/workspaces/utils', () => ({
 }))
 
 vi.mock('@sim/workflow-authz', () => ({
-  getActiveWorkflowRecord: vi.fn().mockResolvedValue({
-    id: 'workflow-1',
-    workspaceId: 'workspace-1',
-    isDeployed: true,
-  }),
+  getActiveWorkflowRecord: mockGetActiveWorkflowRecord,
 }))
 
 import { preprocessExecution } from './preprocessing'
@@ -58,6 +59,33 @@ describe('preprocessExecution correlation logging', () => {
       error: {
         message: 'Workflow not found',
         statusCode: 404,
+        logCreated: false,
+      },
+    })
+    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
+  })
+
+  it('uses canvas wording when a legacy workflow has no workspace container', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValueOnce({
+      id: 'workflow-legacy',
+      workspaceId: null,
+      isDeployed: true,
+    })
+
+    const result = await preprocessExecution({
+      workflowId: 'workflow-legacy',
+      userId: 'user-1',
+      triggerType: 'api',
+      executionId: 'execution-1',
+      requestId: 'request-1',
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: {
+        message:
+          'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot execute.',
+        statusCode: 403,
         logCreated: false,
       },
     })

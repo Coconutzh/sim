@@ -75,6 +75,38 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
     mockResultsQueue.length = 0
   })
 
+  it('uses canvas wording when a legacy workflow has no workspace container', async () => {
+    mockResultsQueue.push([
+      {
+        workflow: {
+          id: 'wf-legacy',
+          workspaceId: null,
+          track: 'draft',
+          visibility: 'workspace',
+        },
+        workspaceId: null,
+        workspaceOrganizationId: null,
+        workspaceWorkgroupId: null,
+        workspaceMode: null,
+      },
+    ])
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: 'wf-legacy',
+      userId: 'user-1',
+      action: 'read',
+    })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      status: 403,
+      message:
+        'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
+      accessSource: null,
+      workspacePermission: null,
+    })
+  })
+
   it('treats a team admin member as admin for team canvas workflows', async () => {
     mockResultsQueue.push(
       [

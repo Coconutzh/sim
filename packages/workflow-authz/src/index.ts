@@ -438,7 +438,7 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       allowed: false,
       status: 403,
       message:
-        'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+        'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
       workflow: wf,
       workspacePermission: null,
       accessSource: null,

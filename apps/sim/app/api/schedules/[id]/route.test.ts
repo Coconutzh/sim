@@ -185,7 +185,7 @@ describe('Schedule PUT API (Reactivate)', () => {
         workflow: { id: 'wf-1', workspaceId: null },
         workspacePermission: null,
         message:
-          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+          'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
       })
       mockDbChain([
         [{ id: 'sched-1', workflowId: 'wf-1', status: 'disabled' }],
@@ -196,7 +196,7 @@ describe('Schedule PUT API (Reactivate)', () => {
 
       expect(res.status).toBe(403)
       const data = await res.json()
-      expect(data.error).toContain('Personal workflows are deprecated')
+      expect(data.error).toContain('Legacy personal workflows are deprecated')
     })
 
     it('returns 403 for workspace member with only read permission', async () => {

@@ -196,7 +196,7 @@ export async function preprocessExecution(
       success: false,
       error: {
         message:
-          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot execute.',
+          'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot execute.',
         statusCode: 403,
         logCreated: false,
       },

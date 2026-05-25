@@ -213,7 +213,7 @@ describe('validateWorkflowPermissions', () => {
         allowed: false,
         status: 403,
         message:
-          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+          'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
         workflow: createWorkflowRecord({ id: 'wf-2', userId: 'other-user', workspaceId: null }),
         workspacePermission: null,
       })
@@ -227,7 +227,7 @@ describe('validateWorkflowPermissions', () => {
         allowed: false,
         status: 403,
         message:
-          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+          'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
         workflow: createWorkflowRecord({ id: 'wf-2', userId: 'user-1', workspaceId: null }),
         workspacePermission: null,
       })
