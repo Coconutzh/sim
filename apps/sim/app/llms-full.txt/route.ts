@@ -21,8 +21,8 @@ Sim is the AI workspace where teams create agents visually with the workflow bui
 
 ## Core Concepts
 
-### Workspace
-A workspace is the top-level container in Sim. It holds workflows, data sources, credentials, and execution history. Users can create multiple workspaces for different projects or teams.
+### Canvas
+A canvas is the top-level working container in Sim. It holds workflows, data sources, credentials, and execution history. Users can create multiple canvases for different projects or teams.
 
 ### Workflow
 A workflow is a directed graph of blocks that defines an agentic process. Workflows can be triggered manually, on a schedule, or via webhooks. Each workflow has a unique ID and can be versioned.
@@ -142,7 +142,7 @@ Built-in table creation and management:
 ## Getting Started
 
 1. **Sign Up**: Create a free account at ${baseUrl}
-2. **Create Workspace**: Set up your first workspace
+2. **Create Canvas**: Set up your first canvas
 3. **Build Workflow**: Drag blocks onto the workflow builder and connect them
 4. **Configure Blocks**: Set up LLM providers, tools, and integrations
 5. **Test**: Run the workflow manually to verify
