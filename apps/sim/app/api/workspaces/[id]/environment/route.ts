@@ -43,7 +43,7 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!access.canWrite) {
@@ -95,7 +95,7 @@ export const PUT = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!access.canWrite) {
@@ -147,7 +147,7 @@ export const PUT = withRouteHandler(
         action: AuditAction.ENVIRONMENT_UPDATED,
         resourceType: AuditResourceType.ENVIRONMENT,
         resourceId: workspaceId,
-        description: `Updated ${Object.keys(variables).length} workspace environment variable(s)`,
+        description: `Updated ${Object.keys(variables).length} canvas environment variable(s)`,
         metadata: {
           variableCount: Object.keys(variables).length,
           updatedKeys: Object.keys(variables),
@@ -187,7 +187,7 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!access.canWrite) {
@@ -237,7 +237,7 @@ export const DELETE = withRouteHandler(
         action: AuditAction.ENVIRONMENT_DELETED,
         resourceType: AuditResourceType.ENVIRONMENT,
         resourceId: workspaceId,
-        description: `Removed ${keys.length} workspace environment variable(s)`,
+        description: `Removed ${keys.length} canvas environment variable(s)`,
         metadata: {
           removedKeys: keys,
           remainingKeysCount: Object.keys(current).length,

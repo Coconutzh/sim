@@ -37,7 +37,7 @@ export const PUT = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -76,7 +76,7 @@ export const PUT = withRouteHandler(
 
       if (conflictingKey.length > 0) {
         return NextResponse.json(
-          { error: 'A workspace API key with this name already exists' },
+          { error: 'A canvas API key with this name already exists' },
           { status: 400 }
         )
       }
@@ -110,7 +110,7 @@ export const PUT = withRouteHandler(
         actorName: session.user.name ?? undefined,
         actorEmail: session.user.email ?? undefined,
         resourceName: name,
-        description: `Renamed workspace API key from "${existingKey[0].name}" to "${name}"`,
+        description: `Renamed canvas API key from "${existingKey[0].name}" to "${name}"`,
         metadata: {
           keyType: 'workspace',
           previousName: existingKey[0].name,
@@ -124,7 +124,7 @@ export const PUT = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key PUT error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to update workspace API key' },
+        { error: error instanceof Error ? error.message : 'Failed to update canvas API key' },
         { status: 500 }
       )
     }
@@ -150,7 +150,7 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -191,7 +191,7 @@ export const DELETE = withRouteHandler(
         actorName: session.user.name ?? undefined,
         actorEmail: session.user.email ?? undefined,
         resourceName: deletedKey.name,
-        description: `Revoked workspace API key: ${deletedKey.name}`,
+        description: `Revoked canvas API key: ${deletedKey.name}`,
         metadata: {
           keyType: 'workspace',
           keyName: deletedKey.name,
@@ -207,7 +207,7 @@ export const DELETE = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key DELETE error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to delete workspace API key' },
+        { error: error instanceof Error ? error.message : 'Failed to delete canvas API key' },
         { status: 500 }
       )
     }

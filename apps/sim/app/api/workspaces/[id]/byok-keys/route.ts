@@ -49,13 +49,13 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission !== 'admin') {
         return NextResponse.json(
-          { error: 'Only workspace admins can view BYOK keys' },
+          { error: 'Only canvas admins can view BYOK keys' },
           { status: 403 }
         )
       }
@@ -135,13 +135,13 @@ export const POST = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission !== 'admin') {
         return NextResponse.json(
-          { error: 'Only workspace admins can manage BYOK keys' },
+          { error: 'Only canvas admins can manage BYOK keys' },
           { status: 403 }
         )
       }
@@ -275,13 +275,13 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
       if (permission !== 'admin') {
         return NextResponse.json(
-          { error: 'Only workspace admins can manage BYOK keys' },
+          { error: 'Only canvas admins can manage BYOK keys' },
           { status: 403 }
         )
       }

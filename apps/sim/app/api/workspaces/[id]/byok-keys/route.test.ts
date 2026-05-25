@@ -105,7 +105,7 @@ describe('/api/workspaces/[id]/byok-keys', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Only workspace admins can view BYOK keys' })
+    expect(data).toEqual({ error: 'Only canvas admins can view BYOK keys' })
     expect(mockDbSelect).not.toHaveBeenCalled()
     expect(mockDecryptSecret).not.toHaveBeenCalled()
   })
@@ -166,7 +166,7 @@ describe('/api/workspaces/[id]/byok-keys', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockEncryptSecret).not.toHaveBeenCalled()
   })

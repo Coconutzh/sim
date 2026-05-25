@@ -41,7 +41,7 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -107,7 +107,7 @@ export const POST = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -130,7 +130,7 @@ export const POST = withRouteHandler(
       if (existingKey.length > 0) {
         return NextResponse.json(
           {
-            error: `A workspace API key named "${name}" already exists. Please choose a different name.`,
+            error: `A canvas API key named "${name}" already exists. Please choose a different name.`,
           },
           { status: 409 }
         )
@@ -206,7 +206,7 @@ export const POST = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key POST error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to create workspace API key' },
+        { error: error instanceof Error ? error.message : 'Failed to create canvas API key' },
         { status: 500 }
       )
     }
@@ -233,7 +233,7 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -273,7 +273,7 @@ export const DELETE = withRouteHandler(
         actorEmail: session?.user?.email,
         action: AuditAction.API_KEY_REVOKED,
         resourceType: AuditResourceType.API_KEY,
-        description: `Revoked ${deletedCount} workspace API key(s)`,
+        description: `Revoked ${deletedCount} canvas API key(s)`,
         metadata: { keyIds: keys, deletedCount, keyType: 'workspace' },
         request,
       })
@@ -282,7 +282,7 @@ export const DELETE = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key DELETE error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to delete workspace API keys' },
+        { error: error instanceof Error ? error.message : 'Failed to delete canvas API keys' },
         { status: 500 }
       )
     }
