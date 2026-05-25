@@ -20,6 +20,7 @@
 - 展示画布已经有只读查看路径和发布版本生命周期基础，服务端权限已对展示/发布画布做强只读约束。
 - Phase 4 权限隔离已完成一轮系统性加固；Phase 5 到 Phase 9 已完成多个可用切片；Phase 10 已启动项目管理员中心概览、创建团队、成员分配、批量成员分配、按团队 activity drilldown、团队归档、项目级 Agent 模板、项目级 Agent Skill 策略、Agent 策略影响预览、Agent Skill 跨团队策略复制、风险 Skill guardrails、项目级发布治理、发布详情 drawer、发布版本 diff preview、节点级 diff preview、发布冲突检测、首批冲突处理动作、发布批量治理、依赖影响预览、发布详情编辑、reviewer 指派、approval workflow、跨团队依赖冲突提示、依赖冲突处理动作、发布评审通知队列、通知投递草稿、服务端通知投递记录、持久通知 outbox、webhook provider delivery、email provider delivery、持久通知 inbox、项目管理员顶部通知铃铛与已读状态首版、通用项目通知中心筛选/分页/详情/导出/全屏页首版和发布治理/成员/团队/Agent 策略/retention/data drain/组织管理/组织设置/billing（seat/plan switch/org credits/invoice failure recovery/subscription cancellation）/cleanup 执行审计类型扩展、项目管理员失败操作审计、失败审计历史筛选/分页/导出/趋势概览/详情 drawer/组织日志 retention controls、冲突修复向导和过期/未提交团队发布 nudges；Phase 11 到 Phase 12 仍未完成。
 - 最新补充的失败审计独立清理能力新增 `POST /api/organizations/[id]/project-admin/failures/cleanup`，可 dry-run 预览或按小时窗口删除旧的 `project_admin_failure.recorded` audit row，并把执行结果写回 `cleanup_execution` 项目通知类型。
+- 最新 Phase 11 切片已让 `/api/workspaces` 返回服务端推导的 `canvasCreationCapabilities.canCreatePersonalCanvas` / `canCreateTeamCanvas`，Sidebar 个人草稿创建和 Home 团队画布初始化入口开始消费该能力，并把 Published/Showcase 旧 workspace 文案改为 canvas/team 语义。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -34,6 +35,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `dc6a30e75` | Phase 11 原 workspace shell 增加 canvas creation capabilities，并清理 published/showcase workspace 心智泄露 |
 | `b27b1794c` | Phase 10 项目管理员中心增加失败审计独立 retention cleanup |
 | `f39d9d9c1` | Phase 10 通用项目通知中心扩展 SSO 安全设置审计事件类型 |
 | `08149ec6f` | Phase 10 通用项目通知中心扩展 subscription cancellation billing 审计事件类型 |
@@ -120,6 +122,8 @@
 - 旧 `/workbench` 路由保留兼容 redirect，不再作为主要产品外壳。
 - `Published workflows` 从普通 Workspace 分组迁出，展示类入口收敛到 `Showcase canvas`。
 - 最新提交进一步把个人草稿删除确认弹窗从 `Delete Workspace` 调整为 `Delete Canvas`，减少主入口里的 workspace 心智泄露。
+- `dc6a30e75` 起 `/api/workspaces` 的合约响应包含 `canvasCreationCapabilities`；服务端基于当前用户 active workgroup membership 推导是否可创建个人草稿画布，以及是否存在“当前用户是 admin 且尚未初始化团队画布”的团队画布创建机会。Sidebar 顶部个人草稿创建按钮不再只靠本地 `activeWorkgroupId` 判断，Home 的团队画布初始化入口也会同时看服务端 capability。
+- `dc6a30e75` 同步把 Published/Showcase 表格列名和空状态提示从 `Team Workspace` / `current workspace` 改为 `Team Canvas` / workgroup canvas 语义，避免普通用户在展示入口看到底层 workspace 配置提示。
 
 仍需注意：
 
@@ -439,7 +443,7 @@ git diff --check
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
-5. `/api/workspaces` 返回继续补齐 `canvasScope`、`workgroupId`、`disciplineId`、`isInternalWorkspace`、`canCreatePersonalCanvas`、`canCreateTeamCanvas` 等前端分组字段。
+5. `/api/workspaces` 已返回 `canvasScope`、`workgroupId`、`disciplineId`、`isInternalWorkspace`，并在 `dc6a30e75` 补上 `canvasCreationCapabilities.canCreatePersonalCanvas` / `canCreateTeamCanvas`；后续继续把 recent、search、command palette、settings 等深层入口消费这些字段。
 
 建议提交：`Migrate legacy workspace entrypoints`。
 
