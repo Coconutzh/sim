@@ -5,6 +5,7 @@
 > 关联基准文档：
 > - `docs/theater-collaboration-phased-implementation-plan-zh.md`
 > - `docs/theater-collaboration-progress-and-next-steps-zh.md`
+> - `docs/theater-collaboration-manual-test-and-status-zh.md`
 >
 > 本文档用于给后续开发者快速接续：哪些能力已经落地、哪些能力只是有基础但不能宣称完成、后续应按什么顺序继续推进。当前产品方向已经从独立 `/workbench` 外壳纠偏为：在原始 `/workspace/[workspaceId]` 主界面、Sidebar、Provider 和编辑器外壳内完成个人草稿画布、团队画布、展示画布的切换与管理。
 
