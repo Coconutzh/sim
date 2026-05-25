@@ -78,7 +78,11 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   listAccessibleWorkspaceIds: vi.fn(),
 }))
 
-import { ensureWorkflowAccess, getDefaultWorkspaceId } from '@/lib/copilot/tools/handlers/access'
+import {
+  ensureWorkflowAccess,
+  ensureWorkspaceAccess,
+  getDefaultWorkspaceId,
+} from '@/lib/copilot/tools/handlers/access'
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 
 describe('ensureWorkflowAccess', () => {
@@ -107,7 +111,7 @@ describe('ensureWorkflowAccess', () => {
     })
 
     await expect(ensureWorkflowAccess('wf-1', 'user-1')).rejects.toThrow(
-      'Workspace access required for workflow tools'
+      'Canvas access required for workflow tools'
     )
   })
 })
@@ -134,8 +138,49 @@ describe('getDefaultWorkspaceId', () => {
   it('throws when the user has no accessible workspace', async () => {
     vi.mocked(listAccessibleWorkspaceIds).mockResolvedValueOnce([])
 
-    await expect(getDefaultWorkspaceId('user-missing')).rejects.toThrow(
-      'No workspace found for user'
+    await expect(getDefaultWorkspaceId('user-missing')).rejects.toThrow('No canvas found for user')
+  })
+})
+
+describe('ensureWorkspaceAccess', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('uses canvas wording when the canvas is hidden or unavailable', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: false,
+      hasAccess: false,
+    })
+
+    await expect(ensureWorkspaceAccess('ws-hidden', 'user-1')).rejects.toThrow(
+      'Canvas ws-hidden not found'
+    )
+  })
+
+  it('uses canvas wording when admin access is required', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      workspace: { ownerId: 'owner-1' },
+    })
+    getUserEntityPermissionsMock.mockResolvedValueOnce('write')
+
+    await expect(ensureWorkspaceAccess('ws-1', 'user-1', 'admin')).rejects.toThrow(
+      'Admin access required for this canvas'
+    )
+  })
+
+  it('uses canvas wording when write access is required', async () => {
+    checkWorkspaceAccessMock.mockResolvedValueOnce({
+      exists: true,
+      hasAccess: true,
+      canWrite: false,
+      workspace: { ownerId: 'owner-1' },
+    })
+
+    await expect(ensureWorkspaceAccess('ws-1', 'user-1', 'write')).rejects.toThrow(
+      'Write or admin access required for this canvas'
     )
   })
 })
