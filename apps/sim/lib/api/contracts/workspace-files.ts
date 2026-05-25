@@ -4,7 +4,7 @@ import { defineRouteContract } from '@/lib/api/contracts/types'
 export const workspaceFileScopeSchema = z.enum(['active', 'archived', 'all'])
 
 export const workspaceFilesParamsSchema = z.object({
-  id: z.string({ error: 'Workspace ID is required' }).min(1, 'Workspace ID is required'),
+  id: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
 })
 
 export const workspaceFileParamsSchema = workspaceFilesParamsSchema.extend({
