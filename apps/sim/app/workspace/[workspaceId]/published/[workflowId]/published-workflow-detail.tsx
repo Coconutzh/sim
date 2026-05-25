@@ -173,11 +173,11 @@ export function PublishedWorkflowDetail() {
         <div className='flex flex-1 items-center justify-center px-6'>
           <div className='max-w-[520px] rounded-[16px] border border-[var(--border)] bg-[var(--surface-2)] p-6'>
             <h2 className='font-medium text-[var(--text-body)] text-lg'>
-              Workflow not visible from this workspace
+              Workflow not visible from this canvas
             </h2>
             <p className='mt-2 text-[14px] text-[var(--text-muted)]'>
-              The requested published workflow is not shared with your current workgroup, or this
-              workspace does not have a configured workgroup yet.
+              The requested published workflow is not shared with your current team, or this canvas
+              does not have a configured team yet.
             </p>
             <Button
               variant='subtle'

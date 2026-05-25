@@ -1171,7 +1171,7 @@ export function Files() {
               <div className='flex flex-col gap-0.5 text-center'>
                 <p className='font-medium text-[14px] text-[var(--accent)]'>Drop to upload</p>
                 <p className='text-[11px] text-[var(--text-tertiary)]'>
-                  Release files here to add them to this workspace
+                  Release files here to add them to this canvas
                 </p>
               </div>
             </div>
