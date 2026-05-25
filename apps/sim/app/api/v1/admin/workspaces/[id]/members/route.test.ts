@@ -281,7 +281,7 @@ describe('DELETE /api/v1/admin/workspaces/[id]/members', () => {
     expect(response.status).toBe(404)
     expect(data.error).toEqual({
       code: 'NOT_FOUND',
-      message: 'Workspace member not found',
+      message: 'Canvas member not found',
     })
   })
 })

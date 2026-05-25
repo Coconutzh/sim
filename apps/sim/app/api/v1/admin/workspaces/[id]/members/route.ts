@@ -82,7 +82,7 @@ export const GET = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       const [ownerData, membersData] = await Promise.all([
@@ -166,7 +166,7 @@ export const GET = withRouteHandler(
       return listResponse(data, pagination)
     } catch (error) {
       logger.error('Admin API: Failed to list workspace members', { error, workspaceId })
-      return internalErrorResponse('Failed to list workspace members')
+      return internalErrorResponse('Failed to list canvas members')
     }
   })
 )
@@ -183,7 +183,7 @@ export const POST = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
@@ -337,7 +337,7 @@ export const POST = withRouteHandler(
       })
     } catch (error) {
       logger.error('Admin API: Failed to add workspace member', { error, workspaceId })
-      return internalErrorResponse('Failed to add workspace member')
+      return internalErrorResponse('Failed to add canvas member')
     }
   })
 )
@@ -357,7 +357,7 @@ export const DELETE = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       if (workspaceData.ownerId === userId) {
@@ -377,11 +377,11 @@ export const DELETE = withRouteHandler(
         .limit(1)
 
       if (!existingPermission) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode) && workspaceData.ownerId !== userId) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       await db.delete(permissions).where(eq(permissions.id, existingPermission.id))
@@ -395,7 +395,7 @@ export const DELETE = withRouteHandler(
         workspaceId,
         userId: targetUserId,
       })
-      return internalErrorResponse('Failed to remove workspace member')
+      return internalErrorResponse('Failed to remove canvas member')
     }
   })
 )

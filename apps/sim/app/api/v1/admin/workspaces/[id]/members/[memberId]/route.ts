@@ -37,7 +37,6 @@ import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
-  forbiddenResponse,
   internalErrorResponse,
   notFoundResponse,
   singleResponse,
@@ -100,7 +99,7 @@ export const GET = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
@@ -118,7 +117,7 @@ export const GET = withRouteHandler(
           .limit(1)
 
         if (!ownerData) {
-          return notFoundResponse('Workspace member')
+          return notFoundResponse('Canvas member')
         }
 
         return singleResponse(
@@ -157,14 +156,14 @@ export const GET = withRouteHandler(
         .limit(1)
 
       if (!memberData) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       if (
         isPersonalWorkspace(workspaceData.workspaceMode) &&
         memberData.userId !== workspaceData.ownerId
       ) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       if (memberData.userId === workspaceData.ownerId) {
@@ -198,7 +197,7 @@ export const GET = withRouteHandler(
       return singleResponse(data)
     } catch (error) {
       logger.error('Admin API: Failed to get workspace member', { error, workspaceId, memberId })
-      return internalErrorResponse('Failed to get workspace member')
+      return internalErrorResponse('Failed to get canvas member')
     }
   })
 )
@@ -215,7 +214,7 @@ export const PATCH = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
@@ -240,7 +239,7 @@ export const PATCH = withRouteHandler(
         .limit(1)
 
       if (!existingMember) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       if (existingMember.userId === workspaceData.ownerId) {
@@ -248,7 +247,7 @@ export const PATCH = withRouteHandler(
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode)) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       const now = new Date()
@@ -284,7 +283,7 @@ export const PATCH = withRouteHandler(
       return singleResponse(data)
     } catch (error) {
       logger.error('Admin API: Failed to update workspace member', { error, workspaceId, memberId })
-      return internalErrorResponse('Failed to update workspace member')
+      return internalErrorResponse('Failed to update canvas member')
     }
   })
 )
@@ -300,7 +299,7 @@ export const DELETE = withRouteHandler(
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceData) {
-        return notFoundResponse('Workspace')
+        return notFoundResponse('Canvas')
       }
 
       if (memberId === ownerMemberId(workspaceId, workspaceData.ownerId)) {
@@ -323,7 +322,7 @@ export const DELETE = withRouteHandler(
         .limit(1)
 
       if (!existingMember) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       if (existingMember.userId === workspaceData.ownerId) {
@@ -331,7 +330,7 @@ export const DELETE = withRouteHandler(
       }
 
       if (isPersonalWorkspace(workspaceData.workspaceMode)) {
-        return notFoundResponse('Workspace member')
+        return notFoundResponse('Canvas member')
       }
 
       await db.delete(permissions).where(eq(permissions.id, memberId))
@@ -350,7 +349,7 @@ export const DELETE = withRouteHandler(
       })
     } catch (error) {
       logger.error('Admin API: Failed to remove workspace member', { error, workspaceId, memberId })
-      return internalErrorResponse('Failed to remove workspace member')
+      return internalErrorResponse('Failed to remove canvas member')
     }
   })
 )
