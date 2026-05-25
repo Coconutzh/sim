@@ -39,6 +39,7 @@
 - 最新 Phase 11 workspace member API 错误切片把共享成员列表和成员移除 API 的 not-found、personal unsupported、billing/owner/last-admin、audit description 和 fallback 文案迁移为 canvas 语义；底层成员权限仍以 workspace permission row 和 `workspaceId` 为内部边界。
 - 最新 Phase 11 workspace utility API/helper 错误切片把 document preview、workflow tracks、metrics executions、permission-group self config 和 workflow execution-context 中直接返回给用户的 not-found/context/unsupported 文案迁移为 canvas 语义；底层 `/api/workspaces` 路径、`workspaceId` 参数和 sandbox payload 仍保持兼容。
 - 最新 Phase 11 workspace notification API 错误切片把通知订阅列表/创建/更新/删除/测试中的 canvas not-found、workflow 归属错误、数量上限和测试通知正文文案迁移为 canvas 语义；底层 notification subscription 仍以 `workspaceId` 作为内部作用域键。
+- 最新 Phase 11 workspace inbox API 错误切片把 Sim Mailer inbox config、allowed senders 和 task list 的 not-found 文案迁移为 canvas 语义；底层 inbox address/task/sender 仍继续按 `workspaceId` 作用域存储和查询。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -53,6 +54,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `1d39c5bdc` | Phase 11 workspace inbox API 用户可见错误迁移为 canvas wording |
 | `ad291c760` | Phase 11 workspace notification API 用户可见错误迁移为 canvas wording |
 | `c32f19117` | Phase 11 workspace utility API/helper 用户可见错误迁移为 canvas wording |
 | `2fc153345` | Phase 11 workspace member API 用户可见错误迁移为 canvas wording |
@@ -178,11 +180,12 @@
 - `2fc153345` 继续迁移 workspace member 相关 API 错误边界：`GET /api/workspaces/[id]/members` 和 `DELETE /api/workspaces/members/[id]` 的 not found、personal shared-member/list、billing account、成员缺失、owner removal、last admin、audit description、fetch/remove fallback 均改为 canvas wording，并同步更新 2 组 route tests。该提交不改 contract、permission row、credential membership revoke、permission group cleanup、audit resource 或 PostHog group。
 - `c32f19117` 继续迁移 utility API/helper 错误边界：document preview factory、PDF/PPTX preview tests、workflow tracks、metrics executions、`/api/permission-groups/user` 和 `resolveAccessibleWorkflowWorkspace` 的用户可见 not-found/context/unsupported 错误均改为 canvas wording，并同步更新 6 组测试。该提交不改 API path、contract、`workspaceId`、sandbox task payload、workflow publication service 或 permission group 数据模型。
 - `ad291c760` 继续迁移 notification API 错误边界：`/api/workspaces/[id]/notifications`、`/[notificationId]` 和 `test` route 的 not found、workflow id scope、notification limit 和测试 email/Slack 文案均改为 canvas wording，并同步更新 3 组 route tests。该提交不改 API path、contract、notification subscription schema、`workspaceId`、audit resource 或 PostHog group。
+- `1d39c5bdc` 继续迁移 Sim Mailer inbox API 错误边界：`/api/workspaces/[id]/inbox`、`/senders` 和 `/tasks` 的用户可见 not-found 错误均改为 canvas wording，并同步更新 3 组 route tests。该提交不改 API path、contract、`workspaceId`、billing gate、inbox lifecycle 或 sender/task 数据模型。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -466,6 +469,16 @@ $patterns = @('Canvas not found','notifications per canvas','do not belong to th
 git diff --check
 ```
 
+最新 Phase 11 workspace inbox API 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/workspaces/[id]/inbox/route.ts" "app/api/workspaces/[id]/inbox/route.test.ts" "app/api/workspaces/[id]/inbox/senders/route.ts" "app/api/workspaces/[id]/inbox/senders/route.test.ts" "app/api/workspaces/[id]/inbox/tasks/route.ts" "app/api/workspaces/[id]/inbox/tasks/route.test.ts"
+Set-Location apps\sim; bunx vitest run "app/api/workspaces/[id]/inbox/route.test.ts" "app/api/workspaces/[id]/inbox/senders/route.test.ts" "app/api/workspaces/[id]/inbox/tasks/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Canvas not found','Sim Mailer','inbox/route','inbox/senders','inbox/tasks'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
 最新失败审计 retention cleanup 切片已验证：
 
 ```powershell
@@ -591,7 +604,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
