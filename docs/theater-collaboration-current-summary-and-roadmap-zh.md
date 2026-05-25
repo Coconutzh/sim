@@ -82,6 +82,7 @@
 - 最新 Phase 11 delete modal fallback 文案切片把通用删除确认框中遗留 workspace container 的 title 和 fallback description 统一显示为 canvas 语义；底层 `itemType='workspace'` 兼容输入、确认文本和 workspace 技术 ID 保持不变。
 - 最新 Phase 11 execution API canvas context 文案切片把 guardrails hallucination validation、function execute sandbox export、form/chat deployed execution 中的 workspace access/context/associated workspace 用户可见错误迁移为 canvas 语义；底层 workflow authorization、sandbox output export、deployment preprocessing 和 `workspaceId` 参数保持不变。
 - 最新 Phase 11 默认 canvas 创建文案切片把 `/workspace` 无容器 fallback、`/api/workspaces` 创建/默认创建 response 与 audit description 中的用户可见 workspace 文案迁移为 canvas 语义；底层 route、contract、`workspaceId`、audit resource 和 logger 资源命名保持兼容。
+- 最新 Phase 11 landing canvas preview 文案切片把公开 landing 的产品下拉分组、features 区块、preview sidebar 和 mock workspace chip 从 workspace 迁移为 canvas 语义；SEO/第三方 Google Workspace 等营销或外部产品术语未改。
 
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
@@ -97,6 +98,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `8b1c8de23` | Phase 11 landing canvas preview wording migrated from workspace wording |
 | `5011f04b` | Phase 11 default canvas creation wording migrated from workspace wording |
 | `c06eba5e6` | Phase 11 execution API canvas context errors migrated to canvas wording |
 | `e17f5defc` | Phase 11 delete modal workspace fallback migrated to canvas wording |
@@ -253,6 +255,7 @@
 - `be6856618` 补齐 sidebar header 的邀请弹窗和原 shell 团队管理页中的残留普通用户文案：外部邀请、已是成员、移除成员、fallback modal title、team canvas health permission 检查，以及 Agent Skill 空态均使用 canvas wording；权限 mutation、pending invitation 和 `teamWorkspaceId` 命名仍是内部实现。
 - `629062e92` 把 `/workspace` 根入口的 legacy workspace fallback 抽成 `selectCanvasLandingTarget`：选择顺序改为 local recency -> server last-active -> default workgroup team canvas -> default workgroup personal canvas -> 其他 team/personal/legacy canvas，并补单测覆盖“最近个人草稿不被默认团队画布覆盖”“local recency 失效时使用 server last-active”“首次进入仍回默认团队画布”。该切片修复了此前 default workgroup 有 team canvas 时过早 redirect、导致 `redirect_workflow` 和最近访问都无法参与决策的问题。
 - `5011f04b` 继续收口 `/workspace` 首次进入和 `/api/workspaces` 默认创建路径：无可用容器时的 fallback log、默认创建名称、创建被禁用/失败 response 和创建 audit description 均使用 canvas wording。该提交不改 `/api/workspaces` route、contract、`workspaceId`、`AuditResourceType.WORKSPACE`、PostHog group 或底层 workspace 创建 helper。
+- `8b1c8de23` 继续迁移 landing / mock UI 中直接呈现的 workspace 心智：navbar product dropdown 分组、features badge/heading/辅助文本、landing preview sidebar 分组和 features preview 的 `My Workspace` chip 均改为 canvas wording。该提交刻意保留 `AI workspace` SEO 语义、第三方 Google Workspace 和内部组件/变量命名。
 - `4bff93528` 继续补 settings/sidebar 深层残留文案：Integrations 分享按钮与错误、Atlassian credential 重名错误、Secrets 的 canvas secret/override/分组、Inbox enable 说明、Subscription plan feature 和 billed-account tooltip、ownership transfer 的 shared canvas 影响提示，以及 sidebar aria label/resource 分组均使用 canvas/resources 语义。该提交只改用户可见文案，不改 `workspaceId`、`env_workspace`、API path 或权限数据模型。
 - `56d4905ae` 继续迁移邀请和发布列表边界：未登录 invite 接收页从“join this workspace”改为“join this canvas”，单个 workspace invitation email 的 preview/body 默认称为 canvas，批量邀请邮件的 team role 说明、canvas access 分组和 subject 改为 canvas，Published/Showcase visibility 中的 `workspace` 可见范围显示为 `Owner canvas only`。该提交不改 invitation grant schema、`workspaceName` 参数或 publication visibility enum。
 - `3838424e6` 继续迁移公共模板详情页的编辑入口：`/templates/[id]` 的可编辑目标列表从 `/api/workspaces` 保留 `canvasScope` / `isInternalWorkspace`，下拉二级文案显示 `Personal draft canvas` / `Team canvas` / `Legacy canvas`，无写权限空态改为 `No canvases with write access`，无模板源访问提示改为 canvas containing this template。该提交不改 template use/import API 的 `workspaceId` 参数。
@@ -497,6 +500,15 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 ## 4. 当前验证状态
 
 最近已通过或复跑的关键校验包括：
+
+Latest Phase 11 landing canvas preview wording slice verified:
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/(landing)/components/navbar/components/product-dropdown.tsx" "app/(landing)/components/features/features.tsx" "app/(landing)/components/features/components/features-preview.tsx" "app/(landing)/components/landing-preview/components/landing-preview-sidebar/landing-preview-sidebar.tsx"
+bun run check:api-validation:strict
+$patterns = @('One canvas','across your canvas','all in one canvas','My Canvas','product-dropdown','features-preview','landing-preview-sidebar','features.tsx'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check -- "apps/sim/app/(landing)/components/navbar/components/product-dropdown.tsx" "apps/sim/app/(landing)/components/features/features.tsx" "apps/sim/app/(landing)/components/features/components/features-preview.tsx" "apps/sim/app/(landing)/components/landing-preview/components/landing-preview-sidebar/landing-preview-sidebar.tsx"
+```
 
 Latest Phase 11 default canvas creation wording slice verified:
 
@@ -1050,7 +1062,7 @@ git diff --check
 已知情况：
 
 - `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，新增 cleanup route 和 SSO route 都走既有合约和 `parseRequest`，最近 invitation 文案切片未改变边界合约；严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按最新 default canvas creation wording 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run type-check` 仍退出 2，但按最新 landing canvas preview wording 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
