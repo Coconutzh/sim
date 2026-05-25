@@ -22,6 +22,7 @@
 - 最新补充的失败审计独立清理能力新增 `POST /api/organizations/[id]/project-admin/failures/cleanup`，可 dry-run 预览或按小时窗口删除旧的 `project_admin_failure.recorded` audit row，并把执行结果写回 `cleanup_execution` 项目通知类型。
 - 最新 Phase 11 切片已让 `/api/workspaces` 返回服务端推导的 `canvasCreationCapabilities.canCreatePersonalCanvas` / `canCreateTeamCanvas`，Sidebar 个人草稿创建和 Home 团队画布初始化入口开始消费该能力，并把 Published/Showcase 旧 workspace 文案改为 canvas/team 语义。
 - 最新 Phase 11 搜索入口切片已把原 command/search modal 的 `Workspaces` 分组改为 `Canvases`，搜索索引改用 `canvas-*` 与个人草稿/团队/legacy canvas 标签，并继续复用 `/api/workspaces` 的 `canvasScope` / `isInternalWorkspace` 元数据。
+- 最新 Phase 11 设置页切片已把 workflow MCP server 详情里的 `Add to Workspace` / `Added to Workspace` 迁移为 `Add to Canvas` / `Added to Canvas`，降低普通用户在画布设置里看到旧 workspace 心智的概率。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -36,6 +37,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `0af9de617` | Phase 11 workflow MCP server 设置页按钮和说明迁移为 canvas wording |
 | `267883e82` | Phase 11 搜索/命令面板 workspace 分组迁移为 canvas entrypoints |
 | `dc6a30e75` | Phase 11 原 workspace shell 增加 canvas creation capabilities，并清理 published/showcase workspace 心智泄露 |
 | `b27b1794c` | Phase 10 项目管理员中心增加失败审计独立 retention cleanup |
@@ -127,11 +129,12 @@
 - `dc6a30e75` 起 `/api/workspaces` 的合约响应包含 `canvasCreationCapabilities`；服务端基于当前用户 active workgroup membership 推导是否可创建个人草稿画布，以及是否存在“当前用户是 admin 且尚未初始化团队画布”的团队画布创建机会。Sidebar 顶部个人草稿创建按钮不再只靠本地 `activeWorkgroupId` 判断，Home 的团队画布初始化入口也会同时看服务端 capability。
 - `dc6a30e75` 同步把 Published/Showcase 表格列名和空状态提示从 `Team Workspace` / `current workspace` 改为 `Team Canvas` / workgroup canvas 语义，避免普通用户在展示入口看到底层 workspace 配置提示。
 - `267883e82` 把 Sidebar 搜索/命令面板里的 workspace 切换分组迁移成 `Canvases`：搜索项从 `/api/workspaces` rows 继承 `canvasScope` 与 `isInternalWorkspace`，展示 `Personal draft canvas` / `Team canvas` / `Legacy canvas` 标签，搜索关键词也从 `workspace-{id}` 改为 `canvas-{id}`，减少 command palette 里的 workspace 主心智。
+- `0af9de617` 先迁移设置页中 workflow MCP server 详情区的普通用户可见按钮和提示：`Add to Workspace` / `Added to Workspace` / “add server to workspace” 已改为 canvas 语义；底层变量仍保留 `workspaceId`，因为 MCP server 绑定关系当前仍以 workspace/canvas 容器 ID 为内部资源键。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页、搜索、最近访问、命令面板等深层旧入口后续仍需 Phase 11 系统排查。
+- Workspace 技术设置页已开始迁移 workflow MCP server 明显可见文案，但 API keys、BYOK、team management、recent、mobile nav 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -442,7 +445,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，仍需继续排查 recent、settings、mobile nav。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，仍需继续排查 recent、settings 其余模块和 mobile nav。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
