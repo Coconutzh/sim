@@ -227,13 +227,13 @@ export function DeployModal({
       if (value && value.trim().length > 0) {
         return value
       }
-      return workflowWorkspaceId ? 'Workspace API keys' : 'Personal API keys'
+      return workflowWorkspaceId ? 'Canvas API keys' : 'Personal API keys'
     },
     [workflowWorkspaceId]
   )
 
   const getApiHeaderPlaceholder = useCallback(
-    () => (workflowWorkspaceId ? 'YOUR_WORKSPACE_API_KEY' : 'YOUR_PERSONAL_API_KEY'),
+    () => (workflowWorkspaceId ? 'YOUR_CANVAS_API_KEY' : 'YOUR_PERSONAL_API_KEY'),
     [workflowWorkspaceId]
   )
 
