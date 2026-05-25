@@ -4,16 +4,20 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockParseRequest, mockCheckSessionOrInternalAuth, mockCheckWorkspaceAccess } = vi.hoisted(() => ({
-  mockParseRequest: vi.fn(),
-  mockCheckSessionOrInternalAuth: vi.fn(),
-  mockCheckWorkspaceAccess: vi.fn(),
-}))
+const { mockParseRequest, mockCheckSessionOrInternalAuth, mockCheckWorkspaceAccess } = vi.hoisted(
+  () => ({
+    mockParseRequest: vi.fn(),
+    mockCheckSessionOrInternalAuth: vi.fn(),
+    mockCheckWorkspaceAccess: vi.fn(),
+  })
+)
 
 vi.mock('@sim/db', () => ({ db: { select: vi.fn(), insert: vi.fn() } }))
 vi.mock('@sim/db/schema', () => ({ a2aAgent: {}, workflow: {} }))
 vi.mock('@/lib/auth/hybrid', () => ({ checkSessionOrInternalAuth: mockCheckSessionOrInternalAuth }))
-vi.mock('@/lib/workspaces/permissions/utils', () => ({ checkWorkspaceAccess: mockCheckWorkspaceAccess }))
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: mockCheckWorkspaceAccess,
+}))
 vi.mock('@/lib/api/server', () => ({
   parseRequest: mockParseRequest,
   getValidationErrorMessage: vi.fn(() => 'Invalid request'),
@@ -24,8 +28,12 @@ vi.mock('@/lib/api/contracts/a2a-agents', () => ({
     safeParse: vi.fn(() => ({ success: true, data: { workspaceId: 'ws-hidden' } })),
   },
 }))
-vi.mock('@/lib/core/utils/with-route-handler', () => ({ withRouteHandler: vi.fn((handler) => handler) }))
-vi.mock('@sim/logger', () => ({ createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })) }))
+vi.mock('@/lib/core/utils/with-route-handler', () => ({
+  withRouteHandler: vi.fn((handler) => handler),
+}))
+vi.mock('@sim/logger', () => ({
+  createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
+}))
 vi.mock('@/lib/a2a/agent-card', () => ({ generateSkillsFromWorkflow: vi.fn() }))
 vi.mock('@/lib/a2a/constants', () => ({ A2A_DEFAULT_CAPABILITIES: {} }))
 vi.mock('@/lib/a2a/utils', () => ({ sanitizeAgentName: vi.fn((name: string) => name) }))
@@ -64,10 +72,12 @@ describe('/api/a2a/agents', () => {
       workspace: { id: 'ws-hidden', ownerId: 'owner-2', workspaceMode: 'personal' },
     })
 
-    const response = await GET(new NextRequest('http://localhost:3000/api/a2a/agents?workspaceId=ws-hidden'))
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/a2a/agents?workspaceId=ws-hidden')
+    )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 
   it('hides foreign personal workspace A2A agent creation behind 404', async () => {
@@ -87,6 +97,6 @@ describe('/api/a2a/agents', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 })

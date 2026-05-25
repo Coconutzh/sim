@@ -50,10 +50,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
     if (!workspaceAccess.exists) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     if (!workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const agents = await db
@@ -112,7 +112,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     if (!workspaceAccess.canWrite) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -138,7 +138,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     if (!wf) {
       return NextResponse.json(
-        { error: 'Workflow not found or does not belong to workspace' },
+        { error: 'Workflow not found or does not belong to canvas' },
         { status: 404 }
       )
     }

@@ -321,7 +321,7 @@ export const POST = withRouteHandler(
           createError(
             id,
             A2A_ERROR_CODES.INTERNAL_ERROR,
-            'Unable to resolve billing account for this workspace'
+            'Unable to resolve billing account for this canvas'
           ),
           { status: 500 }
         )

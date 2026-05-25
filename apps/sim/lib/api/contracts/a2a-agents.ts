@@ -27,7 +27,7 @@ export const a2aAgentParamsSchema = z.object({
 })
 
 export const listA2AAgentsQuerySchema = z.object({
-  workspaceId: z.string({ error: 'workspaceId is required' }).min(1, 'workspaceId is required'),
+  workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
 })
 
 export const a2aAgentCapabilitiesSchema = z.custom<AgentCapabilities>(isRecord, {
@@ -44,7 +44,7 @@ export const a2aAgentSkillSchema = z.custom<AgentSkill>(isRecord, {
 
 export const createA2AAgentBodySchema = z
   .object({
-    workspaceId: z.string({ error: 'workspaceId is required' }).min(1, 'workspaceId is required'),
+    workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
     workflowId: z.string({ error: 'workflowId is required' }).min(1, 'workflowId is required'),
     name: z.string().optional(),
     description: z.string().optional(),
