@@ -49,7 +49,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         userId,
         workspaceId: params.workspaceId,
       })
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (params.folderIds) {

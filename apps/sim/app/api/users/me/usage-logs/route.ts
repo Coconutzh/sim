@@ -6,7 +6,10 @@ import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { getUserUsageLogs, type UsageLogSource } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { checkWorkspaceAccess, listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  listAccessibleWorkspaceIds,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('UsageLogsAPI')
 
@@ -50,7 +53,7 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
     if (workspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
     }
 

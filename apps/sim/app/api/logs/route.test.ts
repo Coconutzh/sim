@@ -164,7 +164,7 @@ describe('GET /api/logs', () => {
     const response = await GET(new Request('http://localhost:3000/api/logs') as any)
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })
