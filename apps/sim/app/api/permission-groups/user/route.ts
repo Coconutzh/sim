@@ -25,11 +25,11 @@ export const GET = withRouteHandler(async (req: Request) => {
 
   const access = await checkWorkspaceAccess(workspaceId, session.user.id)
   if (!access.exists || !access.hasAccess) {
-    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
   }
   if (access.workspace?.workspaceMode === 'personal') {
     return NextResponse.json(
-      { error: 'Personal workspaces do not support permission groups' },
+      { error: 'Personal canvases do not support permission groups' },
       { status: 403 }
     )
   }

@@ -71,7 +71,7 @@ export function createDocumentPreviewRoute(config: DocumentPreviewRouteConfig) {
 
       const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
       if (!membership.exists || !membership.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const parsed = await parseRequest(previewContract, req, context, {

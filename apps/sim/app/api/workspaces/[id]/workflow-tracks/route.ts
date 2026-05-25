@@ -33,7 +33,7 @@ export const GET = withRouteHandler(
       const message = error instanceof Error ? error.message : 'Failed to list workflow tracks'
       logger.error(`[${requestId}] Failed to list workflow tracks`, { error })
       if (message.includes('Access denied to workspace')) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       return NextResponse.json(
         { error: message },

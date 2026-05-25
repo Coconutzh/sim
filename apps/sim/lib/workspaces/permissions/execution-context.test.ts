@@ -43,7 +43,7 @@ describe('resolveAccessibleWorkflowWorkspace', () => {
     expect('response' in result).toBe(true)
     if ('response' in result) {
       expect(result.response.status).toBe(404)
-      await expect(result.response.json()).resolves.toEqual({ error: 'Workspace not found' })
+      await expect(result.response.json()).resolves.toEqual({ error: 'Canvas not found' })
     }
   })
 

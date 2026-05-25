@@ -18,16 +18,13 @@ export async function resolveAccessibleWorkflowWorkspace(params: {
 
   if (!resolvedWorkspaceId) {
     return {
-      response: NextResponse.json(
-        { error: 'Workspace context required' },
-        { status: 400 }
-      ),
+      response: NextResponse.json({ error: 'Canvas context required' }, { status: 400 }),
     }
   }
 
   const access = await checkWorkspaceAccess(resolvedWorkspaceId, userId)
   if (!access.exists || !access.hasAccess) {
-    return { response: NextResponse.json({ error: 'Workspace not found' }, { status: 404 }) }
+    return { response: NextResponse.json({ error: 'Canvas not found' }, { status: 404 }) }
   }
 
   return { workspaceId: resolvedWorkspaceId }

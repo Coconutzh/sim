@@ -41,7 +41,7 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, userId)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       const wfWhere: SQL[] = [eq(workflow.workspaceId, workspaceId)]
       if (qp.folderIds) {

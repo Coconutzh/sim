@@ -44,13 +44,18 @@ describe('workspace workflow tracks route', () => {
   })
 
   it('hides foreign personal workspaces behind 404', async () => {
-    mockListWorkflowTracksForWorkspace.mockRejectedValueOnce(new Error('Access denied to workspace'))
+    mockListWorkflowTracksForWorkspace.mockRejectedValueOnce(
+      new Error('Access denied to workspace')
+    )
 
-    const response = await GET(new NextRequest('http://localhost/api/workspaces/ws-1/workflow-tracks'), {
-      params: Promise.resolve({ id: 'ws-hidden' }),
-    })
+    const response = await GET(
+      new NextRequest('http://localhost/api/workspaces/ws-1/workflow-tracks'),
+      {
+        params: Promise.resolve({ id: 'ws-hidden' }),
+      }
+    )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 })
