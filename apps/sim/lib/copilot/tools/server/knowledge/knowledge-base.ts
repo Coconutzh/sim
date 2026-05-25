@@ -99,7 +99,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
           if (!workspaceId) {
             return {
               success: false,
-              message: 'Workspace ID is required for creating a knowledge base',
+              message: 'Canvas ID is required for creating a knowledge base',
             }
           }
 
