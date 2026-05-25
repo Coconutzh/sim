@@ -180,7 +180,7 @@ describe('/api/workspaces/[id]/permissions', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not expose shared permission settings' })
+    expect(data).toEqual({ error: 'Personal canvases do not expose shared permission settings' })
     expect(getUsersWithPermissionsMock).not.toHaveBeenCalled()
   })
 
@@ -199,7 +199,7 @@ describe('/api/workspaces/[id]/permissions', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(getUsersWithPermissionsMock).not.toHaveBeenCalled()
     expect(getUserEntityPermissionsMock).not.toHaveBeenCalled()
   })
@@ -238,7 +238,7 @@ describe('/api/workspaces/[id]/permissions', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data).toEqual({ error: 'Cannot modify the workspace owner permissions' })
+      expect(data).toEqual({ error: 'Cannot modify the canvas owner permissions' })
     })
 
     it('rejects permission updates for personal workspaces', async () => {
@@ -268,7 +268,7 @@ describe('/api/workspaces/[id]/permissions', () => {
       const data = await response.json()
 
       expect(response.status).toBe(403)
-      expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+      expect(data).toEqual({ error: 'Personal canvases do not support shared members' })
     })
 
     it('hides foreign personal workspaces when stale admin access no longer grants visibility', async () => {
@@ -286,7 +286,7 @@ describe('/api/workspaces/[id]/permissions', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(data).toEqual({ error: 'Canvas not found' })
       expect(parseRequestMock).toHaveBeenCalled()
       expect(getWorkspaceWithOwnerMock).not.toHaveBeenCalled()
     })

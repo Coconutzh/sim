@@ -53,15 +53,15 @@ export const GET = withRouteHandler(
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
 
       if (!access.exists) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!isAdmin && !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not expose shared permission settings' },
+          { error: 'Personal canvases do not expose shared permission settings' },
           { status: 403 }
         )
       }
@@ -88,7 +88,7 @@ export const GET = withRouteHandler(
       })
     } catch (error) {
       logger.error('Error fetching workspace permissions:', error)
-      return NextResponse.json({ error: 'Failed to fetch workspace permissions' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch canvas permissions' }, { status: 500 })
     }
   }
 )
@@ -120,7 +120,7 @@ export const PATCH = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, workspaceId)
@@ -135,7 +135,7 @@ export const PATCH = withRouteHandler(
       const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceRow) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const billedAccountUserId = workspaceRow.billedAccountUserId
@@ -143,14 +143,14 @@ export const PATCH = withRouteHandler(
 
       if (workspaceRow.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not support shared members' },
+          { error: 'Personal canvases do not support shared members' },
           { status: 403 }
         )
       }
 
       if (body.updates.some((update) => update.userId === ownerId)) {
         return NextResponse.json(
-          { error: 'Cannot modify the workspace owner permissions' },
+          { error: 'Cannot modify the canvas owner permissions' },
           { status: 400 }
         )
       }
@@ -170,7 +170,7 @@ export const PATCH = withRouteHandler(
         )
       ) {
         return NextResponse.json(
-          { error: 'Workspace billing account must retain admin permissions' },
+          { error: 'Canvas billing account must retain admin permissions' },
           { status: 400 }
         )
       }
@@ -271,7 +271,7 @@ export const PATCH = withRouteHandler(
       })
     } catch (error) {
       logger.error('Error updating workspace permissions:', error)
-      return NextResponse.json({ error: 'Failed to update workspace permissions' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update canvas permissions' }, { status: 500 })
     }
   }
 )
