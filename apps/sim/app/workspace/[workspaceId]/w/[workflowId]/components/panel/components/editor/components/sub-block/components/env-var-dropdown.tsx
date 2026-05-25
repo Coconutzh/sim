@@ -141,7 +141,7 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
     const workspaceVars = Object.keys(workspaceEnvData?.workspace || {})
     const personalVars = Object.keys(workspaceEnvData?.personal || {})
 
-    envVarGroups.push({ label: 'Workspace', variables: workspaceVars })
+    envVarGroups.push({ label: 'Canvas', variables: workspaceVars })
     envVarGroups.push({ label: 'Personal', variables: personalVars })
   } else {
     if (userEnvVars.length > 0) {
