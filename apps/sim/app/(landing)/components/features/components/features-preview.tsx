@@ -1200,7 +1200,7 @@ function DefaultPreview() {
             </svg>
           </div>
           <span className='whitespace-nowrap font-medium font-season text-[#1C1C1C] text-[13px] tracking-[0.02em]'>
-            My Workspace
+            My Canvas
           </span>
           <ChevronDown className='h-[8px] w-[10px] flex-shrink-0 text-[#999]' />
         </div>

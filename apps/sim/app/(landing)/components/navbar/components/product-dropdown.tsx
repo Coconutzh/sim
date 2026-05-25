@@ -106,7 +106,7 @@ export function ProductDropdown() {
       <div className='flex-1 p-2'>
         <div className='mb-1 px-2.5 pt-1'>
           <span className='font-[430] font-season text-[11px] text-[var(--landing-text-subtle)] uppercase tracking-[0.08em]'>
-            Workspace
+            Canvas
           </span>
           <div className='mt-1.5 h-px bg-[var(--landing-bg-elevated)]' />
         </div>

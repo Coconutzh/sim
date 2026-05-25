@@ -38,7 +38,7 @@ const FEATURE_TABS: FeatureTab[] = [
     color: '#FA4EDF',
     title: 'Your AI command center',
     description:
-      'Direct your entire AI workforce from one place. Build agents, spin up workflows, query tables, and manage every resource across your workspace — in natural language.',
+      'Direct your entire AI workforce from one place. Build agents, spin up workflows, query tables, and manage every resource across your canvas — in natural language.',
     cta: 'Explore mothership',
     segments: [
       [0.3, 8],
@@ -116,7 +116,7 @@ const FEATURE_TABS: FeatureTab[] = [
   },
 ]
 
-const HEADING_TEXT = 'One workspace to build, deploy, and manage AI agents. '
+const HEADING_TEXT = 'One canvas to build, deploy, and manage AI agents. '
 const HEADING_LETTERS = HEADING_TEXT.split('')
 
 const LETTER_REVEAL_SPAN = 0.85
@@ -175,11 +175,11 @@ export default function Features() {
               ),
             }}
           >
-            Workspace
+            Canvas
           </Badge>
           <p className='sr-only'>
-            Sim's workspace includes four core features: Mothership, an AI command center for
-            natural-language control of your entire workspace; Tables, a built-in database for
+            Sim's canvas includes four core features: Mothership, an AI command center for
+            natural-language control of your entire canvas; Tables, a built-in database for
             filtering, sorting, and wiring data directly into workflows; Files, a shared document
             store for uploading, creating, and sharing documents, spreadsheets, and media across
             teams and agents; and Logs, full execution tracing with inputs, outputs, cost, and
@@ -195,7 +195,7 @@ export default function Features() {
               </ScrollLetter>
             ))}
             <span className='text-[color-mix(in_srgb,var(--landing-text-dark)_40%,transparent)]'>
-              Build agents, connect your data, and monitor every run — all in one workspace.
+              Build agents, connect your data, and monitor every run — all in one canvas.
             </span>
           </h2>
         </div>

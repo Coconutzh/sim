@@ -170,7 +170,7 @@ export function LandingPreviewSidebar({
       <div className='mt-3.5 flex flex-shrink-0 flex-col'>
         <div className='px-4 pb-1.5'>
           <div className='font-base text-[12px]' style={{ color: C.TEXT_ICON }}>
-            Workspace
+            Canvas
           </div>
         </div>
         <div className='flex flex-col gap-0.5 px-2'>
