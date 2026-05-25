@@ -76,7 +76,7 @@ describe('DELETE /api/workspaces/[id]', () => {
     mockArchiveWorkspace.mockResolvedValue({ archived: true })
   })
 
-  it('blocks deleting an owner-only workspace when it is the last accessible workspace', async () => {
+  it('blocks deleting an owner-only canvas when it is the last accessible canvas', async () => {
     permissionsMockFns.mockListAccessibleWorkspaceIds.mockResolvedValueOnce(['ws-owner'])
     mockDbSelect.mockReturnValueOnce(createSelectChain([{ name: 'Owner Workspace' }]))
 
@@ -86,7 +86,7 @@ describe('DELETE /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data).toEqual({ error: 'Cannot delete the only workspace' })
+    expect(data).toEqual({ error: 'Cannot delete the only canvas' })
     expect(permissionsMockFns.mockListAccessibleWorkspaceIds).toHaveBeenCalledWith('owner-1')
     expect(mockArchiveWorkspace).not.toHaveBeenCalled()
   })
@@ -123,7 +123,7 @@ describe('DELETE /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
   })
 
@@ -181,11 +181,11 @@ describe('PATCH /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data).toEqual({ error: 'Billed account must be a workspace admin' })
+    expect(data).toEqual({ error: 'Billed account must be a canvas admin' })
     expect(permissionsMockFns.mockHasAdminPermission).toHaveBeenCalledWith('member-2', 'ws-shared')
   })
 
-  it('returns 404 when stale personal rows no longer grant workspace update visibility', async () => {
+  it('returns 404 when stale personal rows no longer grant canvas update visibility', async () => {
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
       hasAccess: false,
@@ -199,7 +199,7 @@ describe('PATCH /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 })
@@ -220,7 +220,7 @@ describe('GET /api/workspaces/[id]', () => {
     mockAnnotateWorkspaceCanvasMetadata.mockImplementation(async (workspaces) => workspaces)
   })
 
-  it('returns 404 when stale personal rows no longer grant workspace visibility', async () => {
+  it('returns 404 when stale personal rows no longer grant canvas visibility', async () => {
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
       exists: true,
       hasAccess: false,
@@ -234,7 +234,7 @@ describe('GET /api/workspaces/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
 

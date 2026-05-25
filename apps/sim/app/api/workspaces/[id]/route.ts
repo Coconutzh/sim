@@ -46,12 +46,12 @@ export const GET = withRouteHandler(
     // Check if user has any access to this workspace
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!userPermission) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     // If checking for published templates before deletion
@@ -102,7 +102,7 @@ export const GET = withRouteHandler(
       .then((rows) => rows[0])
 
     if (!workspaceDetails) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const [workspaceWithMetadata] = await annotateWorkspaceCanvasMetadata([
@@ -133,7 +133,7 @@ export const PATCH = withRouteHandler(
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     // Check if user has admin permissions to update workspace
@@ -163,7 +163,7 @@ export const PATCH = withRouteHandler(
         .then((rows) => rows[0])
 
       if (!existingWorkspace) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const updateData: Record<string, unknown> = {}
@@ -192,7 +192,7 @@ export const PATCH = withRouteHandler(
           return NextResponse.json(
             {
               error:
-                'Organization workspaces use organization billing and cannot change billed account.',
+                'Organization canvases use organization billing and cannot change billed account.',
             },
             { status: 400 }
           )
@@ -202,7 +202,7 @@ export const PATCH = withRouteHandler(
           return NextResponse.json(
             {
               error:
-                'Personal workspaces are always billed to their owner and cannot change billed account.',
+                'Personal canvases are always billed to their owner and cannot change billed account.',
             },
             { status: 400 }
           )
@@ -216,7 +216,7 @@ export const PATCH = withRouteHandler(
 
         if (!hasAdminAccess) {
           return NextResponse.json(
-            { error: 'Billed account must be a workspace admin' },
+            { error: 'Billed account must be a canvas admin' },
             { status: 400 }
           )
         }
@@ -239,7 +239,7 @@ export const PATCH = withRouteHandler(
         .then((rows) => rows[0])
 
       if (!updatedWorkspace) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       recordAudit({
@@ -251,7 +251,7 @@ export const PATCH = withRouteHandler(
         resourceType: AuditResourceType.WORKSPACE,
         resourceId: workspaceId,
         resourceName: updatedWorkspace?.name ?? existingWorkspace.name,
-        description: `Updated workspace "${updatedWorkspace?.name ?? existingWorkspace.name}"`,
+        description: `Updated canvas "${updatedWorkspace?.name ?? existingWorkspace.name}"`,
         metadata: {
           changes: {
             ...(name !== undefined && { name: { from: existingWorkspace.name, to: name } }),
@@ -288,7 +288,7 @@ export const PATCH = withRouteHandler(
       return NextResponse.json({ workspace: workspaceWithMetadata })
     } catch (error) {
       logger.error('Error updating workspace:', error)
-      return NextResponse.json({ error: 'Failed to update workspace' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update canvas' }, { status: 500 })
     }
   }
 )
@@ -309,7 +309,7 @@ export const DELETE = withRouteHandler(
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     // Check if user has admin permissions to delete workspace
@@ -330,7 +330,7 @@ export const DELETE = withRouteHandler(
 
       /** Counts all active workspace memberships including owner-only workspaces. */
       if (accessibleWorkspaceIds.length <= 1) {
-        return NextResponse.json({ error: 'Cannot delete the only workspace' }, { status: 400 })
+        return NextResponse.json({ error: 'Cannot delete the only canvas' }, { status: 400 })
       }
 
       logger.info(
@@ -360,7 +360,7 @@ export const DELETE = withRouteHandler(
       })
 
       if (!archiveResult.archived && !workspaceRecord) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       recordAudit({
@@ -372,7 +372,7 @@ export const DELETE = withRouteHandler(
         resourceType: AuditResourceType.WORKSPACE,
         resourceId: workspaceId,
         resourceName: workspaceRecord?.name,
-        description: `Archived workspace "${workspaceRecord?.name || workspaceId}"`,
+        description: `Archived canvas "${workspaceRecord?.name || workspaceId}"`,
         metadata: {
           affected: {
             workflows: workflowIds.length,
@@ -393,7 +393,7 @@ export const DELETE = withRouteHandler(
       return NextResponse.json({ success: true })
     } catch (error) {
       logger.error(`Error deleting workspace ${workspaceId}:`, error)
-      return NextResponse.json({ error: 'Failed to delete workspace' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete canvas' }, { status: 500 })
     }
   }
 )
