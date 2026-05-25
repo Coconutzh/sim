@@ -69,12 +69,12 @@ export const tableRowParamsSchema = tableIdParamsSchema.extend({
 })
 
 export const listTablesQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   scope: tableScopeSchema.default('active'),
 })
 
 export const getTableQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
 })
 
 export const tableColumnSchema = z.object({
@@ -96,17 +96,17 @@ export const createTableBodySchema = z.object({
         `Table cannot have more than ${TABLE_LIMITS.MAX_COLUMNS_PER_TABLE} columns`
       ),
   }),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   initialRowCount: z.number().int().min(0).max(100).optional(),
 })
 
 export const renameTableBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   name: tableNameSchema,
 })
 
 export const createTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   column: z.object({
     name: columnNameSchema,
     type: columnTypeSchema,
@@ -117,7 +117,7 @@ export const createTableColumnBodySchema = z.object({
 })
 
 export const updateTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   columnName: columnNameSchema,
   updates: z.object({
     name: columnNameSchema.optional(),
@@ -128,7 +128,7 @@ export const updateTableColumnBodySchema = z.object({
 })
 
 export const deleteTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   columnName: columnNameSchema,
 })
 
@@ -138,7 +138,7 @@ export const tableMetadataSchema = z.object({
 }) satisfies z.ZodType<TableMetadata>
 
 export const updateTableMetadataBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   metadata: tableMetadataSchema,
 })
 
@@ -147,7 +147,7 @@ export const tableDefinitionSchema = domainObjectSchema<TableDefinition>()
 export const tableRowSchema = domainObjectSchema<TableRow>()
 
 export const insertTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   data: rowDataSchema,
   position: z.number().int().min(0).optional(),
 })
@@ -158,14 +158,14 @@ export const insertTableRowBodySchema = z.object({
  * unique column when omitted).
  */
 export const upsertTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   data: rowDataSchema,
   conflictTarget: z.string().min(1).optional(),
 })
 
 export const batchInsertTableRowsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: z.string().min(1, 'Canvas ID is required'),
     rows: z
       .array(rowDataSchema)
       .min(1, 'At least one row is required')
@@ -195,12 +195,12 @@ export const insertTableRowsBodySchema = z.union([
 ])
 
 export const updateTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   data: rowDataSchema,
 })
 
 export const batchUpdateTableRowsBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   updates: z
     .array(
       z.object({
@@ -242,12 +242,12 @@ const optionalPositiveLimit = (max: number, label: string) =>
   )
 
 export const deleteTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
 })
 
 export const deleteTableRowsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: z.string().min(1, 'Canvas ID is required'),
     filter: nonEmptyFilterSchema.optional(),
     limit: optionalPositiveLimit(TABLE_LIMITS.MAX_BULK_OPERATION_SIZE, 'Limit').optional(),
     rowIds: z
@@ -264,7 +264,7 @@ export const deleteTableRowsBodySchema = z
   })
 
 export const tableRowsQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   filter: domainObjectSchema<Filter>().optional(),
   sort: domainObjectSchema<Sort>().optional(),
   limit: z
@@ -300,7 +300,7 @@ export const tableRowsQuerySchema = z.object({
 })
 
 export const updateRowsByFilterBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   filter: nonEmptyFilterSchema,
   data: rowDataSchema,
   limit: optionalPositiveLimit(TABLE_LIMITS.MAX_BULK_OPERATION_SIZE, 'Limit').optional(),
@@ -555,7 +555,7 @@ export const csvFileSchema = z
 
 export const csvImportFormSchema = z.object({
   file: csvFileSchema,
-  workspaceId: z.string({ error: 'Workspace ID is required' }).min(1, 'Workspace ID is required'),
+  workspaceId: z.string({ error: 'Canvas ID is required' }).min(1, 'Canvas ID is required'),
 })
 
 export const csvImportModeSchema = z.enum(['append', 'replace'])
@@ -755,7 +755,7 @@ export const groupIdParamsSchema = tableIdParamsSchema.extend({
 })
 
 export const addWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   group: z.object({
     id: z.string().min(1),
     workflowId: z.string().min(1),
@@ -791,7 +791,7 @@ const workflowGroupMappingUpdateSchema = z.object({
 })
 
 export const updateWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   groupId: z.string().min(1),
   workflowId: z.string().min(1).optional(),
   name: z.string().optional(),
@@ -809,7 +809,7 @@ export const updateWorkflowGroupBodySchema = z.object({
 })
 
 export const deleteWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   groupId: z.string().min(1),
 })
 
@@ -860,7 +860,7 @@ export const deleteWorkflowGroupContract = defineRouteContract({
  */
 export const cancelTableRunsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: z.string().min(1, 'Canvas ID is required'),
     scope: z.enum(['all', 'row']),
     rowId: z.string().min(1).optional(),
   })
@@ -901,7 +901,7 @@ export const cancelTableRunsContract = defineRouteContract({
  * optional `rowIds` shape. AI uses the `run_column` tool op.
  */
 export const runColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   groupIds: z.array(z.string().min(1)).min(1),
   runMode: z.enum(['all', 'incomplete']).default('all'),
   rowIds: z.array(z.string().min(1)).min(1).optional(),
