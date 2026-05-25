@@ -52,6 +52,7 @@
 - 最新 Phase 11 folder/memory/schedule API 错误切片把文件夹列表/创建、memory CRUD 和 schedule 列表/创建/发布访问边界里的隐藏 workspace、缺少 workspaceId、无写权限和 published workflow workspace access 文案迁移为 canvas 语义；底层 folder/memory/schedule storage、`workspaceId` 字段、权限 helper 和审计/事件分组不变。
 - 最新 Phase 11 generic file API 错误切片把通用文件 upload、presigned、multipart 和 parse execution-hidden 路径里的隐藏 workspace、缺少 workspaceId、workspace upload/logo 权限和 workspace logo audit 描述迁移为 canvas 语义；底层 storage context、`workspaceId` 字段、upload token、metadata、审计 resource 和事件 key 不变。
 - 最新 Phase 11 custom tool/file manage API 错误切片把 custom tools 列表/写入、workflow 授权读取、tools file manage 写入路径中的 hidden workspace、缺少 workspaceId、无写权限和重复 custom tool 文案迁移为 canvas 语义；底层 custom tool storage、`workspaceId` 字段、权限 helper、审计和事件分组不变。
+- 最新 Phase 11 A2A API 错误切片把 A2A agents 列表/创建、workflow 归属校验、A2A serve billing fallback 和 A2A agents 合约的缺少 workspaceId 文案迁移为 canvas 语义；底层 A2A agent/task storage、JSON-RPC envelope、`workspaceId` 字段、权限 helper 和鉴权方式不变。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -66,6 +67,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `48a48f412` | Phase 11 A2A API 用户可见错误迁移为 canvas wording |
 | `401d338a1` | Phase 11 custom tool/file manage API 用户可见错误迁移为 canvas wording |
 | `ddea6859c` | Phase 11 generic file API 用户可见错误迁移为 canvas wording |
 | `55c6e5c0b` | Phase 11 folder/memory/schedule API 用户可见错误迁移为 canvas wording |
@@ -217,11 +219,12 @@
 - `55c6e5c0b` 继续迁移 folder/memory/schedule API 错误边界：`/api/folders`、`/api/memory`、`/api/memory/[id]`、`/api/schedules` 和 `/api/schedules/[id]` 的 hidden workspace not-found、缺少 workspaceId、无写权限、published workflow workspace access 与相关合约校验文案均改为 canvas wording，并同步更新 5 组 route tests。该提交不改 folder/memory/schedule 数据模型、`workspaceId` query/body 字段、权限 helper、审计 resource、CSV/事件分组或 schedule 执行语义。
 - `ddea6859c` 继续迁移 generic file API 错误边界：`/api/files/upload`、`/api/files/presigned`、`/api/files/multipart` 和 `/api/files/parse` execution-hidden 测试路径里的 hidden workspace not-found、缺少 workspaceId、workspace upload/write、workspace logo 权限和 workspace logo audit description 均改为 canvas wording，并同步更新 4 组 route tests。该提交不改 storage context 枚举、`workspaceId` query/body/form 字段、upload token payload、file metadata、workspace file key、审计 resource 或 PostHog event key。
 - `401d338a1` 继续迁移 custom tool/file manage API 错误边界：`/api/tools/custom` 的 workflow 授权读取、隐藏 workspace、缺少 workspaceId 和重复 custom tool title，以及 `/api/tools/file/manage` 的隐藏 workspace、缺少 workspaceId、无写权限文案均改为 canvas wording，并同步更新 2 组 route tests。该提交不改 custom tool persistence、`workspaceId` query/body 字段、workspace permission helper、文件 upload storage 或 PostHog/audit 分组。
+- `48a48f412` 继续迁移 A2A API 错误边界：`/api/a2a/agents` 的 hidden workspace not-found、缺少 workspaceId、workflow 归属错误，以及 `/api/a2a/serve/[agentId]` 的 billing account fallback 均改为 canvas wording，并同步更新 A2A agents route tests。该提交不改 A2A agent/task persistence、JSON-RPC error envelope、`workspaceId` 字段、hybrid auth、workspace API key 校验或 permission helper。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、A2A API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -645,6 +648,16 @@ $patterns = @('Canvas access required','Canvas not found','Canvas ID is required
 git diff --check
 ```
 
+最新 Phase 11 A2A API 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/a2a/agents/route.ts" "app/api/a2a/agents/route.test.ts" "app/api/a2a/serve/[agentId]/route.ts" "lib/api/contracts/a2a-agents.ts"
+Set-Location apps\sim; bunx vitest run "app/api/a2a/agents/route.test.ts" "app/api/a2a/serve/[agentId]/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Canvas not found','Canvas ID is required','does not belong to canvas','billing account for this canvas','app/api/a2a','lib/api/contracts/a2a-agents'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
 最新失败审计 retention cleanup 切片已验证：
 
 ```powershell
@@ -770,7 +783,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成，knowledge/template-use API 错误切片已由 `ac76786c3` 完成，table API 错误切片已由 `5c5f41d62` 完成，workflow/folder API 错误切片已由 `84143d249` 完成，credential/provider API 错误切片已由 `c4b0ef658` 完成，logs/usage API 错误切片已由 `4996cd275` 完成，folder/memory/schedule API 错误切片已由 `55c6e5c0b` 完成，generic file API 错误切片已由 `ddea6859c` 完成，custom tool/file manage API 错误切片已由 `401d338a1` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成，knowledge/template-use API 错误切片已由 `ac76786c3` 完成，table API 错误切片已由 `5c5f41d62` 完成，workflow/folder API 错误切片已由 `84143d249` 完成，credential/provider API 错误切片已由 `c4b0ef658` 完成，logs/usage API 错误切片已由 `4996cd275` 完成，folder/memory/schedule API 错误切片已由 `55c6e5c0b` 完成，generic file API 错误切片已由 `ddea6859c` 完成，custom tool/file manage API 错误切片已由 `401d338a1` 完成，A2A API 错误切片已由 `48a48f412` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
