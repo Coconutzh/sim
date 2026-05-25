@@ -159,7 +159,7 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUsersWithPermissions).not.toHaveBeenCalled()
   })
 
@@ -178,7 +178,7 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
   })
 
   it('returns 404 for hidden personal workspaces when adding senders', async () => {
@@ -195,7 +195,7 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
   })
 
   it('returns 404 for hidden personal workspaces when deleting senders', async () => {
@@ -212,6 +212,6 @@ describe('GET /api/workspaces/[id]/inbox/senders', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
   })
 })
