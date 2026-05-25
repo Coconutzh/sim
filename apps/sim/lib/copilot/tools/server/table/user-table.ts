@@ -257,7 +257,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Schema is required for creating a table' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const requestId = generateId().slice(0, 8)
@@ -285,7 +285,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -305,7 +305,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -330,7 +330,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'tableId or tableIds is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const deleted: string[] = []
@@ -363,7 +363,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Data is required for inserting a row' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -400,7 +400,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Rows array is required and must not be empty' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const positions = args.positions as number[] | undefined
@@ -451,7 +451,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Row ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const row = await getRowById(args.tableId, args.rowId, workspaceId)
@@ -471,7 +471,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const requestId = generateId().slice(0, 8)
@@ -505,7 +505,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Data is required for updating a row' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -541,7 +541,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Row ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const requestId = generateId().slice(0, 8)
@@ -565,7 +565,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Data is required for bulk update' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -602,7 +602,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Filter is required for bulk delete' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const requestId = generateId().slice(0, 8)
@@ -629,7 +629,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const rawUpdates = (args as Record<string, unknown>).updates as
@@ -692,7 +692,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const rowIds = (args as Record<string, unknown>).rowIds as string[] | undefined
@@ -736,7 +736,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const file = await resolveWorkspaceFile(fileReference, workspaceId)
@@ -804,7 +804,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'tableId is required for import_file' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
           if (rawMode && rawMode !== 'append' && rawMode !== 'replace') {
             return {
@@ -919,7 +919,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
           const col = (args as Record<string, unknown>).column as
             | {
@@ -954,7 +954,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           const newColName = (args as Record<string, unknown>).newName as string | undefined
@@ -983,7 +983,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           const colNames = (args as Record<string, unknown>).columnNames as string[] | undefined
@@ -1025,7 +1025,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table ID is required' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           if (!colName) {
@@ -1085,7 +1085,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'newName is required for renaming a table' }
           }
           if (!workspaceId) {
-            return { success: false, message: 'Workspace ID is required' }
+            return { success: false, message: 'Canvas ID is required' }
           }
 
           const table = await getTableById(args.tableId)
@@ -1108,7 +1108,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
         }
 
         case 'list_workflow_outputs': {
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const workflowId = args.workflowId as string | undefined
           if (!workflowId) {
             return {
@@ -1132,7 +1132,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'add_workflow_group': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const workflowId = args.workflowId as string | undefined
           if (!workflowId) {
             return { success: false, message: 'workflowId is required for add_workflow_group' }
@@ -1232,7 +1232,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'update_workflow_group': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const groupId = args.groupId as string | undefined
           if (!groupId) {
             return { success: false, message: 'groupId is required for update_workflow_group' }
@@ -1299,7 +1299,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'delete_workflow_group': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const groupId = args.groupId as string | undefined
           if (!groupId) {
             return { success: false, message: 'groupId is required for delete_workflow_group' }
@@ -1320,7 +1320,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'add_workflow_group_output': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const groupId = args.groupId as string | undefined
           const blockId = args.blockId as string | undefined
           const path = args.path as string | undefined
@@ -1350,7 +1350,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'delete_workflow_group_output': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const groupId = args.groupId as string | undefined
           const columnName = args.columnName as string | undefined
           if (!groupId || !columnName) {
@@ -1378,7 +1378,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'run_column': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const rawGroupIds = args.groupIds as unknown
           if (
             !Array.isArray(rawGroupIds) ||
@@ -1438,7 +1438,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
         case 'cancel_table_runs': {
           if (!args.tableId) return { success: false, message: 'Table ID is required' }
-          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          if (!workspaceId) return { success: false, message: 'Canvas ID is required' }
           const scope = (args.scope as 'all' | 'row' | undefined) ?? 'all'
           if (scope !== 'all' && scope !== 'row') {
             return {
