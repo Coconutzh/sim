@@ -471,8 +471,8 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                   <div className='rounded-lg border border-[var(--border-1)] p-4'>
                     <div className='flex flex-col gap-3'>
                       <p className='text-[var(--text-secondary)] text-small'>
-                        Add this MCP server to your workspace so you can use its tools in other
-                        workflows via the MCP block.
+                        Add this MCP server to this canvas so you can use its tools in workflows via
+                        the MCP block.
                       </p>
                       <Button
                         variant='primary'
@@ -500,7 +500,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                               3000
                             )
                           } catch (err) {
-                            logger.error('Failed to add server to workspace:', err)
+                            logger.error('Failed to add server to canvas:', err)
                           }
                         }}
                       >
@@ -509,12 +509,12 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                         ) : addedToWorkspace ? (
                           <>
                             <Check className='mr-1.5 h-[13px] w-[13px]' />
-                            Added to Workspace
+                            Added to Canvas
                           </>
                         ) : (
                           <>
                             <Server className='mr-1.5 h-[13px] w-[13px]' />
-                            Add to Workspace
+                            Add to Canvas
                           </>
                         )}
                       </Button>
