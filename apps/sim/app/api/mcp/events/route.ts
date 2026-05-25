@@ -55,7 +55,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   })
 
   if (!queryValidation.success || !queryValidation.data.workspaceId) {
-    return new Response('Missing workspaceId query parameter', { status: 400 })
+    return new Response('Canvas ID is required', { status: 400 })
   }
 
   return mcpEventsHandler(request)

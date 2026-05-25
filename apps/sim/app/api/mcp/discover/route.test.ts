@@ -104,4 +104,23 @@ describe('GET /api/mcp/discover', () => {
     })
     expect(mockDbSelect).not.toHaveBeenCalled()
   })
+
+  it('returns canvas wording when a scoped API key has no canvas scope', async () => {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'owner-1',
+      apiKeyType: 'workspace',
+      workspaceId: null,
+    })
+
+    const response = await GET(new Request('http://localhost:3000/api/mcp/discover') as any)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Canvas API key missing canvas scope',
+    })
+    expect(permissionsMockFns.mockListAccessibleWorkspaceIds).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+  })
 })

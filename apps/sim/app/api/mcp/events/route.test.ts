@@ -25,7 +25,7 @@ vi.mock('@/lib/events/sse-endpoint', () => ({
       const url = new URL(request.url)
       const workspaceId = url.searchParams.get('workspaceId')
       if (!workspaceId) {
-        return new Response('Missing workspaceId query parameter', { status: 400 })
+        return new Response('Canvas ID is required', { status: 400 })
       }
       const access = await mockCheckWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
@@ -84,7 +84,7 @@ describe('MCP Events SSE Endpoint', () => {
 
     expect(response.status).toBe(400)
     const text = await response.text()
-    expect(text).toBe('Missing workspaceId query parameter')
+    expect(text).toBe('Canvas ID is required')
   })
 
   it('returns 404 when user lacks workspace access', async () => {

@@ -30,7 +30,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     if (auth.apiKeyType === 'workspace' && !auth.workspaceId) {
       return NextResponse.json(
-        { success: false, error: 'Workspace API key missing workspace scope' },
+        { success: false, error: 'Canvas API key missing canvas scope' },
         { status: 403 }
       )
     }
