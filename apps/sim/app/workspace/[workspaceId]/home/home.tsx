@@ -416,7 +416,7 @@ export function Home({ chatId }: HomeProps = {}) {
             <span className='text-[12px] text-[var(--text-muted)]'>
               {activeWorkgroup
                 ? `${activeWorkgroup.discipline.name} / ${activeWorkgroup.name}`
-                : 'Canvas workspace'}
+                : 'Canvas context'}
             </span>
             <h1
               data-tour='home-greeting'
@@ -427,7 +427,7 @@ export function Home({ chatId }: HomeProps = {}) {
             </h1>
             <p className='max-w-[46rem] text-[14px] text-[var(--text-muted)] leading-6'>
               Start from a private draft, jump into the team canvas, or review read-only showcase
-              work without leaving the original Sim workspace shell.
+              work without leaving the original Sim canvas shell.
             </p>
           </div>
           <div className='grid gap-3 md:grid-cols-3'>
