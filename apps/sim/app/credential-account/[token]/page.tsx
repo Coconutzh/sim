@@ -191,7 +191,7 @@ export default function CredentialAccountInvitePage() {
         <InviteStatusCard
           type='success'
           title="You're all set!"
-          description={`You've joined ${invitation?.credentialSetName}. Your ${providerName} account is already connected. Redirecting to workspace...`}
+          description={`You've joined ${invitation?.credentialSetName}. Your ${providerName} account is already connected. Redirecting to canvas...`}
           icon='success'
         />
       </InviteLayout>

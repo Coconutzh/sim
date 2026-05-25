@@ -14,7 +14,7 @@ export function ChatErrorState({ error }: ChatErrorStateProps) {
   return (
     <StatusPageLayout title='Chat Unavailable' description={error}>
       <button onClick={() => router.push('/workspace')} className={AUTH_SUBMIT_BTN}>
-        Return to Workspace
+        Return to Canvas
       </button>
     </StatusPageLayout>
   )

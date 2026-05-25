@@ -14,7 +14,7 @@ export function FormErrorState({ error }: FormErrorStateProps) {
   return (
     <StatusPageLayout title='Form Unavailable' description={error}>
       <button onClick={() => router.push('/workspace')} className={AUTH_SUBMIT_BTN}>
-        Return to Workspace
+        Return to Canvas
       </button>
     </StatusPageLayout>
   )
