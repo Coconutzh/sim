@@ -10,7 +10,7 @@ interface WorkspaceInvitationEmailProps {
 }
 
 export function WorkspaceInvitationEmail({
-  workspaceName = 'Workspace',
+  workspaceName = 'Canvas',
   inviterName = 'Someone',
   invitationLink = '',
 }: WorkspaceInvitationEmailProps) {
@@ -18,13 +18,13 @@ export function WorkspaceInvitationEmail({
 
   return (
     <EmailLayout
-      preview={`You've been invited to join the "${workspaceName}" workspace on ${brand.name}!`}
+      preview={`You've been invited to join the "${workspaceName}" canvas on ${brand.name}!`}
       showUnsubscribe={false}
     >
       <Text style={baseStyles.paragraph}>Hello,</Text>
       <Text style={baseStyles.paragraph}>
         <strong>{inviterName}</strong> invited you to join the <strong>{workspaceName}</strong>{' '}
-        workspace on {brand.name}.
+        canvas on {brand.name}.
       </Text>
 
       <Link href={invitationLink} style={{ textDecoration: 'none' }}>

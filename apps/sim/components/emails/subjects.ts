@@ -41,7 +41,7 @@ export function getEmailSubject(type: EmailSubjectType): string {
     case 'invitation':
       return `You've been invited to join a team on ${brandName}`
     case 'batch-invitation':
-      return `You've been invited to join a team and workspaces on ${brandName}`
+      return `You've been invited to join a team and canvases on ${brandName}`
     case 'polling-group-invitation':
       return `You've been invited to join an email polling group on ${brandName}`
     case 'help-confirmation':

@@ -50,10 +50,13 @@ export function BatchInvitationEmail({
 }: BatchInvitationEmailProps) {
   const brand = getBrandConfig()
   const hasWorkspaces = workspaceInvitations.length > 0
+  const canvasCountLabel = `${workspaceInvitations.length} ${
+    workspaceInvitations.length === 1 ? 'canvas' : 'canvases'
+  }`
 
   return (
     <EmailLayout
-      preview={`You've been invited to join ${organizationName}${hasWorkspaces ? ` and ${workspaceInvitations.length} workspace(s)` : ''}`}
+      preview={`You've been invited to join ${organizationName}${hasWorkspaces ? ` and ${canvasCountLabel}` : ''}`}
       showUnsubscribe={false}
     >
       <Text style={baseStyles.paragraph}>Hello,</Text>
@@ -62,24 +65,19 @@ export function BatchInvitationEmail({
         on {brand.name}.
       </Text>
 
-      {/* Team Role Information */}
       <Text style={baseStyles.paragraph}>
         <strong>Team Role:</strong> {getRoleLabel(organizationRole)}
       </Text>
       <Text style={baseStyles.paragraph}>
         {organizationRole === 'admin'
-          ? "As a Team Admin, you'll be able to manage team members, billing, and workspace access."
-          : "As a Team Member, you'll have access to shared team billing and can be invited to workspaces."}
+          ? "As a Team Admin, you'll be able to manage team members, billing, and canvas access."
+          : "As a Team Member, you'll have access to shared team billing and can be invited to canvases."}
       </Text>
 
-      {/* Workspace Invitations */}
       {hasWorkspaces && (
         <>
           <Text style={baseStyles.paragraph}>
-            <strong>
-              Workspace Access ({workspaceInvitations.length} workspace
-              {workspaceInvitations.length !== 1 ? 's' : ''}):
-            </strong>
+            <strong>Canvas Access ({canvasCountLabel}):</strong>
           </Text>
           {workspaceInvitations.map((ws) => (
             <Text key={ws.workspaceId} style={{ ...baseStyles.paragraph, marginLeft: '20px' }}>
@@ -93,7 +91,6 @@ export function BatchInvitationEmail({
         <Text style={baseStyles.button}>Accept Invitation</Text>
       </Link>
 
-      {/* Divider */}
       <div style={baseStyles.divider} />
 
       <Text style={{ ...baseStyles.footerText, textAlign: 'left' }}>

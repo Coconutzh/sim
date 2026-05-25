@@ -73,7 +73,7 @@ function formatPublicationStatus(status: PublicationSummary['status']): string {
 function formatVisibility(visibility: PublishedWorkflowView['visibility']): string {
   switch (visibility) {
     case 'workspace':
-      return 'Owner workspace only'
+      return 'Owner canvas only'
     case 'selected_workgroups':
       return 'Selected workgroups'
     default:

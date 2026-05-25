@@ -43,7 +43,7 @@ function formatPublishedAt(value: Date | null | undefined): string {
 function formatVisibility(value: 'workspace' | 'organization' | 'selected_workgroups' | undefined) {
   switch (value) {
     case 'workspace':
-      return 'Owner workspace only'
+      return 'Owner canvas only'
     case 'selected_workgroups':
       return 'Selected workgroups'
     default:

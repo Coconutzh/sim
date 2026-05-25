@@ -270,7 +270,7 @@ export default function Invite() {
           title="You've been invited!"
           description={
             isNewUser
-              ? 'Create an account to join this workspace on Sim'
+              ? 'Create an account to join this canvas on Sim'
               : 'Sign in to your account to accept this invitation'
           }
           icon='userPlus'
