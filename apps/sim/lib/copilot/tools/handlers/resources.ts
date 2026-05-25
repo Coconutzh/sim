@@ -18,10 +18,9 @@ async function resolveResource(
   let title: string = resourceType
 
   if (resourceType === 'file') {
-    if (!context.workspaceId)
-      return { error: 'Opening a workspace file requires workspace context.' }
+    if (!context.workspaceId) return { error: 'Opening a canvas file requires canvas context.' }
     const record = await getWorkspaceFile(context.workspaceId, item.id)
-    if (!record) return { error: `No workspace file with id "${item.id}".` }
+    if (!record) return { error: `No canvas file with id "${item.id}".` }
     resourceId = record.id
     title = record.name
   }
@@ -29,7 +28,7 @@ async function resolveResource(
     const wf = await getWorkflowById(item.id)
     if (!wf) return { error: `No workflow with id "${item.id}".` }
     if (context.workspaceId && wf.workspaceId !== context.workspaceId)
-      return { error: `Workflow not found in the current workspace.` }
+      return { error: `Workflow not found in the current canvas.` }
     resourceId = wf.id
     title = wf.name
   }
@@ -37,7 +36,7 @@ async function resolveResource(
     const tbl = await getTableById(item.id)
     if (!tbl) return { error: `No table with id "${item.id}".` }
     if (context.workspaceId && tbl.workspaceId !== context.workspaceId)
-      return { error: `Table not found in the current workspace.` }
+      return { error: `Table not found in the current canvas.` }
     resourceId = tbl.id
     title = tbl.name
   }
@@ -45,7 +44,7 @@ async function resolveResource(
     const kb = await getKnowledgeBaseById(item.id)
     if (!kb) return { error: `No knowledge base with id "${item.id}".` }
     if (context.workspaceId && kb.workspaceId !== context.workspaceId)
-      return { error: `Knowledge base not found in the current workspace.` }
+      return { error: `Knowledge base not found in the current canvas.` }
     resourceId = kb.id
     title = kb.name
   }
@@ -53,7 +52,7 @@ async function resolveResource(
     const logRecord = await getLogById(item.id)
     if (!logRecord) return { error: `No log with id "${item.id}".` }
     if (context.workspaceId && logRecord.workspaceId !== context.workspaceId)
-      return { error: `Log not found in the current workspace.` }
+      return { error: `Log not found in the current canvas.` }
     resourceId = logRecord.id
     const workflowName = logRecord.workflowName ?? 'Unknown Workflow'
     const timestamp = logRecord.startedAt.toLocaleString('en-US', {
