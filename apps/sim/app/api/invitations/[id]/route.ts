@@ -141,7 +141,7 @@ export const PATCH = withRouteHandler(
       if (role !== undefined) {
         if (inv.membershipIntent === 'external') {
           return NextResponse.json(
-            { error: 'Role updates are not valid on external workspace invitations' },
+            { error: 'Role updates are not valid on external canvas invitations' },
             { status: 400 }
           )
         }
@@ -164,7 +164,7 @@ export const PATCH = withRouteHandler(
         const belongsToInvite = inv.grants.some((g) => g.workspaceId === update.workspaceId)
         if (!belongsToInvite) {
           return NextResponse.json(
-            { error: `Invitation does not grant access to workspace ${update.workspaceId}` },
+            { error: `Invitation does not grant access to canvas ${update.workspaceId}` },
             { status: 400 }
           )
         }
@@ -177,7 +177,7 @@ export const PATCH = withRouteHandler(
         }
         if (!(await hasWorkspaceAdminAccess(session.user.id, update.workspaceId))) {
           return NextResponse.json(
-            { error: 'Workspace admin access required to change grant permissions' },
+            { error: 'Canvas admin access required to change grant permissions' },
             { status: 403 }
           )
         }
@@ -276,7 +276,7 @@ export const DELETE = withRouteHandler(
           return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
         }
         return NextResponse.json(
-          { error: 'Only an organization or workspace admin can cancel this invitation' },
+          { error: 'Only an organization or canvas admin can cancel this invitation' },
           { status: 403 }
         )
       }

@@ -64,7 +64,7 @@ export const POST = withRouteHandler(
           return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
         }
         return NextResponse.json(
-          { error: 'Only an organization or workspace admin can resend this invitation' },
+          { error: 'Only an organization or canvas admin can resend this invitation' },
           { status: 403 }
         )
       }
@@ -73,14 +73,14 @@ export const POST = withRouteHandler(
         const workspaceDetails = await getWorkspaceWithOwner(grant.workspaceId)
         if (!workspaceDetails) {
           return NextResponse.json(
-            { error: 'Invitation references a workspace that no longer exists' },
+            { error: 'Invitation references a canvas that no longer exists' },
             { status: 409 }
           )
         }
         if (workspaceDetails.workspaceMode === 'personal') {
           return NextResponse.json(
             {
-              error: 'Invitation references a personal workspace that can no longer be shared',
+              error: 'Invitation references a personal canvas that can no longer be shared',
             },
             { status: 409 }
           )
@@ -89,7 +89,7 @@ export const POST = withRouteHandler(
         if (!policy.allowed) {
           return NextResponse.json(
             {
-              error: policy.reason ?? 'Invites are no longer allowed on this workspace',
+              error: policy.reason ?? 'Invites are no longer allowed on this canvas',
               upgradeRequired: policy.upgradeRequired,
             },
             { status: 403 }

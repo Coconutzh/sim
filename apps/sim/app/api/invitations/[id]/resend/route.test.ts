@@ -177,7 +177,7 @@ describe('POST /api/invitations/[id]/resend', () => {
 
     expect(response.status).toBe(409)
     expect(data).toEqual({
-      error: 'Invitation references a personal workspace that can no longer be shared',
+      error: 'Invitation references a personal canvas that can no longer be shared',
     })
     expect(mockPrepareInvitationResend).not.toHaveBeenCalled()
     expect(mockSendInvitationEmail).not.toHaveBeenCalled()

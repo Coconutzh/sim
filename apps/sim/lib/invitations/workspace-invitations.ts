@@ -16,8 +16,8 @@ import {
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
-  hasWorkspaceAdminAccess,
   getWorkspaceWithOwner,
+  hasWorkspaceAdminAccess,
   type PermissionType,
   type WorkspaceWithOwner,
 } from '@/lib/workspaces/permissions/utils'
@@ -81,12 +81,12 @@ export async function prepareWorkspaceInvitationContext({
 
   const access = await checkWorkspaceAccess(workspaceId, inviterId)
   if (!access.exists || !access.hasAccess) {
-    throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
+    throw new WorkspaceInvitationError({ message: 'Canvas not found', status: 404 })
   }
 
   const workspaceDetails = access.workspace ?? (await getWorkspaceWithOwner(workspaceId))
   if (!workspaceDetails) {
-    throw new WorkspaceInvitationError({ message: 'Workspace not found', status: 404 })
+    throw new WorkspaceInvitationError({ message: 'Canvas not found', status: 404 })
   }
 
   const hasAdminAccess = await hasWorkspaceAdminAccess(inviterId, workspaceId)
@@ -99,7 +99,7 @@ export async function prepareWorkspaceInvitationContext({
 
   if (workspaceDetails.workspaceMode === 'personal') {
     throw new WorkspaceInvitationError({
-      message: 'Personal workspaces do not support shared members',
+      message: 'Personal canvases do not support shared members',
       status: 403,
     })
   }
@@ -107,7 +107,7 @@ export async function prepareWorkspaceInvitationContext({
   const invitePolicy = await getWorkspaceInvitePolicy(workspaceDetails)
   if (!invitePolicy.allowed) {
     throw new WorkspaceInvitationError({
-      message: invitePolicy.reason ?? 'Invites are disabled for this workspace.',
+      message: invitePolicy.reason ?? 'Invites are disabled for this canvas.',
       status: 403,
       upgradeRequired: invitePolicy.upgradeRequired,
     })
@@ -169,7 +169,7 @@ export async function createWorkspaceInvitation({
 
     if (isWorkspaceOwner || existingPermission) {
       throw new WorkspaceInvitationError({
-        message: `${normalizedEmail} already has access to this workspace`,
+        message: `${normalizedEmail} already has access to this canvas`,
         status: 400,
         email: normalizedEmail,
       })
@@ -213,7 +213,7 @@ export async function createWorkspaceInvitation({
   })
   if (existingInvitation) {
     throw new WorkspaceInvitationError({
-      message: `${normalizedEmail} has already been invited to this workspace`,
+      message: `${normalizedEmail} has already been invited to this canvas`,
       status: 400,
       email: normalizedEmail,
     })

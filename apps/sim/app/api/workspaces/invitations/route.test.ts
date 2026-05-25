@@ -199,7 +199,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data.error).toBe('Personal workspaces do not support shared members')
+    expect(data.error).toBe('Personal canvases do not support shared members')
     expect(data.upgradeRequired).toBeUndefined()
     expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
   })
@@ -237,7 +237,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data.error).toBe('Workspace not found')
+    expect(data.error).toBe('Canvas not found')
     expect(mockGetWorkspaceInvitePolicy).not.toHaveBeenCalled()
   })
 
@@ -462,7 +462,7 @@ describe('POST /api/workspaces/invitations/batch', () => {
     expect(data.failed).toEqual([
       {
         email: 'owner@test.com',
-        error: 'owner@test.com already has access to this workspace',
+        error: 'owner@test.com already has access to this canvas',
       },
     ])
     expect(mockCreatePendingInvitation).not.toHaveBeenCalled()

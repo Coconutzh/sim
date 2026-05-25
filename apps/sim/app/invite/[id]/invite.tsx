@@ -70,7 +70,7 @@ function getInviteError(code: string): InviteError {
     },
     'workspace-not-found': {
       code: 'workspace-not-found',
-      message: 'The workspace associated with this invitation could not be found.',
+      message: 'The canvas associated with this invitation could not be found.',
     },
     'user-not-found': {
       code: 'user-not-found',
@@ -79,7 +79,7 @@ function getInviteError(code: string): InviteError {
     },
     'already-member': {
       code: 'already-member',
-      message: 'You are already a member of this organization or workspace.',
+      message: 'You are already a member of this organization or canvas.',
     },
     'already-in-organization': {
       code: 'already-in-organization',
@@ -407,7 +407,7 @@ export default function Invite() {
 
   const displayName =
     invitation?.kind === 'workspace'
-      ? invitation.grants[0]?.workspaceName || 'a workspace'
+      ? invitation.grants[0]?.workspaceName || 'a canvas'
       : invitation?.organizationName || 'an organization'
 
   if (accepted) {
@@ -430,7 +430,7 @@ export default function Invite() {
     <InviteLayout>
       <InviteStatusCard
         type='invitation'
-        title={isOrg ? 'Organization Invitation' : 'Workspace Invitation'}
+        title={isOrg ? 'Organization Invitation' : 'Canvas Invitation'}
         description={`You've been invited to join ${displayName}. Click accept below to join.`}
         icon={isOrg ? 'users' : 'mail'}
         actions={[

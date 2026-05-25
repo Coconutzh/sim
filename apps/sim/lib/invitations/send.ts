@@ -189,7 +189,7 @@ export async function sendInvitationEmail(
   if (input.kind === 'workspace') {
     const primaryGrant = input.grants[0]
     if (!primaryGrant) {
-      return { success: false, error: 'Workspace invitation is missing a workspace grant' }
+      return { success: false, error: 'Canvas invitation is missing a canvas grant' }
     }
 
     const [workspaceRow] = await db
@@ -198,7 +198,7 @@ export async function sendInvitationEmail(
       .where(eq(workspace.id, primaryGrant.workspaceId))
       .limit(1)
 
-    const workspaceName = workspaceRow?.name || 'a workspace'
+    const workspaceName = workspaceRow?.name || 'a canvas'
     const emailHtml = await renderWorkspaceInvitationEmail(
       input.inviterName,
       workspaceName,
@@ -239,7 +239,7 @@ export async function sendInvitationEmail(
     const grantPayloads = input.grants.map((grant) => ({
       workspaceId: grant.workspaceId,
       workspaceName:
-        workspaceRows.find((row) => row.id === grant.workspaceId)?.name || 'Unknown Workspace',
+        workspaceRows.find((row) => row.id === grant.workspaceId)?.name || 'Unknown Canvas',
       permission: grant.permission,
     }))
 
