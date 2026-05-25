@@ -142,7 +142,7 @@ describe('DELETE /api/workspaces/[id]/permission-groups/[groupId]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(data).toEqual({ error: 'Personal canvases do not support permission groups' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
   })
 
@@ -160,7 +160,7 @@ describe('DELETE /api/workspaces/[id]/permission-groups/[groupId]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
   })
 

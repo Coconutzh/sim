@@ -232,7 +232,7 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data).toEqual({ error: 'User does not have access to this workspace' })
+    expect(data).toEqual({ error: 'User does not have access to this canvas' })
     expect(insertValuesMock).not.toHaveBeenCalled()
   })
 
@@ -250,7 +250,7 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(data).toEqual({ error: 'Personal canvases do not support permission groups' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
   })
@@ -272,7 +272,7 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(data).toEqual({ error: 'Personal canvases do not support permission groups' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
   })
 
@@ -290,7 +290,7 @@ describe('POST /api/workspaces/[id]/permission-groups/[groupId]/members', () => 
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(insertValuesMock).not.toHaveBeenCalled()
   })

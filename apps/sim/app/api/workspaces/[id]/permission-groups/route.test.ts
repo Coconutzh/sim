@@ -138,7 +138,7 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(data).toEqual({ error: 'Personal canvases do not support permission groups' })
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
 
@@ -156,7 +156,7 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support permission groups' })
+    expect(data).toEqual({ error: 'Personal canvases do not support permission groups' })
     expect(hasWorkspaceAdminAccessMock).not.toHaveBeenCalled()
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
@@ -175,7 +175,7 @@ describe('/api/workspaces/[id]/permission-groups', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(isWorkspaceOnEnterprisePlanMock).not.toHaveBeenCalled()
   })
 

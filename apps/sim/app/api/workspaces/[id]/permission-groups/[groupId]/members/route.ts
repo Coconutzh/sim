@@ -52,11 +52,11 @@ export const GET = withRouteHandler(
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     if (access.workspace?.workspaceMode === 'personal') {
       return NextResponse.json(
-        { error: 'Personal workspaces do not support permission groups' },
+        { error: 'Personal canvases do not support permission groups' },
         { status: 403 }
       )
     }
@@ -110,11 +110,11 @@ export const POST = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not support permission groups' },
+          { error: 'Personal canvases do not support permission groups' },
           { status: 403 }
         )
       }
@@ -142,7 +142,7 @@ export const POST = withRouteHandler(
 
       if (!workspaceMember) {
         return NextResponse.json(
-          { error: 'User does not have access to this workspace' },
+          { error: 'User does not have access to this canvas' },
           { status: 400 }
         )
       }
@@ -230,7 +230,7 @@ export const POST = withRouteHandler(
           return NextResponse.json(
             {
               error:
-                'User was concurrently added to another group in this workspace. Please refresh and try again.',
+                'User was concurrently added to another group in this canvas. Please refresh and try again.',
             },
             { status: 409 }
           )
@@ -267,11 +267,11 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not support permission groups' },
+          { error: 'Personal canvases do not support permission groups' },
           { status: 403 }
         )
       }
