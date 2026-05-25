@@ -44,6 +44,7 @@
 - 最新 Phase 11 workspace settings secret/API key 错误切片把 environment、BYOK keys、workspace API keys 的 not-found、admin-only、duplicate/fallback 和 audit description 文案迁移为 canvas 语义；底层 API 路径、contract、`workspaceId`、credential sync、BYOK/API-key storage、audit resource 和 PostHog group 仍保持兼容。
 - 最新 Phase 11 skills API 错误切片把技能列表和写入路径里的隐藏/无权 workspace not-found 文案迁移为 canvas 语义；删除路径继续用 `Skill not found` 隐藏资源存在性，底层 `workspaceId`、skill storage、audit 和 PostHog group 不变。
 - 最新 Phase 11 Mothership API 错误切片把 home/Mothership chat 列表、创建和 headless execute 的隐藏 workspace 404 文案迁移为 canvas 语义；底层 Mothership chat storage、`workspaceId`、active workspace access helper、task pubsub 和 PostHog group 不变。
+- 最新 Phase 11 knowledge/template-use API 错误切片把 Knowledge Base 列表/创建和公共 template use 路径里的隐藏 workspace、缺少 workspaceId、无写权限文案迁移为 canvas 语义；底层 `workspaceId`、template clone、knowledge storage 和权限 helper 不变。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -58,6 +59,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `ac76786c3` | Phase 11 knowledge/template-use API 用户可见错误迁移为 canvas wording |
 | `c7cedf5ce` | Phase 11 Mothership API 用户可见错误迁移为 canvas wording |
 | `f617feb39` | Phase 11 skills API 用户可见错误迁移为 canvas wording |
 | `42c324b8b` | Phase 11 workspace settings secret/API key 用户可见错误迁移为 canvas wording |
@@ -193,11 +195,12 @@
 - `42c324b8b` 继续迁移 workspace settings secret/API key 错误边界：`/api/workspaces/[id]/environment`、`/byok-keys`、`/api-keys` 和 `/api-keys/[keyId]` 的 not-found、BYOK admin-only、API key duplicate/fallback 与 environment/API-key audit description 均改为 canvas wording，并同步更新 4 组 route tests。该提交不改 API path、contract、`workspaceId`、environment credential sync、BYOK/API-key storage、audit resource 或 PostHog group。
 - `f617feb39` 继续迁移 skills API 错误边界：`/api/skills` 的列表和写入隐藏 workspace not-found 文案改为 canvas wording，并同步更新 route tests；删除隐藏技能仍返回 `Skill not found` 以保持资源隐藏语义。该提交不改 API contract、`workspaceId` query/body 字段、skill persistence、audit resource 或 PostHog group。
 - `c7cedf5ce` 继续迁移 Mothership API 错误边界：`/api/mothership/chats` 的列表/创建和 `/api/mothership/execute` 的 hidden active workspace 404 文案改为 canvas wording，并同步更新 2 组 route tests。该提交不改 API contract、`workspaceId` query/body 字段、Mothership chat persistence、active workspace access helper、task pubsub 或 PostHog group。
+- `ac76786c3` 继续迁移 knowledge/template-use API 错误边界：`/api/knowledge` 的列表/创建 hidden workspace not-found 和无写权限提示，以及 `/api/templates/[id]/use` 的缺少 workspaceId 与 hidden workspace 404 文案均改为 canvas wording，并同步更新 2 组 route tests。该提交不改 API contract、`workspaceId` query/body 字段、knowledge base persistence、template clone flow、workspace permission helper 或 workflow name dedupe 逻辑。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -541,6 +544,16 @@ $patterns = @('Canvas not found','mothership/chats','mothership/execute'); $outp
 git diff --check
 ```
 
+最新 Phase 11 knowledge/template-use API 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/knowledge/route.ts" "app/api/knowledge/route.test.ts" "app/api/templates/[id]/use/route.ts" "app/api/templates/[id]/use/route.test.ts"
+Set-Location apps\sim; bunx vitest run "app/api/knowledge/route.test.ts" "app/api/templates/[id]/use/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Canvas not found','Canvas ID is required','knowledge bases in this canvas','api/knowledge/route','templates/[id]/use'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
 最新失败审计 retention cleanup 切片已验证：
 
 ```powershell
@@ -666,7 +679,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成，knowledge/template-use API 错误切片已由 `ac76786c3` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
