@@ -63,7 +63,7 @@ export function DeleteModal({
   const displayNames = Array.isArray(itemName) ? itemName : itemName ? [itemName] : []
 
   const isContainer = itemType === 'workspace' || itemType === 'canvas'
-  const isCanvas = itemType === 'canvas'
+  const isCanvas = itemType === 'canvas' || itemType === 'workspace'
   const containerName = isContainer && displayNames.length > 0 ? displayNames[0] : ''
   const isConfirmed = !isContainer || confirmationText === containerName
 
@@ -77,7 +77,7 @@ export function DeleteModal({
   } else if (itemType === 'mixed') {
     title = 'Delete Items'
   } else {
-    title = isCanvas ? 'Delete Canvas' : 'Delete Workspace'
+    title = 'Delete Canvas'
   }
 
   const restorableTypes = new Set<string>(['workflow', 'folder', 'mixed'])
