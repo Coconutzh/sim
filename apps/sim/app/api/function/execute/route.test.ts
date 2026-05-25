@@ -511,7 +511,7 @@ describe('Function Execute API Route', () => {
     it('hides foreign personal workspaces during sandbox file export', async () => {
       featureFlagsMock.isE2bEnabled = true
       mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-        response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+        response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
       })
 
       const req = createMockRequest('POST', {
@@ -529,7 +529,7 @@ describe('Function Execute API Route', () => {
       expect(response.status).toBe(404)
       expect(data).toMatchObject({
         success: false,
-        error: 'Workspace not found',
+        error: 'Canvas not found',
       })
       expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
         userId: 'user-123',

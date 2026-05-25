@@ -4,15 +4,12 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  mockCheckInternalAuth,
-  mockParseRequest,
-  mockResolveAccessibleWorkflowWorkspace,
-} = vi.hoisted(() => ({
-  mockCheckInternalAuth: vi.fn(),
-  mockParseRequest: vi.fn(),
-  mockResolveAccessibleWorkflowWorkspace: vi.fn(),
-}))
+const { mockCheckInternalAuth, mockParseRequest, mockResolveAccessibleWorkflowWorkspace } =
+  vi.hoisted(() => ({
+    mockCheckInternalAuth: vi.fn(),
+    mockParseRequest: vi.fn(),
+    mockResolveAccessibleWorkflowWorkspace: vi.fn(),
+  }))
 
 vi.mock('@/lib/auth/hybrid', () => ({
   checkInternalAuth: mockCheckInternalAuth,
@@ -64,7 +61,7 @@ describe('tools tts route', () => {
 
   it('hides foreign personal execution workspaces behind 404', async () => {
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
     const response = await POST(
@@ -76,6 +73,6 @@ describe('tools tts route', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 })
