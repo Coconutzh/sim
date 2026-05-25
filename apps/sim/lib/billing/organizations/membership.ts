@@ -1236,7 +1236,7 @@ export async function removeExternalUserFromOrganizationWorkspaces(params: {
     ) {
       return {
         success: false,
-        error: 'External workspace member not found',
+        error: 'External canvas member not found',
         workspaceAccessRevoked,
         permissionGroupsRevoked,
         credentialMembershipsRevoked,
@@ -1268,7 +1268,7 @@ export async function removeExternalUserFromOrganizationWorkspaces(params: {
     })
     return {
       success: false,
-      error: 'Failed to remove external workspace member',
+      error: 'Failed to remove external canvas member',
       workspaceAccessRevoked: 0,
       permissionGroupsRevoked: 0,
       credentialMembershipsRevoked: 0,

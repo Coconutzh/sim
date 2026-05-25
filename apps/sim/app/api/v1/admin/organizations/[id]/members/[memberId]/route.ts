@@ -187,7 +187,7 @@ export const PATCH = withRouteHandler(
       const { role } = parsed.data.body
 
       if (memberId.startsWith('external-')) {
-        return badRequestResponse('Cannot update external workspace member role')
+        return badRequestResponse('Cannot update external canvas member role')
       }
 
       const [orgData] = await db
@@ -306,8 +306,8 @@ export const DELETE = withRouteHandler(
         })
 
         if (!result.success) {
-          const error = result.error || 'External workspace member not found'
-          if (error === 'External workspace member not found') {
+          const error = result.error || 'External canvas member not found'
+          if (error === 'External canvas member not found') {
             return notFoundResponse('Member')
           }
           if (error === 'User is an organization member') {

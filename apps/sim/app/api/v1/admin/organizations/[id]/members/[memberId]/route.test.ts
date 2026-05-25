@@ -158,7 +158,7 @@ describe('PATCH /api/v1/admin/organizations/[id]/members/[memberId]', () => {
     expect(response.status).toBe(400)
     expect(data.error).toEqual({
       code: 'BAD_REQUEST',
-      message: 'Cannot update external workspace member role',
+      message: 'Cannot update external canvas member role',
     })
   })
 })

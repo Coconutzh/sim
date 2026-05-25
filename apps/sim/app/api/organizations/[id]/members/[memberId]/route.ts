@@ -198,7 +198,7 @@ export const PUT = withRouteHandler(
 
       if (memberId.startsWith('external-')) {
         return NextResponse.json(
-          { error: 'Cannot update external workspace member role' },
+          { error: 'Cannot update external canvas member role' },
           { status: 400 }
         )
       }
@@ -378,9 +378,9 @@ export const DELETE = withRouteHandler(
         })
 
         if (!externalResult.success) {
-          const error = externalResult.error || 'External workspace member not found'
+          const error = externalResult.error || 'External canvas member not found'
           const status =
-            error === 'External workspace member not found'
+            error === 'External canvas member not found'
               ? 404
               : error === 'User is an organization member'
                 ? 409

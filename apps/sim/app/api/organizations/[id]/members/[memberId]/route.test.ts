@@ -255,14 +255,14 @@ describe('PUT /api/organizations/[id]/members/[memberId]', () => {
     } as never)
   })
 
-  it('rejects role updates for synthetic external workspace members', async () => {
+  it('rejects role updates for synthetic external canvas members', async () => {
     const response = await PUT(createMockRequest('PUT'), {
       params: Promise.resolve({ id: 'org-1', memberId: 'external-external-1' }),
     } as any)
     const data = await response.json()
 
     expect(response.status).toBe(400)
-    expect(data).toEqual({ error: 'Cannot update external workspace member role' })
+    expect(data).toEqual({ error: 'Cannot update external canvas member role' })
   })
 
   it('authenticates before validating route params or body', async () => {
