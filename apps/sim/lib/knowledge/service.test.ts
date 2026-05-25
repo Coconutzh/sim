@@ -150,7 +150,7 @@ describe('getKnowledgeBases', () => {
         },
         'req-1'
       )
-    ).rejects.toThrow('Workspace not found')
+    ).rejects.toThrow('Canvas not found')
 
     expect(getUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockInsertValues).not.toHaveBeenCalled()

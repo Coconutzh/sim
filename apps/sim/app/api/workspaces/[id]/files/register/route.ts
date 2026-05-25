@@ -49,7 +49,7 @@ export const POST = withRouteHandler(
     if (parseWorkspaceFileKey(key) !== workspaceId) {
       logger.warn(`Key ${key} does not belong to workspace ${workspaceId}`)
       return NextResponse.json(
-        { error: 'Storage key does not belong to this workspace' },
+        { error: 'Storage key does not belong to this canvas' },
         { status: 400 }
       )
     }

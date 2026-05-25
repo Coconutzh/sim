@@ -74,7 +74,7 @@ const logger = createLogger('TableService')
 export class TableConflictError extends Error {
   readonly code = 'TABLE_EXISTS' as const
   constructor(name: string) {
-    super(`A table named "${name}" already exists in this workspace`)
+    super(`A table named "${name}" already exists in this canvas`)
   }
 }
 

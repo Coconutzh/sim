@@ -37,7 +37,7 @@ export type WorkspaceFileScope = 'active' | 'archived' | 'all'
 export class FileConflictError extends Error {
   readonly code = 'FILE_EXISTS' as const
   constructor(name: string) {
-    super(`A file named "${name}" already exists in this workspace`)
+    super(`A file named "${name}" already exists in this canvas`)
   }
 }
 
@@ -298,7 +298,7 @@ export async function registerUploadedWorkspaceFile(params: {
   }
 
   if (parseWorkspaceFileKey(key) !== workspaceId) {
-    throw new Error('Storage key does not belong to this workspace')
+    throw new Error('Storage key does not belong to this canvas')
   }
 
   const head = await headObject(key, 'workspace')

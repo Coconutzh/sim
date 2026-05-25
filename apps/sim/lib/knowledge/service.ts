@@ -21,7 +21,7 @@ const logger = createLogger('KnowledgeBaseService')
 export class KnowledgeBaseConflictError extends Error {
   readonly code = 'KNOWLEDGE_BASE_EXISTS' as const
   constructor(name: string) {
-    super(`A knowledge base named "${name}" already exists in this workspace`)
+    super(`A knowledge base named "${name}" already exists in this canvas`)
   }
 }
 
@@ -45,7 +45,10 @@ export async function getKnowledgeBases(
 
   const accessibleWorkspaceCondition =
     accessibleWorkspaceIds.length > 0
-      ? and(inArray(knowledgeBase.workspaceId, accessibleWorkspaceIds), isNull(workspace.archivedAt))
+      ? and(
+          inArray(knowledgeBase.workspaceId, accessibleWorkspaceIds),
+          isNull(workspace.archivedAt)
+        )
       : sql`false`
 
   const knowledgeBasesWithCounts = await db
@@ -90,10 +93,7 @@ export async function getKnowledgeBases(
           ? // When filtering by workspace
             or(
               // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
-              and(
-                eq(knowledgeBase.workspaceId, workspaceId),
-                accessibleWorkspaceCondition
-              ),
+              and(eq(knowledgeBase.workspaceId, workspaceId), accessibleWorkspaceCondition),
               // Fallback: User-owned knowledge bases without workspace (legacy)
               and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId))
             )
@@ -157,12 +157,12 @@ export async function createKnowledgeBase(
 
   const workspaceAccess = await checkWorkspaceAccess(data.workspaceId, data.userId)
   if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-    throw new Error('Workspace not found')
+    throw new Error('Canvas not found')
   }
 
   const hasPermission = await getUserEntityPermissions(data.userId, 'workspace', data.workspaceId)
   if (hasPermission !== 'admin' && hasPermission !== 'write') {
-    throw new Error('User does not have permission to create knowledge bases in this workspace')
+    throw new Error('User does not have permission to create knowledge bases in this canvas')
   }
 
   const newKnowledgeBase = {

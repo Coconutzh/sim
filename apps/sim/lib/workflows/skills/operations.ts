@@ -81,7 +81,7 @@ export async function upsertSkills(params: {
               .limit(1)
 
             if (nameConflict.length > 0) {
-              throw new Error(`A skill with the name "${s.name}" already exists in this workspace`)
+              throw new Error(`A skill with the name "${s.name}" already exists in this canvas`)
             }
           }
 
@@ -107,7 +107,7 @@ export async function upsertSkills(params: {
         .limit(1)
 
       if (duplicateName.length > 0) {
-        throw new Error(`A skill with the name "${s.name}" already exists in this workspace`)
+        throw new Error(`A skill with the name "${s.name}" already exists in this canvas`)
       }
 
       await tx.insert(skill).values({
