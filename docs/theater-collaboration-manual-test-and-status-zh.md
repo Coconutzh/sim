@@ -47,6 +47,7 @@
 - 最近完成的切片：
   - `48b29b76b`：Copilot MCP tool descriptions 和 platform actions quick reference 中面向用户的 workspace/workspaces 改为 canvas/canvases。
   - `a2c54538a`：更新主路线图文档记录上述切片。
+  - `486dd08fb`：Copilot server/tool 输出中的 deployment status、导入、恢复、job logs、execution summary、credentials、environment secrets 和文件下载文案继续迁移为 canvas 语义。
 - 以下技术命名仍应保留，不作为人工测试 bug：
   - `workspaceId`
   - `list_workspaces`
