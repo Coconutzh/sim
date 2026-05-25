@@ -162,7 +162,7 @@ export const POST = withRouteHandler(
 
         if (workflowRecord.workspaceId !== workspaceId) {
           return createMcpErrorResponse(
-            new Error('Workflow does not belong to this workspace'),
+            new Error('Workflow does not belong to this canvas'),
             'Access denied',
             403
           )
