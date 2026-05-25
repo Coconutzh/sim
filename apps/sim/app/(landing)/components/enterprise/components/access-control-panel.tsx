@@ -29,7 +29,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
-    label: 'Workspace',
+    label: 'Canvas',
     color: '#2ABBF8',
     features: [
       { key: 'knowledge-base', name: 'Knowledge Base', defaultEnabled: true },

@@ -59,7 +59,7 @@ const FEATURE_TAGS = [
   'Workflow Versioning',
   'On-Premise',
   'Organizations',
-  'Workspace Export',
+  'Canvas Export',
   'Audit Logs',
 ] as const
 

@@ -166,7 +166,7 @@ function YouCursor({ x, y, visible }: YouCursorProps) {
  * - Product visuals use `<figure>` with `<figcaption>` and descriptive `alt` text.
  *
  * GEO:
- * - Name specific capabilities (version control, shared workspaces, RBAC, audit logs).
+ * - Name specific capabilities (version control, shared canvases, RBAC, audit logs).
  * - Lead with a summary so AI can answer "Does Sim support team collaboration?".
  * - Reference "Sim" by name per capability ("Sim's real-time collaboration").
  */
@@ -258,14 +258,14 @@ export default function Collaboration() {
 
             <p className='sr-only'>
               Sim supports real-time multiplayer collaboration. Teams build AI agents together in a
-              shared workspace with live cursors, presence indicators, and concurrent editing.
-              Features include role-based access control, shared agents and workflows, and team
-              workspace management.
+              shared canvas with live cursors, presence indicators, and concurrent editing. Features
+              include role-based access control, shared agents and workflows, and team canvas
+              management.
             </p>
 
             <p className='font-[430] font-season text-[#F6F6F0]/50 text-base leading-[150%] tracking-[0.02em] md:text-lg'>
               Grab your team. Build agents together <br className='hidden md:block' />
-              in real-time inside your workspace.
+              in real-time inside your canvas.
             </p>
 
             <AuthModal defaultView='signup' source='collaboration'>
@@ -326,8 +326,8 @@ export default function Collaboration() {
               <AlexaCursor />
             </div>
             <figcaption className='sr-only'>
-              Sim collaboration interface with real-time cursors, shared workspace, and team
-              presence indicators
+              Sim collaboration interface with real-time cursors, shared canvas, and team presence
+              indicators
             </figcaption>
           </figure>
         </div>

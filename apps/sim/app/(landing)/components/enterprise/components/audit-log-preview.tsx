@@ -35,13 +35,13 @@ function formatTimeAgo(insertedAt: number): string {
 /**
  * Entry templates using real description strings from the actual recordAudit()
  * calls across the codebase (e.g. `Added BYOK key for openai`,
- * `Invited alex@acme.com to workspace as member`).
+ * `Invited alex@acme.com to canvas as member`).
  */
 const ENTRY_TEMPLATES: Omit<LogEntry, 'id' | 'insertedAt'>[] = [
   { actor: 'Sarah K.', description: 'Deployed workflow "Email Triage"', resourceType: 'workflow' },
   {
     actor: 'Sid G.',
-    description: 'Invited alex@acme.com to workspace as member',
+    description: 'Invited alex@acme.com to canvas as member',
     resourceType: 'member',
   },
   { actor: 'Theo L.', description: 'Added BYOK key for openai', resourceType: 'byok_key' },
@@ -85,7 +85,7 @@ const ENTRY_TEMPLATES: Omit<LogEntry, 'id' | 'insertedAt'>[] = [
   },
   {
     actor: 'Sid G.',
-    description: 'Removed member theo@acme.com from workspace',
+    description: 'Removed member theo@acme.com from canvas',
     resourceType: 'member',
   },
   {

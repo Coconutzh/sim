@@ -39,7 +39,7 @@ const PRICING_TIERS: PricingTier[] = [
       '1,000 credits (trial)',
       '5GB file storage',
       '3 tables · 1,000 rows each',
-      '1 personal workspace',
+      '1 personal canvas',
       '5 min execution limit',
       '7-day log retention',
       'CLI/SDK/MCP Access',
@@ -57,7 +57,7 @@ const PRICING_TIERS: PricingTier[] = [
       '6,000 credits/mo · +50/day',
       '50GB file storage',
       '25 tables · 5,000 rows each',
-      'Up to 3 personal workspaces',
+      'Up to 3 personal canvases',
       '50 min execution · 150 runs/min',
       'Unlimited log retention',
       'CLI/SDK/MCP Access',
@@ -75,7 +75,7 @@ const PRICING_TIERS: PricingTier[] = [
       '25,000 credits/mo · +200/day',
       '500GB file storage',
       '25 tables · 5,000 rows each',
-      'Up to 10 personal workspaces',
+      'Up to 10 personal canvases',
       '50 min execution · 300 runs/min',
       'Unlimited log retention',
       'CLI/SDK/MCP Access',
@@ -92,7 +92,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Custom credits & infra limits',
       'Custom file storage',
       '10,000 tables · 1M rows each',
-      'Unlimited shared workspaces',
+      'Unlimited shared canvases',
       'Custom execution limits',
       'Unlimited log retention',
       'SSO & SCIM · SOC2',
@@ -269,11 +269,11 @@ export default function Pricing() {
           </h2>
           <p className='sr-only'>
             Sim pricing: Community plan is free with 1,000 credits, 5GB storage, and 1 personal
-            workspace. Pro plan is $25 per month with 6,000 credits, 50GB storage, and up to 3
-            personal workspaces. Max plan is $100 per month with 25,000 credits, 500GB storage, and
-            up to 10 personal workspaces. Enterprise pricing is custom with unlimited shared
-            workspaces, SSO, SCIM, SOC2 compliance, self-hosting, and dedicated support. All plans
-            include CLI, SDK, and MCP access.
+            canvas. Pro plan is $25 per month with 6,000 credits, 50GB storage, and up to 3 personal
+            canvases. Max plan is $100 per month with 25,000 credits, 500GB storage, and up to 10
+            personal canvases. Enterprise pricing is custom with unlimited shared canvases, SSO,
+            SCIM, SOC2 compliance, self-hosting, and dedicated support. All plans include CLI, SDK,
+            and MCP access.
           </p>
         </div>
 
