@@ -46,7 +46,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
 
     if (!hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (!canWrite) {
@@ -160,7 +160,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const { hasAccess } = await checkWorkspaceAccess(params.workspaceId, authResult.userId)
 
     if (!hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const tables = await listTables(params.workspaceId, { scope: params.scope as TableScope })

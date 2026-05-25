@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { createMockRequest, hybridAuthMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import { hybridAuthMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -113,7 +113,7 @@ describe('POST /api/table/import-csv', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })
