@@ -52,7 +52,7 @@ const mothershipExecuteMessageSchema = z.object({
 export const mothershipExecuteBodySchema = z.object({
   messages: z.array(mothershipExecuteMessageSchema).min(1, 'At least one message is required'),
   responseFormat: z.any().optional(),
-  workspaceId: z.string().min(1, 'workspaceId is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   userId: z.string().min(1, 'userId is required'),
   chatId: z.string().optional(),
   messageId: z.string().optional(),
