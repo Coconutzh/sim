@@ -500,9 +500,9 @@ export function WorkgroupTeamManagement() {
       detail: !teamWorkspaceId
         ? 'No team canvas permissions to sync yet.'
         : isLoadingTeamWorkspacePermissions
-          ? 'Checking workspace permissions...'
+          ? 'Checking canvas permissions...'
           : !teamWorkspacePermissions
-            ? 'Workspace permissions could not be checked.'
+            ? 'Canvas permissions could not be checked.'
             : permissionMismatches.length === 0
               ? 'Every workgroup member has the expected team canvas role.'
               : `${permissionMismatches.length} member${
@@ -1626,7 +1626,7 @@ export function WorkgroupTeamManagement() {
                 </div>
               ) : agentSkills.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No skills exist in the team canvas yet. Create skills in the team workspace, then
+                  No skills exist in the team canvas yet. Create skills in the team canvas, then
                   return here to bind them to the agent.
                 </div>
               ) : (

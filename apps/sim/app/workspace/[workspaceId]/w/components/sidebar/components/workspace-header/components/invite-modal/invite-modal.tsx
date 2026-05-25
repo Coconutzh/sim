@@ -101,7 +101,7 @@ export function InviteModal({
   const exceedsSeatCapacity =
     hasSeatData && userPerms.canAdmin && validEmails.length > availableSeats
   const seatLimitReason = exceedsSeatCapacity
-    ? `Only ${availableSeats} internal seat${availableSeats === 1 ? '' : 's'} available. External workspace invites do not require seats.`
+    ? `Only ${availableSeats} internal seat${availableSeats === 1 ? '' : 's'} available. External canvas invites do not require seats.`
     : null
 
   const isSubmitting = batchSendInvitations.isPending
@@ -145,7 +145,7 @@ export function InviteModal({
         (user) => user.email === normalized
       )
       if (isExistingMember) {
-        setErrorMessage(`${normalized} is already a member of this workspace`)
+        setErrorMessage(`${normalized} is already a member of this canvas`)
         return false
       }
 
@@ -274,7 +274,7 @@ export function InviteModal({
     )
 
     if (!userRecord) {
-      setErrorMessage('User is not a member of this workspace')
+      setErrorMessage('User is not a member of this canvas')
       setMemberToRemove(null)
       return
     }
@@ -506,7 +506,7 @@ export function InviteModal({
       }}
     >
       <ModalContent size='md'>
-        <ModalHeader>Invite members to {workspaceName || 'Workspace'}</ModalHeader>
+        <ModalHeader>Invite members to {workspaceName || 'Canvas'}</ModalHeader>
 
         <form
           ref={formRef}
@@ -661,7 +661,7 @@ export function InviteModal({
               <span className='font-medium text-[var(--text-primary)]'>
                 {memberToRemove?.email}
               </span>{' '}
-              from this workspace? This action cannot be undone.
+              from this canvas? This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>
