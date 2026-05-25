@@ -28,7 +28,7 @@ export class WorkspaceOrganizationMembershipConflictError extends Error {
 
   constructor(conflicts: Array<{ userId: string; organizationId: string }>) {
     super(
-      'One or more workspace members already belong to another organization and cannot be attached.'
+      'One or more canvas members already belong to another organization and cannot be attached.'
     )
     this.name = 'WorkspaceOrganizationMembershipConflictError'
     this.conflicts = conflicts
@@ -78,7 +78,7 @@ export async function attachOwnedWorkspacesToOrganization({
         ownerUserId,
         error: result.error,
       })
-      throw new Error(result.error || 'Failed to sync workspace member into organization')
+      throw new Error(result.error || 'Failed to sync canvas member into organization')
     }
 
     if (result.alreadyMember) {
@@ -282,7 +282,8 @@ async function getWorkspaceMemberIds(workspaceIds: string[]): Promise<string[]> 
       ...ownerRows.map((row) => row.userId),
       ...permissionRows
         .filter(
-          (row) => row.workspaceMode !== WORKSPACE_MODE.PERSONAL || row.workspaceOwnerId === row.userId
+          (row) =>
+            row.workspaceMode !== WORKSPACE_MODE.PERSONAL || row.workspaceOwnerId === row.userId
         )
         .map((row) => row.userId),
     ]),

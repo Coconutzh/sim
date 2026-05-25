@@ -95,7 +95,6 @@ vi.mock('@sim/utils/id', () => ({
 import {
   attachOwnedWorkspacesToOrganization,
   detachOrganizationWorkspaces,
-  WorkspaceOrganizationMembershipConflictError,
 } from '@/lib/workspaces/organization-workspaces'
 
 describe('organization workspace helpers', () => {
@@ -193,9 +192,36 @@ describe('organization workspace helpers', () => {
         ownerUserId: 'user-1',
         organizationId: 'org-1',
       })
-    ).rejects.toBeInstanceOf(WorkspaceOrganizationMembershipConflictError)
+    ).rejects.toMatchObject({
+      message:
+        'One or more canvas members already belong to another organization and cannot be attached.',
+      name: 'WorkspaceOrganizationMembershipConflictError',
+    })
 
     expect(mockEnsureUserInOrganization).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it('uses canvas wording when organization member sync fails without a service error', async () => {
+    mockDbResults.value = [
+      [{ id: 'ws-1' }],
+      [{ userId: 'owner-1' }],
+      [{ userId: 'user-1' }],
+      [{ userId: 'user-1' }],
+      [{ userId: 'user-1', organizationId: 'org-1' }],
+    ]
+    mockEnsureUserInOrganization.mockResolvedValueOnce({
+      success: false,
+      error: undefined,
+    })
+
+    await expect(
+      attachOwnedWorkspacesToOrganization({
+        ownerUserId: 'user-1',
+        organizationId: 'org-1',
+      })
+    ).rejects.toThrow('Failed to sync canvas member into organization')
+
     expect(mockDbUpdate).not.toHaveBeenCalled()
   })
 
