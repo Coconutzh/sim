@@ -37,7 +37,7 @@ describe('validateSelectorIds', () => {
     expect(dbChainMockFns.select).toHaveBeenCalledTimes(1)
   })
 
-  it('reports accessible workspace credentials in warnings for invalid oauth-input ids', async () => {
+  it('reports accessible canvas credentials in warnings for invalid oauth-input ids', async () => {
     dbChainMockFns.where.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         id: 'cred-2',
@@ -55,7 +55,7 @@ describe('validateSelectorIds', () => {
 
     expect(result.valid).toEqual([])
     expect(result.invalid).toEqual(['missing-cred'])
-    expect(result.warning).toContain('Accessible workspace credentials:')
+    expect(result.warning).toContain('Accessible canvas credentials:')
     expect(result.warning).toContain('Shared Gmail [cred-2]')
   })
 })

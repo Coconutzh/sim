@@ -116,14 +116,14 @@ export async function validateSelectorIds(
                 return `${cred.displayName} [${cred.id}] (${providerId}${legacyId})`
               })
               .join(', ')
-            const noCredentialsMessage = 'User has no accessible credentials in this workspace.'
+            const noCredentialsMessage = 'User has no accessible credentials in this canvas.'
 
             return {
               valid: existingIds,
               invalid: invalidIds,
               warning:
                 allAccessibleCredentials.length > 0
-                  ? `Accessible workspace credentials: ${availableCredentials}`
+                  ? `Accessible canvas credentials: ${availableCredentials}`
                   : noCredentialsMessage,
             }
           }
