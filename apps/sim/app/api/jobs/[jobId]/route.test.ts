@@ -109,7 +109,7 @@ describe('GET /api/jobs/[jobId]', () => {
     const body = await response.json()
 
     expect(response.status).toBe(403)
-    expect(body.error).toBe('Workspace access required')
+    expect(body.error).toBe('Canvas access required')
   })
 
   it('returns 404 when job does not exist', async () => {

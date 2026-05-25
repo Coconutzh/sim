@@ -44,27 +44,24 @@ export const GET = withRouteHandler(
           action: 'read',
         })
         if (!accessCheck.allowed) {
-          logger.warn(
-            `[${requestId}] Hidden or unauthorized workflow job status access denied`,
-            {
-              workflowId: metadataToCheck.workflowId,
-              taskId,
-            }
-          )
+          logger.warn(`[${requestId}] Hidden or unauthorized workflow job status access denied`, {
+            workflowId: metadataToCheck.workflowId,
+            taskId,
+          })
           return createErrorResponse('Task not found', 404)
         }
         if (accessCheck.accessSource && accessCheck.accessSource !== 'workspace') {
           logger.warn(
             `[${requestId}] Published workflow access cannot read async job ${metadataToCheck.workflowId}`
           )
-          return createErrorResponse('Workspace access required', 403)
+          return createErrorResponse('Canvas access required', 403)
         }
 
         if (authResult.apiKeyType === 'workspace' && authResult.workspaceId) {
           const { getWorkflowById } = await import('@/lib/workflows/utils')
           const workflow = await getWorkflowById(metadataToCheck.workflowId as string)
           if (!workflow?.workspaceId || workflow.workspaceId !== authResult.workspaceId) {
-            return createErrorResponse('API key is not authorized for this workspace', 403)
+            return createErrorResponse('API key is not authorized for this canvas', 403)
           }
         }
       } else if (metadataToCheck?.userId && metadataToCheck.userId !== authenticatedUserId) {
