@@ -118,7 +118,7 @@ export function normalizeOutputWorkspaceFileName(outputPath: string): string {
   }
   if (withoutPrefix.includes('/')) {
     throw new Error(
-      'outputPath must target a flat workspace file, e.g. "files/result.json". Nested paths like "files/reports/result.json" are not supported.'
+      'outputPath must target a flat canvas file, e.g. "files/result.json". Nested paths like "files/reports/result.json" are not supported.'
     )
   }
   return withoutPrefix

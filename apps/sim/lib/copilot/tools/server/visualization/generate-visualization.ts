@@ -51,11 +51,11 @@ const TEXT_EXTENSIONS = new Set(['csv', 'json', 'txt', 'md', 'html', 'xml', 'tsv
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const MAX_TOTAL_SIZE = 50 * 1024 * 1024
 
-function validateGeneratedWorkspaceFileName(fileName: string): string | null {
+export function validateGeneratedWorkspaceFileName(fileName: string): string | null {
   const trimmed = fileName.trim()
   if (!trimmed) return 'File name cannot be empty'
   if (trimmed.includes('/')) {
-    return 'Workspace files use a flat namespace. Use a plain file name like "chart.png", not a path like "charts/chart.png".'
+    return 'Canvas files use a flat namespace. Use a plain file name like "chart.png", not a path like "charts/chart.png".'
   }
   return null
 }

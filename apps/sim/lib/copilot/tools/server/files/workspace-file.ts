@@ -97,7 +97,7 @@ export function validateFlatWorkspaceFileName(fileName: string): string | null {
   const trimmed = fileName.trim()
   if (!trimmed) return 'File name cannot be empty'
   if (trimmed.includes('/')) {
-    return 'Workspace files use a flat namespace. Use a plain file name like "report.csv", not a path like "files/reports/report.csv".'
+    return 'Canvas files use a flat namespace. Use a plain file name like "report.csv", not a path like "files/reports/report.csv".'
   }
   return null
 }

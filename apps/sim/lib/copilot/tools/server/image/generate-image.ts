@@ -29,11 +29,11 @@ const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
   '3:4': '768x1024',
 }
 
-function validateGeneratedWorkspaceFileName(fileName: string): string | null {
+export function validateGeneratedWorkspaceFileName(fileName: string): string | null {
   const trimmed = fileName.trim()
   if (!trimmed) return 'File name cannot be empty'
   if (trimmed.includes('/')) {
-    return 'Workspace files use a flat namespace. Use a plain file name like "generated-image.png", not a path like "images/generated-image.png".'
+    return 'Canvas files use a flat namespace. Use a plain file name like "generated-image.png", not a path like "images/generated-image.png".'
   }
   return null
 }

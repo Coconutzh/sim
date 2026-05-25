@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   extractTabularData,
+  normalizeOutputWorkspaceFileName,
   serializeOutputForFile,
   unwrapFunctionExecuteOutput,
 } from '@/lib/copilot/request/tools/files'
@@ -100,5 +101,13 @@ describe('extractTabularData', () => {
     expect(extractTabularData('plain string')).toBeNull()
     expect(extractTabularData(null)).toBeNull()
     expect(extractTabularData({ foo: 'bar' })).toBeNull()
+  })
+})
+
+describe('normalizeOutputWorkspaceFileName', () => {
+  it('returns canvas file wording for nested output paths', () => {
+    expect(() => normalizeOutputWorkspaceFileName('files/reports/result.json')).toThrow(
+      'outputPath must target a flat canvas file'
+    )
   })
 })
