@@ -76,6 +76,7 @@
 - 最新 Phase 11 permission group user config 错误切片把 `/api/permission-groups/user` 缺少容器查询参数时返回的 `workspaceId is required` 迁移为 canvas 语义，并补 route test 覆盖；底层 contract schema、permission group 查询和 `workspaceId` 参数不变。
 - 最新 Phase 11 deploy API key 文案切片把 deployment modal API key fallback label and example placeholder from Workspace API key to canvas API key 文案迁移为 canvas 语义；底层 workspace-scoped API key type, `workspaceId` query, and deploy API remain unchanged.
 - 最新 Phase 11 workflow deploy API key response 文案切片把 GET/POST deployment API response label from Workspace API keys to Canvas API keys 文案迁移为 canvas 语义；底层 workflow deployment, workspace-scoped key lookup, and `workspaceId` parameter remain unchanged.
+- 最新 Phase 11 Home canvas gateway wording 文案切片把fallback eyebrow and introductory copy in the original `/workspace/[workspaceId]/home` gateway 文案迁移为 canvas 语义；底层 canvas semantics; routing, workgroup resolution, and `workspaceId` parameter remain unchanged.
 
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
@@ -91,6 +92,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `5793a3a1d` | Phase 11 Home canvas gateway wording migrated from workspace shell wording |
 | `eab881a53` | Phase 11 workflow deploy API key response migrated to canvas wording |
 | `3e7ccce4d` | Phase 11 deploy API key wording migrated to canvas wording |
 | `8957705a9` | Phase 11 permission group user config 错误迁移为 canvas wording |
@@ -290,11 +292,12 @@
 - `8957705a9` 继续迁移 permission group user config 错误边界：`GET /api/permission-groups/user` 在缺少 `workspaceId` query 时返回的错误从 `workspaceId is required` 改为 `Canvas ID is required`，并新增 route test 断言不会继续访问 workspace permission helper。该提交不改 schema 解析方式、permission group membership 查询、enterprise gating 或 `workspaceId` 参数。
 - `3e7ccce4d` migrated the deploy modal API key wording: the workspace-scoped workflow deploy example fallback label now says `Canvas API keys`, and the example header placeholder now uses `YOUR_CANVAS_API_KEY`. This does not change the API key type, workspace-scoped key query, deploy endpoint, or `workspaceId` parameter.
 - `eab881a53` migrated the workflow deploy API response wording: GET and POST `/api/workflows/[id]/deploy` now return `Canvas API keys` for workspace-scoped deployments, and route tests cover both response paths. This does not change deployment orchestration, API key lookup semantics, workspace-scoped key type, or `workspaceId`.
+- `5793a3a1d` migrated the Home canvas gateway copy: the no-workgroup fallback eyebrow now says `Canvas context`, and the intro paragraph now says the user stays in the original Sim canvas shell instead of the original Sim workspace shell. This does not change Home routing, workgroup selection, canvas entry cards, or `workspaceId`.
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、A2A API 错误、copilot chat API 错误、workflow publication/duplicate API 错误、jobs API 错误、workflow API access 错误、service conflict 错误、SSE/MCP 错误、v1 API 错误、resume/wand API 错误、workflow authz/preprocessing 错误、Copilot access helper 错误、Copilot credential selector 警告、workspace permissions hook 错误、MCP workflow tool API 错误、Copilot file/media server tool 错误、Copilot knowledge server tool 错误、Copilot handler/server 错误、Copilot table server tool 错误、user permissions hook 错误、files/published UI 文案、client upload/task fallback 错误、permission group user config 错误、deploy API key wording、workflow deploy API key response、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、A2A API 错误、copilot chat API 错误、workflow publication/duplicate API 错误、jobs API 错误、workflow API access 错误、service conflict 错误、SSE/MCP 错误、v1 API 错误、resume/wand API 错误、workflow authz/preprocessing 错误、Copilot access helper 错误、Copilot credential selector 警告、workspace permissions hook 错误、MCP workflow tool API 错误、Copilot file/media server tool 错误、Copilot knowledge server tool 错误、Copilot handler/server 错误、Copilot table server tool 错误、user permissions hook 错误、files/published UI 文案、client upload/task fallback 错误、permission group user config 错误、deploy API key wording、workflow deploy API key response、Home canvas gateway wording、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -479,6 +482,15 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 ## 4. 当前验证状态
 
 最近已通过或复跑的关键校验包括：
+
+Latest Phase 11 Home canvas gateway wording slice verified:
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/workspace/[workspaceId]/home/home.tsx"
+bun run check:api-validation:strict
+$patterns = @('Canvas context','original Sim canvas shell','home/home'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check -- "apps/sim/app/workspace/[workspaceId]/home/home.tsx"
+```
 
 Latest Phase 11 workflow deploy API key response slice verified:
 
@@ -976,7 +988,7 @@ git diff --check
 已知情况：
 
 - `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，新增 cleanup route 和 SSO route 都走既有合约和 `parseRequest`，最近 invitation 文案切片未改变边界合约；严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按最新 workflow deploy API key response 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run type-check` 仍退出 2，但按最新 Home canvas gateway wording 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
