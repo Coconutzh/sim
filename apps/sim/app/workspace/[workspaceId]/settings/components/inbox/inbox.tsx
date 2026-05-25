@@ -62,7 +62,7 @@ export function Inbox() {
           <div className='border-[var(--border)] border-t pt-4'>
             <div className='font-medium text-[var(--text-secondary)] text-sm'>Inbox</div>
             <p className='mt-0.5 text-[var(--text-muted)] text-small'>
-              Email tasks received by this workspace.
+              Email tasks received by this canvas.
             </p>
           </div>
           <InboxTaskList />

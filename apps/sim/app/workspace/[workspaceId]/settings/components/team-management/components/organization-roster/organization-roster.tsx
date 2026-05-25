@@ -191,7 +191,7 @@ function MemberExpandedPanel({
   if (workspaces.length === 0) {
     return (
       <div className='border-[var(--border-1)] border-t bg-[var(--surface-4)] px-3.5 py-3 text-[var(--text-muted)] text-small'>
-        Not a member of any workspace in this organization yet.
+        Not a member of any canvas in this organization yet.
       </div>
     )
   }
@@ -276,7 +276,7 @@ function InvitationExpandedPanel({
   if (grants.length === 0) {
     return (
       <div className='border-[var(--border-1)] border-t bg-[var(--surface-4)] px-3.5 py-3 text-[var(--text-muted)] text-small'>
-        No workspace access will be granted when this invitation is accepted.
+        No canvas access will be granted when this invitation is accepted.
       </div>
     )
   }
@@ -474,7 +474,7 @@ export function OrganizationRoster({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder='Search by name, email, or workspace'
+          placeholder='Search by name, email, or canvas'
           className='pl-9'
         />
       </div>

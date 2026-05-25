@@ -180,11 +180,9 @@ export function ApiKeys() {
               {/* Workspace section */}
               {!searchTerm.trim() ? (
                 <div className='flex flex-col gap-2'>
-                  <div className='font-medium text-[var(--text-secondary)] text-sm'>Workspace</div>
+                  <div className='font-medium text-[var(--text-secondary)] text-sm'>Canvas</div>
                   {workspaceKeys.length === 0 ? (
-                    <div className='text-[var(--text-muted)] text-sm'>
-                      No workspace Sim keys yet
-                    </div>
+                    <div className='text-[var(--text-muted)] text-sm'>No canvas Sim keys yet</div>
                   ) : (
                     workspaceKeys.map((key) => (
                       <div key={key.id} className='flex items-center justify-between gap-3'>
@@ -218,7 +216,7 @@ export function ApiKeys() {
                 </div>
               ) : filteredWorkspaceKeys.length > 0 ? (
                 <div className='flex flex-col gap-2'>
-                  <div className='font-medium text-[var(--text-secondary)] text-sm'>Workspace</div>
+                  <div className='font-medium text-[var(--text-secondary)] text-sm'>Canvas</div>
                   {filteredWorkspaceKeys.map(({ key }) => (
                     <div key={key.id} className='flex items-center justify-between gap-3'>
                       <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
@@ -285,8 +283,8 @@ export function ApiKeys() {
                         </div>
                         {isConflict && (
                           <div className='text-[var(--text-error)] text-small leading-tight'>
-                            Workspace Sim key with the same name overrides this. Rename your
-                            personal key to use it.
+                            Canvas Sim key with the same name overrides this. Rename your personal
+                            key to use it.
                           </div>
                         )}
                       </div>

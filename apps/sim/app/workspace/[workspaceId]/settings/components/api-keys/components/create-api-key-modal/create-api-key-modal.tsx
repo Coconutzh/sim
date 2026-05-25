@@ -62,7 +62,7 @@ export function CreateApiKeyModal({
     if (isDuplicate) {
       setCreateError(
         keyType === 'workspace'
-          ? `A workspace Sim key named "${trimmedName}" already exists. Please choose a different name.`
+          ? `A canvas Sim key named "${trimmedName}" already exists. Please choose a different name.`
           : `A personal Sim key named "${trimmedName}" already exists. Please choose a different name.`
       )
       return
@@ -112,7 +112,7 @@ export function CreateApiKeyModal({
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
               {keyType === 'workspace'
-                ? "This key will have access to all workflows in this workspace. Make sure to copy it after creation as you won't be able to see it again."
+                ? "This key will have access to all workflows in this canvas. Make sure to copy it after creation as you won't be able to see it again."
                 : "This key will have access to your personal workflows. Make sure to copy it after creation as you won't be able to see it again."}
             </p>
 
@@ -130,7 +130,7 @@ export function CreateApiKeyModal({
                     <ButtonGroupItem value='personal' disabled={!allowPersonalApiKeys}>
                       Personal
                     </ButtonGroupItem>
-                    <ButtonGroupItem value='workspace'>Workspace</ButtonGroupItem>
+                    <ButtonGroupItem value='workspace'>Canvas</ButtonGroupItem>
                   </ButtonGroup>
                 </div>
               )}

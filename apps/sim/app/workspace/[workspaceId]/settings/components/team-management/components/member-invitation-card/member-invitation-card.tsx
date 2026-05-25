@@ -76,7 +76,7 @@ export function MemberInvitationCard({
       <div className='px-3.5 py-2.5'>
         <h4 className='font-medium text-[var(--text-primary)] text-base'>Invite Members</h4>
         <p className='text-[var(--text-muted)] text-small'>
-          Invite people to your organization and choose which workspaces they can access.
+          Invite people to your organization and choose which canvases they can access.
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export function MemberInvitationCard({
                 className='min-w-[110px]'
               >
                 <span className='flex-1 text-left'>
-                  Workspaces
+                  Canvases
                   {selectedCount > 0 && ` (${selectedCount})`}
                 </span>
                 <ChevronDown
@@ -134,7 +134,7 @@ export function MemberInvitationCard({
                 </div>
               ) : userWorkspaces.length === 0 ? (
                 <div className='px-1.5 py-4 text-center'>
-                  <p className='text-[var(--text-tertiary)] text-small'>No workspaces available</p>
+                  <p className='text-[var(--text-tertiary)] text-small'>No canvases available</p>
                 </div>
               ) : (
                 <div className='flex flex-col gap-0.5'>
@@ -201,14 +201,14 @@ export function MemberInvitationCard({
               : !hasAvailableSeats
                 ? 'No Seats'
                 : selectedCount === 0
-                  ? 'Select Workspace'
+                  ? 'Select Canvas'
                   : 'Invite'}
           </Button>
         </div>
 
         {selectedCount === 0 && (
           <p className='text-[var(--text-muted)] text-small leading-tight'>
-            Select at least one organization workspace before sending an organization invite.
+            Select at least one organization canvas before sending an organization invite.
           </p>
         )}
 
@@ -224,7 +224,7 @@ export function MemberInvitationCard({
           <p className='text-[var(--text-success)] text-xs leading-tight'>
             Invitation sent successfully
             {selectedCount > 0 &&
-              ` with access to ${selectedCount} workspace${selectedCount !== 1 ? 's' : ''}`}
+              ` with access to ${selectedCount} canvas${selectedCount !== 1 ? 'es' : ''}`}
           </p>
         )}
       </div>

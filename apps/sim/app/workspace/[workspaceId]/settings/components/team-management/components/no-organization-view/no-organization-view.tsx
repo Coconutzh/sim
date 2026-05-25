@@ -49,11 +49,11 @@ export function NoOrganizationView({
           {/* Header - matching settings page style */}
           <div>
             <h4 className='font-medium text-[var(--text-primary)] text-base'>
-              Create Your Team Workspace
+              Create Your Team Canvas
             </h4>
             <p className='mt-1 text-[var(--text-muted)] text-small'>
               You're subscribed to a {hasEnterprisePlan ? 'enterprise' : 'team'} plan. Create your
-              workspace to start collaborating with your team.
+              team canvas to start collaborating with your team.
             </p>
           </div>
 
@@ -115,7 +115,7 @@ export function NoOrganizationView({
                   onClick={onCreateOrganization}
                   disabled={!orgName || !orgSlug || isCreatingOrg}
                 >
-                  {isCreatingOrg ? 'Creating...' : 'Create Team Workspace'}
+                  {isCreatingOrg ? 'Creating...' : 'Create Team Canvas'}
                 </Button>
               </div>
             </div>
@@ -209,10 +209,10 @@ export function NoOrganizationView({
   return (
     <div className='flex flex-col gap-5'>
       <div className='flex flex-col gap-2'>
-        <h3 className='font-medium text-[var(--text-primary)] text-base'>No Team Workspace</h3>
+        <h3 className='font-medium text-[var(--text-primary)] text-base'>No Team Canvas</h3>
         <p className='text-[var(--text-secondary)] text-small'>
-          You don't have a team workspace yet. To collaborate with others, first upgrade to a team
-          or enterprise plan.
+          You don't have a team canvas yet. To collaborate with others, first upgrade to a team or
+          enterprise plan.
         </p>
       </div>
 

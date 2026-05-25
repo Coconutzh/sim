@@ -55,8 +55,8 @@ export function RemoveMemberDialog({
               <>
                 Are you sure you want to remove{' '}
                 <span className='font-medium text-[var(--text-primary)]'>{memberName}</span> from
-                all organization workspaces? Their workspace access and workspace credential access
-                will be revoked.
+                all organization canvases? Their canvas access and canvas credential access will be
+                revoked.
               </>
             ) : (
               <>

@@ -325,7 +325,7 @@ export function BYOK() {
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
               This key will be used for all {PROVIDERS.find((p) => p.id === editingProvider)?.name}{' '}
-              requests in this workspace. Your key is encrypted and stored securely.
+              requests in this canvas. Your key is encrypted and stored securely.
             </p>
 
             <div className='mt-4 flex flex-col gap-2'>
@@ -413,7 +413,7 @@ export function BYOK() {
               </span>{' '}
               API key?{' '}
               <span className='text-[var(--text-error)]'>
-                This workspace will revert to using platform hosted keys.
+                This canvas will revert to using platform hosted keys.
               </span>{' '}
               This action cannot be undone.
             </p>
