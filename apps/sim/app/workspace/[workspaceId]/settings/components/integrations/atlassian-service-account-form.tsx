@@ -40,7 +40,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     "We couldn't authenticate with that API token. Double-check the token and that the service account has access to this site.",
   site_not_found:
     "We couldn't find an Atlassian site at that domain. Check the spelling — it should look like your-team.atlassian.net.",
-  duplicate_display_name: 'A credential with that name already exists in this workspace.',
+  duplicate_display_name: 'A credential with that name already exists in this canvas.',
   atlassian_unavailable:
     "We couldn't reach Atlassian to verify these credentials. Try again in a moment.",
 }

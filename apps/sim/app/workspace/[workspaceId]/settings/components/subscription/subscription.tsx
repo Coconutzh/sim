@@ -1069,7 +1069,7 @@ export function Subscription() {
                     <Info className='h-[12px] w-[12px] text-[var(--text-secondary)]' />
                   </Tooltip.Trigger>
                   <Tooltip.Content>
-                    <span>Usage from this workspace will be billed to this account</span>
+                    <span>Usage from this canvas will be billed to this account</span>
                   </Tooltip.Content>
                 </Tooltip.Root>
               </div>

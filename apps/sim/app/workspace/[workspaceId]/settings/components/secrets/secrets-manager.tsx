@@ -1116,7 +1116,7 @@ export function SecretsManager() {
           onClick={handleValueClick}
           onBlur={() => setFocusedValueIndex(null)}
           onPaste={(e) => handlePaste(e, originalIndex)}
-          placeholder={isConflict ? 'Workspace override active' : 'Enter value'}
+          placeholder={isConflict ? 'Canvas override active' : 'Enter value'}
           name={`env_variable_value_${envVar.id || originalIndex}_${Math.random()}`}
           autoComplete='off'
           autoCapitalize='off'
@@ -1169,8 +1169,7 @@ export function SecretsManager() {
               'mt-[-4px] text-[var(--text-error)] text-caption leading-tight'
             )}
           >
-            Workspace variable with the same name overrides this. Rename your personal key to use
-            it.
+            Canvas variable with the same name overrides this. Rename your personal key to use it.
           </div>
         )}
       </div>
@@ -1196,7 +1195,7 @@ export function SecretsManager() {
                       {selectedCredential.envKey || selectedCredential.displayName}
                     </p>
                     <Badge variant='gray-secondary' size='sm'>
-                      {selectedCredential.type === 'env_personal' ? 'personal' : 'workspace'}
+                      {selectedCredential.type === 'env_personal' ? 'personal' : 'canvas'}
                     </Badge>
                     {selectedCredential.role && (
                       <Badge variant='gray-secondary' size='sm'>
@@ -1207,7 +1206,7 @@ export function SecretsManager() {
                   <p className='text-[var(--text-muted)] text-small'>
                     {selectedCredential.type === 'env_personal'
                       ? 'Personal secret'
-                      : 'Workspace secret'}
+                      : 'Canvas secret'}
                   </p>
                 </div>
               </div>
@@ -1562,7 +1561,7 @@ export function SecretsManager() {
                         'font-medium text-[var(--text-secondary)] text-small'
                       )}
                     >
-                      Workspace
+                      Canvas
                     </div>
                     {(searchTerm.trim()
                       ? filteredWorkspaceEntries

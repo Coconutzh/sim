@@ -68,7 +68,7 @@ export function InboxEnableToggle() {
         <div className='flex flex-col gap-0.5'>
           <span className='font-medium text-[var(--text-primary)] text-sm'>Enable email inbox</span>
           <span className='text-[var(--text-muted)] text-small'>
-            Allow this workspace to receive tasks via email
+            Allow this canvas to receive tasks via email
           </span>
         </div>
         <Switch
@@ -83,8 +83,8 @@ export function InboxEnableToggle() {
           <ModalHeader>Enable email inbox</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
-              An email address will be created for this workspace. Anyone in the allowed senders
-              list can email it to create tasks.
+              An email address will be created for this canvas. Anyone in the allowed senders list
+              can email it to create tasks.
             </p>
             <div className='mt-4 flex flex-col gap-2'>
               <p className='font-medium text-[var(--text-secondary)] text-sm'>

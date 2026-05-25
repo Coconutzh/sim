@@ -529,9 +529,9 @@ export function IntegrationsManager() {
         })
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to share with workspace'
+      const message = error instanceof Error ? error.message : 'Failed to share with canvas'
       setDetailsError(message)
-      logger.error('Failed to share credential with workspace', error)
+      logger.error('Failed to share credential with canvas', error)
     } finally {
       setIsSharingWithWorkspace(false)
     }
@@ -1176,7 +1176,7 @@ export function IntegrationsManager() {
                       disabled={isSharingWithWorkspace || workspaceUserOptions.length === 0}
                     >
                       <Share2 className='mr-1.5 h-[13px] w-[13px]' />
-                      {isSharingWithWorkspace ? 'Sharing...' : 'Share with workspace'}
+                      {isSharingWithWorkspace ? 'Sharing...' : 'Share with canvas'}
                     </Button>
                   )}
                   <Button

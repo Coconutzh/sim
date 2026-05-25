@@ -1471,7 +1471,7 @@ export const Sidebar = memo(function Sidebar() {
             isResizing && 'is-resizing'
           )}
           data-collapsed={isCollapsed || undefined}
-          aria-label='Workspace sidebar'
+          aria-label='Canvas sidebar'
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col pt-3'>
@@ -1637,7 +1637,7 @@ export const Sidebar = memo(function Sidebar() {
 
                 <div className='mt-3.5 flex flex-shrink-0 flex-col pb-2'>
                   <div className='px-4 pb-1.5'>
-                    <div className='font-base text-[var(--text-icon)] text-small'>Workspace</div>
+                    <div className='font-base text-[var(--text-icon)] text-small'>Resources</div>
                   </div>
                   <div className='flex flex-col gap-0.5 px-2'>
                     {workspaceNavItems.map((item) => (

@@ -109,7 +109,7 @@ export function TransferOwnershipDialog({
               <p className='text-[var(--text-secondary)]'>
                 As the owner, you need to hand off the organization before you can leave. Pick a
                 member to become the new owner. They'll inherit billing access, seat management, and
-                all owner-only permissions. You'll lose access to every shared workspace in this
+                all owner-only permissions. You'll lose access to every shared canvas in this
                 organization.
               </p>
 

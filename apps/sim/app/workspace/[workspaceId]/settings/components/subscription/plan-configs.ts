@@ -19,7 +19,7 @@ export const PRO_PLAN_FEATURES: PlanFeature[] = [
   { icon: Timer, text: '50 min sync run limit' },
   { icon: HardDrive, text: '50GB file storage' },
   { icon: Table2, text: '25 tables · 5,000 rows each' },
-  { icon: LayoutGrid, text: 'Up to 3 personal workspaces' },
+  { icon: LayoutGrid, text: 'Up to 3 personal canvases' },
 ]
 
 export const MAX_PLAN_FEATURES: PlanFeature[] = [
@@ -28,7 +28,7 @@ export const MAX_PLAN_FEATURES: PlanFeature[] = [
   { icon: Timer, text: '50 min sync run limit' },
   { icon: HardDrive, text: '500GB file storage' },
   { icon: Table2, text: '25 tables · 5,000 rows each' },
-  { icon: LayoutGrid, text: 'Up to 10 personal workspaces' },
+  { icon: LayoutGrid, text: 'Up to 10 personal canvases' },
 ]
 
 export const TEAM_INLINE_FEATURES: PlanFeature[] = [
@@ -36,14 +36,14 @@ export const TEAM_INLINE_FEATURES: PlanFeature[] = [
   { icon: Zap, text: 'Max plan rate limits' },
   { icon: HardDrive, text: 'Max plan file storage' },
   { icon: Table2, text: '100 tables · 10,000 rows each' },
-  { icon: LayoutGrid, text: 'Unlimited shared workspaces' },
+  { icon: LayoutGrid, text: 'Unlimited shared canvases' },
   { icon: ShieldCheck, text: 'Access controls' },
   { icon: SlackMonoIcon, text: 'Dedicated Slack channel' },
 ]
 
 export const ENTERPRISE_PLAN_FEATURES: PlanFeature[] = [
   { icon: Zap, text: 'Custom infra limits' },
-  { icon: LayoutGrid, text: 'Unlimited shared workspaces' },
+  { icon: LayoutGrid, text: 'Unlimited shared canvases' },
   { icon: Server, text: 'SSO' },
   { icon: ShieldCheck, text: 'SOC2' },
   { icon: HardDrive, text: 'Self hosting' },
