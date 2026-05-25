@@ -83,7 +83,7 @@ export function useUserPermissions(
         canAdmin: false,
         userPermissions: 'read',
         isLoading: false,
-        error: permissionsError || 'User not found in workspace',
+        error: permissionsError || 'User not found in canvas',
       }
     }
 
