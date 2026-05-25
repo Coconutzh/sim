@@ -58,12 +58,12 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Rou
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!permission) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const subscription = await getSubscription(notificationId, workspaceId)
@@ -116,7 +116,7 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: RouteP
     const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
 
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (!hasAccess) {
@@ -140,7 +140,7 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: RouteP
 
       if (invalidIds.length > 0) {
         return NextResponse.json(
-          { error: 'Some workflow IDs do not belong to this workspace', invalidIds },
+          { error: 'Some workflow IDs do not belong to this canvas', invalidIds },
           { status: 400 }
         )
       }
@@ -246,7 +246,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, { params }: 
     const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
 
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (!hasAccess) {

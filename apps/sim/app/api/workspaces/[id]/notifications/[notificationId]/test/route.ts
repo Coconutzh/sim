@@ -193,7 +193,7 @@ async function testEmail(subscription: typeof workspaceNotificationSubscription.
     to: subscription.emailRecipients,
     subject: `[Test] Workflow Execution: ${data.workflowName}`,
     html,
-    text: `This is a test notification from Sim.\n\nWorkflow: ${data.workflowName}\nStatus: ${data.status}\nDuration: ${data.totalDurationMs}ms\n\nView Log: ${logUrl}\n\nThis notification is configured for workspace notifications.`,
+    text: `This is a test notification from Sim.\n\nWorkflow: ${data.workflowName}\nStatus: ${data.status}\nDuration: ${data.totalDurationMs}ms\n\nView Log: ${logUrl}\n\nThis notification is configured for canvas notifications.`,
     emailType: 'notifications',
   })
 
@@ -247,7 +247,7 @@ async function testSlack(
         elements: [
           {
             type: 'mrkdwn',
-            text: 'This is a test notification from Sim workspace notifications.',
+            text: 'This is a test notification from Sim canvas notifications.',
           },
         ],
       },
@@ -295,7 +295,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)

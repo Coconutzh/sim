@@ -43,12 +43,12 @@ export const GET = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
       if (!permission) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const subscriptions = await db
@@ -101,7 +101,7 @@ export const POST = withRouteHandler(
       const { access, hasAccess } = await checkWorkspaceWriteAccess(session.user.id, workspaceId)
 
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!hasAccess) {
@@ -121,7 +121,7 @@ export const POST = withRouteHandler(
       if (existingCount.length >= MAX_NOTIFICATIONS_PER_TYPE) {
         return NextResponse.json(
           {
-            error: `Maximum ${MAX_NOTIFICATIONS_PER_TYPE} ${data.notificationType} notifications per workspace`,
+            error: `Maximum ${MAX_NOTIFICATIONS_PER_TYPE} ${data.notificationType} notifications per canvas`,
           },
           { status: 400 }
         )
@@ -138,7 +138,7 @@ export const POST = withRouteHandler(
 
         if (invalidIds.length > 0) {
           return NextResponse.json(
-            { error: 'Some workflow IDs do not belong to this workspace', invalidIds },
+            { error: 'Some workflow IDs do not belong to this canvas', invalidIds },
             { status: 400 }
           )
         }

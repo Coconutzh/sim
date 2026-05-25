@@ -168,7 +168,7 @@ describe('/api/workspaces/[id]/notifications/[notificationId]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })
