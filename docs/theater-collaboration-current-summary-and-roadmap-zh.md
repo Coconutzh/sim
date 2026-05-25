@@ -36,6 +36,7 @@
 - 最新 Phase 11 knowledge header 切片把 Knowledge Base 详情页的归属选择器从 workspace 文案迁移为 canvas 文案，并在下拉项显示 Personal draft / Team / Project / Legacy canvas 标签与权限级别；底层 `currentWorkspaceId` 和 knowledge updates 仍保留为内部资源键。
 - 最新 Phase 11 workspace detail/update/delete API 错误切片把 `/api/workspaces/[id]` 的 not-found、唯一容器删除、billed-account、update/delete fallback 和 audit description 文案迁移为 canvas 语义；底层 route、contract、audit resource 和事件 group 仍保留 workspace 资源键。
 - 最新 Phase 11 permission group API 错误切片把 `/api/workspaces/[id]/permission-groups/**` 的 not-found、personal unsupported、成员不属于当前容器和并发分组冲突提示迁移为 canvas 语义；底层 permission group 仍以 `workspaceId` 作为权限容器键。
+- 最新 Phase 11 workspace member API 错误切片把共享成员列表和成员移除 API 的 not-found、personal unsupported、billing/owner/last-admin、audit description 和 fallback 文案迁移为 canvas 语义；底层成员权限仍以 workspace permission row 和 `workspaceId` 为内部边界。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -50,6 +51,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `2fc153345` | Phase 11 workspace member API 用户可见错误迁移为 canvas wording |
 | `d509c3932` | Phase 11 permission group API 用户可见错误迁移为 canvas wording |
 | `36bdcc4f3` | Phase 11 `/api/workspaces/[id]` detail/update/delete 用户可见错误迁移为 canvas wording |
 | `00839fd03` | Phase 11 Knowledge Base header 归属选择器迁移为 canvas wording，并消费 canvas metadata 标签 |
@@ -169,11 +171,12 @@
 - `00839fd03` 继续迁移 Knowledge Base 详情页深层旧入口：归属选择器 tooltip、空态、未归属项和无写权限提示从 workspace 改为 canvas，并在可选目标下方显示 `Personal draft canvas` / `Team canvas` / `Project canvas` / `Legacy canvas` 与权限级别，复用 `/api/workspaces` 已返回的 `canvasScope` / `isInternalWorkspace` 元数据。该提交只改用户可见下拉文案与展示标签，不改 `currentWorkspaceId`、knowledge update payload 或底层 workspace 容器。
 - `36bdcc4f3` 继续迁移 `/api/workspaces/[id]` 详情、更新和删除边界：not found、唯一可访问容器删除、organization/personal billed-account、billed account admin、update/delete fallback 和 audit description 均改为 canvas wording，并同步更新 `app/api/workspaces/[id]/route.test.ts`。该提交不改 route path、contract 字段、`AuditResourceType.WORKSPACE`、PostHog group 或 workspace lifecycle helper。
 - `d509c3932` 继续迁移 permission group 相关 API 错误边界：`/api/workspaces/[id]/permission-groups`、`/[groupId]`、`/[groupId]/members` 和 `members/bulk` 的 not found、personal unsupported、成员不属于当前容器、单个/批量并发分组冲突提示均改为 canvas wording，并同步更新 4 组 route tests。该提交不改 API path、contract 字段、permission group schema、`workspaceId` 资源键或权限 helper 命名。
+- `2fc153345` 继续迁移 workspace member 相关 API 错误边界：`GET /api/workspaces/[id]/members` 和 `DELETE /api/workspaces/members/[id]` 的 not found、personal shared-member/list、billing account、成员缺失、owner removal、last admin、audit description、fetch/remove fallback 均改为 canvas wording，并同步更新 2 组 route tests。该提交不改 contract、permission row、credential membership revoke、permission group cleanup、audit resource 或 PostHog group。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -427,6 +430,16 @@ $patterns = @('Personal canvases do not support permission groups','Canvas not f
 git diff --check
 ```
 
+最新 Phase 11 workspace member API 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/workspaces/[id]/members/route.ts" "app/api/workspaces/[id]/members/route.test.ts" "app/api/workspaces/members/[id]/route.ts" "app/api/workspaces/members/[id]/route.test.ts"
+Set-Location apps\sim; bunx vitest run "app/api/workspaces/[id]/members/route.test.ts" "app/api/workspaces/members/[id]/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Canvas not found','Personal canvases do not expose shared member lists','Personal canvases do not support shared members','canvas billing account','User not found in canvas','canvas owner','last admin from a canvas','Failed to fetch canvas members','Failed to remove canvas member','workspaces/[id]/members','workspaces/members/[id]'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
 最新失败审计 retention cleanup 切片已验证：
 
 ```powershell
@@ -552,7 +565,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
