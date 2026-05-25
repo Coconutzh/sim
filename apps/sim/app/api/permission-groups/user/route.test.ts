@@ -94,6 +94,15 @@ describe('GET /api/permission-groups/user', () => {
     })
   })
 
+  it('returns canvas wording when the canvas query parameter is missing', async () => {
+    const response = await GET(new Request('http://localhost/api/permission-groups/user'))
+    const data = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(data).toEqual({ error: 'Canvas ID is required' })
+    expect(checkWorkspaceAccessMock).not.toHaveBeenCalled()
+  })
+
   it('rejects personal workspaces before loading permission-group membership', async () => {
     checkWorkspaceAccessMock.mockResolvedValueOnce({
       exists: true,

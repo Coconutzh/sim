@@ -19,7 +19,7 @@ export const GET = withRouteHandler(async (req: Request) => {
     Object.fromEntries(new URL(req.url).searchParams.entries())
   )
   if (!queryResult.success) {
-    return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
+    return NextResponse.json({ error: 'Canvas ID is required' }, { status: 400 })
   }
   const { workspaceId } = queryResult.data
 
