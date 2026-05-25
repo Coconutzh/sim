@@ -32,6 +32,7 @@
 - 最新 Phase 11 邀请错误文案切片把 invite 接收页 fallback、邀请发送 fallback、workspace invitation batch API 和 invitation edit/resend API 的用户可见错误迁移为 canvas 语义；内部 `kind = workspace`、grant `workspaceId` 和权限 helper 命名仍保持不变。
 - 最新 Phase 11 fallback 入口文案切片把 form/chat 不可用状态页的返回按钮和 credential-account 已连接成功页的跳转说明改为 canvas 语义；实际兼容跳转仍走 `/workspace` 路由。
 - 最新 Phase 11 组织批量邀请错误文案切片把 organization invitation batch grant 的选择、隐藏个人画布、无权限、非组织画布和跨组织画布错误迁移为 canvas 语义；响应里的 `workspaceGrantsPerInvite` 仍保留为现有 API wire 字段。
+- 最新 Phase 11 canvas permission 错误文案切片把 `/api/workspaces/[id]/permissions` 的 not found、personal shared-member、owner/billing/admin 和 500 fallback 错误迁移为 canvas 语义；底层 permission entity 仍为 `workspace`。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -46,6 +47,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `153bdbd6b` | Phase 11 workspace permissions API 用户可见错误迁移为 canvas wording |
 | `da309e00c` | Phase 11 organization invitation batch grant 错误迁移为 canvas wording |
 | `a7cbaace0` | Phase 11 form/chat fallback 和 credential-account 成功页返回文案迁移为 canvas wording |
 | `bb00136e7` | Phase 11 invitation 接收页、发送 fallback 和邀请 API 错误迁移为 canvas wording |
@@ -157,11 +159,12 @@
 - `bb00136e7` 继续迁移 invitation 错误边界：invite 接收页 fallback title/error、`sendInvitationEmail` 的缺失 grant 与未知目标 fallback、`prepareWorkspaceInvitationContext` 的 not found / personal shared-member / duplicate access / pending invite 错误，以及 `PATCH/DELETE/POST /api/invitations/[id](/resend)` 的权限、缺失 canvas、外部邀请和 grant 更新错误均改为 canvas wording。该提交同步更新相关 route tests，仍不改 `kind = workspace`、grant `workspaceId`、`workspaceName` 或权限 helper 内部命名。
 - `a7cbaace0` 继续清理旧入口 fallback：form 和 chat embed 不可用状态页的按钮从 `Return to Workspace` 改为 `Return to Canvas`，credential-account 邀请接受后 provider 已连接状态从 `Redirecting to workspace...` 改为 `Redirecting to canvas...`。该提交只改用户可见文案，仍保留 `/workspace` 作为兼容 landing route。
 - `da309e00c` 继续迁移组织邀请 batch grant 的错误边界：空 grant 选择提示、隐藏个人画布 404、缺少画布邀请权限、非组织画布和跨组织画布错误均改为 canvas wording，并同步更新 `app/api/organizations/[id]/invitations/route.test.ts`。该提交只改用户可见错误，不改 `workspaceInvitations` request 字段、`workspaceGrantsPerInvite` response 字段或 `hasWorkspaceAdminAccess` 内部权限模型。
+- `153bdbd6b` 继续迁移 canvas 成员/权限 API 的用户可见错误：`GET/PATCH /api/workspaces/[id]/permissions` 的 not found、personal shared permission、personal shared member、owner permission、billing account admin 和 fetch/update fallback 错误均改为 canvas wording，并同步更新 route tests。该提交不改 contract path、permission entityType、audit resource 或权限 helper 命名。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、form/chat/credential-account fallback、published visibility 和公共 templates edit selector 中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、form/chat/credential-account fallback、published visibility 和公共 templates edit selector 中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -376,6 +379,16 @@ $patterns = @('organization canvas','Canvas not found','organization-owned canva
 git diff --check
 ```
 
+最新 Phase 11 canvas permission 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/workspaces/[id]/permissions/route.ts" "app/api/workspaces/[id]/permissions/route.test.ts"
+Set-Location apps\sim; bunx vitest run "app/api/workspaces/[id]/permissions/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Personal canvases do not expose','Personal canvases do not support','canvas owner permissions','Canvas billing account','Failed to fetch canvas permissions','Failed to update canvas permissions','workspaces/[id]/permissions','route.test.ts'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check
+```
+
 最新失败审计 retention cleanup 切片已验证：
 
 ```powershell
@@ -402,7 +415,7 @@ git diff --check
 已知情况：
 
 - `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，新增 cleanup route 和 SSO route 都走既有合约和 `parseRequest`，最近 invitation 文案切片未改变边界合约；严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按最新 invitation/fallback/organization invitation 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run type-check` 仍退出 2，但按最新 invitation/fallback/organization invitation/canvas permission 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
@@ -501,7 +514,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
