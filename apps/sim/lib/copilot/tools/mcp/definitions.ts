@@ -27,7 +27,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'list_workspaces',
     toolId: 'list_user_workspaces',
     description:
-      'List all workspaces the user has access to. Returns workspace IDs, names, and roles. Use this first to determine which workspace to operate in.',
+      'List all canvases the user has access to. Returns canvas IDs, names, and roles. Use this first to determine which canvas to operate in.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -38,13 +38,13 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'list_folders',
     toolId: 'list_folders',
     description:
-      'List all folders in a workspace. Returns folder IDs, names, and parent relationships for organizing workflows.',
+      'List all folders in a canvas. Returns folder IDs, names, and parent relationships for organizing workflows.',
     inputSchema: {
       type: 'object',
       properties: {
         workspaceId: {
           type: 'string',
-          description: 'Workspace ID to list folders from.',
+          description: 'Canvas ID to list folders from.',
         },
       },
       required: ['workspaceId'],
@@ -55,7 +55,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'create_workflow',
     toolId: 'create_workflow',
     description:
-      'Create a new empty workflow. Returns the new workflow ID. Always call this FIRST before sim_workflow for new workflows. Use workspaceId to place it in a specific workspace.',
+      'Create a new empty workflow. Returns the new workflow ID. Always call this FIRST before sim_workflow for new workflows. Use the canvas ID field named workspaceId to place it in a specific canvas.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -65,7 +65,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
         },
         workspaceId: {
           type: 'string',
-          description: 'Optional workspace ID. Uses default workspace if not provided.',
+          description: 'Optional canvas ID. Uses the default canvas if not provided.',
         },
         folderId: {
           type: 'string',
@@ -94,7 +94,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
         },
         workspaceId: {
           type: 'string',
-          description: 'Optional workspace ID. Uses default workspace if not provided.',
+          description: 'Optional canvas ID. Uses the default canvas if not provided.',
         },
         parentId: {
           type: 'string',
@@ -129,7 +129,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'move_workflow',
     toolId: 'move_workflow',
     description:
-      'Move a workflow into a different folder. Omit folderId or pass empty string to move to workspace root.',
+      'Move a workflow into a different folder. Omit folderId or pass empty string to move to the canvas root.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -139,7 +139,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
         },
         folderId: {
           type: 'string',
-          description: 'Target folder ID. Omit or pass empty string to move to workspace root.',
+          description: 'Target folder ID. Omit or pass empty string to move to the canvas root.',
         },
       },
       required: ['workflowId'],
@@ -150,7 +150,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'move_folder',
     toolId: 'move_folder',
     description:
-      'Move a folder into another folder. Omit parentId or pass empty string to move to workspace root.',
+      'Move a folder into another folder. Omit parentId or pass empty string to move to the canvas root.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -161,7 +161,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
         parentId: {
           type: 'string',
           description:
-            'Target parent folder ID. Omit or pass empty string to move to workspace root.',
+            'Target parent folder ID. Omit or pass empty string to move to the canvas root.',
         },
       },
       required: ['folderId'],
@@ -189,7 +189,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
     name: 'generate_api_key',
     toolId: 'generate_api_key',
     description:
-      'Generate a new workspace API key for calling workflow API endpoints. The key is only shown once — tell the user to save it immediately.',
+      'Generate a new canvas API key for calling workflow API endpoints. The key is only shown once; tell the user to save it immediately.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -200,7 +200,7 @@ export const DIRECT_TOOL_DEFS: DirectToolDef[] = [
         },
         workspaceId: {
           type: 'string',
-          description: "Optional workspace ID. Defaults to user's default workspace.",
+          description: "Optional canvas ID. Defaults to the user's default canvas.",
         },
       },
       required: ['name'],
@@ -325,7 +325,7 @@ USE THIS WHEN:
 DO NOT USE (use direct tools instead):
 - User knows the workflow name → use get_workflow
 - User wants to list all workflows → use list_workflows
-- User wants to list workspaces → use list_workspaces
+- User wants to list canvases → use list_workspaces
 - User wants to list folders → use list_folders`,
     inputSchema: {
       type: 'object',
@@ -353,8 +353,8 @@ The deploy subagent will automatically: list available MCP servers → create on
 
 ALSO CAN:
 - Get the deployed (production) state to compare with draft
-- Generate workspace API keys for calling deployed workflows
-- List and create MCP servers in the workspace`,
+- Generate canvas API keys for calling deployed workflows
+- List and create MCP servers in the canvas`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -460,7 +460,7 @@ Supports full and partial execution:
     name: 'sim_agent',
     agentId: 'agent',
     description:
-      'Manage custom tools, MCP server connections, and skills for agent blocks. Supports creating, editing, deleting, and listing custom JavaScript tools, external MCP server connections, and workspace skills. Can also research external MCP tools and add deployed workflows as MCP tools.',
+      'Manage custom tools, MCP server connections, and skills for agent blocks. Supports creating, editing, deleting, and listing custom JavaScript tools, external MCP server connections, and canvas skills. Can also research external MCP tools and add deployed workflows as MCP tools.',
     inputSchema: {
       type: 'object',
       properties: {

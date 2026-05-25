@@ -51,13 +51,13 @@ export const PLATFORM_ACTIONS_CONTENT = `# Sim Platform Quick Reference & Keyboa
 | Drag block | Left-drag on block header |
 | Add to selection | Mod+Click on blocks |
 
-## Quick Reference — Workspaces
+## Quick Reference — Canvases
 | Action | How |
 |--------|-----|
-| Create workspace | Click workspace dropdown → New Workspace |
-| Switch workspaces | Click workspace dropdown → Select workspace |
+| Create canvas | Click canvas dropdown → New Canvas |
+| Switch canvases | Click canvas dropdown → Select canvas |
 | Invite team members | Sidebar → Invite |
-| Rename/Duplicate/Export/Delete workspace | Right-click workspace → action |
+| Rename/Duplicate/Export/Delete canvas | Right-click canvas → action |
 
 ## Quick Reference — Workflows
 | Action | How |
