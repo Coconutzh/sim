@@ -170,7 +170,7 @@ describe('duplicateWorkflow ordering', () => {
         folderId: null,
         requestId: 'req-published-dup',
       })
-    ).rejects.toThrow('Workspace access required for source workflow duplication')
+    ).rejects.toThrow('Canvas access required for source workflow duplication')
   })
 
   it('hides foreign personal source workflows during duplication', async () => {

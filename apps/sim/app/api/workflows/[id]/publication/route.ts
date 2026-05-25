@@ -18,7 +18,7 @@ const logger = createLogger('WorkflowPublicationAPI')
 
 function getStatusForErrorMessage(message: string): number {
   if (message === 'Workflow not found') return 404
-  if (message === 'Workspace access required') return 403
+  if (message === 'Canvas access required') return 403
   if (message.includes('Access denied')) return 403
   return 400
 }

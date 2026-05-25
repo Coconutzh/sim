@@ -4,16 +4,16 @@ import { NextResponse } from 'next/server'
 import { publishWorkflowContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { createPublicationVersion } from '@/lib/collaboration/service'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { createPublicationVersion } from '@/lib/collaboration/service'
 import { publishWorkflowToMainline } from '@/lib/workflows/publication'
 
 const logger = createLogger('WorkflowPublishAPI')
 
 function getStatusForErrorMessage(message: string): number {
   if (message === 'Workflow not found') return 404
-  if (message === 'Workspace access required') return 403
+  if (message === 'Canvas access required') return 403
   if (message.includes('Access denied')) return 403
   return 400
 }

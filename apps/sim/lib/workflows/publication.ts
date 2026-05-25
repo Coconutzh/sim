@@ -242,7 +242,7 @@ export async function publishWorkflowToMainline(params: {
     throw new Error(authorization.message || 'Access denied')
   }
   if (authorization.accessSource !== 'workspace') {
-    throw new Error('Workspace access required')
+    throw new Error('Canvas access required')
   }
 
   const sourceWorkflow = authorization.workflow
@@ -251,14 +251,14 @@ export async function publishWorkflowToMainline(params: {
   }
 
   if (!sourceWorkflow.workspaceId) {
-    throw new Error('Draft workflow must belong to a workspace')
+    throw new Error('Draft workflow must belong to a canvas')
   }
 
   if (
     params.visibility !== 'workspace' &&
     (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId)
   ) {
-    throw new Error('Only organization team workspaces with a workgroup can publish across teams')
+    throw new Error('Only organization team canvases with a workgroup can publish across teams')
   }
 
   const state = await loadSourceWorkflowState(sourceWorkflow.id)
@@ -472,7 +472,7 @@ export async function updateWorkflowPublicationDetails(params: {
     throw new Error(authorization.message || 'Access denied')
   }
   if (authorization.accessSource !== 'workspace') {
-    throw new Error('Workspace access required')
+    throw new Error('Canvas access required')
   }
 
   if (authorization.workflow.track !== 'published') {
@@ -483,7 +483,7 @@ export async function updateWorkflowPublicationDetails(params: {
     params.visibility !== 'workspace' &&
     (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId)
   ) {
-    throw new Error('Only organization team workspaces with a workgroup can publish across teams')
+    throw new Error('Only organization team canvases with a workgroup can publish across teams')
   }
 
   await db

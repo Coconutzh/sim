@@ -300,7 +300,7 @@ describe('workflow publication access', () => {
         visibility: 'workspace',
         viewerWorkgroupIds: [],
       })
-    ).rejects.toThrow('Workspace access required')
+    ).rejects.toThrow('Canvas access required')
   })
 
   it('rejects publication updates from cross-team shared access', async () => {
@@ -323,6 +323,6 @@ describe('workflow publication access', () => {
         visibility: 'organization',
         viewerWorkgroupIds: [],
       })
-    ).rejects.toThrow('Workspace access required')
+    ).rejects.toThrow('Canvas access required')
   })
 })

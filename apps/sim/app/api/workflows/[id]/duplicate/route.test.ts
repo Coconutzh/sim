@@ -30,7 +30,7 @@ describe('Workflow Duplicate API Route', () => {
 
   it('rejects duplication through cross-team published access', async () => {
     mockDuplicateWorkflow.mockRejectedValueOnce(
-      new Error('Workspace access required for source workflow duplication')
+      new Error('Canvas access required for source workflow duplication')
     )
 
     const request = new NextRequest('http://localhost:3000/api/workflows/published-1/duplicate', {

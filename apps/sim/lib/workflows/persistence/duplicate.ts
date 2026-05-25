@@ -299,7 +299,7 @@ export async function duplicateWorkflow(
     const source = sourceWorkflowRow[0]
     if (!source.workspaceId) {
       throw new Error(
-        'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be duplicated.'
+        'This workflow is not attached to a canvas. Personal workflows are deprecated and cannot be duplicated.'
       )
     }
 
@@ -315,12 +315,12 @@ export async function duplicateWorkflow(
       throw new Error('Source workflow access denied')
     }
     if (sourceAuthorization.accessSource !== 'workspace') {
-      throw new Error('Workspace access required for source workflow duplication')
+      throw new Error('Canvas access required for source workflow duplication')
     }
 
     const targetWorkspaceId = workspaceId || source.workspaceId
     if (targetWorkspaceId !== source.workspaceId) {
-      throw new Error('Cross-workspace workflow duplication is not supported')
+      throw new Error('Cross-canvas workflow duplication is not supported')
     }
 
     const targetWorkspacePermission = await getUserEntityPermissions(
@@ -329,7 +329,7 @@ export async function duplicateWorkflow(
       targetWorkspaceId
     )
     if (targetWorkspacePermission !== 'admin' && targetWorkspacePermission !== 'write') {
-      throw new Error('Write or admin access required for target workspace')
+      throw new Error('Write or admin access required for target canvas')
     }
     const targetFolderId = folderId !== undefined ? folderId : source.folderId
     await assertTargetFolderMutable(tx, targetFolderId, targetWorkspaceId)
@@ -650,7 +650,7 @@ export async function duplicateWorkflow(
 
     const finalWorkspaceId = workspaceId || source.workspaceId
     if (!finalWorkspaceId) {
-      throw new Error('Workspace ID is required')
+      throw new Error('Canvas ID is required')
     }
 
     return {

@@ -27,9 +27,7 @@ describe('Workflow Publication API Route', () => {
   })
 
   it('rejects publication updates through cross-team shared access with 403', async () => {
-    mockUpdateWorkflowPublicationDetails.mockRejectedValueOnce(
-      new Error('Workspace access required')
-    )
+    mockUpdateWorkflowPublicationDetails.mockRejectedValueOnce(new Error('Canvas access required'))
 
     const request = new NextRequest('http://localhost:3000/api/workflows/published-1/publication', {
       method: 'PATCH',
@@ -44,7 +42,7 @@ describe('Workflow Publication API Route', () => {
 
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({
-      error: 'Workspace access required',
+      error: 'Canvas access required',
     })
   })
 

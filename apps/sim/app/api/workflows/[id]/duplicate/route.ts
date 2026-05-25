@@ -118,7 +118,7 @@ export const POST = withRouteHandler(
           return NextResponse.json({ error: 'Access denied' }, { status: 403 })
         }
 
-        if (error.message === 'Workspace access required for source workflow duplication') {
+        if (error.message === 'Canvas access required for source workflow duplication') {
           logger.warn(
             `[${requestId}] User ${userId} attempted workflow duplication through cross-team published access for ${sourceWorkflowIdForLog}`
           )
@@ -128,9 +128,9 @@ export const POST = withRouteHandler(
           )
         }
 
-        if (error.message === 'Cross-workspace workflow duplication is not supported') {
+        if (error.message === 'Cross-canvas workflow duplication is not supported') {
           logger.warn(
-            `[${requestId}] User ${userId} attempted cross-workspace workflow duplication for ${sourceWorkflowIdForLog}`
+            `[${requestId}] User ${userId} attempted cross-canvas workflow duplication for ${sourceWorkflowIdForLog}`
           )
           return NextResponse.json({ error: error.message }, { status: 400 })
         }
