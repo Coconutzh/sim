@@ -78,7 +78,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       const workflow = await getWorkflowById(resolved.workflowId)
       if (!workflow?.workspaceId || workflow.workspaceId !== auth.workspaceId) {
         return NextResponse.json(
-          { success: false, error: 'API key is not authorized for this workspace' },
+          { success: false, error: 'API key is not authorized for this canvas' },
           { status: 403 }
         )
       }

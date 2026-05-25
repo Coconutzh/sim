@@ -4,10 +4,7 @@ import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter'
 import { getRateLimit, RateLimiter } from '@/lib/core/rate-limiter'
 import { generateRequestId } from '@/lib/core/utils/request'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { authenticateV1Request } from '@/app/api/v1/auth'
 
 const logger = createLogger('V1Middleware')
@@ -165,7 +162,7 @@ export function checkWorkspaceScope(
     rateLimit.workspaceId !== requestedWorkspaceId
   ) {
     return NextResponse.json(
-      { error: 'API key is not authorized for this workspace' },
+      { error: 'API key is not authorized for this canvas' },
       { status: 403 }
     )
   }
@@ -187,7 +184,7 @@ export async function validateWorkspaceAccess(
 
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
-    return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
   }
 
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)

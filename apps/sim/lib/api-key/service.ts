@@ -4,10 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { authenticateApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBillingSettings, type WorkspaceBillingSettings } from '@/lib/workspaces/utils'
 
 const logger = createLogger('ApiKeyService')
@@ -53,7 +50,10 @@ interface HashCandidate {
   expiresAt: Date | null
 }
 
-async function hasVisibleWorkspacePermission(userId: string, workspaceId: string): Promise<boolean> {
+async function hasVisibleWorkspacePermission(
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
     return false
@@ -86,7 +86,7 @@ export async function authenticateApiKeyFromHeader(
     if (options.workspaceId) {
       workspaceSettings = await getWorkspaceBillingSettings(options.workspaceId)
       if (!workspaceSettings) {
-        return { success: false, error: 'Workspace not found' }
+        return { success: false, error: 'Canvas not found' }
       }
     }
 

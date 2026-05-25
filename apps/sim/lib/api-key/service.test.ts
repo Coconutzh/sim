@@ -103,6 +103,17 @@ describe('authenticateApiKeyFromHeader', () => {
     expect(dbChainMockFns.where).not.toHaveBeenCalled()
   })
 
+  it('returns canvas not found when workspace-scoped billing settings are missing', async () => {
+    mockGetWorkspaceBillingSettings.mockResolvedValueOnce(null)
+
+    const result = await authenticateApiKeyFromHeader('sk-sim-plain-key', {
+      workspaceId: 'ws-missing',
+    })
+
+    expect(result).toEqual({ success: false, error: 'Canvas not found' })
+    expect(dbChainMockFns.where).not.toHaveBeenCalled()
+  })
+
   it('resolves on the fast path when the hash lookup finds a row', async () => {
     const record = personalKeyRecord()
     dbChainMockFns.where.mockResolvedValueOnce([record])
