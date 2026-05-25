@@ -9,6 +9,7 @@ import {
   useCreateWorkspace,
   useDeleteWorkspace,
   useUpdateWorkspace,
+  useWorkspaceCanvasCreationCapabilities,
   useWorkspaceCreationPolicy,
   useWorkspacesQuery,
   type Workspace,
@@ -46,6 +47,8 @@ export function useWorkspaceManagement({
   const { data: workspaceCreationPolicy = null } = useWorkspaceCreationPolicy(
     Boolean(sessionUserId)
   )
+  const { data: workspaceCanvasCreationCapabilities = null } =
+    useWorkspaceCanvasCreationCapabilities(Boolean(sessionUserId))
 
   const leaveWorkspaceMutation = useLeaveWorkspace()
   const createWorkspaceMutation = useCreateWorkspace()
@@ -274,6 +277,7 @@ export function useWorkspaceManagement({
   return {
     workspaces: sortedWorkspaces,
     workspaceCreationPolicy,
+    workspaceCanvasCreationCapabilities,
     activeWorkspace,
     isWorkspacesLoading,
     isCreatingWorkspace: createWorkspaceMutation.isPending,

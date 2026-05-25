@@ -11,6 +11,7 @@ import {
   listWorkspacesContract,
   updateWorkspaceContract,
   type Workspace,
+  type WorkspaceCanvasCreationCapabilities,
   type WorkspaceCreationPolicy,
   type WorkspaceMember,
   type WorkspacePermissions,
@@ -40,6 +41,7 @@ export const workspaceKeys = {
 
 export type {
   Workspace,
+  WorkspaceCanvasCreationCapabilities,
   WorkspaceCreationPolicy,
   WorkspaceMember,
   WorkspacePermissions,
@@ -73,6 +75,10 @@ async function fetchWorkspaces(
           workspaceMode: data.creationPolicy.workspaceMode ?? 'personal',
         }
       : null,
+    canvasCreationCapabilities: {
+      canCreatePersonalCanvas: data.canvasCreationCapabilities.canCreatePersonalCanvas,
+      canCreateTeamCanvas: data.canvasCreationCapabilities.canCreateTeamCanvas,
+    },
   }
 }
 
@@ -117,7 +123,22 @@ export function useWorkspaceCreationPolicy(enabled = true) {
   })
 }
 
+export function useWorkspaceCanvasCreationCapabilities(enabled = true) {
+  return useQuery({
+    queryKey: workspaceKeys.list('active'),
+    queryFn: ({ signal }) => fetchWorkspaces('active', signal),
+    select: (data) => data.canvasCreationCapabilities,
+    enabled,
+    staleTime: 30 * 1000,
+  })
+}
+
 type CreateWorkspaceParams = Pick<ContractBodyInput<typeof createWorkspaceContract>, 'name'>
+
+const EMPTY_CANVAS_CREATION_CAPABILITIES: WorkspaceCanvasCreationCapabilities = {
+  canCreatePersonalCanvas: false,
+  canCreateTeamCanvas: false,
+}
 
 /**
  * Creates a new workspace.
@@ -135,7 +156,12 @@ export function useCreateWorkspace() {
     onSuccess: (newWorkspace) => {
       queryClient.setQueryData<WorkspacesResponse>(workspaceKeys.list('active'), (previous) => {
         if (!previous) {
-          return { workspaces: [newWorkspace], lastActiveWorkspaceId: null, creationPolicy: null }
+          return {
+            workspaces: [newWorkspace],
+            lastActiveWorkspaceId: null,
+            creationPolicy: null,
+            canvasCreationCapabilities: EMPTY_CANVAS_CREATION_CAPABILITIES,
+          }
         }
         if (previous.workspaces.some((w) => w.id === newWorkspace.id)) {
           return previous

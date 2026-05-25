@@ -467,6 +467,7 @@ export const Sidebar = memo(function Sidebar() {
   const {
     workspaces,
     workspaceCreationPolicy,
+    workspaceCanvasCreationCapabilities,
     activeWorkspace,
     isWorkspacesLoading,
     switchWorkspace,
@@ -1556,7 +1557,10 @@ export const Sidebar = memo(function Sidebar() {
                 workspaceId={workspaceHeaderWorkspaceId}
                 workspaces={personalDraftWorkspaces}
                 workspaceCreationPolicy={workspaceCreationPolicy}
-                canCreatePersonalCanvas={Boolean(activeWorkgroupId)}
+                canCreatePersonalCanvas={Boolean(
+                  activeWorkgroupId &&
+                    workspaceCanvasCreationCapabilities?.canCreatePersonalCanvas === true
+                )}
                 isWorkspacesLoading={isWorkspacesLoading}
                 isCreatingWorkspace={isCreatingWorkspace || isCreatingPersonalWorkspace}
                 isWorkspaceMenuOpen={isWorkspaceMenuOpen}

@@ -63,6 +63,11 @@ import { organizationKeys } from '@/hooks/queries/organization'
 import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
 import { type Workspace, workspaceKeys } from '@/hooks/queries/workspace'
 
+const ACTIVE_WORKGROUP_CANVAS_CREATION_CAPABILITIES = {
+  canCreatePersonalCanvas: true,
+  canCreateTeamCanvas: false,
+} as const
+
 export const collaborationKeys = {
   all: ['collaboration'] as const,
   disciplines: () => [...collaborationKeys.all, 'disciplines'] as const,
@@ -567,7 +572,12 @@ export function useCreatePersonalWorkspace() {
       }
       queryClient.setQueryData<WorkspacesResponse>(workspaceKeys.list('active'), (previous) => {
         if (!previous) {
-          return { workspaces: [newWorkspace], lastActiveWorkspaceId: null, creationPolicy: null }
+          return {
+            workspaces: [newWorkspace],
+            lastActiveWorkspaceId: null,
+            creationPolicy: null,
+            canvasCreationCapabilities: ACTIVE_WORKGROUP_CANVAS_CREATION_CAPABILITIES,
+          }
         }
         if (previous.workspaces.some((workspace) => workspace.id === newWorkspace.id)) {
           return previous
@@ -615,7 +625,12 @@ export function useCreateTeamWorkspace() {
       }
       queryClient.setQueryData<WorkspacesResponse>(workspaceKeys.list('active'), (previous) => {
         if (!previous) {
-          return { workspaces: [newWorkspace], lastActiveWorkspaceId: null, creationPolicy: null }
+          return {
+            workspaces: [newWorkspace],
+            lastActiveWorkspaceId: null,
+            creationPolicy: null,
+            canvasCreationCapabilities: ACTIVE_WORKGROUP_CANVAS_CREATION_CAPABILITIES,
+          }
         }
         if (previous.workspaces.some((workspace) => workspace.id === newWorkspace.id)) {
           return previous

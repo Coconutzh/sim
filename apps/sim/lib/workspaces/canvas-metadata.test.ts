@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { mergeWorkspaceCanvasMetadata } from '@/lib/workspaces/canvas-metadata'
+import {
+  deriveWorkspaceCanvasCreationCapabilities,
+  mergeWorkspaceCanvasMetadata,
+} from '@/lib/workspaces/canvas-metadata'
 
 describe('mergeWorkspaceCanvasMetadata', () => {
   it('marks personal canvas workspace rows with their owning workgroup and discipline', () => {
@@ -56,6 +59,37 @@ describe('mergeWorkspaceCanvasMetadata', () => {
       workgroupId: null,
       disciplineId: null,
       isInternalWorkspace: false,
+    })
+  })
+})
+
+describe('deriveWorkspaceCanvasCreationCapabilities', () => {
+  it('allows personal draft canvas creation for any active workgroup member', () => {
+    expect(
+      deriveWorkspaceCanvasCreationCapabilities([{ role: 'member', teamWorkspaceId: 'ws-team' }])
+    ).toEqual({
+      canCreatePersonalCanvas: true,
+      canCreateTeamCanvas: false,
+    })
+  })
+
+  it('allows team canvas creation only for admins of workgroups without a team canvas', () => {
+    expect(
+      deriveWorkspaceCanvasCreationCapabilities([
+        { role: 'member', teamWorkspaceId: null },
+        { role: 'admin', teamWorkspaceId: 'ws-existing-team' },
+        { role: 'admin', teamWorkspaceId: null },
+      ])
+    ).toEqual({
+      canCreatePersonalCanvas: true,
+      canCreateTeamCanvas: true,
+    })
+  })
+
+  it('blocks canvas creation capabilities when the user has no active workgroup memberships', () => {
+    expect(deriveWorkspaceCanvasCreationCapabilities([])).toEqual({
+      canCreatePersonalCanvas: false,
+      canCreateTeamCanvas: false,
     })
   })
 })

@@ -13,7 +13,10 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { annotateWorkspaceCanvasMetadata } from '@/lib/workspaces/canvas-metadata'
+import {
+  annotateWorkspaceCanvasMetadata,
+  getWorkspaceCanvasCreationCapabilities,
+} from '@/lib/workspaces/canvas-metadata'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
 import {
@@ -45,6 +48,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     userId: session.user.id,
     activeOrganizationId,
   })
+  const canvasCreationCapabilities = await getWorkspaceCanvasCreationCapabilities(session.user.id)
 
   const { scope } = parsed.data.query
 
@@ -103,7 +107,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
   if (scope === 'active' && userWorkspaces.length === 0) {
     if (!creationPolicy.canCreate) {
-      return NextResponse.json({ workspaces: [], lastActiveWorkspaceId, creationPolicy })
+      return NextResponse.json({
+        workspaces: [],
+        lastActiveWorkspaceId,
+        creationPolicy,
+        canvasCreationCapabilities,
+      })
     }
 
     const defaultWorkspace = await createDefaultWorkspace(
@@ -123,6 +132,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       workspaces: [defaultWorkspace],
       lastActiveWorkspaceId,
       creationPolicy: refreshedCreationPolicy,
+      canvasCreationCapabilities,
     })
   }
 
@@ -179,6 +189,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     workspaces: workspacesWithPermissions,
     lastActiveWorkspaceId,
     creationPolicy,
+    canvasCreationCapabilities,
   })
 })
 

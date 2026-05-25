@@ -1,6 +1,6 @@
 import { db } from '@sim/db'
-import { personalCanvasWorkspace, workgroup } from '@sim/db/schema'
-import { inArray } from 'drizzle-orm'
+import { personalCanvasWorkspace, workgroup, workgroupMember } from '@sim/db/schema'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 
 export type WorkspaceCanvasScope = 'personal' | 'team' | null
 
@@ -20,11 +20,21 @@ interface WorkgroupLookup {
   disciplineId: string | null
 }
 
+interface UserWorkgroupMembershipLookup {
+  role: 'admin' | 'member'
+  teamWorkspaceId: string | null
+}
+
 export interface WorkspaceCanvasMetadata {
   canvasScope: WorkspaceCanvasScope
   workgroupId: string | null
   disciplineId: string | null
   isInternalWorkspace: boolean
+}
+
+export interface WorkspaceCanvasCreationCapabilities {
+  canCreatePersonalCanvas: boolean
+  canCreateTeamCanvas: boolean
 }
 
 interface WorkspaceCanvasLookup {
@@ -72,6 +82,34 @@ export function mergeWorkspaceCanvasMetadata<T extends WorkspaceCanvasMetadataIn
       isInternalWorkspace: false,
     }
   })
+}
+
+/** Derives original workspace-shell canvas creation capabilities from workgroup membership. */
+export function deriveWorkspaceCanvasCreationCapabilities(
+  memberships: UserWorkgroupMembershipLookup[]
+): WorkspaceCanvasCreationCapabilities {
+  return {
+    canCreatePersonalCanvas: memberships.length > 0,
+    canCreateTeamCanvas: memberships.some(
+      (membership) => membership.role === 'admin' && !membership.teamWorkspaceId
+    ),
+  }
+}
+
+/** Loads canvas creation capabilities for the current user's accessible active workgroups. */
+export async function getWorkspaceCanvasCreationCapabilities(
+  userId: string
+): Promise<WorkspaceCanvasCreationCapabilities> {
+  const memberships = await db
+    .select({
+      role: workgroupMember.role,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroupMember)
+    .innerJoin(workgroup, eq(workgroup.id, workgroupMember.workgroupId))
+    .where(and(eq(workgroupMember.userId, userId), isNull(workgroup.archivedAt)))
+
+  return deriveWorkspaceCanvasCreationCapabilities(memberships)
 }
 
 /** Loads and attaches collaboration canvas metadata for workspace API compatibility. */

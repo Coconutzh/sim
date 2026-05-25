@@ -6,11 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockAnnotateWorkspaceCanvasMetadata,
+  mockGetWorkspaceCanvasCreationCapabilities,
   mockGetSession,
   mockGetWorkspaceCreationPolicy,
   mockDbSelect,
 } = vi.hoisted(() => ({
   mockAnnotateWorkspaceCanvasMetadata: vi.fn(async (workspaces: unknown[]) => workspaces),
+  mockGetWorkspaceCanvasCreationCapabilities: vi.fn(),
   mockGetSession: vi.fn(),
   mockGetWorkspaceCreationPolicy: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 
 vi.mock('@/lib/workspaces/canvas-metadata', () => ({
   annotateWorkspaceCanvasMetadata: mockAnnotateWorkspaceCanvasMetadata,
+  getWorkspaceCanvasCreationCapabilities: mockGetWorkspaceCanvasCreationCapabilities,
 }))
 
 import { listAccessibleWorkspaceIds } from '@/lib/workspaces/permissions/utils'
@@ -79,6 +82,10 @@ describe('GET /api/workspaces', () => {
       organizationId: null,
       workspaceMode: 'personal',
       billedAccountUserId: 'user-1',
+    })
+    mockGetWorkspaceCanvasCreationCapabilities.mockResolvedValue({
+      canCreatePersonalCanvas: false,
+      canCreateTeamCanvas: false,
     })
     mockAnnotateWorkspaceCanvasMetadata.mockImplementation(async (workspaces) => workspaces)
     vi.mocked(listAccessibleWorkspaceIds).mockResolvedValue(['ws-owner'])
@@ -192,6 +199,26 @@ describe('GET /api/workspaces', () => {
           isInternalWorkspace: true,
         },
       ],
+    })
+  })
+
+  it('returns workspace-shell canvas creation capabilities from the server', async () => {
+    mockGetWorkspaceCanvasCreationCapabilities.mockResolvedValueOnce({
+      canCreatePersonalCanvas: true,
+      canCreateTeamCanvas: true,
+    })
+
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/workspaces?scope=all')
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockGetWorkspaceCanvasCreationCapabilities).toHaveBeenCalledWith('user-1')
+    await expect(response.json()).resolves.toMatchObject({
+      canvasCreationCapabilities: {
+        canCreatePersonalCanvas: true,
+        canCreateTeamCanvas: true,
+      },
     })
   })
 

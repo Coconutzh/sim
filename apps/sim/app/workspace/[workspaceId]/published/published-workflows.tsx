@@ -24,7 +24,7 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const PUBLISHED_COLUMNS: ResourceColumn[] = [
   { id: 'workflow', header: 'Workflow', widthMultiplier: 1.15 },
-  { id: 'workspace', header: 'Team Workspace' },
+  { id: 'workspace', header: 'Team Canvas' },
   { id: 'visibility', header: 'Visibility' },
   { id: 'publishedAt', header: 'Published' },
 ] as const
@@ -384,7 +384,7 @@ export function PublishedWorkflows() {
       <div className='border-[var(--border)] border-b px-6 py-3'>
         <p className='text-[13px] text-[var(--text-muted)]'>
           Browse read-only mainlines shared with your current workgroup. Opening a row shows a safe
-          summary view instead of entering another team&apos;s collaborative workspace.
+          summary view instead of entering another team&apos;s collaborative canvas.
         </p>
       </div>
       {isShowcaseRoute && (
@@ -407,8 +407,8 @@ export function PublishedWorkflows() {
       />
       {!workgroupId && !isWorkspaceLoading && (
         <div className='border-[var(--border)] border-t px-6 py-3 text-[12px] text-[var(--text-muted)]'>
-          Configure a `workgroupId` on the current workspace to enable cross-workgroup published
-          workflow browsing.
+          Open a personal or team canvas that belongs to a workgroup to enable cross-team showcase
+          browsing.
         </div>
       )}
     </div>

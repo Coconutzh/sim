@@ -26,7 +26,10 @@ import {
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
 import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import {
+  useWorkspaceCanvasCreationCapabilities,
+  useWorkspaceSettings,
+} from '@/hooks/queries/workspace'
 import type { ChatContext } from '@/stores/panel'
 import { MothershipChat, MothershipView, TemplatePrompts, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
@@ -119,6 +122,9 @@ export function Home({ chatId }: HomeProps = {}) {
   const { data: workgroupsData } = useMyWorkgroups(Boolean(session?.user?.id))
   const workgroups = workgroupsData?.workgroups ?? []
   const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+  const { data: workspaceCanvasCreationCapabilities } = useWorkspaceCanvasCreationCapabilities(
+    Boolean(session?.user?.id)
+  )
   const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
   const activeWorkgroup =
     workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
@@ -133,6 +139,8 @@ export function Home({ chatId }: HomeProps = {}) {
   const personalWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
   const teamWorkspaceId = teamWorkspaceData?.workspace.id ?? activeWorkgroup?.teamWorkspaceId
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
+  const canInitializeActiveTeamCanvas =
+    isActiveWorkgroupAdmin && workspaceCanvasCreationCapabilities?.canCreateTeamCanvas === true
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
   posthogRef.current = posthog
@@ -381,14 +389,20 @@ export function Home({ chatId }: HomeProps = {}) {
   }
 
   const handleInitializeTeamCanvas = useCallback(async () => {
-    if (!activeWorkgroupId || isCreatingTeamWorkspace) return
+    if (!activeWorkgroupId || !canInitializeActiveTeamCanvas || isCreatingTeamWorkspace) return
     const result = await createTeamWorkspace({ workgroupId: activeWorkgroupId })
     router.push(
       result.defaultWorkflowId
         ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
         : `/workspace/${result.workspace.id}/home`
     )
-  }, [activeWorkgroupId, createTeamWorkspace, isCreatingTeamWorkspace, router])
+  }, [
+    activeWorkgroupId,
+    canInitializeActiveTeamCanvas,
+    createTeamWorkspace,
+    isCreatingTeamWorkspace,
+    router,
+  ])
 
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
@@ -427,19 +441,21 @@ export function Home({ chatId }: HomeProps = {}) {
             />
             <CanvasEntryCard
               description='Shared work area for your active workgroup. Team members collaborate here.'
-              disabled={!teamWorkspaceId && !isActiveWorkgroupAdmin}
+              disabled={!teamWorkspaceId && !canInitializeActiveTeamCanvas}
               eyebrow='Team'
               href={teamWorkspaceId ? `/workspace/${teamWorkspaceId}/home` : '#'}
               icon={Users}
               meta={
                 teamWorkspaceId
                   ? activeWorkgroup?.name || 'Team canvas'
-                  : isActiveWorkgroupAdmin
+                  : canInitializeActiveTeamCanvas
                     ? 'Admin can initialize'
                     : 'Waiting for team admin'
               }
               onClick={
-                !teamWorkspaceId && isActiveWorkgroupAdmin ? handleInitializeTeamCanvas : undefined
+                !teamWorkspaceId && canInitializeActiveTeamCanvas
+                  ? handleInitializeTeamCanvas
+                  : undefined
               }
               title={teamWorkspaceId ? 'Team canvas' : 'Initialize team canvas'}
             />

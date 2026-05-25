@@ -44,6 +44,15 @@ export const workspaceCreationPolicySchema = z.object({
 
 export type WorkspaceCreationPolicy = z.output<typeof workspaceCreationPolicySchema>
 
+export const workspaceCanvasCreationCapabilitiesSchema = z.object({
+  canCreatePersonalCanvas: z.boolean(),
+  canCreateTeamCanvas: z.boolean(),
+})
+
+export type WorkspaceCanvasCreationCapabilities = z.output<
+  typeof workspaceCanvasCreationCapabilitiesSchema
+>
+
 export const listWorkspacesQuerySchema = z.object({
   scope: workspaceScopeSchema.default('active'),
 })
@@ -187,6 +196,7 @@ export const listWorkspacesContract = defineRouteContract({
       workspaces: z.array(workspaceSchema),
       lastActiveWorkspaceId: z.string().nullable(),
       creationPolicy: workspaceCreationPolicySchema.nullable(),
+      canvasCreationCapabilities: workspaceCanvasCreationCapabilitiesSchema,
     }),
   },
 })
