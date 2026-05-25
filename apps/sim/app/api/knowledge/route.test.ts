@@ -114,7 +114,7 @@ describe('Knowledge Base API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(data).toEqual({ error: 'Canvas not found' })
       expect(mockDbChain.select).not.toHaveBeenCalled()
     })
   })
@@ -166,7 +166,7 @@ describe('Knowledge Base API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(data).toEqual({ error: 'Canvas not found' })
       expect(mockDbChain.insert).not.toHaveBeenCalled()
     })
 

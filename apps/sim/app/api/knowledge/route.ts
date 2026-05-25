@@ -48,7 +48,7 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
     if (workspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
     }
 
@@ -98,11 +98,11 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     const workspaceAccess = await checkWorkspaceAccess(validatedData.workspaceId, session.user.id)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     if (!workspaceAccess.canWrite) {
       return NextResponse.json(
-        { error: 'Write or Admin access required to create knowledge bases in this workspace' },
+        { error: 'Write or Admin access required to create knowledge bases in this canvas' },
         { status: 403 }
       )
     }

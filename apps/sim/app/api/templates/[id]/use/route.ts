@@ -16,10 +16,7 @@ import {
   regenerateWorkflowStateIds,
 } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -51,12 +48,12 @@ export const POST = withRouteHandler(
 
       if (!workspaceId) {
         logger.warn(`[${requestId}] Missing workspaceId in request body`)
-        return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 })
+        return NextResponse.json({ error: 'Canvas ID is required' }, { status: 400 })
       }
 
       const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
