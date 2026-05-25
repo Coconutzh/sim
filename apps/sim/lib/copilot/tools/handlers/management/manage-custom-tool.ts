@@ -78,7 +78,7 @@ export async function executeManageCustomTool(
       if (!workspaceId) {
         return {
           success: false,
-          error: "workspaceId is required for operation 'add'",
+          error: "Canvas ID is required for operation 'add'",
         }
       }
       if (!params.schema || !params.code) {
@@ -116,7 +116,7 @@ export async function executeManageCustomTool(
       if (!workspaceId) {
         return {
           success: false,
-          error: "workspaceId is required for operation 'edit'",
+          error: "Canvas ID is required for operation 'edit'",
         }
       }
       if (!params.toolId) {

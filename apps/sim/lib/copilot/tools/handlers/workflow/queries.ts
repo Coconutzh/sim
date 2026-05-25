@@ -98,7 +98,7 @@ export async function executeGetWorkflowData(
 
     if (dataType === 'custom_tools') {
       if (!workspaceId) {
-        return { success: false, error: 'workspaceId is required' }
+        return { success: false, error: 'Canvas ID is required' }
       }
       const toolsRows = await listCustomTools({
         userId: context.userId,
@@ -122,7 +122,7 @@ export async function executeGetWorkflowData(
 
     if (dataType === 'mcp_tools') {
       if (!workspaceId) {
-        return { success: false, error: 'workspaceId is required' }
+        return { success: false, error: 'Canvas ID is required' }
       }
       const tools = await mcpService.discoverTools(context.userId, workspaceId, false)
       const mcpTools = tools.map((tool) => ({
@@ -137,7 +137,7 @@ export async function executeGetWorkflowData(
 
     if (dataType === 'files') {
       if (!workspaceId) {
-        return { success: false, error: 'workspaceId is required' }
+        return { success: false, error: 'Canvas ID is required' }
       }
       const files = await listWorkspaceFiles(workspaceId)
       const fileResults = files.map((file) => ({

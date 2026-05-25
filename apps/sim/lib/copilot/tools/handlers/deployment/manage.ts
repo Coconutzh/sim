@@ -128,7 +128,7 @@ export async function executeListWorkspaceMcpServers(
     const { workflow: workflowRecord } = await ensureWorkflowAccess(workflowId, context.userId)
     const workspaceId = workflowRecord.workspaceId
     if (!workspaceId) {
-      return { success: false, error: 'workspaceId is required' }
+      return { success: false, error: 'Canvas ID is required' }
     }
 
     const servers = await db
@@ -192,7 +192,7 @@ export async function executeCreateWorkspaceMcpServer(
     )
     const workspaceId = workflowRecord.workspaceId
     if (!workspaceId) {
-      return { success: false, error: 'workspaceId is required' }
+      return { success: false, error: 'Canvas ID is required' }
     }
 
     const name = params.name?.trim()

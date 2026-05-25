@@ -79,7 +79,7 @@ export async function generateOAuthLink(
   baseUrl: string
 ): Promise<{ url: string; providerId: string; serviceName: string }> {
   if (!workspaceId) {
-    throw new Error('workspaceId is required to generate an OAuth link')
+    throw new Error('Canvas ID is required to generate an OAuth link')
   }
 
   const allServices = getAllOAuthServices()

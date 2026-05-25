@@ -462,7 +462,7 @@ export async function executeDeployMcp(
     )
     const workspaceId = workflowRecord.workspaceId
     if (!workspaceId) {
-      return { success: false, error: 'workspaceId is required' }
+      return { success: false, error: 'Canvas ID is required' }
     }
 
     const serverId = params.serverId
@@ -487,7 +487,7 @@ export async function executeDeployMcp(
       )
       .limit(1)
     if (!serverRecord) {
-      return { success: false, error: 'MCP server not found in this workspace' }
+      return { success: false, error: 'MCP server not found in this canvas' }
     }
 
     // Handle undeploy action — remove workflow from MCP server

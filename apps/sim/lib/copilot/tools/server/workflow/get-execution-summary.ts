@@ -90,7 +90,7 @@ export const getExecutionSummaryServerTool: BaseServerTool<
     const { workspaceId, workflowId, limit = 10, status = 'all' } = rawArgs || {}
 
     if (!workspaceId || typeof workspaceId !== 'string') {
-      throw new Error('workspaceId is required')
+      throw new Error('Canvas ID is required')
     }
     if (!context?.userId) {
       throw new Error('Unauthorized access')

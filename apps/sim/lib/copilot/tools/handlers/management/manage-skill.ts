@@ -28,7 +28,7 @@ export async function executeManageSkill(
   }
 
   if (!workspaceId) {
-    return { success: false, error: 'workspaceId is required' }
+    return { success: false, error: 'Canvas ID is required' }
   }
 
   const writeOps: string[] = ['add', 'edit', 'delete']
