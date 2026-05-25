@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!workflowId && !workspaceId) {
-      return createBadRequestResponse('workflowId, workspaceId, or chatId is required')
+      return createBadRequestResponse('workflowId, canvas ID, or chatId is required')
     }
 
     if (workspaceId) {
@@ -202,7 +202,7 @@ export async function GET(req: NextRequest) {
       logger.warn('Hidden workspace copilot chat query attempt', {
         workspaceId: error.workspaceId,
       })
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     logger.error('Error fetching copilot chats:', error)

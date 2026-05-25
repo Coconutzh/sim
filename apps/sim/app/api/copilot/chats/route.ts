@@ -99,7 +99,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       {},
       {
         validationErrorResponse: (error) =>
-          validationErrorResponse(error, 'workspaceId and workflowId are required'),
+          validationErrorResponse(error, 'Canvas ID and workflowId are required'),
       }
     )
     if (!parsed.success) return parsed.response
@@ -127,14 +127,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
     }
     if (authorization.accessSource !== 'workspace') {
-      return NextResponse.json(
-        { success: false, error: 'Workspace access required' },
-        { status: 403 }
-      )
+      return NextResponse.json({ success: false, error: 'Canvas access required' }, { status: 403 })
     }
 
     if (authorization.workflow.workspaceId !== workspaceId) {
-      return createBadRequestResponse('workflow does not belong to this workspace')
+      return createBadRequestResponse('workflow does not belong to this canvas')
     }
 
     const result = await resolveOrCreateChat({
@@ -155,7 +152,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     if (isActiveWorkspaceAccessError(error)) {
       logger.warn('Hidden workspace copilot chat creation attempt')
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     logger.error('Error creating workflow copilot chat:', error)

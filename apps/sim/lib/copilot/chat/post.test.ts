@@ -292,7 +292,7 @@ describe('handleUnifiedChatPost', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({
-      error: 'workspaceId is required when workflowId is not provided',
+      error: 'Canvas ID is required when workflowId is not provided',
     })
   })
 
@@ -312,7 +312,7 @@ describe('handleUnifiedChatPost', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(createSSEStream).not.toHaveBeenCalled()
   })
 })

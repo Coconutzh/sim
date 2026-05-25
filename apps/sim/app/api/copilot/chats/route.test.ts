@@ -320,7 +320,7 @@ describe('Copilot Chats List API Route', () => {
       expect(response.status).toBe(403)
       expect(responseData).toEqual({
         success: false,
-        error: 'Workspace access required',
+        error: 'Canvas access required',
       })
       expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
     })
@@ -345,7 +345,7 @@ describe('Copilot Chats List API Route', () => {
       const response = await POST(request as any)
 
       expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+      await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
       expect(mockResolveOrCreateChat).not.toHaveBeenCalled()
     })

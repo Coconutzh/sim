@@ -571,14 +571,14 @@ async function resolveBranch(params: {
   }
 
   if (!requestedWorkspaceId) {
-    return createBadRequestResponse('workspaceId is required when workflowId is not provided')
+    return createBadRequestResponse('Canvas ID is required when workflowId is not provided')
   }
 
   try {
     await assertActiveWorkspaceAccess(requestedWorkspaceId, authenticatedUserId)
   } catch (error) {
     if (isActiveWorkspaceAccessError(error)) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     throw error
   }
