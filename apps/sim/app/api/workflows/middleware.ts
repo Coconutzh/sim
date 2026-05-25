@@ -41,7 +41,7 @@ export async function validateWorkflowAccess(
       return {
         error: {
           message:
-            'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+            'This workflow is not attached to a canvas. Legacy personal workflows are deprecated and cannot be accessed.',
           status: 403,
         },
       }
@@ -61,7 +61,7 @@ export async function validateWorkflowAccess(
       if (auth.apiKeyType === 'workspace' && auth.workspaceId !== workflow.workspaceId) {
         return {
           error: {
-            message: 'API key is not authorized for this workspace',
+            message: 'API key is not authorized for this canvas',
             status: 403,
           },
         }
@@ -84,7 +84,7 @@ export async function validateWorkflowAccess(
       if (authorization.accessSource && authorization.accessSource !== 'workspace') {
         return {
           error: {
-            message: 'Cross-team published workflow access does not include workspace operations',
+            message: 'Cross-team published workflow access does not include canvas operations',
             status: 403,
           },
         }

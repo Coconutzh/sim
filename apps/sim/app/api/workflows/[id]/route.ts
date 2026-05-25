@@ -64,7 +64,7 @@ export const GET = withRouteHandler(
 
       if (auth.apiKeyType === 'workspace' && auth.workspaceId !== workflowData.workspaceId) {
         return NextResponse.json(
-          { error: 'API key is not authorized for this workspace' },
+          { error: 'API key is not authorized for this canvas' },
           { status: 403 }
         )
       }

@@ -68,14 +68,14 @@ export const POST = withRouteHandler(
         const workspaceId = workflow.workspaceId
         if (!workspaceId) {
           logger.error(`[${requestId}] Workflow ${id} has no workspaceId`)
-          return createErrorResponse('Workflow has no associated workspace', 500)
+          return createErrorResponse('Workflow has no associated canvas', 500)
         }
         const billedAccountUserId = await getWorkspaceBilledAccountUserId(workspaceId)
         if (!billedAccountUserId) {
           logger.error(
             `[${requestId}] Unable to resolve billed account for workspace ${workspaceId}`
           )
-          return createErrorResponse('Unable to resolve billing account for this workspace', 500)
+          return createErrorResponse('Unable to resolve billing account for this canvas', 500)
         }
 
         await loggingSession.safeStart({

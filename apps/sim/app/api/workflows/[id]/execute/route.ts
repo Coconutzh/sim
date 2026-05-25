@@ -579,14 +579,14 @@ async function handleExecutePost(
 
     if (!workflow.workspaceId) {
       reqLogger.error('Workflow has no workspaceId')
-      return NextResponse.json({ error: 'Workflow has no associated workspace' }, { status: 500 })
+      return NextResponse.json({ error: 'Workflow has no associated canvas' }, { status: 500 })
     }
     const workspaceId = workflow.workspaceId
     reqLogger = reqLogger.withMetadata({ workspaceId, userId: actorUserId })
 
     if (auth.apiKeyType === 'workspace' && auth.workspaceId !== workspaceId) {
       return NextResponse.json(
-        { error: 'API key is not authorized for this workspace' },
+        { error: 'API key is not authorized for this canvas' },
         { status: 403 }
       )
     }

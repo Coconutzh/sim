@@ -55,7 +55,7 @@ describe('validateWorkflowAccess (requireDeployment=false)', () => {
     const result = await validateWorkflowAccess(makeRequest(), 'wf-1', false)
 
     expect(result.error).toEqual({
-      message: 'API key is not authorized for this workspace',
+      message: 'API key is not authorized for this canvas',
       status: 403,
     })
     expect(workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
@@ -145,7 +145,7 @@ describe('validateWorkflowAccess (requireDeployment=false)', () => {
     expect(result.error).toEqual({ message: 'Access denied', status: 403 })
   })
 
-  it('rejects cross-team published access for workspace operations', async () => {
+  it('rejects cross-team published access for canvas operations', async () => {
     hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValueOnce({
       success: true,
       userId: 'user-1',
@@ -162,7 +162,7 @@ describe('validateWorkflowAccess (requireDeployment=false)', () => {
     const result = await validateWorkflowAccess(makeRequest(), 'wf-1', false)
 
     expect(result.error).toEqual({
-      message: 'Cross-team published workflow access does not include workspace operations',
+      message: 'Cross-team published workflow access does not include canvas operations',
       status: 403,
     })
   })
