@@ -17,7 +17,7 @@ import { ChevronDown } from '@/components/emcn/icons'
 import { Trash } from '@/components/emcn/icons/trash'
 import { filterButtonClass } from '@/app/workspace/[workspaceId]/knowledge/components/constants'
 import { useUpdateKnowledgeBase } from '@/hooks/queries/kb/knowledge'
-import { useWorkspacesQuery } from '@/hooks/queries/workspace'
+import { useWorkspacesQuery, type Workspace } from '@/hooks/queries/workspace'
 
 const logger = createLogger('KnowledgeHeader')
 
@@ -36,6 +36,13 @@ const HEADER_STYLES = {
   separator: 'text-[var(--text-icon)]',
   actionsContainer: 'flex items-center gap-2',
 } as const
+
+function getKnowledgeCanvasLabel(workspace: Workspace): string {
+  if (workspace.canvasScope === 'personal') return 'Personal draft canvas'
+  if (workspace.canvasScope === 'team') return 'Team canvas'
+  if (workspace.isInternalWorkspace) return 'Project canvas'
+  return 'Legacy canvas'
+}
 
 interface KnowledgeHeaderOptions {
   knowledgeBaseId?: string
@@ -113,23 +120,19 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
         })}
       </div>
 
-      {/* Actions Area */}
       {options && (
         <div className={HEADER_STYLES.actionsContainer}>
-          {/* Workspace Selector */}
           {options.knowledgeBaseId && (
             <div className='flex items-center gap-2'>
-              {/* Warning icon for unassigned knowledge bases */}
               {!hasWorkspace && (
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <AlertTriangle className='h-4 w-4 text-amber-500' />
                   </Tooltip.Trigger>
-                  <Tooltip.Content side='top'>Not assigned to workspace</Tooltip.Content>
+                  <Tooltip.Content side='top'>Not assigned to canvas</Tooltip.Content>
                 </Tooltip.Root>
               )}
 
-              {/* Workspace selector dropdown */}
               <DropdownMenu open={isWorkspaceMenuOpen} onOpenChange={setIsWorkspaceMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -142,7 +145,7 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
                         ? 'Loading...'
                         : updateKnowledgeBase.isPending
                           ? 'Updating...'
-                          : currentWorkspace?.name || 'No workspace'}
+                          : currentWorkspace?.name || 'No canvas'}
                     </span>
                     <ChevronDown className='ml-2 h-4 w-4 text-[var(--text-icon)]' />
                   </Button>
@@ -152,7 +155,7 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
                     checked={!options.currentWorkspaceId}
                     onSelect={() => handleWorkspaceChange(null)}
                   >
-                    <span className='text-[var(--text-secondary)]'>No workspace</span>
+                    <span className='text-[var(--text-secondary)]'>No canvas</span>
                   </DropdownMenuCheckboxItem>
 
                   {workspaces.map((workspace) => (
@@ -161,14 +164,19 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
                       checked={options.currentWorkspaceId === workspace.id}
                       onSelect={() => handleWorkspaceChange(workspace.id)}
                     >
-                      {workspace.name}
+                      <div className='flex flex-col'>
+                        <span>{workspace.name}</span>
+                        <span className='text-[var(--text-tertiary)] text-xs capitalize'>
+                          {getKnowledgeCanvasLabel(workspace)} - {workspace.permissions} access
+                        </span>
+                      </div>
                     </DropdownMenuCheckboxItem>
                   ))}
 
                   {workspaces.length === 0 && !isLoadingWorkspaces && (
                     <DropdownMenuItem disabled>
                       <span className='text-[var(--text-secondary)] text-xs'>
-                        No workspaces with write access
+                        No canvases with write access
                       </span>
                     </DropdownMenuItem>
                   )}
@@ -177,7 +185,6 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
             </div>
           )}
 
-          {/* Actions Menu */}
           {options.onDeleteKnowledgeBase && (
             <DropdownMenu open={isActionsMenuOpen} onOpenChange={setIsActionsMenuOpen}>
               <DropdownMenuTrigger asChild>
