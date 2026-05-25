@@ -1,21 +1,14 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  deleteSkillContract,
-  listSkillsContract,
-  upsertSkillsContract,
-} from '@/lib/api/contracts'
+import { deleteSkillContract, listSkillsContract, upsertSkillsContract } from '@/lib/api/contracts'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { deleteSkill, listSkills, upsertSkills } from '@/lib/workflows/skills/operations'
-import {
-  checkWorkspaceAccess,
-  getUserEntityPermissions,
-} from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('SkillsAPI')
 
@@ -31,19 +24,26 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const parsed = await parseRequest(listSkillsContract, request, {}, {
-      validationErrorResponse: (error) => {
-        logger.warn(`[${requestId}] Invalid skills query`, { errors: error.issues })
-        return validationErrorResponse(error, 'Invalid request data')
-      },
-    })
+    const parsed = await parseRequest(
+      listSkillsContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid skills query`, { errors: error.issues })
+          return validationErrorResponse(error, 'Invalid request data')
+        },
+      }
+    )
     if (!parsed.success) return parsed.response
     const { workspaceId } = parsed.data.query
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      logger.warn(`[${requestId}] User ${userId} attempted to access hidden workspace ${workspaceId}`)
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to access hidden workspace ${workspaceId}`
+      )
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -91,8 +91,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      logger.warn(`[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`)
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to update hidden workspace ${workspaceId}`
+      )
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -157,18 +159,25 @@ export const DELETE = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const parsed = await parseRequest(deleteSkillContract, request, {}, {
-      validationErrorResponse: (error) => {
-        logger.warn(`[${requestId}] Invalid skill deletion query`, { errors: error.issues })
-        return validationErrorResponse(error, 'Invalid request data')
-      },
-    })
+    const parsed = await parseRequest(
+      deleteSkillContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid skill deletion query`, { errors: error.issues })
+          return validationErrorResponse(error, 'Invalid request data')
+        },
+      }
+    )
     if (!parsed.success) return parsed.response
     const { id: skillId, workspaceId, source } = parsed.data.query
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, userId)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      logger.warn(`[${requestId}] User ${userId} attempted to delete skill in hidden workspace ${workspaceId}`)
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to delete skill in hidden workspace ${workspaceId}`
+      )
       return NextResponse.json({ error: 'Skill not found' }, { status: 404 })
     }
 
