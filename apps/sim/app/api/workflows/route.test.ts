@@ -221,7 +221,7 @@ describe('Workflows API Route - POST ordering', () => {
 
     expect(response.status).toBe(400)
     expect(data.error).toBe(
-      'Only organization team workspaces with a workgroup can create cross-team workflows'
+      'Only organization team canvases with a workgroup can create cross-team workflows'
     )
   })
 
@@ -250,7 +250,7 @@ describe('Workflows API Route - POST ordering', () => {
 
     expect(response.status).toBe(400)
     expect(data.error).toBe(
-      'Only organization team workspaces with a workgroup can create cross-team workflows'
+      'Only organization team canvases with a workgroup can create cross-team workflows'
     )
   })
 
@@ -299,7 +299,7 @@ describe('Workflows API Route - POST ordering', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data.error).toBe('Workspace not found')
+    expect(data.error).toBe('Canvas not found')
     expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
@@ -410,7 +410,7 @@ describe('Workflows API Route - GET access', () => {
 
     expect(response.status).toBe(404)
     expect(data).toEqual({
-      error: 'Workspace not found',
+      error: 'Canvas not found',
       code: 'WORKSPACE_NOT_FOUND',
     })
     expect(mockDbSelect).not.toHaveBeenCalled()

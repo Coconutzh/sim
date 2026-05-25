@@ -49,7 +49,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           `[${requestId}] Attempt to fetch workflows for non-existent workspace: ${workspaceId}`
         )
         return NextResponse.json(
-          { error: 'Workspace not found', code: 'WORKSPACE_NOT_FOUND' },
+          { error: 'Canvas not found', code: 'WORKSPACE_NOT_FOUND' },
           { status: 404 }
         )
       }
@@ -59,7 +59,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           `[${requestId}] User ${userId} attempted to access workspace ${workspaceId} without visibility`
         )
         return NextResponse.json(
-          { error: 'Workspace not found', code: 'WORKSPACE_NOT_FOUND' },
+          { error: 'Canvas not found', code: 'WORKSPACE_NOT_FOUND' },
           { status: 404 }
         )
       }
@@ -165,8 +165,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       logger.warn(`[${requestId}] Workflow creation blocked: missing workspaceId`)
       return NextResponse.json(
         {
-          error:
-            'workspaceId is required. Personal workflows are deprecated and cannot be created.',
+          error: 'Canvas ID is required. Personal workflows are deprecated and cannot be created.',
         },
         { status: 400 }
       )
@@ -177,7 +176,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       logger.warn(
         `[${requestId}] User ${userId} attempted to create workflow in hidden workspace ${workspaceId}`
       )
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const workspacePermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -187,14 +186,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         `[${requestId}] User ${userId} attempted to create workflow in workspace ${workspaceId} without write permissions`
       )
       return NextResponse.json(
-        { error: 'Write or Admin access required to create workflows in this workspace' },
+        { error: 'Write or Admin access required to create workflows in this canvas' },
         { status: 403 }
       )
     }
 
     const workspaceDetails = await getWorkspaceWithOwner(workspaceId)
     if (!workspaceDetails) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (
@@ -203,8 +202,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     ) {
       return NextResponse.json(
         {
-          error:
-            'Only organization team workspaces with a workgroup can create cross-team workflows',
+          error: 'Only organization team canvases with a workgroup can create cross-team workflows',
         },
         { status: 400 }
       )

@@ -34,7 +34,7 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
 
     const access = await checkWorkspaceAccess(workspaceId, userId)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
@@ -76,7 +76,9 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
         .where(inArray(workflowFolder.id, referencedFolderIds))
 
       const validFolderIds = new Set(
-        existingFolders.filter((folder) => folder.workspaceId === workspaceId).map((folder) => folder.id)
+        existingFolders
+          .filter((folder) => folder.workspaceId === workspaceId)
+          .map((folder) => folder.id)
       )
 
       if (validFolderIds.size !== referencedFolderIds.length) {

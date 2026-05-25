@@ -51,18 +51,18 @@ describe('PUT /api/folders/reorder', () => {
       workspace: { id: 'ws-1', ownerId: 'user-1', workspaceMode: 'organization' },
     })
     permissionsMockFns.mockGetUserEntityPermissions.mockResolvedValue('write')
-    mockDbSelect.mockReturnValue(
-      createSelectChain([{ id: 'folder-1', workspaceId: 'ws-1' }])
-    )
-    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<void>) => {
-      await fn({
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({
-            where: vi.fn().mockResolvedValue(undefined),
+    mockDbSelect.mockReturnValue(createSelectChain([{ id: 'folder-1', workspaceId: 'ws-1' }]))
+    mockDbTransaction.mockImplementation(
+      async (fn: (tx: Record<string, unknown>) => Promise<void>) => {
+        await fn({
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({
+              where: vi.fn().mockResolvedValue(undefined),
+            })),
           })),
-        })),
-      })
-    })
+        })
+      }
+    )
   })
 
   it('reorders folders for accessible workspaces', async () => {
@@ -96,7 +96,7 @@ describe('PUT /api/folders/reorder', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 

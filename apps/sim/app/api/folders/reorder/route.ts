@@ -29,7 +29,7 @@ export const PUT = withRouteHandler(async (req: NextRequest) => {
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
