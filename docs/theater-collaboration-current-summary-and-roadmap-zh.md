@@ -85,6 +85,7 @@
 - 最新 Phase 11 landing canvas preview 文案切片把公开 landing 的产品下拉分组、features 区块、preview sidebar 和 mock workspace chip 从 workspace 迁移为 canvas 语义；SEO/第三方 Google Workspace 等营销或外部产品术语未改。
 - 最新 Phase 11 landing marketing/pricing/integration 文案切片把公开 pricing、enterprise、collaboration 和 integrations detail 页中直接描述产品容器的 workspace 文案迁移为 canvas 语义；`AI workspace` SEO 品牌词、Google Workspace 等第三方产品词和内部组件命名未改。
 - 最新 Phase 11 LLM docs 文案切片把 `/llms.txt` 与 `/llms-full.txt` 中直接解释产品容器和 getting started 的 `Workspace` 文案迁移为 `Canvas`；保留标题、tagline 和 category 里的 `AI workspace` SEO 品牌语义。
+- 最新 Phase 11 MCP discover/events 错误文案切片把 MCP discover scoped API key 缺少容器 scope 和 MCP events SSE 缺少容器 query 的用户可见错误迁移为 canvas 语义；底层 API key type、`workspaceId` query、SSE subscription 和 route 兼容保持不变。
 
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
@@ -100,6 +101,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `9a511dfde` | Phase 11 MCP discover/events errors migrated to canvas wording |
 | `d9d4f368f` | Phase 11 LLM docs container wording migrated from workspace to canvas |
 | `ce1c15db1` | Phase 11 landing marketing/pricing/integration wording migrated from workspace wording |
 | `8b1c8de23` | Phase 11 landing canvas preview wording migrated from workspace wording |
@@ -262,6 +264,7 @@
 - `8b1c8de23` 继续迁移 landing / mock UI 中直接呈现的 workspace 心智：navbar product dropdown 分组、features badge/heading/辅助文本、landing preview sidebar 分组和 features preview 的 `My Workspace` chip 均改为 canvas wording。该提交刻意保留 `AI workspace` SEO 语义、第三方 Google Workspace 和内部组件/变量命名。
 - `ce1c15db1` 继续迁移公开营销路径里的旧容器心智：Pricing tier feature 和 sr-only summary 使用 personal/shared canvas，Enterprise feature marquee、audit mock log 和 permission category 使用 canvas wording，Collaboration section 的可见文案、sr-only、figcaption 和 GEO 注释改为 shared canvas，Integration detail 的 FAQ、HowTo step 和 onboarding step 改为 open/ready canvas。该提交只改用户可见/可访问文案，不改 `AI workspace` SEO 品牌词、Google Workspace 等第三方产品词、route path 或 `WorkspacePreview` 等内部组件命名。
 - `d9d4f368f` 继续迁移 LLM-readable public docs 的容器心智：`/llms-full.txt` 的 Core Concepts 从 `Workspace` 改为 `Canvas`，getting started 从 `Create Workspace` 改为 `Create Canvas`；`/llms.txt` 的概览和 Key Concepts 改为 canvas container。该提交保留标题、tagline、category 和 key concept 描述中的 `AI workspace` 品牌/SEO 语义，不改路由结构或 `getBaseUrl`。
+- `9a511dfde` 继续迁移 MCP 边界错误文案：`GET /api/mcp/discover` 在 scoped API key 缺少容器 scope 时返回 `Canvas API key missing canvas scope`，`GET /api/mcp/events` 缺少容器 query 时返回 `Canvas ID is required`，并补 discover route test 覆盖。该提交不改 `workspaceId` query、hybrid auth、API key type、MCP server 查询、SSE subscription 或底层 `createWorkspaceSSE` 命名。
 - `4bff93528` 继续补 settings/sidebar 深层残留文案：Integrations 分享按钮与错误、Atlassian credential 重名错误、Secrets 的 canvas secret/override/分组、Inbox enable 说明、Subscription plan feature 和 billed-account tooltip、ownership transfer 的 shared canvas 影响提示，以及 sidebar aria label/resource 分组均使用 canvas/resources 语义。该提交只改用户可见文案，不改 `workspaceId`、`env_workspace`、API path 或权限数据模型。
 - `56d4905ae` 继续迁移邀请和发布列表边界：未登录 invite 接收页从“join this workspace”改为“join this canvas”，单个 workspace invitation email 的 preview/body 默认称为 canvas，批量邀请邮件的 team role 说明、canvas access 分组和 subject 改为 canvas，Published/Showcase visibility 中的 `workspace` 可见范围显示为 `Owner canvas only`。该提交不改 invitation grant schema、`workspaceName` 参数或 publication visibility enum。
 - `3838424e6` 继续迁移公共模板详情页的编辑入口：`/templates/[id]` 的可编辑目标列表从 `/api/workspaces` 保留 `canvasScope` / `isInternalWorkspace`，下拉二级文案显示 `Personal draft canvas` / `Team canvas` / `Legacy canvas`，无写权限空态改为 `No canvases with write access`，无模板源访问提示改为 canvas containing this template。该提交不改 template use/import API 的 `workspaceId` 参数。
@@ -506,6 +509,16 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 ## 4. 当前验证状态
 
 最近已通过或复跑的关键校验包括：
+
+Latest Phase 11 MCP discover/events error wording slice verified:
+
+```powershell
+Set-Location E:\project\sim\apps\sim; bunx biome check --write "app/api/mcp/discover/route.ts" "app/api/mcp/discover/route.test.ts" "app/api/mcp/events/route.ts" "app/api/mcp/events/route.test.ts"
+Set-Location E:\project\sim\apps\sim; bunx vitest run "app/api/mcp/discover/route.test.ts" "app/api/mcp/events/route.test.ts"
+Set-Location E:\project\sim; bun run check:api-validation:strict
+$patterns = @('Canvas API key missing canvas scope','Canvas ID is required','mcp/discover','mcp/events'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check -- apps/sim/app/api/mcp/discover/route.ts apps/sim/app/api/mcp/discover/route.test.ts apps/sim/app/api/mcp/events/route.ts apps/sim/app/api/mcp/events/route.test.ts
+```
 
 Latest Phase 11 LLM docs canvas wording slice verified:
 
@@ -1085,8 +1098,8 @@ git diff --check
 
 已知情况：
 
-- `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，最近 LLM docs canvas wording 切片未改变 API route 或边界合约；严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按最新 LLM docs canvas wording 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，最近 MCP discover/events 错误文案切片未新增 route 或改变边界合约；严格校验继续通过。
+- `bun run type-check` 仍退出 2，但按最新 MCP discover/events 错误文案触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
@@ -1185,7 +1198,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成，knowledge/template-use API 错误切片已由 `ac76786c3` 完成，table API 错误切片已由 `5c5f41d62` 完成，workflow/folder API 错误切片已由 `84143d249` 完成，credential/provider API 错误切片已由 `c4b0ef658` 完成，logs/usage API 错误切片已由 `4996cd275` 完成，folder/memory/schedule API 错误切片已由 `55c6e5c0b` 完成，generic file API 错误切片已由 `ddea6859c` 完成，custom tool/file manage API 错误切片已由 `401d338a1` 完成，A2A API 错误切片已由 `48a48f412` 完成，copilot chat API 错误切片已由 `1d7cdbd73` 完成，workflow publication/duplicate API 错误切片已由 `811396141` 完成，jobs API 错误切片已由 `722bd0d7c` 完成，workflow API access 错误切片已由 `6a70d8817` 完成，service conflict 错误切片已由 `e584a1b83` 完成，SSE/MCP 错误切片已由 `30647795b` 完成，v1 API 错误切片已由 `667f54627` 完成，resume/wand API 错误切片已由 `a4c457446` 完成，workflow authz/preprocessing 错误切片已由 `888ad9a21` 完成，Copilot access helper 错误切片已由 `5a1272b21` 完成，Copilot credential selector 警告切片已由 `ad3a853dd` 完成，workspace permissions hook 客户端错误切片已由 `18faed0a1` 完成，MCP workflow tool API 错误切片已由 `b1ba8c2d1` 完成，Copilot file/media server tool 错误切片已由 `5ba41029b` 完成，Copilot knowledge server tool 错误切片已由 `5fd730caa` 完成，Copilot handler/server 错误切片已由 `b8df4b9ed` 完成，Copilot table server tool 错误切片已由 `c5d0f1c2e` 完成，user permissions hook 错误切片已由 `862514ace` 完成，files/published UI 文案切片已由 `b150967e1` 完成，client upload/task fallback 错误切片已由 `13248c6bc` 完成，permission group user config 错误切片已由 `8957705a9` 完成，deploy API key wording 切片已由 `3e7ccce4d` 完成，workflow deploy API key response 切片已由 `eab881a53` 完成，Home canvas gateway wording 切片已由 `5793a3a1d` 完成，editor env var dropdown label 切片已由 `49a4bd084` 完成，table/schedule query hook missing ID 切片已由 `6dd2af619` 完成，delete modal fallback 文案切片已由 `e17f5defc` 完成，execution API canvas context 切片已由 `c06eba5e6` 完成，default canvas creation wording 切片已由 `5011f04b` 完成，landing canvas preview 文案切片已由 `8b1c8de23` 完成，landing marketing/pricing/integration 文案切片已由 `ce1c15db1` 完成，LLM docs canvas wording 切片已由 `d9d4f368f` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成，公共模板编辑入口 canvas metadata 切片已由 `3838424e6` 完成，invitation 接收页/发送 fallback/API 错误边界切片已由 `bb00136e7` 完成，form/chat/credential-account fallback 文案切片已由 `a7cbaace0` 完成，organization invitation batch grant 错误切片已由 `da309e00c` 完成，canvas permission API 错误切片已由 `153bdbd6b` 完成，Knowledge Base header canvas selector 文案与 canvas metadata 标签切片已由 `00839fd03` 完成，workspace detail/update/delete API 错误切片已由 `36bdcc4f3` 完成，permission group API 错误切片已由 `d509c3932` 完成，workspace member API 错误切片已由 `2fc153345` 完成，workspace utility API/helper 错误切片已由 `c32f19117` 完成，workspace notification API 错误切片已由 `ad291c760` 完成，workspace inbox API 错误切片已由 `1d39c5bdc` 完成，workspace file API 错误切片已由 `38c0a594e` 完成，workspace settings secret/API key 错误切片已由 `42c324b8b` 完成，skills API 错误切片已由 `f617feb39` 完成，Mothership API 错误切片已由 `c7cedf5ce` 完成，knowledge/template-use API 错误切片已由 `ac76786c3` 完成，table API 错误切片已由 `5c5f41d62` 完成，workflow/folder API 错误切片已由 `84143d249` 完成，credential/provider API 错误切片已由 `c4b0ef658` 完成，logs/usage API 错误切片已由 `4996cd275` 完成，folder/memory/schedule API 错误切片已由 `55c6e5c0b` 完成，generic file API 错误切片已由 `ddea6859c` 完成，custom tool/file manage API 错误切片已由 `401d338a1` 完成，A2A API 错误切片已由 `48a48f412` 完成，copilot chat API 错误切片已由 `1d7cdbd73` 完成，workflow publication/duplicate API 错误切片已由 `811396141` 完成，jobs API 错误切片已由 `722bd0d7c` 完成，workflow API access 错误切片已由 `6a70d8817` 完成，service conflict 错误切片已由 `e584a1b83` 完成，SSE/MCP 错误切片已由 `30647795b` 完成，v1 API 错误切片已由 `667f54627` 完成，resume/wand API 错误切片已由 `a4c457446` 完成，workflow authz/preprocessing 错误切片已由 `888ad9a21` 完成，Copilot access helper 错误切片已由 `5a1272b21` 完成，Copilot credential selector 警告切片已由 `ad3a853dd` 完成，workspace permissions hook 客户端错误切片已由 `18faed0a1` 完成，MCP workflow tool API 错误切片已由 `b1ba8c2d1` 完成，Copilot file/media server tool 错误切片已由 `5ba41029b` 完成，Copilot knowledge server tool 错误切片已由 `5fd730caa` 完成，Copilot handler/server 错误切片已由 `b8df4b9ed` 完成，Copilot table server tool 错误切片已由 `c5d0f1c2e` 完成，user permissions hook 错误切片已由 `862514ace` 完成，files/published UI 文案切片已由 `b150967e1` 完成，client upload/task fallback 错误切片已由 `13248c6bc` 完成，permission group user config 错误切片已由 `8957705a9` 完成，deploy API key wording 切片已由 `3e7ccce4d` 完成，workflow deploy API key response 切片已由 `eab881a53` 完成，Home canvas gateway wording 切片已由 `5793a3a1d` 完成，editor env var dropdown label 切片已由 `49a4bd084` 完成，table/schedule query hook missing ID 切片已由 `6dd2af619` 完成，delete modal fallback 文案切片已由 `e17f5defc` 完成，execution API canvas context 切片已由 `c06eba5e6` 完成，default canvas creation wording 切片已由 `5011f04b` 完成，landing canvas preview 文案切片已由 `8b1c8de23` 完成，landing marketing/pricing/integration 文案切片已由 `ce1c15db1` 完成，LLM docs canvas wording 切片已由 `d9d4f368f` 完成，MCP discover/events 错误文案切片已由 `9a511dfde` 完成；仍需继续排查 mobile nav、onboarding 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
