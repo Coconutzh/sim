@@ -381,7 +381,7 @@ describe('POST /api/organizations/[id]/invitations', () => {
 
     expect(response.status).toBe(400)
     expect(data).toEqual({
-      error: 'Workspace ws-personal is not an organization-owned workspace.',
+      error: 'Canvas ws-personal is not an organization-owned canvas.',
     })
     expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
   })
@@ -412,7 +412,7 @@ describe('POST /api/organizations/[id]/invitations', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
   })
 
@@ -440,7 +440,7 @@ describe('POST /api/organizations/[id]/invitations', () => {
 
     expect(response.status).toBe(400)
     expect(data).toEqual({
-      error: 'Workspace ws-archived is not an organization-owned workspace.',
+      error: 'Canvas ws-archived is not an organization-owned canvas.',
     })
     expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
   })

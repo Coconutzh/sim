@@ -219,7 +219,7 @@ export const POST = withRouteHandler(
       if (isBatch) {
         if (!Array.isArray(workspaceInvitations) || workspaceInvitations.length === 0) {
           return NextResponse.json(
-            { error: 'Select at least one organization workspace for this invitation.' },
+            { error: 'Select at least one organization canvas for this invitation.' },
             { status: 400 }
           )
         }
@@ -230,14 +230,14 @@ export const POST = withRouteHandler(
             session.user.id
           )
           if (hasHiddenPersonalGrant) {
-            return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+            return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
           }
 
           const canInvite = await hasWorkspaceAdminAccess(session.user.id, wsInvitation.workspaceId)
           if (!canInvite) {
             return NextResponse.json(
               {
-                error: `You don't have permission to invite users to workspace ${wsInvitation.workspaceId}`,
+                error: `You don't have permission to invite users to canvas ${wsInvitation.workspaceId}`,
               },
               { status: 403 }
             )
@@ -257,7 +257,7 @@ export const POST = withRouteHandler(
           if (!workspaceEntry || !isOrganizationWorkspace(workspaceEntry)) {
             return NextResponse.json(
               {
-                error: `Workspace ${wsInvitation.workspaceId} is not an organization-owned workspace.`,
+                error: `Canvas ${wsInvitation.workspaceId} is not an organization-owned canvas.`,
               },
               { status: 400 }
             )
@@ -266,7 +266,7 @@ export const POST = withRouteHandler(
           if (workspaceEntry.organizationId !== organizationId) {
             return NextResponse.json(
               {
-                error: `Workspace ${wsInvitation.workspaceId} does not belong to this organization.`,
+                error: `Canvas ${wsInvitation.workspaceId} does not belong to this organization.`,
               },
               { status: 400 }
             )
