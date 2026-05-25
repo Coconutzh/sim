@@ -130,7 +130,7 @@ describe('getCredentialsServerTool', () => {
     expect(result.environment.workspaceVariables).toEqual(['TEAM_API_KEY'])
   })
 
-  it('blocks source workspace credentials for cross-team published workflow viewers', async () => {
+  it('blocks source canvas credentials for cross-team published workflow viewers', async () => {
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
       allowed: true,
       status: 200,
@@ -141,7 +141,7 @@ describe('getCredentialsServerTool', () => {
 
     await expect(
       getCredentialsServerTool.execute({ workflowId: 'published-workflow' }, { userId: 'user-2' })
-    ).rejects.toThrow('Published workflow viewers cannot access source workspace credentials')
+    ).rejects.toThrow('Published workflow viewers cannot access source canvas credentials')
 
     expect(mockGetPersonalAndWorkspaceEnv).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()

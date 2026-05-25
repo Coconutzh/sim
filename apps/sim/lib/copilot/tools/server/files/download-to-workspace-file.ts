@@ -178,7 +178,7 @@ export const downloadToWorkspaceFileServerTool: BaseServerTool<
         mimeType
       )
 
-      logger.info('Downloaded remote file to workspace', {
+      logger.info('Downloaded remote file to canvas', {
         sourceUrl: params.url,
         fileId: uploaded.id,
         fileName: uploaded.name,
@@ -188,14 +188,14 @@ export const downloadToWorkspaceFileServerTool: BaseServerTool<
 
       return {
         success: true,
-        message: `Downloaded "${uploaded.name}" to workspace (${fileBuffer.length} bytes)`,
+        message: `Downloaded "${uploaded.name}" to canvas (${fileBuffer.length} bytes)`,
         fileId: uploaded.id,
         fileName: uploaded.name,
         downloadUrl: uploaded.url,
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
-      logger.error('Failed to download file to workspace', {
+      logger.error('Failed to download file to canvas', {
         url: params.url,
         error: msg,
       })

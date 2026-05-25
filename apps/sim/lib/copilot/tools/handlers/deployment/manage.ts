@@ -51,7 +51,7 @@ export async function executeCheckDeploymentStatus(
       isDeployed: isApiDeployed,
       deployedAt: apiDeploy[0]?.deployedAt || null,
       endpoint: isApiDeployed ? `/api/workflows/${workflowId}/execute` : null,
-      apiKey: workflowRecord.workspaceId ? 'Workspace API keys' : 'Personal API keys',
+      apiKey: workflowRecord.workspaceId ? 'Canvas API keys' : 'Personal API keys',
       needsRedeployment: false,
     }
 

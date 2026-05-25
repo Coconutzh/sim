@@ -106,12 +106,12 @@ export const getExecutionSummaryServerTool: BaseServerTool<
         throw new Error(authorization.message || 'Unauthorized workflow access')
       }
       if (authorization.workflow?.workspaceId !== workspaceId) {
-        throw new Error('Workflow does not belong to the requested workspace')
+        throw new Error('Workflow does not belong to the requested canvas')
       }
     } else {
       const access = await checkWorkspaceAccess(workspaceId, context.userId)
       if (!access.hasAccess) {
-        throw new Error('Unauthorized workspace access')
+        throw new Error('Unauthorized canvas access')
       }
     }
 

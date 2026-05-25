@@ -63,7 +63,7 @@ async function resolveWorkspaceId(
   if (params.workflowId) {
     const { workflow } = await ensureWorkflowAccess(params.workflowId, userId, 'write')
     if (!workflow.workspaceId) {
-      throw new Error(`Workflow ${params.workflowId} is not associated with a workspace`)
+      throw new Error(`Workflow ${params.workflowId} is not associated with a canvas`)
     }
     return workflow.workspaceId
   }
@@ -135,7 +135,7 @@ export const setEnvironmentVariablesServerTool: BaseServerTool<
     if (added.length > 0) parts.push(`${added.length} personal secret(s) added`)
     if (updated.length > 0) parts.push(`${updated.length} personal secret(s) updated`)
     if (workspaceUpdated.length > 0)
-      parts.push(`${workspaceUpdated.length} workspace secret(s) updated`)
+      parts.push(`${workspaceUpdated.length} canvas secret(s) updated`)
 
     return {
       message: `Successfully processed ${totalProcessed} secret(s): ${parts.join(', ')}`,

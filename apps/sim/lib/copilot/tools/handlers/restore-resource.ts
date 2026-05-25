@@ -34,7 +34,7 @@ export async function executeRestoreResource(
     return { success: false, error: 'id is required' }
   }
   if (!context.workspaceId) {
-    return { success: false, error: 'Workspace context required' }
+    return { success: false, error: 'Canvas context required' }
   }
 
   const requestId = generateId().slice(0, 8)

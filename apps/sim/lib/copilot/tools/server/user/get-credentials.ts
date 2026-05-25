@@ -53,7 +53,7 @@ export const getCredentialsServerTool: BaseServerTool<GetCredentialsParams, any>
           accessSource: authorization.accessSource,
         })
         throw new Error(
-          'Access denied: Published workflow viewers cannot access source workspace credentials'
+          'Access denied: Published workflow viewers cannot access source canvas credentials'
         )
       }
 

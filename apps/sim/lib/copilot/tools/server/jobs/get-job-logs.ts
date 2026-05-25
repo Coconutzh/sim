@@ -146,11 +146,11 @@ export const getJobLogsServerTool: BaseServerTool<GetJobLogsArgs, JobLogEntry[]>
 
     const wsId = workspaceId || context.workspaceId
     if (!wsId) {
-      throw new Error('Workspace context required')
+      throw new Error('Canvas context required')
     }
     const access = await checkWorkspaceAccess(wsId, context.userId)
     if (!access.hasAccess) {
-      throw new Error('Unauthorized workspace access')
+      throw new Error('Unauthorized canvas access')
     }
 
     const clampedLimit = Math.min(Math.max(1, limit), 5)

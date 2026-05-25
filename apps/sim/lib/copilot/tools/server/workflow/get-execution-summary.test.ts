@@ -73,7 +73,7 @@ describe('getExecutionSummaryServerTool', () => {
         { workspaceId: 'ws-other', workflowId: 'wf-1' },
         { userId: 'user-1' }
       )
-    ).rejects.toThrow('Workflow does not belong to the requested workspace')
+    ).rejects.toThrow('Workflow does not belong to the requested canvas')
 
     expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()

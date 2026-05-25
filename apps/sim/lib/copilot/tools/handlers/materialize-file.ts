@@ -176,7 +176,7 @@ async function executeImport(
   return {
     success: true,
     output: {
-      message: `Workflow "${dedupedName}" imported successfully. It is now available in the workspace and can be edited or run.`,
+      message: `Workflow "${dedupedName}" imported successfully. It is now available in the canvas and can be edited or run.`,
       workflowId,
       workflowName: dedupedName,
     },
