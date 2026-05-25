@@ -252,7 +252,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     presigned: PresignedUploadInfo | undefined
   ): Promise<UploadedFile> => {
     if (!options.workspaceId) {
-      throw new KnowledgeUploadError('workspaceId is required for upload', 'MISSING_WORKSPACE_ID')
+      throw new KnowledgeUploadError('Canvas ID is required for upload', 'MISSING_WORKSPACE_ID')
     }
 
     const onProgress = (event: UploadProgressEvent) => {

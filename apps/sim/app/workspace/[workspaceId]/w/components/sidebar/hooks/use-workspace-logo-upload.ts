@@ -64,7 +64,7 @@ export function useWorkspaceLogoUpload({
   const uploadFileToServer = useCallback(async (file: File): Promise<string> => {
     const targetWorkspaceId = workspaceIdRef.current
     if (!targetWorkspaceId) {
-      throw new Error('workspaceId is required for workspace logo upload')
+      throw new Error('Canvas ID is required for canvas logo upload')
     }
 
     const presignedEndpoint = `/api/files/presigned?type=workspace-logos&workspaceId=${encodeURIComponent(targetWorkspaceId)}`
@@ -109,8 +109,7 @@ export function useWorkspaceLogoUpload({
         setPreviewUrl(serverUrl)
         onUploadRef.current?.(serverUrl)
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Failed to upload workspace logo'
+        const errorMessage = error instanceof Error ? error.message : 'Failed to upload canvas logo'
         onErrorRef.current?.(errorMessage)
         URL.revokeObjectURL(newPreviewUrl)
         previewRef.current = null

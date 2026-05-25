@@ -551,7 +551,7 @@ export function useCreateTask(workspaceId?: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => {
-      if (!workspaceId) throw new Error('workspaceId is required')
+      if (!workspaceId) throw new Error('Canvas ID is required')
       return createChat(workspaceId)
     },
     onSuccess: (data) => {
