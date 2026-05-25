@@ -165,7 +165,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
 
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (lookupCredentialId) {
@@ -300,7 +300,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const workspaceAccess = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
     if (!workspaceAccess.canWrite) {
       return NextResponse.json({ error: 'Write permission required' }, { status: 403 })
@@ -462,7 +462,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       if (!membership || membership.status !== 'active') {
         return NextResponse.json(
-          { error: 'A credential with this source already exists in this workspace' },
+          { error: 'A credential with this source already exists in this canvas' },
           { status: 409 }
         )
       }
@@ -622,7 +622,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json(
         {
           code: 'duplicate_display_name',
-          error: 'A credential with that name already exists in this workspace.',
+          error: 'A credential with that name already exists in this canvas.',
         },
         { status: 409 }
       )

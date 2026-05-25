@@ -115,7 +115,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           requesterUserId,
           workflowId,
         })
-        return NextResponse.json({ error: 'Workspace access required' }, { status: 403 })
+        return NextResponse.json({ error: 'Canvas access required' }, { status: 403 })
       }
 
       effectiveWorkspaceId = workflowAuthorization.workflow?.workspaceId || undefined
@@ -124,7 +124,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     if (effectiveWorkspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(effectiveWorkspaceId, requesterUserId)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
     }
 

@@ -1,11 +1,20 @@
 /**
  * @vitest-environment node
  */
-import { hybridAuthMock, hybridAuthMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import {
+  hybridAuthMock,
+  hybridAuthMockFns,
+  permissionsMock,
+  permissionsMockFns,
+} from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockResolveOAuthAccountId, mockExecuteProviderRequest, mockResolveAccessibleWorkflowWorkspace } = vi.hoisted(() => ({
+const {
+  mockResolveOAuthAccountId,
+  mockExecuteProviderRequest,
+  mockResolveAccessibleWorkflowWorkspace,
+} = vi.hoisted(() => ({
   mockResolveOAuthAccountId: vi.fn(),
   mockExecuteProviderRequest: vi.fn(),
   mockResolveAccessibleWorkflowWorkspace: vi.fn(),
@@ -167,14 +176,14 @@ describe('ProvidersAPI POST', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
-      error: 'Workspace not found',
+      error: 'Canvas not found',
     })
     expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
   })
 
   it('hides foreign personal workflow execution behind 404 even with a spoofed visible workspace', async () => {
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
     const request = new NextRequest('http://localhost:3000/api/providers', {
@@ -193,7 +202,7 @@ describe('ProvidersAPI POST', () => {
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
-      error: 'Workspace not found',
+      error: 'Canvas not found',
     })
     expect(mockResolveAccessibleWorkflowWorkspace).toHaveBeenCalledWith({
       userId: 'user-1',

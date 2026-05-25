@@ -135,7 +135,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (resolvedWorkspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(resolvedWorkspaceId, auth.userId)
       if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       try {

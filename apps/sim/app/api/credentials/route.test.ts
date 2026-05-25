@@ -173,7 +173,7 @@ describe('/api/credentials', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 
   it('does not sync OAuth credentials for visible read-only workspaces', async () => {
@@ -253,7 +253,7 @@ describe('/api/credentials', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
   })
 
   it('keeps visible read-only workspace credential creation at 403', async () => {

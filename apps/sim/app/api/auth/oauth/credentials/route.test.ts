@@ -197,7 +197,7 @@ describe('OAuth Credentials API Route', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data.error).toBe('Workspace access required')
+    expect(data.error).toBe('Canvas access required')
   })
 
   it('hides foreign personal workspace OAuth credential listings behind 404', async () => {
@@ -229,7 +229,7 @@ describe('OAuth Credentials API Route', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
   })
 
   it('hides direct credential lookup when the user lacks credential membership', async () => {
