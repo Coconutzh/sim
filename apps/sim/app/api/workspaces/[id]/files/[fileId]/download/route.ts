@@ -36,7 +36,7 @@ export const POST = withRouteHandler(
         logger.warn(
           `[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`
         )
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const fileRecord = await getWorkspaceFile(workspaceId, fileId)

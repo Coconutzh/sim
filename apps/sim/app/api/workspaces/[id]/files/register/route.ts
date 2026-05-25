@@ -38,7 +38,7 @@ export const POST = withRouteHandler(
     const access = await checkWorkspaceAccess(workspaceId, userId)
     if (!access.exists || !access.hasAccess) {
       logger.warn(`User ${userId} cannot access workspace ${workspaceId}`)
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     if (!access.canWrite) {

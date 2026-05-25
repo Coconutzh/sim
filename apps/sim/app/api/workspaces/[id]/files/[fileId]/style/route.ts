@@ -35,7 +35,7 @@ export const GET = withRouteHandler(
 
     const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
     if (!membership.exists || !membership.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const fileRecord = await getWorkspaceFile(workspaceId, fileId)
@@ -75,7 +75,7 @@ export const GET = withRouteHandler(
       return NextResponse.json(
         {
           error:
-            'Could not extract style — file may be encrypted, corrupt, image-only, or contain no parseable style information',
+            'Could not extract style - file may be encrypted, corrupt, image-only, or contain no parseable style information',
         },
         { status: 422 }
       )

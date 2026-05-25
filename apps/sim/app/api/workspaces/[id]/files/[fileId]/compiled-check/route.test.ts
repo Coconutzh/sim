@@ -61,14 +61,12 @@ describe('Workspace file compiled check route', () => {
     })
 
     const response = await GET(
-      new NextRequest(
-        'http://localhost:3000/api/workspaces/ws-hidden/files/file-1/compiled-check'
-      ),
+      new NextRequest('http://localhost:3000/api/workspaces/ws-hidden/files/file-1/compiled-check'),
       { params: Promise.resolve({ id: 'ws-hidden', fileId: 'file-1' }) }
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockGetWorkspaceFile).not.toHaveBeenCalled()
     expect(mockFetchWorkspaceFileBuffer).not.toHaveBeenCalled()
   })

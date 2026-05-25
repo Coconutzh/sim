@@ -131,7 +131,7 @@ export const GET = withRouteHandler(
         logger.warn(
           `[${requestId}] User ${session.user.id} lacks permission for workspace ${workspaceId}`
         )
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const files = await listWorkspaceFiles(workspaceId, { scope })
@@ -176,7 +176,7 @@ export const POST = withRouteHandler(
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
         logger.warn(`[${requestId}] User ${session.user.id} cannot access workspace ${workspaceId}`)
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!access.canWrite) {

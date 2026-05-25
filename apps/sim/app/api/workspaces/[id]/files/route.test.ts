@@ -161,7 +161,7 @@ describe('POST /api/workspaces/[id]/files', () => {
     const body = await response.json()
 
     expect(response.status).toBe(404)
-    expect(body.error).toBe('Workspace not found')
+    expect(body.error).toBe('Canvas not found')
     expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
   })
 
@@ -181,6 +181,6 @@ describe('POST /api/workspaces/[id]/files', () => {
     const body = await response.json()
 
     expect(response.status).toBe(404)
-    expect(body.error).toBe('Workspace not found')
+    expect(body.error).toBe('Canvas not found')
   })
 })

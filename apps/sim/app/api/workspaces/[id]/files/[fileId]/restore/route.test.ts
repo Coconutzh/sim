@@ -46,10 +46,7 @@ describe('/api/workspaces/[id]/files/[fileId]/restore', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
     expect(mockRestoreWorkspaceFile).toHaveBeenCalledWith('ws-owner', 'file-1')
   })
 
@@ -67,7 +64,7 @@ describe('/api/workspaces/[id]/files/[fileId]/restore', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockRestoreWorkspaceFile).not.toHaveBeenCalled()
   })

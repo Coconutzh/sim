@@ -27,7 +27,7 @@ export const POST = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (!access.canWrite) {
@@ -47,7 +47,7 @@ export const POST = withRouteHandler(
         resourceType: AuditResourceType.FILE,
         resourceId: fileId,
         resourceName: fileId,
-        description: `Restored workspace file ${fileId}`,
+        description: `Restored canvas file ${fileId}`,
         request,
       })
 

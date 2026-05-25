@@ -39,18 +39,14 @@ describe('/api/workspaces/[id]/files/[fileId]/content', () => {
   })
 
   it('updates file content for accessible workspaces', async () => {
-    const response = await PUT(
-      createMockRequest('PUT', { content: 'hello', encoding: 'utf-8' }),
-      { params: Promise.resolve({ id: 'ws-owner', fileId: 'file-1' }) }
-    )
+    const response = await PUT(createMockRequest('PUT', { content: 'hello', encoding: 'utf-8' }), {
+      params: Promise.resolve({ id: 'ws-owner', fileId: 'file-1' }),
+    })
     const data = await response.json()
 
     expect(response.status).toBe(200)
     expect(data.file).toEqual(expect.objectContaining({ id: 'file-1', name: 'notes.txt' }))
-    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith(
-      'ws-owner',
-      'owner-1'
-    )
+    expect(permissionsMockFns.mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-owner', 'owner-1')
   })
 
   it('returns 404 when stale personal rows no longer grant file-content visibility', async () => {
@@ -61,14 +57,13 @@ describe('/api/workspaces/[id]/files/[fileId]/content', () => {
       workspace: { id: 'ws-owner', ownerId: 'owner-2', workspaceMode: 'personal' },
     })
 
-    const response = await PUT(
-      createMockRequest('PUT', { content: 'hello', encoding: 'utf-8' }),
-      { params: Promise.resolve({ id: 'ws-owner', fileId: 'file-1' }) }
-    )
+    const response = await PUT(createMockRequest('PUT', { content: 'hello', encoding: 'utf-8' }), {
+      params: Promise.resolve({ id: 'ws-owner', fileId: 'file-1' }),
+    })
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
     expect(mockUpdateWorkspaceFileContent).not.toHaveBeenCalled()
   })

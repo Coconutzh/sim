@@ -61,7 +61,7 @@ describe('Workspace file style route', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockGetWorkspaceFile).not.toHaveBeenCalled()
     expect(mockFetchWorkspaceFileBuffer).not.toHaveBeenCalled()
   })

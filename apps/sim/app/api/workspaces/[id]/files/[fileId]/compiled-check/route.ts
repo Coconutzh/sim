@@ -25,7 +25,7 @@ const logger = createLogger('WorkspaceFileCompiledCheckAPI')
  *
  * Returns:
  *   200 { ok: true }
- *   200 { ok: false, error: string, errorName: string }   — user code error
+ *   200 { ok: false, error: string, errorName: string }   - user code error
  *   4xx on auth / missing file / unsupported extension
  *   500 on system (sandbox infra) failure
  */
@@ -42,7 +42,7 @@ export const GET = withRouteHandler(
 
     const membership = await getWorkspaceMembershipAccess(session.user.id, workspaceId)
     if (!membership.exists || !membership.hasAccess) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     const fileRecord = await getWorkspaceFile(workspaceId, fileId)
