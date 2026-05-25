@@ -43,7 +43,7 @@ export const GET = withRouteHandler(async (request: NextRequest, context: RowRou
     const userId = rateLimit.userId!
     const parsed = await parseRequest(v1GetTableRowContract, request, context, {
       validationErrorResponse: () =>
-        NextResponse.json({ error: 'workspaceId query parameter is required' }, { status: 400 }),
+        NextResponse.json({ error: 'Canvas ID query parameter is required' }, { status: 400 }),
     })
     if (!parsed.success) return parsed.response
     const { tableId, rowId } = parsed.data.params
@@ -56,7 +56,7 @@ export const GET = withRouteHandler(async (request: NextRequest, context: RowRou
     if (!result.ok) return accessError(result, requestId, tableId)
 
     if (result.table.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const [row] = await db
@@ -126,7 +126,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest, context: RowR
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const updatedRow = await updateRow(
@@ -202,7 +202,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Row
     const userId = rateLimit.userId!
     const parsed = await parseRequest(v1DeleteTableRowContract, request, context, {
       validationErrorResponse: () =>
-        NextResponse.json({ error: 'workspaceId query parameter is required' }, { status: 400 }),
+        NextResponse.json({ error: 'Canvas ID query parameter is required' }, { status: 400 }),
     })
     if (!parsed.success) return parsed.response
     const { tableId, rowId } = parsed.data.params
@@ -215,7 +215,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Row
     if (!result.ok) return accessError(result, requestId, tableId)
 
     if (result.table.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const [deletedRow] = await db

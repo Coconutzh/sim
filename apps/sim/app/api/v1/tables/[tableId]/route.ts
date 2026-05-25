@@ -38,9 +38,7 @@ export const GET = withRouteHandler(async (request: NextRequest, context: TableR
         const hasInvalidTableId = error.issues.some((issue) => issue.path.includes('tableId'))
         return NextResponse.json(
           {
-            error: hasInvalidTableId
-              ? 'Invalid table ID'
-              : 'workspaceId query parameter is required',
+            error: hasInvalidTableId ? 'Invalid table ID' : 'Canvas ID query parameter is required',
           },
           { status: 400 }
         )
@@ -60,7 +58,7 @@ export const GET = withRouteHandler(async (request: NextRequest, context: TableR
     const { table } = result
 
     if (table.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const schemaData = table.schema as TableSchema
@@ -110,9 +108,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Tab
         const hasInvalidTableId = error.issues.some((issue) => issue.path.includes('tableId'))
         return NextResponse.json(
           {
-            error: hasInvalidTableId
-              ? 'Invalid table ID'
-              : 'workspaceId query parameter is required',
+            error: hasInvalidTableId ? 'Invalid table ID' : 'Canvas ID query parameter is required',
           },
           { status: 400 }
         )
@@ -130,7 +126,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Tab
     if (!result.ok) return accessError(result, requestId, tableId)
 
     if (result.table.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     await deleteTable(tableId, requestId)

@@ -49,7 +49,7 @@ export const v1TableRowsQuerySchema = tableRowsQuerySchema.extend({
 })
 
 export const v1ListTablesQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'workspaceId query parameter is required'),
+  workspaceId: z.string().min(1, 'Canvas ID query parameter is required'),
 })
 
 export const v1CreateTableBodySchema = createTableBodySchema.omit({
@@ -66,7 +66,7 @@ export const v1InsertTableRowBodySchema = insertTableRowBodySchema.omit({ positi
  * Public API batch insert body — no `positions`. Same rationale as above.
  */
 export const v1BatchInsertTableRowsBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   rows: z
     .array(rowDataSchema)
     .min(1, 'At least one row is required')

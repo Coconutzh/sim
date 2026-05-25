@@ -59,7 +59,7 @@ async function handleBatchInsert(
   const { table } = accessResult
 
   if (validated.workspaceId !== table.workspaceId) {
-    return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
   }
 
   const validation = await validateBatchRows({
@@ -150,7 +150,7 @@ export const GET = withRouteHandler(async (request: NextRequest, context: TableR
     const { table } = accessResult
 
     if (validated.workspaceId !== table.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const baseConditions = [
@@ -283,7 +283,7 @@ export const POST = withRouteHandler(
       const { table } = accessResult
 
       if (validated.workspaceId !== table.workspaceId) {
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       const rowData = validated.data as RowData
@@ -366,7 +366,7 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: TableR
     const { table } = accessResult
 
     if (validated.workspaceId !== table.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const sizeValidation = validateRowSize(validated.data as RowData)
@@ -459,7 +459,7 @@ export const DELETE = withRouteHandler(
       const { table } = accessResult
 
       if (validated.workspaceId !== table.workspaceId) {
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       if (validated.rowIds) {

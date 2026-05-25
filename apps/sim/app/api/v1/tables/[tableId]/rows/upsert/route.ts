@@ -48,7 +48,7 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Upser
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const upsertResult = await upsertRow(

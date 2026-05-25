@@ -6,7 +6,7 @@ export const v1FileParamsSchema = z.object({
 })
 
 export const v1WorkspaceIdQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'workspaceId query parameter is required'),
+  workspaceId: z.string().min(1, 'Canvas ID query parameter is required'),
 })
 
 export const v1UploadFileFormFieldsSchema = z.object({
