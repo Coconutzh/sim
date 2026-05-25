@@ -38,7 +38,7 @@ export const pendingWorkspaceInvitationSchema = z
   .passthrough()
 
 export const batchWorkspaceInvitationBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: z.string().min(1, 'Canvas ID is required'),
   invitations: z
     .array(
       z.object({
