@@ -372,7 +372,7 @@ describe('File Upload API Route', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
@@ -390,7 +390,7 @@ describe('File Upload API Route', () => {
       storageProvider: 'local',
     })
     mocks.mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
     const mockFile = createMockFile()
@@ -409,7 +409,7 @@ describe('File Upload API Route', () => {
     const response = await POST(req)
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mocks.mockUploadExecutionFile).not.toHaveBeenCalled()
   })
 

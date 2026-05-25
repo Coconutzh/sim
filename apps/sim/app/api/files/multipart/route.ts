@@ -121,7 +121,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const { fileName, contentType, fileSize, workspaceId, context = 'knowledge-base' } = data
 
         if (!workspaceId || typeof workspaceId !== 'string') {
-          return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
+          return NextResponse.json({ error: 'Canvas ID is required' }, { status: 400 })
         }
 
         if (!ALLOWED_UPLOAD_CONTEXTS.has(context as StorageContext)) {
@@ -165,7 +165,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         const access = await checkWorkspaceAccess(resolvedWorkspaceId, userId)
         if (!access.exists || !access.hasAccess) {
-          return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+          return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
         }
 
         if (!access.canWrite) {

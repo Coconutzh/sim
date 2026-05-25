@@ -278,7 +278,7 @@ describe('/api/files/presigned', () => {
       const data = await response.json()
 
       expect(response.status).toBe(404)
-      expect(data).toEqual({ error: 'Workspace not found' })
+      expect(data).toEqual({ error: 'Canvas not found' })
       expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
     })
 
@@ -830,7 +830,7 @@ describe('/api/files/presigned', () => {
     it('hides foreign personal execution workspaces behind 404', async () => {
       setupFileApiMocks({ cloudEnabled: true, storageProvider: 's3' })
       mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-        response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+        response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
       })
 
       const request = new NextRequest(
@@ -848,7 +848,7 @@ describe('/api/files/presigned', () => {
       const response = await POST(request)
 
       expect(response.status).toBe(404)
-      await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+      await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
       expect(mockGenerateExecutionFileKey).not.toHaveBeenCalled()
       expect(mockInsertFileMetadata).not.toHaveBeenCalled()
     })

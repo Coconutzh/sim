@@ -162,13 +162,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     } else if (uploadType === 'mothership') {
       const workspaceId = request.nextUrl.searchParams.get('workspaceId')
       if (!workspaceId?.trim()) {
-        throw new ValidationError('workspaceId query parameter is required for mothership uploads')
+        throw new ValidationError('Canvas ID query parameter is required for mothership uploads')
       }
 
       const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
         workspaceId,
         sessionUserId,
-        'Workspace not found',
+        'Canvas not found',
         'Write or Admin access required for mothership uploads'
       )
       if (forbiddenWorkspaceResponse) {
@@ -207,7 +207,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const workspaceId = request.nextUrl.searchParams.get('workspaceId')
       if (!workflowId?.trim() || !executionId?.trim() || !workspaceId?.trim()) {
         throw new ValidationError(
-          'workflowId, executionId, and workspaceId query parameters are required for execution uploads'
+          'workflowId, executionId, and canvas ID query parameters are required for execution uploads'
         )
       }
 
@@ -224,7 +224,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
         resolvedWorkspaceId,
         sessionUserId,
-        'Workspace not found',
+        'Canvas not found',
         'Write or Admin access required for execution uploads'
       )
       if (forbiddenWorkspaceResponse) {
@@ -263,15 +263,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     } else if (uploadType === 'workspace-logos') {
       const workspaceId = request.nextUrl.searchParams.get('workspaceId')
       if (!workspaceId?.trim()) {
-        throw new ValidationError(
-          'workspaceId query parameter is required for workspace-logos uploads'
-        )
+        throw new ValidationError('Canvas ID query parameter is required for canvas logo uploads')
       }
 
       const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
         workspaceId,
         sessionUserId,
-        'Workspace not found'
+        'Canvas not found'
       )
       if (hiddenWorkspaceResponse) {
         return hiddenWorkspaceResponse
@@ -280,14 +278,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const permission = await getUserEntityPermissions(sessionUserId, 'workspace', workspaceId)
       if (permission !== 'admin') {
         return NextResponse.json(
-          { error: 'Admin access required for workspace logo uploads' },
+          { error: 'Admin access required for canvas logo uploads' },
           { status: 403 }
         )
       }
 
       if (!isImageFileType(contentType)) {
         throw new ValidationError(
-          'Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for workspace logo uploads'
+          'Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for canvas logo uploads'
         )
       }
 

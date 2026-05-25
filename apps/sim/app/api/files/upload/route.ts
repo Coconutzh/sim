@@ -147,7 +147,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
           workspaceResolution.workspaceId,
           session.user.id,
-          'Workspace not found',
+          'Canvas not found',
           'Write or Admin access required for execution uploads'
         )
         if (forbiddenWorkspaceResponse) {
@@ -183,8 +183,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
             workspaceId,
             session.user.id,
-            'Workspace not found',
-            'Write access required for workspace'
+            'Canvas not found',
+            'Write access required for this canvas'
           )
           if (forbiddenWorkspaceResponse) {
             return forbiddenWorkspaceResponse
@@ -243,13 +243,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       // Handle workspace context
       if (context === 'workspace') {
         if (!workspaceId) {
-          throw new InvalidRequestError('Workspace context requires workspaceId parameter')
+          throw new InvalidRequestError('Canvas file uploads require a canvas ID')
         }
         const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
           workspaceId,
           session.user.id,
-          'Workspace not found',
-          'Write or Admin access required for workspace uploads'
+          'Canvas not found',
+          'Write or Admin access required for canvas uploads'
         )
         if (forbiddenWorkspaceResponse) {
           return forbiddenWorkspaceResponse
@@ -295,13 +295,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       // Handle mothership context (chat-scoped uploads to workspace S3)
       if (context === 'mothership') {
         if (!workspaceId) {
-          throw new InvalidRequestError('Mothership context requires workspaceId parameter')
+          throw new InvalidRequestError('Canvas ID is required for mothership uploads')
         }
 
         const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
           workspaceId,
           session.user.id,
-          'Workspace not found',
+          'Canvas not found',
           'Write or Admin access required for mothership uploads'
         )
         if (forbiddenWorkspaceResponse) {
@@ -370,12 +370,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         if (context === 'workspace-logos') {
           if (!workspaceId) {
-            throw new InvalidRequestError('workspace-logos context requires workspaceId parameter')
+            throw new InvalidRequestError('Canvas ID is required for canvas logo uploads')
           }
           const hiddenWorkspaceResponse = await ensureVisibleWorkspace(
             workspaceId,
             session.user.id,
-            'Workspace not found'
+            'Canvas not found'
           )
           if (hiddenWorkspaceResponse) {
             return hiddenWorkspaceResponse
@@ -387,7 +387,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           )
           if (permission !== 'admin') {
             return NextResponse.json(
-              { error: 'Admin access required for workspace logo uploads' },
+              { error: 'Admin access required for canvas logo uploads' },
               { status: 403 }
             )
           }
@@ -397,8 +397,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           const forbiddenWorkspaceResponse = await ensureWritableWorkspace(
             workspaceId,
             session.user.id,
-            'Workspace not found',
-            'Write access required for workspace'
+            'Canvas not found',
+            'Write access required for this canvas'
           )
           if (forbiddenWorkspaceResponse) {
             return forbiddenWorkspaceResponse
@@ -460,7 +460,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             action: AuditAction.FILE_UPLOADED,
             resourceType: AuditResourceType.WORKSPACE,
             resourceId: workspaceId,
-            description: `Uploaded workspace logo "${originalName}"`,
+            description: `Uploaded canvas logo "${originalName}"`,
             metadata: {
               fileName: originalName,
               fileKey: fileInfo.key,

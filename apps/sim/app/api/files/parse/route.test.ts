@@ -339,7 +339,7 @@ describe('File Parse API Route', () => {
 
   it('should hide foreign personal execution contexts before parsing', async () => {
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
     const req = createMockRequest('POST', {
@@ -352,7 +352,7 @@ describe('File Parse API Route', () => {
     const response = await POST(req)
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockUploadExecutionFile).not.toHaveBeenCalled()
   })
 

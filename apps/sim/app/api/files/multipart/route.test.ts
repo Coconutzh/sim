@@ -240,14 +240,14 @@ describe('POST /api/files/multipart action=complete', () => {
     const data = await res.json()
 
     expect(res.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 
   it('hides foreign personal execution multipart uploads behind 404', async () => {
     mockGetStorageProvider.mockReturnValue('s3')
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValueOnce({
-      response: Response.json({ error: 'Workspace not found' }, { status: 404 }),
+      response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
     const res = await POST(
@@ -263,7 +263,7 @@ describe('POST /api/files/multipart action=complete', () => {
     )
 
     expect(res.status).toBe(404)
-    await expect(res.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(res.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockInitiateS3MultipartUpload).not.toHaveBeenCalled()
   })
 
