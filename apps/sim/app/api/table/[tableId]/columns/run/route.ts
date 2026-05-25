@@ -47,7 +47,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
     return NextResponse.json({ success: true, data: { triggered: null } })
   } catch (error) {
     if (error instanceof Error && error.message === 'Invalid workspace ID') {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
     logger.error(`run-column failed:`, error)
     return NextResponse.json({ error: 'Failed to run columns' }, { status: 500 })

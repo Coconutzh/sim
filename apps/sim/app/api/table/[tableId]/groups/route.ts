@@ -59,7 +59,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
     const result = await checkAccess(tableId, authResult.userId, 'write')
     if (!result.ok) return accessError(result, requestId, tableId)
     if (result.table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
     const updatedTable = await addWorkflowGroup(
       {
@@ -97,7 +97,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest, { params }: R
     const result = await checkAccess(tableId, authResult.userId, 'write')
     if (!result.ok) return accessError(result, requestId, tableId)
     if (result.table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
     const updatedTable = await updateWorkflowGroup(
       {
@@ -144,7 +144,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, { params }: 
     const result = await checkAccess(tableId, authResult.userId, 'write')
     if (!result.ok) return accessError(result, requestId, tableId)
     if (result.table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
     const updatedTable = await deleteWorkflowGroup(
       { tableId, groupId: validated.groupId },

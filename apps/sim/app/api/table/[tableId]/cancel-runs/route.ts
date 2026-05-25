@@ -39,7 +39,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
     const { table } = result
 
     if (table.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const cancelled = await cancelWorkflowGroupRuns(tableId, scope === 'row' ? rowId : undefined)

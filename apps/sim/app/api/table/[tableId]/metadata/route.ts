@@ -40,7 +40,7 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: TableR
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const updated = await updateTableMetadata(

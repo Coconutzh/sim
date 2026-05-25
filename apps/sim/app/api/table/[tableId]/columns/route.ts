@@ -47,7 +47,7 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Colum
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const updatedTable = await addTableColumn(tableId, validated.column, requestId)
@@ -99,7 +99,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest, context: Colu
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const { updates } = validated
@@ -192,7 +192,7 @@ export const DELETE = withRouteHandler(
       const { table } = result
 
       if (table.workspaceId !== validated.workspaceId) {
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       const updatedTable = await deleteColumn(

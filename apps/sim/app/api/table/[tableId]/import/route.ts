@@ -94,7 +94,7 @@ export const POST = withRouteHandler(async (request: NextRequest, { params }: Ro
       logger.warn(
         `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${workspaceId}, Actual: ${table.workspaceId}`
       )
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     if (table.archivedAt) {

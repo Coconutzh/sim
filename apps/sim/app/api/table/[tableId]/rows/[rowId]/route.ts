@@ -45,7 +45,7 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Row
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const [row] = await db
@@ -120,7 +120,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest, context: RowR
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const updatedRow = await updateRow(
@@ -202,7 +202,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Row
     const { table } = result
 
     if (table.workspaceId !== validated.workspaceId) {
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     await deleteRow(tableId, rowId, validated.workspaceId, requestId)

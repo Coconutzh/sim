@@ -54,7 +54,7 @@ async function handleBatchInsert(
     logger.warn(
       `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
     )
-    return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
   }
 
   // Validate rows before calling service (service also validates, but route-level
@@ -144,7 +144,7 @@ export const POST = withRouteHandler(
         logger.warn(
           `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
         )
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       const rowData = validated.data as RowData
@@ -258,7 +258,7 @@ export const GET = withRouteHandler(
         logger.warn(
           `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
         )
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       const baseConditions = [
@@ -371,7 +371,7 @@ export const PUT = withRouteHandler(async (request: NextRequest, context: TableR
       logger.warn(
         `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
       )
-      return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
     }
 
     const sizeValidation = validateRowSize(validated.data as RowData)
@@ -468,7 +468,7 @@ export const DELETE = withRouteHandler(
         logger.warn(
           `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
         )
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       if (validated.rowIds) {
@@ -560,7 +560,7 @@ export const PATCH = withRouteHandler(
         logger.warn(
           `[${requestId}] Workspace ID mismatch for table ${tableId}. Provided: ${validated.workspaceId}, Actual: ${table.workspaceId}`
         )
-        return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid canvas ID' }, { status: 400 })
       }
 
       const result = await batchUpdateRows(
