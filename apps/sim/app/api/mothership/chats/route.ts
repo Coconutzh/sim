@@ -56,7 +56,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     if (isActiveWorkspaceAccessError(error)) {
       logger.warn('Hidden workspace mothership chats access attempt')
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     logger.error('Error fetching mothership chats:', error)
@@ -111,7 +111,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     if (isActiveWorkspaceAccessError(error)) {
       logger.warn('Hidden workspace mothership chat creation attempt')
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     logger.error('Error creating mothership chat:', error)

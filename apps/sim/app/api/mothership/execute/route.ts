@@ -194,7 +194,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         requestId,
         workspaceId: error.workspaceId,
       })
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
     }
 
     logger.error(

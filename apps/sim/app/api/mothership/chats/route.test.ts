@@ -131,7 +131,7 @@ describe('mothership chats route', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockOrderBy).not.toHaveBeenCalled()
   })
 
@@ -153,7 +153,7 @@ describe('mothership chats route', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.json()).resolves.toEqual({ error: 'Workspace not found' })
+    await expect(response.json()).resolves.toEqual({ error: 'Canvas not found' })
     expect(mockReturning).not.toHaveBeenCalled()
     expect(mockPublishStatusChanged).not.toHaveBeenCalled()
   })
