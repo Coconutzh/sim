@@ -73,9 +73,7 @@ export const GET = withRouteHandler(
 
       logger.info(`[${requestId}] Successfully retrieved deployment info: ${id}`)
 
-      const responseApiKeyInfo = workflowData.workspaceId
-        ? 'Workspace API keys'
-        : 'Personal API keys'
+      const responseApiKeyInfo = workflowData.workspaceId ? 'Canvas API keys' : 'Personal API keys'
 
       return createSuccessResponse({
         apiKey: responseApiKeyInfo,
@@ -150,9 +148,7 @@ export const POST = withRouteHandler(
         }
       )
 
-      const responseApiKeyInfo = workflowData!.workspaceId
-        ? 'Workspace API keys'
-        : 'Personal API keys'
+      const responseApiKeyInfo = workflowData!.workspaceId ? 'Canvas API keys' : 'Personal API keys'
 
       return createSuccessResponse({
         apiKey: responseApiKeyInfo,

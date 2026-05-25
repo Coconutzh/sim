@@ -4,9 +4,17 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockParseRequest, mockValidateWorkflowPermissions } = vi.hoisted(() => ({
+const {
+  mockCheckNeedsRedeployment,
+  mockGetSession,
+  mockParseRequest,
+  mockPerformFullDeploy,
+  mockValidateWorkflowPermissions,
+} = vi.hoisted(() => ({
+  mockCheckNeedsRedeployment: vi.fn(),
   mockGetSession: vi.fn(),
   mockParseRequest: vi.fn(),
+  mockPerformFullDeploy: vi.fn(),
   mockValidateWorkflowPermissions: vi.fn(),
 }))
 
@@ -57,12 +65,12 @@ vi.mock('@/lib/posthog/server', () => ({
 }))
 
 vi.mock('@/lib/workflows/orchestration', () => ({
-  performFullDeploy: vi.fn(),
+  performFullDeploy: mockPerformFullDeploy,
   performFullUndeploy: vi.fn(),
 }))
 
 vi.mock('@/app/api/workflows/utils', () => ({
-  checkNeedsRedeployment: vi.fn(),
+  checkNeedsRedeployment: mockCheckNeedsRedeployment,
   createErrorResponse: vi.fn((error: string, status: number, code?: string) =>
     Response.json({ error, code: code || error.toUpperCase().replace(/\s+/g, '_') }, { status })
   ),
@@ -139,5 +147,70 @@ describe('/api/workflows/[id]/deploy auth boundary', () => {
     expect(await response.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHORIZED' })
     expect(mockParseRequest).not.toHaveBeenCalled()
     expect(mockValidateWorkflowPermissions).not.toHaveBeenCalled()
+  })
+
+  it('GET returns canvas API key wording for workspace-scoped deployments', async () => {
+    mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    mockParseRequest.mockResolvedValue({
+      success: true,
+      data: { params: { id: 'workflow-1' } },
+    })
+    mockValidateWorkflowPermissions.mockResolvedValue({
+      error: null,
+      workflow: {
+        id: 'workflow-1',
+        workspaceId: 'workspace-1',
+        isDeployed: true,
+        deployedAt: new Date('2026-05-25T00:00:00.000Z'),
+        isPublicApi: false,
+      },
+    })
+    mockCheckNeedsRedeployment.mockResolvedValue(false)
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/workflow-1/deploy')
+
+    const response = await GET(request, { params: Promise.resolve({ id: 'workflow-1' }) })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      apiKey: 'Canvas API keys',
+      isDeployed: true,
+      needsRedeployment: false,
+    })
+  })
+
+  it('POST returns canvas API key wording after deploying workspace-scoped workflows', async () => {
+    mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    mockParseRequest.mockResolvedValue({
+      success: true,
+      data: { params: { id: 'workflow-1' } },
+    })
+    mockValidateWorkflowPermissions.mockResolvedValue({
+      error: null,
+      session: { user: { id: 'user-1' } },
+      workflow: {
+        id: 'workflow-1',
+        name: 'Team deploy',
+        workspaceId: 'workspace-1',
+      },
+    })
+    mockPerformFullDeploy.mockResolvedValue({
+      success: true,
+      deployedAt: new Date('2026-05-25T00:00:00.000Z'),
+      warnings: [],
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/workflows/workflow-1/deploy', {
+      method: 'POST',
+    })
+
+    const response = await POST(request, { params: Promise.resolve({ id: 'workflow-1' }) })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      apiKey: 'Canvas API keys',
+      isDeployed: true,
+      warnings: [],
+    })
   })
 })
