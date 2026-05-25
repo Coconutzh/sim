@@ -37,7 +37,11 @@ import {
   updateCreatorProfileContract,
 } from '@/lib/api/contracts/creator-profile'
 import { updateTemplateContract, useTemplateContract } from '@/lib/api/contracts/templates'
-import { listWorkspacesContract } from '@/lib/api/contracts/workspaces'
+import {
+  listWorkspacesContract,
+  type WorkspaceCanvasScope,
+  type WorkspacePermission,
+} from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -52,6 +56,21 @@ import {
 } from './workflow-access'
 
 const logger = createLogger('TemplateDetails')
+
+interface TemplateCanvasOption {
+  id: string
+  name: string
+  permissions: WorkspacePermission
+  canvasScope?: WorkspaceCanvasScope | null
+  isInternalWorkspace?: boolean
+}
+
+function getTemplateCanvasLabel(workspace: TemplateCanvasOption): string {
+  if (workspace.canvasScope === 'personal') return 'Personal draft canvas'
+  if (workspace.canvasScope === 'team') return 'Team canvas'
+  if (workspace.isInternalWorkspace) return 'Internal canvas'
+  return 'Legacy canvas'
+}
 
 interface TemplateDetailsLoadingProps {
   isWorkspaceContext?: boolean
@@ -168,9 +187,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
   const [isRejecting, setIsRejecting] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
   const [hasWorkspaceAccess, setHasWorkspaceAccess] = useState<boolean | null>(null)
-  const [workspaces, setWorkspaces] = useState<
-    Array<{ id: string; name: string; permissions: string }>
-  >([])
+  const [workspaces, setWorkspaces] = useState<TemplateCanvasOption[]>([])
   const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(false)
   const [showWorkspaceSelectorForEdit, setShowWorkspaceSelectorForEdit] = useState(false)
   const [sharePopoverOpen, setSharePopoverOpen] = useState(false)
@@ -208,7 +225,15 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
         const data = await requestJson(listWorkspacesContract, { query: { scope: 'active' } })
         const availableWorkspaces = data.workspaces.flatMap((ws) =>
           ws.permissions === 'write' || ws.permissions === 'admin'
-            ? [{ id: ws.id, name: ws.name, permissions: ws.permissions }]
+            ? [
+                {
+                  id: ws.id,
+                  name: ws.name,
+                  permissions: ws.permissions,
+                  canvasScope: ws.canvasScope,
+                  isInternalWorkspace: ws.isInternalWorkspace,
+                },
+              ]
             : []
         )
         setWorkspaces(availableWorkspaces)
@@ -421,7 +446,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
         const checkResponse = await fetch(`/api/workflows/${template.workflowId}`)
 
         if (checkResponse.status === 403) {
-          alert("You don't have access to the workspace containing this template")
+          alert("You don't have access to the canvas containing this template")
           return
         }
 
@@ -671,7 +696,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                       <DropdownMenuContent align='end'>
                         {workspaces.length === 0 ? (
                           <DropdownMenuItem disabled>
-                            No workspaces with write access
+                            No canvases with write access
                           </DropdownMenuItem>
                         ) : (
                           workspaces.map((workspace) => (
@@ -682,7 +707,8 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                               <div className='flex flex-col'>
                                 <span>{workspace.name}</span>
                                 <span className='text-[var(--text-tertiary)] text-xs capitalize'>
-                                  {workspace.permissions} access
+                                  {getTemplateCanvasLabel(workspace)} · {workspace.permissions}{' '}
+                                  access
                                 </span>
                               </div>
                             </DropdownMenuItem>
