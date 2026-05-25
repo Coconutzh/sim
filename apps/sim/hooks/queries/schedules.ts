@@ -72,7 +72,7 @@ export function useWorkspaceSchedules(workspaceId?: string) {
   return useQuery({
     queryKey: scheduleKeys.list(workspaceId ?? ''),
     queryFn: async ({ signal }) => {
-      if (!workspaceId) throw new Error('Workspace ID required')
+      if (!workspaceId) throw new Error('Canvas ID required')
 
       const data = await requestJson(listWorkspaceSchedulesContract, {
         query: { workspaceId },

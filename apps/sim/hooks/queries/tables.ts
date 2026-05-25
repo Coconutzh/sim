@@ -175,7 +175,7 @@ export function useTablesList(workspaceId?: string, scope: TableQueryScope = 'ac
   return useQuery({
     queryKey: tableKeys.list(workspaceId, scope),
     queryFn: async ({ signal }) => {
-      if (!workspaceId) throw new Error('Workspace ID required')
+      if (!workspaceId) throw new Error('Canvas ID required')
 
       const response = await requestJson(listTablesContract, {
         query: { workspaceId, scope },
