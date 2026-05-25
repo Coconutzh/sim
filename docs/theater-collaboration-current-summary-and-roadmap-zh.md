@@ -73,6 +73,7 @@
 - 最新 Phase 11 user permissions hook 错误切片把权限 fallback 返回给组件的 `User not found in workspace` 迁移为 canvas 语义；底层 hook 名称、permission 类型、viewer fallback 和 server permission response 不变。
 - 最新 Phase 11 files/published UI 文案切片把文件拖拽上传 overlay 和 published/showcase 不可见空态里的 workspace/workgroup 文案迁移为 canvas/team 语义；底层 files route、published route、workgroup 可见性判断和 `workspaceId` 参数不变。
 - 最新 Phase 11 client upload/task fallback 错误切片把任务创建、Knowledge 文档上传和 canvas logo 上传中缺少容器上下文或上传失败时可能展示给用户的 workspaceId/workspace logo 文案迁移为 canvas 语义；底层 upload context、storage path、React Query key 和 `workspaceId` 参数不变。
+- 最新 Phase 11 permission group user config 错误切片把 `/api/permission-groups/user` 缺少容器查询参数时返回的 `workspaceId is required` 迁移为 canvas 语义，并补 route test 覆盖；底层 contract schema、permission group 查询和 `workspaceId` 参数不变。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -87,6 +88,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `8957705a9` | Phase 11 permission group user config 错误迁移为 canvas wording |
 | `13248c6bc` | Phase 11 client upload/task fallback 错误迁移为 canvas wording |
 | `b150967e1` | Phase 11 files/published UI 文案迁移为 canvas/team wording |
 | `862514ace` | Phase 11 user permissions hook fallback 错误迁移为 canvas wording |
@@ -280,11 +282,12 @@
 - `862514ace` 继续迁移 user permissions hook 错误边界：`useUserPermissions` 在 server response 缺少 viewer 和当前用户权限 row 时返回给调用方的 fallback error 从 `User not found in workspace` 改为 `User not found in canvas`。该提交不改 hook API、permission 类型、viewer 优先级、fallback 扫描逻辑或 `workspaceId` 技术边界。
 - `b150967e1` 继续迁移 files/published UI 深层文案：文件页拖拽上传 overlay 从 `Release files here to add them to this workspace` 改为 `...this canvas`，published/showcase 详情不可见空态从 `Workflow not visible from this workspace` 与 workgroup 配置提示改为 canvas/team 语义。该提交不改文件上传、发布可见性判断、showcase/published 路由或 `workspaceId` 参数。
 - `13248c6bc` 继续迁移 client upload/task fallback 错误边界：`useCreateTask` 缺少容器上下文时返回 `Canvas ID is required`，Knowledge 文档上传缺少容器上下文时返回 `Canvas ID is required for upload`，canvas logo 上传缺少上下文或未知失败 fallback 返回 canvas logo wording。该提交不改 Mothership task 创建 API、Knowledge upload pipeline、workspace-logo storage context、presigned URL 或 `workspaceId` 参数。
+- `8957705a9` 继续迁移 permission group user config 错误边界：`GET /api/permission-groups/user` 在缺少 `workspaceId` query 时返回的错误从 `workspaceId is required` 改为 `Canvas ID is required`，并新增 route test 断言不会继续访问 workspace permission helper。该提交不改 schema 解析方式、permission group membership 查询、enterprise gating 或 `workspaceId` 参数。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、A2A API 错误、copilot chat API 错误、workflow publication/duplicate API 错误、jobs API 错误、workflow API access 错误、service conflict 错误、SSE/MCP 错误、v1 API 错误、resume/wand API 错误、workflow authz/preprocessing 错误、Copilot access helper 错误、Copilot credential selector 警告、workspace permissions hook 错误、MCP workflow tool API 错误、Copilot file/media server tool 错误、Copilot knowledge server tool 错误、Copilot handler/server 错误、Copilot table server tool 错误、user permissions hook 错误、files/published UI 文案、client upload/task fallback 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email、邀请错误、组织批量邀请错误、canvas permission 错误、workspace detail/update/delete 错误、permission group 错误、workspace member 错误、workspace utility API/helper 错误、workspace notification API 错误、workspace inbox API 错误、workspace file API 错误、workspace settings secret/API key 错误、skills API 错误、Mothership API 错误、knowledge/template-use API 错误、table API 错误、workflow/folder API 错误、credential/provider API 错误、logs/usage API 错误、folder/memory/schedule API 错误、generic file API 错误、custom tool/file manage API 错误、A2A API 错误、copilot chat API 错误、workflow publication/duplicate API 错误、jobs API 错误、workflow API access 错误、service conflict 错误、SSE/MCP 错误、v1 API 错误、resume/wand API 错误、workflow authz/preprocessing 错误、Copilot access helper 错误、Copilot credential selector 警告、workspace permissions hook 错误、MCP workflow tool API 错误、Copilot file/media server tool 错误、Copilot knowledge server tool 错误、Copilot handler/server 错误、Copilot table server tool 错误、user permissions hook 错误、files/published UI 文案、client upload/task fallback 错误、permission group user config 错误、form/chat/credential-account fallback、published visibility、公共 templates edit selector 和 Knowledge Base header 归属选择器中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；product tour 与 split mobile pane 当前未发现明显 workspace 用户文案，Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -469,6 +472,16 @@ Phase 4 已完成一轮系统性收尾，已覆盖：
 ## 4. 当前验证状态
 
 最近已通过或复跑的关键校验包括：
+
+最新 Phase 11 permission group user config 错误文案切片已验证：
+
+```powershell
+Set-Location apps\sim; bunx biome check --write "app/api/permission-groups/user/route.ts" "app/api/permission-groups/user/route.test.ts"
+Set-Location apps\sim; bunx vitest run "app/api/permission-groups/user/route.test.ts"
+bun run check:api-validation:strict
+$patterns = @('Canvas ID is required','permission-groups/user','app/api/permission-groups/user'); $output = bun run type-check 2>&1; $matches = $output | Select-String -Pattern $patterns; if ($matches) { $matches | ForEach-Object { $_.Line }; exit 1 } else { 'NO_TOUCHED_PATH_TYPECHECK_MATCHES' }
+git diff --check -- apps/sim/app/api/permission-groups/user/route.ts apps/sim/app/api/permission-groups/user/route.test.ts
+```
 
 最新 Phase 11 client upload/task fallback 错误文案切片已验证：
 
@@ -937,7 +950,7 @@ git diff --check
 已知情况：
 
 - `bun run check:api-validation:strict` 当前基线为 `total=761, zod=736, nonZod=25`，新增 cleanup route 和 SSO route 都走既有合约和 `parseRequest`，最近 invitation 文案切片未改变边界合约；严格校验继续通过。
-- `bun run type-check` 仍退出 2，但按最新 client upload/task fallback 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
+- `bun run type-check` 仍退出 2，但按最新 permission group user config 触碰路径和文案标识过滤输出 `NO_TOUCHED_PATH_TYPECHECK_MATCHES`；全量 type-check 仍有仓库既有历史错误，不能宣称全量通过。
 - `git diff --check` 本轮通过，没有 whitespace error。
 - `Set-Location packages\audit; bunx vitest run src/log.test.ts` 目前仍会在收集阶段失败：`@sim/testing` 的 request mock 会导入 `next/server`，而 `packages/audit` 包上下文没有该依赖；需后续拆分 testing mock 子入口或补包级测试依赖后再作为有效信号。
 
