@@ -27,6 +27,7 @@
 - 最新 Phase 11 邀请/团队管理切片已把原 sidebar header invite modal 和 team canvas health/Agent Skill 空态中的 “this workspace / workspace permissions / team workspace” 用户可见文案改为 canvas 语义。
 - 最新 Phase 11 `/workspace` 入口切片已把根入口重定向改为优先打开本地最近访问 canvas，其次 server last-active canvas，再回退默认团队画布；这避免已有团队画布时总是覆盖个人草稿最近访问，也让 `redirect_workflow` 继续使用同一 canvas fallback。
 - 最新 Phase 11 settings/sidebar 深层文案切片继续迁移 Integrations、Secrets、Inbox enable、Subscription plan/tooltip、ownership transfer 和 sidebar resource 分组中的 workspace 用户可见文案；保留底层 `workspaceId`、API route 和 credential type 作为内部资源键。
+- 最新 Phase 11 邀请/邮件切片把 invite 登录页、单个/批量邀请邮件、批量邀请 subject 和 published visibility 的 owner-only 文案迁移为 canvas 语义；内部 invitation grant 仍保留 workspace 字段名。
 
 需要注意：当前工作树仍有两个非本轮文档相关的未提交项，后续不要误混入协作提交：
 
@@ -41,6 +42,7 @@
 
 | Commit | 内容摘要 |
 | --- | --- |
+| `56d4905ae` | Phase 11 invite/email/published visibility 用户可见 workspace 文案迁移为 canvas wording |
 | `4bff93528` | Phase 11 settings/sidebar 深层用户可见 workspace 文案迁移为 canvas/resources wording |
 | `629062e92` | Phase 11 `/workspace` 根入口优先使用最近访问 canvas，并补选择器单测 |
 | `be6856618` | Phase 11 sidebar invite modal 与团队管理健康/Agent Skill 空态迁移为 canvas wording |
@@ -142,11 +144,12 @@
 - `be6856618` 补齐 sidebar header 的邀请弹窗和原 shell 团队管理页中的残留普通用户文案：外部邀请、已是成员、移除成员、fallback modal title、team canvas health permission 检查，以及 Agent Skill 空态均使用 canvas wording；权限 mutation、pending invitation 和 `teamWorkspaceId` 命名仍是内部实现。
 - `629062e92` 把 `/workspace` 根入口的 legacy workspace fallback 抽成 `selectCanvasLandingTarget`：选择顺序改为 local recency -> server last-active -> default workgroup team canvas -> default workgroup personal canvas -> 其他 team/personal/legacy canvas，并补单测覆盖“最近个人草稿不被默认团队画布覆盖”“local recency 失效时使用 server last-active”“首次进入仍回默认团队画布”。该切片修复了此前 default workgroup 有 team canvas 时过早 redirect、导致 `redirect_workflow` 和最近访问都无法参与决策的问题。
 - `4bff93528` 继续补 settings/sidebar 深层残留文案：Integrations 分享按钮与错误、Atlassian credential 重名错误、Secrets 的 canvas secret/override/分组、Inbox enable 说明、Subscription plan feature 和 billed-account tooltip、ownership transfer 的 shared canvas 影响提示，以及 sidebar aria label/resource 分组均使用 canvas/resources 语义。该提交只改用户可见文案，不改 `workspaceId`、`env_workspace`、API path 或权限数据模型。
+- `56d4905ae` 继续迁移邀请和发布列表边界：未登录 invite 接收页从“join this workspace”改为“join this canvas”，单个 workspace invitation email 的 preview/body 默认称为 canvas，批量邀请邮件的 team role 说明、canvas access 分组和 subject 改为 canvas，Published/Showcase visibility 中的 `workspace` 可见范围显示为 `Owner canvas only`。该提交不改 invitation grant schema、`workspaceName` 参数或 publication visibility enum。
 
 仍需注意：
 
 - 代码内部仍大量使用 `workspace` 命名，这是底层模型和路径兼容需要；用户可见主路径应继续逐步替换为 canvas 语义。
-- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查和 Agent Skill 空态中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding/templates 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
+- Workspace 技术设置页和 sidebar header 邀请弹窗已开始迁移 workflow MCP server、API keys、BYOK、Inbox、Integrations、Secrets、Subscription、team management invite/roster/no-organization/remove-member/ownership transfer、团队健康检查、Agent Skill 空态、invite/email 和 published visibility 中的明显可见文案；`/workspace` 根入口已开始消费 recent/last-active canvas 语义；Recently Deleted 当前未发现明显 workspace 用户文案，mobile nav/onboarding/templates 等深层旧入口后续仍需 Phase 11 系统排查；技术资源名确实以 workspace 为授权边界时应谨慎保留。
 
 ### 3.2 个人草稿画布
 
@@ -457,7 +460,7 @@ git diff --check
 
 建议任务：
 
-1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成；仍需继续排查 mobile nav、onboarding、templates 和其他旧入口。
+1. 排查 sidebar、settings、onboarding、templates、recent、search、command palette、mobile nav 的 workspace 文案和创建入口；search/command palette 首个迁移切片已由 `267883e82` 完成，workflow MCP server 设置页首个文案切片已由 `0af9de617` 完成，API keys/BYOK/Inbox/team management 设置文案切片已由 `ec67e90fe` 完成，sidebar invite/team-management 健康与 Agent Skill 空态文案切片已由 `be6856618` 完成，`/workspace` 根入口 recent canvas 选择切片已由 `629062e92` 完成，settings/sidebar 深层 Integrations/Secrets/Subscription/ownership 文案切片已由 `4bff93528` 完成，invite/email/published visibility 文案切片已由 `56d4905ae` 完成；仍需继续排查 mobile nav、onboarding、templates 和其他旧入口。
 2. 普通成员看到“新建个人草稿画布”，不再看到“create workspace”。
 3. 团队管理员看到“初始化/修复团队画布”，项目管理员看到“创建团队”。
 4. 老链接继续兼容跳转或展示说明，不直接报错。
