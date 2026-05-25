@@ -751,6 +751,8 @@ export const Sidebar = memo(function Sidebar() {
         id: workspace.id,
         name: workspace.name,
         href: `/workspace/${workspace.id}/w`,
+        canvasScope: workspace.canvasScope,
+        isInternalWorkspace: workspace.isInternalWorkspace,
         isCurrent: workspace.id === workspaceId,
       })),
     [workspaces, workspaceId]

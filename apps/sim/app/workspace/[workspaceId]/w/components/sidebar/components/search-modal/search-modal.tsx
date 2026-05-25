@@ -35,7 +35,7 @@ import {
   WorkspacesGroup,
 } from './components/search-groups'
 import type { PageItem, SearchModalProps, TaskItem, WorkflowItem, WorkspaceItem } from './utils'
-import { filterAndSort } from './utils'
+import { filterAndSort, getWorkspaceCanvasSearchValue } from './utils'
 
 export type { SearchModalProps } from './utils'
 
@@ -246,7 +246,7 @@ export function SearchModal({
         routerRef.current.push(workspace.href)
       }
       captureEvent(posthogRef.current, 'search_result_selected', {
-        result_type: 'workspace',
+        result_type: 'canvas',
         query_length: deferredSearchRef.current.length,
         workspace_id: workspaceId,
       })
@@ -412,7 +412,7 @@ export function SearchModal({
     [tasks, deferredSearch]
   )
   const filteredWorkspaces = useMemo(
-    () => filterAndSort(workspaces, (w) => `${w.name} workspace-${w.id}`, deferredSearch),
+    () => filterAndSort(workspaces, getWorkspaceCanvasSearchValue, deferredSearch),
     [workspaces, deferredSearch]
   )
   const filteredPages = useMemo(

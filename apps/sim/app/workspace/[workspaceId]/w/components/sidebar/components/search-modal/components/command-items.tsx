@@ -128,24 +128,32 @@ export const MemoizedWorkspaceItem = memo(
     value,
     onSelect,
     name,
+    kindLabel,
     isCurrent,
   }: {
     value: string
     onSelect: () => void
     name: string
+    kindLabel: string
     isCurrent?: boolean
   }) {
     return (
       <Command.Item value={value} onSelect={onSelect} className={COMMAND_ITEM_CLASSNAME}>
-        <span className='flex min-w-0 font-base text-[var(--text-body)]'>
+        <span className='flex min-w-0 flex-1 font-base text-[var(--text-body)]'>
           <span className='truncate'>{name}</span>
           {isCurrent && <span className='flex-shrink-0 whitespace-pre'> (current)</span>}
+        </span>
+        <span className='ml-auto flex-shrink-0 text-[11px] text-[var(--text-subtle)]'>
+          {kindLabel}
         </span>
       </Command.Item>
     )
   },
   (prev, next) =>
-    prev.value === next.value && prev.name === next.name && prev.isCurrent === next.isCurrent
+    prev.value === next.value &&
+    prev.name === next.name &&
+    prev.kindLabel === next.kindLabel &&
+    prev.isCurrent === next.isCurrent
 )
 
 export const MemoizedPageItem = memo(

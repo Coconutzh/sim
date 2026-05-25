@@ -9,8 +9,15 @@ import type {
   SearchDocItem,
   SearchToolOperationItem,
 } from '@/stores/modals/search/types'
-import type { PageItem, TaskItem, WorkflowItem, WorkspaceItem } from '../utils'
-import { GROUP_HEADING_CLASSNAME } from '../utils'
+import {
+  GROUP_HEADING_CLASSNAME,
+  getWorkspaceCanvasKindLabel,
+  getWorkspaceCanvasSearchValue,
+  type PageItem,
+  type TaskItem,
+  type WorkflowItem,
+  type WorkspaceItem,
+} from '../utils'
 import {
   MemoizedCommandItem,
   MemoizedIconItem,
@@ -206,13 +213,14 @@ export const WorkspacesGroup = memo(function WorkspacesGroup({
 }) {
   if (items.length === 0) return null
   return (
-    <Command.Group heading='Workspaces' className={GROUP_HEADING_CLASSNAME}>
+    <Command.Group heading='Canvases' className={GROUP_HEADING_CLASSNAME}>
       {items.map((workspace) => (
         <MemoizedWorkspaceItem
           key={workspace.id}
-          value={`${workspace.name} workspace-${workspace.id}`}
+          value={getWorkspaceCanvasSearchValue(workspace)}
           onSelect={() => onSelect(workspace)}
           name={workspace.name}
+          kindLabel={getWorkspaceCanvasKindLabel(workspace)}
           isCurrent={workspace.isCurrent}
         />
       ))}

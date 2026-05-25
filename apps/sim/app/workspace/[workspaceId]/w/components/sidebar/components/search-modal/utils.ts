@@ -19,6 +19,8 @@ export interface WorkspaceItem {
   id: string
   name: string
   href: string
+  canvasScope?: 'personal' | 'team' | null
+  isInternalWorkspace?: boolean
   isCurrent?: boolean
 }
 
@@ -85,4 +87,16 @@ export function filterAndSort<T>(items: T[], toValue: (item: T) => string, searc
   }
   scored.sort((a, b) => b[1] - a[1])
   return scored.map(([item]) => item)
+}
+
+export function getWorkspaceCanvasKindLabel(workspace: WorkspaceItem): string {
+  if (workspace.canvasScope === 'personal') return 'Personal draft canvas'
+  if (workspace.canvasScope === 'team') return 'Team canvas'
+  if (workspace.isInternalWorkspace) return 'Project canvas'
+  return 'Legacy canvas'
+}
+
+export function getWorkspaceCanvasSearchValue(workspace: WorkspaceItem): string {
+  const kindLabel = getWorkspaceCanvasKindLabel(workspace)
+  return `${workspace.name} ${kindLabel} canvas-${workspace.id}`
 }
