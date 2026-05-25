@@ -36,25 +36,25 @@ export const DELETE = withRouteHandler(
 
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       const workspaceRow = await getWorkspaceWithOwner(workspaceId)
 
       if (!workspaceRow) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
 
       if (workspaceRow.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not support shared members' },
+          { error: 'Personal canvases do not support shared members' },
           { status: 403 }
         )
       }
 
       if (workspaceRow.billedAccountUserId === userId) {
         return NextResponse.json(
-          { error: 'Cannot remove the workspace billing account. Please reassign billing first.' },
+          { error: 'Cannot remove the canvas billing account. Please reassign billing first.' },
           { status: 400 }
         )
       }
@@ -76,7 +76,7 @@ export const DELETE = withRouteHandler(
       const isOwnerOnlyRemoval = isRemovingWorkspaceOwner && !userPermission
 
       if (!userPermission && !isOwnerOnlyRemoval) {
-        return NextResponse.json({ error: 'User not found in workspace' }, { status: 404 })
+        return NextResponse.json({ error: 'User not found in canvas' }, { status: 404 })
       }
 
       // Check if current user has admin access to this workspace
@@ -93,7 +93,7 @@ export const DELETE = withRouteHandler(
         session.user.id !== workspaceRow.billedAccountUserId
       ) {
         return NextResponse.json(
-          { error: 'Only the workspace owner or billing account can remove the workspace owner' },
+          { error: 'Only the canvas owner or billing account can remove the canvas owner' },
           { status: 403 }
         )
       }
@@ -116,7 +116,7 @@ export const DELETE = withRouteHandler(
 
         if (otherAdmins.length === 0 && !hasOtherOwnerAdmin) {
           return NextResponse.json(
-            { error: 'Cannot remove the last admin from a workspace' },
+            { error: 'Cannot remove the last admin from a canvas' },
             { status: 400 }
           )
         }
@@ -210,7 +210,7 @@ export const DELETE = withRouteHandler(
         action: AuditAction.MEMBER_REMOVED,
         resourceType: AuditResourceType.WORKSPACE,
         resourceId: workspaceId,
-        description: isSelf ? 'Left the workspace' : `Removed member ${userId} from the workspace`,
+        description: isSelf ? 'Left the canvas' : `Removed member ${userId} from the canvas`,
         metadata: {
           removedUserId: userId,
           removedUserRole: userPermission?.permissionType ?? 'owner',
@@ -223,7 +223,7 @@ export const DELETE = withRouteHandler(
       return NextResponse.json({ success: true })
     } catch (error) {
       logger.error('Error removing workspace member:', error)
-      return NextResponse.json({ error: 'Failed to remove workspace member' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to remove canvas member' }, { status: 500 })
     }
   }
 )

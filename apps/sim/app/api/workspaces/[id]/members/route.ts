@@ -33,11 +33,11 @@ export const GET = withRouteHandler(
       const { id: workspaceId } = parsed.data.params
       const access = await checkWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
       }
       if (access.workspace?.workspaceMode === 'personal') {
         return NextResponse.json(
-          { error: 'Personal workspaces do not expose shared member lists' },
+          { error: 'Personal canvases do not expose shared member lists' },
           { status: 403 }
         )
       }
@@ -47,7 +47,7 @@ export const GET = withRouteHandler(
       return NextResponse.json({ members })
     } catch (error) {
       logger.error('Error fetching workspace members:', error)
-      return NextResponse.json({ error: 'Failed to fetch workspace members' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch canvas members' }, { status: 500 })
     }
   }
 )

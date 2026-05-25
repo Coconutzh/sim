@@ -86,7 +86,7 @@ describe('GET /api/workspaces/[id]/members', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
   })
 
@@ -109,7 +109,7 @@ describe('GET /api/workspaces/[id]/members', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not expose shared member lists' })
+    expect(data).toEqual({ error: 'Personal canvases do not expose shared member lists' })
     expect(permissionsMockFns.mockGetWorkspaceMemberProfiles).not.toHaveBeenCalled()
   })
 

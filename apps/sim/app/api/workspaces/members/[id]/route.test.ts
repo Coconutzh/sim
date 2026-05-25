@@ -169,10 +169,7 @@ describe('DELETE /api/workspaces/members/[id]', () => {
   })
 
   it('allows an admin to leave when the only other admin is an owner-only workspace owner', async () => {
-    mockDbResults.value = [
-      [{ permissionType: 'admin' }],
-      [],
-    ]
+    mockDbResults.value = [[{ permissionType: 'admin' }], []]
 
     const response = await DELETE(createMockRequest('DELETE'), {
       params: Promise.resolve({ id: 'member-1' }),
@@ -203,7 +200,7 @@ describe('DELETE /api/workspaces/members/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(403)
-    expect(data).toEqual({ error: 'Personal workspaces do not support shared members' })
+    expect(data).toEqual({ error: 'Personal canvases do not support shared members' })
     expect(transactionMock).not.toHaveBeenCalled()
     expect(recordAuditMock).not.toHaveBeenCalled()
   })
@@ -231,7 +228,7 @@ describe('DELETE /api/workspaces/members/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(getWorkspaceWithOwnerMock).not.toHaveBeenCalled()
     expect(transactionMock).not.toHaveBeenCalled()
   })
@@ -245,7 +242,7 @@ describe('DELETE /api/workspaces/members/[id]', () => {
     const data = await response.json()
 
     expect(response.status).toBe(404)
-    expect(data).toEqual({ error: 'Workspace not found' })
+    expect(data).toEqual({ error: 'Canvas not found' })
     expect(transactionMock).not.toHaveBeenCalled()
     expect(recordAuditMock).not.toHaveBeenCalled()
   })
