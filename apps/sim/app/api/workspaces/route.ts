@@ -214,7 +214,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     if (!creationPolicy.canCreate) {
       return NextResponse.json(
-        { error: creationPolicy.reason || 'Workspace creation is not available.' },
+        { error: creationPolicy.reason || 'Canvas creation is not available.' },
         { status: creationPolicy.status }
       )
     }
@@ -253,7 +253,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       resourceType: AuditResourceType.WORKSPACE,
       resourceId: newWorkspace.id,
       resourceName: newWorkspace.name,
-      description: `Created workspace "${newWorkspace.name}"`,
+      description: `Created canvas "${newWorkspace.name}"`,
       metadata: {
         name: newWorkspace.name,
         color: newWorkspace.color,
@@ -266,7 +266,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     return NextResponse.json({ workspace: newWorkspace })
   } catch (error) {
     logger.error('Error creating workspace:', error)
-    return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create canvas' }, { status: 500 })
   }
 })
 
@@ -280,7 +280,7 @@ async function createDefaultWorkspace(
   }
 ) {
   const firstName = userName?.split(' ')[0] || null
-  const workspaceName = firstName ? `${firstName}'s Workspace` : 'My Workspace'
+  const workspaceName = firstName ? `${firstName}'s Canvas` : 'My Canvas'
   return createWorkspace({
     userId,
     name: workspaceName,

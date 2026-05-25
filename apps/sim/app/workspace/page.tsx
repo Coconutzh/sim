@@ -129,7 +129,7 @@ async function handleNoWorkspaces(
   creationPolicy: WorkspaceCreationPolicy | null
 ): Promise<void> {
   if (creationPolicy && !creationPolicy.canCreate) {
-    logger.warn('No workspaces found and workspace creation is blocked', {
+    logger.warn('No canvases found and canvas creation is blocked', {
       reason: creationPolicy.reason,
       workspaceMode: creationPolicy.workspaceMode,
       organizationId: creationPolicy.organizationId,
@@ -138,19 +138,19 @@ async function handleNoWorkspaces(
     return
   }
 
-  logger.warn('No workspaces found, creating default workspace')
+  logger.warn('No canvases found, creating default canvas')
   try {
     const data = await requestJson(createWorkspaceContract, {
-      body: { name: 'My Workspace' },
+      body: { name: 'My Canvas' },
     })
     if (data.workspace?.id) {
-      logger.info(`Created default workspace: ${data.workspace.id}`)
+      logger.info(`Created default canvas: ${data.workspace.id}`)
       router.replace(`/workspace/${data.workspace.id}/home`)
       return
     }
-    logger.error('Failed to create default workspace')
+    logger.error('Failed to create default canvas')
   } catch (error) {
-    logger.error('Error creating default workspace:', error)
+    logger.error('Error creating default canvas:', error)
   }
   router.replace('/login')
 }
