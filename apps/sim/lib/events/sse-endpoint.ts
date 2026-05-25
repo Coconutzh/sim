@@ -42,7 +42,7 @@ export function createWorkspaceSSE(config: WorkspaceSSEConfig) {
 
     const access = await checkWorkspaceAccess(workspaceId, session.user.id)
     if (!access.exists || !access.hasAccess) {
-      return new Response('Workspace not found', { status: 404 })
+      return new Response('Canvas not found', { status: 404 })
     }
 
     const encoder = new TextEncoder()

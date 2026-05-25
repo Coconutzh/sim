@@ -29,7 +29,7 @@ vi.mock('@/lib/events/sse-endpoint', () => ({
       }
       const access = await mockCheckWorkspaceAccess(workspaceId, session.user.id)
       if (!access.exists || !access.hasAccess) {
-        return new Response('Workspace not found', { status: 404 })
+        return new Response('Canvas not found', { status: 404 })
       }
       return new Response(new ReadableStream({ start() {} }), {
         headers: {
@@ -102,7 +102,7 @@ describe('MCP Events SSE Endpoint', () => {
 
     expect(response.status).toBe(404)
     const text = await response.text()
-    expect(text).toBe('Workspace not found')
+    expect(text).toBe('Canvas not found')
     expect(mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-123', 'user-123')
   })
 

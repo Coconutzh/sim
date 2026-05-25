@@ -100,8 +100,8 @@ async function validateMcpAuth(
       return {
         success: false,
         errorResponse: createMcpErrorResponse(
-          new Error('Workspace not found'),
-          'Workspace not found',
+          new Error('Canvas not found'),
+          'Canvas not found',
           404
         ),
       }
@@ -112,7 +112,7 @@ async function validateMcpAuth(
       return {
         success: false,
         errorResponse: createMcpErrorResponse(
-          new Error('Access denied to workspace'),
+          new Error('Access denied to canvas'),
           'Insufficient permissions',
           403
         ),
@@ -177,7 +177,7 @@ function checkPermissionLevel(userPermission: string, requiredLevel: McpPermissi
 function getPermissionErrorMessage(permissionLevel: McpPermissionLevel): string {
   switch (permissionLevel) {
     case 'read':
-      return 'Workspace access required for MCP operations'
+      return 'Canvas access required for MCP operations'
     case 'write':
       return 'Write or admin permission required for MCP server management'
     case 'admin':

@@ -43,7 +43,7 @@ describe('createWorkspaceSSE', () => {
     )
 
     expect(response.status).toBe(404)
-    await expect(response.text()).resolves.toBe('Workspace not found')
+    await expect(response.text()).resolves.toBe('Canvas not found')
     expect(mockCheckWorkspaceAccess).toHaveBeenCalledWith('ws-hidden', 'viewer-1')
   })
 
