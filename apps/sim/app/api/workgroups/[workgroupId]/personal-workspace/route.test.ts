@@ -77,6 +77,30 @@ describe('/api/workgroups/[workgroupId]/personal-workspace', () => {
     })
   })
 
+  it('returns canvas wording when personal draft canvas access is denied', async () => {
+    mockGetOrCreatePersonalWorkspace.mockRejectedValueOnce(new Error('denied'))
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ workgroupId: 'wg-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal draft canvas access denied' })
+  })
+
+  it('returns canvas wording when personal draft canvas creation is denied', async () => {
+    mockCreatePersonalWorkspace.mockRejectedValueOnce(new Error('denied'))
+
+    const response = await POST(createMockRequest('POST', { name: 'Lighting scratch 2' }), {
+      params: Promise.resolve({ workgroupId: 'wg-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Personal draft canvas creation denied' })
+  })
+
   it('authenticates before creating a personal draft canvas', async () => {
     mockGetSession.mockResolvedValueOnce(null)
 

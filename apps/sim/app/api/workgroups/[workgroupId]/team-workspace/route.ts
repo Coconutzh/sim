@@ -24,7 +24,7 @@ export const GET = withRouteHandler(async (request, context) => {
     return NextResponse.json({ workspace })
   } catch (error) {
     logger.warn('Failed to get team workspace', error)
-    return NextResponse.json({ error: 'Team workspace access denied' }, { status: 403 })
+    return NextResponse.json({ error: 'Team canvas access denied' }, { status: 403 })
   }
 })
 
@@ -41,6 +41,6 @@ export const POST = withRouteHandler(async (request, context) => {
     return NextResponse.json(result)
   } catch (error) {
     logger.warn('Failed to create team workspace', error)
-    return NextResponse.json({ error: 'Team workspace initialization denied' }, { status: 403 })
+    return NextResponse.json({ error: 'Team canvas initialization denied' }, { status: 403 })
   }
 })

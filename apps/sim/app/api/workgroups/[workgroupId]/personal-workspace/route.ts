@@ -24,7 +24,7 @@ export const GET = withRouteHandler(async (request, context) => {
     return NextResponse.json({ workspace })
   } catch (error) {
     logger.warn('Failed to get personal workspace', error)
-    return NextResponse.json({ error: 'Personal workspace access denied' }, { status: 403 })
+    return NextResponse.json({ error: 'Personal draft canvas access denied' }, { status: 403 })
   }
 })
 
@@ -42,6 +42,6 @@ export const POST = withRouteHandler(async (request, context) => {
     return NextResponse.json(result)
   } catch (error) {
     logger.warn('Failed to create personal workspace', error)
-    return NextResponse.json({ error: 'Personal workspace creation denied' }, { status: 403 })
+    return NextResponse.json({ error: 'Personal draft canvas creation denied' }, { status: 403 })
   }
 })

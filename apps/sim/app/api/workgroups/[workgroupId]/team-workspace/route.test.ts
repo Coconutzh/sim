@@ -75,6 +75,30 @@ describe('/api/workgroups/[workgroupId]/team-workspace', () => {
     })
   })
 
+  it('returns canvas wording when team canvas access is denied', async () => {
+    mockGetTeamWorkspace.mockRejectedValueOnce(new Error('denied'))
+
+    const response = await GET(createMockRequest('GET'), {
+      params: Promise.resolve({ workgroupId: 'wg-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Team canvas access denied' })
+  })
+
+  it('returns canvas wording when team canvas initialization is denied', async () => {
+    mockCreateTeamWorkspace.mockRejectedValueOnce(new Error('denied'))
+
+    const response = await POST(createMockRequest('POST'), {
+      params: Promise.resolve({ workgroupId: 'wg-1' }),
+    })
+    const data = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(data).toEqual({ error: 'Team canvas initialization denied' })
+  })
+
   it('authenticates before initializing the team canvas', async () => {
     mockGetSession.mockResolvedValueOnce(null)
 
