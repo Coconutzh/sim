@@ -3,9 +3,29 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetApiKeyWithBYOK, mockExecuteRequest } = vi.hoisted(() => ({
+const { mockGetApiKeyWithBYOK, mockExecuteRequest, providersLogger } = vi.hoisted(() => ({
   mockGetApiKeyWithBYOK: vi.fn(),
   mockExecuteRequest: vi.fn(),
+  providersLogger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+    withMetadata: vi.fn(),
+  },
+}))
+
+providersLogger.child.mockReturnValue(providersLogger)
+providersLogger.withMetadata.mockReturnValue(providersLogger)
+
+vi.mock('@sim/logger', () => ({
+  createLogger: vi.fn(() => providersLogger),
+  logger: providersLogger,
+  runWithRequestContext: vi.fn(<T>(_ctx: unknown, fn: () => T): T => fn()),
+  getRequestContext: vi.fn(() => undefined),
 }))
 
 vi.mock('@/lib/api-key/byok', () => ({
@@ -72,7 +92,11 @@ describe('executeProviderRequest — BYOK regression', () => {
   })
 
   it('zeroes block-level model cost for BYOK callers (existing behavior)', async () => {
-    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-byok',
+      isBYOK: true,
+      source: 'workspace-byok',
+    })
     mockExecuteRequest.mockResolvedValue(makeAnthropicResponse())
 
     const result = (await executeProviderRequest('anthropic', {
@@ -86,7 +110,11 @@ describe('executeProviderRequest — BYOK regression', () => {
   })
 
   it('zeroes per-segment model cost for BYOK callers so trace aggregation does not re-charge', async () => {
-    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-byok',
+      isBYOK: true,
+      source: 'workspace-byok',
+    })
     mockExecuteRequest.mockResolvedValue(makeAnthropicResponse())
 
     const result = (await executeProviderRequest('anthropic', {
@@ -106,7 +134,11 @@ describe('executeProviderRequest — BYOK regression', () => {
   })
 
   it('does not zero per-segment cost for non-BYOK hosted callers', async () => {
-    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-rotating', isBYOK: false })
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-rotating',
+      isBYOK: false,
+      source: 'hosted-rotating-key',
+    })
     mockExecuteRequest.mockResolvedValue(makeAnthropicResponse())
 
     const result = (await executeProviderRequest('anthropic', {
@@ -119,7 +151,11 @@ describe('executeProviderRequest — BYOK regression', () => {
   })
 
   it('preserves tool segment cost (BYOK does not suppress tool charges)', async () => {
-    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-byok',
+      isBYOK: true,
+      source: 'workspace-byok',
+    })
     const responseWithToolSegment: ProviderResponse = {
       content: 'hi',
       model: 'claude-opus-4-6',
@@ -168,7 +204,11 @@ describe('executeProviderRequest — BYOK regression', () => {
   })
 
   it('zeroes per-segment cost on streaming responses for BYOK callers', async () => {
-    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-byok',
+      isBYOK: true,
+      source: 'workspace-byok',
+    })
     const segments = [
       {
         type: 'model' as const,
@@ -217,5 +257,33 @@ describe('executeProviderRequest — BYOK regression', () => {
     expect(segments[0].cost.total).toBe(0)
     expect(segments[0].cost.input).toBe(0)
     expect(segments[0].cost.output).toBe(0)
+  })
+
+  it('logs the resolved API key source so terminal diagnostics show BYOK vs env clearly', async () => {
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-zhipu-env',
+      isBYOK: false,
+      source: 'env-zhipu-api-key',
+    })
+    mockExecuteRequest.mockResolvedValue({
+      content: 'ok',
+      model: 'glm-4.7-flash',
+    } satisfies ProviderResponse)
+
+    await executeProviderRequest('zhipu', {
+      model: 'glm-4.7-flash',
+      workspaceId: 'ws-1',
+    })
+
+    expect(providersLogger.info).toHaveBeenCalledWith(
+      'API key resolved',
+      expect.objectContaining({
+        provider: 'zhipu',
+        model: 'glm-4.7-flash',
+        workspaceId: 'ws-1',
+        isBYOK: false,
+        source: 'env-zhipu-api-key',
+      })
+    )
   })
 })

@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { executeProviderContract } from '@/lib/api/contracts/providers'
 import { parseRequest } from '@/lib/api/server'
-import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions/execution-context'
@@ -36,8 +36,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const startTime = Date.now()
 
   try {
-    const auth = await checkInternalAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
+      logger.warn(`[${requestId}] Provider API unauthorized`, {
+        error: auth.error,
+        authType: auth.authType,
+      })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

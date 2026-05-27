@@ -25,6 +25,8 @@ describe('content-node-presets', () => {
       fontSize: 16,
       width: 320,
       height: 160,
+      aiPrompt: '',
+      aiModel: 'gemini-3.1-flash-lite-preview',
     })
   })
 
@@ -36,6 +38,9 @@ describe('content-node-presets', () => {
     expect(preset?.contentVariant).toBe('image')
     expect(preset?.presetSubBlockValues).toMatchObject({
       contentVariant: 'image',
+      aiPrompt: '',
+      aiModel: 'jimeng-4.5',
+      aiAspectRatio: 'auto',
       file: null,
     })
   })

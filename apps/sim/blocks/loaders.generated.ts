@@ -8,6 +8,7 @@ export const BLOCK_MODULE_LOADERS = {
   api: () => import('@/blocks/blocks/api'),
   chat_trigger: () => import('@/blocks/blocks/chat_trigger'),
   condition: () => import('@/blocks/blocks/condition'),
+  content: () => import('@/blocks/blocks/content'),
   file: () => import('@/blocks/blocks/file'),
   function: () => import('@/blocks/blocks/function'),
   generic_webhook: () => import('@/blocks/blocks/generic_webhook'),

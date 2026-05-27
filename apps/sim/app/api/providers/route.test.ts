@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @vitest-environment node
  */
 import {
@@ -11,13 +11,15 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockResolveOAuthAccountId,
+  mockAssertPermissionsAllowed,
   mockExecuteProviderRequest,
   mockResolveAccessibleWorkflowWorkspace,
+  mockResolveOAuthAccountId,
 } = vi.hoisted(() => ({
-  mockResolveOAuthAccountId: vi.fn(),
+  mockAssertPermissionsAllowed: vi.fn(),
   mockExecuteProviderRequest: vi.fn(),
   mockResolveAccessibleWorkflowWorkspace: vi.fn(),
+  mockResolveOAuthAccountId: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/hybrid', () => hybridAuthMock)
@@ -33,7 +35,7 @@ vi.mock('@/app/api/auth/oauth/utils', () => ({
 }))
 
 vi.mock('@/providers', () => ({
-  executeProviderRequest: mockExecuteProviderRequest,
+  executeProviderRequest: (...args: unknown[]) => mockExecuteProviderRequest(...args),
 }))
 
 vi.mock('@sim/logger', () => ({
@@ -52,21 +54,34 @@ vi.mock('@/lib/core/utils/with-route-handler', () => ({
   withRouteHandler: vi.fn((handler) => handler),
 }))
 
-vi.mock('@/ee/access-control/utils/permission-check', () => ({
-  assertPermissionsAllowed: vi.fn(),
-  IntegrationNotAllowedError: class IntegrationNotAllowedError extends Error {},
-  ProviderNotAllowedError: class ProviderNotAllowedError extends Error {},
-}))
+vi.mock('@/ee/access-control/utils/permission-check', () => {
+  class ProviderNotAllowedError extends Error {}
+  class IntegrationNotAllowedError extends Error {}
+
+  return {
+    assertPermissionsAllowed: (...args: unknown[]) => mockAssertPermissionsAllowed(...args),
+    IntegrationNotAllowedError,
+    ProviderNotAllowedError,
+  }
+})
 
 import { POST } from '@/app/api/providers/route'
+
+function createProviderRequest(body: Record<string, unknown>) {
+  return new NextRequest('http://localhost:3000/api/providers', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
 
 describe('ProvidersAPI POST', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    hybridAuthMockFns.mockCheckInternalAuth.mockResolvedValue({
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValue({
       success: true,
       userId: 'user-1',
-      authType: 'internal_jwt',
+      authType: hybridAuthMock.AuthType.SESSION,
     })
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValue({
       exists: true,
@@ -81,6 +96,7 @@ describe('ProvidersAPI POST', () => {
         billedAccountUserId: 'user-1',
       },
     })
+    mockAssertPermissionsAllowed.mockResolvedValue(undefined)
     mockResolveAccessibleWorkflowWorkspace.mockResolvedValue({
       workspaceId: 'ws-visible',
     })
@@ -94,6 +110,32 @@ describe('ProvidersAPI POST', () => {
         content: 'hello',
       },
     })
+  })
+
+  it('allows session-authenticated browser requests to execute providers', async () => {
+    const request = createProviderRequest({
+      provider: 'zhipu',
+      model: 'glm-4.7-flash',
+      workspaceId: 'ws-visible',
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(hybridAuthMockFns.mockCheckSessionOrInternalAuth).toHaveBeenCalled()
+    expect(mockAssertPermissionsAllowed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      workspaceId: 'ws-visible',
+      model: 'glm-4.7-flash',
+    })
+    expect(mockExecuteProviderRequest).toHaveBeenCalledWith(
+      'zhipu',
+      expect.objectContaining({
+        model: 'glm-4.7-flash',
+        workspaceId: 'ws-visible',
+      })
+    )
   })
 
   it('hides foreign personal workspace vertex credential access', async () => {
@@ -125,16 +167,12 @@ describe('ProvidersAPI POST', () => {
         },
       })
 
-    const request = new NextRequest('http://localhost:3000/api/providers', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'vertex',
-        model: 'gemini-1.5-pro',
-        workspaceId: 'ws-visible',
-        vertexCredential: 'cred-hidden',
-        messages: [{ role: 'user', content: 'hello' }],
-      }),
-      headers: { 'Content-Type': 'application/json' },
+    const request = createProviderRequest({
+      provider: 'vertex',
+      model: 'gemini-1.5-pro',
+      workspaceId: 'ws-visible',
+      vertexCredential: 'cred-hidden',
+      messages: [{ role: 'user', content: 'hello' }],
     })
 
     const response = await POST(request)
@@ -161,15 +199,11 @@ describe('ProvidersAPI POST', () => {
       },
     })
 
-    const request = new NextRequest('http://localhost:3000/api/providers', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'openai',
-        model: 'gpt-4.1',
-        workspaceId: 'ws-hidden',
-        messages: [{ role: 'user', content: 'hello' }],
-      }),
-      headers: { 'Content-Type': 'application/json' },
+    const request = createProviderRequest({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      workspaceId: 'ws-hidden',
+      messages: [{ role: 'user', content: 'hello' }],
     })
 
     const response = await POST(request)
@@ -186,16 +220,12 @@ describe('ProvidersAPI POST', () => {
       response: Response.json({ error: 'Canvas not found' }, { status: 404 }),
     })
 
-    const request = new NextRequest('http://localhost:3000/api/providers', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'openai',
-        model: 'gpt-4.1',
-        workspaceId: 'ws-visible',
-        workflowId: 'wf-hidden',
-        messages: [{ role: 'user', content: 'hello' }],
-      }),
-      headers: { 'Content-Type': 'application/json' },
+    const request = createProviderRequest({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      workspaceId: 'ws-visible',
+      workflowId: 'wf-hidden',
+      messages: [{ role: 'user', content: 'hello' }],
     })
 
     const response = await POST(request)
@@ -217,16 +247,12 @@ describe('ProvidersAPI POST', () => {
       workspaceId: 'ws-actual',
     })
 
-    const request = new NextRequest('http://localhost:3000/api/providers', {
-      method: 'POST',
-      body: JSON.stringify({
-        provider: 'openai',
-        model: 'gpt-4.1',
-        workspaceId: 'ws-spoofed',
-        workflowId: 'wf-1',
-        messages: [{ role: 'user', content: 'hello' }],
-      }),
-      headers: { 'Content-Type': 'application/json' },
+    const request = createProviderRequest({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      workspaceId: 'ws-spoofed',
+      workflowId: 'wf-1',
+      messages: [{ role: 'user', content: 'hello' }],
     })
 
     const response = await POST(request)

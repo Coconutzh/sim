@@ -1,0 +1,53 @@
+import { describe, expect, it } from 'vitest'
+import {
+  DEFAULT_IMAGE_AI_MODEL,
+  DEFAULT_IMAGE_ASPECT_RATIO,
+  getImageGenerationModelOptions,
+  getNearestSupportedImageAspectRatio,
+  getResolvedImageAspectRatio,
+  mapImageAspectRatioToProviderSize,
+} from '@/lib/generated-media/image/image-generation-utils'
+
+describe('image-generation-utils', () => {
+  it('exposes the fixed Jimeng model list and defaults to Jimeng 4.5', () => {
+    expect(DEFAULT_IMAGE_AI_MODEL).toBe('jimeng-4.5')
+    expect(getImageGenerationModelOptions()).toEqual([
+      expect.objectContaining({ id: 'jimeng-4.5', label: '即梦 4.5' }),
+      expect.objectContaining({ id: 'jimeng-4.0', label: '即梦 4.0' }),
+    ])
+  })
+
+  it('maps auto and fixed ratios to provider size hints', () => {
+    expect(DEFAULT_IMAGE_ASPECT_RATIO).toBe('auto')
+    expect(mapImageAspectRatioToProviderSize('auto')).toBe('4K')
+    expect(mapImageAspectRatioToProviderSize('16:9')).toBe('2560x1440')
+    expect(mapImageAspectRatioToProviderSize('3:2')).toBe('2496x1664')
+  })
+
+  it('finds the nearest supported ratio for existing images', () => {
+    expect(getNearestSupportedImageAspectRatio(2048, 1152)).toBe('16:9')
+    expect(getNearestSupportedImageAspectRatio(1536, 2048)).toBe('3:4')
+    expect(getNearestSupportedImageAspectRatio(2520, 1080)).toBe('21:9')
+  })
+
+  it('prefers the inferred image ratio when the stored value is empty or default auto', () => {
+    expect(
+      getResolvedImageAspectRatio({
+        storedAspectRatio: '',
+        inferredAspectRatio: '4:3',
+      })
+    ).toBe('4:3')
+    expect(
+      getResolvedImageAspectRatio({
+        storedAspectRatio: 'auto',
+        inferredAspectRatio: '9:16',
+      })
+    ).toBe('9:16')
+    expect(
+      getResolvedImageAspectRatio({
+        storedAspectRatio: '1:1',
+        inferredAspectRatio: '9:16',
+      })
+    ).toBe('1:1')
+  })
+})

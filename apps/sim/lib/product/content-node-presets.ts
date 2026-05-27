@@ -3,6 +3,9 @@ import { PenTool } from 'lucide-react'
 import { AgentIcon, DocumentIcon, ImageIcon, TableIcon, VideoIcon } from '@/components/icons'
 import { AudioIcon } from '@/components/icons/document-icons'
 
+const DEFAULT_TEXT_AI_MODEL = 'gemini-3.1-flash-lite-preview'
+const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5'
+
 /**
  * TapNow-style content node identifiers used by product-facing creation flows.
  */
@@ -51,6 +54,8 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
       fontSize: 16,
       width: 320,
       height: 160,
+      aiPrompt: '',
+      aiModel: DEFAULT_TEXT_AI_MODEL,
     },
     advancedPanelLabel: 'Text settings',
   },
@@ -65,6 +70,9 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
     inlineSubBlockIds: [],
     presetSubBlockValues: {
       contentVariant: 'image',
+      aiPrompt: '',
+      aiModel: DEFAULT_IMAGE_AI_MODEL,
+      aiAspectRatio: 'auto',
       file: null,
     },
     advancedPanelLabel: 'Image settings',

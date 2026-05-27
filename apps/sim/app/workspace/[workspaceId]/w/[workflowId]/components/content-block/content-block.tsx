@@ -6,8 +6,21 @@ import { Copy as CopyIcon, ImagePlus, List, Pilcrow, Type } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import type { NodeProps } from 'reactflow'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  DEFAULT_IMAGE_AI_MODEL,
+  DEFAULT_IMAGE_ASPECT_RATIO,
+  getNearestSupportedImageAspectRatio,
+  getResolvedImageAspectRatio,
+  type ImageAspectRatioValue,
+  type ImageGenerationModelId,
+} from '@/lib/generated-media/image/image-generation-utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
+import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
+import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
+import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
+import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
+import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
@@ -304,39 +317,66 @@ function TextContentCard({
   selected,
   canEdit,
   isPreview,
+  isEmbedded,
   html,
   blockStyle,
   backgroundColor,
   fontSize,
   width,
   height,
+  aiPrompt,
+  aiModel,
   onChangeHtml,
   onChangeBlockStyle,
   onChangeBackgroundColor,
   onChangeFontSize,
   onChangeWidth,
   onChangeHeight,
+  onChangeAiPrompt,
+  onChangeAiModel,
 }: {
   blockId: string
   selected: boolean
   canEdit: boolean
   isPreview: boolean
+  isEmbedded: boolean
   html: string
   blockStyle: string
   backgroundColor: string
   fontSize: number
   width: number
   height: number
+  aiPrompt: string
+  aiModel: string
   onChangeHtml: (value: string) => void
   onChangeBlockStyle: (value: string) => void
   onChangeBackgroundColor: (value: string) => void
   onChangeFontSize: (value: number) => void
   onChangeWidth: (value: number) => void
   onChangeHeight: (value: number) => void
+  onChangeAiPrompt: (value: string) => void
+  onChangeAiModel: (value: string) => void
 }) {
   const editorRef = useRef<HTMLDivElement>(null)
+  const params = useParams<{ workspaceId: string }>()
   const [isEditing, setIsEditing] = useState(false)
   const [draftHtml, setDraftHtml] = useState(html)
+  const {
+    modelOptions,
+    isGenerating,
+    error,
+    pendingGeneratedText,
+    pendingActionChoice,
+    submitPrompt,
+    applyPendingGeneratedText,
+  } = useTextContentAiSession({
+    blockId,
+    workspaceId: params.workspaceId,
+    html,
+    prompt: aiPrompt,
+    model: aiModel,
+    onChangeHtml,
+  })
 
   useEffect(() => {
     if (!isEditing) {
@@ -579,30 +619,68 @@ function TextContentCard({
           </button>
         )}
       </div>
+
+      {!isPreview && !isEmbedded && (
+        <ContentNodeAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={aiPrompt}
+          model={aiModel}
+          modelOptions={modelOptions}
+          isGenerating={isGenerating}
+          error={error}
+          hasPendingResult={pendingActionChoice && Boolean(pendingGeneratedText)}
+          onChangePrompt={onChangeAiPrompt}
+          onChangeModel={onChangeAiModel}
+          onSubmit={submitPrompt}
+          onReplace={() => applyPendingGeneratedText('replace')}
+          onAppend={() => applyPendingGeneratedText('append')}
+        />
+      )}
     </div>
   )
 }
 
 function MediaContentCard({
+  blockId,
   variant,
   canEdit,
   isPreview,
+  isEmbedded,
   file,
   selected,
+  aiPrompt,
+  aiModel,
+  aiAspectRatio,
   onChangeFile,
+  onChangeAiPrompt,
+  onChangeAiModel,
+  onChangeAiAspectRatio,
 }: {
+  blockId: string
   variant: Extract<ContentVariant, 'image' | 'video' | 'audio'>
   canEdit: boolean
   isPreview: boolean
+  isEmbedded: boolean
   file: UploadedFileValue | null
   selected: boolean
+  aiPrompt: string
+  aiModel: string
+  aiAspectRatio: ImageAspectRatioValue
   onChangeFile: (value: UploadedFileValue | null) => void
+  onChangeAiPrompt: (value: string) => void
+  onChangeAiModel: (value: ImageGenerationModelId) => void
+  onChangeAiAspectRatio: (value: ImageAspectRatioValue) => void
 }) {
   const params = useParams<{ workspaceId: string }>()
   const inputRef = useRef<HTMLInputElement>(null)
   const uploadFileMutation = useUploadWorkspaceFile()
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
+  const [inferredAspectRatio, setInferredAspectRatio] = useState<Exclude<
+    ImageAspectRatioValue,
+    'auto'
+  > | null>(null)
 
   const mediaPath = file?.path ?? ''
   const canUpload = canEdit && !isPreview
@@ -638,6 +716,50 @@ function MediaContentCard({
     setIsBroken(false)
   }, [mediaPath])
 
+  useEffect(() => {
+    if (variant !== 'image' || !mediaPath || typeof window === 'undefined') {
+      setInferredAspectRatio(null)
+      return
+    }
+
+    let cancelled = false
+    const image = new window.Image()
+    image.onload = () => {
+      if (cancelled) return
+      setInferredAspectRatio(
+        getNearestSupportedImageAspectRatio(image.naturalWidth, image.naturalHeight)
+      )
+    }
+    image.onerror = () => {
+      if (cancelled) return
+      setInferredAspectRatio(null)
+    }
+    image.src = mediaPath
+
+    return () => {
+      cancelled = true
+    }
+  }, [mediaPath, variant])
+
+  const resolvedAspectRatio = getResolvedImageAspectRatio({
+    storedAspectRatio: aiAspectRatio,
+    inferredAspectRatio,
+  })
+  const {
+    modelOptions,
+    aspectRatioOptions,
+    isGenerating,
+    error: generationError,
+    submitPrompt,
+  } = useImageContentAiSession({
+    blockId,
+    workspaceId: params.workspaceId,
+    prompt: aiPrompt,
+    model: (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId,
+    aspectRatio: resolvedAspectRatio,
+    onChangeFile,
+  })
+
   const openFileDialog = useCallback(() => {
     if (!canUpload) return
     inputRef.current?.click()
@@ -655,7 +777,7 @@ function MediaContentCard({
       }
 
       if (!params.workspaceId) {
-        setError('Missing canvas context for upload.')
+        setError('Missing workspace context for upload.')
         return
       }
 
@@ -687,112 +809,132 @@ function MediaContentCard({
   const hasMedia = Boolean(mediaPath) && !isBroken
 
   return (
-    <div
-      className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
-      style={{ width: cardWidth, minHeight: cardHeight }}
-    >
-      <input
-        ref={inputRef}
-        type='file'
-        accept={accept}
-        className='hidden'
-        onChange={handleFileChange}
-      />
+    <div>
+      <div
+        className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
+        style={{ width: cardWidth, minHeight: cardHeight }}
+      >
+        <input
+          ref={inputRef}
+          type='file'
+          accept={accept}
+          className='hidden'
+          onChange={handleFileChange}
+        />
 
-      {hasMedia ? (
-        variant === 'image' ? (
-          <div className='relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3'>
-            <img
-              src={mediaPath}
-              alt={file?.name || 'Uploaded content'}
-              className='max-h-full max-w-full rounded-xl object-contain'
-              onError={() => setIsBroken(true)}
-            />
-          </div>
-        ) : variant === 'video' ? (
-          <div className='flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3'>
-            {/* biome-ignore lint/a11y/useMediaCaption: uploaded local video cards do not have a caption track in this iteration. */}
-            <video
-              src={mediaPath}
-              controls
-              preload='metadata'
-              className='nodrag nopan aspect-video w-full rounded-xl bg-black object-contain'
-              onPointerDown={(event) => {
-                event.stopPropagation()
-              }}
-              onError={() => setIsBroken(true)}
-            />
-          </div>
-        ) : (
-          <div className='flex min-h-[132px] w-[360px] flex-col justify-center gap-3 bg-[var(--surface-1)] px-4 py-4'>
-            <div className='truncate font-medium text-[var(--text-primary)] text-sm'>
-              {file?.name || 'Uploaded audio'}
+        {hasMedia ? (
+          variant === 'image' ? (
+            <div className='relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3'>
+              <img
+                src={mediaPath}
+                alt={file?.name || 'Uploaded content'}
+                className='max-h-full max-w-full rounded-xl object-contain'
+                onError={() => setIsBroken(true)}
+              />
             </div>
-            {/* biome-ignore lint/a11y/useMediaCaption: uploaded local audio cards do not have a caption track in this iteration. */}
-            <audio
-              src={mediaPath}
-              controls
-              preload='metadata'
-              className='nodrag nopan w-full'
-              onPointerDown={(event) => {
-                event.stopPropagation()
-              }}
-              onError={() => setIsBroken(true)}
-            />
-          </div>
-        )
-      ) : (
-        <button
-          type='button'
-          onPointerDown={(event) => {
-            event.stopPropagation()
-          }}
-          onClick={(event) => {
-            event.stopPropagation()
-            openFileDialog()
-          }}
-          disabled={!canUpload}
-          className={cn(
-            'nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent',
-            variant === 'audio' ? 'h-[132px] w-[360px]' : 'h-[240px] w-full'
-          )}
-        >
-          <div className='flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-4)]'>
-            <ImagePlus className='h-5 w-5' />
-          </div>
-          <div>
-            <div className='font-medium text-sm'>{canUpload ? uploadLabel : emptyLabel}</div>
-            <div className='mt-1 text-[var(--text-tertiary)] text-xs'>{helperText}</div>
-          </div>
-        </button>
-      )}
+          ) : variant === 'video' ? (
+            <div className='flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3'>
+              {/* biome-ignore lint/a11y/useMediaCaption: uploaded local video cards do not have a caption track in this iteration. */}
+              <video
+                src={mediaPath}
+                controls
+                preload='metadata'
+                className='nodrag nopan aspect-video w-full rounded-xl bg-black object-contain'
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onError={() => setIsBroken(true)}
+              />
+            </div>
+          ) : (
+            <div className='flex min-h-[132px] w-[360px] flex-col justify-center gap-3 bg-[var(--surface-1)] px-4 py-4'>
+              <div className='truncate font-medium text-[var(--text-primary)] text-sm'>
+                {file?.name || 'Uploaded audio'}
+              </div>
+              {/* biome-ignore lint/a11y/useMediaCaption: uploaded local audio cards do not have a caption track in this iteration. */}
+              <audio
+                src={mediaPath}
+                controls
+                preload='metadata'
+                className='nodrag nopan w-full'
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onError={() => setIsBroken(true)}
+              />
+            </div>
+          )
+        ) : (
+          <button
+            type='button'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              openFileDialog()
+            }}
+            disabled={!canUpload}
+            className={cn(
+              'nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent',
+              variant === 'audio' ? 'h-[132px] w-[360px]' : 'h-[240px] w-full'
+            )}
+          >
+            <div className='flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-4)]'>
+              <ImagePlus className='h-5 w-5' />
+            </div>
+            <div>
+              <div className='font-medium text-sm'>{canUpload ? uploadLabel : emptyLabel}</div>
+              <div className='mt-1 text-[var(--text-tertiary)] text-xs'>{helperText}</div>
+            </div>
+          </button>
+        )}
 
-      {selected && canUpload && (
-        <button
-          type='button'
-          onPointerDown={(event) => {
-            event.stopPropagation()
-          }}
-          onClick={(event) => {
-            event.stopPropagation()
-            openFileDialog()
-          }}
-          className='nodrag nopan absolute top-3 right-3 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
-        >
-          Replace
-        </button>
-      )}
+        {selected && canUpload && (
+          <button
+            type='button'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              openFileDialog()
+            }}
+            className='nodrag nopan absolute top-3 right-3 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            Replace
+          </button>
+        )}
 
-      {uploadFileMutation.isPending && (
-        <div className='absolute inset-x-0 bottom-0 bg-[var(--surface-4)] px-3 py-2 text-[11px] text-[var(--text-secondary)]'>
-          Uploading {variant}...
-        </div>
-      )}
+        {uploadFileMutation.isPending && (
+          <div className='absolute inset-x-0 bottom-0 bg-[var(--surface-4)] px-3 py-2 text-[11px] text-[var(--text-secondary)]'>
+            Uploading {variant}...
+          </div>
+        )}
 
-      {error && (
-        <div className='border-[var(--border)] border-t bg-[var(--surface-1)] px-3 py-2 text-[11px] text-[var(--text-error)]'>
-          {error}
-        </div>
+        {error && (
+          <div className='border-[var(--border)] border-t bg-[var(--surface-1)] px-3 py-2 text-[11px] text-[var(--text-error)]'>
+            {error}
+          </div>
+        )}
+      </div>
+
+      {variant === 'image' && !isPreview && !isEmbedded && (
+        <MediaContentAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={aiPrompt}
+          model={(aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId}
+          aspectRatio={resolvedAspectRatio}
+          isGenerating={isGenerating}
+          error={generationError}
+          modelOptions={modelOptions}
+          aspectRatioOptions={aspectRatioOptions}
+          onChangePrompt={onChangeAiPrompt}
+          onChangeModel={onChangeAiModel}
+          onChangeAspectRatio={onChangeAiAspectRatio}
+          onSubmit={submitPrompt}
+        />
       )}
     </div>
   )
@@ -832,6 +974,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [fontSizeValue, setFontSizeValue] = useSubBlockValue<number>(id, 'fontSize')
   const [widthValue, setWidthValue] = useSubBlockValue<number>(id, 'width')
   const [heightValue, setHeightValue] = useSubBlockValue<number>(id, 'height')
+  const [aiPromptValue, setAiPromptValue] = useSubBlockValue<string>(id, 'aiPrompt')
+  const [aiModelValue, setAiModelValue] = useSubBlockValue<string>(id, 'aiModel')
+  const [aiAspectRatioValue, setAiAspectRatioValue] = useSubBlockValue<string>(id, 'aiAspectRatio')
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
 
   const userPermissions = useUserPermissionsContext()
@@ -892,6 +1037,24 @@ export const ContentBlock = memo(function ContentBlock({
     'file',
     null
   )
+  const resolvedAiPrompt = extractStoredValue<string>(
+    data.isPreview ? sourceValues : ({ aiPrompt: aiPromptValue } as StoredValueRecord),
+    'aiPrompt',
+    ''
+  )
+  const fallbackAiModel =
+    resolvedVariant === 'image' ? DEFAULT_IMAGE_AI_MODEL : DEFAULT_TEXT_AI_MODEL
+  const resolvedAiModel =
+    extractStoredValue<string>(
+      data.isPreview ? sourceValues : ({ aiModel: aiModelValue } as StoredValueRecord),
+      'aiModel',
+      fallbackAiModel
+    ) || fallbackAiModel
+  const resolvedAiAspectRatio = extractStoredValue<string>(
+    data.isPreview ? sourceValues : ({ aiAspectRatio: aiAspectRatioValue } as StoredValueRecord),
+    'aiAspectRatio',
+    DEFAULT_IMAGE_ASPECT_RATIO
+  ) as ImageAspectRatioValue
 
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -920,6 +1083,9 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedHtml,
       resolvedBackgroundColor,
       resolvedFontSize,
+      resolvedAiPrompt,
+      resolvedAiModel,
+      resolvedAiAspectRatio,
       resolvedFile?.path,
       selected,
     ],
@@ -953,13 +1119,27 @@ export const ContentBlock = memo(function ContentBlock({
         resolvedVariant === 'video' ||
         resolvedVariant === 'audio' ? (
           <MediaContentCard
+            blockId={id}
             variant={resolvedVariant}
             canEdit={canEditWorkflow}
             isPreview={Boolean(data.isPreview)}
+            isEmbedded={Boolean(data.isEmbedded)}
             file={resolvedFile}
             selected={selected}
+            aiPrompt={resolvedAiPrompt}
+            aiModel={resolvedAiModel}
+            aiAspectRatio={resolvedAiAspectRatio}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
+            }}
+            onChangeAiPrompt={(value) => {
+              if (!data.isPreview) setAiPromptValue(value)
+            }}
+            onChangeAiModel={(value) => {
+              if (!data.isPreview) setAiModelValue(value)
+            }}
+            onChangeAiAspectRatio={(value) => {
+              if (!data.isPreview) setAiAspectRatioValue(value)
             }}
           />
         ) : (
@@ -968,12 +1148,15 @@ export const ContentBlock = memo(function ContentBlock({
             selected={selected}
             canEdit={canEditWorkflow}
             isPreview={Boolean(data.isPreview)}
+            isEmbedded={Boolean(data.isEmbedded)}
             html={normalizeContentHtml(resolvedHtml)}
             blockStyle={resolvedBlockStyle}
             backgroundColor={resolvedBackgroundColor}
             fontSize={resolvedFontSize}
             width={resolvedWidth}
             height={resolvedHeight}
+            aiPrompt={resolvedAiPrompt}
+            aiModel={resolvedAiModel}
             onChangeHtml={(value) => {
               if (!data.isPreview) setContentHtmlValue(value)
             }}
@@ -991,6 +1174,12 @@ export const ContentBlock = memo(function ContentBlock({
             }}
             onChangeHeight={(value) => {
               if (!data.isPreview) setHeightValue(value)
+            }}
+            onChangeAiPrompt={(value) => {
+              if (!data.isPreview) setAiPromptValue(value)
+            }}
+            onChangeAiModel={(value) => {
+              if (!data.isPreview) setAiModelValue(value)
             }}
           />
         )}

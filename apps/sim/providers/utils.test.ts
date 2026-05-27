@@ -76,6 +76,9 @@ describe('getApiKey', () => {
 
     const key3 = getApiKey('google', 'gemini-2.5-flash', 'user-key-google')
     expect(key3).toBe('user-key-google')
+
+    const key4 = getApiKey('zhipu', 'glm-4.7-flash', 'user-key-zhipu')
+    expect(key4).toBe('user-key-zhipu')
   })
 
   it.concurrent('should throw error if no key provided in non-hosted environment', () => {
@@ -906,6 +909,8 @@ describe('Provider Management', () => {
       expect(getProviderFromModel('gpt-4o')).toBe('openai')
       expect(getProviderFromModel('claude-sonnet-4-0')).toBe('anthropic')
       expect(getProviderFromModel('gemini-2.5-pro')).toBe('google')
+      expect(getProviderFromModel('glm-4.7-flash')).toBe('zhipu')
+      expect(getProviderFromModel('glm-4.7')).toBe('zhipu')
       expect(getProviderFromModel('azure/gpt-4o')).toBe('azure-openai')
     })
 
@@ -978,6 +983,7 @@ describe('Provider Management', () => {
       expect(providerIds).toContain('openai')
       expect(providerIds).toContain('anthropic')
       expect(providerIds).toContain('google')
+      expect(providerIds).toContain('zhipu')
       expect(providerIds).toContain('azure-openai')
     })
   })
@@ -992,6 +998,10 @@ describe('Provider Management', () => {
       const anthropicModels = getProviderModels('anthropic')
       expect(anthropicModels).toContain('claude-sonnet-4-0')
       expect(anthropicModels).toContain('claude-opus-4-0')
+
+      const zhipuModels = getProviderModels('zhipu' as any)
+      expect(zhipuModels).toContain('glm-4.7-flash')
+      expect(zhipuModels).toContain('glm-4.7')
     })
 
     it.concurrent('should return empty array for unknown providers', () => {

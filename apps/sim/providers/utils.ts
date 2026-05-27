@@ -141,6 +141,7 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
     ),
   },
   google: buildProviderMetadata('google'),
+  zhipu: buildProviderMetadata('zhipu'),
   vertex: buildProviderMetadata('vertex'),
   'azure-openai': buildProviderMetadata('azure-openai'),
   'azure-anthropic': buildProviderMetadata('azure-anthropic'),

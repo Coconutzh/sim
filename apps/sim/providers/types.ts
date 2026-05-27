@@ -6,6 +6,7 @@ export type ProviderId =
   | 'anthropic'
   | 'azure-anthropic'
   | 'google'
+  | 'zhipu'
   | 'vertex'
   | 'deepseek'
   | 'xai'

@@ -1,17 +1,47 @@
+import fs from 'fs'
+import { createRequire } from 'module'
 import path from 'path'
 /// <reference types="vitest" />
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { configDefaults, defineConfig } from 'vitest/config'
 
-const nextEnv = require('@next/env')
-const { loadEnvConfig } = nextEnv.default || nextEnv
+const require = createRequire(import.meta.url)
+
+function resolveNextEnv(projectDir: string) {
+  const workspaceRoot = path.resolve(projectDir, '../..')
+  const candidates = [
+    '@next/env',
+    path.resolve(projectDir, 'node_modules/@next/env'),
+    path.resolve(workspaceRoot, 'node_modules/@next/env'),
+  ]
+
+  const bunPackagesDir = path.resolve(workspaceRoot, 'node_modules/.bun')
+  if (fs.existsSync(bunPackagesDir)) {
+    for (const entry of fs.readdirSync(bunPackagesDir)) {
+      if (!entry.startsWith('@next+env@')) continue
+      candidates.push(path.resolve(bunPackagesDir, entry, 'node_modules/@next/env'))
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return require(candidate)
+    } catch {}
+  }
+
+  throw new Error(`Unable to resolve @next/env for Vitest. Tried: ${candidates.join(', ')}`)
+}
 
 const projectDir = process.cwd()
+const nextEnv = resolveNextEnv(projectDir)
+const { loadEnvConfig } = nextEnv.default || nextEnv
+
 loadEnvConfig(projectDir)
 
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
+  cacheDir: path.resolve(projectDir, '.vitest-cache/vite'),
   test: {
     globals: true,
     environment: 'node',

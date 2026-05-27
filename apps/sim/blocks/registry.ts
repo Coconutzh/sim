@@ -2,6 +2,7 @@
 import * as apiBlocks from '@/blocks/blocks/api'
 import * as chatTriggerBlocks from '@/blocks/blocks/chat_trigger'
 import * as conditionBlocks from '@/blocks/blocks/condition'
+import * as contentBlocks from '@/blocks/blocks/content'
 import * as fileBlocks from '@/blocks/blocks/file'
 import * as functionBlocks from '@/blocks/blocks/function'
 import * as genericWebhookBlocks from '@/blocks/blocks/generic_webhook'
@@ -22,6 +23,7 @@ const BLOCK_MODULES = [
   apiBlocks,
   chatTriggerBlocks,
   conditionBlocks,
+  contentBlocks,
   fileBlocks,
   functionBlocks,
   genericWebhookBlocks,
