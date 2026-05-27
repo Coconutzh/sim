@@ -32,11 +32,22 @@ interface PlusMenuDropdownProps {
   pendingCursorRef: React.MutableRefObject<number | null>
   /** When in mention mode the dropdown hides its search input and uses this query for filtering. */
   mentionQuery?: string
+  onOpen?: () => void
+  onRequestFullResources?: () => void
 }
 
 export const PlusMenuDropdown = React.memo(
   React.forwardRef<PlusMenuHandle, PlusMenuDropdownProps>(function PlusMenuDropdown(
-    { availableResources, onResourceSelect, onClose, textareaRef, pendingCursorRef, mentionQuery },
+    {
+      availableResources,
+      onResourceSelect,
+      onClose,
+      textareaRef,
+      pendingCursorRef,
+      mentionQuery,
+      onOpen,
+      onRequestFullResources,
+    },
     ref
   ) {
     const [open, setOpen] = useState(false)
@@ -58,11 +69,12 @@ export const PlusMenuDropdown = React.memo(
           setAnchorPos({ left: rect.left, top: rect.top })
         }
         setIsMention(!!options?.mention)
+        onOpen?.()
         setOpen(true)
         setSearch('')
         setActiveIndex(0)
       },
-      []
+      [onOpen]
     )
 
     const doClose = useCallback(() => {
@@ -265,7 +277,11 @@ export const PlusMenuDropdown = React.memo(
                 placeholder='Search resources...'
                 value={search}
                 onChange={(e) => {
-                  setSearch(e.target.value)
+                  const nextSearch = e.target.value
+                  setSearch(nextSearch)
+                  if (nextSearch.trim()) {
+                    onRequestFullResources?.()
+                  }
                   setActiveIndex(0)
                 }}
                 onKeyDown={handleSearchKeyDown}

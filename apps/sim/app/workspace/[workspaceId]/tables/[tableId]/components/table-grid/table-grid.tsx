@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,7 +13,7 @@ import { captureEvent } from '@/lib/posthog/client'
 import type { ColumnDefinition, TableRow as TableRowType } from '@/lib/table'
 import { TABLE_LIMITS } from '@/lib/table/constants'
 import { isExecInFlight } from '@/lib/table/deps'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import {
   useAddTableColumn,
   useBatchCreateTableRows,

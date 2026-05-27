@@ -1,4 +1,4 @@
-import type React from 'react'
+﻿import type React from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { ArrowLeft, ChevronRight, ServerIcon, WrenchIcon, XIcon } from 'lucide-react'
@@ -28,12 +28,10 @@ import type { McpToolSchema } from '@/lib/mcp/types'
 import { getProviderIdFromServiceId, type OAuthProvider, type OAuthService } from '@/lib/oauth'
 import { isBlockEnabled } from '@/lib/product/tool-policy'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { McpServerFormModal } from '@/app/workspace/[workspaceId]/settings/components/mcp/components/mcp-server-form-modal/mcp-server-form-modal'
-import {
-  LongInput,
-  ShortInput,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
+import { LongInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/long-input/long-input'
+import { ShortInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/short-input/short-input'
 import {
   type CustomTool,
   CustomToolModal,
@@ -75,7 +73,7 @@ import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { getProviderFromModel, supportsToolUsageControl } from '@/providers/utils'
+import { getProviderFromModel, supportsToolUsageControl } from '@/providers/models'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import {
@@ -86,7 +84,7 @@ import {
   isPasswordParameter,
   type SubBlocksForToolInput,
   type ToolParameterConfig,
-} from '@/tools/params'
+} from '@/tools/params-client'
 import {
   buildCanonicalIndex,
   buildPreviewContextValues,

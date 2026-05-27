@@ -248,11 +248,14 @@ async function fetchWorkspacePermissions(
  * Fetches permissions for a specific workspace.
  * @param workspaceId - The workspace ID to fetch permissions for
  */
-export function useWorkspacePermissionsQuery(workspaceId: string | null | undefined) {
+export function useWorkspacePermissionsQuery(
+  workspaceId: string | null | undefined,
+  enabled = true
+) {
   return useQuery({
     queryKey: workspaceKeys.permissions(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchWorkspacePermissions(workspaceId as string, signal),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && enabled,
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
   })

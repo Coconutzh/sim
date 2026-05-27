@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { navTourSteps } from '@/app/workspace/[workspaceId]/components/product-tour/nav-tour-steps'
+import { START_NAV_TOUR_EVENT } from '@/app/workspace/[workspaceId]/components/product-tour/tour-events'
 import type { TourState } from '@/app/workspace/[workspaceId]/components/product-tour/tour-shared'
 import {
   getSharedJoyrideProps,
@@ -15,8 +16,6 @@ import { useTour } from '@/app/workspace/[workspaceId]/components/product-tour/u
 const Joyride = dynamic(() => import('react-joyride'), {
   ssr: false,
 })
-
-export const START_NAV_TOUR_EVENT = 'start-nav-tour'
 
 export function NavTour() {
   const pathname = usePathname()

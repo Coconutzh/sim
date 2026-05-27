@@ -1,4 +1,4 @@
-import { createLogger } from '@sim/logger'
+﻿import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { microsoftFilesQuerySchema } from '@/lib/api/contracts/selectors/microsoft'
 import { getValidationErrorMessage } from '@/lib/api/server'
@@ -6,8 +6,8 @@ import { authorizeCredentialUse, credentialAccessErrorResponse } from '@/lib/aut
 import { validatePathSegment } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { GRAPH_ID_PATTERN } from '@/lib/integrations/microsoft-excel/utils'
 import { getCredential, refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
-import { GRAPH_ID_PATTERN } from '@/tools/microsoft_excel/utils'
 
 export const dynamic = 'force-dynamic'
 

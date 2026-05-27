@@ -64,7 +64,7 @@ async function fetchGeneralSettings(signal?: AbortSignal): Promise<GeneralSettin
  * Hook to fetch general settings.
  * TanStack Query is now the single source of truth for general settings.
  */
-export function useGeneralSettings() {
+export function useGeneralSettings(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: generalSettingsKeys.settings(),
     queryFn: async ({ signal }) => {
@@ -72,6 +72,7 @@ export function useGeneralSettings() {
       syncThemeToNextThemes(settings.theme)
       return settings
     },
+    enabled: options?.enabled ?? true,
     staleTime: 60 * 60 * 1000,
   })
 }
@@ -97,8 +98,8 @@ export function prefetchGeneralSettings(queryClient: QueryClient) {
  * These provide a simple API for components that only need a single setting value.
  */
 
-export function useAutoConnect(): boolean {
-  const { data } = useGeneralSettings()
+export function useAutoConnect(options?: { enabled?: boolean }): boolean {
+  const { data } = useGeneralSettings(options)
   return data?.autoConnect ?? true
 }
 
@@ -107,8 +108,8 @@ export function useShowTrainingControls(): boolean {
   return data?.showTrainingControls ?? false
 }
 
-export function useSnapToGridSize(): number {
-  const { data } = useGeneralSettings()
+export function useSnapToGridSize(options?: { enabled?: boolean }): number {
+  const { data } = useGeneralSettings(options)
   return data?.snapToGridSize ?? 0
 }
 

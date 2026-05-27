@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
+import { START_WORKFLOW_TOUR_EVENT } from '@/app/workspace/[workspaceId]/components/product-tour/tour-events'
 import type { TourState } from '@/app/workspace/[workspaceId]/components/product-tour/tour-shared'
 import {
   getSharedJoyrideProps,
@@ -14,8 +15,6 @@ import { workflowTourSteps } from '@/app/workspace/[workspaceId]/components/prod
 const Joyride = dynamic(() => import('react-joyride'), {
   ssr: false,
 })
-
-export const START_WORKFLOW_TOUR_EVENT = 'start-workflow-tour'
 
 /**
  * Workflow tour that covers the canvas, blocks, copilot, and deployment.

@@ -1,5 +1,4 @@
-import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
-import { getAllTriggers } from '@/triggers'
+import { getAllBlockCatalogEntries } from '@/blocks/catalog'
 
 export interface TriggerOption {
   value: string
@@ -27,7 +26,6 @@ export function getTriggerOptions(): TriggerOption[] {
     return cachedTriggerOptions
   }
 
-  const triggers = getAllTriggers()
   const providerMap = new Map<string, TriggerOption>()
 
   const coreTypes: TriggerOption[] = [
@@ -44,20 +42,24 @@ export function getTriggerOptions(): TriggerOption[] {
     { value: 'workflow', label: 'Workflow', color: '#0369a1' },
   ]
 
-  for (const trigger of triggers) {
-    const provider = trigger.provider
+  for (const block of getAllBlockCatalogEntries()) {
+    const provider = block.type
 
     // Skip generic webhook and already processed providers
-    if (!provider || providerMap.has(provider) || provider === 'generic') {
+    if (
+      !provider ||
+      providerMap.has(provider) ||
+      provider === 'generic' ||
+      provider === 'generic_webhook' ||
+      (block.category !== 'triggers' && block.triggers?.enabled !== true)
+    ) {
       continue
     }
 
-    const block = getAnyBlockCatalogEntry(provider)
-
     providerMap.set(provider, {
       value: provider,
-      label: block?.name || formatProviderName(provider),
-      color: block?.bgColor || '#6b7280',
+      label: block.name || formatProviderName(provider),
+      color: block.bgColor || '#6b7280',
     })
   }
 

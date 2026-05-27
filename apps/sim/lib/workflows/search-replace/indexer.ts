@@ -42,12 +42,40 @@ import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
 import { isReference } from '@/executor/constants'
 import type { SelectorContext } from '@/hooks/selectors/types'
-import {
-  getSubBlocksForToolInput,
-  getToolIdForOperation,
-  getToolParametersConfig,
-  type ToolParameterConfig,
-} from '@/tools/params'
+
+interface ToolParameterConfig {
+  id: string
+  type?: string
+  visibility?: 'hidden' | 'llm-only' | string
+  uiComponent?: Partial<WorkflowSearchSubBlockConfig> & {
+    serviceId?: string
+    selectorKey?: string
+    requiredScopes?: string[]
+    mimeType?: string
+    canonicalParamId?: string
+    password?: boolean
+  }
+}
+
+interface ToolInputSubBlocksResult {
+  subBlocks: WorkflowSearchSubBlockConfig[]
+}
+
+interface ToolParametersConfig {
+  userInputParameters?: ToolParameterConfig[]
+}
+
+function getToolIdForOperation(_blockType: string, _operation?: string): string | undefined {
+  return undefined
+}
+
+function getSubBlocksForToolInput(..._args: unknown[]): ToolInputSubBlocksResult | null {
+  return null
+}
+
+function getToolParametersConfig(..._args: unknown[]): ToolParametersConfig | null {
+  return null
+}
 
 function normalizeForSearch(value: string, caseSensitive: boolean): string {
   return caseSensitive ? value : value.toLowerCase()

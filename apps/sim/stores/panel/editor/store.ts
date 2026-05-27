@@ -6,6 +6,7 @@ import { EDITOR_CONNECTIONS_HEIGHT } from '@/stores/constants'
 import { usePanelStore } from '../store'
 
 let renameCallback: (() => void) | null = null
+const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
 
 export interface ActiveSearchTarget {
   matchId: string
@@ -62,7 +63,7 @@ export const usePanelEditorStore = create<PanelEditorState>()(
       },
       setCurrentBlockId: (blockId) => {
         set({ currentBlockId: blockId })
-        if (blockId !== null) {
+        if (blockId !== null && !IS_LOW_MEMORY_DEV) {
           usePanelStore.getState().setActiveTab('editor')
         }
       },

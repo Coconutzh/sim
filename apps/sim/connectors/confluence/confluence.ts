@@ -1,10 +1,13 @@
-import { createLogger } from '@sim/logger'
+﻿import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { ConfluenceIcon } from '@/components/icons'
+import {
+  getConfluenceCloudId,
+  normalizeConfluenceDomainHost,
+} from '@/lib/integrations/atlassian/confluence'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
-import { getConfluenceCloudId, normalizeConfluenceDomainHost } from '@/tools/confluence/utils'
 
 const logger = createLogger('ConfluenceConnector')
 

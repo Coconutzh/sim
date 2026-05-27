@@ -16,7 +16,7 @@ import {
   extractTriggerMockPayload,
   selectBestTrigger,
   triggerNeedsMockPayload,
-} from '@/lib/workflows/triggers/trigger-utils'
+} from '@/lib/workflows/triggers/client-trigger-utils'
 import {
   resolveStartCandidates,
   StartBlockPath,
@@ -62,6 +62,12 @@ import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('useWorkflowExecution')
+
+async function loadTriggerMockPayload<
+  T extends { type: string; subBlocks?: Record<string, unknown> },
+>(trigger: { blockId: string; block: T; path: StartBlockPath }): Promise<unknown> {
+  return extractTriggerMockPayload(trigger)
+}
 
 /**
  * Module-level Set tracking which workflows have an active reconnection effect.
@@ -1046,7 +1052,7 @@ export function useWorkflowExecution() {
 
       // Prepare input based on trigger type
       if (triggerNeedsMockPayload(selectedCandidate)) {
-        const mockPayload = extractTriggerMockPayload(selectedCandidate)
+        const mockPayload = await loadTriggerMockPayload(selectedCandidate)
         finalWorkflowInput = mockPayload
       } else if (
         selectedCandidate.path === StartBlockPath.SPLIT_API ||
@@ -1801,7 +1807,7 @@ export function useWorkflowExecution() {
 
         if (candidate) {
           if (triggerNeedsMockPayload(candidate)) {
-            workflowInput = extractTriggerMockPayload(candidate)
+            workflowInput = await loadTriggerMockPayload(candidate)
           } else if (
             candidate.path === StartBlockPath.SPLIT_API ||
             candidate.path === StartBlockPath.SPLIT_INPUT ||
@@ -1828,7 +1834,7 @@ export function useWorkflowExecution() {
             const hasTriggers = blockConfig?.triggers?.available?.length
 
             if (hasTriggers || block.triggerMode) {
-              workflowInput = extractTriggerMockPayload({
+              workflowInput = await loadTriggerMockPayload({
                 blockId,
                 block,
                 path: StartBlockPath.EXTERNAL_TRIGGER,

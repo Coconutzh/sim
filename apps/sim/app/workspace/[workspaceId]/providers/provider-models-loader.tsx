@@ -4,12 +4,6 @@ import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { useProviderModels } from '@/hooks/queries/providers'
-import {
-  updateFireworksProviderModels,
-  updateOllamaProviderModels,
-  updateOpenRouterProviderModels,
-  updateVLLMProviderModels,
-} from '@/providers/utils'
 import { type ProviderName, useProvidersStore } from '@/stores/providers'
 
 const logger = createLogger('ProviderModelsLoader')
@@ -27,23 +21,30 @@ function useSyncProvider(provider: ProviderName, workspaceId?: string) {
   useEffect(() => {
     if (!data) return
 
-    try {
-      if (provider === 'ollama') {
-        updateOllamaProviderModels(data.models)
-      } else if (provider === 'vllm') {
-        updateVLLMProviderModels(data.models)
-      } else if (provider === 'openrouter') {
-        void updateOpenRouterProviderModels(data.models)
-        if (data.modelInfo) {
-          setOpenRouterModelInfo(data.modelInfo)
+    const syncProviderDefinitions = async () => {
+      try {
+        if (provider === 'ollama') {
+          const { updateOllamaProviderModels } = await import('@/providers/client-model-sync')
+          updateOllamaProviderModels(data.models)
+        } else if (provider === 'vllm') {
+          const { updateVLLMProviderModels } = await import('@/providers/client-model-sync')
+          updateVLLMProviderModels(data.models)
+        } else if (provider === 'openrouter') {
+          const { updateOpenRouterProviderModels } = await import('@/providers/client-model-sync')
+          updateOpenRouterProviderModels(data.models)
+          if (data.modelInfo) {
+            setOpenRouterModelInfo(data.modelInfo)
+          }
+        } else if (provider === 'fireworks') {
+          const { updateFireworksProviderModels } = await import('@/providers/client-model-sync')
+          updateFireworksProviderModels(data.models)
         }
-      } else if (provider === 'fireworks') {
-        void updateFireworksProviderModels(data.models)
+      } catch (syncError) {
+        logger.warn(`Failed to sync provider definitions for ${provider}`, syncError as Error)
       }
-    } catch (syncError) {
-      logger.warn(`Failed to sync provider definitions for ${provider}`, syncError as Error)
     }
 
+    void syncProviderDefinitions()
     setProviderModels(provider, data.models)
   }, [provider, data, setProviderModels, setOpenRouterModelInfo])
 
@@ -55,6 +56,14 @@ function useSyncProvider(provider: ProviderName, workspaceId?: string) {
 }
 
 export function ProviderModelsLoader() {
+  if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
+    return null
+  }
+
+  return <ProviderModelsLoaderInner />
+}
+
+function ProviderModelsLoaderInner() {
   const params = useParams()
   const workspaceId = params?.workspaceId as string | undefined
 

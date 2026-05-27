@@ -1,6 +1,6 @@
-import { RepeatIcon, SplitIcon } from 'lucide-react'
+﻿import { RepeatIcon, SplitIcon } from 'lucide-react'
 import { getToolOperationsIndex } from '@/lib/search/tool-operations'
-import { getTriggersForSidebar } from '@/lib/workflows/triggers/trigger-utils'
+import { getTriggersForSidebar } from '@/lib/workflows/triggers/client-trigger-utils'
 import { getAllBlockCatalogEntries } from '@/blocks/catalog'
 import { getBlockCatalogIcon } from '@/blocks/icons'
 import type {

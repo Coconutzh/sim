@@ -1,7 +1,8 @@
-'use client'
+﻿'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import dynamic from 'next/dynamic'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Button,
@@ -61,14 +62,13 @@ import {
   ResourceHeader,
   timeCell,
 } from '@/app/workspace/[workspaceId]/components'
-import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
 import {
-  FileViewer,
   isPreviewable,
   isTextEditable,
-} from '@/app/workspace/[workspaceId]/files/components/file-viewer'
+  type PreviewMode,
+} from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-types'
 import { FilesListContextMenu } from '@/app/workspace/[workspaceId]/files/components/files-list-context-menu'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { useWorkspaceMembersQuery } from '@/hooks/queries/workspace'
 import {
@@ -84,6 +84,21 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 const logger = createLogger('Files')
+
+const FileViewer = dynamic(
+  () =>
+    import('@/app/workspace/[workspaceId]/files/components/file-viewer/file-viewer').then(
+      (module) => module.FileViewer
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className='flex flex-1 items-center justify-center bg-[var(--surface-1)]'>
+        <Loader className='h-[20px] w-[20px] text-[var(--text-secondary)]' animate />
+      </div>
+    ),
+  }
+)
 
 const SUPPORTED_EXTENSIONS = [
   ...SUPPORTED_DOCUMENT_EXTENSIONS,

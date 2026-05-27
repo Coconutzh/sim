@@ -6,11 +6,19 @@ const DISABLED_PRESET_NAMES = new Set(['all', 'full', 'off'])
 
 const TAPNOW_RECOMMENDED_TOOL_SERVICES = [
   'file',
+  'function',
+  'knowledge',
+  'llm',
+  'logs',
+  'memory',
   'mcp',
   'notion',
+  'parallel',
   'search',
   'slack',
   'gmail',
+  'table',
+  'workflow',
 ] as const
 
 const TAPNOW_RECOMMENDED_TOOL_IDS = [
@@ -21,6 +29,7 @@ const TAPNOW_RECOMMENDED_TOOL_IDS = [
   'file_write',
   'http_request',
   'search_tool',
+  'webhook_request',
 ] as const
 
 const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
@@ -29,20 +38,21 @@ const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
   'chat_trigger',
   'condition',
   'file',
-  'image_generator',
+  'file_v2',
+  'file_v3',
   'function',
   'generic_webhook',
   'loop',
   'mcp',
   'note',
-  'parallel',
+  'parallel_ai',
   'response',
   'router',
+  'router_v2',
   'search',
   'start_trigger',
   'table',
   'variables',
-  'video_generator',
   'webhook_request',
 ] as const
 
@@ -229,7 +239,19 @@ function getToolService(toolId: string, tool: ToolConfig): string | null {
   }
 
   const normalizedToolId = stripVersionSuffix(normalizeToken(toolId))
+  const servicePrefix = normalizedToolId.split('_')[0]
+  if (
+    ['function', 'knowledge', 'llm', 'logs', 'memory', 'parallel', 'table', 'workflow'].includes(
+      servicePrefix
+    )
+  ) {
+    return servicePrefix
+  }
+
   if (normalizedToolId === 'http_request') {
+    return 'api'
+  }
+  if (normalizedToolId === 'webhook_request') {
     return 'api'
   }
   if (normalizedToolId === 'search_tool') {

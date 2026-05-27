@@ -1,13 +1,15 @@
 'use client'
 
 import type React from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
+import { WorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import {
   useWorkspacePermissionsQuery,
+  useWorkspacesWithMetadata,
   type WorkspacePermissions,
   workspaceKeys,
 } from '@/hooks/queries/workspace'
@@ -16,31 +18,6 @@ import { useNotificationStore } from '@/stores/notifications'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 
 const logger = createLogger('WorkspacePermissionsProvider')
-
-interface WorkspacePermissionsContextType {
-  workspacePermissions: WorkspacePermissions | null
-  permissionsLoading: boolean
-  permissionsError: string | null
-  updatePermissions: (newPermissions: WorkspacePermissions) => void
-  refetchPermissions: () => Promise<void>
-  userPermissions: WorkspaceUserPermissions & { isOfflineMode?: boolean }
-}
-
-const WorkspacePermissionsContext = createContext<WorkspacePermissionsContextType>({
-  workspacePermissions: null,
-  permissionsLoading: false,
-  permissionsError: null,
-  updatePermissions: () => {},
-  refetchPermissions: async () => {},
-  userPermissions: {
-    canRead: false,
-    canEdit: false,
-    canAdmin: false,
-    userPermissions: 'read',
-    isLoading: false,
-    error: null,
-  },
-})
 
 interface WorkspacePermissionsProviderProps {
   children: React.ReactNode
@@ -51,6 +28,10 @@ interface WorkspacePermissionsProviderProps {
  * Enforces read-only mode when offline to prevent data loss.
  */
 export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsProviderProps) {
+  return <WorkspacePermissionsProviderInner>{children}</WorkspacePermissionsProviderInner>
+}
+
+function WorkspacePermissionsProviderInner({ children }: WorkspacePermissionsProviderProps) {
   const params = useParams()
   const workspaceId = params?.workspaceId as string
   const queryClient = useQueryClient()
@@ -62,6 +43,13 @@ export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsP
   const { isReconnecting, isRetryingWorkflowJoin } = useSocket()
   const realtimeStatusNotificationIdRef = useRef<string | null>(null)
   const realtimeStatusNotificationMessageRef = useRef<string | null>(null)
+  const { data: workspacesMetadata, isLoading: workspacesLoading } = useWorkspacesWithMetadata()
+  const currentWorkspace = useMemo(
+    () => workspacesMetadata?.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+    [workspacesMetadata, workspaceId]
+  )
+  const hasResolvedCurrentWorkspace = Boolean(currentWorkspace)
+  const isPersonalCanvas = currentWorkspace?.workspaceMode === 'personal'
 
   const isOfflineMode = hasOperationError
   const realtimeStatusMessage = isReconnecting
@@ -131,13 +119,32 @@ export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsP
   }, [addNotification, clearRealtimeStatusNotification, hasShownOfflineNotification, isOfflineMode])
 
   const {
-    data: workspacePermissions,
-    isLoading: permissionsLoading,
+    data: sharedWorkspacePermissions,
+    isLoading: sharedPermissionsLoading,
     error: permissionsErrorObj,
     refetch,
-  } = useWorkspacePermissionsQuery(workspaceId)
+  } = useWorkspacePermissionsQuery(workspaceId, hasResolvedCurrentWorkspace && !isPersonalCanvas)
 
-  const permissionsError = permissionsErrorObj?.message ?? null
+  const personalCanvasPermissions = useMemo<WorkspacePermissions | null>(() => {
+    if (!isPersonalCanvas || !currentWorkspace) return null
+    const permissionType = currentWorkspace.permissions ?? 'admin'
+    return {
+      users: [],
+      total: 1,
+      viewer: {
+        userId: currentWorkspace.ownerId,
+        isAdmin: permissionType === 'admin',
+        permissionType,
+      },
+    }
+  }, [currentWorkspace, isPersonalCanvas])
+
+  const workspacePermissions = personalCanvasPermissions ?? sharedWorkspacePermissions ?? null
+  const permissionsLoading = isPersonalCanvas
+    ? workspacesLoading
+    : workspacesLoading || sharedPermissionsLoading
+
+  const permissionsError = personalCanvasPermissions ? null : (permissionsErrorObj?.message ?? null)
 
   const updatePermissions = useCallback(
     (newPermissions: WorkspacePermissions) => {
@@ -200,59 +207,8 @@ export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsP
   )
 }
 
-/**
- * Accesses workspace permissions data and operations from context.
- * Must be used within a WorkspacePermissionsProvider.
- */
-export function useWorkspacePermissionsContext(): WorkspacePermissionsContextType {
-  const context = useContext(WorkspacePermissionsContext)
-  if (!context) {
-    throw new Error(
-      'useWorkspacePermissionsContext must be used within a WorkspacePermissionsProvider'
-    )
-  }
-  return context
-}
-
-/**
- * Accesses the current user's computed permissions including offline mode status.
- * Convenience hook that extracts userPermissions from the context.
- */
-export function useUserPermissionsContext(): WorkspaceUserPermissions & {
-  isOfflineMode?: boolean
-} {
-  const { userPermissions } = useWorkspacePermissionsContext()
-  return userPermissions
-}
-
-/**
- * Lightweight permissions provider for sandbox/academy contexts.
- * Grants full edit access without any API calls or workspace dependencies.
- */
-export function SandboxWorkspacePermissionsProvider({ children }: { children: React.ReactNode }) {
-  const sandboxPermissions = useMemo(
-    (): WorkspacePermissionsContextType => ({
-      workspacePermissions: null,
-      permissionsLoading: false,
-      permissionsError: null,
-      updatePermissions: () => {},
-      refetchPermissions: async () => {},
-      userPermissions: {
-        canRead: true,
-        canEdit: true,
-        canAdmin: false,
-        userPermissions: 'write',
-        isLoading: false,
-        error: null,
-        isOfflineMode: false,
-      },
-    }),
-    []
-  )
-
-  return (
-    <WorkspacePermissionsContext.Provider value={sandboxPermissions}>
-      {children}
-    </WorkspacePermissionsContext.Provider>
-  )
-}
+export {
+  SandboxWorkspacePermissionsProvider,
+  useUserPermissionsContext,
+  useWorkspacePermissionsContext,
+} from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'

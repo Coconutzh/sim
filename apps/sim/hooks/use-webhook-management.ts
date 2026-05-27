@@ -7,7 +7,6 @@ import { useWebhookQuery } from '@/hooks/queries/webhooks'
 import { populateTriggerFieldsFromConfig } from '@/hooks/use-trigger-config-aggregation'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import { isTriggerValid } from '@/triggers'
 
 const logger = createLogger('useWebhookManagement')
 
@@ -33,29 +32,37 @@ function resolveEffectiveTriggerId(
   triggerId: string | undefined,
   webhook?: { providerConfig?: { triggerId?: string } }
 ): string | undefined {
-  if (triggerId && isTriggerValid(triggerId)) {
-    return triggerId
-  }
-
-  const selectedTriggerId = useSubBlockStore.getState().getValue(blockId, 'selectedTriggerId')
-  if (typeof selectedTriggerId === 'string' && isTriggerValid(selectedTriggerId)) {
-    return selectedTriggerId
-  }
-
-  const storedTriggerId = useSubBlockStore.getState().getValue(blockId, 'triggerId')
-  if (typeof storedTriggerId === 'string' && isTriggerValid(storedTriggerId)) {
-    return storedTriggerId
-  }
-
-  if (webhook?.providerConfig?.triggerId && typeof webhook.providerConfig.triggerId === 'string') {
-    return webhook.providerConfig.triggerId
-  }
-
   const workflowState = useWorkflowStore.getState()
   const block = workflowState.blocks?.[blockId]
   if (block) {
     const blockConfig = getAnyBlockCatalogEntry(block.type)
     if (blockConfig) {
+      const availableTriggerIds = blockConfig.triggers?.available ?? []
+      if (triggerId && availableTriggerIds.includes(triggerId)) {
+        return triggerId
+      }
+
+      const selectedTriggerId = useSubBlockStore.getState().getValue(blockId, 'selectedTriggerId')
+      if (
+        typeof selectedTriggerId === 'string' &&
+        availableTriggerIds.includes(selectedTriggerId)
+      ) {
+        return selectedTriggerId
+      }
+
+      const storedTriggerId = useSubBlockStore.getState().getValue(blockId, 'triggerId')
+      if (typeof storedTriggerId === 'string' && availableTriggerIds.includes(storedTriggerId)) {
+        return storedTriggerId
+      }
+
+      if (
+        webhook?.providerConfig?.triggerId &&
+        typeof webhook.providerConfig.triggerId === 'string' &&
+        availableTriggerIds.includes(webhook.providerConfig.triggerId)
+      ) {
+        return webhook.providerConfig.triggerId
+      }
+
       if (blockConfig.category === 'triggers') {
         return block.type
       }
@@ -63,13 +70,14 @@ function resolveEffectiveTriggerId(
         const selectedTriggerIdValue = block.subBlocks?.selectedTriggerId?.value
         const triggerIdValue = block.subBlocks?.triggerId?.value
         return (
-          (typeof selectedTriggerIdValue === 'string' && isTriggerValid(selectedTriggerIdValue)
+          (typeof selectedTriggerIdValue === 'string' &&
+          availableTriggerIds.includes(selectedTriggerIdValue)
             ? selectedTriggerIdValue
             : undefined) ||
-          (typeof triggerIdValue === 'string' && isTriggerValid(triggerIdValue)
+          (typeof triggerIdValue === 'string' && availableTriggerIds.includes(triggerIdValue)
             ? triggerIdValue
             : undefined) ||
-          blockConfig.triggers?.available?.[0]
+          availableTriggerIds[0]
         )
       }
     }

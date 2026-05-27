@@ -2,12 +2,9 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { getAnyBlockCatalogEntry } from '@/blocks/catalog'
 import type { SubBlockConfig } from '@/blocks/types'
-import { populateTriggerFieldsFromConfig } from '@/hooks/use-trigger-config-aggregation'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { SubBlockStore, SubBlockValue } from '@/stores/workflows/subblock/types'
-import { isTriggerValid } from '@/triggers'
 
 const logger = createLogger('SubBlockStore')
 
@@ -22,6 +19,37 @@ export const EMPTY_SUBBLOCK_VALUES: Record<string, Record<string, SubBlockValue>
  * Stable empty fallback for a single block's sub-block values.
  */
 export const EMPTY_BLOCK_SUBBLOCK_VALUES: Record<string, SubBlockValue> = {}
+
+function mapLegacyTriggerConfigField(fieldName: string): string {
+  const fieldMapping: Record<string, string> = {
+    credentialId: 'triggerCredentials',
+    includeCellValuesInFieldIds: 'includeCellValues',
+  }
+  return fieldMapping[fieldName] || fieldName
+}
+
+function normalizeLegacyTriggerConfigValue(
+  subBlockId: string,
+  value: SubBlockValue
+): SubBlockValue {
+  if (subBlockId !== 'labelIds' && subBlockId !== 'folderIds') {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return [value]
+    }
+  }
+
+  if (!Array.isArray(value) && value !== null && value !== undefined) {
+    return [value]
+  }
+
+  return value
+}
 
 /**
  * SubBlockState stores values for all subblocks in workflows
@@ -115,6 +143,20 @@ export const useSubBlockStore = create<SubBlockStore>()(
         Object.entries(block.subBlocks || {}).forEach(([subBlockId, subBlock]) => {
           values[blockId][subBlockId] = (subBlock as SubBlockConfig).value
         })
+
+        const triggerConfig = values[blockId].triggerConfig
+        if (triggerConfig && typeof triggerConfig === 'object' && !Array.isArray(triggerConfig)) {
+          for (const [fieldName, fieldValue] of Object.entries(triggerConfig)) {
+            const subBlockId = mapLegacyTriggerConfigField(fieldName)
+            const currentValue = values[blockId][subBlockId]
+            if (currentValue === null || currentValue === undefined || currentValue === '') {
+              values[blockId][subBlockId] = normalizeLegacyTriggerConfigValue(
+                subBlockId,
+                fieldValue as SubBlockValue
+              )
+            }
+          }
+        }
       })
 
       set((state) => ({
@@ -123,39 +165,6 @@ export const useSubBlockStore = create<SubBlockStore>()(
           [workflowId]: values,
         },
       }))
-
-      Object.entries(blocks).forEach(([blockId, block]) => {
-        const blockConfig = getAnyBlockCatalogEntry(block.type)
-        if (!blockConfig) return
-
-        const isTriggerBlock = blockConfig.category === 'triggers' || block.triggerMode === true
-        if (!isTriggerBlock) return
-
-        let triggerId: string | undefined
-        if (blockConfig.category === 'triggers') {
-          triggerId = block.type
-        } else if (block.triggerMode === true && blockConfig.triggers?.enabled) {
-          const selectedTriggerIdValue = block.subBlocks?.selectedTriggerId?.value
-          const triggerIdValue = block.subBlocks?.triggerId?.value
-          triggerId =
-            (typeof selectedTriggerIdValue === 'string' && isTriggerValid(selectedTriggerIdValue)
-              ? selectedTriggerIdValue
-              : undefined) ||
-            (typeof triggerIdValue === 'string' && isTriggerValid(triggerIdValue)
-              ? triggerIdValue
-              : undefined) ||
-            blockConfig.triggers?.available?.[0]
-        }
-
-        if (!triggerId || !isTriggerValid(triggerId)) {
-          return
-        }
-
-        const triggerConfigSubBlock = block.subBlocks?.triggerConfig
-        if (triggerConfigSubBlock?.value && typeof triggerConfigSubBlock.value === 'object') {
-          populateTriggerFieldsFromConfig(blockId, triggerConfigSubBlock.value, triggerId)
-        }
-      })
     },
     setWorkflowValues: (workflowId: string, values: Record<string, Record<string, any>>) => {
       set((state) => ({

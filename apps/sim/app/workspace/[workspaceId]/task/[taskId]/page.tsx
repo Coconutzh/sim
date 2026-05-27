@@ -13,6 +13,6 @@ interface TaskPageProps {
 }
 
 export default async function TaskPage({ params }: TaskPageProps) {
-  const { taskId } = await params
-  return <Home key={taskId} chatId={taskId} />
+  const { taskId, workspaceId } = await params
+  return <Home key={taskId} chatId={taskId} workspaceId={workspaceId} />
 }

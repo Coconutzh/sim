@@ -63,11 +63,11 @@ async function fetchMcpServers(workspaceId: string, signal?: AbortSignal): Promi
   }
 }
 
-export function useMcpServers(workspaceId: string) {
+export function useMcpServers(workspaceId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: mcpKeys.servers(workspaceId),
     queryFn: ({ signal }) => fetchMcpServers(workspaceId, signal),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && (options?.enabled ?? true),
     retry: false,
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
@@ -93,11 +93,11 @@ async function fetchMcpTools(
   }
 }
 
-export function useMcpToolsQuery(workspaceId: string) {
+export function useMcpToolsQuery(workspaceId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: mcpKeys.tools(workspaceId),
     queryFn: ({ signal }) => fetchMcpTools(workspaceId, false, signal),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && (options?.enabled ?? true),
     retry: false,
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,

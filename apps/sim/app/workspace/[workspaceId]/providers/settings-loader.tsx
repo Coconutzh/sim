@@ -10,6 +10,14 @@ import { useGeneralSettings } from '@/hooks/queries/general-settings'
  * This ensures settings are available throughout the app.
  */
 export function SettingsLoader() {
+  if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
+    return null
+  }
+
+  return <SettingsLoaderInner />
+}
+
+function SettingsLoaderInner() {
   const { data: session, isPending: isSessionPending } = useSession()
   const hasLoadedRef = useRef(false)
 

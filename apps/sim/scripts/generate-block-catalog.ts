@@ -29,7 +29,7 @@ interface GeneratedBlockEntry {
   triggerAllowed?: boolean
   authMode?: BlockConfig['authMode']
   singleInstance?: boolean
-  tools: BlockConfig['tools']
+  tools: SerializableTools
   inputs: BlockConfig['inputs']
   outputs: BlockConfig['outputs']
   hideFromToolbar?: boolean
@@ -37,7 +37,7 @@ interface GeneratedBlockEntry {
 }
 
 interface SerializableTools {
-  access?: string[]
+  access: string[]
   config?: Record<string, unknown>
   operationToolMap?: Record<string, string>
 }

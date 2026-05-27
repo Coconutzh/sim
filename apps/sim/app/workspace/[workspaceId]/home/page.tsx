@@ -5,4 +5,13 @@ export const metadata: Metadata = {
   title: 'Home',
 }
 
-export default Home
+interface HomePageProps {
+  params: Promise<{
+    workspaceId: string
+  }>
+}
+
+export default async function HomePage({ params }: HomePageProps) {
+  const { workspaceId } = await params
+  return <Home workspaceId={workspaceId} />
+}

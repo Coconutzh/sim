@@ -22,7 +22,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { generatePassword } from '@/lib/core/security/encryption'
+import { generatePassword } from '@/lib/core/security/password'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'

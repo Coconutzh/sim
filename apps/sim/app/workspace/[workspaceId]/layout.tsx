@@ -1,51 +1,43 @@
-import { redirect } from 'next/navigation'
-import { ToastProvider } from '@/components/emcn'
-import { getSession } from '@/lib/auth'
-import { NavTour } from '@/app/workspace/[workspaceId]/components/product-tour'
-import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/impersonation-banner'
+import type React from 'react'
+import { LiteSidebar } from '@/app/workspace/[workspaceId]/lite-sidebar'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
-import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
-import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
-import { WorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { WorkspaceScopeSync } from '@/app/workspace/[workspaceId]/providers/workspace-scope-sync'
-import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
-import { BrandingProvider } from '@/ee/whitelabeling/components/branding-provider'
-import { getOrgWhitelabelSettings } from '@/ee/whitelabeling/org-branding'
+import { LowMemoryWorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
+import { WorkspaceScopeSyncLite } from '@/app/workspace/[workspaceId]/providers/workspace-scope-sync-lite'
 
-export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
-  const session = await getSession()
-  if (!session?.user) {
-    redirect('/login')
+interface WorkspaceLayoutProps {
+  children: React.ReactNode
+  params: Promise<{
+    workspaceId: string
+  }>
+}
+
+export default async function WorkspaceLayout({ children, params }: WorkspaceLayoutProps) {
+  if (process.env.SIM_LOW_MEMORY_DEV !== 'true') {
+    const { WorkspaceFullLayout } = await import(
+      '@/app/workspace/[workspaceId]/workspace-full-layout'
+    )
+    return <WorkspaceFullLayout params={params}>{children}</WorkspaceFullLayout>
   }
-  // The organization plugin is conditionally spread so TS can't infer activeOrganizationId on the base session type.
-  const orgId = (session.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
-  const initialOrgSettings = orgId ? await getOrgWhitelabelSettings(orgId) : null
+
+  const { workspaceId } = await params
 
   return (
-    <BrandingProvider initialOrgSettings={initialOrgSettings}>
-      <ToastProvider>
-        <SettingsLoader />
-        <ProviderModelsLoader />
-        <GlobalCommandsProvider>
-          <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
-            <ImpersonationBanner />
-            <WorkspacePermissionsProvider>
-              <WorkspaceScopeSync />
-              <div className='flex min-h-0 flex-1'>
-                <div className='shrink-0' suppressHydrationWarning>
-                  <Sidebar />
-                </div>
-                <div className='flex min-w-0 flex-1 flex-col p-[8px] pl-0'>
-                  <div className='flex-1 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg)]'>
-                    {children}
-                  </div>
-                </div>
+    <GlobalCommandsProvider>
+      <LowMemoryWorkspacePermissionsProvider>
+        <WorkspaceScopeSyncLite />
+        <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
+          <div className='flex min-h-0 flex-1'>
+            <div className='shrink-0' suppressHydrationWarning>
+              <LiteSidebar workspaceId={workspaceId} />
+            </div>
+            <div className='flex min-w-0 flex-1 flex-col p-[8px] pl-0'>
+              <div className='flex-1 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg)]'>
+                {children}
               </div>
-              <NavTour />
-            </WorkspacePermissionsProvider>
+            </div>
           </div>
-        </GlobalCommandsProvider>
-      </ToastProvider>
-    </BrandingProvider>
+        </div>
+      </LowMemoryWorkspacePermissionsProvider>
+    </GlobalCommandsProvider>
   )
 }

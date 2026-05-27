@@ -3,11 +3,6 @@
 import { Component, type ReactNode, useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { RefreshCw } from 'lucide-react'
-import { ReactFlowProvider } from 'reactflow'
-import { Button } from '@/components/emcn'
-import { Panel } from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
-import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
-import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 
 const logger = createLogger('ErrorBoundary')
 
@@ -27,8 +22,6 @@ export function ErrorUI({
   onReset,
   fullScreen = false,
 }: ErrorUIProps) {
-  const preventZoomRef = usePreventZoom()
-
   if (!fullScreen) {
     return (
       <div className='flex h-full flex-1 items-center justify-center'>
@@ -37,32 +30,24 @@ export function ErrorUI({
             <h2 className='font-semibold text-[var(--text-primary)] text-md'>{title}</h2>
             <p className='max-w-[300px] text-[var(--text-tertiary)] text-small'>{message}</p>
           </div>
-          <Button variant='default' size='sm' onClick={onReset ?? (() => window.location.reload())}>
+          <button
+            type='button'
+            className='inline-flex h-8 items-center rounded-[8px] bg-[var(--brand-primary)] px-3 font-medium text-[13px] text-white'
+            onClick={onReset ?? (() => window.location.reload())}
+          >
             <RefreshCw className='mr-1.5 h-[14px] w-[14px]' />
             Try again
-          </Button>
+          </button>
         </div>
       </div>
     )
   }
 
   return (
-    <div ref={preventZoomRef} className='flex h-screen w-full flex-col bg-[var(--surface-1)]'>
-      <Sidebar />
-
-      <div className='relative flex flex-1'>
-        <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
-          <div className='pointer-events-none flex flex-col items-center gap-4'>
-            <h3 className='font-semibold text-[var(--text-primary)] text-md'>{title}</h3>
-            <p className='max-w-sm text-center font-medium text-[var(--text-tertiary)] text-sm'>
-              {message}
-            </p>
-          </div>
-        </div>
-
-        <ReactFlowProvider>
-          <Panel />
-        </ReactFlowProvider>
+    <div className='flex h-screen w-full items-center justify-center bg-[var(--surface-1)]'>
+      <div className='flex max-w-sm flex-col items-center gap-4 text-center'>
+        <h3 className='font-semibold text-[var(--text-primary)] text-md'>{title}</h3>
+        <p className='font-medium text-[var(--text-tertiary)] text-sm'>{message}</p>
       </div>
     </div>
   )

@@ -22,42 +22,16 @@ import { useParams } from 'next/navigation'
 import { Button, Input, Label, Tooltip } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
 import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
-import {
-  CheckboxList,
-  Code,
-  ConditionInput,
-  CredentialSelector,
-  DocumentTagEntry,
-  EvalInput,
-  FileUpload,
-  FilterBuilder,
-  GroupedCheckboxList,
-  InputFormat,
-  InputMapping,
-  KnowledgeBaseSelector,
-  KnowledgeTagFilters,
-  LongInput,
-  McpDynamicArgs,
-  McpServerSelector,
-  McpToolSelector,
-  MessagesInput,
-  ResponseFormat,
-  ScheduleInfo,
-  SelectorInput,
-  type SelectorOverrides,
-  ShortInput,
-  SkillInput,
-  SliderInput,
-  SortBuilder,
-  Switch,
-  Table,
-  TableSelector,
-  Text,
-  TimeInput,
-  VariablesInput,
-  WorkflowSelectorInput,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
+import { LongInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/long-input/long-input'
 import { MODAL_REGISTRY } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/modal-registry'
+import { ScheduleInfo } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/schedule-info/schedule-info'
+import type { SelectorOverrides } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-input/selector-input'
+import { ShortInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/short-input/short-input'
+import { SliderInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/slider-input/slider-input'
+import { Switch } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/switch/switch'
+import { Table } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/table/table'
+import { Text } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/text/text'
+import { TimeInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/time-input/time-input'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useWebhookManagement } from '@/hooks/use-webhook-management'
@@ -79,16 +53,160 @@ const ToolInput = lazy(() =>
   ).then((module) => ({ default: module.ToolInput }))
 )
 
+const CheckboxList = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/checkbox-list/checkbox-list'
+  ).then((module) => ({ default: module.CheckboxList }))
+)
+
+const Code = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/code/code'
+  ).then((module) => ({ default: module.Code }))
+)
+
+const ConditionInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/condition-input/condition-input'
+  ).then((module) => ({ default: module.ConditionInput }))
+)
+
+const CredentialSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/credential-selector'
+  ).then((module) => ({ default: module.CredentialSelector }))
+)
+
+const DocumentTagEntry = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/document-tag-entry/document-tag-entry'
+  ).then((module) => ({ default: module.DocumentTagEntry }))
+)
+
 const Dropdown = lazy(() =>
   import(
     '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/dropdown/dropdown'
   ).then((module) => ({ default: module.Dropdown }))
 )
 
+const EvalInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/eval-input/eval-input'
+  ).then((module) => ({ default: module.EvalInput }))
+)
+
+const FileUpload = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/file-upload'
+  ).then((module) => ({ default: module.FileUpload }))
+)
+
+const FilterBuilder = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/filter-builder/filter-builder'
+  ).then((module) => ({ default: module.FilterBuilder }))
+)
+
+const GroupedCheckboxList = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/grouped-checkbox-list/grouped-checkbox-list'
+  ).then((module) => ({ default: module.GroupedCheckboxList }))
+)
+
 const ComboBox = lazy(() =>
   import(
     '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/combobox/combobox'
   ).then((module) => ({ default: module.ComboBox }))
+)
+
+const InputFormat = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/starter/input-format'
+  ).then((module) => ({ default: module.InputFormat }))
+)
+
+const InputMapping = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/input-mapping/input-mapping'
+  ).then((module) => ({ default: module.InputMapping }))
+)
+
+const KnowledgeBaseSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/knowledge-base-selector/knowledge-base-selector'
+  ).then((module) => ({ default: module.KnowledgeBaseSelector }))
+)
+
+const KnowledgeTagFilters = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/knowledge-tag-filters/knowledge-tag-filters'
+  ).then((module) => ({ default: module.KnowledgeTagFilters }))
+)
+
+const McpDynamicArgs = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/mcp-dynamic-args/mcp-dynamic-args'
+  ).then((module) => ({ default: module.McpDynamicArgs }))
+)
+
+const McpServerSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/mcp-server-modal/mcp-server-selector'
+  ).then((module) => ({ default: module.McpServerSelector }))
+)
+
+const McpToolSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/mcp-server-modal/mcp-tool-selector'
+  ).then((module) => ({ default: module.McpToolSelector }))
+)
+
+const MessagesInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/messages-input/messages-input'
+  ).then((module) => ({ default: module.MessagesInput }))
+)
+
+const ResponseFormat = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/response/response-format'
+  ).then((module) => ({ default: module.ResponseFormat }))
+)
+
+const SelectorInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-input/selector-input'
+  ).then((module) => ({ default: module.SelectorInput }))
+)
+
+const SkillInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/skill-input/skill-input'
+  ).then((module) => ({ default: module.SkillInput }))
+)
+
+const SortBuilder = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sort-builder/sort-builder'
+  ).then((module) => ({ default: module.SortBuilder }))
+)
+
+const TableSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/table-selector/table-selector'
+  ).then((module) => ({ default: module.TableSelector }))
+)
+
+const VariablesInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/variables-input/variables-input'
+  ).then((module) => ({ default: module.VariablesInput }))
+)
+
+const WorkflowSelectorInput = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-selector/workflow-selector-input'
+  ).then((module) => ({ default: module.WorkflowSelectorInput }))
 )
 
 const FOLDER_OVERRIDES: SelectorOverrides = {
@@ -1265,7 +1383,7 @@ function SubBlockComponent({
         highlightParentLabel,
         externalLink
       )}
-      {renderInput()}
+      <Suspense fallback={<div className='h-8' />}>{renderInput()}</Suspense>
     </div>
   )
 }

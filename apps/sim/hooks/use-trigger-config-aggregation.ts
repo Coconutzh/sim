@@ -1,9 +1,24 @@
 import { createLogger } from '@sim/logger'
+import { getAllBlockCatalogEntries } from '@/blocks/catalog'
+import type { BlockCatalogEntry } from '@/blocks/catalog-types'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import { getTrigger, isTriggerValid } from '@/triggers'
-import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
 const logger = createLogger('useTriggerConfigAggregation')
+
+const SYSTEM_SUBBLOCK_IDS: readonly string[] = [
+  'triggerCredentials',
+  'triggerInstructions',
+  'webhookUrlDisplay',
+  'samplePayload',
+  'setupScript',
+  'scheduleInfo',
+] as const
+
+function getTriggerCatalogEntry(triggerId: string): BlockCatalogEntry | undefined {
+  return getAllBlockCatalogEntries().find(
+    (entry) => entry.type === triggerId || entry.triggers?.available?.includes(triggerId)
+  )
+}
 
 /**
  * Maps old trigger config field names to new subblock IDs for backward compatibility.
@@ -42,12 +57,11 @@ export function useTriggerConfigAggregation(
     return null
   }
 
-  if (!isTriggerValid(triggerId)) {
+  const triggerDef = getTriggerCatalogEntry(triggerId)
+  if (!triggerDef) {
     logger.warn(`Trigger definition not found for ID: ${triggerId}`)
     return null
   }
-
-  const triggerDef = getTrigger(triggerId)
 
   const subBlockStore = useSubBlockStore.getState()
 
@@ -111,11 +125,10 @@ export function populateTriggerFieldsFromConfig(
     return
   }
 
-  if (!isTriggerValid(triggerId)) {
+  const triggerDef = getTriggerCatalogEntry(triggerId)
+  if (!triggerDef) {
     return
   }
-
-  const triggerDef = getTrigger(triggerId)
 
   const subBlockStore = useSubBlockStore.getState()
 

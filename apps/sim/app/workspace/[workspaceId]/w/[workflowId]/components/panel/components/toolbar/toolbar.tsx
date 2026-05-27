@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import {
   forwardRef,
@@ -12,14 +12,12 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import { Search } from 'lucide-react'
-import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
-import { captureEvent } from '@/lib/posthog/client'
 import {
   getBlocksForSidebar,
   getTriggersForSidebar,
   hasTriggerCapability,
-} from '@/lib/workflows/triggers/trigger-utils'
+} from '@/lib/workflows/triggers/client-trigger-utils'
 import { ToolbarItemContextMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/components'
 import {
   calculateTriggerHeights,
@@ -33,6 +31,8 @@ import { getBlockCatalogIcon } from '@/blocks/icons'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSandboxBlockConstraints } from '@/hooks/use-sandbox-block-constraints'
 import { useToolbarStore } from '@/stores/panel'
+
+const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
 
 interface BlockItem {
   name: string
@@ -351,8 +351,7 @@ export const Toolbar = memo(
       triggersHeaderRef,
     })
 
-    const posthog = usePostHog()
-    const { filterBlocks } = usePermissionConfig()
+    const { filterBlocks } = usePermissionConfig({ enabled: !IS_LOW_MEMORY_DEV })
     const sandboxAllowedBlocks = useSandboxBlockConstraints()
 
     const allTriggers = getTriggers()
@@ -545,12 +544,16 @@ export const Toolbar = memo(
     const handleViewDocumentation = useCallback(() => {
       if (activeItemInfo?.docsLink) {
         window.open(activeItemInfo.docsLink, '_blank', 'noopener,noreferrer')
-        captureEvent(posthog, 'docs_opened', {
-          source: 'toolbar_context_menu',
-          block_type: activeItemInfo.type,
-        })
+        import('@/lib/posthog/client')
+          .then(({ captureClientEvent }) => {
+            captureClientEvent('docs_opened', {
+              source: 'toolbar_context_menu',
+              block_type: activeItemInfo.type,
+            })
+          })
+          .catch(() => undefined)
       }
-    }, [activeItemInfo, posthog])
+    }, [activeItemInfo])
 
     /**
      * Handle clicks outside the context menu to close it

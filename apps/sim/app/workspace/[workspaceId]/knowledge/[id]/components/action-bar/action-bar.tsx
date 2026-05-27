@@ -1,8 +1,8 @@
-import { motion } from 'framer-motion'
+﻿import { motion } from 'framer-motion'
 import { Circle, CircleOff } from 'lucide-react'
 import { Button, Tooltip, Trash2 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 
 interface ActionBarProps {
   selectedCount: number

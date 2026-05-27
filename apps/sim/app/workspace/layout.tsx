@@ -1,26 +1,24 @@
 'use client'
 
-import { useSession } from '@/lib/auth/auth-client'
-import { SocketProvider } from '@/app/workspace/providers/socket-provider'
+import type React from 'react'
+import dynamic from 'next/dynamic'
 
 interface WorkspaceRootLayoutProps {
   children: React.ReactNode
 }
 
+const FullWorkspaceRootLayout = dynamic(
+  () =>
+    import('@/app/workspace/workspace-full-root-layout').then(
+      (module) => module.WorkspaceFullRootLayout
+    ),
+  { ssr: false }
+)
+
 export default function WorkspaceRootLayout({ children }: WorkspaceRootLayoutProps) {
-  const session = useSession()
+  if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
+    return <div className='workspace-root'>{children}</div>
+  }
 
-  const user = session.data?.user
-    ? {
-        id: session.data.user.id,
-        name: session.data.user.name ?? undefined,
-        email: session.data.user.email,
-      }
-    : undefined
-
-  return (
-    <SocketProvider user={user}>
-      <div className='workspace-root'>{children}</div>
-    </SocketProvider>
-  )
+  return <FullWorkspaceRootLayout>{children}</FullWorkspaceRootLayout>
 }

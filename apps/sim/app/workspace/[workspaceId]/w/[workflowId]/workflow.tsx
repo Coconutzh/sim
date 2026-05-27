@@ -6,8 +6,10 @@ import ReactFlow, {
   applyNodeChanges,
   ConnectionLineType,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeChange,
+  type NodeTypes,
   ReactFlowProvider,
   SelectionMode,
   useReactFlow,
@@ -31,21 +33,13 @@ import {
 } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
-import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import {
-  CommandList,
-  DiffControls,
-  Notifications,
-  Panel,
-  Terminal,
-  WorkflowTrackBar,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
+import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/block-menu'
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
+import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
-import { WorkflowControls } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-controls/workflow-controls'
 import {
   useAutoLayout,
   useCanvasContextMenu,
@@ -75,14 +69,16 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import {
   defaultEdgeOptions,
-  edgeTypes,
   embeddedFitViewOptions,
   embeddedResizeFitViewOptions,
-  nodeTypes,
   reactFlowFitViewOptions,
   reactFlowProOptions,
   reactFlowStyles,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow-constants'
+import {
+  liteEdgeTypes,
+  liteNodeTypes,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow-node-types-lite'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { getWorkflowEditorRedirectPath } from '@/app/workspace/redirect-workflow'
 import {
@@ -115,6 +111,7 @@ import { useChatStore } from '@/stores/chat/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
+import { usePanelStore } from '@/stores/panel/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -139,9 +136,66 @@ const LazyWorkflowSearchReplace = lazy(() =>
   }))
 )
 
+const LazyCommandList = lazy(() =>
+  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/command-list/command-list').then(
+    (mod) => ({
+      default: mod.CommandList,
+    })
+  )
+)
+
+const LazyDiffControls = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/diff-controls/diff-controls'
+  ).then((mod) => ({
+    default: mod.DiffControls,
+  }))
+)
+
+interface LazyPanelProps {
+  workspaceId?: string
+}
+
+const LazyPanel = lazy(async () => {
+  if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
+    const mod = await import(
+      '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel-lite'
+    )
+    return { default: mod.PanelLite as React.ComponentType<LazyPanelProps> }
+  }
+
+  const mod = await import('@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel')
+  return { default: mod.Panel as React.ComponentType<LazyPanelProps> }
+})
+
+const LazyTerminal = lazy(() =>
+  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/terminal').then(
+    (mod) => ({
+      default: mod.Terminal,
+    })
+  )
+)
+
+const LazyWorkflowTrackBar = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-track-bar/workflow-track-bar'
+  ).then((mod) => ({
+    default: mod.WorkflowTrackBar,
+  }))
+)
+
+const LazyWorkflowControls = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-controls/workflow-controls'
+  ).then((mod) => ({
+    default: mod.WorkflowControls,
+  }))
+)
+
 const logger = createLogger('Workflow')
 
 const DEFAULT_PASTE_OFFSET = { x: 50, y: 50 }
+const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
 
 /**
  * Calculates the offset to paste blocks at viewport center
@@ -255,6 +309,9 @@ const WorkflowContent = React.memo(
     const [potentialParentId, setPotentialParentId] = useState<string | null>(null)
     const [selectedEdges, setSelectedEdges] = useState<SelectedEdgesMap>(new Map())
     const [isErrorConnectionDrag, setIsErrorConnectionDrag] = useState(false)
+    const [isHeavyEditorChromeLoaded, setIsHeavyEditorChromeLoaded] = useState(!IS_LOW_MEMORY_DEV)
+    const [nodeTypesForRender, setNodeTypesForRender] = useState<NodeTypes>(liteNodeTypes)
+    const [edgeTypesForRender, setEdgeTypesForRender] = useState<EdgeTypes>(liteEdgeTypes)
     const canvasContainerRef = useRef<HTMLDivElement>(null)
     const embeddedFitFrameRef = useRef<number | null>(null)
     const hasCompletedInitialEmbeddedFitRef = useRef(false)
@@ -277,6 +334,28 @@ const WorkflowContent = React.memo(
       embedded,
     })
     const { emitCursorUpdate, joinWorkflow, leaveWorkflow } = useSocket()
+    const activePanelTab = usePanelStore((state) => state.activeTab)
+    const shouldUseFullNodeTypes = !IS_LOW_MEMORY_DEV || embedded || sandbox
+
+    useEffect(() => {
+      if (!shouldUseFullNodeTypes) return
+
+      let isCancelled = false
+
+      import('@/app/workspace/[workspaceId]/w/[workflowId]/workflow-node-types-full')
+        .then(({ fullEdgeTypes, fullNodeTypes }) => {
+          if (isCancelled) return
+          setNodeTypesForRender(fullNodeTypes)
+          setEdgeTypesForRender(fullEdgeTypes)
+        })
+        .catch((err: unknown) => {
+          logger.error('Failed to load full workflow node types', { err })
+        })
+
+      return () => {
+        isCancelled = true
+      }
+    }, [shouldUseFullNodeTypes])
     useDynamicHandleRefresh()
 
     const workspaceId = propWorkspaceId || (params.workspaceId as string)
@@ -304,16 +383,19 @@ const WorkflowContent = React.memo(
 
     useOAuthReturnForWorkflow(workflowIdParam)
 
-    const {
-      data: workflows = {},
-      isLoading: isWorkflowMapLoading,
-      isPlaceholderData: isWorkflowMapPlaceholderData,
-    } = useWorkflowMap(workspaceId)
-    const { data: folders = {} } = useFolderMap(workspaceId)
+    const shouldSkipWorkflowMap = IS_LOW_MEMORY_DEV && !sandbox
+    const workflowMapQuery = useWorkflowMap(shouldSkipWorkflowMap ? undefined : workspaceId)
+    const workflows = workflowMapQuery.data ?? {}
+    const isWorkflowMapLoading = shouldSkipWorkflowMap ? false : workflowMapQuery.isLoading
+    const isWorkflowMapPlaceholderData = shouldSkipWorkflowMap
+      ? false
+      : workflowMapQuery.isPlaceholderData
+    const lowMemoryWorkspaceId = IS_LOW_MEMORY_DEV && !sandbox ? '' : workspaceId
+    const { data: folders = {} } = useFolderMap(lowMemoryWorkspaceId)
     const updateWorkflowMutation = useUpdateWorkflow()
     const { mutateAsync: copySelection, isPending: isCopyingSelection } = useCopySelection()
-    const { data: myWorkgroupsData } = useMyWorkgroups(!embedded)
-    const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
+    const { data: myWorkgroupsData } = useMyWorkgroups(!embedded && !IS_LOW_MEMORY_DEV)
+    const { data: workspaceSettingsData } = useWorkspaceSettings(lowMemoryWorkspaceId)
     const currentWorkspaceWorkgroupId = workspaceSettingsData?.settings.workspace.workgroupId
     const activeWorkgroupId =
       myWorkgroupsData?.workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId)
@@ -322,8 +404,12 @@ const WorkflowContent = React.memo(
         ?.id ??
       myWorkgroupsData?.defaultWorkgroupId ??
       myWorkgroupsData?.workgroups[0]?.id
-    const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
-    const { data: personalWorkspaceData } = usePersonalWorkspace(activeWorkgroupId)
+    const { data: teamWorkspaceData } = useTeamWorkspace(
+      IS_LOW_MEMORY_DEV ? undefined : activeWorkgroupId
+    )
+    const { data: personalWorkspaceData } = usePersonalWorkspace(
+      IS_LOW_MEMORY_DEV ? undefined : activeWorkgroupId
+    )
     const copyTargetDescriptor = useMemo(() => {
       if (!activeWorkgroupId) return null
       const teamWorkspace = teamWorkspaceData?.workspace
@@ -405,10 +491,11 @@ const WorkflowContent = React.memo(
     const { handleRunFromBlock, handleRunUntilBlock, handleRunWorkflow, handleCancelExecution } =
       useWorkflowExecution()
 
-    const snapToGridSize = useSnapToGridSize()
+    const lowMemorySettingsQueryOptions = useMemo(() => ({ enabled: !IS_LOW_MEMORY_DEV }), [])
+    const snapToGridSize = useSnapToGridSize(lowMemorySettingsQueryOptions)
     const snapToGrid = snapToGridSize > 0
 
-    const isAutoConnectEnabled = useAutoConnect() && !sandbox
+    const isAutoConnectEnabled = useAutoConnect(lowMemorySettingsQueryOptions) && !sandbox
     const autoConnectRef = useRef(isAutoConnectEnabled)
     autoConnectRef.current = isAutoConnectEnabled
 
@@ -485,10 +572,11 @@ const WorkflowContent = React.memo(
         hydration.phase === 'ready' &&
         hydration.workflowId === workflowIdParam &&
         activeWorkflowId === workflowIdParam &&
-        Boolean(workflows[workflowIdParam]) &&
+        (shouldSkipWorkflowMap || Boolean(workflows[workflowIdParam])) &&
         lastSaved !== undefined &&
         areWorkflowBlockConfigsReady,
       [
+        shouldSkipWorkflowMap,
         isWorkflowMapPlaceholderData,
         hydration.phase,
         hydration.workflowId,
@@ -596,9 +684,13 @@ const WorkflowContent = React.memo(
       []
     )
 
-    const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null, {
-      embedded,
-    })
+    const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(
+      activeWorkflowId || null,
+      {
+        embedded,
+      },
+      lowMemorySettingsQueryOptions
+    )
 
     const isWorkflowEmpty = useMemo(() => Object.keys(blocks).length === 0, [blocks])
 
@@ -2586,7 +2678,8 @@ const WorkflowContent = React.memo(
 
     const loadingWorkflowRef = useRef<string | null>(null)
     const currentWorkflowExists =
-      !isWorkflowMapPlaceholderData && Boolean(workflows[workflowIdParam])
+      shouldSkipWorkflowMap ||
+      (!isWorkflowMapPlaceholderData && Boolean(workflows[workflowIdParam]))
 
     useEffect(() => {
       // In sandbox mode the stores are pre-hydrated externally; skip the API load.
@@ -2653,6 +2746,7 @@ const WorkflowContent = React.memo(
       }
     }, [
       workflowIdParam,
+      shouldSkipWorkflowMap,
       isWorkflowMapLoading,
       isWorkflowMapPlaceholderData,
       currentWorkflowExists,
@@ -2664,21 +2758,28 @@ const WorkflowContent = React.memo(
       workspaceId,
     ])
 
-    useWorkspaceEnvironment(sandbox ? '' : workspaceId)
+    useWorkspaceEnvironment(sandbox ? '' : lowMemoryWorkspaceId)
 
-    const workflowCount = useMemo(() => Object.keys(workflows).length, [workflows])
+    const workflowCount = useMemo(
+      () => (shouldSkipWorkflowMap && workflowIdParam ? 1 : Object.keys(workflows).length),
+      [shouldSkipWorkflowMap, workflowIdParam, workflows]
+    )
     const workspaceWorkflowIds = useMemo(
       () =>
-        Object.entries(workflows)
-          .filter(([, workflow]) => workflow.workspaceId === workspaceId)
-          .map(([id]) => id),
-      [workflows, workspaceId]
+        shouldSkipWorkflowMap
+          ? workflowIdParam
+            ? [workflowIdParam]
+            : []
+          : Object.entries(workflows)
+              .filter(([, workflow]) => workflow.workspaceId === workspaceId)
+              .map(([id]) => id),
+      [shouldSkipWorkflowMap, workflowIdParam, workflows, workspaceId]
     )
     const missingWorkflowRedirectRef = useRef<string | null>(null)
 
     /** Handles navigation validation and redirects for invalid workflow IDs. */
     useEffect(() => {
-      if (embedded || sandbox) return
+      if (embedded || sandbox || shouldSkipWorkflowMap) return
 
       if (
         isWorkflowMapLoading ||
@@ -2751,6 +2852,7 @@ const WorkflowContent = React.memo(
       }
     }, [
       embedded,
+      shouldSkipWorkflowMap,
       workflowIdParam,
       isWorkflowMapLoading,
       isWorkflowMapPlaceholderData,
@@ -4412,6 +4514,9 @@ const WorkflowContent = React.memo(
       scheduleEmbeddedFit()
     }, [blocksStructureHash, embedded, isWorkflowReady, scheduleEmbeddedFit])
 
+    const shouldRenderEditorPanel = embedded || sandbox || isHeavyEditorChromeLoaded
+    const shouldRenderAuxiliaryEditorChrome = !IS_LOW_MEMORY_DEV || embedded || sandbox
+
     return (
       <div className='flex h-full w-full overflow-hidden'>
         <div className='flex min-w-0 flex-1 flex-col'>
@@ -4437,14 +4542,16 @@ const WorkflowContent = React.memo(
 
             {isWorkflowReady && (
               <>
-                {!embedded && workflowMetadata && (
-                  <WorkflowTrackBar
-                    workspaceId={workspaceId}
-                    workflowId={workflowIdParam}
-                    workflow={workflowMetadata}
-                    canPublish={userPermissions.canAdmin}
-                    onNotify={notifyTrackAction}
-                  />
+                {!embedded && workflowMetadata && shouldRenderAuxiliaryEditorChrome && (
+                  <Suspense fallback={null}>
+                    <LazyWorkflowTrackBar
+                      workspaceId={workspaceId}
+                      workflowId={workflowIdParam}
+                      workflow={workflowMetadata}
+                      canPublish={userPermissions.canAdmin}
+                      onNotify={notifyTrackAction}
+                    />
+                  </Suspense>
                 )}
 
                 <ReactFlow
@@ -4459,8 +4566,8 @@ const WorkflowContent = React.memo(
                   onConnectEnd={
                     !embedded && effectivePermissions.canEdit ? onConnectEnd : undefined
                   }
-                  nodeTypes={nodeTypes}
-                  edgeTypes={edgeTypes}
+                  nodeTypes={nodeTypesForRender}
+                  edgeTypes={edgeTypesForRender}
                   onMouseDown={handleCanvasMouseDown}
                   onDrop={
                     effectivePermissions.canEdit
@@ -4537,10 +4644,16 @@ const WorkflowContent = React.memo(
 
                 {!embedded && (
                   <>
-                    <WorkflowControls />
-                    <Suspense fallback={null}>
-                      <LazyChat />
-                    </Suspense>
+                    {!IS_LOW_MEMORY_DEV && (
+                      <Suspense fallback={null}>
+                        <LazyWorkflowControls />
+                      </Suspense>
+                    )}
+                    {shouldRenderAuxiliaryEditorChrome && (
+                      <Suspense fallback={null}>
+                        <LazyChat />
+                      </Suspense>
+                    )}
 
                     <BlockMenu
                       isOpen={isBlockMenuOpen}
@@ -4630,17 +4743,48 @@ const WorkflowContent = React.memo(
               </Suspense>
             )}
 
-            {!embedded && isWorkflowReady && isWorkflowEmpty && effectivePermissions.canEdit && (
-              <CommandList />
-            )}
+            {!embedded &&
+              isWorkflowReady &&
+              isWorkflowEmpty &&
+              effectivePermissions.canEdit &&
+              shouldRenderAuxiliaryEditorChrome && (
+                <Suspense fallback={null}>
+                  <LazyCommandList />
+                </Suspense>
+              )}
 
-            {!embedded && <DiffControls />}
+            {!embedded && shouldRenderAuxiliaryEditorChrome && (
+              <Suspense fallback={null}>
+                <LazyDiffControls />
+              </Suspense>
+            )}
           </div>
 
-          <Terminal />
+          {shouldRenderAuxiliaryEditorChrome && (
+            <Suspense fallback={null}>
+              <LazyTerminal />
+            </Suspense>
+          )}
         </div>
 
-        {(!embedded || sandbox) && <Panel workspaceId={sandbox ? workspaceId : undefined} />}
+        {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (
+          <button
+            type='button'
+            className='absolute top-3 right-3 z-20 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-sm'
+            onClick={() => {
+              usePanelStore.getState().setActiveTab('toolbar')
+              setIsHeavyEditorChromeLoaded(true)
+            }}
+          >
+            Load editor panels
+          </button>
+        )}
+
+        {(!embedded || sandbox) && shouldRenderEditorPanel && (
+          <Suspense fallback={null}>
+            <LazyPanel workspaceId={sandbox ? workspaceId : undefined} />
+          </Suspense>
+        )}
 
         {!embedded && !sandbox && oauthModal && (
           <OAuthModal

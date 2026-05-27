@@ -1,10 +1,10 @@
-import { useMemo, useRef } from 'react'
+﻿import { useMemo, useRef } from 'react'
 import { RotateCw, X } from 'lucide-react'
 import { Badge, Button, Loader, Skeleton, Tooltip } from '@/components/emcn'
 import { PermissionSelector } from '@/components/permissions'
 import { useSession } from '@/lib/auth/auth-client'
 import type { PermissionType } from '@/lib/workspaces/permissions/utils'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import type { WorkspacePermissions } from '@/hooks/queries/workspace'
 import type { UserPermissions } from './types'
 

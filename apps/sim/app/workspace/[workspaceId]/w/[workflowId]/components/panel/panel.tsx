@@ -1,12 +1,8 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { useQueryClient } from '@tanstack/react-query'
-import { History, Plus } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   BubbleChatClose,
@@ -25,37 +21,16 @@ import {
   ModalHeader,
   MoreHorizontal,
   Play,
-  Popover,
-  PopoverContent,
-  PopoverItem,
-  PopoverScrollArea,
-  PopoverSection,
-  PopoverTrigger,
   Trash,
 } from '@/components/emcn'
 import { Lock, Square, Unlock, Upload } from '@/components/emcn/icons'
 import { VariableIcon } from '@/components/icons'
-import { requestJson } from '@/lib/api/client/request'
-import {
-  createWorkflowCopilotChatContract,
-  deleteCopilotChatContract,
-} from '@/lib/api/contracts/copilot'
-import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
-import { useSession } from '@/lib/auth/auth-client'
-import { captureEvent } from '@/lib/posthog/client'
 import { generateWorkflowJson } from '@/lib/workflows/operations/import-export'
-import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
-import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components/mothership-chat/mothership-chat'
-import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
-import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
-import {
-  Deploy,
-  Editor,
-  Toolbar,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components'
+import { Deploy } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/deploy'
+import type { ToolbarRef } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/toolbar'
 import {
   usePanelResize,
   useUsageLimits,
@@ -66,12 +41,6 @@ import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
-import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
-import {
-  type CopilotChatListItem,
-  copilotChatsKeys,
-  useCopilotChats,
-} from '@/hooks/queries/copilot-chats'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
@@ -80,19 +49,40 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useChatStore } from '@/stores/chat/store'
 import { useNotificationStore } from '@/stores/notifications/store'
-import type { ChatContext, PanelTab } from '@/stores/panel'
+import type { PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useVariablesStore } from '@/stores/variables/store'
-import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
-import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
 import { getWorkflowWithValues } from '@/stores/workflows'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('Panel')
-const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
+const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
+
+const LazyCopilotTab = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab'
+  ).then((mod) => ({
+    default: mod.CopilotTab,
+  }))
+)
+
+const LazyEditor = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/editor'
+  ).then((mod) => ({
+    default: mod.Editor,
+  }))
+)
+
+const LazyToolbar = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/toolbar'
+  ).then((mod) => ({
+    default: mod.Toolbar,
+  }))
+)
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *
@@ -105,8 +95,8 @@ const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
  *
  * This ensures server and client render identical HTML, preventing hydration errors and visual flash.
  *
- * Note: All tabs are kept mounted but hidden to preserve component state during tab switches.
- * This prevents unnecessary remounting which would trigger data reloads and reset state.
+ * Note: Full mode keeps all tabs mounted but hidden to preserve state during tab switches.
+ * Low-memory dev mode mounts only the active tab to avoid eager data loads.
  *
  * @returns Panel on the right side of the workflow
  */
@@ -120,9 +110,6 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   const params = useParams()
   const workspaceId = propWorkspaceId ?? (params.workspaceId as string)
 
-  const posthog = usePostHog()
-  const posthogRef = useRef(posthog)
-
   const panelRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { activeTab, setActiveTab, panelWidth, _hasHydrated, setHasHydrated } = usePanelStore(
@@ -134,10 +121,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
       setHasHydrated: state.setHasHydrated,
     }))
   )
-  const toolbarRef = useRef<{
-    focusSearch: () => void
-  } | null>(null)
-  const { data: session } = useSession()
+  const toolbarRef = useRef<ToolbarRef | null>(null)
 
   // State
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -145,14 +129,15 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   const [isExporting, setIsExporting] = useState(false)
   const [isDuplicating, setIsDuplicating] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [pendingCopilotMessage, setPendingCopilotMessage] = useState<string | null>(null)
 
   // Hooks
   const userPermissions = useUserPermissionsContext()
-  const { config: permissionConfig } = usePermissionConfig()
+  const { config: permissionConfig } = usePermissionConfig({ enabled: !IS_LOW_MEMORY_DEV })
   const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
   const duplicateWorkflowMutation = useDuplicateWorkflowMutation()
   const { data: workflows = {} } = useWorkflowMap(workspaceId)
-  const { data: folders = {} } = useFolderMap(workspaceId)
+  const { data: folders = {} } = useFolderMap(IS_LOW_MEMORY_DEV ? '' : workspaceId)
   const { activeWorkflowId, hydration } = useWorkflowRegistry(
     useShallow((state) => ({
       activeWorkflowId: state.activeWorkflowId,
@@ -241,200 +226,9 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   const canMutateWorkflow = userPermissions.canEdit && !workflowLocked
   const { isSnapshotView } = useCurrentWorkflow()
 
-  const { chatId: copilotChatId, setChatId: setCopilotChatId } = useCopilotChatSelection(
-    activeWorkflowId ?? undefined
-  )
-
-  const { data: copilotChatList = EMPTY_COPILOT_CHATS } = useCopilotChats(
-    activeWorkflowId ?? undefined
-  )
-  const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
-
-  const copilotChatTitle = useMemo(
-    () =>
-      copilotChatId ? (copilotChatList.find((c) => c.id === copilotChatId)?.title ?? null) : null,
-    [copilotChatId, copilotChatList]
-  )
-
-  const queryClient = useQueryClient()
-  const loadCopilotChats = useCallback(() => {
-    if (!activeWorkflowId) return
-    queryClient.invalidateQueries({ queryKey: copilotChatsKeys.list(activeWorkflowId) })
-  }, [activeWorkflowId, queryClient])
-
-  // Auto-select most recent on first list arrival per workflow, and drop a
-  // selection that no longer matches anything in the current list (e.g. the
-  // chat was deleted in another tab).
-  const autoSelectAttemptedForRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!activeWorkflowId) return
-
-    if (copilotChatId && !copilotChatList.find((c) => c.id === copilotChatId)) {
-      setCopilotChatId(undefined)
-      return
-    }
-
-    if (copilotChatId) return
-    if (autoSelectAttemptedForRef.current.has(activeWorkflowId)) return
-    if (copilotChatList.length === 0) return
-    autoSelectAttemptedForRef.current.add(activeWorkflowId)
-    setCopilotChatId(copilotChatList[0].id)
-  }, [copilotChatList, copilotChatId, activeWorkflowId, setCopilotChatId])
-
-  useEffect(() => {
-    posthogRef.current = posthog
-  }, [posthog])
-
-  const handleCopilotSelectChat = useCallback(
-    (chat: { id: string; title: string | null }) => {
-      setCopilotChatId(chat.id)
-      setIsCopilotHistoryOpen(false)
-    },
-    [setCopilotChatId]
-  )
-
-  const handleCopilotDeleteChat = useCallback(
-    (chatId: string) => {
-      requestJson(deleteCopilotChatContract, { body: { chatId } })
-        .then(() => {
-          if (copilotChatId === chatId) {
-            setCopilotChatId(undefined)
-          }
-          loadCopilotChats()
-        })
-        .catch((err) => {
-          logger.error('Failed to delete copilot chat', { error: toError(err).message, chatId })
-        })
-    },
-    [copilotChatId, loadCopilotChats, setCopilotChatId]
-  )
-
-  const handleCopilotToolResult = useCallback(
-    (toolName: string, success: boolean, _output: unknown) => {
-      if (toolName !== 'edit_workflow' || !success) return
-      const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
-      if (!workflowId) return
-
-      const baselineWorkflow = captureBaselineSnapshot(workflowId)
-
-      requestJson(getWorkflowNormalizedStateContract, { params: { id: workflowId } })
-        .then((freshState) => {
-          const diffStore = useWorkflowDiffStore.getState()
-          return diffStore.setProposedChanges(freshState as WorkflowState, undefined, {
-            baselineWorkflow,
-            skipPersist: true,
-          })
-        })
-        .catch((err) => {
-          logger.error('Failed to fetch/apply edit_workflow state', {
-            error: toError(err).message,
-            workflowId,
-          })
-        })
-    },
-    [activeWorkflowId]
-  )
-
-  const {
-    messages: copilotMessages,
-    isSending: copilotIsSending,
-    isReconnecting: copilotIsReconnecting,
-    sendMessage: copilotSendMessage,
-    stopGeneration: copilotStopGeneration,
-    resolvedChatId: copilotResolvedChatId,
-    messageQueue: copilotMessageQueue,
-    removeFromQueue: copilotRemoveFromQueue,
-    sendNow: copilotSendNow,
-    editQueuedMessage: copilotEditQueuedMessage,
-    getCurrentRequestId: getCopilotCurrentRequestId,
-  } = useChat(
-    workspaceId,
-    copilotChatId,
-    getWorkflowCopilotUseChatOptions({
-      workflowId: activeWorkflowId || undefined,
-      onTitleUpdate: loadCopilotChats,
-      onToolResult: handleCopilotToolResult,
-      onRequestStarted: ({ requestId, userMessageId }) => {
-        captureEvent(posthogRef.current, 'task_request_started', {
-          workspace_id: workspaceId,
-          view: 'copilot',
-          request_id: requestId,
-          user_message_id: userMessageId,
-        })
-      },
-    })
-  )
-
-  const handleCopilotNewChat = useCallback(() => {
-    if (!activeWorkflowId || !workspaceId) return
-    requestJson(createWorkflowCopilotChatContract, {
-      body: { workspaceId, workflowId: activeWorkflowId },
-    })
-      .then((data) => {
-        // Seed the new chat into the list cache before selecting it. Without this, the
-        // auto-select effect sees a selected id that isn't in the (still-stale) list and
-        // deselects it, which leaves the panel detached from the freshly created row.
-        queryClient.setQueryData<CopilotChatListItem[]>(
-          copilotChatsKeys.list(activeWorkflowId),
-          (prev) => [
-            {
-              id: data.id,
-              title: null,
-              workflowId: activeWorkflowId,
-              updatedAt: new Date().toISOString(),
-              activeStreamId: null,
-            },
-            ...(prev ?? []),
-          ]
-        )
-        setCopilotChatId(data.id)
-        loadCopilotChats()
-      })
-      .catch((err) => {
-        logger.error('Failed to create copilot chat', { error: toError(err).message })
-      })
-  }, [activeWorkflowId, workspaceId, loadCopilotChats, setCopilotChatId, queryClient])
-
-  const prevResolvedRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (
-      copilotResolvedChatId &&
-      copilotResolvedChatId !== prevResolvedRef.current &&
-      !copilotChatId
-    ) {
-      prevResolvedRef.current = copilotResolvedChatId
-      setCopilotChatId(copilotResolvedChatId)
-      loadCopilotChats()
-    } else {
-      prevResolvedRef.current = copilotResolvedChatId
-    }
-  }, [copilotResolvedChatId, copilotChatId, loadCopilotChats, setCopilotChatId])
-
-  const wasCopilotSendingRef = useRef(false)
-  useEffect(() => {
-    if (wasCopilotSendingRef.current && !copilotIsSending) {
-      loadCopilotChats()
-    }
-    wasCopilotSendingRef.current = copilotIsSending
-  }, [copilotIsSending, loadCopilotChats])
-
-  const handleCopilotStopGeneration = useCallback(() => {
-    captureEvent(posthogRef.current, 'task_generation_aborted', {
-      workspace_id: workspaceId,
-      view: 'copilot',
-      request_id: getCopilotCurrentRequestId(),
-    })
-    copilotStopGeneration()
-  }, [copilotStopGeneration, getCopilotCurrentRequestId, workspaceId])
-
-  const handleCopilotSubmit = useCallback(
-    (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
-      const trimmed = text.trim()
-      if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
-      copilotSendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
-    },
-    [copilotSendMessage]
-  )
+  const handlePendingCopilotMessageConsumed = useCallback(() => {
+    setPendingCopilotMessage(null)
+  }, [])
 
   /**
    * Mark hydration as complete on mount
@@ -448,23 +242,12 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     const handler = (e: Event) => {
       const message = (e as CustomEvent<{ message: string }>).detail?.message
       if (!message) return
+      setPendingCopilotMessage(message)
       setActiveTab('copilot')
-      copilotSendMessage(message)
     }
     window.addEventListener('mothership-send-message', handler)
     return () => window.removeEventListener('mothership-send-message', handler)
-  }, [setActiveTab, copilotSendMessage])
-
-  useEffect(() => {
-    if (activeTab !== 'copilot') return
-    const id = window.setTimeout(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>(
-        "[data-tab-content='copilot'] textarea"
-      )
-      textarea?.focus()
-    }, 0)
-    return () => window.clearTimeout(id)
-  }, [activeTab])
+  }, [setActiveTab])
 
   /**
    * Handles tab click events
@@ -608,6 +391,9 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   const hasValidationErrors = false // TODO: Add validation logic if needed
   const isWorkflowBlocked = isExecuting || hasValidationErrors
   const isButtonDisabled = !isExecuting && (isWorkflowBlocked || (!canRun && !isLoadingPermissions))
+  const shouldMountCopilotTab = !IS_LOW_MEMORY_DEV || activeTab === 'copilot'
+  const shouldMountEditorTab = !IS_LOW_MEMORY_DEV || activeTab === 'editor'
+  const shouldMountToolbarTab = !IS_LOW_MEMORY_DEV || activeTab === 'toolbar'
   /**
    * Register global keyboard shortcuts using the central commands registry.
    *
@@ -794,9 +580,8 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
             </div>
           </div>
 
-          {/* Tab Content - Keep all tabs mounted but hidden to preserve state */}
           <div className='flex-1 overflow-hidden pt-3'>
-            {!permissionConfig.hideCopilot && (
+            {!permissionConfig.hideCopilot && shouldMountCopilotTab && (
               <div
                 className={
                   _hasHydrated && activeTab === 'copilot'
@@ -807,116 +592,49 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                 }
                 data-tab-content='copilot'
               >
-                {/* Copilot Header */}
-                <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
-                  <h2 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
-                    {copilotChatTitle || 'New Chat'}
-                  </h2>
-                  <div className='flex items-center gap-2'>
-                    <Button variant='ghost' className='p-0' onClick={handleCopilotNewChat}>
-                      <Plus className='h-[14px] w-[14px]' />
-                    </Button>
-                    <Popover
-                      open={isCopilotHistoryOpen}
-                      onOpenChange={(open) => {
-                        setIsCopilotHistoryOpen(open)
-                        if (open) loadCopilotChats()
-                      }}
-                    >
-                      <PopoverTrigger asChild>
-                        <Button variant='ghost' className='p-0'>
-                          <History className='h-[14px] w-[14px]' />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align='end' side='bottom' sideOffset={8} maxHeight={280}>
-                        {copilotChatList.length === 0 ? (
-                          <div className='px-1.5 py-4 text-center text-[12px] text-muted-foreground'>
-                            No chats yet
-                          </div>
-                        ) : (
-                          <PopoverScrollArea>
-                            <PopoverSection className='pt-0'>Recent</PopoverSection>
-                            <div className='flex flex-col gap-0.5'>
-                              {copilotChatList.map((chat) => (
-                                <div key={chat.id} className='group'>
-                                  <PopoverItem
-                                    active={copilotChatId === chat.id}
-                                    onClick={() => handleCopilotSelectChat(chat)}
-                                  >
-                                    <ConversationListItem
-                                      title={chat.title || 'New Chat'}
-                                      isActive={Boolean(chat.activeStreamId)}
-                                      titleClassName='text-[13px]'
-                                      actions={
-                                        <div
-                                          className={`flex flex-shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
-                                        >
-                                          <Button
-                                            variant='ghost'
-                                            className='h-[16px] w-[16px] p-0'
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleCopilotDeleteChat(chat.id)
-                                            }}
-                                            aria-label='Delete chat'
-                                          >
-                                            <Trash className='h-[10px] w-[10px]' />
-                                          </Button>
-                                        </div>
-                                      }
-                                    />
-                                  </PopoverItem>
-                                </div>
-                              ))}
-                            </div>
-                          </PopoverScrollArea>
-                        )}
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-
-                <MothershipChat
-                  className='min-h-0 flex-1'
-                  messages={copilotMessages}
-                  isSending={copilotIsSending}
-                  isReconnecting={copilotIsReconnecting}
-                  onSubmit={handleCopilotSubmit}
-                  onStopGeneration={handleCopilotStopGeneration}
-                  messageQueue={copilotMessageQueue}
-                  onRemoveQueuedMessage={copilotRemoveFromQueue}
-                  onSendQueuedMessage={copilotSendNow}
-                  onEditQueuedMessage={copilotEditQueuedMessage}
-                  userId={session?.user?.id}
-                  chatId={copilotResolvedChatId}
-                  layout='copilot-view'
-                />
+                <Suspense fallback={null}>
+                  <LazyCopilotTab
+                    workspaceId={workspaceId}
+                    activeWorkflowId={activeWorkflowId}
+                    isActive={activeTab === 'copilot'}
+                    pendingMessage={pendingCopilotMessage}
+                    onPendingMessageConsumed={handlePendingCopilotMessageConsumed}
+                  />
+                </Suspense>
               </div>
             )}
-            <div
-              className={
-                _hasHydrated && activeTab === 'editor'
-                  ? 'h-full'
-                  : _hasHydrated
-                    ? 'hidden'
-                    : 'h-full'
-              }
-              data-tab-content='editor'
-            >
-              <Editor />
-            </div>
-            <div
-              className={
-                _hasHydrated && activeTab === 'toolbar'
-                  ? 'h-full'
-                  : _hasHydrated
-                    ? 'hidden'
-                    : 'h-full'
-              }
-              data-tab-content='toolbar'
-            >
-              <Toolbar ref={toolbarRef} isActive={activeTab === 'toolbar'} />
-            </div>
+            {shouldMountEditorTab && (
+              <div
+                className={
+                  _hasHydrated && activeTab === 'editor'
+                    ? 'h-full'
+                    : _hasHydrated
+                      ? 'hidden'
+                      : 'h-full'
+                }
+                data-tab-content='editor'
+              >
+                <Suspense fallback={null}>
+                  <LazyEditor />
+                </Suspense>
+              </div>
+            )}
+            {shouldMountToolbarTab && (
+              <div
+                className={
+                  _hasHydrated && activeTab === 'toolbar'
+                    ? 'h-full'
+                    : _hasHydrated
+                      ? 'hidden'
+                      : 'h-full'
+                }
+                data-tab-content='toolbar'
+              >
+                <Suspense fallback={null}>
+                  <LazyToolbar ref={toolbarRef} isActive={activeTab === 'toolbar'} />
+                </Suspense>
+              </div>
+            )}
           </div>
         </div>
 

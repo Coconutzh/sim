@@ -29,7 +29,11 @@ interface AllowedIntegrationsResponse {
   allowedIntegrations: string[] | null
 }
 
-function useAllowedIntegrationsFromEnv() {
+interface UsePermissionConfigOptions {
+  enabled?: boolean
+}
+
+function useAllowedIntegrationsFromEnv(enabled = true) {
   return useQuery<AllowedIntegrationsResponse>({
     queryKey: ['allowedIntegrations', 'env'],
     queryFn: async ({ signal }) => {
@@ -44,6 +48,7 @@ function useAllowedIntegrationsFromEnv() {
         throw error
       }
     },
+    enabled,
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -58,14 +63,19 @@ function intersectAllowlists(a: string[] | null, b: string[] | null): string[] |
   return a.map((i) => i.toLowerCase()).filter((i) => b.includes(i))
 }
 
-export function usePermissionConfig(): PermissionConfigResult {
+export function usePermissionConfig(
+  options: UsePermissionConfigOptions = {}
+): PermissionConfigResult {
+  const enabled = options.enabled ?? true
   const params = useParams()
   const workspaceId = typeof params?.workspaceId === 'string' ? params.workspaceId : undefined
 
-  const { data: permissionData, isLoading: isPermissionLoading } =
-    useUserPermissionConfig(workspaceId)
+  const { data: permissionData, isLoading: isPermissionLoading } = useUserPermissionConfig(
+    workspaceId,
+    enabled
+  )
   const { data: envAllowlistData, isLoading: isEnvAllowlistLoading } =
-    useAllowedIntegrationsFromEnv()
+    useAllowedIntegrationsFromEnv(enabled)
 
   const isLoading = isPermissionLoading || isEnvAllowlistLoading
 

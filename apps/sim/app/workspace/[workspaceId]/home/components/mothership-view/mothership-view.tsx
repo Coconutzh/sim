@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { forwardRef, memo, useState } from 'react'
 import type { FilePreviewSession } from '@/lib/copilot/request/session'
@@ -14,7 +14,7 @@ import type {
   MothershipResource,
   MothershipResourceType,
 } from '@/app/workspace/[workspaceId]/home/types'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ResourceActions, ResourceContent, ResourceTabs } from './components'
 
 const PREVIEW_CYCLE: Record<PreviewMode, PreviewMode> = {

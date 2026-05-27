@@ -171,7 +171,11 @@ function invalidateTableSchema(queryClient: ReturnType<typeof useQueryClient>, t
 /**
  * Fetch all tables for a workspace.
  */
-export function useTablesList(workspaceId?: string, scope: TableQueryScope = 'active') {
+export function useTablesList(
+  workspaceId?: string,
+  scope: TableQueryScope = 'active',
+  options?: { enabled?: boolean }
+) {
   return useQuery({
     queryKey: tableKeys.list(workspaceId, scope),
     queryFn: async ({ signal }) => {
@@ -183,7 +187,7 @@ export function useTablesList(workspaceId?: string, scope: TableQueryScope = 'ac
       })
       return response.data.tables
     },
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && (options?.enabled ?? true),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
   })

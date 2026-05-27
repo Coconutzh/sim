@@ -329,6 +329,8 @@ export function MothershipChat({
             onSendQueuedHead={handleSendQueuedHead}
             onEditQueuedTail={handleEditQueuedTail}
             draftScopeKey={draftScopeKey}
+            enableSpeech={layout !== 'copilot-view'}
+            lazyResourceLoading={layout === 'copilot-view'}
           />
         </div>
       </div>

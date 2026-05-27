@@ -23,7 +23,6 @@ import {
   type OutputFieldDefinition,
 } from '@/blocks/types'
 import { getToolOutputsFromCatalog } from '@/tools/outputs'
-import { getTrigger, isTriggerValid } from '@/triggers'
 
 const logger = createLogger('BlockOutputs')
 
@@ -171,15 +170,17 @@ function getTriggerId(
 ): string | undefined {
   const selectedTriggerIdValue = subBlocks?.selectedTriggerId?.value
   const triggerIdValue = subBlocks?.triggerId?.value
+  const availableTriggerIds = blockConfig.triggers?.available ?? []
 
   return (
-    (typeof selectedTriggerIdValue === 'string' && isTriggerValid(selectedTriggerIdValue)
+    (typeof selectedTriggerIdValue === 'string' &&
+    availableTriggerIds.includes(selectedTriggerIdValue)
       ? selectedTriggerIdValue
       : undefined) ||
-    (typeof triggerIdValue === 'string' && isTriggerValid(triggerIdValue)
+    (typeof triggerIdValue === 'string' && availableTriggerIds.includes(triggerIdValue)
       ? triggerIdValue
       : undefined) ||
-    blockConfig.triggers?.available?.[0]
+    availableTriggerIds[0]
   )
 }
 
@@ -264,12 +265,12 @@ export function getBlockOutputs(
 
   if (triggerMode && blockConfig.triggers?.enabled) {
     const triggerId = getTriggerId(subBlocks, blockConfig)
-    if (triggerId && isTriggerValid(triggerId)) {
-      const trigger = getTrigger(triggerId)
-      if (trigger.outputs) {
-        // TriggerOutput is compatible with OutputFieldDefinition at runtime
-        return trigger.outputs as OutputDefinition
-      }
+    if (triggerId) {
+      return filterOutputsByCondition(
+        { ...(blockConfig.outputs || {}) } as OutputDefinition,
+        subBlocks,
+        includeHidden
+      )
     }
   }
 

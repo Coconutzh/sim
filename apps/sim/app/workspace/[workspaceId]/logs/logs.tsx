@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { formatDuration } from '@sim/utils/formatting'
@@ -52,7 +52,7 @@ import {
 } from '@/app/workspace/[workspaceId]/components'
 import { useSearchState } from '@/app/workspace/[workspaceId]/logs/hooks/use-search-state'
 import type { Suggestion } from '@/app/workspace/[workspaceId]/logs/types'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import type { LogSortBy, LogSortOrder } from '@/hooks/queries/logs'

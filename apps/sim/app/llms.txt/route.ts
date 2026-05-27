@@ -5,14 +5,13 @@ export function GET() {
 
   const content = `# Sim
 
-> Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.
+> Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect focused tools and every major LLM to create agents that automate real work.
 
 Sim lets teams create agents visually with the workflow builder, conversationally through Mothership, or programmatically with the API. Each canvas includes knowledge bases, tables, files, and full observability.
 
 ## Preferred URLs
 
 - [Homepage](${baseUrl}): Product overview and primary entry point
-- [Integrations directory](${baseUrl}/integrations): Public catalog of integrations and automation capabilities
 - [Models directory](${baseUrl}/models): Public catalog of AI models, pricing, context windows, and capabilities
 - [Blog](${baseUrl}/blog): Announcements, guides, and product context
 - [Changelog](${baseUrl}/changelog): Product updates and release notes

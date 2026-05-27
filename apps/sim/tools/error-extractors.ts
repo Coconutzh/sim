@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Error Extractor Registry
  *
  * This module provides a clean, config-based approach to extracting error messages
@@ -19,7 +19,7 @@
  * 2. Add the ID to ErrorExtractorId constant at the bottom of this file
  */
 
-import { parseGraphErrorFromData } from '@/tools/microsoft_excel/utils'
+import { parseGraphErrorFromData } from '@/lib/integrations/microsoft-excel/utils'
 
 export interface ErrorInfo {
   status?: number

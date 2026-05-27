@@ -111,12 +111,16 @@ export function useWorkflowStates(
   return map
 }
 
-export function useWorkflows(workspaceId?: string, options?: { scope?: WorkflowQueryScope }) {
-  const { scope = 'active' } = options || {}
+export function useWorkflows(
+  workspaceId?: string,
+  options?: { scope?: WorkflowQueryScope; enabled?: boolean }
+) {
+  const { scope = 'active', enabled = true } = options || {}
 
   return useQuery({
     queryKey: workflowKeys.list(workspaceId, scope),
-    queryFn: workspaceId ? getWorkflowListQueryOptions(workspaceId, scope).queryFn : skipToken,
+    queryFn:
+      workspaceId && enabled ? getWorkflowListQueryOptions(workspaceId, scope).queryFn : skipToken,
     placeholderData: keepPreviousData,
     staleTime: WORKFLOW_LIST_STALE_TIME,
   })
@@ -130,12 +134,16 @@ const selectWorkflowMap = (data: WorkflowMetadata[]): Record<string, WorkflowMet
  * Uses the `select` option so the transformation runs inside React Query
  * with structural sharing — components only re-render when the record changes.
  */
-export function useWorkflowMap(workspaceId?: string, options?: { scope?: WorkflowQueryScope }) {
-  const { scope = 'active' } = options || {}
+export function useWorkflowMap(
+  workspaceId?: string,
+  options?: { scope?: WorkflowQueryScope; enabled?: boolean }
+) {
+  const { scope = 'active', enabled = true } = options || {}
 
   return useQuery({
     queryKey: workflowKeys.list(workspaceId, scope),
-    queryFn: workspaceId ? getWorkflowListQueryOptions(workspaceId, scope).queryFn : skipToken,
+    queryFn:
+      workspaceId && enabled ? getWorkflowListQueryOptions(workspaceId, scope).queryFn : skipToken,
     placeholderData: keepPreviousData,
     staleTime: WORKFLOW_LIST_STALE_TIME,
     select: selectWorkflowMap,

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Command } from 'cmdk'
@@ -10,7 +10,7 @@ import { Calendar, Database, File, HelpCircle, Settings, Table } from '@/compone
 import { Search } from '@/components/emcn/icons/search'
 import { cn } from '@/lib/core/utils/cn'
 import { captureEvent } from '@/lib/posthog/client'
-import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
+import { hasTriggerCapability } from '@/lib/workflows/triggers/client-trigger-utils'
 import { SIDEBAR_SCROLL_EVENT } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -246,7 +246,7 @@ export function SearchModal({
         routerRef.current.push(workspace.href)
       }
       captureEvent(posthogRef.current, 'search_result_selected', {
-        result_type: 'canvas',
+        result_type: 'workspace',
         query_length: deferredSearchRef.current.length,
         workspace_id: workspaceId,
       })

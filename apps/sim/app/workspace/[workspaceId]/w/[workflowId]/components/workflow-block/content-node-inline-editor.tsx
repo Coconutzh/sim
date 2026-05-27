@@ -5,14 +5,22 @@ import { lazy, Suspense, useCallback, useMemo } from 'react'
 import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
-import {
-  FileUpload,
-  LongInput,
-  TableSelector,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
+import { LongInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/long-input/long-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
 import { usePanelEditorStore } from '@/stores/panel'
+
+const FileUpload = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/file-upload'
+  ).then((module) => ({ default: module.FileUpload }))
+)
+
+const TableSelector = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/table-selector/table-selector'
+  ).then((module) => ({ default: module.TableSelector }))
+)
 
 const Dropdown = lazy(() =>
   import(
@@ -235,16 +243,18 @@ export function ContentNodeInlineEditor({
               <div className='mb-2 font-medium text-[var(--text-tertiary)] text-xs uppercase tracking-[0.08em]'>
                 Reference Image
               </div>
-              <FileUpload
-                blockId={blockId}
-                subBlockId={visualReferenceConfig.id}
-                acceptedTypes={visualReferenceConfig.acceptedTypes || '*'}
-                multiple={visualReferenceConfig.multiple === true}
-                maxSize={visualReferenceConfig.maxSize}
-                isPreview={isPreview}
-                previewValue={visualReferencePreviewValue}
-                disabled={disabled}
-              />
+              <Suspense fallback={<div className='h-9' />}>
+                <FileUpload
+                  blockId={blockId}
+                  subBlockId={visualReferenceConfig.id}
+                  acceptedTypes={visualReferenceConfig.acceptedTypes || '*'}
+                  multiple={visualReferenceConfig.multiple === true}
+                  maxSize={visualReferenceConfig.maxSize}
+                  isPreview={isPreview}
+                  previewValue={visualReferencePreviewValue}
+                  disabled={disabled}
+                />
+              </Suspense>
             </div>
           )}
         </div>
@@ -255,16 +265,18 @@ export function ContentNodeInlineEditor({
           <div className='font-medium text-[var(--text-tertiary)] text-xs uppercase tracking-[0.08em]'>
             Upload
           </div>
-          <FileUpload
-            blockId={blockId}
-            subBlockId={fileConfig.id}
-            acceptedTypes={fileConfig.acceptedTypes || '*'}
-            multiple={fileConfig.multiple === true}
-            maxSize={fileConfig.maxSize}
-            isPreview={isPreview}
-            previewValue={filePreviewValue}
-            disabled={disabled}
-          />
+          <Suspense fallback={<div className='h-9' />}>
+            <FileUpload
+              blockId={blockId}
+              subBlockId={fileConfig.id}
+              acceptedTypes={fileConfig.acceptedTypes || '*'}
+              multiple={fileConfig.multiple === true}
+              maxSize={fileConfig.maxSize}
+              isPreview={isPreview}
+              previewValue={filePreviewValue}
+              disabled={disabled}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -274,13 +286,15 @@ export function ContentNodeInlineEditor({
             <div className='font-medium text-[var(--text-tertiary)] text-xs uppercase tracking-[0.08em]'>
               Table
             </div>
-            <TableSelector
-              blockId={blockId}
-              subBlock={tableConfig}
-              disabled={disabled}
-              isPreview={isPreview}
-              previewValue={typeof tablePreviewValue === 'string' ? tablePreviewValue : null}
-            />
+            <Suspense fallback={<div className='h-8' />}>
+              <TableSelector
+                blockId={blockId}
+                subBlock={tableConfig}
+                disabled={disabled}
+                isPreview={isPreview}
+                previewValue={typeof tablePreviewValue === 'string' ? tablePreviewValue : null}
+              />
+            </Suspense>
           </div>
           <div className='flex flex-col gap-1.5'>
             <div className='font-medium text-[var(--text-tertiary)] text-xs uppercase tracking-[0.08em]'>

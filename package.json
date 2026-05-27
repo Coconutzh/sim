@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:sockets": "cd apps/realtime && bun run dev",
-    "dev:full": "bunx concurrently -n \"App,Realtime\" -c \"cyan,magenta\" \"cd apps/sim && bun run dev\" \"cd apps/realtime && bun run dev\"",
+    "dev:full": "bunx concurrently -n \"App,Realtime\" -c \"cyan,magenta\" \"cd apps/sim && bun run dev:local\" \"cd apps/realtime && bun run dev\"",
     "dev:full:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop-local-dev.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-local-db.ps1 && bunx concurrently -n \"App,Realtime\" -c \"cyan,magenta\" \"cd apps/sim && bun run dev:local\" \"cd apps/realtime && bun run dev\"",
     "test": "turbo run test",
     "format": "turbo run format",

@@ -1,5 +1,4 @@
-import type { ComponentType } from 'react'
-import { SlackSetupWizard } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/slack-setup-wizard/slack-setup-wizard'
+import { type ComponentType, type LazyExoticComponent, lazy } from 'react'
 
 /**
  * Props every `type: 'modal'` sub-block component must accept. The sub-block
@@ -10,6 +9,10 @@ export interface ModalSubBlockProps {
   isPreview?: boolean
   disabled?: boolean
 }
+
+type ModalSubBlockComponent =
+  | ComponentType<ModalSubBlockProps>
+  | LazyExoticComponent<ComponentType<ModalSubBlockProps>>
 
 /**
  * Registry of available modal sub-block components keyed by the `modalId`
@@ -22,8 +25,12 @@ export interface ModalSubBlockProps {
  * Keep this file client-only — it imports React components and must not be
  * pulled into trigger / block config modules.
  */
-export const MODAL_REGISTRY: Readonly<Record<string, ComponentType<ModalSubBlockProps>>> = {
-  'slack-setup-wizard': SlackSetupWizard,
+export const MODAL_REGISTRY: Readonly<Record<string, ModalSubBlockComponent>> = {
+  'slack-setup-wizard': lazy(() =>
+    import(
+      '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/slack-setup-wizard/slack-setup-wizard'
+    ).then((module) => ({ default: module.SlackSetupWizard }))
+  ),
 }
 
 export type ModalId = keyof typeof MODAL_REGISTRY

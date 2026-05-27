@@ -1,5 +1,6 @@
-import { createLogger } from '@sim/logger'
+﻿import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { emailBisonHeaders, emailBisonUrl } from '@/lib/integrations/emailbison/utils'
 import { getNotificationUrl, getProviderConfig } from '@/lib/webhooks/provider-subscription-utils'
 import type {
   DeleteSubscriptionContext,
@@ -10,7 +11,6 @@ import type {
   SubscriptionResult,
   WebhookProviderHandler,
 } from '@/lib/webhooks/providers/types'
-import { emailBisonHeaders, emailBisonUrl } from '@/tools/emailbison/utils'
 
 const logger = createLogger('WebhookProvider:EmailBison')
 

@@ -64,7 +64,7 @@ export function usePermissionGroupMembers(workspaceId?: string, permissionGroupI
   })
 }
 
-export function useUserPermissionConfig(workspaceId?: string) {
+export function useUserPermissionConfig(workspaceId?: string, enabled = true) {
   return useQuery<UserPermissionConfig>({
     queryKey: permissionGroupKeys.userConfig(workspaceId),
     queryFn: async ({ signal }) => {
@@ -74,7 +74,7 @@ export function useUserPermissionConfig(workspaceId?: string) {
       })
       return data
     },
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && enabled,
     staleTime: 60 * 1000,
   })
 }

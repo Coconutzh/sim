@@ -14,19 +14,49 @@ import type { StreamingMode } from './text-editor-state'
 
 export type { StreamingMode } from './text-editor-state'
 
-import { DocxPreview } from './docx-preview'
-import { ImagePreview } from './image-preview'
 import type { PdfDocumentSource } from './pdf-viewer'
-import { PptxPreview } from './pptx-preview'
 import { PDF_PAGE_SKELETON, PreviewError, resolvePreviewError } from './preview-shared'
-import { TextEditor } from './text-editor'
-import { XlsxPreview } from './xlsx-preview'
+
+const DocxPreview = dynamic(() => import('./docx-preview').then((m) => m.DocxPreview), {
+  ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
+})
+
+const ImagePreview = dynamic(() => import('./image-preview').then((m) => m.ImagePreview), {
+  ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
+})
 
 const PdfViewerCore = dynamic(() => import('./pdf-viewer').then((m) => m.PdfViewerCore), {
   ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
+})
+
+const PptxPreview = dynamic(() => import('./pptx-preview').then((m) => m.PptxPreview), {
+  ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
+})
+
+const TextEditor = dynamic(() => import('./text-editor').then((m) => m.TextEditor), {
+  ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
+})
+
+const XlsxPreview = dynamic(() => import('./xlsx-preview').then((m) => m.XlsxPreview), {
+  ssr: false,
+  loading: () => <ViewerLoadingSkeleton />,
 })
 
 const logger = createLogger('FileViewer')
+
+function ViewerLoadingSkeleton() {
+  return (
+    <div className='flex h-full flex-1 flex-col items-center justify-center gap-4 bg-[var(--surface-1)] p-8'>
+      <Skeleton className='h-[18px] w-[180px]' />
+      <Skeleton className='h-[12px] w-[240px]' />
+    </div>
+  )
+}
 
 interface FileViewerProps {
   file: WorkspaceFileRecord

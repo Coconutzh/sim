@@ -15,17 +15,27 @@ interface Storage<T> {
 
 let storage: Storage<RequestContext>
 
-if (typeof globalThis.process !== 'undefined' && globalThis.process.versions?.node) {
-  // Node.js — use real AsyncLocalStorage
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AsyncLocalStorage } = require('node:async_hooks') as typeof import('node:async_hooks')
-  storage = new AsyncLocalStorage<RequestContext>()
-} else {
-  // Edge / browser — no-op
-  storage = {
+type AsyncLocalStorageConstructor = new <T>() => Storage<T>
+
+function createNoopStorage(): Storage<RequestContext> {
+  return {
     getStore: () => undefined,
     run: <R>(_store: RequestContext, fn: () => R) => fn(),
   }
+}
+
+if (typeof globalThis.process !== 'undefined' && globalThis.process.versions?.node) {
+  try {
+    const loadNodeModule = Function('specifier', 'return require(specifier)') as (
+      specifier: string
+    ) => { AsyncLocalStorage: AsyncLocalStorageConstructor }
+    const { AsyncLocalStorage } = loadNodeModule('node:async_hooks')
+    storage = new AsyncLocalStorage<RequestContext>()
+  } catch {
+    storage = createNoopStorage()
+  }
+} else {
+  storage = createNoopStorage()
 }
 
 /**

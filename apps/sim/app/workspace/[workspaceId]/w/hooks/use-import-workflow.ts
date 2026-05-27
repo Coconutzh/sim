@@ -4,12 +4,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { captureEvent } from '@/lib/posthog/client'
-import {
-  extractWorkflowsFromFiles,
-  extractWorkflowsFromZip,
-  persistImportedWorkflow,
-  sanitizePathSegment,
-} from '@/lib/workflows/operations/import-export'
 import { useCreateFolder } from '@/hooks/queries/folders'
 import { folderKeys } from '@/hooks/queries/utils/folder-keys'
 import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
@@ -49,6 +43,7 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
   const importSingleWorkflow = useCallback(
     async (content: string, filename: string, folderId?: string, sortOrder?: number) => {
       clearDiff()
+      const { persistImportedWorkflow } = await import('@/lib/workflows/operations/import-export')
       const result = await persistImportedWorkflow({
         content,
         filename,
@@ -89,6 +84,9 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
         const importedWorkflowIds: string[] = []
 
         if (hasZip && fileArray.length === 1) {
+          const { extractWorkflowsFromZip, sanitizePathSegment } = await import(
+            '@/lib/workflows/operations/import-export'
+          )
           const zipFile = fileArray[0]
           const { workflows: extractedWorkflows, metadata } = await extractWorkflowsFromZip(zipFile)
 
@@ -191,6 +189,9 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
             }
           }
         } else if (jsonFiles.length > 0) {
+          const { extractWorkflowsFromFiles } = await import(
+            '@/lib/workflows/operations/import-export'
+          )
           const extractedWorkflows = await extractWorkflowsFromFiles(jsonFiles)
 
           for (const workflow of extractedWorkflows) {

@@ -39,7 +39,7 @@ import { LogDetailsContent } from '@/app/workspace/[workspaceId]/logs/components
 import {
   useUserPermissionsContext,
   useWorkspacePermissionsContext,
-} from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+} from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { Table } from '@/app/workspace/[workspaceId]/tables/[tableId]/table'
 import { useUsageLimits } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'

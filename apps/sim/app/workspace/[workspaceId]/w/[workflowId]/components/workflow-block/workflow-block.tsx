@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+﻿import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '@sim/logger'
 import { isEqual } from 'es-toolkit'
 import { useParams } from 'next/navigation'
@@ -23,7 +23,7 @@ import {
   isSubBlockVisibleForMode,
   resolveDependencyValue,
 } from '@/lib/workflows/subblocks/visibility'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { ContentNodeInlineEditor } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/content-node-inline-editor'
 import {
@@ -604,13 +604,21 @@ const SubBlockRow = memo(function SubBlockRow({
   )
   const knowledgeBaseDisplayName = kbForDisplayName?.name ?? null
 
-  const { data: workflowMapForLookup = {} } = useWorkflowMap(workspaceId)
+  const shouldResolveWorkflowName =
+    subBlock?.type === 'workflow-selector' && typeof rawValue === 'string' && rawValue.length > 0
+  const { data: workflowMapForLookup = {} } = useWorkflowMap(workspaceId, {
+    enabled: shouldResolveWorkflowName,
+  })
   const workflowSelectionName = useMemo(() => {
     if (subBlock?.type !== 'workflow-selector' || typeof rawValue !== 'string') return null
     return workflowMapForLookup[rawValue]?.name ?? null
   }, [workflowMapForLookup, subBlock?.type, rawValue])
 
-  const { data: mcpServers = [] } = useMcpServers(workspaceId || '')
+  const shouldResolveMcpServerName =
+    subBlock?.type === 'mcp-server-selector' && typeof rawValue === 'string' && rawValue.length > 0
+  const { data: mcpServers = [] } = useMcpServers(workspaceId || '', {
+    enabled: shouldResolveMcpServerName,
+  })
   const mcpServerDisplayName = useMemo(() => {
     if (subBlock?.type !== 'mcp-server-selector' || typeof rawValue !== 'string') {
       return null
@@ -619,7 +627,11 @@ const SubBlockRow = memo(function SubBlockRow({
     return server?.name ?? null
   }, [subBlock?.type, rawValue, mcpServers])
 
-  const { data: mcpToolsData = [] } = useMcpToolsQuery(workspaceId || '')
+  const shouldResolveMcpToolName =
+    subBlock?.type === 'mcp-tool-selector' && typeof rawValue === 'string' && rawValue.length > 0
+  const { data: mcpToolsData = [] } = useMcpToolsQuery(workspaceId || '', {
+    enabled: shouldResolveMcpToolName,
+  })
   const mcpToolDisplayName = useMemo(() => {
     if (subBlock?.type !== 'mcp-tool-selector' || typeof rawValue !== 'string') {
       return null
@@ -632,7 +644,11 @@ const SubBlockRow = memo(function SubBlockRow({
     return tool?.name ?? null
   }, [subBlock?.type, rawValue, mcpToolsData])
 
-  const { data: tables = [] } = useTablesList(workspaceId || '')
+  const shouldResolveTableName =
+    subBlock?.type === 'table-selector' && typeof rawValue === 'string' && rawValue.length > 0
+  const { data: tables = [] } = useTablesList(workspaceId || '', 'active', {
+    enabled: shouldResolveTableName,
+  })
   const tableDisplayName = useMemo(() => {
     if (subBlock?.type !== 'table-selector' || typeof rawValue !== 'string') {
       return null
@@ -698,7 +714,19 @@ const SubBlockRow = memo(function SubBlockRow({
    * Hydrates tool references to display names.
    * Follows the same pattern as other selectors (Slack channels, MCP tools, etc.)
    */
-  const { data: customTools = [] } = useCustomTools(workspaceId || '')
+  const shouldResolveCustomToolNames =
+    subBlock?.type === 'tool-input' &&
+    Array.isArray(rawValue) &&
+    rawValue.some(
+      (tool) =>
+        tool &&
+        typeof tool === 'object' &&
+        tool.type === 'custom-tool' &&
+        typeof tool.customToolId === 'string'
+    )
+  const { data: customTools = [] } = useCustomTools(workspaceId || '', {
+    enabled: shouldResolveCustomToolNames,
+  })
 
   const toolsDisplayValue = useMemo(() => {
     if (subBlock?.type !== 'tool-input' || !Array.isArray(rawValue) || rawValue.length === 0) {
@@ -772,7 +800,11 @@ const SubBlockRow = memo(function SubBlockRow({
    * Hydrates skill references to display names.
    * Resolves skill IDs to their current names from the skills query.
    */
-  const { data: workspaceSkills = [] } = useSkills(workspaceId || '')
+  const shouldResolveSkillNames =
+    subBlock?.type === 'skill-input' && Array.isArray(rawValue) && rawValue.length > 0
+  const { data: workspaceSkills = [] } = useSkills(workspaceId || '', {
+    enabled: shouldResolveSkillNames,
+  })
 
   const skillsDisplayValue = useMemo(() => {
     if (subBlock?.type !== 'skill-input' || !Array.isArray(rawValue) || rawValue.length === 0) {

@@ -54,12 +54,16 @@ async function fetchFolders(
   return folders.map(mapFolder)
 }
 
-export function useFolders(workspaceId?: string, options?: { scope?: FolderQueryScope }) {
+export function useFolders(
+  workspaceId?: string,
+  options?: { scope?: FolderQueryScope; enabled?: boolean }
+) {
   const scope = options?.scope ?? 'active'
+  const enabled = options?.enabled ?? true
   return useQuery({
     queryKey: folderKeys.list(workspaceId, scope),
     queryFn: ({ signal }) => fetchFolders(workspaceId as string, scope, signal),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && enabled,
     placeholderData: keepPreviousData,
     staleTime: 60 * 1000,
   })
@@ -68,11 +72,11 @@ export function useFolders(workspaceId?: string, options?: { scope?: FolderQuery
 const selectFolderMap = (folders: WorkflowFolder[]): Record<string, WorkflowFolder> =>
   Object.fromEntries(folders.map((folder) => [folder.id, folder]))
 
-export function useFolderMap(workspaceId?: string) {
+export function useFolderMap(workspaceId?: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: folderKeys.list(workspaceId),
     queryFn: ({ signal }) => fetchFolders(workspaceId as string, 'active', signal),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && (options?.enabled ?? true),
     placeholderData: keepPreviousData,
     staleTime: 60 * 1000,
     select: selectFolderMap,

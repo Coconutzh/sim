@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import {
   lazy,
@@ -57,24 +57,22 @@ import { captureEvent } from '@/lib/posthog/client'
 import {
   START_NAV_TOUR_EVENT,
   START_WORKFLOW_TOUR_EVENT,
-} from '@/app/workspace/[workspaceId]/components/product-tour'
+} from '@/app/workspace/[workspaceId]/components/product-tour/tour-events'
 import { PublicationNotificationBell } from '@/app/workspace/[workspaceId]/components/publication-notification-bell'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
   CollapsedFolderItems,
   CollapsedSidebarMenu,
   CollapsedTaskFlyoutItem,
   CollapsedWorkflowFlyoutItem,
-  HelpModal,
-  NavItemContextMenu,
-  SettingsSidebar,
-  WorkflowList,
-  WorkspaceHeader,
-} from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
+} from '@/app/workspace/[workspaceId]/w/components/sidebar/components/collapsed-sidebar-menu/collapsed-sidebar-menu'
+import { NavItemContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/nav-item-context-menu'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
+import { WorkflowList } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/workflow-list'
+import { WorkspaceHeader } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header'
 import {
   useContextMenu,
   useFlyoutInlineRename,
@@ -131,6 +129,16 @@ const SearchModal = lazy(() =>
   import(
     '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-modal'
   ).then((module) => ({ default: module.SearchModal }))
+)
+const SettingsSidebar = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-sidebar'
+  ).then((module) => ({ default: module.SettingsSidebar }))
+)
+const HelpModal = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/components/sidebar/components/help-modal/help-modal'
+  ).then((module) => ({ default: module.HelpModal }))
 )
 
 export function SidebarTooltip({
@@ -1583,10 +1591,12 @@ export const Sidebar = memo(function Sidebar() {
             </div>
 
             {isOnSettingsPage ? (
-              <SettingsSidebar
-                isCollapsed={isCollapsed}
-                showCollapsedTooltips={showCollapsedTooltips}
-              />
+              <Suspense fallback={null}>
+                <SettingsSidebar
+                  isCollapsed={isCollapsed}
+                  showCollapsedTooltips={showCollapsedTooltips}
+                />
+              </Suspense>
             ) : (
               <>
                 <div className='mt-2.5 flex flex-shrink-0 flex-col gap-0.5 px-2'>
@@ -2074,12 +2084,16 @@ export const Sidebar = memo(function Sidebar() {
         </Suspense>
       )}
 
-      <HelpModal
-        open={isHelpModalOpen}
-        onOpenChange={setIsHelpModalOpen}
-        workflowId={workflowId}
-        workspaceId={workspaceId}
-      />
+      {isHelpModalOpen && (
+        <Suspense fallback={null}>
+          <HelpModal
+            open={isHelpModalOpen}
+            onOpenChange={setIsHelpModalOpen}
+            workflowId={workflowId}
+            workspaceId={workspaceId}
+          />
+        </Suspense>
+      )}
     </>
   )
 })

@@ -24,6 +24,7 @@ interface UseSpeechToTextProps {
   onTranscript: (text: string) => void
   onUsageLimitExceeded?: () => void
   language?: string
+  enabled?: boolean
 }
 
 interface UseSpeechToTextReturn {
@@ -38,6 +39,7 @@ export function useSpeechToText({
   onTranscript,
   onUsageLimitExceeded,
   language,
+  enabled = true,
 }: UseSpeechToTextProps): UseSpeechToTextReturn {
   const [isListening, setIsListening] = useState(false)
   const [isSupported, setIsSupported] = useState(false)
@@ -66,6 +68,11 @@ export function useSpeechToText({
   languageRef.current = language
 
   useEffect(() => {
+    if (!enabled) {
+      setIsSupported(false)
+      return
+    }
+
     const browserOk =
       typeof window !== 'undefined' &&
       typeof AudioContext !== 'undefined' &&
@@ -84,7 +91,7 @@ export function useSpeechToText({
       .catch(() => {
         if (mountedRef.current) setIsSupported(false)
       })
-  }, [])
+  }, [enabled])
 
   const flushAudioBuffer = useCallback(() => {
     const ws = wsRef.current

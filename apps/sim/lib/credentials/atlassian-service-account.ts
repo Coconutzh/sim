@@ -1,4 +1,4 @@
-import { parseAtlassianErrorMessage } from '@/tools/jira/utils'
+﻿import { parseAtlassianErrorMessage } from '@/lib/integrations/atlassian/jira'
 
 /**
  * Discrete validation failure codes returned to the client. The UI maps each

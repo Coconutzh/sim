@@ -70,7 +70,6 @@ const WORKSPACE: ProductLink[] = [
 
 const EXPLORE: SidebarLink[] = [
   { label: 'Models', href: '/models' },
-  { label: 'Integrations', href: '/integrations' },
   { label: 'Changelog', href: '/changelog' },
   { label: 'Self-hosting', href: 'https://docs.sim.ai/self-hosting', external: true },
 ]

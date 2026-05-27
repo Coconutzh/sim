@@ -47,28 +47,6 @@ const BLOCK_LINKS: FooterItem[] = [
   { label: 'Loop', href: 'https://docs.sim.ai/blocks/loop', external: true },
 ]
 
-const INTEGRATION_LINKS: FooterItem[] = [
-  { label: 'All Integrations', href: '/integrations' },
-  { label: 'Confluence', href: 'https://docs.sim.ai/tools/confluence', external: true },
-  { label: 'Slack', href: 'https://docs.sim.ai/tools/slack', external: true },
-  { label: 'GitHub', href: 'https://docs.sim.ai/tools/github', external: true },
-  { label: 'Gmail', href: 'https://docs.sim.ai/tools/gmail', external: true },
-  { label: 'HubSpot', href: 'https://docs.sim.ai/tools/hubspot', external: true },
-  { label: 'Salesforce', href: 'https://docs.sim.ai/tools/salesforce', external: true },
-  { label: 'Notion', href: 'https://docs.sim.ai/tools/notion', external: true },
-  { label: 'Google Drive', href: 'https://docs.sim.ai/tools/google_drive', external: true },
-  { label: 'Google Sheets', href: 'https://docs.sim.ai/tools/google_sheets', external: true },
-  { label: 'Supabase', href: 'https://docs.sim.ai/tools/supabase', external: true },
-  { label: 'Stripe', href: 'https://docs.sim.ai/tools/stripe', external: true },
-  { label: 'Jira', href: 'https://docs.sim.ai/tools/jira', external: true },
-  { label: 'Linear', href: 'https://docs.sim.ai/tools/linear', external: true },
-  { label: 'Airtable', href: 'https://docs.sim.ai/tools/airtable', external: true },
-  { label: 'Firecrawl', href: 'https://docs.sim.ai/tools/firecrawl', external: true },
-  { label: 'Discord', href: 'https://docs.sim.ai/tools/discord', external: true },
-  { label: 'Microsoft Teams', href: 'https://docs.sim.ai/tools/microsoft_teams', external: true },
-  { label: 'Telegram', href: 'https://docs.sim.ai/tools/telegram', external: true },
-]
-
 const SOCIAL_LINKS: FooterItem[] = [
   { label: 'X (Twitter)', href: 'https://x.com/simdotai', external: true, externalArrow: true },
   {
@@ -189,7 +167,7 @@ export default function Footer({ hideCTA }: FooterProps) {
             aria-label='Footer navigation'
             itemScope
             itemType='https://schema.org/SiteNavigationElement'
-            className='relative z-[1] grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-7'
+            className='relative z-[1] grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-6'
           >
             <div className='col-span-2 flex flex-col gap-6 sm:col-span-1'>
               <Link href='/' aria-label='Sim home'>
@@ -206,7 +184,6 @@ export default function Footer({ hideCTA }: FooterProps) {
             <FooterColumn title='Product' items={PRODUCT_LINKS} />
             <FooterColumn title='Resources' items={RESOURCES_LINKS} />
             <FooterColumn title='Blocks' items={BLOCK_LINKS} />
-            <FooterColumn title='Integrations' items={INTEGRATION_LINKS} />
             <FooterColumn title='Socials' items={SOCIAL_LINKS} />
             <FooterColumn title='Legal' items={LEGAL_LINKS} />
           </nav>

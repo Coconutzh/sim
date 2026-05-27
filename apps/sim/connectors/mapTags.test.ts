@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @vitest-environment node
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -16,8 +16,11 @@ vi.mock('@/lib/knowledge/documents/utils', () => ({
   fetchWithRetry: vi.fn(),
   VALIDATE_RETRY_OPTIONS: {},
 }))
-vi.mock('@/tools/jira/utils', () => ({ extractAdfText: vi.fn(), getJiraCloudId: vi.fn() }))
-vi.mock('@/tools/confluence/utils', () => ({ getConfluenceCloudId: vi.fn() }))
+vi.mock('@/lib/integrations/atlassian/jira', () => ({
+  extractAdfText: vi.fn(),
+  getJiraCloudId: vi.fn(),
+}))
+vi.mock('@/lib/integrations/atlassian/confluence', () => ({ getConfluenceCloudId: vi.fn() }))
 
 import { airtableConnector } from '@/connectors/airtable/airtable'
 import { confluenceConnector } from '@/connectors/confluence/confluence'

@@ -1,4 +1,4 @@
-import { createLogger } from '@sim/logger'
+﻿import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { EvernoteIcon } from '@/components/icons'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
@@ -10,7 +10,7 @@ import {
   TYPE_LIST,
   TYPE_STRING,
   TYPE_STRUCT,
-} from '@/app/api/tools/evernote/lib/thrift'
+} from '@/connectors/evernote/lib/thrift'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
 

@@ -1,4 +1,4 @@
-import type { NextConfig } from 'next'
+﻿import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
 import { isDev } from './lib/core/config/feature-flags'
 import {
@@ -77,7 +77,6 @@ const nextConfig: NextConfig = {
   },
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   serverExternalPackages: [
-    '@1password/sdk',
     '@opentelemetry/api',
     '@opentelemetry/exporter-trace-otlp-http',
     '@opentelemetry/resources',

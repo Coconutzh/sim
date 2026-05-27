@@ -1,5 +1,5 @@
-import { getEffectiveBlockOutputPaths } from '@/lib/workflows/blocks/block-outputs'
-import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
+﻿import { getEffectiveBlockOutputPaths } from '@/lib/workflows/blocks/block-outputs'
+import { hasTriggerCapability } from '@/lib/workflows/triggers/client-trigger-utils'
 import { TRIGGER_TYPES } from '@/lib/workflows/triggers/triggers'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { normalizeName } from '@/executor/constants'

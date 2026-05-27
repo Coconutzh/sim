@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isEqual } from 'es-toolkit'
@@ -26,7 +26,7 @@ import {
   resolveCanonicalMode,
   shouldUseSubBlockForTriggerModeCanonicalIndex,
 } from '@/lib/workflows/subblocks/visibility'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import {
   ConnectionBlocks,
   SubBlock,
@@ -63,6 +63,7 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 /** Stable empty object to avoid creating new references */
 const EMPTY_SUBBLOCK_VALUES = {} as Record<string, any>
+const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
 
 /** Shared style for dashed divider lines */
 const DASHED_DIVIDER_STYLE = {
@@ -138,10 +139,12 @@ export function Editor() {
   const userPermissions = useUserPermissionsContext()
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const workflowId = activeWorkflowId ?? (params.workflowId as string | undefined)
-  const { data: workflows = {} } = useWorkflowMap(workspaceId)
-  const { data: folders = {} } = useFolderMap(workspaceId)
+  const { data: workflows = {} } = useWorkflowMap(workspaceId, { enabled: !IS_LOW_MEMORY_DEV })
+  const { data: folders = {} } = useFolderMap(workspaceId, { enabled: !IS_LOW_MEMORY_DEV })
   const workflowMetadata = workflowId ? workflows[workflowId] : undefined
-  const workflowLocked = isWorkflowEffectivelyLocked(workflowMetadata, folders)
+  const workflowLocked = IS_LOW_MEMORY_DEV
+    ? false
+    : isWorkflowEffectivelyLocked(workflowMetadata, folders)
 
   // Check if block is locked (or inside a locked ancestor) and compute edit permission
   // Locked blocks cannot be edited by anyone (admins can only lock/unlock)

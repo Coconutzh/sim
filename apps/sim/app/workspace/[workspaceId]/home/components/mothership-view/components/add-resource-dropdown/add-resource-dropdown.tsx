@@ -66,15 +66,29 @@ const LOG_DROPDOWN_FILTERS = {
 export function useAvailableResources(
   workspaceId: string,
   existingKeys: Set<string>,
-  excludeTypes?: readonly MothershipResourceType[]
+  excludeTypes?: readonly MothershipResourceType[],
+  options?: { enabled?: boolean; includeTypes?: readonly MothershipResourceType[] }
 ): AvailableItemsByType[] {
-  const { data: workflows = [] } = useWorkflows(workspaceId)
-  const { data: tables = [] } = useTablesList(workspaceId)
-  const { data: files = [] } = useWorkspaceFiles(workspaceId)
-  const { data: knowledgeBases } = useKnowledgeBasesQuery(workspaceId)
-  const { data: folders = [] } = useFolders(workspaceId)
-  const { data: tasks = [] } = useTasks(workspaceId)
-  const { data: logsData } = useLogsList(workspaceId, LOG_DROPDOWN_FILTERS)
+  const enabled = options?.enabled ?? true
+  const includedTypes = useMemo(
+    () => (options?.includeTypes ? new Set(options.includeTypes) : null),
+    [options?.includeTypes]
+  )
+  const isIncluded = (type: MothershipResourceType) =>
+    enabled && (!includedTypes || includedTypes.has(type))
+  const enabledWorkspaceId = (type: MothershipResourceType) =>
+    isIncluded(type) || (type === 'workflow' && isIncluded('folder')) ? workspaceId : ''
+  const { data: workflows = [] } = useWorkflows(enabledWorkspaceId('workflow'))
+  const { data: tables = [] } = useTablesList(enabledWorkspaceId('table'))
+  const { data: files = [] } = useWorkspaceFiles(enabledWorkspaceId('file'))
+  const { data: knowledgeBases } = useKnowledgeBasesQuery(enabledWorkspaceId('knowledgebase'), {
+    enabled: isIncluded('knowledgebase'),
+  })
+  const { data: folders = [] } = useFolders(enabledWorkspaceId('folder'))
+  const { data: tasks = [] } = useTasks(enabledWorkspaceId('task'))
+  const { data: logsData } = useLogsList(enabledWorkspaceId('log'), LOG_DROPDOWN_FILTERS, {
+    enabled: isIncluded('log'),
+  })
   const logs = useMemo(() => (logsData?.pages ?? []).flatMap((page) => page.logs), [logsData])
   const workflowColorById = useMemo(() => {
     const map = new Map<string, string>()
@@ -158,7 +172,9 @@ export function useAvailableResources(
         }),
       },
     ]
-    return groups.filter((g) => !excluded.has(g.type))
+    return groups.filter(
+      (g) => !excluded.has(g.type) && (!includedTypes || includedTypes.has(g.type))
+    )
   }, [
     workflows,
     folders,
@@ -170,6 +186,7 @@ export function useAvailableResources(
     workflowColorById,
     existingKeys,
     excludeTypes,
+    includedTypes,
   ])
 }
 

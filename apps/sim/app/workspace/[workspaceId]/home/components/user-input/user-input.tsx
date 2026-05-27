@@ -39,6 +39,7 @@ import {
 import type {
   FileAttachmentForApi,
   MothershipResource,
+  MothershipResourceType,
   QueuedMessage,
 } from '@/app/workspace/[workspaceId]/home/types'
 import {
@@ -61,6 +62,19 @@ import type { ChatContext } from '@/stores/panel'
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
 const logger = createLogger('UserInput')
+const ALL_RESOURCE_TYPES = [
+  'workflow',
+  'folder',
+  'table',
+  'file',
+  'knowledgebase',
+  'task',
+  'log',
+] as const satisfies readonly MothershipResourceType[]
+const INITIAL_RESOURCE_TYPES = [
+  'workflow',
+  'folder',
+] as const satisfies readonly MothershipResourceType[]
 
 function getCaretAnchor(
   textarea: HTMLTextAreaElement,
@@ -123,6 +137,8 @@ interface UserInputProps {
   onContextRemove?: (context: ChatContext) => void
   onSendQueuedHead?: () => void
   onEditQueuedTail?: () => void
+  enableSpeech?: boolean
+  lazyResourceLoading?: boolean
 }
 
 export interface UserInputHandle {
@@ -142,6 +158,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     onContextRemove,
     onSendQueuedHead,
     onEditQueuedTail,
+    enableSpeech = true,
+    lazyResourceLoading = false,
   },
   ref
 ) {
@@ -159,6 +177,11 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   const plusMenuRef = useRef<PlusMenuHandle>(null)
 
   const [prevDefaultValue, setPrevDefaultValue] = useState(defaultValue)
+  const [resourceLookupEnabled, setResourceLookupEnabled] = useState(!lazyResourceLoading)
+  const [resourceTypes, setResourceTypes] = useState<readonly MothershipResourceType[]>(() =>
+    lazyResourceLoading ? INITIAL_RESOURCE_TYPES : ALL_RESOURCE_TYPES
+  )
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   if (defaultValue && defaultValue !== prevDefaultValue) {
     setPrevDefaultValue(defaultValue)
     setValue(defaultValue)
@@ -305,7 +328,36 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     return keys
   }, [contextManagement.selectedContexts])
 
-  const availableResources = useAvailableResources(workspaceId, existingResourceKeys)
+  useEffect(() => {
+    if (!lazyResourceLoading) {
+      setResourceTypes(ALL_RESOURCE_TYPES)
+      return
+    }
+    if (!resourceLookupEnabled) {
+      setResourceTypes(INITIAL_RESOURCE_TYPES)
+      return
+    }
+
+    setResourceTypes(INITIAL_RESOURCE_TYPES)
+  }, [lazyResourceLoading, resourceLookupEnabled])
+
+  useEffect(() => {
+    if (!lazyResourceLoading || !resourceLookupEnabled) return
+    if (mentionQuery && mentionQuery.trim().length > 0) {
+      setResourceTypes(ALL_RESOURCE_TYPES)
+    }
+  }, [lazyResourceLoading, mentionQuery, resourceLookupEnabled])
+
+  const handleRequestFullResources = useCallback(() => {
+    if (lazyResourceLoading) {
+      setResourceTypes(ALL_RESOURCE_TYPES)
+    }
+  }, [lazyResourceLoading])
+
+  const availableResources = useAvailableResources(workspaceId, existingResourceKeys, undefined, {
+    enabled: resourceLookupEnabled,
+    includeTypes: resourceTypes,
+  })
 
   const mentionMenu = useMentionMenu({
     message: value,
@@ -347,6 +399,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   } = useSpeechToText({
     onTranscript: handleTranscript,
     onUsageLimitExceeded: handleUsageLimitExceeded,
+    enabled: enableSpeech,
   })
 
   const toggleListening = useCallback(() => {
@@ -372,7 +425,6 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   const atInsertPosRef = useRef<number | null>(null)
   const pendingCursorRef = useRef<number | null>(null)
   const mentionRangeRef = useRef<{ start: number; end: number } | null>(null)
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
 
   useImperativeHandle(
     ref,
@@ -748,6 +800,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
 
       const wasActive = mentionRangeRef.current !== null
       mentionRangeRef.current = { start: active.start, end: active.end }
+      setResourceLookupEnabled(true)
       setMentionQuery(active.query)
       if (!wasActive) {
         // Anchor at the caret so the menu floats above the user's cursor.
@@ -950,6 +1003,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
             ref={plusMenuRef}
             availableResources={availableResources}
             onResourceSelect={handleResourceSelect}
+            onOpen={() => setResourceLookupEnabled(true)}
+            onRequestFullResources={handleRequestFullResources}
             onClose={handlePlusMenuClose}
             textareaRef={textareaRef}
             pendingCursorRef={pendingCursorRef}
