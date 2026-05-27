@@ -12,11 +12,20 @@ import {
   resolveCanonicalMode,
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
-import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
+import type { BlockConfig, ParamType, SubBlockConfig } from '@/blocks/types'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
-import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
+import type { BlockState, Loop, Parallel, SubBlockState } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { getTool } from '@/tools/utils'
+
+function toSubBlockStateValue(value: unknown): SubBlockState['value'] {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' || typeof value === 'number') return value
+  if (Array.isArray(value) && value.every((row) => Array.isArray(row))) {
+    return value.map((row) => row.map((cell) => String(cell)))
+  }
+  return JSON.stringify(value)
+}
 
 function shouldSerializeSubBlock(
   subBlockConfig: SubBlockConfig,
@@ -128,7 +137,7 @@ export class LightweightSerializer {
       inputs: Object.fromEntries(
         Object.entries(blockConfig.inputs || {}).map(([key, config]) => [
           key,
-          (config as { type?: unknown }).type,
+          config.type as ParamType,
         ])
       ),
       outputs: { ...block.outputs },
@@ -300,12 +309,12 @@ export class LightweightSerializer {
     const blockConfig = getBlockConfigFromCatalog(blockType)
     if (!blockConfig) throw new Error(`Invalid block type: ${blockType}`)
 
-    const subBlocks: Record<string, { id: string; type: string; value: unknown }> = {}
+    const subBlocks: Record<string, SubBlockState> = {}
     blockConfig.subBlocks.forEach((subBlock) => {
       subBlocks[subBlock.id] = {
         id: subBlock.id,
         type: subBlock.type,
-        value: serializedBlock.config.params[subBlock.id] ?? null,
+        value: toSubBlockStateValue(serializedBlock.config.params[subBlock.id]),
       }
     })
 

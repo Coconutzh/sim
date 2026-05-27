@@ -1,4 +1,5 @@
 import { type SQL, sql } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import {
   bigint,
   boolean,
@@ -1228,7 +1229,7 @@ export const workgroup = pgTable(
     disciplineId: text('discipline_id').references(() => discipline.id, {
       onDelete: 'set null',
     }),
-    teamWorkspaceId: text('team_workspace_id').references(() => workspace.id, {
+    teamWorkspaceId: text('team_workspace_id').references((): AnyPgColumn => workspace.id, {
       onDelete: 'set null',
     }),
     archivedAt: timestamp('archived_at'),
@@ -1376,7 +1377,7 @@ export const workspace = pgTable(
     organizationId: text('organization_id').references(() => organization.id, {
       onDelete: 'set null',
     }),
-    workgroupId: text('workgroup_id').references(() => workgroup.id, {
+    workgroupId: text('workgroup_id').references((): AnyPgColumn => workgroup.id, {
       onDelete: 'set null',
     }),
     workspaceMode: workspaceModeEnum('workspace_mode').notNull().default('grandfathered_shared'),

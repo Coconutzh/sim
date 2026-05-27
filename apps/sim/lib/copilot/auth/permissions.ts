@@ -34,7 +34,7 @@ export async function verifyWorkflowAccess(
       return { hasAccess: false, userPermission: null }
     }
 
-    const workspaceId = authorization.workflow.workspaceId
+    const workspaceId = authorization.workflow.workspaceId ?? undefined
     const userPermission = authorization.workspacePermission
 
     if (authorization.allowed && userPermission !== null) {
@@ -59,7 +59,7 @@ export async function verifyWorkflowAccess(
     return {
       hasAccess: false,
       userPermission: null,
-      workspaceId: authorization.status === 404 ? undefined : workspaceId || undefined,
+      workspaceId: authorization.status === 404 ? undefined : workspaceId,
     }
   } catch (error) {
     logger.error('Error verifying workflow access', { error, workflowId, userId })

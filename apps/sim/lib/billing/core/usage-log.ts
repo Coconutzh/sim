@@ -222,8 +222,15 @@ export async function getUserUsageLogs(
   userId: string,
   options: GetUsageLogsOptions = {}
 ): Promise<UsageLogsResult> {
-  const { source, workspaceId, visibleWorkspaceIds, startDate, endDate, limit = 50, cursor } =
-    options
+  const {
+    source,
+    workspaceId,
+    visibleWorkspaceIds,
+    startDate,
+    endDate,
+    limit = 50,
+    cursor,
+  } = options
 
   try {
     const conditions = [eq(usageLog.userId, userId)]
@@ -237,11 +244,13 @@ export async function getUserUsageLogs(
     }
 
     if (visibleWorkspaceIds) {
-      conditions.push(
-        visibleWorkspaceIds.length > 0
-          ? or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))
-          : isNull(usageLog.workspaceId)
-      )
+      if (visibleWorkspaceIds.length > 0) {
+        conditions.push(
+          or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))!
+        )
+      } else {
+        conditions.push(isNull(usageLog.workspaceId))
+      }
     }
 
     if (startDate) {
@@ -293,11 +302,13 @@ export async function getUserUsageLogs(
     if (source) summaryConditions.push(eq(usageLog.source, source))
     if (workspaceId) summaryConditions.push(eq(usageLog.workspaceId, workspaceId))
     if (visibleWorkspaceIds) {
-      summaryConditions.push(
-        visibleWorkspaceIds.length > 0
-          ? or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))
-          : isNull(usageLog.workspaceId)
-      )
+      if (visibleWorkspaceIds.length > 0) {
+        summaryConditions.push(
+          or(isNull(usageLog.workspaceId), inArray(usageLog.workspaceId, visibleWorkspaceIds))!
+        )
+      } else {
+        summaryConditions.push(isNull(usageLog.workspaceId))
+      }
     }
     if (startDate) summaryConditions.push(gte(usageLog.createdAt, startDate))
     if (endDate) summaryConditions.push(lte(usageLog.createdAt, endDate))

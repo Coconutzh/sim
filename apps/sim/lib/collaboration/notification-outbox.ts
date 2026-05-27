@@ -35,7 +35,7 @@ const publicationNotificationPayloadSchema = z.object({
     z.object({
       id: z.string().min(1),
       type: z.string().min(1),
-      severity: z.enum(['warning', 'danger']),
+      severity: z.enum(['info', 'warning', 'danger']),
       publicationId: z.string().min(1),
       publicationTitle: z.string().min(1),
       publicationWorkgroupName: z.string().min(1),

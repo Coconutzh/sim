@@ -37,6 +37,7 @@ import {
   or,
   sql,
 } from 'drizzle-orm'
+import type { PublicationSummary } from '@/lib/api/contracts/collaboration'
 import { ORGANIZATION_BILLING_LIFECYCLE_EVENTS } from '@/lib/billing/billing-lifecycle-audit'
 import { canPublishTeamCanvas, canReadPublication } from '@/lib/collaboration/authz'
 import {
@@ -2861,7 +2862,7 @@ export async function listOrganizationPublications(params: {
   agentCode?: string
   status?: PublicationStatus
   limit?: number
-}) {
+}): Promise<PublicationSummary[]> {
   await assertOrganizationAdmin(params.userId, params.organizationId)
 
   const conditions = [eq(workflowPublicationVersion.organizationId, params.organizationId)]
@@ -2914,7 +2915,9 @@ export async function listOrganizationPublications(params: {
       code: row.sourceDisciplineCode ?? 'chief_director',
       name: row.sourceDisciplineName ?? '总导演',
     },
-    agentCode: row.publication.agentCode,
+    agentCode: isAgentCode(row.publication.agentCode)
+      ? row.publication.agentCode
+      : 'chief_director',
     versionNumber: row.publication.versionNumber,
     parentVersionId:
       row.publication.parentVersionId && visibleVersionIds.has(row.publication.parentVersionId)

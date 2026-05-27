@@ -82,8 +82,8 @@ function ownerMemberResponse({
     permissions: 'admin',
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
-    userName,
-    userEmail,
+    userName: userName ?? '',
+    userEmail: userEmail ?? '',
     userImage,
   }
 }
@@ -187,8 +187,8 @@ export const GET = withRouteHandler(
         permissions: memberData.permissionType,
         createdAt: memberData.createdAt.toISOString(),
         updatedAt: memberData.updatedAt.toISOString(),
-        userName: memberData.userName,
-        userEmail: memberData.userEmail,
+        userName: memberData.userName ?? '',
+        userEmail: memberData.userEmail ?? '',
         userImage: memberData.userImage,
       }
 

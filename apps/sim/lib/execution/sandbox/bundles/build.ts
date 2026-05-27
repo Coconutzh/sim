@@ -46,7 +46,7 @@ interface BundleSpec {
   entry: string
 }
 
-const POLYFILLS_PATH = join(HERE, '_polyfills.ts')
+const POLYFILLS_PATH = '../_polyfills.ts'
 const POLYFILL_PRELUDE = `
 // Isolate-side polyfills must execute BEFORE any other import (process/browser
 // captures setTimeout at module-init time). Keep this as the first import.

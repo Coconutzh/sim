@@ -39,6 +39,7 @@ import {
   type MarkPublicationNotificationInboxReadBody,
   markOrganizationProjectNotificationCenterReadContract,
   markOrganizationPublicationNotificationInboxReadContract,
+  type OrganizationAgentSkillPolicyQuery,
   type ProjectAdminFailureScope,
   type ProjectNotificationCenterQuery,
   type PublicationNotificationInboxQuery,
@@ -295,7 +296,10 @@ export function useUpdateOrganizationAgentTemplate() {
   })
 }
 
-export function useOrganizationAgentSkillPolicies(organizationId?: string, agentCode?: string) {
+export function useOrganizationAgentSkillPolicies(
+  organizationId?: string,
+  agentCode?: OrganizationAgentSkillPolicyQuery['agentCode']
+) {
   return useQuery({
     queryKey: collaborationKeys.organizationAgentSkills(organizationId, agentCode),
     queryFn: ({ signal }) =>

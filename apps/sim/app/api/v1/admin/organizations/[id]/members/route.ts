@@ -31,7 +31,7 @@
 import { db } from '@sim/db'
 import { member, organization, permissions, user, userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   adminV1AddOrganizationMemberContract,
   adminV1ListOrganizationMembersContract,
@@ -131,8 +131,8 @@ export const GET = withRouteHandler(
               .select({
                 id: user.id,
                 userId: user.id,
-                organizationId: member.organizationId,
-                role: 'external' as const,
+                organizationId: sql<string>`${organizationId}`,
+                role: sql<'external'>`'external'`,
                 createdAt: permissions.createdAt,
                 userName: user.name,
                 userEmail: user.email,

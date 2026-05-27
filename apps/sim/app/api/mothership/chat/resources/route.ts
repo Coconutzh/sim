@@ -32,6 +32,10 @@ const VALID_RESOURCE_TYPES = new Set<ResourceType>([
 ])
 const GENERIC_TITLES = new Set(['Table', 'File', 'Workflow', 'Knowledge Base', 'Folder', 'Log'])
 
+function isValidResourceType(value: string): value is ResourceType {
+  return VALID_RESOURCE_TYPES.has(value as ResourceType)
+}
+
 export const POST = withRouteHandler(async (req: NextRequest) => {
   try {
     const session = await getSession()
@@ -56,9 +60,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ success: true, resources: [] })
     }
 
-    if (!VALID_RESOURCE_TYPES.has(resource.type)) {
+    if (!isValidResourceType(resource.type)) {
       return createBadRequestResponse(`Invalid resource type: ${resource.type}`)
     }
+    const validatedResource: ChatResource = { ...resource, type: resource.type }
 
     const chat = await getAccessibleMothershipChat(chatId, userId)
     if (!chat) {
@@ -66,20 +71,20 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const existing = Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
-    const key = `${resource.type}:${resource.id}`
+    const key = `${validatedResource.type}:${validatedResource.id}`
     const previous = existing.find((entry) => `${entry.type}:${entry.id}` === key)
 
     let merged: ChatResource[]
     if (previous) {
-      if (GENERIC_TITLES.has(previous.title) && !GENERIC_TITLES.has(resource.title)) {
+      if (GENERIC_TITLES.has(previous.title) && !GENERIC_TITLES.has(validatedResource.title)) {
         merged = existing.map((entry) =>
-          `${entry.type}:${entry.id}` === key ? { ...entry, title: resource.title } : entry
+          `${entry.type}:${entry.id}` === key ? { ...entry, title: validatedResource.title } : entry
         )
       } else {
         merged = existing
       }
     } else {
-      merged = [...existing, resource]
+      merged = [...existing, validatedResource]
     }
 
     await db
@@ -87,7 +92,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       .set({ resources: sql`${JSON.stringify(merged)}::jsonb`, updatedAt: new Date() })
       .where(and(eq(copilotChats.id, chatId), eq(copilotChats.type, 'mothership')))
 
-    logger.info('Added resource to mothership chat', { chatId, resource })
+    logger.info('Added resource to mothership chat', { chatId, resource: validatedResource })
 
     return NextResponse.json({ success: true, resources: merged })
   } catch (error) {

@@ -3,7 +3,7 @@ import { document, knowledgeBase, knowledgeConnector, permissions, workspace } f
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { generateRestoreName } from '@/lib/core/utils/restore-name'
 import type {
   ChunkingConfig,

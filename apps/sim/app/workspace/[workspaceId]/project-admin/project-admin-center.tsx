@@ -1055,23 +1055,25 @@ function buildAgentSkillRiskGuardrails(params: {
   if (!params.impact) return []
   const agentCode = params.impact.agentCode
   const hasCriticalPublication = params.impact.riskPublications.length > 0
-  return params.policies
-    .filter((policy) => policy.agentCode === agentCode)
-    .map((policy) => {
-      const text = `${policy.name} ${policy.description ?? ''}`.toLowerCase()
-      const matchedTerms = RISK_SKILL_KEYWORDS.filter((term) => text.includes(term))
-      if (!policy.enabled || matchedTerms.length === 0) return null
-      return {
-        policy,
-        matchedTerms,
-        tone: hasCriticalPublication ? ('danger' as const) : ('warning' as const),
-        reason: hasCriticalPublication
-          ? 'This Agent has critical current publications; risky project-default skills should be disabled until review is complete.'
-          : 'This project-default skill looks action-oriented; disable it unless teams explicitly need it.',
-      }
+  const guardrails: AgentSkillRiskGuardrail[] = []
+
+  for (const policy of params.policies) {
+    if (policy.agentCode !== agentCode || !policy.enabled) continue
+    const text = `${policy.name} ${policy.description ?? ''}`.toLowerCase()
+    const matchedTerms = RISK_SKILL_KEYWORDS.filter((term) => text.includes(term))
+    if (matchedTerms.length === 0) continue
+
+    guardrails.push({
+      policy,
+      matchedTerms,
+      tone: hasCriticalPublication ? 'danger' : 'warning',
+      reason: hasCriticalPublication
+        ? 'This Agent has critical current publications; risky project-default skills should be disabled until review is complete.'
+        : 'This project-default skill looks action-oriented; disable it unless teams explicitly need it.',
     })
-    .filter((item): item is AgentSkillRiskGuardrail => Boolean(item))
-    .sort((left, right) => left.policy.name.localeCompare(right.policy.name))
+  }
+
+  return guardrails.sort((left, right) => left.policy.name.localeCompare(right.policy.name))
 }
 
 function parseBatchAssignmentTargets(value: string) {
@@ -1500,7 +1502,12 @@ export function ProjectAdminCenter() {
   const agentTemplates = agentTemplatesData?.templates ?? []
   const selectedAgentTemplateCodeValue = selectedAgentTemplateCode || agentTemplates[0]?.code || ''
   const { data: agentSkillPoliciesData, isLoading: isLoadingAgentSkillPolicies } =
-    useOrganizationAgentSkillPolicies(organizationId, selectedAgentTemplateCodeValue || undefined)
+    useOrganizationAgentSkillPolicies(
+      organizationId,
+      selectedAgentTemplateCodeValue
+        ? (selectedAgentTemplateCodeValue as AgentTemplate['code'])
+        : undefined
+    )
   const agentSkillPolicies = agentSkillPoliciesData?.policies ?? []
   const publications = publicationsData?.publications ?? []
   const selectedPublication =
@@ -1752,12 +1759,10 @@ export function ProjectAdminCenter() {
   const batchRestoreCandidatePublications = publicationStateGroups
     .filter((group) => group.governanceAlerts.some((alert) => alert.code === 'no_current_version'))
     .map((group) => publicationById.get(group.current?.id ?? ''))
-    .filter(
-      (publication): publication is PublicationSummary =>
-        Boolean(publication) &&
-        publication.status !== 'published' &&
-        publication.status !== 'retracted'
-    )
+    .filter((publication): publication is PublicationSummary => {
+      if (!publication) return false
+      return publication.status !== 'published' && publication.status !== 'retracted'
+    })
   const hasPublicationBatchTargets =
     batchUnapprovedCurrentPublications.length > 0 ||
     batchCriticalCurrentPublications.length > 0 ||
@@ -2217,15 +2222,19 @@ export function ProjectAdminCenter() {
     field: 'title' | 'description',
     value: string
   ) => {
-    setPublicationDetailDrafts((drafts) => ({
-      ...drafts,
-      [publication.id]: {
+    setPublicationDetailDrafts((drafts) => {
+      const currentDraft = drafts[publication.id] ?? {
         title: publication.title,
         description: publication.description ?? '',
-        ...drafts[publication.id],
-        [field]: value,
-      },
-    }))
+      }
+      return {
+        ...drafts,
+        [publication.id]: {
+          ...currentDraft,
+          [field]: value,
+        },
+      }
+    })
     setPublicationGovernanceStatus(null)
   }
 
@@ -2266,15 +2275,19 @@ export function ProjectAdminCenter() {
     field: keyof PublicationReviewDraft,
     value: PublicationReviewDraft[keyof PublicationReviewDraft]
   ) => {
-    setPublicationReviewDrafts((drafts) => ({
-      ...drafts,
-      [publication.id]: {
+    setPublicationReviewDrafts((drafts) => {
+      const currentDraft = drafts[publication.id] ?? {
         reviewState: publication.reviewState ?? '',
         riskLevel: publication.riskLevel ?? '',
-        ...drafts[publication.id],
-        [field]: value,
-      },
-    }))
+      }
+      return {
+        ...drafts,
+        [publication.id]: {
+          ...currentDraft,
+          [field]: value,
+        },
+      }
+    })
     setPublicationGovernanceStatus(null)
   }
 
@@ -2499,12 +2512,6 @@ export function ProjectAdminCenter() {
         resetActivityPage()
         return
       }
-
-      await navigator.clipboard.writeText(delivery.body)
-      setPublicationGovernanceStatus(
-        `Persisted ${delivery.channel.replace('_', ' ')} outbox ${delivery.outboxEventId ?? 'record'} and copied ${delivery.title.toLowerCase()} to clipboard.`
-      )
-      resetActivityPage()
     } catch (error) {
       setPublicationGovernanceStatus(
         recordProjectAdminFailure('notification', draft.title, draft.channel, error)
