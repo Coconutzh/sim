@@ -1,6 +1,17 @@
 import type { ComponentType } from 'react'
+import { db, workflow as workflowTable } from '@sim/db'
+import { createLogger } from '@sim/logger'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import { ArrowRight, Compass, PenLine, Users } from 'lucide-react'
-import Link from 'next/link'
+import { getSession } from '@/lib/auth'
+import {
+  getDefaultActiveWorkgroupId,
+  getOrCreatePersonalWorkspace,
+  getTeamWorkspace,
+  listUserWorkgroups,
+} from '@/lib/collaboration/service'
+
+const logger = createLogger('WorkspaceHome')
 
 interface HomeProps {
   chatId?: string
@@ -29,7 +40,7 @@ function CanvasEntryCard({
   title,
 }: CanvasEntryCardProps) {
   return (
-    <Link
+    <a
       href={href}
       className='group rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4 transition-colors hover-hover:bg-[var(--surface-hover)]'
     >
@@ -49,7 +60,7 @@ function CanvasEntryCard({
           <ArrowRight className='h-[15px] w-[15px] flex-shrink-0 text-[var(--text-icon)]' />
         </div>
       </div>
-    </Link>
+    </a>
   )
 }
 
@@ -67,17 +78,111 @@ function LowMemoryCopilotLauncher(_props: CopilotEntryProps) {
   )
 }
 
+async function resolveLowMemoryCanvasTargets(workspaceId: string) {
+  const fallback = {
+    contextLabel: 'Canvas context',
+    personalHref: `/workspace/${workspaceId}/w`,
+    personalWorkspaceId: workspaceId,
+    teamHref: `/workspace/${workspaceId}/w`,
+    teamWorkspaceId: workspaceId,
+  }
+
+  try {
+    const session = await getSession()
+    if (!session?.user?.id) return fallback
+
+    const [workgroups, defaultWorkgroupId] = await Promise.all([
+      listUserWorkgroups(session.user.id),
+      getDefaultActiveWorkgroupId(session.user.id),
+    ])
+    const activeWorkgroup =
+      workgroups.find((workgroup) => workgroup.teamWorkspaceId === workspaceId) ??
+      workgroups.find((workgroup) => workgroup.id === defaultWorkgroupId) ??
+      workgroups[0]
+
+    if (!activeWorkgroup) return fallback
+
+    const personalWorkspace = await getOrCreatePersonalWorkspace({
+      userId: session.user.id,
+      workgroupId: activeWorkgroup.id,
+    }).catch((error) => {
+      logger.warn('Failed to resolve low-memory personal canvas target', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        workgroupId: activeWorkgroup.id,
+      })
+      return null
+    })
+
+    const teamWorkspace = await getTeamWorkspace({
+      userId: session.user.id,
+      workgroupId: activeWorkgroup.id,
+    }).catch((error) => {
+      logger.warn('Failed to resolve low-memory team canvas target', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        workgroupId: activeWorkgroup.id,
+      })
+      return null
+    })
+
+    const personalWorkspaceId = personalWorkspace?.id ?? workspaceId
+    const teamWorkspaceId = teamWorkspace?.id ?? activeWorkgroup.teamWorkspaceId ?? workspaceId
+    const [personalHref, teamHref] = await Promise.all([
+      resolveWorkspaceEditorHref(personalWorkspaceId),
+      resolveWorkspaceEditorHref(teamWorkspaceId),
+    ])
+
+    return {
+      contextLabel: `${activeWorkgroup.discipline.name} / ${activeWorkgroup.name}`,
+      personalHref,
+      personalWorkspaceId,
+      teamHref,
+      teamWorkspaceId,
+    }
+  } catch (error) {
+    logger.warn('Failed to resolve low-memory canvas targets', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      workspaceId,
+    })
+    return fallback
+  }
+}
+
+async function resolveWorkspaceEditorHref(workspaceId: string): Promise<string> {
+  const [firstWorkflow] = await db
+    .select({ id: workflowTable.id })
+    .from(workflowTable)
+    .where(and(eq(workflowTable.workspaceId, workspaceId), isNull(workflowTable.archivedAt)))
+    .orderBy(asc(workflowTable.sortOrder), asc(workflowTable.createdAt))
+    .limit(1)
+
+  return firstWorkflow
+    ? `/workspace/${workspaceId}/w/${firstWorkflow.id}`
+    : `/workspace/${workspaceId}/w`
+}
+
 export async function Home({ chatId, workspaceId }: HomeProps) {
   const CopilotEntry =
     process.env.SIM_LOW_MEMORY_DEV === 'true'
       ? LowMemoryCopilotLauncher
       : (await import('@/app/workspace/[workspaceId]/home/home-copilot-loader')).HomeCopilotLoader
+  const lowMemoryTargets =
+    process.env.SIM_LOW_MEMORY_DEV === 'true'
+      ? await resolveLowMemoryCanvasTargets(workspaceId)
+      : {
+          contextLabel: 'Canvas context',
+          personalHref: `/workspace/${workspaceId}/w`,
+          personalWorkspaceId: workspaceId,
+          teamHref: `/workspace/${workspaceId}/w`,
+          teamWorkspaceId: workspaceId,
+        }
 
   return (
     <div className='h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
       <div className='mx-auto flex min-h-full w-full max-w-[72rem] flex-col px-4 pt-10 pb-8 sm:px-6 lg:px-10'>
         <div className='mb-5 flex flex-col gap-2'>
-          <span className='text-[12px] text-[var(--text-muted)]'>Canvas context</span>
+          <span className='text-[12px] text-[var(--text-muted)]'>
+            {lowMemoryTargets.contextLabel}
+          </span>
           <h1
             data-tour='home-greeting'
             className='max-w-[42rem] text-balance font-[430] font-season text-[32px] text-[var(--text-primary)] tracking-[-0.02em]'
@@ -93,7 +198,7 @@ export async function Home({ chatId, workspaceId }: HomeProps) {
           <CanvasEntryCard
             description='Private space for ideas, tests, and nodes that are not ready for the team.'
             eyebrow='Private'
-            href={`/workspace/${workspaceId}/home`}
+            href={lowMemoryTargets.personalHref}
             icon={PenLine}
             meta='Only you can edit'
             title='Personal draft canvas'
@@ -101,7 +206,7 @@ export async function Home({ chatId, workspaceId }: HomeProps) {
           <CanvasEntryCard
             description='Shared work area for your active workgroup. Team members collaborate here.'
             eyebrow='Team'
-            href={`/workspace/${workspaceId}/home`}
+            href={lowMemoryTargets.teamHref}
             icon={Users}
             meta='Team canvas'
             title='Team canvas'
