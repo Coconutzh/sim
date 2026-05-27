@@ -84,3 +84,9 @@ i18n.cache
 .claude/launch.json
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+
+# Local run artifacts
+.codex-run-logs/
+apps/sim/.vitest-cache/
+test-results/
+tmp-smoke/
