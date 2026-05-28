@@ -2,10 +2,27 @@
 
 import type { ChangeEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
 import { createElement, memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Copy as CopyIcon, ImagePlus, List, Pilcrow, Type } from 'lucide-react'
+import {
+  Copy as CopyIcon,
+  ImageIcon,
+  List,
+  Music4,
+  Pilcrow,
+  Plus,
+  Type,
+  Upload,
+  Video,
+} from 'lucide-react'
 import { useParams } from 'next/navigation'
-import type { NodeProps } from 'reactflow'
+import { Handle, type NodeProps, Position } from 'reactflow'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  type AudioGenerationModelId,
+  type AudioGenerationParametersValue,
+  DEFAULT_AUDIO_MODEL,
+  DEFAULT_AUDIO_PARAMETERS,
+  isAudioGenerationModel,
+} from '@/lib/generated-media/audio/audio-generation-utils'
 import {
   DEFAULT_IMAGE_AI_MODEL,
   DEFAULT_IMAGE_ASPECT_RATIO,
@@ -15,17 +32,10 @@ import {
   type ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
-  DEFAULT_AUDIO_MODEL,
-  DEFAULT_AUDIO_PARAMETERS,
-  isAudioGenerationModel,
-  type AudioGenerationModelId,
-  type AudioGenerationParametersValue,
-} from '@/lib/generated-media/audio/audio-generation-utils'
-import {
   DEFAULT_VIDEO_DURATION_SECONDS,
   DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
-  DEFAULT_VIDEO_MODEL_FAMILY,
   DEFAULT_VIDEO_MODEL,
+  DEFAULT_VIDEO_MODEL_FAMILY,
   DEFAULT_VIDEO_RESOLUTION,
   getVideoMediaFileForType,
   getVideoModelFamilyFromModelId,
@@ -38,11 +48,16 @@ import {
   type VideoModelFamily,
   type VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
+import {
+  CONTENT_REFERENCE_EDGE_KIND,
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
+import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
-import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
@@ -54,8 +69,9 @@ import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workfl
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
-import { usePanelEditorStore } from '@/stores/panel'
+import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
+import { usePanelEditorStore } from '@/stores/panel'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -81,6 +97,10 @@ interface VideoParametersValue {
   promptExtend: boolean
   watermark: boolean
 }
+
+const CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT = 'clear-video-frame-auto-link'
+const HIDDEN_CONTENT_HANDLE_CLASSNAME =
+  'pointer-events-none !h-2 !w-2 !border-0 !bg-transparent opacity-0'
 
 const DEFAULT_TEXT_HTML = '<p></p>'
 const DEFAULT_TEXT_WIDTH = 320
@@ -174,10 +194,7 @@ function isUploadedFileValue(value: unknown): value is UploadedFileValue {
   return hasUploadedFileValue(value)
 }
 
-function normalizeVideoModelFamily(
-  value: unknown,
-  legacyModelValue?: unknown
-): VideoModelFamily {
+function normalizeVideoModelFamily(value: unknown, legacyModelValue?: unknown): VideoModelFamily {
   if (isVideoModelFamily(value)) {
     return value
   }
@@ -215,9 +232,7 @@ function normalizeVideoParameters(value: unknown): VideoParametersValue {
   }
 }
 
-function normalizeVideoMedia(
-  value: unknown
-): Array<VideoMediaFileSlot<UploadedFileValue>> {
+function normalizeVideoMedia(value: unknown): Array<VideoMediaFileSlot<UploadedFileValue>> {
   if (!Array.isArray(value)) return []
 
   return value.flatMap((item) => {
@@ -861,8 +876,6 @@ function MediaContentCard({
       : variant === 'video'
         ? VIDEO_CARD_HEIGHT
         : AUDIO_CARD_HEIGHT
-  const uploadLabel =
-    variant === 'image' ? 'Upload image' : variant === 'video' ? 'Upload video' : 'Upload audio'
   const emptyLabel =
     variant === 'image'
       ? 'No image available'
@@ -876,7 +889,9 @@ function MediaContentCard({
         ? 'Supports a single local video file.'
         : 'Supports a single local audio file.'
   const referencedVideoBlockId = frameSelection?.targetBlockId ?? currentEditorBlockId
-  const referencedVideoBlock = referencedVideoBlockId ? workflowBlocks[referencedVideoBlockId] : null
+  const referencedVideoBlock = referencedVideoBlockId
+    ? workflowBlocks[referencedVideoBlockId]
+    : null
   const referencedVideoMediaValue = useSubBlockStore(
     useCallback(
       (state) => {
@@ -888,7 +903,7 @@ function MediaContentCard({
   )
   const referencedVideoMedia = normalizeVideoMedia(
     referencedVideoBlock
-      ? referencedVideoMediaValue ?? referencedVideoBlock.subBlocks?.videoMedia?.value
+      ? (referencedVideoMediaValue ?? referencedVideoBlock.subBlocks?.videoMedia?.value)
       : []
   )
   const isReferencedFirstFrame =
@@ -986,6 +1001,16 @@ function MediaContentCard({
     inputRef.current?.click()
   }, [canUpload])
 
+  const uploadActionLabel = mediaPath ? 'Replace' : 'Upload'
+  const emptyStateIcon =
+    variant === 'image' ? (
+      <ImageIcon className='h-7 w-7' />
+    ) : variant === 'video' ? (
+      <Video className='h-7 w-7' />
+    ) : (
+      <Music4 className='h-7 w-7' />
+    )
+
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const nextFile = event.target.files?.[0]
@@ -1004,11 +1029,11 @@ function MediaContentCard({
 
       setError(null)
 
-        try {
-          const result = await uploadFileMutation.mutateAsync({
-            workspaceId: params.workspaceId,
-            file: nextFile,
-            skipToast: true,
+      try {
+        const result = await uploadFileMutation.mutateAsync({
+          workspaceId: params.workspaceId,
+          file: nextFile,
+          skipToast: true,
         })
 
         onChangeFile({
@@ -1032,7 +1057,24 @@ function MediaContentCard({
   const hasMedia = Boolean(mediaPath) && !isBroken
 
   return (
-    <div>
+    <div className='relative'>
+      {selected && canUpload && (
+        <button
+          type='button'
+          onPointerDown={(event) => {
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.stopPropagation()
+            openFileDialog()
+          }}
+          className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+        >
+          <Upload className='h-3.5 w-3.5' />
+          <span>{uploadActionLabel}</span>
+        </button>
+      )}
+
       <div
         className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
         style={{ width: cardWidth, minHeight: cardHeight }}
@@ -1063,12 +1105,12 @@ function MediaContentCard({
               {(isReferencedFirstFrame || isReferencedLastFrame) && (
                 <div className='pointer-events-none absolute top-3 left-3 flex flex-wrap gap-2'>
                   {isReferencedFirstFrame ? (
-                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[10px] text-[#F4C86A]'>
+                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[#F4C86A] text-[10px]'>
                       当前首帧
                     </span>
                   ) : null}
                   {isReferencedLastFrame ? (
-                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[10px] text-[#F4C86A]'>
+                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[#F4C86A] text-[10px]'>
                       当前尾帧
                     </span>
                   ) : null}
@@ -1108,45 +1150,23 @@ function MediaContentCard({
             </div>
           )
         ) : (
-          <button
-            type='button'
+          <div
             onPointerDown={(event) => {
               event.stopPropagation()
             }}
-            onClick={(event) => {
-              event.stopPropagation()
-              openFileDialog()
-            }}
-            disabled={!canUpload}
             className={cn(
-              'nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)] disabled:cursor-default disabled:hover-hover:bg-transparent',
+              'nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)]',
               variant === 'audio' ? 'h-[132px] w-[360px]' : 'h-[240px] w-full'
             )}
           >
             <div className='flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-4)]'>
-              <ImagePlus className='h-5 w-5' />
+              {emptyStateIcon}
             </div>
             <div>
-              <div className='font-medium text-sm'>{canUpload ? uploadLabel : emptyLabel}</div>
+              <div className='font-medium text-sm'>{emptyLabel}</div>
               <div className='mt-1 text-[var(--text-tertiary)] text-xs'>{helperText}</div>
             </div>
-          </button>
-        )}
-
-        {selected && canUpload && (
-          <button
-            type='button'
-            onPointerDown={(event) => {
-              event.stopPropagation()
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              openFileDialog()
-            }}
-            className='nodrag nopan absolute top-3 right-3 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
-          >
-            Replace
-          </button>
+          </div>
         )}
 
         {uploadFileMutation.isPending && (
@@ -1194,9 +1214,7 @@ function MediaContentCard({
           isGenerating={isVideoGenerating}
           error={videoGenerationError}
           isSelectingFrame={frameSelection?.targetBlockId === blockId}
-          selectedFrameSlot={
-            frameSelection?.targetBlockId === blockId ? frameSelection.slot : null
-          }
+          selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
           modelOptions={videoModelOptions}
           aspectRatioOptions={videoAspectRatioOptions}
           resolutionOptions={videoResolutionOptions}
@@ -1231,6 +1249,14 @@ function MediaContentCard({
           onClearFrame={(slot) => {
             const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
             onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
+            window.dispatchEvent(
+              new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
+                detail: {
+                  blockId,
+                  autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
+                },
+              })
+            )
           }}
           onSubmit={submitVideoPrompt}
         />
@@ -1316,6 +1342,11 @@ export const ContentBlock = memo(function ContentBlock({
 
   const userPermissions = useUserPermissionsContext()
   const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
+  const contentReferenceSelection = useContentReferenceSelectionStore((state) => state.selection)
+  const beginContentReferenceSelection = useContentReferenceSelectionStore(
+    (state) => state.beginSelection
+  )
+  const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
 
   const resolvedVariant = resolveContentVariant(
     variant,
@@ -1404,7 +1435,9 @@ export const ContentBlock = memo(function ContentBlock({
   )
   const resolvedAudioParameters = normalizeAudioParameters(
     extractStoredValue<unknown>(
-      data.isPreview ? sourceValues : ({ audioParameters: audioParametersValue } as StoredValueRecord),
+      data.isPreview
+        ? sourceValues
+        : ({ audioParameters: audioParametersValue } as StoredValueRecord),
       'audioParameters',
       DEFAULT_AUDIO_PARAMETERS
     )
@@ -1468,6 +1501,9 @@ export const ContentBlock = memo(function ContentBlock({
     : DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
 
   const cardRef = useRef<HTMLDivElement>(null)
+  const showContentReferenceHandles =
+    canEditWorkflow && !data.isPreview && !data.isEmbedded && !frameSelection
+  const isContentReferenceSource = contentReferenceSelection?.sourceBlockId === id
 
   useBlockDimensions({
     blockId: id,
@@ -1519,6 +1555,65 @@ export const ContentBlock = memo(function ContentBlock({
 
   return (
     <div className='group relative'>
+      {!data.isPreview &&
+        !data.isEmbedded &&
+        (['left', 'right'] as const).flatMap((anchor) => [
+          <Handle
+            key={`source-${anchor}`}
+            id={getContentReferenceSourceHandleId(anchor)}
+            type='source'
+            position={anchor === 'left' ? Position.Left : Position.Right}
+            isConnectable={false}
+            className={HIDDEN_CONTENT_HANDLE_CLASSNAME}
+          />,
+          <Handle
+            key={`target-${anchor}`}
+            id={getContentReferenceTargetHandleId(anchor)}
+            type='target'
+            position={anchor === 'left' ? Position.Left : Position.Right}
+            isConnectable={false}
+            className={HIDDEN_CONTENT_HANDLE_CLASSNAME}
+          />,
+        ])}
+
+      {showContentReferenceHandles && (
+        <>
+          {(['left', 'right'] as const).map((anchor) => (
+            <button
+              key={anchor}
+              type='button'
+              aria-label={
+                anchor === 'left' ? 'Start content link from left' : 'Start content link from right'
+              }
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                beginContentReferenceSelection({
+                  sourceBlockId: id,
+                  sourceAnchor: anchor,
+                  mode: CONTENT_REFERENCE_EDGE_KIND,
+                })
+              }}
+              className={cn(
+                'nodrag nopan -translate-y-1/2 absolute top-1/2 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] shadow-sm transition-all hover-hover:bg-[var(--surface-3)]',
+                anchor === 'left' ? 'left-[-18px]' : 'right-[-18px]',
+                selected || isContentReferenceSource
+                  ? 'opacity-100'
+                  : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
+                isContentReferenceSource &&
+                  'border-[var(--brand-secondary)] text-[var(--brand-secondary)]'
+              )}
+            >
+              <Plus className='h-3.5 w-3.5' />
+            </button>
+          ))}
+        </>
+      )}
+
       <div
         ref={cardRef}
         role='button'
@@ -1646,6 +1741,10 @@ export const ContentBlock = memo(function ContentBlock({
           <div
             className={cn('pointer-events-none absolute inset-0 z-40 rounded-2xl', ringStyles)}
           />
+        )}
+
+        {isContentReferenceSource && (
+          <div className='pointer-events-none absolute inset-0 z-30 rounded-2xl ring-2 ring-[var(--brand-secondary)] ring-offset-0' />
         )}
       </div>
     </div>

@@ -2,6 +2,7 @@ import { generateId } from '@sim/utils/id'
 import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import type { Edge } from 'reactflow'
 import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
+import { isDuplicateContentReferenceEdge } from '@/lib/workflows/content-reference-edges'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
 import { buildDefaultCanonicalModes } from '@/lib/workflows/subblocks/visibility'
 import { type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
@@ -33,10 +34,11 @@ export function filterNewEdges(edgesToAdd: Edge[], currentEdges: Edge[]): Edge[]
     if (edge.source === edge.target) return false
     return !currentEdges.some(
       (e) =>
-        e.source === edge.source &&
-        e.sourceHandle === edge.sourceHandle &&
-        e.target === edge.target &&
-        e.targetHandle === edge.targetHandle
+        isDuplicateContentReferenceEdge(edge, e) ||
+        (e.source === edge.source &&
+          e.sourceHandle === edge.sourceHandle &&
+          e.target === edge.target &&
+          e.targetHandle === edge.targetHandle)
     )
   })
 }

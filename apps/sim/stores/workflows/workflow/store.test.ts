@@ -334,6 +334,31 @@ describe('workflow store', () => {
       const state = useWorkflowStore.getState()
       expectEdgeCount(state, 1)
     })
+
+    it('allows content reference edges even when their direction would form an execution cycle', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('content-1', 'content', 'Image 1', { x: 0, y: 0 })
+      addBlock('content-2', 'content', 'Image 2', { x: 200, y: 0 })
+      addBlock('content-3', 'content', 'Video 1', { x: 400, y: 0 })
+
+      batchAddEdges([
+        { id: 'edge-1', source: 'content-1', target: 'content-2' },
+        { id: 'edge-2', source: 'content-2', target: 'content-3' },
+      ])
+
+      batchAddEdges([
+        {
+          id: 'edge-3',
+          source: 'content-3',
+          target: 'content-1',
+          data: { kind: 'content_reference' },
+        },
+      ])
+
+      const state = useWorkflowStore.getState()
+      expect(state.edges.some((edge) => edge.id === 'edge-3')).toBe(true)
+    })
   })
 
   describe('batchRemoveEdges', () => {

@@ -41,6 +41,8 @@ const WorkflowEdgeComponent = ({
   })
 
   const isSelected = data?.isSelected ?? false
+  const isContentReference =
+    (data as { isContentReference?: boolean } | undefined)?.isContentReference ?? false
   const isPreviewSelected =
     (data as { isPreviewSelected?: boolean } | undefined)?.isPreviewSelected ?? false
 
@@ -140,7 +142,7 @@ const WorkflowEdgeComponent = ({
     <>
       <BaseEdge path={edgePath} style={edgeStyle} interactionWidth={30} />
 
-      {isSelected && (
+      {isSelected && !isContentReference && (
         <EdgeLabelRenderer>
           <div
             className='nodrag nopan group flex h-[22px] w-[22px] cursor-pointer items-center justify-center transition-colors'

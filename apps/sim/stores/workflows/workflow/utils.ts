@@ -3,6 +3,7 @@ import {
   isWorkflowBlockProtected,
 } from '@sim/workflow-types/workflow'
 import type { Edge } from 'reactflow'
+import { isContentReferenceEdge } from '@/lib/workflows/content-reference-edges'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 
 const DEFAULT_LOOP_ITERATIONS = 5
@@ -23,6 +24,7 @@ export function wouldCreateCycle(edges: Edge[], sourceId: string, targetId: stri
 
   const adjacencyList = new Map<string, string[]>()
   for (const edge of edges) {
+    if (isContentReferenceEdge(edge)) continue
     if (!adjacencyList.has(edge.source)) {
       adjacencyList.set(edge.source, [])
     }

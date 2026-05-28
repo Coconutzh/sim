@@ -1,6 +1,7 @@
 'use client'
 
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Scissors } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   applyNodeChanges,
@@ -24,12 +25,15 @@ import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthConnectEventDetail } from '@/lib/copilot/tools/client/base-tool'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
-import type { OAuthProvider } from '@/lib/oauth'
 import {
   getNearestSupportedImageAspectRatio,
   type ImageAspectRatioValue,
 } from '@/lib/generated-media/image/image-generation-utils'
-import { upsertVideoMediaFile } from '@/lib/generated-media/video/video-generation-utils'
+import {
+  removeVideoMediaFileForType,
+  upsertVideoMediaFile,
+} from '@/lib/generated-media/video/video-generation-utils'
+import type { OAuthProvider } from '@/lib/oauth'
 import { type ContentNodePresetId, getContentNodePreset } from '@/lib/product/content-node-presets'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import {
@@ -37,6 +41,17 @@ import {
   getCanvasNodeType,
   isPureCanvasBlockType,
 } from '@/lib/workflows/blocks/pure-canvas-blocks'
+import {
+  type ContentReferenceAutoLinkType,
+  createContentReferenceEdge,
+  findAutoVideoContentReferenceEdge,
+  getContentReferenceAnchorForTarget,
+  getContentReferenceAutoLinkType,
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+  isContentBlockState,
+  isContentReferenceEdge,
+} from '@/lib/workflows/content-reference-edges'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
@@ -114,6 +129,8 @@ import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useOAuthReturnForWorkflow } from '@/hooks/use-oauth-return'
 import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
+import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
+import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
@@ -122,7 +139,6 @@ import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowSearchReplaceStore } from '@/stores/workflow-search-replace/store'
-import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
@@ -163,6 +179,8 @@ interface UploadedFileSnapshot {
   type?: string
   context?: string
 }
+
+const CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT = 'clear-video-frame-auto-link'
 
 function hasUploadedFileSnapshot(value: unknown): value is UploadedFileSnapshot {
   return Boolean(
@@ -209,12 +227,15 @@ function getStoredSubBlockValue(
   return rawValue
 }
 
-function inferImageAspectRatioFromUrl(path: string): Promise<Exclude<ImageAspectRatioValue, 'auto'> | null> {
+function inferImageAspectRatioFromUrl(
+  path: string
+): Promise<Exclude<ImageAspectRatioValue, 'auto'> | null> {
   if (typeof window === 'undefined') return Promise.resolve(null)
 
   return new Promise((resolve) => {
     const image = new window.Image()
-    image.onload = () => resolve(getNearestSupportedImageAspectRatio(image.naturalWidth, image.naturalHeight))
+    image.onload = () =>
+      resolve(getNearestSupportedImageAspectRatio(image.naturalWidth, image.naturalHeight))
     image.onerror = () => resolve(null)
     image.src = path
   })
@@ -379,6 +400,12 @@ interface BlockData {
   position: { x: number; y: number }
 }
 
+interface ContentReferenceEdgeMenuState {
+  edgeId: string
+  x: number
+  y: number
+}
+
 /**
  * Main workflow canvas content component.
  * Renders the ReactFlow canvas with blocks, edges, and all interactive features.
@@ -401,6 +428,8 @@ const WorkflowContent = React.memo(
     const [isCanvasReady, setIsCanvasReady] = useState(false)
     const [potentialParentId, setPotentialParentId] = useState<string | null>(null)
     const [selectedEdges, setSelectedEdges] = useState<SelectedEdgesMap>(new Map())
+    const [contentReferenceEdgeMenu, setContentReferenceEdgeMenu] =
+      useState<ContentReferenceEdgeMenuState | null>(null)
     const [isErrorConnectionDrag, setIsErrorConnectionDrag] = useState(false)
     const [isHeavyEditorChromeLoaded, setIsHeavyEditorChromeLoaded] = useState(!IS_LOW_MEMORY_DEV)
     const [nodeTypesForRender, setNodeTypesForRender] = useState<NodeTypes>(liteNodeTypes)
@@ -429,6 +458,10 @@ const WorkflowContent = React.memo(
     const { emitCursorUpdate, joinWorkflow, leaveWorkflow } = useSocket()
     const activePanelTab = usePanelStore((state) => state.activeTab)
     const shouldUseFullNodeTypes = !IS_LOW_MEMORY_DEV || embedded || sandbox
+    const contentReferenceSelection = useContentReferenceSelectionStore((state) => state.selection)
+    const clearContentReferenceSelection = useContentReferenceSelectionStore(
+      (state) => state.clearSelection
+    )
 
     useEffect(() => {
       if (!shouldUseFullNodeTypes) return
@@ -952,13 +985,6 @@ const WorkflowContent = React.memo(
       [collaborativeBatchAddEdges]
     )
 
-    const removeEdge = useCallback(
-      (edgeId: string) => {
-        collaborativeBatchRemoveEdges([edgeId])
-      },
-      [collaborativeBatchRemoveEdges]
-    )
-
     const batchUpdateBlocksWithParent = useCallback(
       (updates: Array<{ id: string; position: { x: number; y: number }; parentId?: string }>) => {
         collaborativeBatchUpdateParent(
@@ -1301,18 +1327,56 @@ const WorkflowContent = React.memo(
       [activeWorkflowId, addNotification]
     )
 
+    const clearVideoFrameMediaForRemovedBlock = useCallback(
+      (videoBlockId: string, autoLinkType: ContentReferenceAutoLinkType) => {
+        const targetBlock = blocks[videoBlockId]
+        if (!targetBlock || targetBlock.type !== 'content') return
+
+        const targetStoreValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[videoBlockId]
+          : undefined
+        const storedVideoMedia = normalizeVideoMediaSnapshots(targetStoreValues?.videoMedia)
+        const currentVideoMedia =
+          storedVideoMedia.length > 0
+            ? storedVideoMedia
+            : normalizeVideoMediaSnapshots(targetBlock.subBlocks?.videoMedia?.value)
+
+        collaborativeSetSubblockValue(
+          videoBlockId,
+          'videoMedia',
+          removeVideoMediaFileForType(
+            currentVideoMedia,
+            autoLinkType === 'video_first_frame' ? 'first_frame' : 'last_frame'
+          )
+        )
+      },
+      [activeWorkflowId, blocks, collaborativeSetSubblockValue]
+    )
+
     const removeBlocksWithProtection = useCallback(
       (blockIds: string[]) => {
         const { deletableIds, protectedIds, allProtected } = filterProtectedBlocks(blockIds, blocks)
         if (notifyProtectedBlockRemoval(protectedIds, allProtected)) return []
 
         if (deletableIds.length > 0) {
+          edges.forEach((edge) => {
+            const autoLinkType = getContentReferenceAutoLinkType(edge)
+            if (!autoLinkType) return
+            if (!deletableIds.includes(edge.source) && !deletableIds.includes(edge.target)) return
+            clearVideoFrameMediaForRemovedBlock(edge.target, autoLinkType)
+          })
           collaborativeBatchRemoveBlocks(deletableIds)
         }
 
         return deletableIds
       },
-      [blocks, collaborativeBatchRemoveBlocks, notifyProtectedBlockRemoval]
+      [
+        blocks,
+        clearVideoFrameMediaForRemovedBlock,
+        collaborativeBatchRemoveBlocks,
+        edges,
+        notifyProtectedBlockRemoval,
+      ]
     )
 
     const cutBlocksWithProtection = useCallback(
@@ -1322,10 +1386,23 @@ const WorkflowContent = React.memo(
 
         if (deletableIds.length > 0) {
           copyBlocks(deletableIds)
+          edges.forEach((edge) => {
+            const autoLinkType = getContentReferenceAutoLinkType(edge)
+            if (!autoLinkType) return
+            if (!deletableIds.includes(edge.source) && !deletableIds.includes(edge.target)) return
+            clearVideoFrameMediaForRemovedBlock(edge.target, autoLinkType)
+          })
           collaborativeBatchRemoveBlocks(deletableIds)
         }
       },
-      [blocks, collaborativeBatchRemoveBlocks, copyBlocks, notifyProtectedBlockRemoval]
+      [
+        blocks,
+        clearVideoFrameMediaForRemovedBlock,
+        collaborativeBatchRemoveBlocks,
+        copyBlocks,
+        edges,
+        notifyProtectedBlockRemoval,
+      ]
     )
 
     /**
@@ -4330,7 +4407,8 @@ const WorkflowContent = React.memo(
 
         const nodeSubBlockValues =
           node.data && typeof node.data === 'object' && 'subBlockValues' in node.data
-            ? ((node.data as { subBlockValues?: Record<string, unknown> }).subBlockValues ?? undefined)
+            ? ((node.data as { subBlockValues?: Record<string, unknown> }).subBlockValues ??
+              undefined)
             : undefined
         const previewFile = getStoredSubBlockValue(nodeSubBlockValues, 'file')
         if (hasUploadedFileSnapshot(previewFile)) {
@@ -4344,7 +4422,11 @@ const WorkflowContent = React.memo(
     )
 
     const resolveLiveContentVariant = useCallback(
-      (blockId: string, node: Node, fileSnapshot: UploadedFileSnapshot | null): ContentVariant | null => {
+      (
+        blockId: string,
+        node: Node,
+        fileSnapshot: UploadedFileSnapshot | null
+      ): ContentVariant | null => {
         const block = blocks[blockId]
         if (block?.type !== 'content') {
           return null
@@ -4355,12 +4437,105 @@ const WorkflowContent = React.memo(
           : undefined
         return (
           normalizeContentVariant(storeValues?.contentVariant) ||
-          normalizeContentVariant((node.data as { contentVariant?: unknown } | undefined)?.contentVariant) ||
-          normalizeContentVariant(getStoredSubBlockValue(block.subBlocks as Record<string, unknown>, 'contentVariant')) ||
+          normalizeContentVariant(
+            (node.data as { contentVariant?: unknown } | undefined)?.contentVariant
+          ) ||
+          normalizeContentVariant(
+            getStoredSubBlockValue(block.subBlocks as Record<string, unknown>, 'contentVariant')
+          ) ||
           inferContentVariantFromSnapshot(fileSnapshot)
         )
       },
       [activeWorkflowId, blocks]
+    )
+
+    const buildContentReferenceHandles = useCallback(
+      (params: { sourceX: number; targetX: number; sourceAnchor?: 'left' | 'right' }) => {
+        const sourceAnchor =
+          params.sourceAnchor ?? (params.targetX >= params.sourceX ? 'right' : 'left')
+        const targetAnchor = getContentReferenceAnchorForTarget({
+          sourceX: params.sourceX,
+          targetX: params.targetX,
+        })
+
+        return {
+          sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+          targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        }
+      },
+      []
+    )
+
+    const clearVideoFrameMediaForAutoLink = useCallback(
+      (videoBlockId: string, autoLinkType: ContentReferenceAutoLinkType) => {
+        const targetBlock = blocks[videoBlockId]
+        if (!targetBlock || targetBlock.type !== 'content') return
+
+        const targetStoreValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[videoBlockId]
+          : undefined
+        const storedVideoMedia = normalizeVideoMediaSnapshots(targetStoreValues?.videoMedia)
+        const currentVideoMedia =
+          storedVideoMedia.length > 0
+            ? storedVideoMedia
+            : normalizeVideoMediaSnapshots(targetBlock.subBlocks?.videoMedia?.value)
+
+        const nextVideoMedia = removeVideoMediaFileForType(
+          currentVideoMedia,
+          autoLinkType === 'video_first_frame' ? 'first_frame' : 'last_frame'
+        )
+
+        collaborativeSetSubblockValue(videoBlockId, 'videoMedia', nextVideoMedia)
+      },
+      [activeWorkflowId, blocks, collaborativeSetSubblockValue]
+    )
+
+    const removeContentReferenceEdgeWithSync = useCallback(
+      (edgeId: string) => {
+        const edge = edges.find((candidate) => candidate.id === edgeId)
+        if (!edge) return
+
+        const autoLinkType = getContentReferenceAutoLinkType(edge)
+        if (autoLinkType) {
+          clearVideoFrameMediaForAutoLink(edge.target, autoLinkType)
+        }
+
+        collaborativeBatchRemoveEdges([edgeId])
+      },
+      [clearVideoFrameMediaForAutoLink, collaborativeBatchRemoveEdges, edges]
+    )
+
+    const replaceVideoFrameAutoReferenceEdge = useCallback(
+      (videoBlockId: string, imageBlockId: string, autoLinkType: ContentReferenceAutoLinkType) => {
+        const previousEdge = findAutoVideoContentReferenceEdge(edges, videoBlockId, autoLinkType)
+        const sourceX = blocks[imageBlockId]?.position.x ?? 0
+        const targetX = blocks[videoBlockId]?.position.x ?? sourceX
+        const { sourceHandle, targetHandle } = buildContentReferenceHandles({
+          sourceX,
+          targetX,
+        })
+        const edgeToAdd = createContentReferenceEdge({
+          id: generateId(),
+          source: imageBlockId,
+          target: videoBlockId,
+          sourceHandle,
+          targetHandle,
+          autoLinkType,
+        })
+
+        if (previousEdge?.id) {
+          collaborativeBatchRemoveEdges([previousEdge.id], { skipUndoRedo: true })
+        }
+
+        collaborativeBatchAddEdges([edgeToAdd], { skipUndoRedo: true })
+      },
+      [
+        blocks,
+        buildContentReferenceHandles,
+        collaborativeBatchAddEdges,
+        collaborativeBatchRemoveEdges,
+        edges,
+      ]
     )
 
     const applyVideoFrameSelection = useCallback(
@@ -4388,9 +4563,12 @@ const WorkflowContent = React.memo(
 
         const inferredAspectRatio = await inferImageAspectRatioFromUrl(fileSnapshot.path)
         if (inferredAspectRatio !== frameSelection.requiredAspectRatioPreset) {
-          toast.error(`所选图片比例不匹配，请选择 ${frameSelection.requiredAspectRatioPreset} 图片。`, {
-            duration: 3200,
-          })
+          toast.error(
+            `所选图片比例不匹配，请选择 ${frameSelection.requiredAspectRatioPreset} 图片。`,
+            {
+              duration: 3200,
+            }
+          )
           return true
         }
 
@@ -4412,6 +4590,11 @@ const WorkflowContent = React.memo(
         )
 
         collaborativeSetSubblockValue(frameSelection.targetBlockId, 'videoMedia', nextVideoMedia)
+        replaceVideoFrameAutoReferenceEdge(
+          frameSelection.targetBlockId,
+          node.id,
+          frameSelection.slot === 'first' ? 'video_first_frame' : 'video_last_frame'
+        )
         clearFrameSelection()
         toast.success(frameSelection.slot === 'first' ? '首帧已更新。' : '尾帧已更新。', {
           duration: 2200,
@@ -4424,6 +4607,7 @@ const WorkflowContent = React.memo(
         clearFrameSelection,
         collaborativeSetSubblockValue,
         frameSelection,
+        replaceVideoFrameAutoReferenceEdge,
         resolveLiveContentFileSnapshot,
         resolveLiveContentVariant,
       ]
@@ -4444,15 +4628,55 @@ const WorkflowContent = React.memo(
       }
     }, [clearFrameSelection, frameSelection])
 
+    useEffect(() => {
+      if (!contentReferenceSelection) return
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return
+        clearContentReferenceSelection()
+        toast({ message: '已取消内容连线。', duration: 2000 })
+      }
+
+      window.addEventListener('keydown', handleKeyDown, true)
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown, true)
+      }
+    }, [clearContentReferenceSelection, contentReferenceSelection])
+
+    useEffect(() => {
+      const handleClearVideoFrameAutoLink = (event: Event) => {
+        const detail = (
+          event as CustomEvent<{ blockId?: string; autoLinkType?: ContentReferenceAutoLinkType }>
+        ).detail
+        if (!detail?.blockId || !detail.autoLinkType) return
+
+        const edge = findAutoVideoContentReferenceEdge(edges, detail.blockId, detail.autoLinkType)
+        if (!edge?.id) return
+
+        collaborativeBatchRemoveEdges([edge.id], { skipUndoRedo: true })
+      }
+
+      window.addEventListener(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, handleClearVideoFrameAutoLink)
+      return () => {
+        window.removeEventListener(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, handleClearVideoFrameAutoLink)
+      }
+    }, [collaborativeBatchRemoveEdges, edges])
+
     const handleCanvasPaneClick = useCallback(() => {
       if (frameSelection) {
         toast({ message: '请选择画布中的图片节点，按 Esc 取消。', duration: 2200 })
         return
       }
 
+      if (contentReferenceSelection) {
+        toast({ message: '请选择另一个内容节点完成连线，按 Esc 取消。', duration: 2200 })
+        return
+      }
+
       setSelectedEdges(new Map())
+      setContentReferenceEdgeMenu(null)
       usePanelEditorStore.getState().clearCurrentBlock()
-    }, [frameSelection])
+    }, [contentReferenceSelection, frameSelection])
 
     /**
      * Handles node click to select the node in ReactFlow.
@@ -4465,6 +4689,38 @@ const WorkflowContent = React.memo(
           event.preventDefault()
           event.stopPropagation()
           await applyVideoFrameSelection(node)
+          return
+        }
+
+        if (contentReferenceSelection) {
+          event.preventDefault()
+          event.stopPropagation()
+
+          const targetBlock = blocks[node.id]
+          if (!isContentBlockState(targetBlock)) {
+            toast({ message: '只能连接到文本、图片、视频或音频内容节点。', duration: 2200 })
+            return
+          }
+
+          if (node.id === contentReferenceSelection.sourceBlockId) {
+            toast({ message: '不能连接到自己，请选择另一个内容节点。', duration: 2200 })
+            return
+          }
+
+          addEdge(
+            createContentReferenceEdge({
+              id: generateId(),
+              source: contentReferenceSelection.sourceBlockId,
+              target: node.id,
+              ...buildContentReferenceHandles({
+                sourceX: blocks[contentReferenceSelection.sourceBlockId]?.position.x ?? 0,
+                targetX: blocks[node.id]?.position.x ?? 0,
+                sourceAnchor: contentReferenceSelection.sourceAnchor,
+              }),
+            })
+          )
+          clearContentReferenceSelection()
+          toast.success('内容引用线已创建。', { duration: 1800 })
           return
         }
 
@@ -4495,13 +4751,23 @@ const WorkflowContent = React.memo(
           return resolveSelectionConflicts(updated, blocks, isMultiSelect ? node.id : undefined)
         })
       },
-      [applyVideoFrameSelection, blocks, frameSelection, getNodes]
+      [
+        addEdge,
+        applyVideoFrameSelection,
+        blocks,
+        clearContentReferenceSelection,
+        buildContentReferenceHandles,
+        contentReferenceSelection,
+        frameSelection,
+        getNodes,
+      ]
     )
 
     /** Handles edge selection with container context tracking and Shift-click multi-selection. */
     const onEdgeClick = useCallback(
       (event: React.MouseEvent, edge: any) => {
         event.stopPropagation() // Prevent bubbling
+        setContentReferenceEdgeMenu(null)
 
         const contextId = `${edge.id}${(() => {
           const selectionContextId = getEdgeSelectionContextId(edge, getNodes(), blocks)
@@ -4527,6 +4793,35 @@ const WorkflowContent = React.memo(
       [blocks, getNodes]
     )
 
+    const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
+      if (!isContentReferenceEdge(edge)) {
+        setContentReferenceEdgeMenu(null)
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedEdges(new Map([[edge.id, edge.id]]))
+      setContentReferenceEdgeMenu({
+        edgeId: edge.id,
+        x: event.clientX,
+        y: event.clientY,
+      })
+    }, [])
+
+    useEffect(() => {
+      if (!contentReferenceEdgeMenu) return
+
+      const handlePointerDown = () => {
+        setContentReferenceEdgeMenu(null)
+      }
+
+      window.addEventListener('pointerdown', handlePointerDown)
+      return () => {
+        window.removeEventListener('pointerdown', handlePointerDown)
+      }
+    }, [contentReferenceEdgeMenu])
+
     /** Stable delete handler to avoid creating new function references per edge. */
     const handleEdgeDelete = useCallback(
       (edgeId: string) => {
@@ -4540,7 +4835,7 @@ const WorkflowContent = React.memo(
           })
           return
         }
-        removeEdge(edgeId)
+        removeContentReferenceEdgeWithSync(edgeId)
         // Remove this edge from selection (find by edge ID value)
         setSelectedEdges((prev) => {
           const next = new Map(prev)
@@ -4551,8 +4846,9 @@ const WorkflowContent = React.memo(
           }
           return next
         })
+        setContentReferenceEdgeMenu((current) => (current?.edgeId === edgeId ? null : current))
       },
-      [removeEdge, edges, blocks, addNotification, activeWorkflowId]
+      [removeContentReferenceEdgeWithSync, edges, blocks, addNotification, activeWorkflowId]
     )
 
     // Elevate nodes using React Flow's native zIndex so selected/recent blocks
@@ -4617,6 +4913,7 @@ const WorkflowContent = React.memo(
           zIndex: connectedToElevated ? elevatedZIndex : baseZIndex,
           data: {
             ...edge.data,
+            isContentReference: isContentReferenceEdge(edge),
             isSelected: selectedEdges.has(edgeContextId),
             isInsideLoop: Boolean(parentLoopId),
             parentLoopId,
@@ -4655,9 +4952,12 @@ const WorkflowContent = React.memo(
             return !isEdgeProtected(edge, blocks)
           })
           if (edgeIds.length > 0) {
-            collaborativeBatchRemoveEdges(edgeIds)
+            edgeIds.forEach((edgeId) => {
+              removeContentReferenceEdgeWithSync(edgeId)
+            })
           }
           setSelectedEdges(new Map())
+          setContentReferenceEdgeMenu(null)
           return
         }
 
@@ -4710,6 +5010,7 @@ const WorkflowContent = React.memo(
       edges,
       addNotification,
       activeWorkflowId,
+      removeContentReferenceEdgeWithSync,
     ])
 
     useEffect(() => {
@@ -4835,24 +5136,40 @@ const WorkflowContent = React.memo(
                   connectionLineType={ConnectionLineType.SmoothStep}
                   onPaneClick={handleCanvasPaneClick}
                   onEdgeClick={embedded ? undefined : onEdgeClick}
+                  onEdgeContextMenu={embedded ? undefined : onEdgeContextMenu}
                   onNodeClick={handleNodeClick}
                   onPaneContextMenu={handlePaneContextMenu}
                   onNodeContextMenu={handleNodeContextMenu}
                   onSelectionContextMenu={handleSelectionContextMenu}
                   onPointerMove={handleCanvasPointerMove}
                   onPointerLeave={handleCanvasPointerLeave}
-                  elementsSelectable={!embedded && !frameSelection}
+                  elementsSelectable={!embedded && !frameSelection && !contentReferenceSelection}
                   selectionOnDrag={embedded ? false : selectionProps.selectionOnDrag}
                   selectionMode={SelectionMode.Partial}
                   panOnDrag={embedded ? true : selectionProps.panOnDrag}
                   selectionKeyCode={embedded ? null : selectionProps.selectionKeyCode}
                   multiSelectionKeyCode={embedded ? null : ['Meta', 'Control', 'Shift']}
-                  nodesConnectable={!embedded && effectivePermissions.canEdit && !frameSelection}
-                  nodesDraggable={!embedded && effectivePermissions.canEdit && !frameSelection}
+                  nodesConnectable={
+                    !embedded &&
+                    effectivePermissions.canEdit &&
+                    !frameSelection &&
+                    !contentReferenceSelection
+                  }
+                  nodesDraggable={
+                    !embedded &&
+                    effectivePermissions.canEdit &&
+                    !frameSelection &&
+                    !contentReferenceSelection
+                  }
                   draggable={false}
                   noWheelClassName='allow-scroll'
-                  edgesFocusable={!embedded && !frameSelection}
-                  edgesUpdatable={!embedded && effectivePermissions.canEdit && !frameSelection}
+                  edgesFocusable={!embedded && !frameSelection && !contentReferenceSelection}
+                  edgesUpdatable={
+                    !embedded &&
+                    effectivePermissions.canEdit &&
+                    !frameSelection &&
+                    !contentReferenceSelection
+                  }
                   className={`workflow-container h-full bg-[var(--bg)] transition-opacity duration-150 ${reactFlowStyles} ${canvasOpacityClass} ${isHandMode ? 'canvas-mode-hand' : 'canvas-mode-cursor'}`}
                   onNodeDrag={effectivePermissions.canEdit ? onNodeDrag : undefined}
                   onNodeDragStop={effectivePermissions.canEdit ? onNodeDragStop : undefined}
@@ -4878,6 +5195,32 @@ const WorkflowContent = React.memo(
 
                 {!embedded && (
                   <>
+                    {contentReferenceEdgeMenu && (
+                      <div
+                        className='fixed z-[1200]'
+                        style={{
+                          left: contentReferenceEdgeMenu.x,
+                          top: contentReferenceEdgeMenu.y,
+                        }}
+                        onPointerDown={(event) => {
+                          event.stopPropagation()
+                        }}
+                      >
+                        <button
+                          type='button'
+                          className='flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-primary)] text-xs shadow-lg hover-hover:bg-[var(--surface-3)]'
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            handleEdgeDelete(contentReferenceEdgeMenu.edgeId)
+                          }}
+                        >
+                          <Scissors className='h-3.5 w-3.5 text-[var(--text-error)]' />
+                          <span>删除连线</span>
+                        </button>
+                      </div>
+                    )}
+
                     {!IS_LOW_MEMORY_DEV && (
                       <Suspense fallback={null}>
                         <LazyWorkflowControls />

@@ -5,6 +5,7 @@ import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
+import { isContentReferenceEdge } from '@/lib/workflows/content-reference-edges'
 import {
   getDynamicHandleSubblockType,
   isDynamicHandleSubblock,
@@ -471,7 +472,12 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const newEdges = [...currentEdges]
 
         for (const edge of filtered) {
-          if (wouldCreateCycle([...newEdges], edge.source, edge.target)) continue
+          if (
+            !isContentReferenceEdge(edge) &&
+            wouldCreateCycle([...newEdges], edge.source, edge.target)
+          ) {
+            continue
+          }
           newEdges.push({
             id: edge.id || generateId(),
             source: edge.source,

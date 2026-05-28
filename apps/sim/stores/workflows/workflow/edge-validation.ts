@@ -1,6 +1,10 @@
 import type { Edge } from 'reactflow'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { isAnnotationOnlyBlock } from '@/executor/constants'
+import {
+  isContentReferenceEdge,
+  isValidContentReferenceConnection,
+} from '@/lib/workflows/content-reference-edges'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 export interface DroppedEdge {
@@ -60,6 +64,16 @@ export function validateEdges(
 
     if (!sourceBlock || !targetBlock) {
       dropped.push({ edge, reason: 'edge references a missing block' })
+      continue
+    }
+
+    if (isContentReferenceEdge(edge)) {
+      if (!isValidContentReferenceConnection(edge, blocks)) {
+        dropped.push({ edge, reason: 'content reference edges must connect two content blocks' })
+        continue
+      }
+
+      valid.push(edge)
       continue
     }
 
