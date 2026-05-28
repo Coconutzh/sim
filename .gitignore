@@ -90,3 +90,4 @@ i18n.cache
 apps/sim/.vitest-cache/
 test-results/
 tmp-smoke/
+imgs
