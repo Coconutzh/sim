@@ -18,7 +18,7 @@
     "build": "bun run build:sandbox-bundles && NODE_OPTIONS='--max-old-space-size=8192' next build",
     "build:sandbox-bundles": "bun run ./lib/execution/sandbox/bundles/build.ts",
     "start": "next start",
-    "start:local": "next start -p 3000",
+    "start:local": "NEXT_PUBLIC_SOCKET_URL=http://localhost:3002 next start -p 3000",
     "prepare": "cd ../.. && bun husky",
     "test": "vitest run",
     "test:watch": "vitest",

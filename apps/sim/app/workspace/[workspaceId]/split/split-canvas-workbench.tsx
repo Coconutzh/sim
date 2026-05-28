@@ -44,16 +44,17 @@ interface PaneConfig {
   isWorkflowsLoading: boolean
   isWorkflowStateLoading: boolean
   viewport?: PaneViewportSnapshot
-  hasStoredViewport: boolean
   selectedBlockIds: string[]
   selectedEdgeIds: string[]
   copiedBlockIds: string[]
   copiedEdgeIds: string[]
   boxSelectionEnabled: boolean
+  fitRequestKey: number
   onSelectBlock: (blockId: string, additive: boolean) => void
   onSelectEdge: (edgeId: string, additive: boolean) => void
   onBoxSelect: (blockIds: string[], additive: boolean) => void
   onToggleBoxSelection: () => void
+  onFitContent: () => void
   onClearSelection: () => void
   onSelectWorkflow: (workflowId: string) => void
   onViewportChange: (viewport: PaneViewportSnapshot) => void
@@ -124,6 +125,26 @@ function writeStoredPaneViewport(
   }
 }
 
+function clearStoredPaneViewport(kind: CanvasPaneKind, workflowId?: string) {
+  if (typeof window === 'undefined') return
+  const key = getPaneViewportStorageKey(kind, workflowId)
+  if (!key) return
+
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    return
+  }
+}
+
+function hasWorkflowBlocks(workflowState?: WorkflowState | null): boolean {
+  return Object.keys(workflowState?.blocks ?? {}).length > 0
+}
+
+function getWorkflowBlockCount(workflowState?: WorkflowState | null): number {
+  return Object.keys(workflowState?.blocks ?? {}).length
+}
+
 function useDefaultWorkflowSelection(workflows: WorkflowMetadata[], preferredId?: string) {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | undefined>(preferredId)
 
@@ -142,6 +163,7 @@ function useDefaultWorkflowSelection(workflows: WorkflowMetadata[], preferredId?
 
 function PaneHeader({ pane }: { pane: PaneConfig }) {
   const Icon = pane.kind === 'personal' ? PenLine : Users
+  const blockCount = getWorkflowBlockCount(pane.workflowState)
 
   return (
     <div className='flex flex-col gap-3 border-[var(--border)] border-b p-3'>
@@ -155,7 +177,9 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
               {pane.label}
             </div>
             <div className='truncate text-[12px] text-[var(--text-muted)]'>
-              {describePaneSelection(pane.selectedBlockIds, pane.selectedEdgeIds)}
+              {blockCount > 0
+                ? `${blockCount} 个节点 · ${describePaneSelection(pane.selectedBlockIds, pane.selectedEdgeIds)}`
+                : describePaneSelection(pane.selectedBlockIds, pane.selectedEdgeIds)}
             </div>
           </div>
         </div>
@@ -167,7 +191,17 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
               className='h-[28px] px-2'
               onClick={pane.onToggleBoxSelection}
             >
-              Box select
+              框选
+            </Button>
+          )}
+          {pane.workflowState && hasWorkflowBlocks(pane.workflowState) && (
+            <Button
+              variant='default'
+              size='sm'
+              className='h-[28px] px-2'
+              onClick={pane.onFitContent}
+            >
+              适配内容
             </Button>
           )}
           {pane.workspaceId && pane.workflowId && (
@@ -176,15 +210,14 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
               className='flex h-[28px] items-center gap-1.5 rounded-[6px] border border-[var(--border)] px-2 text-[12px] text-[var(--text-body)] transition-colors hover-hover:bg-[var(--surface-hover)]'
             >
               <ExternalLink className='h-[13px] w-[13px]' />
-              Open
+              打开
             </Link>
           )}
         </div>
       </div>
       {pane.boxSelectionEnabled && (
         <div className='rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
-          Drag inside the pane to box-select nodes. Hold Shift/Ctrl/Cmd while starting the drag to
-          add to the current selection.
+          在画布空白处拖拽可以框选节点；按住 Shift/Ctrl/Cmd 再拖拽会追加到当前选择。
         </div>
       )}
       <select
@@ -194,7 +227,7 @@ function PaneHeader({ pane }: { pane: PaneConfig }) {
         className='h-[30px] rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[12px] text-[var(--text-body)] outline-none'
       >
         {pane.workflows.length === 0 ? (
-          <option value=''>No node graph yet</option>
+          <option value=''>还没有画布</option>
         ) : (
           pane.workflows.map((workflow) => (
             <option key={workflow.id} value={workflow.id}>
@@ -322,20 +355,22 @@ function BoxSelectionOverlay({ pane }: { pane: PaneConfig }) {
 
 function CanvasPane({ pane }: { pane: PaneConfig }) {
   const isLoading = pane.isWorkflowsLoading || pane.isWorkflowStateLoading
+  const hasBlocks = hasWorkflowBlocks(pane.workflowState)
+  const blockCount = getWorkflowBlockCount(pane.workflowState)
 
   return (
-    <section className='flex min-h-[360px] min-w-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
+    <section className='flex h-full min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] lg:min-h-0'>
       <PaneHeader pane={pane} />
-      <div className='relative min-h-0 flex-1 bg-[var(--bg)]'>
+      <div className='relative h-full min-h-0 flex-1 overflow-hidden bg-[var(--bg)]'>
         {isLoading && (
           <div className='absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]'>
             <Loader className='h-[18px] w-[18px] text-[var(--text-icon)]' animate />
           </div>
         )}
-        {!isLoading && pane.workflowState && pane.workspaceId ? (
+        {!isLoading && pane.workflowState && pane.workspaceId && hasBlocks ? (
           <>
             <PreviewWorkflow
-              key={`${pane.kind}:${pane.workflowId ?? 'none'}`}
+              key={`${pane.kind}:${pane.workflowId ?? 'none'}:${pane.fitRequestKey}`}
               workflowState={pane.workflowState}
               workspaceId={pane.workspaceId}
               selectedBlockIds={pane.selectedBlockIds}
@@ -343,7 +378,7 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
               focusNodeIds={pane.copiedBlockIds}
               defaultPosition={pane.viewport}
               defaultZoom={pane.viewport?.zoom}
-              autoFitView={!pane.hasStoredViewport}
+              autoFitView
               zoomOnScroll
               onNodeClick={(blockId, _mousePosition, modifiers) =>
                 pane.onSelectBlock(blockId, modifiers?.additive ?? false)
@@ -355,16 +390,22 @@ function CanvasPane({ pane }: { pane: PaneConfig }) {
               cursorStyle='pointer'
               fitPadding={0.2}
               onViewportChange={pane.onViewportChange}
+              className='h-full w-full'
               lightweight
             />
+            <div className='pointer-events-none absolute top-3 right-3 z-10 rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1 text-[11px] text-[var(--text-muted)] shadow-sm'>
+              {blockCount} 个节点
+            </div>
             {pane.boxSelectionEnabled && <BoxSelectionOverlay pane={pane} />}
           </>
         ) : (
           !isLoading && (
             <div className='flex h-full items-center justify-center px-6 text-center text-[13px] text-[var(--text-muted)] leading-5'>
-              {pane.workspaceId
-                ? 'Create a node graph in this canvas before using split view copy.'
-                : 'This canvas is not available for the active team.'}
+              {pane.workspaceId && pane.workflowState && !hasBlocks
+                ? '这个画布当前没有节点。请先点“打开”进入完整画布新增节点，再回到分屏复制。'
+                : pane.workspaceId
+                  ? '请先选择一个有节点的画布，再使用分屏复制。'
+                  : 'This canvas is not available for the active team.'}
             </div>
           )
         )}
@@ -410,8 +451,8 @@ export function SplitCanvasWorkbench() {
   const [copiedTeamEdgeIds, setCopiedTeamEdgeIds] = useState<string[]>([])
   const [personalViewport, setPersonalViewport] = useState<PaneViewportSnapshot | undefined>()
   const [teamViewport, setTeamViewport] = useState<PaneViewportSnapshot | undefined>()
-  const [personalHasStoredViewport, setPersonalHasStoredViewport] = useState(false)
-  const [teamHasStoredViewport, setTeamHasStoredViewport] = useState(false)
+  const [personalFitRequestKey, setPersonalFitRequestKey] = useState(0)
+  const [teamFitRequestKey, setTeamFitRequestKey] = useState(0)
   const [activeMobilePane, setActiveMobilePane] = useState<CanvasPaneKind>('personal')
   const [personalBoxSelectionEnabled, setPersonalBoxSelectionEnabled] = useState(false)
   const [teamBoxSelectionEnabled, setTeamBoxSelectionEnabled] = useState(false)
@@ -420,13 +461,11 @@ export function SplitCanvasWorkbench() {
   useEffect(() => {
     const storedViewport = readStoredPaneViewport('personal', personalWorkflowId)
     setPersonalViewport(storedViewport)
-    setPersonalHasStoredViewport(Boolean(storedViewport))
   }, [personalWorkflowId])
 
   useEffect(() => {
     const storedViewport = readStoredPaneViewport('team', teamWorkflowId)
     setTeamViewport(storedViewport)
-    setTeamHasStoredViewport(Boolean(storedViewport))
   }, [teamWorkflowId])
 
   const panes = useMemo(() => {
@@ -440,12 +479,12 @@ export function SplitCanvasWorkbench() {
       isWorkflowsLoading: isPersonalWorkflowsLoading,
       isWorkflowStateLoading: isPersonalWorkflowStateLoading,
       viewport: personalViewport,
-      hasStoredViewport: personalHasStoredViewport,
       selectedBlockIds: selectedPersonalBlockIds,
       selectedEdgeIds: selectedPersonalEdgeIds,
       copiedBlockIds: copiedPersonalBlockIds,
       copiedEdgeIds: copiedPersonalEdgeIds,
       boxSelectionEnabled: personalBoxSelectionEnabled,
+      fitRequestKey: personalFitRequestKey,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('personal')
         setActiveMobilePane('personal')
@@ -479,6 +518,11 @@ export function SplitCanvasWorkbench() {
         setPersonalBoxSelectionEnabled((enabled) => !enabled)
         setTeamBoxSelectionEnabled(false)
       },
+      onFitContent: () => {
+        clearStoredPaneViewport('personal', personalWorkflowId)
+        setPersonalViewport(undefined)
+        setPersonalFitRequestKey((key) => key + 1)
+      },
       onClearSelection: () => {
         setSelectedPersonalBlockIds([])
         setSelectedPersonalEdgeIds([])
@@ -493,7 +537,6 @@ export function SplitCanvasWorkbench() {
         setCopiedPersonalEdgeIds([])
         const storedViewport = readStoredPaneViewport('personal', workflowId)
         setPersonalViewport(storedViewport)
-        setPersonalHasStoredViewport(Boolean(storedViewport))
       },
       onViewportChange: (viewport) => {
         setPersonalViewport(viewport)
@@ -510,12 +553,12 @@ export function SplitCanvasWorkbench() {
       isWorkflowsLoading: isTeamWorkflowsLoading,
       isWorkflowStateLoading: isTeamWorkflowStateLoading,
       viewport: teamViewport,
-      hasStoredViewport: teamHasStoredViewport,
       selectedBlockIds: selectedTeamBlockIds,
       selectedEdgeIds: selectedTeamEdgeIds,
       copiedBlockIds: copiedTeamBlockIds,
       copiedEdgeIds: copiedTeamEdgeIds,
       boxSelectionEnabled: teamBoxSelectionEnabled,
+      fitRequestKey: teamFitRequestKey,
       onSelectBlock: (blockId, additive) => {
         setSelectedPane('team')
         setActiveMobilePane('team')
@@ -549,6 +592,11 @@ export function SplitCanvasWorkbench() {
         setTeamBoxSelectionEnabled((enabled) => !enabled)
         setPersonalBoxSelectionEnabled(false)
       },
+      onFitContent: () => {
+        clearStoredPaneViewport('team', teamWorkflowId)
+        setTeamViewport(undefined)
+        setTeamFitRequestKey((key) => key + 1)
+      },
       onClearSelection: () => {
         setSelectedTeamBlockIds([])
         setSelectedTeamEdgeIds([])
@@ -563,7 +611,6 @@ export function SplitCanvasWorkbench() {
         setCopiedTeamEdgeIds([])
         const storedViewport = readStoredPaneViewport('team', workflowId)
         setTeamViewport(storedViewport)
-        setTeamHasStoredViewport(Boolean(storedViewport))
       },
       onViewportChange: (viewport) => {
         setTeamViewport(viewport)
@@ -584,9 +631,9 @@ export function SplitCanvasWorkbench() {
     personalWorkflowState,
     personalWorkflows,
     personalBoxSelectionEnabled,
+    personalFitRequestKey,
     personalWorkspaceId,
     personalViewport,
-    personalHasStoredViewport,
     selectedPersonalBlockIds,
     selectedPersonalEdgeIds,
     selectedTeamBlockIds,
@@ -597,9 +644,9 @@ export function SplitCanvasWorkbench() {
     teamWorkflowState,
     teamWorkflows,
     teamBoxSelectionEnabled,
+    teamFitRequestKey,
     teamWorkspaceId,
     teamViewport,
-    teamHasStoredViewport,
   ])
 
   const sourcePane = panes[selectedPane]
@@ -679,7 +726,7 @@ export function SplitCanvasWorkbench() {
                 : 'Split view'}
             </div>
             <h1 className='mt-1 font-medium text-[18px] text-[var(--text-primary)]'>
-              Split view canvas workbench
+              分屏画布工作台
             </h1>
           </div>
           <Button
@@ -693,7 +740,7 @@ export function SplitCanvasWorkbench() {
             ) : (
               <ArrowRight className='h-[14px] w-[14px]' />
             )}
-            Copy selected to {targetPane.label}
+            复制选中节点到 {targetPane.label}
           </Button>
         </div>
         <div
@@ -703,8 +750,8 @@ export function SplitCanvasWorkbench() {
           )}
         >
           {copiedTargetBlockIds.length > 0
-            ? `Copied ${copiedTargetBlockIds.length} block${copiedTargetBlockIds.length === 1 ? '' : 's'}${copiedTargetEdgeIds.length > 0 ? ` and ${copiedTargetEdgeIds.length} edge${copiedTargetEdgeIds.length === 1 ? '' : 's'}` : ''} into ${targetPane.label}. New target selection is highlighted and focused after refresh.`
-            : 'Click nodes in either pane, Shift/Ctrl/Cmd-click to multi-select, and click edges to limit which connections copy. Selected edges copy only when both endpoint nodes are selected.'}
+            ? `已复制 ${copiedTargetBlockIds.length} 个节点${copiedTargetEdgeIds.length > 0 ? `和 ${copiedTargetEdgeIds.length} 条连线` : ''}到 ${targetPane.label}。复制后的目标节点会被高亮并自动聚焦。`
+            : '用法：先在左侧或右侧画布点击节点；按住 Shift/Ctrl/Cmd 点击可多选；需要连线时再点连线。然后点击右上角复制按钮，选中的节点会复制到另一侧画布。只有两端节点都被选中时，连线才会一起复制。'}
         </div>
       </div>
       <div className='grid grid-cols-2 gap-1 border-[var(--border)] border-b bg-[var(--surface-1)] p-2 lg:hidden'>
@@ -731,11 +778,11 @@ export function SplitCanvasWorkbench() {
           )
         })}
       </div>
-      <div className='grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 lg:grid-cols-2'>
-        <div className={cn(activeMobilePane !== 'personal' && 'hidden lg:block')}>
+      <div className='grid min-h-0 flex-1 gap-3 overflow-hidden p-3 lg:grid-cols-2'>
+        <div className={cn('min-h-0', activeMobilePane !== 'personal' ? 'hidden lg:flex' : 'flex')}>
           <CanvasPane pane={panes.personal} />
         </div>
-        <div className={cn(activeMobilePane !== 'team' && 'hidden lg:block')}>
+        <div className={cn('min-h-0', activeMobilePane !== 'team' ? 'hidden lg:flex' : 'flex')}>
           <CanvasPane pane={panes.team} />
         </div>
       </div>
