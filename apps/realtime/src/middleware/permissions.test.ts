@@ -22,11 +22,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockAuthorizeWorkflowByWorkspacePermission,
   mockDb,
+  mockIsAuthDisabled,
   mockResolveCanvasScope,
   mockWorkflowRows,
   schemaMock,
 } = vi.hoisted(() => {
   const workflowRows: unknown[] = []
+  const envFlags = { isAuthDisabled: false }
   const chain: Record<string, unknown> = {}
 
   chain.from = vi.fn(() => chain)
@@ -38,6 +40,7 @@ const {
     mockDb: {
       select: vi.fn(() => chain),
     },
+    mockIsAuthDisabled: envFlags,
     mockResolveCanvasScope: vi.fn(),
     mockWorkflowRows: workflowRows,
     schemaMock: {
@@ -54,6 +57,11 @@ const {
 
 vi.mock('@sim/db', () => ({ db: mockDb }))
 vi.mock('@sim/db/schema', () => schemaMock)
+vi.mock('@/env', () => ({
+  get isAuthDisabled() {
+    return mockIsAuthDisabled.isAuthDisabled
+  },
+}))
 vi.mock('@sim/workflow-authz', () => ({
   authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
   resolveCanvasScope: mockResolveCanvasScope,
@@ -358,7 +366,23 @@ describe('verifyWorkflowAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockWorkflowRows.length = 0
+    mockIsAuthDisabled.isAuthDisabled = false
     mockResolveCanvasScope.mockReturnValue('team')
+  })
+
+  it('bypasses workspace permission checks when auth is disabled', async () => {
+    queueWorkflowRow('local-workflow')
+    mockIsAuthDisabled.isAuthDisabled = true
+
+    await expect(verifyWorkflowAccess('anonymous-user', 'local-workflow')).resolves.toEqual({
+      hasAccess: true,
+      role: 'admin',
+      workspaceId: 'workspace-1',
+      canvasScope: 'team',
+    })
+
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    expect(mockResolveCanvasScope).not.toHaveBeenCalled()
   })
 
   it('denies personal draft room access when the caller is not the owner', async () => {

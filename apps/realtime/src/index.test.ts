@@ -444,5 +444,22 @@ describe('Socket Server Index Integration', () => {
 
       expect(() => WorkflowOperationSchema.parse(validSubflowOperation)).not.toThrow()
     })
+
+    it('should validate single subblock update operations', async () => {
+      const { WorkflowOperationSchema } = await import('@sim/realtime-protocol/schemas')
+
+      const validSubblockOperation = {
+        operation: 'subblock-update',
+        target: 'subblock',
+        payload: {
+          blockId: 'block-1',
+          subblockId: 'contentHtml',
+          value: '<p>Persist me</p>',
+        },
+        timestamp: Date.now(),
+      }
+
+      expect(() => WorkflowOperationSchema.parse(validSubblockOperation)).not.toThrow()
+    })
   })
 })

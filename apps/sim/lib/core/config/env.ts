@@ -131,6 +131,8 @@ export const env = createEnv({
     LUMA_API_KEY:                          z.string().min(1).optional(),           // Luma API key for video generation
     MINIMAX_API_KEY:                       z.string().min(1).optional(),           // MiniMax API key for video generation
     FAL_API_KEY:                           z.string().min(1).optional(),           // Fal.ai API key for video generation
+    DASHSCOPE_API_KEY:                     z.string().min(1).optional(),           // DashScope API key for Wan video generation
+    DASHSCOPE_BASE_URL:                    z.string().url().optional(),            // Optional DashScope API base URL override
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
     BLACKLISTED_PROVIDERS:                 z.string().optional(),                  // Comma-separated provider IDs to hide (e.g., "openai,anthropic")

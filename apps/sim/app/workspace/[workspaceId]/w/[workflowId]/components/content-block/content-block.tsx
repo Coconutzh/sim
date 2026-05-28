@@ -14,6 +14,23 @@ import {
   type ImageAspectRatioValue,
   type ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
+import {
+  DEFAULT_VIDEO_DURATION_SECONDS,
+  DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
+  DEFAULT_VIDEO_MODEL_FAMILY,
+  DEFAULT_VIDEO_MODEL,
+  DEFAULT_VIDEO_RESOLUTION,
+  getVideoMediaFileForType,
+  getVideoModelFamilyFromModelId,
+  isVideoFrameAspectRatioPreset,
+  isVideoModelFamily,
+  removeVideoMediaFileForType,
+  type VideoFrameAspectRatioPreset,
+  type VideoGenerationModelId,
+  type VideoMediaFileSlot,
+  type VideoModelFamily,
+  type VideoResolution,
+} from '@/lib/generated-media/video/video-generation-utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
@@ -21,13 +38,18 @@ import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflo
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
+import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
+import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
+import { usePanelEditorStore } from '@/stores/panel'
+import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -35,11 +57,20 @@ type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefin
 interface ContentBlockNodeData extends WorkflowBlockProps {}
 
 interface UploadedFileValue {
+  id?: string
   name?: string
   path?: string
   key?: string
   size?: number
   type?: string
+  context?: string
+}
+
+interface VideoParametersValue {
+  resolution: VideoResolution
+  duration: number
+  promptExtend: boolean
+  watermark: boolean
 }
 
 const DEFAULT_TEXT_HTML = '<p></p>'
@@ -57,6 +88,12 @@ const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
 const AUDIO_CARD_HEIGHT = 132
+const DEFAULT_VIDEO_PARAMETERS: VideoParametersValue = {
+  resolution: DEFAULT_VIDEO_RESOLUTION,
+  duration: DEFAULT_VIDEO_DURATION_SECONDS,
+  promptExtend: true,
+  watermark: false,
+}
 
 const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const
 const BACKGROUND_COLORS = ['#FFF8C5', '#FEE2E2', '#DBEAFE', '#DCFCE7', '#F3E8FF'] as const
@@ -122,6 +159,67 @@ function inferVariantFromFile(value: unknown): ContentVariant | null {
 
 function matchesVariantFile(value: unknown, variant: ContentVariant): boolean {
   return inferVariantFromFile(value) === variant
+}
+
+function isUploadedFileValue(value: unknown): value is UploadedFileValue {
+  return hasUploadedFileValue(value)
+}
+
+function normalizeVideoModelFamily(
+  value: unknown,
+  legacyModelValue?: unknown
+): VideoModelFamily {
+  if (isVideoModelFamily(value)) {
+    return value
+  }
+
+  if (
+    legacyModelValue === 'wan2.7-i2v' ||
+    legacyModelValue === 'wan2.6-t2v' ||
+    legacyModelValue === 'wan2.6-i2v-flash'
+  ) {
+    return getVideoModelFamilyFromModelId(legacyModelValue as VideoGenerationModelId)
+  }
+
+  return DEFAULT_VIDEO_MODEL_FAMILY
+}
+
+function normalizeVideoResolution(value: unknown): VideoResolution {
+  return value === '1080P' || value === '720P' ? value : DEFAULT_VIDEO_RESOLUTION
+}
+
+function normalizeVideoDuration(value: unknown): number {
+  return Math.max(2, Math.min(15, Math.round(coerceNumber(value, DEFAULT_VIDEO_DURATION_SECONDS))))
+}
+
+function normalizeVideoParameters(value: unknown): VideoParametersValue {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_VIDEO_PARAMETERS
+  }
+
+  const candidate = value as Partial<VideoParametersValue>
+  return {
+    resolution: normalizeVideoResolution(candidate.resolution),
+    duration: normalizeVideoDuration(candidate.duration),
+    promptExtend: candidate.promptExtend ?? true,
+    watermark: candidate.watermark ?? false,
+  }
+}
+
+function normalizeVideoMedia(
+  value: unknown
+): Array<VideoMediaFileSlot<UploadedFileValue>> {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const type = (item as { type?: unknown }).type
+    const file = (item as { file?: unknown }).file
+    if ((type !== 'first_frame' && type !== 'last_frame') || !isUploadedFileValue(file)) {
+      return []
+    }
+    return [{ type, file }]
+  })
 }
 
 function resolveContentVariant(
@@ -652,10 +750,20 @@ function MediaContentCard({
   aiPrompt,
   aiModel,
   aiAspectRatio,
+  videoPrompt,
+  videoModelFamily,
+  videoMedia,
+  videoParameters,
+  videoFrameAspectRatioPreset,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
   onChangeAiAspectRatio,
+  onChangeVideoPrompt,
+  onChangeVideoModelFamily,
+  onChangeVideoMedia,
+  onChangeVideoParameters,
+  onChangeVideoFrameAspectRatioPreset,
 }: {
   blockId: string
   variant: Extract<ContentVariant, 'image' | 'video' | 'audio'>
@@ -667,16 +775,31 @@ function MediaContentCard({
   aiPrompt: string
   aiModel: string
   aiAspectRatio: ImageAspectRatioValue
+  videoPrompt: string
+  videoModelFamily: VideoModelFamily
+  videoMedia: Array<VideoMediaFileSlot<UploadedFileValue>>
+  videoParameters: VideoParametersValue
+  videoFrameAspectRatioPreset: VideoFrameAspectRatioPreset
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
   onChangeAiAspectRatio: (value: ImageAspectRatioValue) => void
+  onChangeVideoPrompt: (value: string) => void
+  onChangeVideoModelFamily: (value: VideoModelFamily) => void
+  onChangeVideoMedia: (value: Array<VideoMediaFileSlot<UploadedFileValue>>) => void
+  onChangeVideoParameters: (value: VideoParametersValue) => void
+  onChangeVideoFrameAspectRatioPreset: (value: VideoFrameAspectRatioPreset) => void
 }) {
   const params = useParams<{ workspaceId: string }>()
   const inputRef = useRef<HTMLInputElement>(null)
   const uploadFileMutation = useUploadWorkspaceFile()
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
+  const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
+  const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+  const currentEditorBlockId = usePanelEditorStore((state) => state.currentBlockId)
+  const workflowBlocks = useWorkflowStore((state) => state.blocks)
   const [inferredAspectRatio, setInferredAspectRatio] = useState<Exclude<
     ImageAspectRatioValue,
     'auto'
@@ -711,6 +834,30 @@ function MediaContentCard({
       : variant === 'video'
         ? 'Supports a single local video file.'
         : 'Supports a single local audio file.'
+  const referencedVideoBlockId = frameSelection?.targetBlockId ?? currentEditorBlockId
+  const referencedVideoBlock = referencedVideoBlockId ? workflowBlocks[referencedVideoBlockId] : null
+  const referencedVideoMediaValue = useSubBlockStore(
+    useCallback(
+      (state) => {
+        if (!activeWorkflowId || !referencedVideoBlockId) return undefined
+        return state.workflowValues[activeWorkflowId]?.[referencedVideoBlockId]?.videoMedia
+      },
+      [activeWorkflowId, referencedVideoBlockId]
+    )
+  )
+  const referencedVideoMedia = normalizeVideoMedia(
+    referencedVideoBlock
+      ? referencedVideoMediaValue ?? referencedVideoBlock.subBlocks?.videoMedia?.value
+      : []
+  )
+  const isReferencedFirstFrame =
+    variant === 'image' &&
+    Boolean(file?.key) &&
+    getVideoMediaFileForType(referencedVideoMedia, 'first_frame')?.key === file?.key
+  const isReferencedLastFrame =
+    variant === 'image' &&
+    Boolean(file?.key) &&
+    getVideoMediaFileForType(referencedVideoMedia, 'last_frame')?.key === file?.key
 
   useEffect(() => {
     setIsBroken(false)
@@ -759,6 +906,26 @@ function MediaContentCard({
     aspectRatio: resolvedAspectRatio,
     onChangeFile,
   })
+  const {
+    modelOptions: videoModelOptions,
+    aspectRatioOptions: videoAspectRatioOptions,
+    resolutionOptions: videoResolutionOptions,
+    durationOptions: videoDurationOptions,
+    isGenerating: isVideoGenerating,
+    error: videoGenerationError,
+    submitPrompt: submitVideoPrompt,
+  } = useVideoContentAiSession({
+    blockId,
+    workspaceId: params.workspaceId,
+    prompt: videoPrompt,
+    modelFamily: videoModelFamily,
+    aspectRatioPreset: videoFrameAspectRatioPreset,
+    resolution: videoParameters.resolution,
+    durationSeconds: videoParameters.duration,
+    firstFrameFile: getVideoMediaFileForType(videoMedia, 'first_frame'),
+    lastFrameFile: getVideoMediaFileForType(videoMedia, 'last_frame'),
+    onChangeFile,
+  })
 
   const openFileDialog = useCallback(() => {
     if (!canUpload) return
@@ -783,19 +950,21 @@ function MediaContentCard({
 
       setError(null)
 
-      try {
-        const result = await uploadFileMutation.mutateAsync({
-          workspaceId: params.workspaceId,
-          file: nextFile,
-          skipToast: true,
+        try {
+          const result = await uploadFileMutation.mutateAsync({
+            workspaceId: params.workspaceId,
+            file: nextFile,
+            skipToast: true,
         })
 
         onChangeFile({
+          id: result.file.id,
           name: result.file.name,
           path: result.file.url,
           key: result.file.key,
           size: result.file.size,
           type: result.file.type,
+          context: result.file.context,
         })
       } catch (uploadError) {
         const message =
@@ -824,13 +993,33 @@ function MediaContentCard({
 
         {hasMedia ? (
           variant === 'image' ? (
-            <div className='relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3'>
+            <div
+              className={cn(
+                'relative flex h-[240px] w-[320px] items-center justify-center bg-[var(--surface-1)] px-3 py-3',
+                (isReferencedFirstFrame || isReferencedLastFrame) &&
+                  'ring-2 ring-[#F4B740] ring-offset-0'
+              )}
+            >
               <img
                 src={mediaPath}
                 alt={file?.name || 'Uploaded content'}
                 className='max-h-full max-w-full rounded-xl object-contain'
                 onError={() => setIsBroken(true)}
               />
+              {(isReferencedFirstFrame || isReferencedLastFrame) && (
+                <div className='pointer-events-none absolute top-3 left-3 flex flex-wrap gap-2'>
+                  {isReferencedFirstFrame ? (
+                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[10px] text-[#F4C86A]'>
+                      当前首帧
+                    </span>
+                  ) : null}
+                  {isReferencedLastFrame ? (
+                    <span className='rounded-full bg-[#2A2417] px-2 py-1 text-[10px] text-[#F4C86A]'>
+                      当前尾帧
+                    </span>
+                  ) : null}
+                </div>
+              )}
             </div>
           ) : variant === 'video' ? (
             <div className='flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3'>
@@ -936,6 +1125,62 @@ function MediaContentCard({
           onSubmit={submitPrompt}
         />
       )}
+
+      {variant === 'video' && !isPreview && !isEmbedded && (
+        <VideoContentAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={videoPrompt}
+          modelFamily={videoModelFamily}
+          aspectRatioPreset={videoFrameAspectRatioPreset}
+          resolution={videoParameters.resolution}
+          durationSeconds={videoParameters.duration}
+          firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
+          lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
+          isGenerating={isVideoGenerating}
+          error={videoGenerationError}
+          isSelectingFrame={frameSelection?.targetBlockId === blockId}
+          selectedFrameSlot={
+            frameSelection?.targetBlockId === blockId ? frameSelection.slot : null
+          }
+          modelOptions={videoModelOptions}
+          aspectRatioOptions={videoAspectRatioOptions}
+          resolutionOptions={videoResolutionOptions}
+          durationOptions={videoDurationOptions}
+          onChangePrompt={onChangeVideoPrompt}
+          onChangeModelFamily={onChangeVideoModelFamily}
+          onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
+          onChangeResolution={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              resolution: value,
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onChangeDurationSeconds={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              duration: normalizeVideoDuration(value),
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onSelectFrame={(slot) =>
+            beginFrameSelection({
+              targetBlockId: blockId,
+              slot,
+              modelFamily: videoModelFamily,
+              requiredAspectRatioPreset: videoFrameAspectRatioPreset,
+            })
+          }
+          onClearFrame={(slot) => {
+            const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
+            onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
+          }}
+          onSubmit={submitVideoPrompt}
+        />
+      )}
     </div>
   )
 }
@@ -977,6 +1222,21 @@ export const ContentBlock = memo(function ContentBlock({
   const [aiPromptValue, setAiPromptValue] = useSubBlockValue<string>(id, 'aiPrompt')
   const [aiModelValue, setAiModelValue] = useSubBlockValue<string>(id, 'aiModel')
   const [aiAspectRatioValue, setAiAspectRatioValue] = useSubBlockValue<string>(id, 'aiAspectRatio')
+  const [videoPromptValue, setVideoPromptValue] = useSubBlockValue<string>(id, 'videoPrompt')
+  const [videoModelValue, setVideoModelValue] = useSubBlockValue<string>(id, 'videoModel')
+  const [videoModelFamilyValue, setVideoModelFamilyValue] = useSubBlockValue<string>(
+    id,
+    'videoModelFamily'
+  )
+  const [videoMediaValue, setVideoMediaValue] = useSubBlockValue<
+    Array<VideoMediaFileSlot<UploadedFileValue>>
+  >(id, 'videoMedia')
+  const [videoParametersValue, setVideoParametersValue] = useSubBlockValue<VideoParametersValue>(
+    id,
+    'videoParameters'
+  )
+  const [videoFrameAspectRatioPresetValue, setVideoFrameAspectRatioPresetValue] =
+    useSubBlockValue<string>(id, 'videoFrameAspectRatioPreset')
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
 
   const userPermissions = useUserPermissionsContext()
@@ -1055,6 +1315,63 @@ export const ContentBlock = memo(function ContentBlock({
     'aiAspectRatio',
     DEFAULT_IMAGE_ASPECT_RATIO
   ) as ImageAspectRatioValue
+  const resolvedVideoPrompt = extractStoredValue<string>(
+    data.isPreview ? sourceValues : ({ videoPrompt: videoPromptValue } as StoredValueRecord),
+    'videoPrompt',
+    ''
+  )
+  const resolvedLegacyVideoModel = extractStoredValue<string>(
+    data.isPreview ? sourceValues : ({ videoModel: videoModelValue } as StoredValueRecord),
+    'videoModel',
+    DEFAULT_VIDEO_MODEL
+  )
+  const resolvedVideoModelFamily = normalizeVideoModelFamily(
+    extractStoredValue<string>(
+      data.isPreview
+        ? sourceValues
+        : ({ videoModelFamily: videoModelFamilyValue } as StoredValueRecord),
+      'videoModelFamily',
+      DEFAULT_VIDEO_MODEL_FAMILY
+    ),
+    resolvedLegacyVideoModel
+  )
+  const resolvedVideoMedia = normalizeVideoMedia(
+    extractStoredValue<unknown>(
+      data.isPreview ? sourceValues : ({ videoMedia: videoMediaValue } as StoredValueRecord),
+      'videoMedia',
+      []
+    )
+  )
+  const resolvedVideoParameters = normalizeVideoParameters(
+    extractStoredValue<unknown>(
+      data.isPreview
+        ? sourceValues
+        : ({ videoParameters: videoParametersValue } as StoredValueRecord),
+      'videoParameters',
+      DEFAULT_VIDEO_PARAMETERS
+    )
+  )
+  const resolvedVideoFrameAspectRatioPreset = isVideoFrameAspectRatioPreset(
+    extractStoredValue<string>(
+      data.isPreview
+        ? sourceValues
+        : ({
+            videoFrameAspectRatioPreset: videoFrameAspectRatioPresetValue,
+          } as StoredValueRecord),
+      'videoFrameAspectRatioPreset',
+      DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
+    )
+  )
+    ? (extractStoredValue<string>(
+        data.isPreview
+          ? sourceValues
+          : ({
+              videoFrameAspectRatioPreset: videoFrameAspectRatioPresetValue,
+            } as StoredValueRecord),
+        'videoFrameAspectRatioPreset',
+        DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
+      ) as VideoFrameAspectRatioPreset)
+    : DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
 
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -1086,6 +1403,13 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedAiPrompt,
       resolvedAiModel,
       resolvedAiAspectRatio,
+      resolvedVideoPrompt,
+      resolvedVideoModelFamily,
+      resolvedVideoParameters.resolution,
+      resolvedVideoParameters.duration,
+      resolvedVideoFrameAspectRatioPreset,
+      getVideoMediaFileForType(resolvedVideoMedia, 'first_frame')?.path,
+      getVideoMediaFileForType(resolvedVideoMedia, 'last_frame')?.path,
       resolvedFile?.path,
       selected,
     ],
@@ -1129,6 +1453,11 @@ export const ContentBlock = memo(function ContentBlock({
             aiPrompt={resolvedAiPrompt}
             aiModel={resolvedAiModel}
             aiAspectRatio={resolvedAiAspectRatio}
+            videoPrompt={resolvedVideoPrompt}
+            videoModelFamily={resolvedVideoModelFamily}
+            videoMedia={resolvedVideoMedia}
+            videoParameters={resolvedVideoParameters}
+            videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}
@@ -1140,6 +1469,21 @@ export const ContentBlock = memo(function ContentBlock({
             }}
             onChangeAiAspectRatio={(value) => {
               if (!data.isPreview) setAiAspectRatioValue(value)
+            }}
+            onChangeVideoPrompt={(value) => {
+              if (!data.isPreview) setVideoPromptValue(value)
+            }}
+            onChangeVideoModelFamily={(value) => {
+              if (!data.isPreview) setVideoModelFamilyValue(value)
+            }}
+            onChangeVideoMedia={(value) => {
+              if (!data.isPreview) setVideoMediaValue(value)
+            }}
+            onChangeVideoParameters={(value) => {
+              if (!data.isPreview) setVideoParametersValue(value)
+            }}
+            onChangeVideoFrameAspectRatioPreset={(value) => {
+              if (!data.isPreview) setVideoFrameAspectRatioPresetValue(value)
             }}
           />
         ) : (

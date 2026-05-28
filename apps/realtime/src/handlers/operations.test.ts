@@ -1,7 +1,11 @@
 /**
  * @vitest-environment node
  */
-import { BLOCK_OPERATIONS, OPERATION_TARGETS } from '@sim/realtime-protocol/constants'
+import {
+  BLOCK_OPERATIONS,
+  OPERATION_TARGETS,
+  SUBBLOCK_OPERATIONS,
+} from '@sim/realtime-protocol/constants'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IRoomManager, UserPresence } from '@/rooms'
 
@@ -105,6 +109,20 @@ function createPositionOperation(commit = false) {
   }
 }
 
+function createSubblockUpdateOperation() {
+  return {
+    operation: SUBBLOCK_OPERATIONS.UPDATE,
+    target: OPERATION_TARGETS.SUBBLOCK,
+    payload: {
+      blockId: 'block-1',
+      subblockId: 'contentHtml',
+      value: '<p>Persist me</p>',
+    },
+    timestamp: Date.now(),
+    operationId: 'op-subblock-1',
+  }
+}
+
 describe('setupOperationsHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -152,5 +170,39 @@ describe('setupOperationsHandlers', () => {
       })
     )
     expect(mockPersistWorkflowOperation).not.toHaveBeenCalled()
+  })
+
+  it('persists and broadcasts single subblock updates for write users', async () => {
+    const { handlers, socket, roomEmit } = createSocket()
+    const roomManager = createRoomManager(createPresence('write'))
+
+    setupOperationsHandlers(
+      socket as unknown as Parameters<typeof setupOperationsHandlers>[0],
+      roomManager
+    )
+
+    const operation = createSubblockUpdateOperation()
+    await handlers['workflow-operation'](operation)
+
+    expect(mockPersistWorkflowOperation).toHaveBeenCalledWith(
+      'workflow-1',
+      expect.objectContaining({
+        operation: SUBBLOCK_OPERATIONS.UPDATE,
+        target: OPERATION_TARGETS.SUBBLOCK,
+        payload: operation.payload,
+      })
+    )
+    expect(roomEmit).toHaveBeenCalledWith(
+      'workflow-operation',
+      expect.objectContaining({
+        operation: SUBBLOCK_OPERATIONS.UPDATE,
+        target: OPERATION_TARGETS.SUBBLOCK,
+        payload: operation.payload,
+      })
+    )
+    expect(socket.emit).toHaveBeenCalledWith(
+      'operation-confirmed',
+      expect.objectContaining({ operationId: 'op-subblock-1' })
+    )
   })
 })

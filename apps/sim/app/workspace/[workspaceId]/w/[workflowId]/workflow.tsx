@@ -18,12 +18,18 @@ import 'reactflow/dist/style.css'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { useShallow } from 'zustand/react/shallow'
+import { toast } from '@/components/emcn'
 import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthConnectEventDetail } from '@/lib/copilot/tools/client/base-tool'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import type { OAuthProvider } from '@/lib/oauth'
+import {
+  getNearestSupportedImageAspectRatio,
+  type ImageAspectRatioValue,
+} from '@/lib/generated-media/image/image-generation-utils'
+import { upsertVideoMediaFile } from '@/lib/generated-media/video/video-generation-utils'
 import { type ContentNodePresetId, getContentNodePreset } from '@/lib/product/content-node-presets'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import {
@@ -116,7 +122,9 @@ import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowSearchReplaceStore } from '@/stores/workflow-search-replace/store'
+import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState } from '@/stores/workflows/workflow/types'
@@ -143,6 +151,91 @@ const LazyCommandList = lazy(() =>
     })
   )
 )
+
+type ContentVariant = 'text' | 'image' | 'video' | 'audio'
+
+interface UploadedFileSnapshot {
+  id?: string
+  name?: string
+  path?: string
+  key?: string
+  size?: number
+  type?: string
+  context?: string
+}
+
+function hasUploadedFileSnapshot(value: unknown): value is UploadedFileSnapshot {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      ('path' in value || 'key' in value || 'name' in value) &&
+      (typeof (value as UploadedFileSnapshot).path === 'string' ||
+        typeof (value as UploadedFileSnapshot).key === 'string' ||
+        typeof (value as UploadedFileSnapshot).name === 'string')
+  )
+}
+
+function inferContentVariantFromSnapshot(value: unknown): ContentVariant | null {
+  if (!hasUploadedFileSnapshot(value)) return null
+
+  const file = value as UploadedFileSnapshot
+  const fileType = file.type?.toLowerCase()
+  if (fileType?.startsWith('image/')) return 'image'
+  if (fileType?.startsWith('video/')) return 'video'
+  if (fileType?.startsWith('audio/')) return 'audio'
+
+  const fileName = `${file.name ?? ''} ${file.path ?? ''}`.toLowerCase()
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName)) return 'image'
+  if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return 'video'
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return 'audio'
+
+  return null
+}
+
+function normalizeContentVariant(value: unknown): ContentVariant | null {
+  return value === 'text' || value === 'image' || value === 'video' || value === 'audio'
+    ? value
+    : null
+}
+
+function getStoredSubBlockValue(
+  source: Record<string, unknown> | undefined,
+  key: string
+): unknown | undefined {
+  const rawValue = source?.[key]
+  if (rawValue && typeof rawValue === 'object' && 'value' in rawValue) {
+    return (rawValue as { value?: unknown }).value
+  }
+  return rawValue
+}
+
+function inferImageAspectRatioFromUrl(path: string): Promise<Exclude<ImageAspectRatioValue, 'auto'> | null> {
+  if (typeof window === 'undefined') return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const image = new window.Image()
+    image.onload = () => resolve(getNearestSupportedImageAspectRatio(image.naturalWidth, image.naturalHeight))
+    image.onerror = () => resolve(null)
+    image.src = path
+  })
+}
+
+function normalizeVideoMediaSnapshots(value: unknown): Array<{
+  type: 'first_frame' | 'last_frame'
+  file: UploadedFileSnapshot
+}> {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const type = (item as { type?: unknown }).type
+    const file = (item as { file?: unknown }).file
+    if ((type !== 'first_frame' && type !== 'last_frame') || !hasUploadedFileSnapshot(file)) {
+      return []
+    }
+    return [{ type, file }]
+  })
+}
 
 const LazyDiffControls = lazy(() =>
   import(
@@ -503,6 +596,8 @@ const WorkflowContent = React.memo(
     const isVariablesOpen = useVariablesModalStore((state) => state.isOpen)
     const isChatOpen = useChatStore((state) => state.isChatOpen)
     const isWorkflowSearchReplaceOpen = useWorkflowSearchReplaceStore((state) => state.isOpen)
+    const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
+    const clearFrameSelection = useVideoFrameSelectionStore((state) => state.clearSelection)
 
     const snapGrid: [number, number] = useMemo(
       () => [snapToGridSize, snapToGridSize],
@@ -838,6 +933,7 @@ const WorkflowContent = React.memo(
       collaborativeBatchToggleBlockEnabled,
       collaborativeBatchToggleBlockHandles,
       collaborativeBatchToggleLocked,
+      collaborativeSetSubblockValue,
       undo,
       redo,
     } = useCollaborativeWorkflow()
@@ -4222,10 +4318,141 @@ const WorkflowContent = React.memo(
       ]
     )
 
-    const onPaneClick = useCallback(() => {
+    const resolveLiveContentFileSnapshot = useCallback(
+      (blockId: string, node: Node): UploadedFileSnapshot | null => {
+        const storeValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[blockId]
+          : undefined
+        const liveFile = storeValues?.file
+        if (hasUploadedFileSnapshot(liveFile)) {
+          return liveFile
+        }
+
+        const nodeSubBlockValues =
+          node.data && typeof node.data === 'object' && 'subBlockValues' in node.data
+            ? ((node.data as { subBlockValues?: Record<string, unknown> }).subBlockValues ?? undefined)
+            : undefined
+        const previewFile = getStoredSubBlockValue(nodeSubBlockValues, 'file')
+        if (hasUploadedFileSnapshot(previewFile)) {
+          return previewFile
+        }
+
+        const blockFile = blocks[blockId]?.subBlocks?.file?.value
+        return hasUploadedFileSnapshot(blockFile) ? blockFile : null
+      },
+      [activeWorkflowId, blocks]
+    )
+
+    const resolveLiveContentVariant = useCallback(
+      (blockId: string, node: Node, fileSnapshot: UploadedFileSnapshot | null): ContentVariant | null => {
+        const block = blocks[blockId]
+        if (block?.type !== 'content') {
+          return null
+        }
+
+        const storeValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[blockId]
+          : undefined
+        return (
+          normalizeContentVariant(storeValues?.contentVariant) ||
+          normalizeContentVariant((node.data as { contentVariant?: unknown } | undefined)?.contentVariant) ||
+          normalizeContentVariant(getStoredSubBlockValue(block.subBlocks as Record<string, unknown>, 'contentVariant')) ||
+          inferContentVariantFromSnapshot(fileSnapshot)
+        )
+      },
+      [activeWorkflowId, blocks]
+    )
+
+    const applyVideoFrameSelection = useCallback(
+      async (node: Node) => {
+        if (!frameSelection) return false
+
+        const targetBlock = blocks[frameSelection.targetBlockId]
+        if (!targetBlock || targetBlock.type !== 'content') {
+          clearFrameSelection()
+          return true
+        }
+
+        const fileSnapshot = resolveLiveContentFileSnapshot(node.id, node)
+        const variant = resolveLiveContentVariant(node.id, node, fileSnapshot)
+
+        if (variant !== 'image') {
+          toast({ message: '只能选择图片内容节点作为首帧或尾帧。', duration: 2500 })
+          return true
+        }
+
+        if (!fileSnapshot?.path || !fileSnapshot.key) {
+          toast.error('该图片节点缺少可用文件，无法作为首帧或尾帧。', { duration: 3000 })
+          return true
+        }
+
+        const inferredAspectRatio = await inferImageAspectRatioFromUrl(fileSnapshot.path)
+        if (inferredAspectRatio !== frameSelection.requiredAspectRatioPreset) {
+          toast.error(`所选图片比例不匹配，请选择 ${frameSelection.requiredAspectRatioPreset} 图片。`, {
+            duration: 3200,
+          })
+          return true
+        }
+
+        const targetStoreValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[
+              frameSelection.targetBlockId
+            ]
+          : undefined
+        const storedVideoMedia = normalizeVideoMediaSnapshots(targetStoreValues?.videoMedia)
+        const currentVideoMedia =
+          storedVideoMedia.length > 0
+            ? storedVideoMedia
+            : normalizeVideoMediaSnapshots(targetBlock.subBlocks?.videoMedia?.value)
+
+        const nextVideoMedia = upsertVideoMediaFile(
+          currentVideoMedia,
+          frameSelection.slot === 'first' ? 'first_frame' : 'last_frame',
+          { ...fileSnapshot }
+        )
+
+        collaborativeSetSubblockValue(frameSelection.targetBlockId, 'videoMedia', nextVideoMedia)
+        clearFrameSelection()
+        toast.success(frameSelection.slot === 'first' ? '首帧已更新。' : '尾帧已更新。', {
+          duration: 2200,
+        })
+        return true
+      },
+      [
+        activeWorkflowId,
+        blocks,
+        clearFrameSelection,
+        collaborativeSetSubblockValue,
+        frameSelection,
+        resolveLiveContentFileSnapshot,
+        resolveLiveContentVariant,
+      ]
+    )
+
+    useEffect(() => {
+      if (!frameSelection) return
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return
+        clearFrameSelection()
+        toast({ message: '已取消画布选帧。', duration: 2000 })
+      }
+
+      window.addEventListener('keydown', handleKeyDown, true)
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown, true)
+      }
+    }, [clearFrameSelection, frameSelection])
+
+    const handleCanvasPaneClick = useCallback(() => {
+      if (frameSelection) {
+        toast({ message: '请选择画布中的图片节点，按 Esc 取消。', duration: 2200 })
+        return
+      }
+
       setSelectedEdges(new Map())
       usePanelEditorStore.getState().clearCurrentBlock()
-    }, [])
+    }, [frameSelection])
 
     /**
      * Handles node click to select the node in ReactFlow.
@@ -4233,7 +4460,14 @@ const WorkflowContent = React.memo(
      * consistently for click, shift-click, and marquee selection.
      */
     const handleNodeClick = useCallback(
-      (event: React.MouseEvent, node: Node) => {
+      async (event: React.MouseEvent, node: Node) => {
+        if (frameSelection) {
+          event.preventDefault()
+          event.stopPropagation()
+          await applyVideoFrameSelection(node)
+          return
+        }
+
         const isMultiSelect = event.shiftKey || event.metaKey || event.ctrlKey
 
         // Ignore shift-clicks on nodes at a different nesting level
@@ -4261,7 +4495,7 @@ const WorkflowContent = React.memo(
           return resolveSelectionConflicts(updated, blocks, isMultiSelect ? node.id : undefined)
         })
       },
-      [blocks, getNodes]
+      [applyVideoFrameSelection, blocks, frameSelection, getNodes]
     )
 
     /** Handles edge selection with container context tracking and Shift-click multi-selection. */
@@ -4599,7 +4833,7 @@ const WorkflowContent = React.memo(
                   proOptions={reactFlowProOptions}
                   connectionLineStyle={connectionLineStyle}
                   connectionLineType={ConnectionLineType.SmoothStep}
-                  onPaneClick={onPaneClick}
+                  onPaneClick={handleCanvasPaneClick}
                   onEdgeClick={embedded ? undefined : onEdgeClick}
                   onNodeClick={handleNodeClick}
                   onPaneContextMenu={handlePaneContextMenu}
@@ -4607,18 +4841,18 @@ const WorkflowContent = React.memo(
                   onSelectionContextMenu={handleSelectionContextMenu}
                   onPointerMove={handleCanvasPointerMove}
                   onPointerLeave={handleCanvasPointerLeave}
-                  elementsSelectable={!embedded}
+                  elementsSelectable={!embedded && !frameSelection}
                   selectionOnDrag={embedded ? false : selectionProps.selectionOnDrag}
                   selectionMode={SelectionMode.Partial}
                   panOnDrag={embedded ? true : selectionProps.panOnDrag}
                   selectionKeyCode={embedded ? null : selectionProps.selectionKeyCode}
                   multiSelectionKeyCode={embedded ? null : ['Meta', 'Control', 'Shift']}
-                  nodesConnectable={!embedded && effectivePermissions.canEdit}
-                  nodesDraggable={!embedded && effectivePermissions.canEdit}
+                  nodesConnectable={!embedded && effectivePermissions.canEdit && !frameSelection}
+                  nodesDraggable={!embedded && effectivePermissions.canEdit && !frameSelection}
                   draggable={false}
                   noWheelClassName='allow-scroll'
-                  edgesFocusable={!embedded}
-                  edgesUpdatable={!embedded && effectivePermissions.canEdit}
+                  edgesFocusable={!embedded && !frameSelection}
+                  edgesUpdatable={!embedded && effectivePermissions.canEdit && !frameSelection}
                   className={`workflow-container h-full bg-[var(--bg)] transition-opacity duration-150 ${reactFlowStyles} ${canvasOpacityClass} ${isHandMode ? 'canvas-mode-hand' : 'canvas-mode-cursor'}`}
                   onNodeDrag={effectivePermissions.canEdit ? onNodeDrag : undefined}
                   onNodeDragStop={effectivePermissions.canEdit ? onNodeDragStop : undefined}

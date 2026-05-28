@@ -2,9 +2,29 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { registerEmitFunctions, useOperationQueueStore } from '@/stores/operation-queue/store'
+import {
+  rehydratePersistedOperationQueue,
+  registerEmitFunctions,
+  useOperationQueueStore,
+} from '@/stores/operation-queue/store'
 
 describe('operation queue room gating', () => {
+  const createStorage = () => {
+    const store = new Map<string, string>()
+    return {
+      getItem: vi.fn((key: string) => store.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        store.set(key, value)
+      }),
+      removeItem: vi.fn((key: string) => {
+        store.delete(key)
+      }),
+      clear: vi.fn(() => {
+        store.clear()
+      }),
+    }
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     useOperationQueueStore.setState({
@@ -365,6 +385,51 @@ describe('operation queue room gating', () => {
       await expect(drained).resolves.toBe(false)
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  it('rehydrates persisted operations as pending so refresh does not drop unsaved changes', () => {
+    const sessionStorage = createStorage()
+    const originalWindow = (globalThis as { window?: unknown }).window
+    ;(globalThis as { window?: unknown }).window = { sessionStorage }
+
+    try {
+      sessionStorage.setItem(
+        'sim:operation-queue:v1',
+        JSON.stringify({
+          operations: [
+            {
+              id: 'op-restore-1',
+              workflowId: 'workflow-a',
+              userId: 'user-1',
+              timestamp: Date.now(),
+              retryCount: 1,
+              status: 'processing',
+              operation: {
+                operation: 'batch-add-blocks',
+                target: 'blocks',
+                payload: {
+                  blocks: [{ id: 'block-1', type: 'content' }],
+                  edges: [],
+                },
+              },
+            },
+          ],
+        })
+      )
+
+      rehydratePersistedOperationQueue()
+
+      expect(useOperationQueueStore.getState().operations).toEqual([
+        expect.objectContaining({
+          id: 'op-restore-1',
+          workflowId: 'workflow-a',
+          status: 'pending',
+          retryCount: 1,
+        }),
+      ])
+    } finally {
+      ;(globalThis as { window?: unknown }).window = originalWindow
     }
   })
 })

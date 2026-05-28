@@ -30,6 +30,7 @@ const RETRY_DELAY_BASE_MS = 1000
 const retryTimeouts = new Map<string, NodeJS.Timeout>()
 const operationTimeouts = new Map<string, NodeJS.Timeout>()
 const DEFAULT_WORKFLOW_DRAIN_TIMEOUT_MS = 20000
+const OPERATION_QUEUE_STORAGE_KEY = 'sim:operation-queue:v1'
 
 let emitWorkflowOperation:
   | ((
@@ -58,6 +59,100 @@ let emitVariableUpdate:
       workflowId: string
     ) => void)
   | null = null
+
+function getOperationQueueStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage ?? null
+  } catch {
+    return null
+  }
+}
+
+function normalizePersistedOperations(operations: unknown): QueuedOperation[] {
+  if (!Array.isArray(operations)) return []
+
+  return operations
+    .filter((operation): operation is QueuedOperation => {
+      if (!operation || typeof operation !== 'object') return false
+      const candidate = operation as Partial<QueuedOperation>
+      return (
+        typeof candidate.id === 'string' &&
+        typeof candidate.workflowId === 'string' &&
+        typeof candidate.userId === 'string' &&
+        typeof candidate.timestamp === 'number' &&
+        typeof candidate.retryCount === 'number' &&
+        candidate.operation !== undefined
+      )
+    })
+    .map((operation) => ({
+      ...operation,
+      status: 'pending',
+    }))
+}
+
+function loadPersistedOperations(): QueuedOperation[] {
+  const storage = getOperationQueueStorage()
+  if (!storage) return []
+
+  try {
+    const raw = storage.getItem(OPERATION_QUEUE_STORAGE_KEY)
+    if (!raw) return []
+
+    const parsed = JSON.parse(raw) as { operations?: unknown }
+    return normalizePersistedOperations(parsed.operations)
+  } catch (error) {
+    logger.warn('Failed to load persisted operation queue', { error })
+    return []
+  }
+}
+
+function persistOperations(operations: QueuedOperation[]): void {
+  const storage = getOperationQueueStorage()
+  if (!storage) return
+
+  try {
+    if (operations.length === 0) {
+      storage.removeItem(OPERATION_QUEUE_STORAGE_KEY)
+      return
+    }
+
+    storage.setItem(OPERATION_QUEUE_STORAGE_KEY, JSON.stringify({ operations }))
+  } catch (error) {
+    logger.warn('Failed to persist operation queue', { error, operationCount: operations.length })
+  }
+}
+
+export function rehydratePersistedOperationQueue(): void {
+  const persistedOperations = loadPersistedOperations()
+  if (persistedOperations.length === 0) return
+
+  const state = useOperationQueueStore.getState()
+  const existingIds = new Set(state.operations.map((operation) => operation.id))
+  const restoredOperations = persistedOperations.filter((operation) => !existingIds.has(operation.id))
+  if (restoredOperations.length === 0) return
+
+  const workflowVersionBumps = restoredOperations.reduce<Record<string, number>>((acc, operation) => {
+    acc[operation.workflowId] = (acc[operation.workflowId] ?? 0) + 1
+    return acc
+  }, {})
+
+  useOperationQueueStore.setState((currentState) => ({
+    operations: [...currentState.operations, ...restoredOperations],
+    workflowOperationVersions: {
+      ...currentState.workflowOperationVersions,
+      ...Object.fromEntries(
+        Object.entries(workflowVersionBumps).map(([workflowId, bump]) => [
+          workflowId,
+          (currentState.workflowOperationVersions[workflowId] ?? 0) + bump,
+        ])
+      ),
+    },
+    hasOperationError: false,
+  }))
+
+  useOperationQueueStore.getState().processNextOperation()
+}
 
 export function registerEmitFunctions(
   workflowEmit: (
@@ -95,7 +190,7 @@ export function registerEmitFunctions(
 let currentRegisteredWorkflowId: string | null = null
 
 export const useOperationQueueStore = create<OperationQueueState>((set, get) => ({
-  operations: [],
+  operations: loadPersistedOperations(),
   workflowOperationVersions: {},
   isProcessing: false,
   hasOperationError: false,
@@ -609,6 +704,10 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     set({ hasOperationError: false })
   },
 }))
+
+useOperationQueueStore.subscribe((state) => {
+  persistOperations(state.operations)
+})
 
 /**
  * Hook to access operation queue state and actions.

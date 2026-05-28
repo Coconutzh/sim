@@ -1,0 +1,77 @@
+<h2>视频节点 AI 生成交互草图</h2>
+<p class="subtitle">推荐先做 A：底部摘要按钮 + 参数弹层 + 首尾帧缩略图选择位</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 推荐方案</div>
+        <div class="mockup-body">
+          <div style="background:#1d1f24;border-radius:20px;padding:18px;color:#f5f7fa;">
+            <div style="height:120px;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px;color:#9fa5b2;">
+              输入提示词...
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:12px;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <div style="padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);font-size:12px;">wan2.7</div>
+                <div style="padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);font-size:12px;">首尾帧 · 16:9 · 720P · 5s · 有音频</div>
+              </div>
+              <div style="width:40px;height:40px;border-radius:999px;background:#f4b740;color:#1d1f24;display:flex;align-items:center;justify-content:center;font-weight:700;">Go</div>
+            </div>
+            <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,.08);padding-top:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <strong style="font-size:13px;">参数弹层</strong>
+                <div style="display:flex;gap:10px;">
+                  <div style="width:56px;height:56px;border-radius:14px;border:1px dashed rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:24px;">+</div>
+                  <div style="width:56px;height:56px;border-radius:14px;border:1px dashed rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:24px;">+</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:#c7ccd6;">
+                <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,.05);">生成方式：首尾帧</div>
+                <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,.05);">比例：16:9</div>
+                <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,.05);">清晰度：720P</div>
+                <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,.05);">时长：5s</div>
+                <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,.05);grid-column:1 / span 2;">生成音频：开启</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>摘要清晰，参数集中</h3>
+      <p>默认只露出模型和当前摘要，展开后再做首尾帧与参数配置，最适合第一版继续扩模型和扩参数。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 轻量备选</div>
+        <div class="mockup-body">
+          <div style="background:#1d1f24;border-radius:20px;padding:18px;color:#f5f7fa;">
+            <div style="height:120px;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px;color:#9fa5b2;">
+              输入提示词...
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:12px;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <div style="padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);font-size:12px;">wan2.7</div>
+                <div style="padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);font-size:12px;">设置</div>
+              </div>
+              <div style="width:40px;height:40px;border-radius:999px;background:#f4b740;color:#1d1f24;display:flex;align-items:center;justify-content:center;font-weight:700;">Go</div>
+            </div>
+            <div style="margin-top:14px;display:flex;gap:8px;">
+              <div style="flex:1;height:60px;border-radius:14px;border:1px dashed rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:22px;">+</div>
+              <div style="flex:1;height:60px;border-radius:14px;border:1px dashed rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:22px;">+</div>
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:#9fa5b2;">参数散落在底部多个入口里，操作步数少一些，但状态不够集中。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>界面更轻，但状态分散</h3>
+      <p>不额外强调参数摘要，画面更简洁，不过用户不容易一眼确认当前的比例、时长、清晰度和音频状态。</p>
+    </div>
+  </div>
+</div>

@@ -1731,8 +1731,14 @@ async function handleSubblockOperationTx(
   payload: any
 ) {
   switch (operation) {
+    case SUBBLOCK_OPERATIONS.UPDATE:
     case SUBBLOCK_OPERATIONS.BATCH_UPDATE: {
-      const updates = payload.updates
+      const updates =
+        operation === SUBBLOCK_OPERATIONS.UPDATE
+          ? [payload]
+          : Array.isArray(payload.updates)
+            ? payload.updates
+            : []
       if (!Array.isArray(updates) || updates.length === 0) {
         return
       }

@@ -135,22 +135,31 @@ export const WorkflowStateOperationSchema = z.object({
   operationId: z.string().optional(),
 })
 
-export const SubblockOperationSchema = z.object({
-  operation: z.literal(SUBBLOCK_OPERATIONS.BATCH_UPDATE),
-  target: z.literal(OPERATION_TARGETS.SUBBLOCK),
-  payload: z.object({
-    updates: z.array(
-      z.object({
-        blockId: z.string(),
-        subblockId: z.string(),
-        value: z.any(),
-        expectedValue: z.any().optional(),
-      })
-    ),
-  }),
-  timestamp: z.number(),
-  operationId: z.string().optional(),
+const SubblockUpdatePayloadSchema = z.object({
+  blockId: z.string(),
+  subblockId: z.string(),
+  value: z.any(),
+  expectedValue: z.any().optional(),
 })
+
+export const SubblockOperationSchema = z.union([
+  z.object({
+    operation: z.literal(SUBBLOCK_OPERATIONS.UPDATE),
+    target: z.literal(OPERATION_TARGETS.SUBBLOCK),
+    payload: SubblockUpdatePayloadSchema,
+    timestamp: z.number(),
+    operationId: z.string().optional(),
+  }),
+  z.object({
+    operation: z.literal(SUBBLOCK_OPERATIONS.BATCH_UPDATE),
+    target: z.literal(OPERATION_TARGETS.SUBBLOCK),
+    payload: z.object({
+      updates: z.array(SubblockUpdatePayloadSchema),
+    }),
+    timestamp: z.number(),
+    operationId: z.string().optional(),
+  }),
+])
 
 export const BatchAddBlocksSchema = z.object({
   operation: z.literal(BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS),

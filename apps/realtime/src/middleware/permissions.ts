@@ -9,6 +9,7 @@ import {
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
+import { isAuthDisabled } from '@/env'
 
 const logger = createLogger('SocketPermissions')
 
@@ -108,6 +109,20 @@ export async function verifyWorkflowAccess(
     }
 
     const { workspaceId, name: workflowName, track } = workflowData[0]
+
+    if (isAuthDisabled) {
+      logger.info(`Bypassing workflow access check for ${workflowId} because auth is disabled`, {
+        userId,
+        workspaceId,
+      })
+      return {
+        hasAccess: true,
+        role: 'admin',
+        workspaceId: workspaceId || undefined,
+        canvasScope: 'team',
+      }
+    }
+
     const authorization = await authorizeWorkflowByWorkspacePermission({
       workflowId,
       userId,

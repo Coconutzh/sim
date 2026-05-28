@@ -30,6 +30,7 @@ import { invalidateDeploymentQueries } from '@/hooks/queries/deployments'
 import { useUndoRedo } from '@/hooks/use-undo-redo'
 import { useNotificationStore } from '@/stores/notifications'
 import {
+  rehydratePersistedOperationQueue,
   registerEmitFunctions,
   useOperationQueue,
   useOperationQueueStore,
@@ -192,6 +193,8 @@ export function useCollaborativeWorkflow() {
       emitVariableUpdate,
       registeredWorkflowId
     )
+
+    rehydratePersistedOperationQueue()
   }, [
     activeWorkflowId,
     currentWorkflowId,
@@ -248,6 +251,12 @@ export function useCollaborativeWorkflow() {
           }
         } else if (target === OPERATION_TARGETS.SUBBLOCK) {
           switch (operation) {
+            case SUBBLOCK_OPERATIONS.UPDATE: {
+              const { blockId, subblockId, value } = payload
+              useSubBlockStore.getState().setValue(blockId, subblockId, value)
+              useWorkflowStore.getState().syncDynamicHandleSubblockValue(blockId, subblockId, value)
+              break
+            }
             case SUBBLOCK_OPERATIONS.BATCH_UPDATE: {
               const { updates } = payload
               if (Array.isArray(updates)) {

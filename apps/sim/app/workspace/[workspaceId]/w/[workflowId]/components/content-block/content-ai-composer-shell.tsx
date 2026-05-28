@@ -12,6 +12,7 @@ interface ContentAiComposerShellProps {
   isGenerating: boolean
   loadingLabel: string
   error: string | null
+  header?: ReactNode
   footer: ReactNode
   afterFooter?: ReactNode
   onChangePrompt: (value: string) => void
@@ -34,6 +35,7 @@ export function ContentAiComposerShell({
   isGenerating,
   loadingLabel,
   error,
+  header,
   footer,
   afterFooter,
   onChangePrompt,
@@ -52,6 +54,8 @@ export function ContentAiComposerShell({
     >
       <div className='overflow-hidden rounded-[22px] border border-[#303038] bg-[#1D1F24] text-[#F5F7FA] shadow-[0_20px_50px_rgba(0,0,0,0.18)]'>
         <div className='relative px-4 pt-4 pb-3'>
+          {header ? <div className='mb-3'>{header}</div> : null}
+
           <textarea
             value={prompt}
             onChange={(event) => onChangePrompt(event.target.value)}
@@ -76,7 +80,7 @@ export function ContentAiComposerShell({
           />
 
           {isGenerating && (
-            <div className='pointer-events-none absolute inset-x-4 top-4 flex h-[92px] items-start justify-between rounded-2xl border border-white/5 bg-[linear-gradient(90deg,rgba(255,255,255,0.02),rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-3 py-3'>
+            <div className='pointer-events-none absolute inset-x-4 top-4 bottom-3 flex items-start justify-between rounded-2xl border border-white/5 bg-[linear-gradient(90deg,rgba(255,255,255,0.02),rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-3 py-3'>
               <div className='flex items-center gap-2 text-[#D8DDE7] text-xs'>
                 <Loader2 className='h-3.5 w-3.5 animate-spin' />
                 <span>{loadingLabel}</span>
