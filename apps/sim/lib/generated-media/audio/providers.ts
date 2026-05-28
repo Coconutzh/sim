@@ -1,0 +1,223 @@
+import { createLogger } from '@sim/logger'
+import { env } from '@/lib/core/config/env'
+import type { AudioGenerationParametersValue, AudioGenerationModelId } from '@/lib/generated-media/audio/audio-generation-utils'
+
+const logger = createLogger('GeneratedAudioProviders')
+
+const EVOLINK_BASE_URL =
+  process.env.NODE_ENV === 'test'
+    ? 'https://api.evolink.ai/v1'
+    : (env.EVOLINK_BASE_URL ?? 'https://api.evolink.ai/v1')
+const EVOLINK_AUDIO_ENDPOINT = `${EVOLINK_BASE_URL.replace(/\/$/, '')}/audios/generations`
+const EVOLINK_TASKS_ENDPOINT = `${EVOLINK_BASE_URL.replace(/\/$/, '')}/tasks`
+const EVOLINK_POLL_INTERVAL_MS = 1500
+
+interface GenerateAudioWithProviderInput {
+  model: AudioGenerationModelId
+  prompt: string
+  parameters: AudioGenerationParametersValue
+}
+
+export interface GeneratedAudioProviderResult {
+  buffer: Buffer
+  mimeType: string
+  provider: 'evolink'
+  providerModel: AudioGenerationModelId
+  taskId: string
+}
+
+interface EvolinkTaskPayload {
+  id?: string
+  task_id?: string
+  status?: string
+  message?: string
+  error?: string | { code?: string; message?: string; type?: string }
+  results?: unknown
+  data?: {
+    id?: string
+    task_id?: string
+    status?: string
+    message?: string
+    error?: string | { code?: string; message?: string; type?: string }
+    results?: unknown
+  }
+}
+
+function getEvolinkApiKey(): string {
+  const apiKey = env.EVOLINK_API_KEY
+  if (!apiKey) {
+    throw new Error('EVOLINK_API_KEY is not configured')
+  }
+  return apiKey
+}
+
+function getProviderErrorMessage(payload: EvolinkTaskPayload, fallback: string) {
+  const errorMessage =
+    typeof payload.error === 'object' && payload.error
+      ? payload.error.message
+      : typeof payload.error === 'string'
+        ? payload.error
+        : undefined
+  const nestedErrorMessage =
+    typeof payload.data?.error === 'object' && payload.data.error
+      ? payload.data.error.message
+      : typeof payload.data?.error === 'string'
+        ? payload.data.error
+        : undefined
+
+  return (
+    errorMessage ||
+    payload.message ||
+    nestedErrorMessage ||
+    payload.data?.message ||
+    fallback
+  )
+}
+
+function getTaskId(payload: EvolinkTaskPayload) {
+  const taskId = payload.id || payload.task_id || payload.data?.id || payload.data?.task_id
+  if (!taskId) {
+    throw new Error('EvoLink did not return a task id')
+  }
+  return taskId
+}
+
+function normalizeTaskStatus(status: string | undefined) {
+  const normalized = status?.trim().toUpperCase()
+  if (!normalized) return null
+  if (normalized === 'SUCCESS' || normalized === 'SUCCEEDED' || normalized === 'COMPLETED') {
+    return 'SUCCEEDED'
+  }
+  if (normalized === 'FAILED' || normalized === 'FAILURE') {
+    return 'FAILED'
+  }
+  if (normalized === 'CANCELED' || normalized === 'CANCELLED') {
+    return 'CANCELED'
+  }
+  return normalized
+}
+
+function getTaskStatus(payload: EvolinkTaskPayload) {
+  return normalizeTaskStatus(payload.status || payload.data?.status)
+}
+
+function getAudioResultUrls(payload: EvolinkTaskPayload) {
+  const candidates = [payload.results, payload.data?.results]
+
+  return candidates.flatMap((candidate) => {
+    if (!Array.isArray(candidate)) return []
+    return candidate.flatMap((item) => {
+      if (typeof item === 'string' && item.length > 0) return [item]
+      if (item && typeof item === 'object') {
+        const url = (item as { url?: unknown; audio_url?: unknown }).url
+        if (typeof url === 'string' && url.length > 0) return [url]
+        const audioUrl = (item as { url?: unknown; audio_url?: unknown }).audio_url
+        if (typeof audioUrl === 'string' && audioUrl.length > 0) return [audioUrl]
+      }
+      return []
+    })
+  })
+}
+
+function buildEvolinkPayload({
+  model,
+  prompt,
+  parameters,
+}: GenerateAudioWithProviderInput) {
+  const payload: Record<string, unknown> = {
+    model,
+    custom_mode: parameters.customMode,
+    instrumental: parameters.instrumental,
+    prompt,
+  }
+
+  if (parameters.customMode) {
+    if (parameters.style.trim()) payload.style = parameters.style.trim()
+    if (parameters.title.trim()) payload.title = parameters.title.trim()
+    if (parameters.negativeTags.trim()) payload.negative_tags = parameters.negativeTags.trim()
+    if (parameters.vocalGender.trim()) payload.vocal_gender = parameters.vocalGender.trim()
+  }
+
+  return payload
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export async function generateAudioWithProvider({
+  model,
+  prompt,
+  parameters,
+}: GenerateAudioWithProviderInput): Promise<GeneratedAudioProviderResult> {
+  const apiKey = getEvolinkApiKey()
+  const payload = buildEvolinkPayload({ model, prompt, parameters })
+
+  const createResponse = await fetch(EVOLINK_AUDIO_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const createPayload = (await createResponse.json().catch(() => ({}))) as EvolinkTaskPayload
+  if (!createResponse.ok) {
+    const errorMessage = getProviderErrorMessage(
+      createPayload,
+      `EvoLink audio request failed (${createResponse.status})`
+    )
+    logger.error('EvoLink audio task creation failed', {
+      model,
+      status: createResponse.status,
+      error: errorMessage,
+    })
+    throw new Error(errorMessage)
+  }
+
+  const taskId = getTaskId(createPayload)
+  let latestPayload = createPayload
+
+  while (true) {
+    const status = getTaskStatus(latestPayload)
+    if (status === 'SUCCEEDED') break
+    if (status === 'FAILED' || status === 'CANCELED') {
+      throw new Error(getProviderErrorMessage(latestPayload, `EvoLink task ${status.toLowerCase()}`))
+    }
+
+    await sleep(EVOLINK_POLL_INTERVAL_MS)
+
+    const pollResponse = await fetch(`${EVOLINK_TASKS_ENDPOINT}/${taskId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    latestPayload = (await pollResponse.json().catch(() => ({}))) as EvolinkTaskPayload
+
+    if (!pollResponse.ok) {
+      throw new Error(
+        getProviderErrorMessage(latestPayload, `EvoLink task polling failed (${pollResponse.status})`)
+      )
+    }
+  }
+
+  const resultUrl = getAudioResultUrls(latestPayload)[0]
+  if (!resultUrl) {
+    throw new Error('EvoLink task succeeded but returned no audio result URL')
+  }
+
+  const downloadResponse = await fetch(resultUrl)
+  if (!downloadResponse.ok) {
+    throw new Error(`Failed to download generated audio (${downloadResponse.status})`)
+  }
+
+  return {
+    buffer: Buffer.from(await downloadResponse.arrayBuffer()),
+    mimeType: downloadResponse.headers.get('content-type') || 'audio/mpeg',
+    provider: 'evolink',
+    providerModel: model,
+    taskId,
+  }
+}

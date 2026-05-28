@@ -15,6 +15,13 @@ import {
   type ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
+  DEFAULT_AUDIO_MODEL,
+  DEFAULT_AUDIO_PARAMETERS,
+  isAudioGenerationModel,
+  type AudioGenerationModelId,
+  type AudioGenerationParametersValue,
+} from '@/lib/generated-media/audio/audio-generation-utils'
+import {
   DEFAULT_VIDEO_DURATION_SECONDS,
   DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
   DEFAULT_VIDEO_MODEL_FAMILY,
@@ -35,7 +42,9 @@ import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/provide
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
+import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
+import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
@@ -220,6 +229,26 @@ function normalizeVideoMedia(
     }
     return [{ type, file }]
   })
+}
+
+function normalizeAudioModel(value: unknown): AudioGenerationModelId {
+  return isAudioGenerationModel(value) ? value : DEFAULT_AUDIO_MODEL
+}
+
+function normalizeAudioParameters(value: unknown): AudioGenerationParametersValue {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_AUDIO_PARAMETERS
+  }
+
+  const candidate = value as Partial<AudioGenerationParametersValue>
+  return {
+    customMode: candidate.customMode ?? DEFAULT_AUDIO_PARAMETERS.customMode,
+    instrumental: candidate.instrumental ?? DEFAULT_AUDIO_PARAMETERS.instrumental,
+    style: typeof candidate.style === 'string' ? candidate.style : '',
+    title: typeof candidate.title === 'string' ? candidate.title : '',
+    negativeTags: typeof candidate.negativeTags === 'string' ? candidate.negativeTags : '',
+    vocalGender: typeof candidate.vocalGender === 'string' ? candidate.vocalGender : '',
+  }
 }
 
 function resolveContentVariant(
@@ -750,6 +779,9 @@ function MediaContentCard({
   aiPrompt,
   aiModel,
   aiAspectRatio,
+  audioPrompt,
+  audioModel,
+  audioParameters,
   videoPrompt,
   videoModelFamily,
   videoMedia,
@@ -759,6 +791,9 @@ function MediaContentCard({
   onChangeAiPrompt,
   onChangeAiModel,
   onChangeAiAspectRatio,
+  onChangeAudioPrompt,
+  onChangeAudioModel,
+  onChangeAudioParameters,
   onChangeVideoPrompt,
   onChangeVideoModelFamily,
   onChangeVideoMedia,
@@ -775,6 +810,9 @@ function MediaContentCard({
   aiPrompt: string
   aiModel: string
   aiAspectRatio: ImageAspectRatioValue
+  audioPrompt: string
+  audioModel: AudioGenerationModelId
+  audioParameters: AudioGenerationParametersValue
   videoPrompt: string
   videoModelFamily: VideoModelFamily
   videoMedia: Array<VideoMediaFileSlot<UploadedFileValue>>
@@ -784,6 +822,9 @@ function MediaContentCard({
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
   onChangeAiAspectRatio: (value: ImageAspectRatioValue) => void
+  onChangeAudioPrompt: (value: string) => void
+  onChangeAudioModel: (value: AudioGenerationModelId) => void
+  onChangeAudioParameters: (value: AudioGenerationParametersValue) => void
   onChangeVideoPrompt: (value: string) => void
   onChangeVideoModelFamily: (value: VideoModelFamily) => void
   onChangeVideoMedia: (value: Array<VideoMediaFileSlot<UploadedFileValue>>) => void
@@ -924,6 +965,19 @@ function MediaContentCard({
     durationSeconds: videoParameters.duration,
     firstFrameFile: getVideoMediaFileForType(videoMedia, 'first_frame'),
     lastFrameFile: getVideoMediaFileForType(videoMedia, 'last_frame'),
+    onChangeFile,
+  })
+  const {
+    modelOptions: audioModelOptions,
+    isGenerating: isAudioGenerating,
+    error: audioGenerationError,
+    submitPrompt: submitAudioPrompt,
+  } = useAudioContentAiSession({
+    blockId,
+    workspaceId: params.workspaceId,
+    prompt: audioPrompt,
+    model: audioModel,
+    parameters: audioParameters,
     onChangeFile,
   })
 
@@ -1181,6 +1235,23 @@ function MediaContentCard({
           onSubmit={submitVideoPrompt}
         />
       )}
+
+      {variant === 'audio' && !isPreview && !isEmbedded && (
+        <AudioContentAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={audioPrompt}
+          model={audioModel}
+          parameters={audioParameters}
+          isGenerating={isAudioGenerating}
+          error={audioGenerationError}
+          modelOptions={audioModelOptions}
+          onChangePrompt={onChangeAudioPrompt}
+          onChangeModel={onChangeAudioModel}
+          onChangeParameters={onChangeAudioParameters}
+          onSubmit={submitAudioPrompt}
+        />
+      )}
     </div>
   )
 }
@@ -1222,6 +1293,10 @@ export const ContentBlock = memo(function ContentBlock({
   const [aiPromptValue, setAiPromptValue] = useSubBlockValue<string>(id, 'aiPrompt')
   const [aiModelValue, setAiModelValue] = useSubBlockValue<string>(id, 'aiModel')
   const [aiAspectRatioValue, setAiAspectRatioValue] = useSubBlockValue<string>(id, 'aiAspectRatio')
+  const [audioPromptValue, setAudioPromptValue] = useSubBlockValue<string>(id, 'audioPrompt')
+  const [audioModelValue, setAudioModelValue] = useSubBlockValue<string>(id, 'audioModel')
+  const [audioParametersValue, setAudioParametersValue] =
+    useSubBlockValue<AudioGenerationParametersValue>(id, 'audioParameters')
   const [videoPromptValue, setVideoPromptValue] = useSubBlockValue<string>(id, 'videoPrompt')
   const [videoModelValue, setVideoModelValue] = useSubBlockValue<string>(id, 'videoModel')
   const [videoModelFamilyValue, setVideoModelFamilyValue] = useSubBlockValue<string>(
@@ -1315,6 +1390,25 @@ export const ContentBlock = memo(function ContentBlock({
     'aiAspectRatio',
     DEFAULT_IMAGE_ASPECT_RATIO
   ) as ImageAspectRatioValue
+  const resolvedAudioPrompt = extractStoredValue<string>(
+    data.isPreview ? sourceValues : ({ audioPrompt: audioPromptValue } as StoredValueRecord),
+    'audioPrompt',
+    ''
+  )
+  const resolvedAudioModel = normalizeAudioModel(
+    extractStoredValue<string>(
+      data.isPreview ? sourceValues : ({ audioModel: audioModelValue } as StoredValueRecord),
+      'audioModel',
+      DEFAULT_AUDIO_MODEL
+    )
+  )
+  const resolvedAudioParameters = normalizeAudioParameters(
+    extractStoredValue<unknown>(
+      data.isPreview ? sourceValues : ({ audioParameters: audioParametersValue } as StoredValueRecord),
+      'audioParameters',
+      DEFAULT_AUDIO_PARAMETERS
+    )
+  )
   const resolvedVideoPrompt = extractStoredValue<string>(
     data.isPreview ? sourceValues : ({ videoPrompt: videoPromptValue } as StoredValueRecord),
     'videoPrompt',
@@ -1403,6 +1497,14 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedAiPrompt,
       resolvedAiModel,
       resolvedAiAspectRatio,
+      resolvedAudioPrompt,
+      resolvedAudioModel,
+      resolvedAudioParameters.customMode,
+      resolvedAudioParameters.instrumental,
+      resolvedAudioParameters.style,
+      resolvedAudioParameters.title,
+      resolvedAudioParameters.negativeTags,
+      resolvedAudioParameters.vocalGender,
       resolvedVideoPrompt,
       resolvedVideoModelFamily,
       resolvedVideoParameters.resolution,
@@ -1453,6 +1555,9 @@ export const ContentBlock = memo(function ContentBlock({
             aiPrompt={resolvedAiPrompt}
             aiModel={resolvedAiModel}
             aiAspectRatio={resolvedAiAspectRatio}
+            audioPrompt={resolvedAudioPrompt}
+            audioModel={resolvedAudioModel}
+            audioParameters={resolvedAudioParameters}
             videoPrompt={resolvedVideoPrompt}
             videoModelFamily={resolvedVideoModelFamily}
             videoMedia={resolvedVideoMedia}
@@ -1469,6 +1574,15 @@ export const ContentBlock = memo(function ContentBlock({
             }}
             onChangeAiAspectRatio={(value) => {
               if (!data.isPreview) setAiAspectRatioValue(value)
+            }}
+            onChangeAudioPrompt={(value) => {
+              if (!data.isPreview) setAudioPromptValue(value)
+            }}
+            onChangeAudioModel={(value) => {
+              if (!data.isPreview) setAudioModelValue(value)
+            }}
+            onChangeAudioParameters={(value) => {
+              if (!data.isPreview) setAudioParametersValue(value)
             }}
             onChangeVideoPrompt={(value) => {
               if (!data.isPreview) setVideoPromptValue(value)

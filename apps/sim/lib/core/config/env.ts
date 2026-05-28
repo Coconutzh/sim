@@ -133,6 +133,8 @@ export const env = createEnv({
     FAL_API_KEY:                           z.string().min(1).optional(),           // Fal.ai API key for video generation
     DASHSCOPE_API_KEY:                     z.string().min(1).optional(),           // DashScope API key for Wan video generation
     DASHSCOPE_BASE_URL:                    z.string().url().optional(),            // Optional DashScope API base URL override
+    EVOLINK_API_KEY:                       z.string().min(1).optional(),           // EvoLink API key for Suno audio generation
+    EVOLINK_BASE_URL:                      z.string().url().optional(),            // Optional EvoLink API base URL override
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
     BLACKLISTED_PROVIDERS:                 z.string().optional(),                  // Comma-separated provider IDs to hide (e.g., "openai,anthropic")
