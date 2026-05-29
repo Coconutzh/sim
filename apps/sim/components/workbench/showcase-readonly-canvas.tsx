@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useMemo } from 'react'
 import {
@@ -45,22 +45,22 @@ export function ShowcaseReadOnlyCanvas({
               className='rounded-full bg-[#e7f0e1] px-3 py-1 font-semibold text-[#496b36] text-xs'
               title={SHOWCASE_READ_ONLY_CANVAS_MODE.reason}
             >
-              只读发布快照
+              Read-only snapshot
             </span>
           </div>
           <h2 className='mt-3 font-semibold text-2xl'>{title}</h2>
           {description ? <p className='mt-2 text-[#6f6256] text-sm'>{description}</p> : null}
         </div>
         <div className='grid min-w-[220px] grid-cols-2 gap-3'>
-          <CanvasMetric label='节点' value={String(canvasModel.blockCount)} />
-          <CanvasMetric label='连线' value={String(canvasModel.edgeCount)} />
+          <CanvasMetric label='Nodes' value={String(canvasModel.blockCount)} />
+          <CanvasMetric label='Edges' value={String(canvasModel.edgeCount)} />
         </div>
       </div>
 
       <div className='p-5'>
         <div className='mb-4 rounded-2xl border border-[#e7d7c1] bg-[#fffaf2] px-4 py-3 text-[#6f6256] text-sm'>
-          展示画布仅使用发布时的 snapshot 渲染，可缩放和平移；不会保存、不会发送 realtime
-          operation，也不会加入团队编辑 presence。
+          Showcase canvas renders the published snapshot only. You can pan and zoom, but it will not
+          save changes, send realtime operations, or join the team editing presence.
         </div>
 
         {canvasModel.workflowState ? (
@@ -77,9 +77,10 @@ export function ShowcaseReadOnlyCanvas({
           </div>
         ) : (
           <div className='rounded-2xl border border-[#cdbfaa] border-dashed bg-white p-8'>
-            <p className='font-semibold text-[#9b5b2e] text-sm'>快照暂不可视化</p>
+            <p className='font-semibold text-[#9b5b2e] text-sm'>Snapshot is not renderable</p>
             <p className='mt-3 text-[#6f6256]'>
-              该发布版本的快照结构不符合当前画布渲染合约，系统仅保留只读原始数据供排查。
+              This published version does not match the current canvas rendering contract. The raw
+              read-only data is shown for diagnosis.
             </p>
             <pre className='mt-6 max-h-[320px] overflow-auto rounded-xl bg-[#271f18] p-4 text-[#f7f4ed] text-xs'>
               {JSON.stringify(snapshotState, null, 2)}

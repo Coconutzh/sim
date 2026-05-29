@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { ArrowLeft, Compass, GitBranch, Network, RefreshCw } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button } from '@/components/emcn'
+import { ShowcaseReadOnlyCanvas } from '@/components/workbench/showcase-readonly-canvas'
 import { cn } from '@/lib/core/utils/cn'
 import {
   type HeaderAction,
@@ -12,6 +13,7 @@ import {
   type ResourceRow,
   ResourceTable,
 } from '@/app/workspace/[workspaceId]/components'
+import { usePublication } from '@/hooks/queries/collaboration'
 import {
   usePublishedWorkflowsForWorkgroup,
   useWorkflowPublication,
@@ -40,6 +42,16 @@ function formatPublishedAt(value: Date | null | undefined): string {
   }).format(value)
 }
 
+function formatPublicationDate(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 function formatVisibility(value: 'workspace' | 'organization' | 'selected_workgroups' | undefined) {
   switch (value) {
     case 'workspace':
@@ -56,7 +68,7 @@ export function PublishedWorkflowDetail() {
   const router = useRouter()
   const pathname = usePathname()
   const workspaceId = params.workspaceId
-  const workflowId = params.workflowId
+  const resourceId = params.workflowId
   const isShowcaseRoute = pathname?.startsWith(`/workspace/${workspaceId}/showcase`) ?? false
 
   const { data: workspaceSettingsData, isLoading: isWorkspaceLoading } =
@@ -64,21 +76,31 @@ export function PublishedWorkflowDetail() {
   const workgroupId = workspaceSettingsData?.settings.workspace.workgroupId ?? undefined
 
   const { data: publishedWorkflows = [], isLoading: isPublishedLoading } =
-    usePublishedWorkflowsForWorkgroup(workgroupId)
-  const publishedWorkflow = publishedWorkflows.find((workflow) => workflow.id === workflowId)
+    usePublishedWorkflowsForWorkgroup(isShowcaseRoute ? undefined : workgroupId)
+  const publishedWorkflow = publishedWorkflows.find((workflow) => workflow.id === resourceId)
+
+  const {
+    data: publicationData,
+    isLoading: isPublicationDetailLoading,
+    refetch: refetchPublication,
+    isFetching: isFetchingPublication,
+  } = usePublication(isShowcaseRoute ? resourceId : undefined)
+  const publication = publicationData?.publication
 
   const {
     data: workflowState,
     isLoading: isWorkflowStateLoading,
     refetch: refetchWorkflowState,
     isFetching: isFetchingWorkflowState,
-  } = useWorkflowState(publishedWorkflow ? workflowId : undefined)
-  const { data: publication, isLoading: isPublicationLoading } = useWorkflowPublication(
-    publishedWorkflow ? workflowId : undefined
-  )
+  } = useWorkflowState(!isShowcaseRoute && publishedWorkflow ? resourceId : undefined)
+  const { data: workflowPublication, isLoading: isWorkflowPublicationLoading } =
+    useWorkflowPublication(!isShowcaseRoute && publishedWorkflow ? resourceId : undefined)
+  const detailWorkflowState = isShowcaseRoute
+    ? publicationData?.publication.snapshotState
+    : workflowState
 
   const blockRows = useMemo<ResourceRow[]>(() => {
-    const blocks = Object.values(workflowState?.blocks ?? {})
+    const blocks = Object.values(detailWorkflowState?.blocks ?? {})
     return blocks
       .sort((left, right) => {
         if (left.position.y !== right.position.y) {
@@ -126,7 +148,7 @@ export function PublishedWorkflowDetail() {
           position: block.position.y * 100000 + block.position.x,
         },
       }))
-  }, [workflowState])
+  }, [detailWorkflowState])
 
   const headerActions = useMemo<HeaderAction[]>(
     () => [
@@ -138,18 +160,28 @@ export function PublishedWorkflowDetail() {
         },
       },
       {
-        label: isFetchingWorkflowState ? 'Refreshing...' : 'Refresh',
+        label: isFetchingWorkflowState || isFetchingPublication ? 'Refreshing...' : 'Refresh',
         icon: RefreshCw,
         onClick: () => {
-          void refetchWorkflowState()
+          if (isShowcaseRoute) {
+            void refetchPublication()
+          } else {
+            void refetchWorkflowState()
+          }
         },
-        disabled: !publishedWorkflow || isFetchingWorkflowState,
+        disabled:
+          (isShowcaseRoute ? !publication : !publishedWorkflow) ||
+          isFetchingWorkflowState ||
+          isFetchingPublication,
       },
     ],
     [
+      isFetchingPublication,
       isFetchingWorkflowState,
       isShowcaseRoute,
       publishedWorkflow,
+      publication,
+      refetchPublication,
       refetchWorkflowState,
       router,
       workspaceId,
@@ -158,11 +190,13 @@ export function PublishedWorkflowDetail() {
 
   const isLoading =
     isWorkspaceLoading ||
-    (Boolean(workgroupId) && isPublishedLoading) ||
-    isWorkflowStateLoading ||
-    isPublicationLoading
+    (isShowcaseRoute
+      ? isPublicationDetailLoading
+      : (Boolean(workgroupId) && isPublishedLoading) ||
+        isWorkflowStateLoading ||
+        isWorkflowPublicationLoading)
 
-  if (!isLoading && !publishedWorkflow) {
+  if (!isLoading && (isShowcaseRoute ? !publication : !publishedWorkflow)) {
     return (
       <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
         <ResourceHeader
@@ -173,11 +207,14 @@ export function PublishedWorkflowDetail() {
         <div className='flex flex-1 items-center justify-center px-6'>
           <div className='max-w-[520px] rounded-[16px] border border-[var(--border)] bg-[var(--surface-2)] p-6'>
             <h2 className='font-medium text-[var(--text-body)] text-lg'>
-              Workflow not visible from this canvas
+              {isShowcaseRoute
+                ? 'Showcase snapshot not visible from this canvas'
+                : 'Workflow not visible from this canvas'}
             </h2>
             <p className='mt-2 text-[14px] text-[var(--text-muted)]'>
-              The requested published workflow is not shared with your current team, or this canvas
-              does not have a configured team yet.
+              {isShowcaseRoute
+                ? 'The requested publication is not shared with your current team, or it has been retracted.'
+                : 'The requested published workflow is not shared with your current team, or this canvas does not have a configured team yet.'}
             </p>
             <Button
               variant='subtle'
@@ -197,17 +234,27 @@ export function PublishedWorkflowDetail() {
   }
 
   const blockCount = blockRows.length
-  const edgeCount = workflowState?.edges.length ?? 0
-  const loopCount = Object.keys(workflowState?.loops ?? {}).length
-  const parallelCount = Object.keys(workflowState?.parallels ?? {}).length
+  const edgeCount = detailWorkflowState?.edges.length ?? 0
+  const loopCount = Object.keys(detailWorkflowState?.loops ?? {}).length
+  const parallelCount = Object.keys(detailWorkflowState?.parallels ?? {}).length
+  const detailTitle =
+    publication?.title ??
+    publishedWorkflow?.name ??
+    (isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow')
+  const detailDescription = publication?.description ?? publishedWorkflow?.description ?? null
+  const detailVisibility = publication?.visibility ?? workflowPublication?.visibility ?? publishedWorkflow?.visibility
+  const detailPublishedAt = publication?.publishedAt
+    ? formatPublicationDate(publication.publishedAt)
+    : formatPublishedAt(publishedWorkflow?.publishedAt)
+  const sourceDraftLabel = publication?.snapshotMetadata.sourceWorkflowName
+    ?? workflowPublication?.sourceWorkflowId
+    ?? 'Unknown'
 
   return (
     <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
       <ResourceHeader
         icon={Compass}
-        title={
-          publishedWorkflow?.name ?? (isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow')
-        }
+        title={detailTitle}
         actions={headerActions}
       />
       <div className='border-[var(--border)] border-b px-6 py-4'>
@@ -218,11 +265,10 @@ export function PublishedWorkflowDetail() {
               Source team
             </div>
             <div className='mt-2 font-medium text-[var(--text-body)] text-sm'>
-              {publishedWorkflow?.workspaceName ?? 'Unknown'}
+              {publication?.sourceWorkgroup.name ?? publishedWorkflow?.workspaceName ?? 'Unknown'}
             </div>
             <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
-              Visibility:{' '}
-              {formatVisibility(publication?.visibility ?? publishedWorkflow?.visibility)}
+              Visibility: {detailVisibility ? formatVisibility(detailVisibility) : 'Unknown'}
             </div>
           </div>
           <div className='rounded-[14px] border border-[var(--border)] bg-[var(--surface-2)] p-4'>
@@ -231,10 +277,10 @@ export function PublishedWorkflowDetail() {
               Publication
             </div>
             <div className='mt-2 font-medium text-[var(--text-body)] text-sm'>
-              {formatPublishedAt(publishedWorkflow?.publishedAt)}
+              {detailPublishedAt}
             </div>
             <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
-              Source draft: {publication?.sourceWorkflowId ?? 'Unknown'}
+              Source workflow: {sourceDraftLabel}
             </div>
           </div>
           <div className='rounded-[14px] border border-[var(--border)] bg-[var(--surface-2)] p-4'>
@@ -261,6 +307,16 @@ export function PublishedWorkflowDetail() {
           </div>
         </div>
       </div>
+      {isShowcaseRoute && publication && (
+        <div className='border-[var(--border)] border-b px-6 py-5'>
+          <ShowcaseReadOnlyCanvas
+            snapshotState={publication.snapshotState}
+            title={detailTitle}
+            description={detailDescription}
+            versionLabel={`v${publication.versionNumber}`}
+          />
+        </div>
+      )}
       <ResourceTable
         columns={BLOCK_COLUMNS}
         rows={blockRows}

@@ -3,7 +3,7 @@ import { userStats, workflowFolder, workflow as workflowTable } from '@sim/db/sc
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, asc, eq, inArray, isNull, max, min, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, max, min, ne, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
@@ -57,11 +57,15 @@ export async function listWorkflows(workspaceId: string, options?: { scope?: Wor
 export async function deduplicateWorkflowName(
   name: string,
   workspaceId: string,
-  folderId: string | null | undefined
+  folderId: string | null | undefined,
+  options?: { excludeWorkflowId?: string }
 ): Promise<string> {
   const folderCondition = folderId
     ? eq(workflowTable.folderId, folderId)
     : isNull(workflowTable.folderId)
+  const excludeSelfCondition = options?.excludeWorkflowId
+    ? ne(workflowTable.id, options.excludeWorkflowId)
+    : undefined
 
   const [existing] = await db
     .select({ id: workflowTable.id })
@@ -71,7 +75,8 @@ export async function deduplicateWorkflowName(
         eq(workflowTable.workspaceId, workspaceId),
         folderCondition,
         eq(workflowTable.name, name),
-        isNull(workflowTable.archivedAt)
+        isNull(workflowTable.archivedAt),
+        excludeSelfCondition
       )
     )
     .limit(1)
@@ -90,7 +95,8 @@ export async function deduplicateWorkflowName(
           eq(workflowTable.workspaceId, workspaceId),
           folderCondition,
           eq(workflowTable.name, candidate),
-          isNull(workflowTable.archivedAt)
+          isNull(workflowTable.archivedAt),
+          excludeSelfCondition
         )
       )
       .limit(1)

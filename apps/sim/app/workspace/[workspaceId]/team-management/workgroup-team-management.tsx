@@ -33,6 +33,7 @@ import {
   useAddWorkgroupMember,
   useCreateTeamWorkspace,
   useMyWorkgroups,
+  useOrganizationWorkgroups,
   useRemoveWorkgroupMember,
   useShowcasePublications,
   useTeamWorkspace,
@@ -61,6 +62,12 @@ type RiskLevelDraft = PublicationRiskLevel | 'unset'
 type TeamManagementTab = 'members' | 'invites' | 'publications' | 'agent' | 'activity'
 type TeamHealthTone = 'healthy' | 'warning' | 'loading'
 type TeamWorkspaceRepairPermission = 'admin' | 'write'
+
+interface PublicationTargetWorkgroup {
+  id: string
+  name: string
+  disciplineName: string
+}
 
 const INVITATION_RESULT_STATUSES: OrganizationInvitationResultStatus[] = [
   'sent',
@@ -316,7 +323,10 @@ export function WorkgroupTeamManagement() {
     workgroups.find((workgroup) => workgroup.id === workgroupsData?.defaultWorkgroupId) ??
     workgroups[0]
   const activeWorkgroupId = activeWorkgroup?.id
+  const activeOrganizationId = activeWorkgroup?.organizationId
   const isAdmin = activeWorkgroup?.role === 'admin'
+  const { data: organizationWorkgroupsData, isLoading: isLoadingOrganizationWorkgroups } =
+    useOrganizationWorkgroups(isAdmin ? activeOrganizationId : undefined)
   const { data: teamWorkspaceData } = useTeamWorkspace(activeWorkgroupId)
   const { data: membersData, isLoading: isLoadingMembers } = useWorkgroupMembers(
     isAdmin ? activeWorkgroupId : undefined
@@ -360,9 +370,17 @@ export function WorkgroupTeamManagement() {
   )
   const selectedPublishWorkflow =
     teamWorkflows.find((workflow) => workflow.id === publishWorkflowId) ?? teamWorkflows[0]
-  const publishTargetWorkgroups = workgroups.filter(
-    (workgroup) => workgroup.organizationId === activeWorkgroup?.organizationId
+  const publishTargetWorkgroups = useMemo<PublicationTargetWorkgroup[]>(
+    () =>
+      (organizationWorkgroupsData?.workgroups ?? []).map((workgroup) => ({
+        id: workgroup.id,
+        name: workgroup.name,
+        disciplineName: workgroup.disciplineName,
+      })),
+    [organizationWorkgroupsData?.workgroups]
   )
+  const isPublishTargetSelectionLoading =
+    publishVisibility === 'selected_workgroups' && isLoadingOrganizationWorkgroups
   const publicationFilters = useMemo(
     () =>
       isAdmin && activeWorkgroupId ? { sourceWorkgroupId: activeWorkgroupId, limit: 8 } : undefined,
@@ -1341,29 +1359,41 @@ export function WorkgroupTeamManagement() {
                   {publishVisibility === 'selected_workgroups' && (
                     <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
                       <div className='mb-2 text-[12px] text-[var(--text-muted)]'>
-                        Select teams that can see this showcase snapshot. If none are selected, only
-                        the current team is targeted.
+                        Select active teams in this organization that can see this showcase
+                        snapshot. Organization admins can choose teams even if they are not members.
+                        If none are selected, only the current team is targeted.
                       </div>
-                      <div className='grid gap-2 md:grid-cols-2'>
-                        {publishTargetWorkgroups.map((workgroup) => (
-                          <div
-                            key={workgroup.id}
-                            className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
-                          >
-                            <span className='truncate'>
-                              {workgroup.discipline.name} / {workgroup.name}
-                            </span>
-                            <Switch
-                              checked={publishTargetWorkgroupIds.includes(workgroup.id)}
-                              disabled={isBusy}
-                              aria-label={`Toggle ${workgroup.name} showcase visibility`}
-                              onCheckedChange={(checked) =>
-                                handlePublishTargetToggle(workgroup.id, checked)
-                              }
-                            />
-                          </div>
-                        ))}
-                      </div>
+                      {isLoadingOrganizationWorkgroups ? (
+                        <div className='flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
+                          <Loader className='h-[14px] w-[14px]' animate />
+                          Loading organization teams...
+                        </div>
+                      ) : publishTargetWorkgroups.length === 0 ? (
+                        <div className='text-[13px] text-[var(--text-muted)]'>
+                          No active teams are available in this organization.
+                        </div>
+                      ) : (
+                        <div className='grid gap-2 md:grid-cols-2'>
+                          {publishTargetWorkgroups.map((workgroup) => (
+                            <div
+                              key={workgroup.id}
+                              className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
+                            >
+                              <span className='truncate'>
+                                {workgroup.disciplineName} / {workgroup.name}
+                              </span>
+                              <Switch
+                                checked={publishTargetWorkgroupIds.includes(workgroup.id)}
+                                disabled={isBusy}
+                                aria-label={`Toggle ${workgroup.name} showcase visibility`}
+                                onCheckedChange={(checked) =>
+                                  handlePublishTargetToggle(workgroup.id, checked)
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className='flex items-center justify-between gap-3'>
@@ -1374,7 +1404,9 @@ export function WorkgroupTeamManagement() {
                     <Button
                       variant='primary'
                       onClick={() => void handlePublishTeamWorkflow()}
-                      disabled={isBusy || !selectedPublishWorkflow}
+                      disabled={
+                        isBusy || !selectedPublishWorkflow || isPublishTargetSelectionLoading
+                      }
                     >
                       {publishWorkflow.isPending ? (
                         <Loader className='mr-2 h-[14px] w-[14px]' animate />
@@ -1485,39 +1517,53 @@ export function WorkgroupTeamManagement() {
                             variant='default'
                             className='h-[32px]'
                             onClick={() => void handleUpdatePublicationVisibility(publication)}
-                            disabled={isBusy}
+                            disabled={
+                              isBusy ||
+                              (visibilityDraft.visibility === 'selected_workgroups' &&
+                                isLoadingOrganizationWorkgroups)
+                            }
                           >
                             Update visibility
                           </Button>
                         </div>
-                        {visibilityDraft.visibility === 'selected_workgroups' && (
-                          <div className='mt-3 grid gap-2 md:grid-cols-2'>
-                            {publishTargetWorkgroups.map((workgroup) => (
-                              <div
-                                key={workgroup.id}
-                                className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
-                              >
-                                <span className='truncate'>
-                                  {workgroup.discipline.name} / {workgroup.name}
-                                </span>
-                                <Switch
-                                  checked={visibilityDraft.targetWorkgroupIds.includes(
-                                    workgroup.id
-                                  )}
-                                  disabled={isBusy}
-                                  aria-label={`Toggle ${workgroup.name} publication visibility`}
-                                  onCheckedChange={(checked) =>
-                                    handlePublicationTargetToggle(
-                                      publication.id,
-                                      workgroup.id,
-                                      checked
-                                    )
-                                  }
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {visibilityDraft.visibility === 'selected_workgroups' &&
+                          (isLoadingOrganizationWorkgroups ? (
+                            <div className='mt-3 flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
+                              <Loader className='h-[14px] w-[14px]' animate />
+                              Loading organization teams...
+                            </div>
+                          ) : publishTargetWorkgroups.length === 0 ? (
+                            <div className='mt-3 text-[13px] text-[var(--text-muted)]'>
+                              No active teams are available in this organization.
+                            </div>
+                          ) : (
+                            <div className='mt-3 grid gap-2 md:grid-cols-2'>
+                              {publishTargetWorkgroups.map((workgroup) => (
+                                <div
+                                  key={workgroup.id}
+                                  className='flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)]'
+                                >
+                                  <span className='truncate'>
+                                    {workgroup.disciplineName} / {workgroup.name}
+                                  </span>
+                                  <Switch
+                                    checked={visibilityDraft.targetWorkgroupIds.includes(
+                                      workgroup.id
+                                    )}
+                                    disabled={isBusy}
+                                    aria-label={`Toggle ${workgroup.name} publication visibility`}
+                                    onCheckedChange={(checked) =>
+                                      handlePublicationTargetToggle(
+                                        publication.id,
+                                        workgroup.id,
+                                        checked
+                                      )
+                                    }
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ))}
                       </div>
 
                       <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>

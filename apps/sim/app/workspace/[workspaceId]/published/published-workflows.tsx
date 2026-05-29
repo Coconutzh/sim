@@ -136,9 +136,14 @@ function governanceAlertClass(severity: PublicationGovernanceAlertSeverity): str
 interface PublicationStateTreePanelProps {
   publications: PublicationSummary[]
   isLoading: boolean
+  onOpenPublication: (publicationId: string) => void
 }
 
-function PublicationStateTreePanel({ publications, isLoading }: PublicationStateTreePanelProps) {
+function PublicationStateTreePanel({
+  publications,
+  isLoading,
+  onOpenPublication,
+}: PublicationStateTreePanelProps) {
   const groups = useMemo(() => buildPublicationStateGroups(publications), [publications])
   const publishedCount = publications.filter(
     (publication) => publication.status === 'published'
@@ -201,7 +206,24 @@ function PublicationStateTreePanel({ publications, isLoading }: PublicationState
                 </span>
               </div>
 
-              <div className='mt-3 rounded-[10px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
+              <div
+                className={cn(
+                  'mt-3 rounded-[10px] border border-[var(--border)] bg-[var(--surface-1)] p-3',
+                  group.current && 'cursor-pointer transition-colors hover:bg-[var(--surface-3)]'
+                )}
+                role={group.current ? 'button' : undefined}
+                tabIndex={group.current ? 0 : undefined}
+                onClick={() => {
+                  if (group.current) onOpenPublication(group.current.id)
+                }}
+                onKeyDown={(event) => {
+                  if (!group.current) return
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onOpenPublication(group.current.id)
+                  }
+                }}
+              >
                 <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
                   <GitBranch className='h-[13px] w-[13px]' />
                   Current / latest visible version
@@ -234,6 +256,11 @@ function PublicationStateTreePanel({ publications, isLoading }: PublicationState
                 {group.current && (
                   <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
                     {formatDependencyVersions(group.current.dependencyVersionNumbers)}
+                  </div>
+                )}
+                {group.current && (
+                  <div className='mt-2 text-[11px] text-[var(--text-muted)]'>
+                    Click to open read-only canvas snapshot
                   </div>
                 )}
               </div>
@@ -302,65 +329,117 @@ export function PublishedWorkflows() {
     isLoading: isPublishedLoading,
     refetch,
     isFetching,
-  } = usePublishedWorkflowsForWorkgroup(workgroupId)
-  const { data: publicationData, isLoading: isPublicationsLoading } = useShowcasePublications(
-    isShowcaseRoute ? workgroupId : undefined,
-    STATE_TREE_PUBLICATION_FILTERS
-  )
+  } = usePublishedWorkflowsForWorkgroup(isShowcaseRoute ? undefined : workgroupId)
+  const {
+    data: publicationData,
+    isLoading: isPublicationsLoading,
+    refetch: refetchPublications,
+    isFetching: isFetchingPublications,
+  } = useShowcasePublications(isShowcaseRoute ? workgroupId : undefined, STATE_TREE_PUBLICATION_FILTERS)
   const publications = publicationData?.publications ?? []
 
-  const rows = useMemo<ResourceRow[]>(
-    () =>
-      publishedWorkflows.map((workflow) => ({
-        id: workflow.id,
+  const rows = useMemo<ResourceRow[]>(() => {
+    if (isShowcaseRoute) {
+      return publications.map((publication) => ({
+        id: publication.id,
         cells: {
           workflow: {
             content: (
               <div className='flex min-w-0 flex-col'>
                 <span className='truncate font-medium text-[var(--text-body)] text-sm'>
-                  {workflow.name}
+                  {publication.title}
                 </span>
                 <span className='truncate text-[12px] text-[var(--text-muted)]'>
-                  {workflow.description?.trim() || 'No description'}
+                  {publication.description?.trim() || 'No description'}
+                </span>
+                <span className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                  Click to open read-only canvas snapshot
                 </span>
               </div>
             ),
           },
           workspace: {
-            label: workflow.workspaceName,
+            label: publication.sourceWorkgroup.name,
           },
           visibility: {
             content: (
               <span
                 className={cn(
                   'inline-flex rounded-full px-2 py-0.5 font-medium text-[12px]',
-                  workflow.visibility === 'organization' &&
+                  publication.visibility === 'organization' &&
                     'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-                  workflow.visibility === 'selected_workgroups' &&
-                    'bg-amber-500/10 text-amber-700 dark:text-amber-300',
-                  workflow.visibility === 'workspace' &&
-                    'bg-slate-500/10 text-slate-700 dark:text-slate-300'
+                  publication.visibility === 'selected_workgroups' &&
+                    'bg-amber-500/10 text-amber-700 dark:text-amber-300'
                 )}
               >
-                {formatVisibility(workflow.visibility)}
+                {formatPublicationVisibility(publication.visibility)}
               </span>
             ),
           },
           publishedAt: {
-            label: formatPublishedAt(workflow.publishedAt),
+            label: formatPublicationDate(publication.publishedAt),
           },
         },
         sortValues: {
-          workflow: workflow.name,
-          workspace: workflow.workspaceName,
-          visibility: workflow.visibility ?? '',
-          publishedAt: workflow.publishedAt?.getTime() ?? 0,
+          workflow: publication.title,
+          workspace: publication.sourceWorkgroup.name,
+          visibility: publication.visibility,
+          publishedAt: new Date(publication.publishedAt).getTime(),
         },
-      })),
-    [publishedWorkflows]
-  )
+      }))
+    }
 
-  const isLoading = isWorkspaceLoading || (Boolean(workgroupId) && isPublishedLoading)
+    return publishedWorkflows.map((workflow) => ({
+      id: workflow.id,
+      cells: {
+        workflow: {
+          content: (
+            <div className='flex min-w-0 flex-col'>
+              <span className='truncate font-medium text-[var(--text-body)] text-sm'>
+                {workflow.name}
+              </span>
+              <span className='truncate text-[12px] text-[var(--text-muted)]'>
+                {workflow.description?.trim() || 'No description'}
+              </span>
+            </div>
+          ),
+        },
+        workspace: {
+          label: workflow.workspaceName,
+        },
+        visibility: {
+          content: (
+            <span
+              className={cn(
+                'inline-flex rounded-full px-2 py-0.5 font-medium text-[12px]',
+                workflow.visibility === 'organization' &&
+                  'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                workflow.visibility === 'selected_workgroups' &&
+                  'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+                workflow.visibility === 'workspace' &&
+                  'bg-slate-500/10 text-slate-700 dark:text-slate-300'
+              )}
+            >
+              {formatVisibility(workflow.visibility)}
+            </span>
+          ),
+        },
+        publishedAt: {
+          label: formatPublishedAt(workflow.publishedAt),
+        },
+      },
+      sortValues: {
+        workflow: workflow.name,
+        workspace: workflow.workspaceName,
+        visibility: workflow.visibility ?? '',
+        publishedAt: workflow.publishedAt?.getTime() ?? 0,
+      },
+    }))
+  }, [isShowcaseRoute, publications, publishedWorkflows])
+
+  const isLoading =
+    isWorkspaceLoading ||
+    (Boolean(workgroupId) && (isShowcaseRoute ? isPublicationsLoading : isPublishedLoading))
   const emptyMessage = workgroupId
     ? 'No published workflows are visible to this workgroup yet.'
     : 'This workspace is not assigned to a workgroup yet.'
@@ -372,25 +451,35 @@ export function PublishedWorkflows() {
         title={isShowcaseRoute ? 'Showcase Canvas' : 'Published'}
         actions={[
           {
-            label: isFetching ? 'Refreshing...' : 'Refresh',
+            label:
+              (isShowcaseRoute ? isFetchingPublications : isFetching)
+                ? 'Refreshing...'
+                : 'Refresh',
             icon: RefreshCw,
             onClick: () => {
-              void refetch()
+              if (isShowcaseRoute) {
+                void refetchPublications()
+              } else {
+                void refetch()
+              }
             },
-            disabled: !workgroupId || isFetching,
+            disabled: !workgroupId || (isShowcaseRoute ? isFetchingPublications : isFetching),
           },
         ]}
       />
       <div className='border-[var(--border)] border-b px-6 py-3'>
         <p className='text-[13px] text-[var(--text-muted)]'>
-          Browse read-only mainlines shared with your current workgroup. Opening a row shows a safe
-          summary view instead of entering another team&apos;s collaborative canvas.
+          Browse read-only mainlines shared with your current workgroup. Opening a row shows the
+          published snapshot without entering another team&apos;s collaborative canvas.
         </p>
       </div>
       {isShowcaseRoute && (
         <PublicationStateTreePanel
           publications={publications}
           isLoading={Boolean(workgroupId) && isPublicationsLoading}
+          onOpenPublication={(publicationId) => {
+            router.push(`/workspace/${workspaceId}/showcase/${publicationId}`)
+          }}
         />
       )}
       <ResourceTable
