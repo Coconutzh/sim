@@ -2,12 +2,16 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { requestJson } from '@/lib/api/client/request'
 import type { ContractBodyInput } from '@/lib/api/contracts'
 import {
+  acceptInvitationContract,
   type BatchInvitationResult as BatchInvitationResultContract,
   batchWorkspaceInvitationsContract,
   cancelInvitationContract,
   listWorkspaceInvitationsContract,
+  listMyPendingInvitationsContract,
+  type MyPendingInvitation,
   type PendingInvitationRow,
   removeWorkspaceMemberContract,
+  rejectInvitationContract,
   resendInvitationContract,
 } from '@/lib/api/contracts/invitations'
 import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
@@ -19,9 +23,11 @@ export const invitationKeys = {
   all: ['invitations'] as const,
   lists: () => [...invitationKeys.all, 'list'] as const,
   list: (workspaceId: string) => [...invitationKeys.lists(), workspaceId] as const,
+  mine: () => [...invitationKeys.all, 'mine'] as const,
 }
 
 export type { PendingInvitationRow }
+export type { MyPendingInvitation }
 
 export interface WorkspaceInvitation {
   email: string
@@ -67,6 +73,53 @@ export function usePendingInvitations(workspaceId: string | undefined) {
     enabled: Boolean(workspaceId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useMyPendingInvitations() {
+  return useQuery({
+    queryKey: invitationKeys.mine(),
+    queryFn: async ({ signal }) => {
+      const data = await requestJson(listMyPendingInvitationsContract, { signal })
+      return data.invitations
+    },
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
+  })
+}
+
+export function useAcceptMyInvitation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (invitationId: string) => {
+      return requestJson(acceptInvitationContract, {
+        params: { id: invitationId },
+        body: {},
+      })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: invitationKeys.mine() })
+      queryClient.invalidateQueries({ queryKey: organizationKeys.all })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.all })
+    },
+  })
+}
+
+export function useRejectMyInvitation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (invitationId: string) => {
+      return requestJson(rejectInvitationContract, {
+        params: { id: invitationId },
+        body: {},
+      })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: invitationKeys.mine() })
+      queryClient.invalidateQueries({ queryKey: organizationKeys.all })
+    },
   })
 }
 

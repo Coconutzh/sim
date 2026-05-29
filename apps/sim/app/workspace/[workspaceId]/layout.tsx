@@ -1,4 +1,5 @@
 import type React from 'react'
+import { InvitationBell } from '@/app/workspace/[workspaceId]/components/invitation-bell'
 import { LiteSidebar } from '@/app/workspace/[workspaceId]/lite-sidebar'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { LowMemoryWorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
@@ -26,6 +27,7 @@ export default async function WorkspaceLayout({ children, params }: WorkspaceLay
       <LowMemoryWorkspacePermissionsProvider>
         <WorkspaceScopeSyncLite />
         <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
+          <InvitationBell />
           <div className='flex min-h-0 flex-1'>
             <div className='shrink-0' suppressHydrationWarning>
               <LiteSidebar workspaceId={workspaceId} />

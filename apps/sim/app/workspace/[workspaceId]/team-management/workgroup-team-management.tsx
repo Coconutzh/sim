@@ -48,7 +48,6 @@ import {
 import {
   useCancelWorkspaceInvitation,
   usePendingInvitations,
-  useResendWorkspaceInvitation,
   useUpdateWorkspacePermissions,
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
@@ -72,7 +71,7 @@ const INVITATION_RESULT_STATUSES: OrganizationInvitationResultStatus[] = [
 ]
 
 const INVITATION_RESULT_LABELS: Record<OrganizationInvitationResultStatus, string> = {
-  sent: 'Sent',
+  sent: 'Created',
   existing_member: 'Already member',
   pending_invitation: 'Pending invite',
   invalid_email: 'Invalid email',
@@ -92,7 +91,7 @@ const TEAM_MANAGEMENT_TABS: {
   {
     id: 'invites',
     label: 'Invites',
-    description: 'Email invites and pending',
+    description: 'In-app invites and pending',
   },
   {
     id: 'publications',
@@ -260,7 +259,7 @@ function summarizeInvitationResults(results: OrganizationInvitationResult[]) {
   ).length
   const failedCount = results.filter((result) => result.status === 'failed').length
   const parts = [
-    sentCount > 0 ? `${sentCount} sent` : null,
+    sentCount > 0 ? `${sentCount} created` : null,
     skippedCount > 0 ? `${skippedCount} skipped` : null,
     failedCount > 0 ? `${failedCount} failed` : null,
   ].filter((part): part is string => !!part)
@@ -335,7 +334,6 @@ export function WorkgroupTeamManagement() {
   const createWorkflow = useCreateWorkflow()
   const updateWorkspacePermissions = useUpdateWorkspacePermissions()
   const cancelInvitation = useCancelWorkspaceInvitation()
-  const resendInvitation = useResendWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
   const [emailInvitationValue, setEmailInvitationValue] = useState('')
   const [emailInvitationResults, setEmailInvitationResults] = useState<
@@ -555,7 +553,6 @@ export function WorkgroupTeamManagement() {
     createWorkflow.isPending ||
     updateWorkspacePermissions.isPending ||
     cancelInvitation.isPending ||
-    resendInvitation.isPending ||
     updateMember.isPending ||
     removeMember.isPending ||
     createTeamWorkspace.isPending
@@ -679,16 +676,6 @@ export function WorkgroupTeamManagement() {
           ? `Team invitation results: ${summarizeInvitationResults(results)}.`
           : readErrorMessage(error)
       )
-    }
-  }
-
-  const handleResendInvitation = async (invitationId: string) => {
-    if (!teamWorkspaceId) return
-    try {
-      await resendInvitation.mutateAsync({ invitationId, workspaceId: teamWorkspaceId })
-      setStatusMessage('Invitation email resent.')
-    } catch (error) {
-      setStatusMessage(readErrorMessage(error))
     }
   }
 
@@ -1121,11 +1108,11 @@ export function WorkgroupTeamManagement() {
               <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Send team invitation
+                  Create team invitation
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Email a new teammate. Accepting the invite grants team canvas access and joins
-                  this workgroup.
+                  Create an in-app invitation for a teammate. Accepting it grants team canvas
+                  access and joins this workgroup.
                 </p>
               </div>
             </div>
@@ -1171,7 +1158,7 @@ export function WorkgroupTeamManagement() {
                 {inviteMember.isPending ? (
                   <Loader className='mr-2 h-[14px] w-[14px]' animate />
                 ) : null}
-                {emailInvitationEmails.length > 1 ? 'Send invites' : 'Send invite'}
+                {emailInvitationEmails.length > 1 ? 'Create invites' : 'Create invite'}
               </Button>
             </div>
             {emailInvitationResults.length > 0 && (
@@ -1724,7 +1711,7 @@ export function WorkgroupTeamManagement() {
                   Pending invitations
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Resend or cancel team canvas invites that have not been accepted yet.
+                  Cancel team canvas invitations that have not been accepted yet.
                 </p>
               </div>
             </div>
@@ -1748,7 +1735,7 @@ export function WorkgroupTeamManagement() {
                   return (
                     <div
                       key={invitation.invitationId ?? invitation.email}
-                      className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto]'
+                      className='grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]'
                     >
                       <div className='min-w-0'>
                         <div className='flex min-w-0 flex-wrap items-center gap-2'>
@@ -1775,19 +1762,6 @@ export function WorkgroupTeamManagement() {
                           {invitation.isExternal ? ' / external invite' : ''}
                         </div>
                       </div>
-                      <Button
-                        variant='default'
-                        className='h-[32px]'
-                        onClick={() =>
-                          invitation.invitationId
-                            ? void handleResendInvitation(invitation.invitationId)
-                            : undefined
-                        }
-                        disabled={!invitation.invitationId || isBusy}
-                      >
-                        <RotateCcw className='mr-2 h-[14px] w-[14px]' />
-                        Resend
-                      </Button>
                       <Button
                         variant='default'
                         className='h-[32px]'
