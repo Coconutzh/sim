@@ -1,5 +1,13 @@
 import { NoteIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import {
+  DEFAULT_AUDIO_MODEL,
+  DEFAULT_AUDIO_PARAMETERS,
+} from '@/lib/generated-media/audio/audio-generation-utils'
+import {
+  DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
+  DEFAULT_VIDEO_MODEL_FAMILY,
+} from '@/lib/generated-media/video/video-generation-utils'
 
 export const ContentBlock: BlockConfig = {
   type: 'content',
@@ -84,6 +92,73 @@ export const ContentBlock: BlockConfig = {
       type: 'file-upload',
       acceptedTypes: 'image/*,video/*,audio/*',
       multiple: false,
+    },
+    {
+      id: 'audioPrompt',
+      title: 'Audio Prompt',
+      type: 'long-input',
+      defaultValue: '',
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'audioModel',
+      title: 'Audio Model',
+      type: 'short-input',
+      defaultValue: DEFAULT_AUDIO_MODEL,
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'audioParameters',
+      title: 'Audio Parameters',
+      type: 'short-input',
+      defaultValue: DEFAULT_AUDIO_PARAMETERS as unknown as Record<string, unknown>,
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'videoPrompt',
+      title: 'Video Prompt',
+      type: 'long-input',
+      defaultValue: '',
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'videoModelFamily',
+      title: 'Video Model Family',
+      type: 'short-input',
+      defaultValue: DEFAULT_VIDEO_MODEL_FAMILY,
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'videoMedia',
+      title: 'Video Media',
+      type: 'short-input',
+      defaultValue: [],
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'videoParameters',
+      title: 'Video Parameters',
+      type: 'short-input',
+      defaultValue: {
+        resolution: '720P',
+        duration: 5,
+      },
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
+      id: 'videoFrameAspectRatioPreset',
+      title: 'Video Aspect Ratio',
+      type: 'short-input',
+      defaultValue: DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
+      hidden: true,
+      paramVisibility: 'hidden',
     },
   ],
   tools: { access: [] },

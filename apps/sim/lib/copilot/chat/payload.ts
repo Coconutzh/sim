@@ -41,6 +41,14 @@ interface BuildPayloadParams {
   userPermission?: string
   userTimezone?: string
   conversationHistory?: unknown[]
+  workflowCopilotMode?: 'legacy_workflow' | 'content_canvas_v1'
+  confirmationMode?: 'manual' | 'auto'
+  thinkingLevel?: 'standard' | 'extra'
+  autoSelectionContexts?: Array<{
+    kind: 'blocks'
+    blockIds: string[]
+    label: string
+  }>
 }
 
 export interface ToolSchema {
@@ -341,6 +349,12 @@ export async function buildCopilotRequestPayload(
     ...(params.userPermission ? { userPermission: params.userPermission } : {}),
     ...(params.userTimezone ? { userTimezone: params.userTimezone } : {}),
     ...(conversationHistory && conversationHistory.length > 0 ? { conversationHistory } : {}),
+    ...(params.workflowCopilotMode ? { workflowCopilotMode: params.workflowCopilotMode } : {}),
+    ...(params.confirmationMode ? { confirmationMode: params.confirmationMode } : {}),
+    ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}),
+    ...(params.autoSelectionContexts && params.autoSelectionContexts.length > 0
+      ? { autoSelectionContexts: params.autoSelectionContexts }
+      : {}),
     isHosted,
   }
 }

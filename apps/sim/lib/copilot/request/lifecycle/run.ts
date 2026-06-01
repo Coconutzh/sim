@@ -21,6 +21,7 @@ import {
   runLocalWorkflowFallback,
   shouldUseLocalWorkflowFallback,
 } from '@/lib/copilot/request/lifecycle/local-workflow-fallback'
+import { runContentCanvasAgent } from '@/lib/copilot/request/lifecycle/content-canvas-agent'
 import {
   getToolCallTerminalData,
   requireToolCallStateResult,
@@ -139,7 +140,14 @@ export async function runCopilotLifecycle(
   })
 
   try {
-    if (
+    if (requestPayload.workflowCopilotMode === 'content_canvas_v1') {
+      await runContentCanvasAgent({
+        requestPayload,
+        context,
+        execContext,
+        options: lifecycleOptions,
+      })
+    } else if (
       shouldUseLocalWorkflowFallback({
         workflowId,
         disableAuth: Boolean(env.DISABLE_AUTH),
@@ -184,6 +192,7 @@ export async function runCopilotLifecycle(
     return result
   } catch (error) {
     if (
+      requestPayload.workflowCopilotMode !== 'content_canvas_v1' &&
       shouldUseLocalWorkflowFallback({
         workflowId,
         disableAuth: Boolean(env.DISABLE_AUTH),

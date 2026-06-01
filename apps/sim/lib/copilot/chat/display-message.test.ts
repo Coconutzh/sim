@@ -6,6 +6,50 @@ import { describe, expect, it } from 'vitest'
 import { toDisplayMessage } from './display-message'
 
 describe('display-message', () => {
+  it('maps persisted options blocks to display options blocks', () => {
+    const display = toDisplayMessage({
+      id: 'msg-options',
+      role: 'assistant',
+      content: '请选择',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        {
+          type: 'options',
+          options: [
+            {
+              id: '__content_canvas_confirm__:plan-1',
+              label: '确认执行',
+              value: '__content_canvas_confirm__:plan-1',
+            },
+            {
+              id: '__content_canvas_revise__:plan-1',
+              label: '继续修改',
+              value: '__content_canvas_revise__:plan-1',
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(display.contentBlocks).toEqual([
+      {
+        type: 'options',
+        options: [
+          {
+            id: '__content_canvas_confirm__:plan-1',
+            label: '确认执行',
+            value: '__content_canvas_confirm__:plan-1',
+          },
+          {
+            id: '__content_canvas_revise__:plan-1',
+            label: '继续修改',
+            value: '__content_canvas_revise__:plan-1',
+          },
+        ],
+      },
+    ])
+  })
+
   it('maps canonical tool, subagent text, and cancelled complete blocks to display blocks', () => {
     const display = toDisplayMessage({
       id: 'msg-1',

@@ -61,6 +61,66 @@ describe('persisted-message', () => {
     ])
   })
 
+  it('round-trips options blocks through persistence and normalization', () => {
+    const result: OrchestratorResult = {
+      success: true,
+      content: '请选择下一步',
+      requestId: 'req-options-1',
+      contentBlocks: [
+        {
+          type: 'text',
+          content: '请选择下一步',
+          timestamp: 1_700_000_000_001,
+        },
+        {
+          type: 'options',
+          timestamp: 1_700_000_000_002,
+          options: [
+            {
+              id: '__content_canvas_confirm__:plan-1',
+              label: '确认执行',
+              value: '__content_canvas_confirm__:plan-1',
+            },
+            {
+              id: '__content_canvas_revise__:plan-1',
+              label: '继续修改',
+              value: '__content_canvas_revise__:plan-1',
+            },
+          ],
+        },
+      ],
+      toolCalls: [],
+    }
+
+    const persisted = buildPersistedAssistantMessage(result)
+    const normalized = normalizeMessage(persisted as unknown as Record<string, unknown>)
+
+    expect(normalized.contentBlocks).toEqual([
+      {
+        type: 'text',
+        channel: 'assistant',
+        content: '请选择下一步',
+        timestamp: 1_700_000_000_001,
+      },
+      {
+        type: 'options',
+        timestamp: 1_700_000_000_002,
+        options: [
+          {
+            id: '__content_canvas_confirm__:plan-1',
+            label: '确认执行',
+            value: '__content_canvas_confirm__:plan-1',
+          },
+          {
+            id: '__content_canvas_revise__:plan-1',
+            label: '继续修改',
+            value: '__content_canvas_revise__:plan-1',
+          },
+        ],
+      },
+    ])
+  })
+
   it('prefers an explicit persisted request ID override', () => {
     const result: OrchestratorResult = {
       success: true,

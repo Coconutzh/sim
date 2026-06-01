@@ -34,6 +34,99 @@ import { applyOperationsToWorkflowState } from './engine'
 import type { EditWorkflowParams, ValidationError } from './types'
 import { preValidateCredentialInputs, validateWorkflowSelectorIds } from './validation'
 
+const IGNORABLE_LEGACY_WORKFLOW_ERROR_PATTERNS = [
+  /unknown block type '/,
+  /Edge references non-existent source block '/,
+  /Edge references non-existent target block '/,
+] as const
+
+function isIgnorableLegacyWorkflowError(error: string): boolean {
+  return IGNORABLE_LEGACY_WORKFLOW_ERROR_PATTERNS.some((pattern) => pattern.test(error))
+}
+
+function pruneDanglingEdgesFromWorkflowState(workflowState: any): {
+  workflowState: any
+  removedEdgeCount: number
+} {
+  const edges = Array.isArray(workflowState?.edges) ? workflowState.edges : []
+  const blockIds = new Set(Object.keys(workflowState?.blocks || {}))
+  const loopIds = new Set(Object.keys(workflowState?.loops || {}))
+  const parallelIds = new Set(Object.keys(workflowState?.parallels || {}))
+
+  const filteredEdges = edges.filter((edge: any) => {
+    if (!edge || typeof edge !== 'object') return false
+
+    const sourceExists =
+      blockIds.has(edge.source) || loopIds.has(edge.source) || parallelIds.has(edge.source)
+    const targetExists =
+      blockIds.has(edge.target) || loopIds.has(edge.target) || parallelIds.has(edge.target)
+
+    return sourceExists && targetExists
+  })
+
+  return {
+    workflowState:
+      filteredEdges.length === edges.length
+        ? workflowState
+        : {
+            ...workflowState,
+            edges: filteredEdges,
+          },
+    removedEdgeCount: edges.length - filteredEdges.length,
+  }
+}
+
+function sanitizeLegacyWorkflowStateForEditing(workflowState: any): {
+  workflowState: any
+  warnings: string[]
+} {
+  const initialValidation = validateWorkflowState(workflowState, { sanitize: true })
+  if (initialValidation.valid) {
+    return {
+      workflowState: initialValidation.sanitizedState || workflowState,
+      warnings: initialValidation.warnings,
+    }
+  }
+
+  if (!initialValidation.errors.every(isIgnorableLegacyWorkflowError)) {
+    return {
+      workflowState,
+      warnings: [],
+    }
+  }
+
+  const sanitizedBlocksState = initialValidation.sanitizedState || workflowState
+  const { workflowState: edgePrunedState, removedEdgeCount } =
+    pruneDanglingEdgesFromWorkflowState(sanitizedBlocksState)
+
+  const regeneratedSubflowsState = {
+    ...edgePrunedState,
+    loops: generateLoopBlocks((edgePrunedState as any).blocks),
+    parallels: generateParallelBlocks((edgePrunedState as any).blocks),
+  }
+
+  const cleanedValidation = validateWorkflowState(regeneratedSubflowsState, { sanitize: true })
+  if (!cleanedValidation.valid) {
+    return {
+      workflowState,
+      warnings: [],
+    }
+  }
+
+  const warnings = [
+    ...initialValidation.errors.map((error) => `Recovered legacy workflow issue: ${error}`),
+    ...(removedEdgeCount > 0
+      ? [`Removed ${removedEdgeCount} dangling edge(s) from persisted workflow state.`]
+      : []),
+    ...cleanedValidation.warnings,
+  ]
+
+  return {
+    workflowState: cleanedValidation.sanitizedState || regeneratedSubflowsState,
+    warnings,
+  }
+}
+
 async function getCurrentWorkflowStateFromDb(
   workflowId: string
 ): Promise<{ workflowState: any; subBlockValues: Record<string, Record<string, any>> }> {
@@ -117,6 +210,17 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
     } else {
       const fromDb = await getCurrentWorkflowStateFromDb(workflowId)
       workflowState = fromDb.workflowState
+    }
+
+    const legacySanitization = sanitizeLegacyWorkflowStateForEditing(workflowState)
+    workflowState = legacySanitization.workflowState
+
+    if (legacySanitization.warnings.length > 0) {
+      logger.warn('Recovered persisted legacy workflow issues before applying operations', {
+        workflowId,
+        warningCount: legacySanitization.warnings.length,
+        warnings: legacySanitization.warnings,
+      })
     }
 
     const permissionConfig =
@@ -299,7 +403,10 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
       logger.warn('Failed to notify socket server of workflow update', { workflowId, error })
     })
 
-    const sanitizationWarnings = validation.warnings.length > 0 ? validation.warnings : undefined
+    const sanitizationWarnings =
+      legacySanitization.warnings.length > 0 || validation.warnings.length > 0
+        ? [...legacySanitization.warnings, ...validation.warnings]
+        : undefined
 
     return {
       success: true,

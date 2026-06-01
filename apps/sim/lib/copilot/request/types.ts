@@ -39,10 +39,17 @@ export interface ToolCallStateResult<T = unknown> {
   output?: T
 }
 
+export interface OptionItem {
+  id: string
+  label: string
+  value?: string
+}
+
 export const ContentBlockType = {
   text: 'text',
   thinking: 'thinking',
   tool_call: 'tool_call',
+  options: 'options',
   subagent_text: 'subagent_text',
   subagent_thinking: 'subagent_thinking',
   subagent: 'subagent',
@@ -52,6 +59,7 @@ export type ContentBlockType = (typeof ContentBlockType)[keyof typeof ContentBlo
 export interface ContentBlock {
   type: ContentBlockType
   content?: string
+  options?: OptionItem[]
   toolCall?: ToolCallState
   calledBy?: string
   timestamp: number

@@ -17,6 +17,7 @@ import {
 import type {
   ContentBlock,
   LocalToolCallStatus,
+  OptionItem,
   OrchestratorResult,
 } from '@/lib/copilot/request/types'
 
@@ -35,7 +36,7 @@ export interface PersistedToolCall {
 }
 
 export interface PersistedContentBlock {
-  type: MothershipStreamV1EventType
+  type: MothershipStreamV1EventType | 'options'
   lane?: MothershipStreamV1StreamScope['lane']
   channel?: MothershipStreamV1TextChannel
   phase?: MothershipStreamV1ToolPhase
@@ -43,6 +44,7 @@ export interface PersistedContentBlock {
   lifecycle?: MothershipStreamV1SpanLifecycleEvent
   status?: MothershipStreamV1CompletionStatus
   content?: string
+  options?: OptionItem[]
   toolCall?: PersistedToolCall
   timestamp?: number
   endedAt?: number
@@ -197,6 +199,11 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         toolCall,
       }
     }
+    case 'options':
+      return {
+        type: 'options',
+        ...(block.options?.length ? { options: block.options } : {}),
+      }
     default:
       return { type: MothershipStreamV1EventType.text, content: block.content }
   }
@@ -265,7 +272,10 @@ export function buildPersistedUserMessage(params: UserMessageParams): PersistedM
 // legacy (type: 'tool_call', 'thinking', 'subagent', 'stopped') blocks.
 // ---------------------------------------------------------------------------
 
-const CANONICAL_BLOCK_TYPES: Set<string> = new Set(Object.values(MothershipStreamV1EventType))
+const CANONICAL_BLOCK_TYPES: Set<string> = new Set([
+  ...Object.values(MothershipStreamV1EventType),
+  'options',
+])
 
 interface RawBlock {
   type: string
@@ -281,6 +291,7 @@ interface RawBlock {
   timestamp?: number
   endedAt?: number
   parentToolCallId?: string
+  options?: OptionItem[]
   toolCall?: {
     id?: string
     name?: string
@@ -324,6 +335,13 @@ function isCanonicalBlock(block: RawBlock): boolean {
 }
 
 function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
+  if (block.type === 'options') {
+    return {
+      type: 'options',
+      ...(Array.isArray(block.options) ? { options: block.options } : {}),
+    }
+  }
+
   const result: PersistedContentBlock = {
     type: block.type as MothershipStreamV1EventType,
   }
@@ -364,6 +382,13 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
 }
 
 function normalizeLegacyBlock(block: RawBlock): PersistedContentBlock {
+  if (block.type === 'options') {
+    return {
+      type: 'options',
+      ...(Array.isArray(block.options) ? { options: block.options } : {}),
+    }
+  }
+
   if (block.type === 'tool_call' && block.toolCall) {
     return {
       type: MothershipStreamV1EventType.tool,

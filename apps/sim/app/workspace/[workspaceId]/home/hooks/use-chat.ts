@@ -132,6 +132,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type {
+  ChatSendOptions,
   ChatMessage,
   ContentBlock,
   FileAttachmentForApi,
@@ -154,7 +155,8 @@ export interface UseChatReturn {
   sendMessage: (
     message: string,
     fileAttachments?: FileAttachmentForApi[],
-    contexts?: ChatContext[]
+    contexts?: ChatContext[],
+    options?: ChatSendOptions
   ) => Promise<void>
   stopGeneration: () => Promise<void>
   resources: MothershipResource[]
@@ -226,6 +228,7 @@ interface QueuedSendHandoffState {
   message: string
   fileAttachments?: FileAttachmentForApi[]
   contexts?: ChatContext[]
+  options?: ChatSendOptions
   requestedAt: number
   resolveAttempts?: number
 }
@@ -373,6 +376,56 @@ function isChatContext(value: unknown): value is ChatContext {
   }
 }
 
+function isAutoSelectionContextForApi(
+  value: unknown
+): value is NonNullable<ChatSendOptions['autoSelectionContexts']>[number] {
+  return (
+    isRecord(value) &&
+    value.kind === 'blocks' &&
+    typeof value.label === 'string' &&
+    Array.isArray(value.blockIds) &&
+    value.blockIds.every((id) => typeof id === 'string')
+  )
+}
+
+function isChatSendOptions(value: unknown): value is ChatSendOptions {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  const { workflowCopilotMode, confirmationMode, thinkingLevel, autoSelectionContexts } = value
+  if (
+    workflowCopilotMode !== undefined &&
+    workflowCopilotMode !== 'legacy_workflow' &&
+    workflowCopilotMode !== 'content_canvas_v1'
+  ) {
+    return false
+  }
+  if (
+    confirmationMode !== undefined &&
+    confirmationMode !== 'manual' &&
+    confirmationMode !== 'auto'
+  ) {
+    return false
+  }
+  if (
+    thinkingLevel !== undefined &&
+    thinkingLevel !== 'standard' &&
+    thinkingLevel !== 'extra'
+  ) {
+    return false
+  }
+  if (
+    autoSelectionContexts !== undefined &&
+    (!Array.isArray(autoSelectionContexts) ||
+      !autoSelectionContexts.every(isAutoSelectionContextForApi))
+  ) {
+    return false
+  }
+
+  return true
+}
+
 function readQueuedSendHandoffState(): QueuedSendHandoffState | null {
   if (typeof window === 'undefined') return null
 
@@ -415,6 +468,7 @@ function readQueuedSendHandoffState(): QueuedSendHandoffState | null {
       ...(Array.isArray(parsed.contexts)
         ? { contexts: parsed.contexts.filter(isChatContext) }
         : {}),
+      ...(isChatSendOptions(parsed.options) ? { options: parsed.options } : {}),
       requestedAt: parsed.requestedAt,
       ...(typeof parsed.resolveAttempts === 'number' &&
       Number.isFinite(parsed.resolveAttempts) &&
@@ -1444,6 +1498,7 @@ export interface UseChatOptions {
   initialActiveResourceId?: string | null
   /** Fired when the server's `traceparent` response header arrives, before any stream content. */
   onRequestStarted?: (info: { requestId: string; userMessageId: string }) => void
+  fixedSendOptions?: ChatSendOptions
 }
 
 interface ActiveStreamRecovery {
@@ -1474,7 +1529,12 @@ export function getMothershipUseChatOptions(
 export function getWorkflowCopilotUseChatOptions(
   options: Pick<
     UseChatOptions,
-    'workflowId' | 'onToolResult' | 'onTitleUpdate' | 'onStreamEnd' | 'onRequestStarted'
+    | 'workflowId'
+    | 'onToolResult'
+    | 'onTitleUpdate'
+    | 'onStreamEnd'
+    | 'onRequestStarted'
+    | 'fixedSendOptions'
   > = {}
 ): UseChatOptions {
   return {
@@ -1522,6 +1582,8 @@ export function useChat(
   onStreamEndRef.current = options?.onStreamEnd
   const onRequestStartedRef = useRef(options?.onRequestStarted)
   onRequestStartedRef.current = options?.onRequestStarted
+  const fixedSendOptionsRef = useRef(options?.fixedSendOptions)
+  fixedSendOptionsRef.current = options?.fixedSendOptions
 
   const getCurrentRequestId = useCallback(() => {
     const traceId = streamTraceparentRef.current?.split('-')[1] ?? ''
@@ -4311,7 +4373,8 @@ export function useChat(
     (
       message: string,
       fileAttachments?: FileAttachmentForApi[],
-      contexts?: ChatContext[]
+      contexts?: ChatContext[],
+      options?: ChatSendOptions
     ): QueuedChatMessage => {
       const id = generateId()
       const handoffChatId = selectedChatIdRef.current ?? chatIdRef.current
@@ -4330,6 +4393,7 @@ export function useChat(
         content: message,
         fileAttachments,
         contexts,
+        options,
         ...(supersededStreamId || handoffChatId
           ? {
               queuedSendHandoff: {
@@ -4375,6 +4439,7 @@ export function useChat(
       message: string,
       fileAttachments?: FileAttachmentForApi[],
       contexts?: ChatContext[],
+      sendOptions?: ChatSendOptions,
       pendingStopOverride?: Promise<void> | null,
       onOptimisticSendApplied?: () => void,
       queuedSendHandoff?: QueuedSendHandoffSeed
@@ -4387,6 +4452,14 @@ export function useChat(
           streamIdRef.current ||
           activeTurnRef.current?.userMessageId
         : undefined
+
+      const mergedSendOptions =
+        sendOptions || fixedSendOptionsRef.current
+          ? {
+              ...fixedSendOptionsRef.current,
+              ...sendOptions,
+            }
+          : undefined
 
       let consumedByTranscript = false
 
@@ -4421,6 +4494,7 @@ export function useChat(
           message,
           ...(fileAttachments ? { fileAttachments } : {}),
           ...(contexts ? { contexts } : {}),
+          ...(mergedSendOptions ? { options: mergedSendOptions } : {}),
           requestedAt: Date.now(),
         })
       }
@@ -4620,6 +4694,19 @@ export function useChat(
             ...(resourceAttachments ? { resourceAttachments } : {}),
             ...(contexts && contexts.length > 0 ? { contexts } : {}),
             ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
+            ...(mergedSendOptions?.workflowCopilotMode
+              ? { workflowCopilotMode: mergedSendOptions.workflowCopilotMode }
+              : {}),
+            ...(mergedSendOptions?.confirmationMode
+              ? { confirmationMode: mergedSendOptions.confirmationMode }
+              : {}),
+            ...(mergedSendOptions?.thinkingLevel
+              ? { thinkingLevel: mergedSendOptions.thinkingLevel }
+              : {}),
+            ...(mergedSendOptions?.autoSelectionContexts &&
+            mergedSendOptions.autoSelectionContexts.length > 0
+              ? { autoSelectionContexts: mergedSendOptions.autoSelectionContexts }
+              : {}),
             userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
           signal: abortController.signal,
@@ -4773,13 +4860,18 @@ export function useChat(
     ]
   )
   const sendMessage = useCallback(
-    async (message: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
+    async (
+      message: string,
+      fileAttachments?: FileAttachmentForApi[],
+      contexts?: ChatContext[],
+      sendOptions?: ChatSendOptions
+    ) => {
       if (!message.trim() || !workspaceId) return
 
       if (sendingRef.current) {
         setMessageQueue((prev) => [
           ...prev,
-          createQueuedMessage(message, fileAttachments, contexts),
+          createQueuedMessage(message, fileAttachments, contexts, sendOptions),
         ])
         return
       }
@@ -4787,13 +4879,13 @@ export function useChat(
       if (pendingStopPromiseRef.current) {
         setMessageQueue((prev) => [
           ...prev,
-          createQueuedMessage(message, fileAttachments, contexts),
+          createQueuedMessage(message, fileAttachments, contexts, sendOptions),
         ])
         void enqueueQueueDispatchRef.current({ type: 'send_head' })
         return
       }
 
-      await startSendMessage(message, fileAttachments, contexts)
+      await startSendMessage(message, fileAttachments, contexts, sendOptions)
     },
     [workspaceId, startSendMessage, createQueuedMessage]
   )
@@ -4968,6 +5060,7 @@ export function useChat(
       handoff.message,
       handoff.fileAttachments,
       handoff.contexts,
+      handoff.options,
       null,
       undefined,
       {
@@ -5368,6 +5461,7 @@ export function useChat(
           msg.content,
           msg.fileAttachments,
           msg.contexts,
+          msg.options,
           options.pendingStop,
           removeQueuedMessage,
           activeQueuedSendHandoff

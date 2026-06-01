@@ -451,7 +451,7 @@ function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
                   key={key}
                   type='button'
                   disabled={disabled}
-                  onClick={() => onSelect?.(title)}
+                  onClick={() => onSelect?.(key)}
                   className={cn(
                     'flex items-center gap-2 border-[var(--divider)] px-2 py-2 text-left transition-colors',
                     disabled ? 'cursor-not-allowed' : 'hover-hover:bg-[var(--surface-5)]',

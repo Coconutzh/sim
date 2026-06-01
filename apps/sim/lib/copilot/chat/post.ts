@@ -108,6 +108,12 @@ const ChatContextSchema = z.object({
   folderId: z.string().optional(),
 })
 
+const AutoSelectionContextSchema = z.object({
+  kind: z.literal('blocks'),
+  blockIds: z.array(z.string()).min(1),
+  label: z.string(),
+})
+
 const ChatMessageSchema = z.object({
   message: z.string().min(1, 'Message is required'),
   userMessageId: z.string().optional(),
@@ -124,6 +130,10 @@ const ChatMessageSchema = z.object({
   resourceAttachments: z.array(ResourceAttachmentSchema).optional(),
   provider: z.string().optional(),
   contexts: z.array(ChatContextSchema).optional(),
+  workflowCopilotMode: z.enum(['legacy_workflow', 'content_canvas_v1']).optional(),
+  confirmationMode: z.enum(['manual', 'auto']).optional(),
+  thinkingLevel: z.enum(['standard', 'extra']).optional(),
+  autoSelectionContexts: z.array(AutoSelectionContextSchema).optional(),
   commands: z.array(z.string()).optional(),
   userTimezone: z.string().optional(),
 })
@@ -160,6 +170,10 @@ type UnifiedChatBranch =
         prefetch?: boolean
         implicitFeedback?: string
         conversationHistory?: unknown[]
+        workflowCopilotMode?: UnifiedChatRequest['workflowCopilotMode']
+        confirmationMode?: UnifiedChatRequest['confirmationMode']
+        thinkingLevel?: UnifiedChatRequest['thinkingLevel']
+        autoSelectionContexts?: UnifiedChatRequest['autoSelectionContexts']
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -186,6 +200,10 @@ type UnifiedChatBranch =
         userTimezone?: string
         workspaceContext?: string
         conversationHistory?: unknown[]
+        workflowCopilotMode?: UnifiedChatRequest['workflowCopilotMode']
+        confirmationMode?: UnifiedChatRequest['confirmationMode']
+        thinkingLevel?: UnifiedChatRequest['thinkingLevel']
+        autoSelectionContexts?: UnifiedChatRequest['autoSelectionContexts']
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -550,11 +568,15 @@ async function resolveBranch(params: {
             commands: payloadParams.commands,
             chatId: payloadParams.chatId,
             prefetch: payloadParams.prefetch,
-            implicitFeedback: payloadParams.implicitFeedback,
-            conversationHistory: payloadParams.conversationHistory,
-            userPermission: payloadParams.userPermission,
-            userTimezone: payloadParams.userTimezone,
-          },
+             implicitFeedback: payloadParams.implicitFeedback,
+             conversationHistory: payloadParams.conversationHistory,
+             workflowCopilotMode: payloadParams.workflowCopilotMode,
+             confirmationMode: payloadParams.confirmationMode,
+             thinkingLevel: payloadParams.thinkingLevel,
+             autoSelectionContexts: payloadParams.autoSelectionContexts,
+             userPermission: payloadParams.userPermission,
+             userTimezone: payloadParams.userTimezone,
+           },
           { selectedModel }
         ),
       buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
@@ -601,11 +623,15 @@ async function resolveBranch(params: {
           contexts: payloadParams.contexts,
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
-          workspaceContext: payloadParams.workspaceContext,
-          conversationHistory: payloadParams.conversationHistory,
-          userPermission: payloadParams.userPermission,
-          userTimezone: payloadParams.userTimezone,
-        },
+           workspaceContext: payloadParams.workspaceContext,
+           conversationHistory: payloadParams.conversationHistory,
+           workflowCopilotMode: payloadParams.workflowCopilotMode,
+           confirmationMode: payloadParams.confirmationMode,
+           thinkingLevel: payloadParams.thinkingLevel,
+           autoSelectionContexts: payloadParams.autoSelectionContexts,
+           userPermission: payloadParams.userPermission,
+           userTimezone: payloadParams.userTimezone,
+         },
         { selectedModel: '' }
       ),
     buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
@@ -911,6 +937,10 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 prefetch: body.prefetch,
                 implicitFeedback: body.implicitFeedback,
                 conversationHistory,
+                workflowCopilotMode: body.workflowCopilotMode,
+                confirmationMode: body.confirmationMode,
+                thinkingLevel: body.thinkingLevel,
+                autoSelectionContexts: body.autoSelectionContexts,
               })
             : branch.buildPayload({
                 message: body.message,
@@ -923,6 +953,10 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userTimezone: body.userTimezone,
                 workspaceContext,
                 conversationHistory,
+                workflowCopilotMode: body.workflowCopilotMode,
+                confirmationMode: body.confirmationMode,
+                thinkingLevel: body.thinkingLevel,
+                autoSelectionContexts: body.autoSelectionContexts,
               }),
         activeOtelRoot.context
       )

@@ -9,7 +9,8 @@ import { z } from 'zod'
  */
 const getEnv = (variable: string): string | undefined => {
   if (typeof window === 'undefined') return process.env[variable]
-  return window.__ENV?.[variable] ?? process.env[variable]
+  const runtimeWindow = window as Window & { __ENV?: Record<string, string | undefined> }
+  return runtimeWindow.__ENV?.[variable] ?? process.env[variable]
 }
 
 // biome-ignore format: keep alignment for readability

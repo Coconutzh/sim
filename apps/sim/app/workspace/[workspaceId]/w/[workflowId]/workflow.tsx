@@ -135,6 +135,7 @@ import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execu
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel/store'
+import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -3220,6 +3221,30 @@ const WorkflowContent = React.memo(
     useEffect(() => {
       syncPanelWithSelection(selectedNodeIds)
     }, [selectedNodeIdsKey])
+
+    const contentCanvasSelectionWorkflowIdRef = useRef<string | null>(null)
+    useEffect(() => {
+      const previousWorkflowId = contentCanvasSelectionWorkflowIdRef.current
+      if (previousWorkflowId && previousWorkflowId !== activeWorkflowId) {
+        useContentCanvasSelectionStore.getState().clearSelection(previousWorkflowId)
+      }
+      contentCanvasSelectionWorkflowIdRef.current = activeWorkflowId
+    }, [activeWorkflowId])
+
+    useEffect(() => {
+      if (!activeWorkflowId) return
+      useContentCanvasSelectionStore.getState().setSelection(activeWorkflowId, selectedNodeIds)
+    }, [activeWorkflowId, selectedNodeIdsKey, selectedNodeIds])
+
+    useEffect(
+      () => () => {
+        const workflowId = contentCanvasSelectionWorkflowIdRef.current
+        if (workflowId) {
+          useContentCanvasSelectionStore.getState().clearSelection(workflowId)
+        }
+      },
+      []
+    )
 
     // Keep the most recently selected block on top even after deselection, so a
     // dragged block doesn't suddenly drop behind other overlapping blocks.

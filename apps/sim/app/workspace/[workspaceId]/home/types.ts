@@ -54,6 +54,33 @@ export interface QueuedMessage {
   content: string
   fileAttachments?: FileAttachmentForApi[]
   contexts?: ChatContext[]
+  options?: ChatSendOptions
+}
+
+export type WorkflowCopilotMode = 'legacy_workflow' | 'content_canvas_v1'
+export type ConfirmationMode = 'manual' | 'auto'
+export type ThinkingLevel = 'standard' | 'extra'
+
+export interface AutoSelectionContextForApi {
+  kind: 'blocks'
+  blockIds: string[]
+  label: string
+}
+
+export interface ChatSendOptions {
+  workflowCopilotMode?: WorkflowCopilotMode
+  confirmationMode?: ConfirmationMode
+  thinkingLevel?: ThinkingLevel
+  autoSelectionContexts?: AutoSelectionContextForApi[]
+}
+
+export interface CanvasSelectionCard {
+  blockId: string
+  title: string
+  variant: 'text' | 'image' | 'video' | 'audio'
+  previewText?: string
+  mediaPath?: string
+  mediaName?: string
 }
 
 export const ToolCallStatus = {
@@ -110,6 +137,7 @@ export interface ToolCallInfo {
 export interface OptionItem {
   id: string
   label: string
+  value?: string
 }
 
 export const ContentBlockType = {

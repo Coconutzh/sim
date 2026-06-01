@@ -12,9 +12,19 @@ import {
   useState,
 } from 'react'
 import { createLogger } from '@sim/logger'
-import { Paperclip } from 'lucide-react'
+import { Check, ChevronDown, Image as ImageIcon, Music4, Paperclip, Type, Video } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Button, Tooltip } from '@/components/emcn'
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  Tooltip,
+} from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
@@ -37,10 +47,15 @@ import {
   TEXTAREA_BASE_CLASSES,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import type {
+  AutoSelectionContextForApi,
+  CanvasSelectionCard,
+  ChatSendOptions,
+  ConfirmationMode,
   FileAttachmentForApi,
   MothershipResource,
   MothershipResourceType,
   QueuedMessage,
+  ThinkingLevel,
 } from '@/app/workspace/[workspaceId]/home/types'
 import {
   useContextManagement,
@@ -121,13 +136,62 @@ function getCaretAnchor(
   }
 }
 
+function stripHtmlPreview(value: string | null | undefined): string {
+  if (!value) return ''
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function buildAutoSelectionContexts(
+  cards: CanvasSelectionCard[] | undefined
+): AutoSelectionContextForApi[] | undefined {
+  if (!cards || cards.length === 0) return undefined
+  return [
+    {
+      kind: 'blocks',
+      blockIds: cards.map((card) => card.blockId),
+      label: `Current canvas selection (${cards.length})`,
+    },
+  ]
+}
+
+function buildManualCanvasContext(cards: CanvasSelectionCard[] | undefined): ChatContext | null {
+  if (!cards || cards.length === 0) return null
+  const titles = cards
+    .slice(0, 2)
+    .map((card) => card.title)
+    .filter(Boolean)
+  const label =
+    cards.length <= 2
+      ? titles.join(', ')
+      : `${titles.join(', ')} +${Math.max(cards.length - titles.length, 0)}`
+
+  return {
+    kind: 'blocks',
+    blockIds: cards.map((card) => card.blockId),
+    label: label || `Canvas nodes (${cards.length})`,
+  }
+}
+
+function SelectionCardIcon({ variant }: { variant: CanvasSelectionCard['variant'] }) {
+  const className = 'h-3.5 w-3.5 text-[var(--text-icon)]'
+  if (variant === 'text') return <Type className={className} />
+  if (variant === 'image') return <ImageIcon className={className} />
+  if (variant === 'video') return <Video className={className} />
+  return <Music4 className={className} />
+}
+
 interface UserInputProps {
   defaultValue?: string
   draftScopeKey?: string
   onSubmit: (
     text: string,
     fileAttachments?: FileAttachmentForApi[],
-    contexts?: ChatContext[]
+    contexts?: ChatContext[],
+    options?: ChatSendOptions
   ) => void
   isSending: boolean
   onStopGeneration: () => void
@@ -139,6 +203,9 @@ interface UserInputProps {
   onEditQueuedTail?: () => void
   enableSpeech?: boolean
   lazyResourceLoading?: boolean
+  fixedSendOptions?: ChatSendOptions
+  enableContentCanvasAgent?: boolean
+  autoSelectionCards?: CanvasSelectionCard[]
 }
 
 export interface UserInputHandle {
@@ -160,6 +227,9 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     onEditQueuedTail,
     enableSpeech = true,
     lazyResourceLoading = false,
+    fixedSendOptions,
+    enableContentCanvasAgent = false,
+    autoSelectionCards,
   },
   ref
 ) {
@@ -175,6 +245,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   })
   const overlayRef = useRef<HTMLDivElement>(null)
   const plusMenuRef = useRef<PlusMenuHandle>(null)
+  const [confirmationMode, setConfirmationMode] = useState<ConfirmationMode>('manual')
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('standard')
 
   const [prevDefaultValue, setPrevDefaultValue] = useState(defaultValue)
   const [resourceLookupEnabled, setResourceLookupEnabled] = useState(!lazyResourceLoading)
@@ -518,6 +590,12 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     filesRef.current.handleFileSelect()
   }, [])
 
+  const handleAddCanvasSelectionContext = useCallback(() => {
+    const context = buildManualCanvasContext(autoSelectionCards)
+    if (!context) return
+    handleContextAdd(context)
+  }, [autoSelectionCards, handleContextAdd])
+
   const handleFileClick = useCallback((file: AttachedFile) => {
     filesRef.current.handleFileClick(file)
   }, [])
@@ -640,10 +718,19 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         ...(f.path ? { path: f.path } : {}),
       }))
 
+    const autoSelectionContexts = buildAutoSelectionContexts(
+      enableContentCanvasAgent ? autoSelectionCards : undefined
+    )
+
     onSubmit(
       currentValue,
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
-      currentContext.selectedContexts.length > 0 ? currentContext.selectedContexts : undefined
+      currentContext.selectedContexts.length > 0 ? currentContext.selectedContexts : undefined,
+      {
+        ...fixedSendOptions,
+        ...(enableContentCanvasAgent ? { confirmationMode, thinkingLevel } : {}),
+        ...(autoSelectionContexts ? { autoSelectionContexts } : {}),
+      }
     )
     setValue('')
     valueRef.current = ''
@@ -664,7 +751,16 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-  }, [onSubmit, textareaRef, resetTranscript])
+  }, [
+    autoSelectionCards,
+    confirmationMode,
+    enableContentCanvasAgent,
+    fixedSendOptions,
+    onSubmit,
+    resetTranscript,
+    textareaRef,
+    thinkingLevel,
+  ])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -951,6 +1047,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     return elements.length > 0 ? elements : <span>{'\u00A0'}</span>
   }, [value, contextManagement.selectedContexts, workflowsById])
 
+  const canAddCanvasSelectionContext = Boolean(autoSelectionCards && autoSelectionCards.length > 0)
+
   return (
     <div
       onClick={handleContainerClick}
@@ -970,6 +1068,37 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         onFileClick={handleFileClick}
         onRemoveFile={handleRemoveFile}
       />
+
+      {enableContentCanvasAgent && autoSelectionCards && autoSelectionCards.length > 0 && (
+        <div className='mb-2 flex flex-wrap gap-2'>
+          {autoSelectionCards.map((card) => (
+            <div
+              key={card.blockId}
+              className='flex min-w-[160px] max-w-[220px] items-start gap-2 rounded-[14px] border border-[var(--border-1)] bg-[var(--surface-2)] px-2.5 py-2'
+            >
+              {card.variant === 'image' && card.mediaPath ? (
+                <img
+                  src={card.mediaPath}
+                  alt={card.title}
+                  className='h-10 w-10 rounded-[8px] object-cover'
+                />
+              ) : (
+                <div className='flex h-10 w-10 items-center justify-center rounded-[8px] bg-[var(--surface-4)]'>
+                  <SelectionCardIcon variant={card.variant} />
+                </div>
+              )}
+              <div className='min-w-0 flex-1'>
+                <div className='truncate text-[12px] font-medium text-[var(--text-primary)]'>
+                  {card.title}
+                </div>
+                <div className='mt-0.5 line-clamp-2 text-[11px] text-[var(--text-secondary)]'>
+                  {card.previewText || card.mediaName || 'Selected canvas node'}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className='relative'>
         <div
@@ -1009,21 +1138,95 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
             textareaRef={textareaRef}
             pendingCursorRef={pendingCursorRef}
             mentionQuery={mentionQuery ?? undefined}
+            hideTriggerButton={enableContentCanvasAgent}
           />
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={handleFileSelectStable}
-                aria-label='Attach file'
-                className='h-[28px] w-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Paperclip className='h-[14px] w-[14px] text-[var(--text-icon)]' strokeWidth={2} />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>Attach file</Tooltip.Content>
-          </Tooltip.Root>
+          {enableContentCanvasAgent ? (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    className='h-[28px] rounded-full border border-[var(--border-1)] px-2 text-[12px] text-[var(--text-secondary)] hover-hover:bg-[var(--surface-hover)]'
+                  >
+                    功能菜单
+                    <ChevronDown className='ml-1 h-3.5 w-3.5' />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='start' side='top' sideOffset={8}>
+                  <DropdownMenuItem
+                    onClick={handleAddCanvasSelectionContext}
+                    disabled={!canAddCanvasSelectionContext}
+                  >
+                    从画布添加
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleFileSelectStable}>上传</DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>思考等级</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onClick={() => setThinkingLevel('standard')}>
+                        <span className='flex items-center gap-2'>
+                          {thinkingLevel === 'standard' && <Check className='h-3.5 w-3.5' />}
+                          <span>standard</span>
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setThinkingLevel('extra')}>
+                        <span className='flex items-center gap-2'>
+                          {thinkingLevel === 'extra' && <Check className='h-3.5 w-3.5' />}
+                          <span>extra</span>
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    className='h-[28px] rounded-full border border-[var(--border-1)] px-2 text-[12px] text-[var(--text-secondary)] hover-hover:bg-[var(--surface-hover)]'
+                  >
+                    {confirmationMode === 'manual' ? '手动确认' : '自动确认'}
+                    <ChevronDown className='ml-1 h-3.5 w-3.5' />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='start' side='top' sideOffset={8}>
+                  <DropdownMenuItem onClick={() => setConfirmationMode('manual')}>
+                    <span className='flex items-center gap-2'>
+                      {confirmationMode === 'manual' && <Check className='h-3.5 w-3.5' />}
+                      <span>手动确认</span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setConfirmationMode('auto')}>
+                    <span className='flex items-center gap-2'>
+                      {confirmationMode === 'auto' && <Check className='h-3.5 w-3.5' />}
+                      <span>自动确认</span>
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  onClick={handleFileSelectStable}
+                  aria-label='Attach file'
+                  className='h-[28px] w-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
+                >
+                  <Paperclip
+                    className='h-[14px] w-[14px] text-[var(--text-icon)]'
+                    strokeWidth={2}
+                  />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>Attach file</Tooltip.Content>
+            </Tooltip.Root>
+          )}
         </div>
         <div className='flex items-center gap-1.5'>
           {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}

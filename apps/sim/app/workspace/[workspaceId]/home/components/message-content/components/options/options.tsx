@@ -14,7 +14,7 @@ export function Options({ items, onSelect }: OptionsProps) {
         <button
           key={item.id}
           type='button'
-          onClick={() => onSelect?.(item.id)}
+          onClick={() => onSelect?.(item.value ?? item.id)}
           className='rounded-full border border-[var(--divider)] bg-[var(--bg)] px-3.5 py-1.5 font-[430] font-[family-name:var(--font-inter)] text-[var(--text-primary)] text-sm leading-5 transition-colors hover-hover:bg-[var(--surface-5)]'
         >
           {item.label}

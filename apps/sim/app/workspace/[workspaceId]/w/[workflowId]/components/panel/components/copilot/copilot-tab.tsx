@@ -26,21 +26,47 @@ import { captureEvent } from '@/lib/posthog/client'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components/mothership-chat/mothership-chat'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
-import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
+import type {
+  CanvasSelectionCard,
+  ChatSendOptions,
+  FileAttachmentForApi,
+} from '@/app/workspace/[workspaceId]/home/types'
 import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
 import {
   type CopilotChatListItem,
   copilotChatsKeys,
   useCopilotChats,
 } from '@/hooks/queries/copilot-chats'
+import { getContentNodePreset } from '@/lib/product/content-node-presets'
 import type { ChatContext } from '@/stores/panel'
+import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
+import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('PanelCopilotTab')
 const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
+const EMPTY_SELECTION_IDS: string[] = []
+
+function getStoredValue<T>(source: Record<string, unknown> | undefined, key: string, fallback: T): T {
+  const rawValue = source?.[key]
+  if (rawValue && typeof rawValue === 'object' && 'value' in rawValue) {
+    return ((rawValue as { value?: T }).value ?? fallback) as T
+  }
+  return (rawValue ?? fallback) as T
+}
+
+function stripHtmlPreview(value: string | null | undefined): string {
+  if (!value) return ''
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 interface CopilotTabProps {
   workspaceId: string
@@ -68,6 +94,60 @@ export function CopilotTab({
     activeWorkflowId ?? undefined
   )
   const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
+  const blocks = useWorkflowStore((state) => state.blocks)
+  const selectedCanvasNodeIds = useContentCanvasSelectionStore(
+    useCallback(
+      (state) => (activeWorkflowId ? state.selectionByWorkflow[activeWorkflowId] ?? EMPTY_SELECTION_IDS : EMPTY_SELECTION_IDS),
+      [activeWorkflowId]
+    )
+  )
+  const workflowSubBlockValues = useSubBlockStore(
+    useCallback(
+      (state) =>
+        activeWorkflowId ? state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES : EMPTY_SUBBLOCK_VALUES,
+      [activeWorkflowId]
+    )
+  )
+
+  const autoSelectionCards = useMemo<CanvasSelectionCard[]>(() => {
+    if (!isActive || !activeWorkflowId || selectedCanvasNodeIds.length === 0) {
+      return []
+    }
+
+    return selectedCanvasNodeIds.flatMap((blockId) => {
+      const block = blocks[blockId]
+      if (!block || block.type !== 'content') {
+        return []
+      }
+
+      const storedValues = workflowSubBlockValues[blockId] as Record<string, unknown> | undefined
+      const sourceValues = storedValues ?? (block.subBlocks as Record<string, unknown> | undefined)
+      const variant = getStoredValue<string>(sourceValues, 'contentVariant', 'text')
+      if (variant !== 'text' && variant !== 'image' && variant !== 'video' && variant !== 'audio') {
+        return []
+      }
+
+      const file = getStoredValue<Record<string, unknown> | null>(sourceValues, 'file', null)
+      return [
+        {
+          blockId,
+          title: block.name || getContentNodePreset(variant)?.label || 'Content',
+          variant,
+          previewText:
+            variant === 'text'
+              ? stripHtmlPreview(getStoredValue<string>(sourceValues, 'contentHtml', '')).slice(0, 80)
+              : undefined,
+          mediaPath:
+            typeof file?.path === 'string'
+              ? file.path
+              : typeof file?.url === 'string'
+                ? file.url
+                : undefined,
+          mediaName: typeof file?.name === 'string' ? file.name : undefined,
+        },
+      ]
+    })
+  }, [activeWorkflowId, blocks, isActive, selectedCanvasNodeIds, workflowSubBlockValues])
 
   const copilotChatTitle = useMemo(
     () =>
@@ -167,6 +247,7 @@ export function CopilotTab({
     copilotChatId,
     getWorkflowCopilotUseChatOptions({
       workflowId: activeWorkflowId || undefined,
+      fixedSendOptions: { workflowCopilotMode: 'content_canvas_v1' },
       onTitleUpdate: loadCopilotChats,
       onToolResult: handleCopilotToolResult,
       onRequestStarted: ({ requestId, userMessageId }) => {
@@ -240,10 +321,15 @@ export function CopilotTab({
   }, [copilotStopGeneration, getCopilotCurrentRequestId, workspaceId])
 
   const handleCopilotSubmit = useCallback(
-    (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
+    (
+      text: string,
+      fileAttachments?: FileAttachmentForApi[],
+      contexts?: ChatContext[],
+      options?: ChatSendOptions
+    ) => {
       const trimmed = text.trim()
       if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
-      copilotSendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
+      copilotSendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts, options)
     },
     [copilotSendMessage]
   )
@@ -349,6 +435,9 @@ export function CopilotTab({
         userId={session?.user?.id}
         chatId={copilotResolvedChatId}
         layout='copilot-view'
+        fixedSendOptions={{ workflowCopilotMode: 'content_canvas_v1' }}
+        enableContentCanvasAgent
+        autoSelectionCards={autoSelectionCards}
       />
     </>
   )

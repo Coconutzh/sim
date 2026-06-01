@@ -16,6 +16,8 @@ import {
 } from '@/app/workspace/[workspaceId]/home/components/user-input'
 import { UserMessageContent } from '@/app/workspace/[workspaceId]/home/components/user-message-content'
 import type {
+  CanvasSelectionCard,
+  ChatSendOptions,
   ChatMessage,
   ChatMessageAttachment,
   ChatMessageContext,
@@ -37,7 +39,8 @@ interface MothershipChatProps {
   onSubmit: (
     text: string,
     fileAttachments?: FileAttachmentForApi[],
-    contexts?: ChatContext[]
+    contexts?: ChatContext[],
+    options?: ChatSendOptions
   ) => void
   onStopGeneration: () => void
   messageQueue: QueuedMessage[]
@@ -51,6 +54,9 @@ interface MothershipChatProps {
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
   draftScopeKey?: string
   layout?: 'mothership-view' | 'copilot-view'
+  fixedSendOptions?: ChatSendOptions
+  enableContentCanvasAgent?: boolean
+  autoSelectionCards?: CanvasSelectionCard[]
   initialScrollBlocked?: boolean
   animateInput?: boolean
   onInputAnimationEnd?: () => void
@@ -193,6 +199,9 @@ export function MothershipChat({
   onWorkspaceResourceSelect,
   draftScopeKey,
   layout = 'mothership-view',
+  fixedSendOptions,
+  enableContentCanvasAgent = false,
+  autoSelectionCards,
   initialScrollBlocked = false,
   animateInput = false,
   onInputAnimationEnd,
@@ -331,6 +340,9 @@ export function MothershipChat({
             draftScopeKey={draftScopeKey}
             enableSpeech={layout !== 'copilot-view'}
             lazyResourceLoading={layout === 'copilot-view'}
+            fixedSendOptions={fixedSendOptions}
+            enableContentCanvasAgent={enableContentCanvasAgent}
+            autoSelectionCards={autoSelectionCards}
           />
         </div>
       </div>

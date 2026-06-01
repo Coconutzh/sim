@@ -34,6 +34,7 @@ interface PlusMenuDropdownProps {
   mentionQuery?: string
   onOpen?: () => void
   onRequestFullResources?: () => void
+  hideTriggerButton?: boolean
 }
 
 export const PlusMenuDropdown = React.memo(
@@ -44,11 +45,12 @@ export const PlusMenuDropdown = React.memo(
       onClose,
       textareaRef,
       pendingCursorRef,
-      mentionQuery,
-      onOpen,
-      onRequestFullResources,
-    },
-    ref
+        mentionQuery,
+        onOpen,
+        onRequestFullResources,
+        hideTriggerButton = false,
+      },
+      ref
   ) {
     const [open, setOpen] = useState(false)
     const [isMention, setIsMention] = useState(false)
@@ -371,15 +373,17 @@ export const PlusMenuDropdown = React.memo(
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          ref={buttonRef}
-          type='button'
-          onClick={() => doOpen()}
-          className='flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[var(--border-1)] transition-colors hover:bg-[var(--surface-hover)]'
-          title='Add attachments or resources'
-        >
-          <Plus className='h-[16px] w-[16px] text-[var(--text-icon)]' />
-        </button>
+        {!hideTriggerButton && (
+          <button
+            ref={buttonRef}
+            type='button'
+            onClick={() => doOpen()}
+            className='flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[var(--border-1)] transition-colors hover:bg-[var(--surface-hover)]'
+            title='Add attachments or resources'
+          >
+            <Plus className='h-[16px] w-[16px] text-[var(--text-icon)]' />
+          </button>
+        )}
       </>
     )
   })
