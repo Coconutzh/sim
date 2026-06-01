@@ -281,13 +281,12 @@ export async function publishWorkflowToMainline(params: {
 
   if (!publishedWorkflowId) {
     publishedWorkflowId = generateId()
-    publishedWorkflowName =
-      params.name?.trim() ||
-      (await deduplicateWorkflowName(
-        `${sourceWorkflow.name} (Published)`,
-        sourceWorkflow.workspaceId,
-        sourceWorkflow.folderId
-      ))
+    const requestedName = params.name?.trim() || `${sourceWorkflow.name} (Published)`
+    publishedWorkflowName = await deduplicateWorkflowName(
+      requestedName,
+      sourceWorkflow.workspaceId,
+      sourceWorkflow.folderId
+    )
 
     await db.insert(workflow).values({
       id: publishedWorkflowId,
@@ -316,7 +315,13 @@ export async function publishWorkflowToMainline(params: {
       archivedAt: null,
     })
   } else {
-    const updatedName = params.name?.trim() || publishedWorkflowName || sourceWorkflow.name
+    const requestedName = params.name?.trim() || publishedWorkflowName || sourceWorkflow.name
+    const updatedName = await deduplicateWorkflowName(
+      requestedName,
+      sourceWorkflow.workspaceId,
+      sourceWorkflow.folderId,
+      { excludeWorkflowId: publishedWorkflowId }
+    )
     await db
       .update(workflow)
       .set({

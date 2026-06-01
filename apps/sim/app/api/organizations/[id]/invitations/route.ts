@@ -16,6 +16,7 @@ import {
   validateSeatAvailability,
 } from '@/lib/billing/validation/seat-management'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { shouldSendInvitationEmail } from '@/lib/invitations/delivery'
 import { summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
 import {
   cancelPendingInvitation,
@@ -431,6 +432,7 @@ export const POST = withRouteHandler(
 
       const sentInvitations: Array<{ id: string; email: string }> = []
       const failedInvitations: Array<{ email: string; error: string }> = []
+      const sendEmailInvitations = shouldSendInvitationEmail()
 
       for (const email of emailsToInvite) {
         try {
@@ -443,28 +445,30 @@ export const POST = withRouteHandler(
             grants: validGrants,
           })
 
-          const emailResult = await sendInvitationEmail({
-            invitationId,
-            token,
-            kind: 'organization',
-            email,
-            inviterName,
-            organizationId,
-            organizationRole: role,
-            grants: validGrants,
-          })
+          if (sendEmailInvitations) {
+            const emailResult = await sendInvitationEmail({
+              invitationId,
+              token,
+              kind: 'organization',
+              email,
+              inviterName,
+              organizationId,
+              organizationRole: role,
+              grants: validGrants,
+            })
 
-          if (!emailResult.success) {
-            logger.error('Failed to send organization invitation email', {
-              email,
-              error: emailResult.error,
-            })
-            failedInvitations.push({
-              email,
-              error: emailResult.error || 'Unknown email delivery error',
-            })
-            await cancelPendingInvitation(invitationId)
-            continue
+            if (!emailResult.success) {
+              logger.error('Failed to send organization invitation email', {
+                email,
+                error: emailResult.error,
+              })
+              failedInvitations.push({
+                email,
+                error: emailResult.error || 'Unknown email delivery error',
+              })
+              await cancelPendingInvitation(invitationId)
+              continue
+            }
           }
 
           sentInvitations.push({ id: invitationId, email })
@@ -524,7 +528,12 @@ export const POST = withRouteHandler(
         emailResults: normalizedInvitationEmails.map((email) => {
           const invitationId = sentInvitationByEmail.get(email)
           if (invitationId) {
-            return createInvitationResult(email, 'sent', 'Invitation email sent', invitationId)
+            return createInvitationResult(
+              email,
+              'sent',
+              sendEmailInvitations ? 'Invitation email sent' : 'In-app invitation created',
+              invitationId
+            )
           }
           if (invalidEmails.includes(email)) {
             return createInvitationResult(email, 'invalid_email', 'Invalid email address')
@@ -583,7 +592,9 @@ export const POST = withRouteHandler(
 
       return NextResponse.json({
         success: true,
-        message: `${sentInvitations.length} invitation(s) sent successfully`,
+        message: sendEmailInvitations
+          ? `${sentInvitations.length} invitation(s) sent successfully`
+          : `${sentInvitations.length} in-app invitation(s) created successfully`,
         data: responseData,
       })
     } catch (error) {

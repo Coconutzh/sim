@@ -7,6 +7,7 @@ import { getUserOrganization } from '@/lib/billing/organizations/membership'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { normalizeEmail } from '@/lib/invitations/core'
+import { shouldSendInvitationEmail } from '@/lib/invitations/delivery'
 import {
   cancelPendingInvitation,
   createPendingInvitation,
@@ -262,24 +263,26 @@ export async function createWorkspaceInvitation({
     }
   )
 
-  const emailResult = await sendInvitationEmail({
-    invitationId,
-    token,
-    kind: 'workspace',
-    email: normalizedEmail,
-    inviterName: context.inviterName,
-    organizationId: context.workspaceDetails.organizationId,
-    organizationRole: 'member',
-    grants: [{ workspaceId: context.workspaceId, permission: invitationPermission }],
-  })
-
-  if (!emailResult.success) {
-    await cancelPendingInvitation(invitationId)
-    throw new WorkspaceInvitationError({
-      message: emailResult.error || 'Failed to send invitation email',
-      status: 502,
+  if (shouldSendInvitationEmail()) {
+    const emailResult = await sendInvitationEmail({
+      invitationId,
+      token,
+      kind: 'workspace',
       email: normalizedEmail,
+      inviterName: context.inviterName,
+      organizationId: context.workspaceDetails.organizationId,
+      organizationRole: 'member',
+      grants: [{ workspaceId: context.workspaceId, permission: invitationPermission }],
     })
+
+    if (!emailResult.success) {
+      await cancelPendingInvitation(invitationId)
+      throw new WorkspaceInvitationError({
+        message: emailResult.error || 'Failed to send invitation email',
+        status: 502,
+        email: normalizedEmail,
+      })
+    }
   }
 
   recordAudit({

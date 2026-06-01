@@ -13,6 +13,7 @@ import { isEnterprise, isTeam } from '@/lib/billing/plan-helpers'
 import { hasUsableSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getInvitationById, summarizeInvitationGrantVisibility } from '@/lib/invitations/core'
+import { shouldSendInvitationEmail } from '@/lib/invitations/delivery'
 import {
   persistInvitationResend,
   prepareInvitationResend,
@@ -120,31 +121,34 @@ export const POST = withRouteHandler(
         currentToken: inv.token,
       })
 
-      const [inviterRow] = await db
-        .select({ name: user.name, email: user.email })
-        .from(user)
-        .where(eq(user.id, session.user.id))
-        .limit(1)
+      const sendEmailInvitations = shouldSendInvitationEmail()
+      if (sendEmailInvitations) {
+        const [inviterRow] = await db
+          .select({ name: user.name, email: user.email })
+          .from(user)
+          .where(eq(user.id, session.user.id))
+          .limit(1)
 
-      const emailResult = await sendInvitationEmail({
-        invitationId: inv.id,
-        token: tokenForEmail,
-        kind: inv.kind,
-        email: inv.email,
-        inviterName: inviterRow?.name || inviterRow?.email || 'A user',
-        organizationId: inv.organizationId,
-        organizationRole: (inv.role as 'admin' | 'member') || 'member',
-        grants: inv.grants.map((grant) => ({
-          workspaceId: grant.workspaceId,
-          permission: grant.permission,
-        })),
-      })
+        const emailResult = await sendInvitationEmail({
+          invitationId: inv.id,
+          token: tokenForEmail,
+          kind: inv.kind,
+          email: inv.email,
+          inviterName: inviterRow?.name || inviterRow?.email || 'A user',
+          organizationId: inv.organizationId,
+          organizationRole: (inv.role as 'admin' | 'member') || 'member',
+          grants: inv.grants.map((grant) => ({
+            workspaceId: grant.workspaceId,
+            permission: grant.permission,
+          })),
+        })
 
-      if (!emailResult.success) {
-        return NextResponse.json(
-          { error: emailResult.error || 'Failed to send invitation email' },
-          { status: 502 }
-        )
+        if (!emailResult.success) {
+          return NextResponse.json(
+            { error: emailResult.error || 'Failed to send invitation email' },
+            { status: 502 }
+          )
+        }
       }
 
       await persistInvitationResend({ invitationId: id, nextToken, nextExpiresAt })
@@ -161,7 +165,9 @@ export const POST = withRouteHandler(
         resourceType:
           inv.kind === 'workspace' ? AuditResourceType.WORKSPACE : AuditResourceType.ORGANIZATION,
         resourceId: inv.organizationId ?? inv.grants[0]?.workspaceId ?? inv.id,
-        description: `Resent ${inv.kind} invitation to ${inv.email}`,
+        description: sendEmailInvitations
+          ? `Resent ${inv.kind} invitation to ${inv.email}`
+          : `Refreshed ${inv.kind} in-app invitation for ${inv.email}`,
         metadata: {
           organizationId: inv.organizationId ?? undefined,
           invitationId: inv.id,
@@ -169,6 +175,7 @@ export const POST = withRouteHandler(
           targetRole: inv.role,
           kind: inv.kind,
           membershipIntent: inv.membershipIntent,
+          deliveryMode: sendEmailInvitations ? 'email' : 'in_app',
         },
         request,
       })

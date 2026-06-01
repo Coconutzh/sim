@@ -65,29 +65,72 @@ function Test-TcpReachable {
   }
 }
 
-function Resolve-PostgresBin {
-  $pgCtlCommand = Get-Command pg_ctl.exe -ErrorAction SilentlyContinue
-  $pgIsReadyCommand = Get-Command pg_isready.exe -ErrorAction SilentlyContinue
+function Get-PostgresMajorVersion {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BinDir
+  )
 
-  if ($pgCtlCommand -and $pgIsReadyCommand) {
-    return Split-Path -Parent $pgCtlCommand.Source
+  $postgres = Join-Path $BinDir 'postgres.exe'
+  if (-not (Test-Path -LiteralPath $postgres)) {
+    return $null
   }
+
+  $versionOutput = & $postgres --version 2>$null
+  if ($versionOutput -match 'PostgreSQL\)\s+(\d+)') {
+    return [int]$matches[1]
+  }
+
+  return $null
+}
+
+function Resolve-PostgresBin {
+  param(
+    [int]$PreferredMajorVersion = 0
+  )
 
   $candidates = @(
     (Join-Path $env:USERPROFILE 'miniconda3\envs\sim-pg\Library\bin'),
     (Join-Path $env:USERPROFILE 'anaconda3\envs\sim-pg\Library\bin')
   )
 
+  $pgCtlCommand = Get-Command pg_ctl.exe -ErrorAction SilentlyContinue
+  $pgIsReadyCommand = Get-Command pg_isready.exe -ErrorAction SilentlyContinue
+
+  if ($pgCtlCommand -and $pgIsReadyCommand) {
+    $candidates += Split-Path -Parent $pgCtlCommand.Source
+  }
+
+  $validCandidates = @()
   foreach ($candidate in $candidates) {
     if (
       (Test-Path -LiteralPath (Join-Path $candidate 'pg_ctl.exe')) -and
       (Test-Path -LiteralPath (Join-Path $candidate 'pg_isready.exe'))
     ) {
+      $validCandidates += $candidate
+    }
+  }
+
+  foreach ($candidate in ($validCandidates | Select-Object -Unique)) {
+    if ($PreferredMajorVersion -gt 0 -and (Get-PostgresMajorVersion -BinDir $candidate) -eq $PreferredMajorVersion) {
       return $candidate
     }
   }
 
+  if ($validCandidates.Count -gt 0) {
+    return ($validCandidates | Select-Object -Unique)[0]
+  }
+
   return $candidates[0]
+}
+
+$dataDir = Join-Path $env:USERPROFILE '.simstudio\postgres-data'
+$logDir = Join-Path $env:USERPROFILE '.simstudio\logs'
+$pgVersionFile = Join-Path $dataDir 'PG_VERSION'
+$preferredMajorVersion = if (Test-Path -LiteralPath $pgVersionFile) {
+  [int](Get-Content -LiteralPath $pgVersionFile -TotalCount 1)
+} else {
+  0
 }
 
 $databaseUrl = Get-ConfiguredDatabaseUrl
@@ -104,9 +147,7 @@ if ($databaseUrl) {
   }
 }
 
-$pgBin = Resolve-PostgresBin
-$dataDir = Join-Path $env:USERPROFILE '.simstudio\postgres-data'
-$logDir = Join-Path $env:USERPROFILE '.simstudio\logs'
+$pgBin = Resolve-PostgresBin -PreferredMajorVersion $preferredMajorVersion
 
 $pgCtl = Join-Path $pgBin 'pg_ctl.exe'
 $pgIsReady = Join-Path $pgBin 'pg_isready.exe'

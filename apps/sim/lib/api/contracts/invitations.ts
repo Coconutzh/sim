@@ -92,6 +92,8 @@ export const invitationDetailsSchema = z.object({
   ),
 })
 
+export const myPendingInvitationSchema = invitationDetailsSchema
+
 export const acceptInvitationResponseSchema = z.object({
   success: z.literal(true),
   redirectPath: z.string(),
@@ -116,6 +118,17 @@ export const listWorkspaceInvitationsContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       invitations: z.array(pendingWorkspaceInvitationSchema),
+    }),
+  },
+})
+
+export const listMyPendingInvitationsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/invitations',
+  response: {
+    mode: 'json',
+    schema: z.object({
+      invitations: z.array(myPendingInvitationSchema),
     }),
   },
 })
@@ -210,3 +223,4 @@ export const removeWorkspaceMemberContract = defineRouteContract({
 export type PendingInvitationRow = z.infer<typeof pendingWorkspaceInvitationSchema>
 export type BatchInvitationResult = z.infer<typeof batchInvitationResultSchema>
 export type InvitationDetails = z.infer<typeof invitationDetailsSchema>
+export type MyPendingInvitation = z.infer<typeof myPendingInvitationSchema>

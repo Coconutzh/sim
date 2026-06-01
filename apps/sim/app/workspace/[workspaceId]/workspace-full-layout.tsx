@@ -2,6 +2,7 @@ import type React from 'react'
 import { redirect } from 'next/navigation'
 import { ToastProvider } from '@/components/emcn'
 import { getSession } from '@/lib/auth'
+import { InvitationBell } from '@/app/workspace/[workspaceId]/components/invitation-bell'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/impersonation-banner'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
@@ -38,6 +39,7 @@ export async function WorkspaceFullLayout({ children, params }: WorkspaceFullLay
             <ImpersonationBanner />
             <WorkspacePermissionsProvider>
               <WorkspaceScopeSync />
+              <InvitationBell />
               <div className='flex min-h-0 flex-1'>
                 <div className='shrink-0' suppressHydrationWarning>
                   <Sidebar />
