@@ -7,6 +7,7 @@ import { getProviderExecutor } from '@/providers/registry'
 import type { ProviderId, ProviderRequest, ProviderResponse } from '@/providers/types'
 import {
   calculateCost,
+  generateSchemaInstructions,
   generateStructuredOutputInstructions,
   shouldBillModelUsage,
   sumToolCosts,
@@ -196,9 +197,13 @@ export async function executeProviderRequest(
       logger.info('Empty response format provided, ignoring it')
       sanitizedRequest.responseFormat = undefined
     } else {
-      const structuredOutputInstructions = generateStructuredOutputInstructions(
-        sanitizedRequest.responseFormat
-      )
+      const structuredOutputInstructions =
+        providerId === 'deepseek' && sanitizedRequest.responseFormat?.schema
+          ? generateSchemaInstructions(
+              sanitizedRequest.responseFormat.schema,
+              sanitizedRequest.responseFormat.name
+            )
+          : generateStructuredOutputInstructions(sanitizedRequest.responseFormat)
 
       if (structuredOutputInstructions.trim()) {
         const originalPrompt = sanitizedRequest.systemPrompt || ''

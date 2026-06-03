@@ -50,6 +50,13 @@ interface OptionsSegment {
   items: OptionItem[]
 }
 
+interface ActionEventSegment {
+  type: 'action_event'
+  id: string
+  text: string
+  status: NonNullable<ContentBlock['actionEvent']>['status']
+}
+
 interface StoppedSegment {
   type: 'stopped'
 }
@@ -59,6 +66,7 @@ type MessageSegment =
   | ThinkingSegment
   | AgentGroupSegment
   | OptionsSegment
+  | ActionEventSegment
   | StoppedSegment
 
 const SUBAGENT_KEYS = new Set(Object.keys(SUBAGENT_LABELS))
@@ -338,6 +346,18 @@ function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
       continue
     }
 
+    if (block.type === 'action_event') {
+      if (!block.actionEvent?.text) continue
+      flushLanes()
+      segments.push({
+        type: 'action_event',
+        id: `action-event-${i}`,
+        text: block.actionEvent.text,
+        status: block.actionEvent.status,
+      })
+      continue
+    }
+
     if (block.type === 'subagent_end') {
       if (block.parentToolCallId) {
         for (const [key, g] of groupsByKey) {
@@ -519,6 +539,26 @@ function MessageContentInner({
                 <Options items={segment.items} onSelect={onOptionSelect} />
               </div>
             )
+          case 'action_event': {
+            const statusClass =
+              segment.status === 'error'
+                ? 'border-[var(--border-danger)] bg-[var(--fill-danger)] text-[var(--text-danger)]'
+                : segment.status === 'warning'
+                  ? 'border-[var(--border-warning)] bg-[var(--fill-warning)] text-[var(--text-warning)]'
+                  : segment.status === 'success'
+                    ? 'border-[var(--border-success)] bg-[var(--fill-success)] text-[var(--text-success)]'
+                    : 'border-[var(--border-secondary)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+            return (
+              <div
+                key={segment.id}
+                className={`rounded-[12px] border px-[10px] py-[8px] text-[13px] leading-[1.5] ${statusClass} ${
+                  isStreaming ? 'animate-stream-fade-in' : ''
+                }`}
+              >
+                {segment.text}
+              </div>
+            )
+          }
           case 'stopped':
             return (
               <div key={`stopped-${i}`} className='flex items-center gap-[8px]'>

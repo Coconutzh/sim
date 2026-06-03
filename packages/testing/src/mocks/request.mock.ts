@@ -1,7 +1,7 @@
 /**
  * Mock request utilities for API testing
  */
-import { NextRequest } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { vi } from 'vitest'
 
 /**
@@ -24,7 +24,16 @@ import { vi } from 'vitest'
  * const response = await POST(req)
  * ```
  */
-type NextRequestInit = NonNullable<ConstructorParameters<typeof NextRequest>[1]>
+type NextRequestInit = RequestInit
+
+class MockNextRequest extends Request {
+  nextUrl: URL
+
+  constructor(input: URL, init?: RequestInit) {
+    super(input, init)
+    this.nextUrl = new URL(input.toString())
+  }
+}
 
 export function createMockRequest(
   method = 'GET',
@@ -44,7 +53,7 @@ export function createMockRequest(
     init.body = JSON.stringify(body)
   }
 
-  return new NextRequest(new URL(url), init)
+  return new MockNextRequest(new URL(url), init) as NextRequest
 }
 
 /**

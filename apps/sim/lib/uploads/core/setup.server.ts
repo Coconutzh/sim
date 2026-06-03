@@ -1,14 +1,15 @@
 import { existsSync } from 'fs'
 import { mkdir } from 'fs/promises'
-import path, { join } from 'path'
+import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
 import { getStorageProvider, USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
 
 const logger = createLogger('UploadsSetup')
 
-const PROJECT_ROOT = path.resolve(process.cwd())
-export const UPLOAD_DIR_SERVER = join(PROJECT_ROOT, 'uploads')
+export const UPLOAD_DIR_SERVER = join(process.cwd(), 'uploads')
+
+let runtimeSetupPromise: Promise<void> | null = null
 
 /**
  * Server-only function to ensure uploads directory exists
@@ -37,8 +38,7 @@ export async function ensureUploadsDirectory() {
   }
 }
 
-// Immediately invoke on server startup
-if (typeof process !== 'undefined') {
+async function initializeUploadsRuntime() {
   const storageProvider = getStorageProvider()
 
   // Log storage mode
@@ -84,13 +84,12 @@ if (typeof process !== 'undefined') {
     logger.info('Using local file storage')
 
     // Only initialize local uploads directory when using local storage
-    ensureUploadsDirectory().then((success) => {
-      if (success) {
-        logger.info('Local uploads directory initialized')
-      } else {
-        logger.error('Failed to initialize local uploads directory')
-      }
-    })
+    const success = await ensureUploadsDirectory()
+    if (success) {
+      logger.info('Local uploads directory initialized')
+    } else {
+      logger.error('Failed to initialize local uploads directory')
+    }
   }
 
   // Log additional configuration details
@@ -106,4 +105,12 @@ if (typeof process !== 'undefined') {
   if (USE_S3_STORAGE && env.S3_COPILOT_BUCKET_NAME) {
     logger.info(`S3 copilot bucket: ${env.S3_COPILOT_BUCKET_NAME}`)
   }
+}
+
+export async function ensureUploadsRuntimeReady() {
+  if (!runtimeSetupPromise) {
+    runtimeSetupPromise = initializeUploadsRuntime()
+  }
+
+  await runtimeSetupPromise
 }

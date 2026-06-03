@@ -56,6 +56,11 @@ function toDisplayBlock(block: PersistedContentBlock): ContentBlock | undefined 
 
 function toDisplayBlockBody(block: PersistedContentBlock): ContentBlock | undefined {
   switch (block.type) {
+    case 'action_event':
+      return {
+        type: ContentBlockType.action_event,
+        actionEvent: block.actionEvent,
+      }
     case 'options':
       return {
         type: ContentBlockType.options,

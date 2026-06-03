@@ -16,7 +16,6 @@ import { sanitizeUrlForLog } from '@/lib/core/utils/logging'
 import { isSupportedFileType, parseFile } from '@/lib/file-parsers'
 import { isUsingCloudStorage, type StorageContext, StorageService } from '@/lib/uploads'
 import { uploadExecutionFile } from '@/lib/uploads/contexts/execution'
-import { UPLOAD_DIR_SERVER } from '@/lib/uploads/core/setup.server'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import {
   extractCleanFilename,
@@ -31,7 +30,6 @@ import { resolveAccessibleWorkflowWorkspace } from '@/lib/workspaces/permissions
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
-import '@/lib/uploads/core/setup.server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 export const dynamic = 'force-dynamic'
@@ -654,6 +652,11 @@ async function handleLocalFile(
   executionContext?: ExecutionContext
 ): Promise<ParseResult> {
   try {
+    const { UPLOAD_DIR_SERVER, ensureUploadsRuntimeReady } = await import(
+      '@/lib/uploads/core/setup.server'
+    )
+    await ensureUploadsRuntimeReady()
+
     const filename = filePath.split('/').pop() || filePath
 
     const context = inferContextFromKey(filename)

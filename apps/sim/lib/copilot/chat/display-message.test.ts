@@ -50,6 +50,36 @@ describe('display-message', () => {
     ])
   })
 
+  it('maps persisted action event blocks to display action event blocks', () => {
+    const display = toDisplayMessage({
+      id: 'msg-action-event',
+      role: 'assistant',
+      content: '',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        {
+          type: 'action_event',
+          actionEvent: {
+            name: 'generated_output',
+            text: '已生成图片内容',
+            status: 'success',
+          },
+        },
+      ],
+    })
+
+    expect(display.contentBlocks).toEqual([
+      {
+        type: 'action_event',
+        actionEvent: {
+          name: 'generated_output',
+          text: '已生成图片内容',
+          status: 'success',
+        },
+      },
+    ])
+  })
+
   it('maps canonical tool, subagent text, and cancelled complete blocks to display blocks', () => {
     const display = toDisplayMessage({
       id: 'msg-1',

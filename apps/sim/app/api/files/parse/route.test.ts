@@ -96,6 +96,7 @@ vi.mock('path', () => ({
 vi.mock('@/lib/uploads/setup.server', () => ({}))
 vi.mock('@/lib/uploads/core/setup.server', () => ({
   UPLOAD_DIR_SERVER: '/test/uploads',
+  ensureUploadsRuntimeReady: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/core/security/input-validation.server', () => inputValidationMock)

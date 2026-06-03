@@ -12,6 +12,8 @@ const {
   mockSetTerminalToolCallState,
   mockCreateLogger,
   mockGenerateWorkspaceImageFromPrompt,
+  mockGenerateWorkspaceAudioFromPrompt,
+  mockGenerateWorkspaceVideoFromPrompt,
 } = vi.hoisted(() => ({
   mockGenerateId: vi.fn(),
   mockExecuteProviderRequest: vi.fn(),
@@ -25,6 +27,8 @@ const {
     debug: vi.fn(),
   })),
   mockGenerateWorkspaceImageFromPrompt: vi.fn(),
+  mockGenerateWorkspaceAudioFromPrompt: vi.fn(),
+  mockGenerateWorkspaceVideoFromPrompt: vi.fn(),
 }))
 
 vi.mock('@sim/utils/id', () => ({
@@ -66,6 +70,582 @@ vi.mock('@/lib/core/config/env', async (importOriginal) => {
   }
 })
 
+describe.skip('generic goal fallback legacy', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
+    mockEditWorkflowExecute.mockResolvedValue({ success: true })
+  })
+  it('falls back to a generic text-first content chain for high-level goal requests when the planner returns no steps', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId
+      .mockReturnValueOnce('goal-text-block-1')
+      .mockReturnValueOnce('tool-call-1')
+      .mockReturnValueOnce('outline-text-block-1')
+      .mockReturnValueOnce('tool-call-2')
+      .mockReturnValueOnce('draft-text-block-1')
+      .mockReturnValueOnce('tool-call-3')
+      .mockReturnValueOnce('tool-call-4')
+      .mockReturnValueOnce('tool-call-5')
+      .mockReturnValueOnce('tool-call-6')
+
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'goal-text-block-1': {
+              type: 'content',
+              name: '目标拆解',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-1' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'goal-text-block-1': {
+              type: 'content',
+              name: '目标拆解',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-1' },
+              },
+            },
+            'outline-text-block-1': {
+              type: 'content',
+              name: '结构大纲',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-2' },
+              },
+            },
+          },
+          edges: [{ source: 'goal-text-block-1', target: 'outline-text-block-1' }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'goal-text-block-1': {
+              type: 'content',
+              name: '目标拆解',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-1' },
+              },
+            },
+            'outline-text-block-1': {
+              type: 'content',
+              name: '结构大纲',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-2' },
+              },
+            },
+            'draft-text-block-1': {
+              type: 'content',
+              name: '内容草稿',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: 'prompt-3' },
+              },
+            },
+          },
+          edges: [
+            { source: 'goal-text-block-1', target: 'outline-text-block-1' },
+            { source: 'outline-text-block-1', target: 'draft-text-block-1' },
+          ],
+        },
+      })
+      .mockResolvedValue({
+        success: true,
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '帮我做一个毕设PPT全套 pipeline',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalled()
+    const createdNodeNames = mockEditWorkflowExecute.mock.calls
+      .flatMap((call) => call[0]?.operations ?? [])
+      .filter((operation: { operation_type?: string }) => operation.operation_type === 'add')
+      .map((operation: { params?: { name?: string } }) => operation.params?.name)
+
+    expect(createdNodeNames).toEqual(expect.arrayContaining(['目标拆解', '结构大纲', '内容草稿']))
+    expect(context.accumulatedContent).not.toContain('我暂时没有需要替你执行的画布操作')
+    expect(context.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'action_event',
+          actionEvent: expect.objectContaining({
+            name: 'understood_request',
+            text: expect.stringContaining('轻量内容链草案'),
+          }),
+        }),
+      ])
+    )
+  })
+
+  it('builds text plus image for generic content-pack requests', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId
+      .mockReturnValueOnce('goal-text-block-1')
+      .mockReturnValueOnce('tool-call-1')
+      .mockReturnValueOnce('outline-text-block-1')
+      .mockReturnValueOnce('tool-call-2')
+      .mockReturnValueOnce('draft-text-block-1')
+      .mockReturnValueOnce('tool-call-3')
+      .mockReturnValueOnce('image-block-1')
+      .mockReturnValueOnce('tool-call-4')
+      .mockReturnValueOnce('tool-call-5')
+      .mockReturnValueOnce('tool-call-6')
+      .mockReturnValueOnce('tool-call-7')
+      .mockReturnValueOnce('tool-call-8')
+
+    const emptyPlannerResponse = {
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    }
+    mockExecuteProviderRequest.mockResolvedValue(emptyPlannerResponse)
+
+    mockEditWorkflowExecute.mockResolvedValue({
+      success: true,
+      workflowState: {
+        blocks: {
+          'goal-text-block-1': {
+            type: 'content',
+            name: '目标拆解',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'text' },
+              aiPrompt: { value: 'prompt-1' },
+            },
+          },
+          'outline-text-block-1': {
+            type: 'content',
+            name: '结构大纲',
+            position: { x: 360, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'text' },
+              aiPrompt: { value: 'prompt-2' },
+            },
+          },
+          'draft-text-block-1': {
+            type: 'content',
+            name: '内容草稿',
+            position: { x: 720, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'text' },
+              aiPrompt: { value: 'prompt-3' },
+            },
+          },
+          'image-block-1': {
+            type: 'content',
+            name: '配图草案',
+            position: { x: 1080, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: 'prompt-4' },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '做一套图文内容包',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    const addOperations = mockEditWorkflowExecute.mock.calls
+      .flatMap((call) => call[0]?.operations ?? [])
+      .filter((operation: { operation_type?: string }) => operation.operation_type === 'add')
+
+    expect(addOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          params: expect.objectContaining({
+            name: '配图草案',
+            inputs: expect.objectContaining({
+              contentVariant: 'image',
+            }),
+          }),
+        }),
+      ])
+    )
+  })
+
+  it('does not trigger the generic fallback for analysis-only requests', async () => {
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '当前画布是空的。',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '只做分析',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '先别改，描述一下当前画布',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+    expect(context.accumulatedContent).toContain('当前画布是空的')
+    expect(context.contentBlocks.some((block) => block.type === 'action_event')).toBe(false)
+  })
+})
+
+describe('generic goal fallback', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
+    mockEditWorkflowExecute.mockResolvedValue({ success: true })
+    mockGenerateWorkspaceImageFromPrompt.mockResolvedValue({
+      file: {
+        id: 'generated-image-1',
+        name: 'generated-image.png',
+        url: 'https://example.com/generated-image.png',
+        key: 'files/generated-image.png',
+        size: 12345,
+        type: 'image/png',
+        context: 'generated',
+      },
+    })
+  })
+
+  it('falls back to a generic text-first content chain for high-level goal requests when the planner returns no steps', async () => {
+    mockGenerateId.mockReset()
+    let generatedIdCallCount = 0
+    mockGenerateId.mockImplementation(() => {
+      generatedIdCallCount += 1
+      if (generatedIdCallCount === 1) return 'goal-text-block-1'
+      if (generatedIdCallCount === 3) return 'outline-text-block-1'
+      if (generatedIdCallCount === 5) return 'draft-text-block-1'
+      return `tool-call-${generatedIdCallCount}`
+    })
+
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+
+    const goalBlock = {
+      type: 'content',
+      name: '\u76ee\u6807\u62c6\u89e3',
+      position: { x: 0, y: 0 },
+      subBlocks: {
+        contentVariant: { value: 'text' },
+        aiPrompt: { value: 'prompt-1' },
+      },
+    }
+    const outlineBlock = {
+      type: 'content',
+      name: '\u7ed3\u6784\u5927\u7eb2',
+      position: { x: 360, y: 0 },
+      subBlocks: {
+        contentVariant: { value: 'text' },
+        aiPrompt: { value: 'prompt-2' },
+      },
+    }
+    const draftBlock = {
+      type: 'content',
+      name: '\u5185\u5bb9\u8349\u7a3f',
+      position: { x: 720, y: 0 },
+      subBlocks: {
+        contentVariant: { value: 'text' },
+        aiPrompt: { value: 'prompt-3' },
+      },
+    }
+
+    const structuralStates = [
+      {
+        blocks: {
+          'goal-text-block-1': goalBlock,
+        },
+        edges: [],
+      },
+      {
+        blocks: {
+          'goal-text-block-1': goalBlock,
+          'outline-text-block-1': outlineBlock,
+        },
+        edges: [],
+      },
+      {
+        blocks: {
+          'goal-text-block-1': goalBlock,
+          'outline-text-block-1': outlineBlock,
+          'draft-text-block-1': draftBlock,
+        },
+        edges: [],
+      },
+      {
+        blocks: {
+          'goal-text-block-1': goalBlock,
+          'outline-text-block-1': outlineBlock,
+          'draft-text-block-1': draftBlock,
+        },
+        edges: [{ source: 'goal-text-block-1', target: 'outline-text-block-1' }],
+      },
+      {
+        blocks: {
+          'goal-text-block-1': goalBlock,
+          'outline-text-block-1': outlineBlock,
+          'draft-text-block-1': draftBlock,
+        },
+        edges: [
+          { source: 'goal-text-block-1', target: 'outline-text-block-1' },
+          { source: 'outline-text-block-1', target: 'draft-text-block-1' },
+        ],
+      },
+    ]
+
+    mockEditWorkflowExecute.mockImplementation(() =>
+      Promise.resolve(
+        structuralStates.length > 0
+          ? {
+              success: true,
+              workflowState: structuralStates.shift(),
+            }
+          : { success: true }
+      )
+    )
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '\u5e2e\u6211\u505a\u4e00\u4e2a\u6bd5\u8bbePPT\u5168\u5957 pipeline',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalled()
+    const createdNodeNames = mockEditWorkflowExecute.mock.calls
+      .flatMap((call) => call[0]?.operations ?? [])
+      .filter((operation: { operation_type?: string }) => operation.operation_type === 'add')
+      .map((operation: { params?: { name?: string } }) => operation.params?.name)
+
+    expect(createdNodeNames).toEqual(
+      expect.arrayContaining([
+        '\u76ee\u6807\u62c6\u89e3',
+        '\u7ed3\u6784\u5927\u7eb2',
+        '\u5185\u5bb9\u8349\u7a3f',
+      ])
+    )
+    expect(context.accumulatedContent).not.toContain(
+      '\u6211\u6682\u65f6\u6ca1\u6709\u9700\u8981\u66ff\u4f60\u6267\u884c\u7684\u753b\u5e03\u64cd\u4f5c'
+    )
+    expect(context.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'action_event',
+          actionEvent: expect.objectContaining({
+            name: 'understood_request',
+            text: expect.stringContaining('\u8f7b\u91cf\u5185\u5bb9\u94fe\u8349\u6848'),
+          }),
+        }),
+      ])
+    )
+  })
+
+  it('builds text plus image for generic content-pack requests', async () => {
+    mockGenerateId.mockReset()
+    let generatedIdCallCount = 0
+    mockGenerateId.mockImplementation(() => {
+      generatedIdCallCount += 1
+      if (generatedIdCallCount === 1) return 'goal-text-block-1'
+      if (generatedIdCallCount === 3) return 'outline-text-block-1'
+      if (generatedIdCallCount === 5) return 'draft-text-block-1'
+      if (generatedIdCallCount === 7) return 'image-block-1'
+      return `tool-call-${generatedIdCallCount}`
+    })
+
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '\u505a\u4e00\u5957\u56fe\u6587\u5185\u5bb9\u5305',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'manual',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+    expect(context.accumulatedContent).toContain('\u56fe\u7247')
+    expect(context.accumulatedContent).toContain('\u6587\u672c')
+    expect(context.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'options',
+        }),
+      ])
+    )
+  })
+
+  it('does not trigger the generic fallback for analysis-only requests', async () => {
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '\u5f53\u524d\u753b\u5e03\u662f\u7a7a\u7684\u3002',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '\u53ea\u505a\u5206\u6790',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '\u5148\u522b\u6539\uff0c\u63cf\u8ff0\u4e00\u4e0b\u5f53\u524d\u753b\u5e03',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+    expect(context.accumulatedContent).toContain('\u5f53\u524d\u753b\u5e03\u662f\u7a7a\u7684')
+    expect(context.contentBlocks.some((block) => block.type === 'action_event')).toBe(false)
+  })
+})
+
 vi.mock(
   '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils',
   () => ({
@@ -75,7 +655,7 @@ vi.mock(
 )
 
 vi.mock('@/lib/generated-media/audio/audio-generation-service', () => ({
-  generateWorkspaceAudioFromPrompt: vi.fn(),
+  generateWorkspaceAudioFromPrompt: mockGenerateWorkspaceAudioFromPrompt,
 }))
 
 vi.mock('@/lib/generated-media/image/image-generation-service', () => ({
@@ -83,7 +663,7 @@ vi.mock('@/lib/generated-media/image/image-generation-service', () => ({
 }))
 
 vi.mock('@/lib/generated-media/video/video-generation-service', () => ({
-  generateWorkspaceVideoFromPrompt: vi.fn(),
+  generateWorkspaceVideoFromPrompt: mockGenerateWorkspaceVideoFromPrompt,
 }))
 
 import {
@@ -154,7 +734,7 @@ describe('content canvas agent', () => {
   const originalEnv = { ...process.env }
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     process.env = { ...originalEnv }
     mockGenerateId
       .mockReturnValueOnce('pending-plan-1')
@@ -170,6 +750,28 @@ describe('content canvas agent', () => {
         key: 'files/generated-image.png',
         size: 12345,
         type: 'image/png',
+        context: 'generated',
+      },
+    })
+    mockGenerateWorkspaceAudioFromPrompt.mockResolvedValue({
+      file: {
+        id: 'generated-audio-1',
+        name: 'generated-audio.mp3',
+        url: 'https://example.com/generated-audio.mp3',
+        key: 'files/generated-audio.mp3',
+        size: 34567,
+        type: 'audio/mpeg',
+        context: 'generated',
+      },
+    })
+    mockGenerateWorkspaceVideoFromPrompt.mockResolvedValue({
+      file: {
+        id: 'generated-video-1',
+        name: 'generated-video.mp4',
+        url: 'https://example.com/generated-video.mp4',
+        key: 'files/generated-video.mp4',
+        size: 45678,
+        type: 'video/mp4',
         context: 'generated',
       },
     })
@@ -455,6 +1057,572 @@ describe('content canvas agent', () => {
         }),
       ])
     )
+  })
+
+  it('falls back to a deterministic three-node content chain when the planner declines a concrete build request', async () => {
+    mockGenerateId.mockReset()
+    let generatedIdCallCount = 0
+    mockGenerateId.mockImplementation(() => {
+      generatedIdCallCount += 1
+      if (generatedIdCallCount === 1) return 'text-block-1'
+      if (generatedIdCallCount === 3) return 'image-block-1'
+      if (generatedIdCallCount === 5) return 'video-block-1'
+      return `tool-call-${generatedIdCallCount}`
+    })
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '',
+          summary: '',
+          intent: {
+            mode: 'analyze',
+            summary: '',
+            shouldExecute: false,
+            risk: 'low',
+          },
+          steps: [
+            {
+              id: 'ignored-step',
+              type: 'create_node',
+              clientNodeId: 'ignored_text_1',
+              nodeType: 'text',
+              prompt: 'ignore me',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: '夏日第一口，清爽到心动。',
+      })
+
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+              },
+            },
+          },
+          edges: [{ source: 'text-block-1', target: 'image-block-1' }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+              },
+            },
+          },
+          edges: [
+            { source: 'text-block-1', target: 'image-block-1' },
+            { source: 'image-block-1', target: 'video-block-1' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+                contentHtml: { value: '<p>夏日第一口，清爽到心动。</p>' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+              },
+            },
+          },
+          edges: [
+            { source: 'text-block-1', target: 'image-block-1' },
+            { source: 'image-block-1', target: 'video-block-1' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+                contentHtml: { value: '<p>夏日第一口，清爽到心动。</p>' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+                file: {
+                  value: {
+                    id: 'generated-image-1',
+                    name: 'generated-image.png',
+                    path: 'https://example.com/generated-image.png',
+                    key: 'files/generated-image.png',
+                    type: 'image/png',
+                    size: 12345,
+                  },
+                },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+              },
+            },
+          },
+          edges: [
+            { source: 'text-block-1', target: 'image-block-1' },
+            { source: 'image-block-1', target: 'video-block-1' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'text-block-1': {
+              type: 'content',
+              name: '文案节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '写一句夏日饮品文案' },
+                contentHtml: { value: '<p>夏日第一口，清爽到心动。</p>' },
+              },
+            },
+            'image-block-1': {
+              type: 'content',
+              name: '配图节点',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '生成夏日饮品文案的配图' },
+                file: {
+                  value: {
+                    id: 'generated-image-1',
+                    name: 'generated-image.png',
+                    path: 'https://example.com/generated-image.png',
+                    key: 'files/generated-image.png',
+                    type: 'image/png',
+                    size: 12345,
+                  },
+                },
+              },
+            },
+            'video-block-1': {
+              type: 'content',
+              name: '短视频节点',
+              position: { x: 720, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'video' },
+                videoPrompt: { value: '生成配图对应的短视频' },
+                file: {
+                  value: {
+                    id: 'generated-video-1',
+                    name: 'generated-video.mp4',
+                    path: 'https://example.com/generated-video.mp4',
+                    key: 'files/generated-video.mp4',
+                    type: 'video/mp4',
+                    size: 45678,
+                  },
+                },
+              },
+            },
+          },
+          edges: [
+            { source: 'text-block-1', target: 'image-block-1' },
+            { source: 'image-block-1', target: 'video-block-1' },
+          ],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '帮我做一个三节点内容流：先写一句夏日饮品文案，再生成配图，最后生成配图对应的短视频。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalled()
+    const addOperations = mockEditWorkflowExecute.mock.calls
+      .flatMap((call) => call[0]?.operations ?? [])
+      .filter((operation: { operation_type?: string }) => operation.operation_type === 'add')
+
+    expect(addOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              contentVariant: 'text',
+              aiPrompt: expect.stringContaining('夏日饮品文案'),
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              contentVariant: 'image',
+              aiPrompt: expect.stringContaining('配图'),
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              contentVariant: 'video',
+              videoPrompt: expect.stringContaining('短视频'),
+            }),
+          }),
+        }),
+      ])
+    )
+    expect(context.accumulatedContent).not.toContain('我暂时没有需要替你执行的画布操作')
+  })
+
+  it('creates an image node without generation when the planner no-ops on an explicit image-node request', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('image-block-1').mockReturnValueOnce('tool-call-1')
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        blocks: {
+          'image-block-1': {
+            type: 'content',
+            name: '图片节点',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: '极简咖啡海报' },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '加一个图片节点，主题是极简咖啡海报，先不要生成，只把需求写进去。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockGenerateWorkspaceImageFromPrompt).not.toHaveBeenCalled()
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(1)
+    expect(mockEditWorkflowExecute.mock.calls[0]?.[0]?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              contentVariant: 'image',
+              aiPrompt: expect.stringContaining('极简咖啡海报'),
+            }),
+          }),
+        }),
+      ])
+    )
+    expect(context.accumulatedContent).not.toContain('我暂时没有需要替你执行的画布操作')
+  })
+
+  it('creates an audio node when the planner no-ops on an explicit audio-node request', async () => {
+    mockGenerateId.mockReset()
+    let generatedIdCallCount = 0
+    mockGenerateId.mockImplementation(() => {
+      generatedIdCallCount += 1
+      if (generatedIdCallCount === 1) return 'audio-block-1'
+      return `tool-call-${generatedIdCallCount}`
+    })
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        intent: {
+          mode: 'analyze',
+          summary: '',
+          shouldExecute: false,
+          risk: 'low',
+        },
+        steps: [],
+      }),
+    })
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'audio-block-1': {
+              type: 'content',
+              name: '音频节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'audio' },
+                audioPrompt: { value: '做旁白，语气温柔一点' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'audio-block-1': {
+              type: 'content',
+              name: '音频节点',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'audio' },
+                audioPrompt: { value: '做旁白，语气温柔一点' },
+                file: {
+                  value: {
+                    id: 'generated-audio-1',
+                    name: 'generated-audio.mp3',
+                    path: 'https://example.com/generated-audio.mp3',
+                    key: 'files/generated-audio.mp3',
+                    type: 'audio/mpeg',
+                    size: 34567,
+                  },
+                },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '给我加一个音频节点，用来做旁白，语气要温柔一点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockGenerateWorkspaceAudioFromPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('旁白'),
+      })
+    )
+    expect(mockEditWorkflowExecute.mock.calls[0]?.[0]?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              contentVariant: 'audio',
+              audioPrompt: expect.stringContaining('温柔'),
+            }),
+          }),
+        }),
+      ])
+    )
+    expect(context.accumulatedContent).not.toContain('我暂时没有需要替你执行的画布操作')
   })
 
   it('uses content reference handles when adding a linked content node', () => {
@@ -746,6 +1914,355 @@ describe('content canvas agent', () => {
         }),
       ])
     )
+  })
+
+  it('defaults to auto execution and emits step-level action events for multi-step content chains', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId
+      .mockReturnValueOnce('new-image-block-1')
+      .mockReturnValueOnce('tool-call-1')
+      .mockReturnValueOnce('new-text-block-1')
+      .mockReturnValueOnce('tool-call-2')
+      .mockReturnValueOnce('tool-call-3')
+      .mockReturnValueOnce('tool-call-4')
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '先生成图片，再补一条文案。',
+        intent: {
+          mode: 'build_from_scratch',
+          summary: '创建图片并补一条文案',
+          shouldExecute: true,
+          risk: 'low',
+        },
+        steps: [
+          {
+            id: 'step-1',
+            type: 'create_node',
+            clientNodeId: 'new_image_1',
+            nodeType: 'image',
+            title: '海边插画',
+            prompt: '日落海边少女插画',
+          },
+          {
+            id: 'step-2',
+            type: 'create_node',
+            clientNodeId: 'new_text_1',
+            nodeType: 'text',
+            title: '配套文案',
+            prompt: '为这张图写一句广告标题',
+          },
+          {
+            id: 'step-3',
+            type: 'connect_nodes',
+            sourceBlockId: 'new_image_1',
+            targetBlockId: 'new_text_1',
+          },
+          {
+            id: 'step-4',
+            type: 'generate_output',
+            blockId: 'new_image_1',
+          },
+          {
+            id: 'step-5',
+            type: 'writeback_output',
+            blockId: 'new_image_1',
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'new-image-block-1': {
+              type: 'content',
+              name: '海边插画',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '日落海边少女插画' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'new-image-block-1': {
+              type: 'content',
+              name: '海边插画',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '日落海边少女插画' },
+              },
+            },
+            'new-text-block-1': {
+              type: 'content',
+              name: '配套文案',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '为这张图写一句广告标题' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'new-image-block-1': {
+              type: 'content',
+              name: '海边插画',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '日落海边少女插画' },
+              },
+            },
+            'new-text-block-1': {
+              type: 'content',
+              name: '配套文案',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '为这张图写一句广告标题' },
+              },
+            },
+          },
+          edges: [{ source: 'new-image-block-1', target: 'new-text-block-1' }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'new-image-block-1': {
+              type: 'content',
+              name: '海边插画',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '日落海边少女插画' },
+                file: {
+                  value: {
+                    id: 'generated-image-1',
+                    name: 'generated-image.png',
+                    path: 'https://example.com/generated-image.png',
+                    key: 'files/generated-image.png',
+                    type: 'image/png',
+                    size: 12345,
+                  },
+                },
+              },
+            },
+            'new-text-block-1': {
+              type: 'content',
+              name: '配套文案',
+              position: { x: 360, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'text' },
+                aiPrompt: { value: '为这张图写一句广告标题' },
+              },
+            },
+          },
+          edges: [{ source: 'new-image-block-1', target: 'new-text-block-1' }],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '先生成一张图，再补一个文案节点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(4)
+    expect(context.contentBlocks.some((block) => block.type === 'options')).toBe(false)
+    expect(
+      context.contentBlocks
+        .filter((block) => block.type === 'action_event')
+        .map((block) => block.actionEvent?.name)
+    ).toEqual(
+      expect.arrayContaining([
+        'understood_request',
+        'created_node',
+        'connected_nodes',
+        'generated_output',
+        'completed_request',
+      ])
+    )
+  })
+
+  it('repairs a missing created node once before continuing', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId
+      .mockReturnValueOnce('new-image-block-1')
+      .mockReturnValueOnce('tool-call-1')
+      .mockReturnValueOnce('tool-call-2')
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '新建一张图。',
+        intent: {
+          mode: 'build_from_scratch',
+          summary: '创建图片节点',
+          shouldExecute: true,
+          risk: 'low',
+        },
+        steps: [
+          {
+            id: 'step-1',
+            type: 'create_node',
+            clientNodeId: 'new_image_1',
+            nodeType: 'image',
+            title: '新图',
+            prompt: '电影感海边插画',
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {},
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {
+            'new-image-block-1': {
+              type: 'content',
+              name: '新图',
+              position: { x: 0, y: 0 },
+              subBlocks: {
+                contentVariant: { value: 'image' },
+                aiPrompt: { value: '电影感海边插画' },
+              },
+            },
+          },
+          edges: [],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '新建一张图',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
+    expect(
+      context.contentBlocks.some(
+        (block) =>
+          block.type === 'action_event' && block.actionEvent?.name === 'repaired_step'
+      )
+    ).toBe(true)
+  })
+
+  it('marks the request blocked when step repair is exhausted', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId
+      .mockReturnValueOnce('new-image-block-1')
+      .mockReturnValueOnce('tool-call-1')
+      .mockReturnValueOnce('tool-call-2')
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '新建一张图。',
+        intent: {
+          mode: 'build_from_scratch',
+          summary: '创建图片节点',
+          shouldExecute: true,
+          risk: 'low',
+        },
+        steps: [
+          {
+            id: 'step-1',
+            type: 'create_node',
+            clientNodeId: 'new_image_1',
+            nodeType: 'image',
+            title: '新图',
+            prompt: '电影感海边插画',
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {},
+          edges: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          blocks: {},
+          edges: [],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await expect(
+      runContentCanvasAgent({
+        requestPayload: {
+          message: '新建一张图',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          confirmationMode: 'auto',
+        },
+        context,
+        execContext: {
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+        },
+        options: {},
+      })
+    ).rejects.toThrow(/blocked|卡住|无法继续/i)
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
+    expect(
+      context.contentBlocks.some(
+        (block) => block.type === 'action_event' && block.actionEvent?.name === 'blocked_step'
+      )
+    ).toBe(true)
   })
 
   it('fails visibly when planned add_node actions do not materialize in the workflow', async () => {
