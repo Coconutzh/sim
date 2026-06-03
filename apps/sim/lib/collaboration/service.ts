@@ -2820,6 +2820,7 @@ export async function listVisiblePublications(params: {
 
   return rows.map((row) => ({
     id: row.publication.id,
+    publishedWorkflowId: row.publication.publishedWorkflowId,
     title: row.publication.title,
     description: row.publication.description,
     sourceWorkgroup: { id: row.publication.sourceWorkgroupId, name: row.sourceWorkgroupName },
@@ -2908,6 +2909,7 @@ export async function listOrganizationPublications(params: {
 
   return rows.map((row) => ({
     id: row.publication.id,
+    publishedWorkflowId: row.publication.publishedWorkflowId,
     title: row.publication.title,
     description: row.publication.description,
     sourceWorkgroup: { id: row.publication.sourceWorkgroupId, name: row.sourceWorkgroupName },
@@ -3588,9 +3590,41 @@ export async function updatePublicationReview(params: {
   }
 }
 
+async function resolveReadablePublicationVersionId(
+  userId: string,
+  publicationVersionIdOrWorkflowId: string
+): Promise<string | null> {
+  if (await canReadPublication(userId, publicationVersionIdOrWorkflowId)) {
+    return publicationVersionIdOrWorkflowId
+  }
+
+  const candidateRows = await db
+    .select({ id: workflowPublicationVersion.id })
+    .from(workflowPublicationVersion)
+    .where(
+      and(
+        eq(workflowPublicationVersion.publishedWorkflowId, publicationVersionIdOrWorkflowId),
+        ne(workflowPublicationVersion.status, 'retracted')
+      )
+    )
+    .orderBy(desc(workflowPublicationVersion.publishedAt))
+    .limit(10)
+
+  for (const candidate of candidateRows) {
+    if (await canReadPublication(userId, candidate.id)) {
+      return candidate.id
+    }
+  }
+
+  return null
+}
+
 export async function getPublication(params: { userId: string; publicationVersionId: string }) {
-  const canRead = await canReadPublication(params.userId, params.publicationVersionId)
-  if (!canRead) throw new Error('Publication access denied')
+  const publicationVersionId = await resolveReadablePublicationVersionId(
+    params.userId,
+    params.publicationVersionId
+  )
+  if (!publicationVersionId) throw new Error('Publication access denied')
 
   const [row] = await db
     .select({
@@ -3602,7 +3636,7 @@ export async function getPublication(params: { userId: string; publicationVersio
     .from(workflowPublicationVersion)
     .innerJoin(workgroup, eq(workflowPublicationVersion.sourceWorkgroupId, workgroup.id))
     .leftJoin(discipline, eq(workflowPublicationVersion.sourceDisciplineId, discipline.id))
-    .where(eq(workflowPublicationVersion.id, params.publicationVersionId))
+    .where(eq(workflowPublicationVersion.id, publicationVersionId))
     .limit(1)
   if (!row) throw new Error('Publication not found')
   if (row.publication.status === 'retracted') throw new Error('Publication not found')
@@ -3614,6 +3648,7 @@ export async function getPublication(params: { userId: string; publicationVersio
 
   return {
     id: row.publication.id,
+    publishedWorkflowId: row.publication.publishedWorkflowId,
     title: row.publication.title,
     description: row.publication.description,
     versionNumber: row.publication.versionNumber,
@@ -3629,6 +3664,7 @@ export async function getPublication(params: { userId: string; publicationVersio
     reviewState: row.publication.reviewState as PublicationReviewState | null,
     riskLevel: row.publication.riskLevel as PublicationRiskLevel | null,
     reviewer: formatPublicationReviewer(row.publication),
+    dependsOnPublicationIds: parentVersionId ? [parentVersionId] : [],
     snapshotState: row.publication.snapshotState,
     snapshotMetadata: row.publication.snapshotMetadata,
     publishedAt: row.publication.publishedAt.toISOString(),

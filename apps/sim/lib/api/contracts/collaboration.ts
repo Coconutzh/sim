@@ -239,6 +239,7 @@ export const publicationListQuerySchema = z.object({
 
 export const publicationSummarySchema = z.object({
   id: z.string(),
+  publishedWorkflowId: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   sourceWorkgroup: z.object({ id: z.string(), name: z.string() }),

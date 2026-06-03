@@ -287,6 +287,7 @@ vi.mock('@/lib/workflows/defaults', () => ({
 }))
 
 import { recordAudit } from '@sim/audit'
+import { getPublicationContract } from '@/lib/api/contracts/collaboration'
 import { canReadPublication } from '@/lib/collaboration/authz'
 import {
   addWorkgroupMember,
@@ -832,8 +833,16 @@ describe('collaboration service', () => {
           description: null,
           versionNumber: 2,
           parentVersionId: 'publication-hidden',
+          publishedWorkflowId: 'published-workflow-1',
           sourceWorkgroupId: 'workgroup-1',
           agentCode: 'chief_director',
+          status: 'published',
+          visibility: 'selected_workgroups',
+          reviewState: null,
+          riskLevel: null,
+          reviewerUserId: null,
+          reviewerAssignedBy: null,
+          reviewerAssignedAt: null,
           snapshotState: {},
           snapshotMetadata: {},
           publishedAt: new Date('2026-05-22T00:00:00Z'),
@@ -851,6 +860,96 @@ describe('collaboration service', () => {
       parentVersionId: null,
     })
     expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-hidden')
+  })
+
+  it('opens publication details when routed by published workflow id', async () => {
+    vi.mocked(canReadPublication).mockImplementation(
+      async (_userId, publicationVersionId) => publicationVersionId === 'publication-visible'
+    )
+    mockResultsQueue.push(
+      [{ id: 'publication-visible' }],
+      [
+        {
+          publication: {
+            id: 'publication-visible',
+            title: 'Visible version',
+            description: null,
+            versionNumber: 1,
+            parentVersionId: null,
+            publishedWorkflowId: 'published-workflow-1',
+            sourceWorkgroupId: 'workgroup-1',
+            agentCode: 'chief_director',
+            status: 'published',
+            visibility: 'selected_workgroups',
+            reviewState: null,
+            riskLevel: null,
+            reviewerUserId: null,
+            reviewerAssignedBy: null,
+            reviewerAssignedAt: null,
+            snapshotState: {},
+            snapshotMetadata: {},
+            publishedAt: new Date('2026-05-22T00:00:00Z'),
+          },
+          sourceWorkgroupName: 'Team A',
+          sourceDisciplineCode: 'stage_design',
+          sourceDisciplineName: 'Stage Design',
+        },
+      ]
+    )
+
+    await expect(
+      getPublication({ userId: 'viewer-1', publicationVersionId: 'published-workflow-1' })
+    ).resolves.toMatchObject({
+      id: 'publication-visible',
+      title: 'Visible version',
+      publishedWorkflowId: 'published-workflow-1',
+      dependsOnPublicationIds: [],
+    })
+    expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'published-workflow-1')
+    expect(canReadPublication).toHaveBeenCalledWith('viewer-1', 'publication-visible')
+  })
+
+  it('returns publication details that match the API contract', async () => {
+    vi.mocked(canReadPublication).mockResolvedValue(true)
+    mockResultsQueue.push([
+      {
+        publication: {
+          id: 'publication-visible',
+          title: 'Visible version',
+          description: null,
+          versionNumber: 1,
+          parentVersionId: null,
+          publishedWorkflowId: 'published-workflow-1',
+          sourceWorkgroupId: 'workgroup-1',
+          agentCode: 'chief_director',
+          status: 'published',
+          visibility: 'organization',
+          reviewState: null,
+          riskLevel: null,
+          reviewerUserId: null,
+          reviewerAssignedBy: null,
+          reviewerAssignedAt: null,
+          snapshotState: {
+            blocks: {},
+            edges: [],
+            loops: {},
+            parallels: {},
+          },
+          snapshotMetadata: {},
+          publishedAt: new Date('2026-05-22T00:00:00Z'),
+        },
+        sourceWorkgroupName: 'Team A',
+        sourceDisciplineCode: 'stage_design',
+        sourceDisciplineName: 'Stage Design',
+      },
+    ])
+
+    const publication = await getPublication({
+      userId: 'viewer-1',
+      publicationVersionId: 'publication-visible',
+    })
+
+    expect(getPublicationContract.response.schema.safeParse({ publication }).success).toBe(true)
   })
 
   it('filters publication tree versions by per-version visibility', async () => {
