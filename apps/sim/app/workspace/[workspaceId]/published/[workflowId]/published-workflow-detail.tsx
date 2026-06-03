@@ -13,7 +13,7 @@ import {
   type ResourceRow,
   ResourceTable,
 } from '@/app/workspace/[workspaceId]/components'
-import { usePublication } from '@/hooks/queries/collaboration'
+import { usePublication, useShowcasePublications } from '@/hooks/queries/collaboration'
 import {
   usePublishedWorkflowsForWorkgroup,
   useWorkflowPublication,
@@ -27,6 +27,8 @@ const BLOCK_COLUMNS: ResourceColumn[] = [
   { id: 'status', header: 'Status' },
   { id: 'position', header: 'Position' },
 ] as const
+
+const SHOWCASE_PUBLICATION_LOOKUP_FILTERS = { limit: 100 } as const
 
 function formatPublishedAt(value: Date | null | undefined): string {
   if (!value) {
@@ -79,12 +81,22 @@ export function PublishedWorkflowDetail() {
     usePublishedWorkflowsForWorkgroup(isShowcaseRoute ? undefined : workgroupId)
   const publishedWorkflow = publishedWorkflows.find((workflow) => workflow.id === resourceId)
 
+  const { data: publicationListData, isLoading: isPublicationListLoading } =
+    useShowcasePublications(
+      isShowcaseRoute ? workgroupId : undefined,
+      SHOWCASE_PUBLICATION_LOOKUP_FILTERS
+    )
+  const routedPublication = publicationListData?.publications.find(
+    (item) => item.id === resourceId || item.publishedWorkflowId === resourceId
+  )
+  const publicationId = isShowcaseRoute ? (routedPublication?.id ?? resourceId) : undefined
+
   const {
     data: publicationData,
     isLoading: isPublicationDetailLoading,
     refetch: refetchPublication,
     isFetching: isFetchingPublication,
-  } = usePublication(isShowcaseRoute ? resourceId : undefined)
+  } = usePublication(publicationId)
   const publication = publicationData?.publication
 
   const {
@@ -191,7 +203,7 @@ export function PublishedWorkflowDetail() {
   const isLoading =
     isWorkspaceLoading ||
     (isShowcaseRoute
-      ? isPublicationDetailLoading
+      ? isPublicationListLoading || isPublicationDetailLoading
       : (Boolean(workgroupId) && isPublishedLoading) ||
         isWorkflowStateLoading ||
         isWorkflowPublicationLoading)

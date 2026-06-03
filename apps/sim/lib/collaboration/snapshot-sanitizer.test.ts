@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { workflowStateSchema } from '@/lib/api/contracts/workflows'
 import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
 
 describe('sanitizeWorkflowSnapshot', () => {
@@ -23,11 +24,11 @@ describe('sanitizeWorkflowSnapshot', () => {
       blocks: {
         blockA: {
           type: 'api',
-          credentialId: { type: 'credential', label: '已配置凭证' },
+          credentialId: { type: 'credential', label: 'Configured credential' },
           config: {
-            apiKey: { type: 'redacted', label: '已隐藏' },
+            apiKey: { type: 'redacted', label: 'Redacted value' },
             nested: {
-              accessToken: { type: 'redacted', label: '已隐藏' },
+              accessToken: { type: 'redacted', label: 'Redacted value' },
               safeLabel: 'public',
             },
           },
@@ -75,10 +76,69 @@ describe('sanitizeWorkflowSnapshot', () => {
 
     expect(sanitizeWorkflowSnapshot(snapshot)).toEqual({
       block: {
-        imageFile: { type: 'file', label: '已隐藏文件' },
-        files: { type: 'file', label: '已隐藏文件' },
+        imageFile: { type: 'file', label: 'Redacted file' },
+        files: { type: 'file', label: 'Redacted file' },
         profile: { name: 'Stage designer' },
       },
     })
+  })
+
+  it('keeps redacted workflow subBlocks compatible with workflowStateSchema', () => {
+    const snapshot = {
+      blocks: {
+        content: {
+          id: 'content',
+          type: 'content',
+          name: 'Image 1',
+          position: { x: 10, y: 20 },
+          subBlocks: {
+            file: {
+              id: 'file',
+              type: 'file',
+              value: {
+                id: 'file-1',
+                name: 'draft.png',
+                url: 'https://files.example/private',
+                size: 42,
+                type: 'image/png',
+                key: 'private/file-1',
+              },
+            },
+            credential: {
+              id: 'credential',
+              type: 'credential',
+              value: 'cred_private',
+            },
+          },
+          outputs: {},
+          enabled: true,
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+
+    const sanitized = sanitizeWorkflowSnapshot(snapshot)
+
+    expect(sanitized).toMatchObject({
+      blocks: {
+        content: {
+          subBlocks: {
+            file: {
+              id: 'file',
+              type: 'file',
+              value: { type: 'file', label: 'Redacted file' },
+            },
+            credential: {
+              id: 'credential',
+              type: 'credential',
+              value: { type: 'credential', label: 'Configured credential' },
+            },
+          },
+        },
+      },
+    })
+    expect(workflowStateSchema.safeParse(sanitized).success).toBe(true)
   })
 })
