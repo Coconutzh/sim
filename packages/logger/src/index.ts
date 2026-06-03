@@ -4,7 +4,6 @@
  * Framework-agnostic logging utilities for the Sim platform.
  * Provides standardized console logging with environment-aware configuration.
  */
-import chalk from 'chalk'
 import { getRequestContext } from './request-context'
 
 /**
@@ -39,6 +38,36 @@ export interface LoggerConfig {
  * Included automatically in every log line produced by that logger.
  */
 export type LoggerMetadata = Record<string, string | number | boolean | undefined>
+
+type TextFormatter = (text: string) => string
+
+const ANSI_RESET = '\u001b[0m'
+const ANSI_COLORS = {
+  blue: '\u001b[34m',
+  cyan: '\u001b[36m',
+  gray: '\u001b[90m',
+  green: '\u001b[32m',
+  magenta: '\u001b[35m',
+  red: '\u001b[31m',
+  yellow: '\u001b[33m',
+} as const
+
+const shouldUseAnsiColors = (): boolean => {
+  if (typeof window !== 'undefined') {
+    return false
+  }
+
+  const stdout = typeof process !== 'undefined' ? process.stdout : undefined
+  return Boolean(stdout?.isTTY)
+}
+
+const createTextFormatter = (color: (typeof ANSI_COLORS)[keyof typeof ANSI_COLORS]): TextFormatter => {
+  if (!shouldUseAnsiColors()) {
+    return (text: string) => text
+  }
+
+  return (text: string) => `${color}${text}${ANSI_RESET}`
+}
 
 const getNodeEnv = (): string => {
   if (typeof process !== 'undefined' && process.env) {
@@ -248,25 +277,26 @@ export class Logger {
 
     if (this.config.colorize) {
       let levelColor: (text: string) => string
-      const moduleColor = chalk.cyan
-      const timestampColor = chalk.gray
+      const moduleColor = createTextFormatter(ANSI_COLORS.cyan)
+      const timestampColor = createTextFormatter(ANSI_COLORS.gray)
 
       switch (level) {
         case LogLevel.DEBUG:
-          levelColor = chalk.blue
+          levelColor = createTextFormatter(ANSI_COLORS.blue)
           break
         case LogLevel.INFO:
-          levelColor = chalk.green
+          levelColor = createTextFormatter(ANSI_COLORS.green)
           break
         case LogLevel.WARN:
-          levelColor = chalk.yellow
+          levelColor = createTextFormatter(ANSI_COLORS.yellow)
           break
         case LogLevel.ERROR:
-          levelColor = chalk.red
+          levelColor = createTextFormatter(ANSI_COLORS.red)
           break
       }
 
-      const coloredMeta = metadataStr ? ` ${chalk.magenta(metadataStr.trim())}` : ''
+      const metadataColor = createTextFormatter(ANSI_COLORS.magenta)
+      const coloredMeta = metadataStr ? ` ${metadataColor(metadataStr.trim())}` : ''
       const coloredPrefix = `${timestampColor(`[${timestamp}]`)} ${levelColor(`[${level}]`)} ${moduleColor(`[${this.module}]`)}${coloredMeta}`
 
       if (level === LogLevel.ERROR) {

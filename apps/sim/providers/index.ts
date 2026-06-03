@@ -282,3 +282,16 @@ export async function executeProviderRequest(
 
   return response
 }
+
+export async function executeStructuredActorRequest(
+  providerId: string,
+  request: ProviderRequest
+): Promise<ProviderResponse> {
+  const response = await executeProviderRequest(providerId, request)
+
+  if (isStreamingExecution(response) || isReadableStream(response)) {
+    throw new Error('Structured actor requests must return a non-streaming provider response')
+  }
+
+  return response
+}

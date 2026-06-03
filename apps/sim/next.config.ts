@@ -8,9 +8,12 @@ import {
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
 
+const windowsDistDir = process.platform === 'win32' ? '.next-build' : undefined
+
 const nextConfig: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
+  distDir: windowsDistDir,
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

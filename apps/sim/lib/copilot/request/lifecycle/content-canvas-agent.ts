@@ -48,8 +48,8 @@ import {
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
 } from '@/lib/workflows/content-reference-edges'
-import { executeProviderRequest } from '@/providers'
-import type { ProviderResponse } from '@/providers/types'
+import { executeProviderRequest, executeStructuredActorRequest } from '@/providers'
+import type { ProviderId, ProviderResponse } from '@/providers/types'
 import { extractAndParseJSON, getProviderFromModel } from '@/providers/utils'
 
 const logger = createLogger('ContentCanvasAgent')
@@ -222,6 +222,99 @@ const contentCanvasTaskPlanSchema = z.object({
 type ContentCanvasTaskIntent = z.infer<typeof contentCanvasTaskIntentSchema>
 type ContentCanvasTaskStep = z.infer<typeof contentCanvasTaskStepSchema>
 type ContentCanvasTaskPlan = z.infer<typeof contentCanvasTaskPlanSchema>
+
+const contentCanvasActionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('create_node'),
+    clientNodeId: z.string().min(1),
+    nodeType: z.enum(['text', 'image', 'video', 'audio']),
+    title: z.string().optional(),
+    contentText: z.string().optional(),
+    prompt: z.string().optional(),
+    targetBlockId: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('update_node'),
+    blockId: z.string().min(1),
+    title: z.string().optional(),
+    contentText: z.string().optional(),
+    prompt: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('connect_nodes'),
+    sourceBlockId: z.string().min(1),
+    targetBlockId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('layout_nodes'),
+    direction: z.enum(['horizontal', 'vertical', 'grid']).default('horizontal'),
+    blockIds: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('generate_output'),
+    blockId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('writeback_output'),
+    blockId: z.string().min(1),
+    textApplyMode: z.enum(['replace', 'append']).optional(),
+  }),
+])
+type ContentCanvasAction = z.infer<typeof contentCanvasActionSchema>
+
+const contentCanvasActionBatchSchema = z.object({
+  assistantText: z.string().catch(''),
+  shouldContinue: z.boolean().catch(false),
+  actions: z.array(contentCanvasActionSchema).max(3).catch([]),
+  repairHint: z.string().optional(),
+})
+
+type ContentCanvasActionBatch = z.infer<typeof contentCanvasActionBatchSchema>
+
+interface ContentCanvasActionDecision {
+  batch: ContentCanvasActionBatch
+  compatibilityPlan?: ContentCanvasTaskPlan
+}
+
+type ContentCanvasRequestKind =
+  | 'create'
+  | 'edit-selection'
+  | 'edit-existing'
+  | 'connect'
+  | 'layout'
+  | 'analyze-only'
+  | 'out-of-scope'
+
+interface ContentCanvasActorConfig {
+  provider: ProviderId
+  model: string
+  mode: 'structured' | 'tool-call'
+  apiKey?: string
+}
+
+type ContentCanvasActorFailureCode =
+  | 'empty_actions'
+  | 'invalid_action_schema'
+  | 'missing_create_for_create_intent'
+  | 'invalid_target_block'
+  | 'missing_generate_pair'
+  | 'missing_update_for_edit_intent'
+  | 'missing_connect_for_connect_intent'
+  | 'missing_layout_for_layout_intent'
+  | 'analyze_only_with_actions'
+  | 'out_of_scope_request'
+  | 'invalid_selection_target'
+
+class ContentCanvasActorError extends Error {
+  code: ContentCanvasActorFailureCode
+
+  constructor(code: ContentCanvasActorFailureCode, message: string) {
+    super(message)
+    this.code = code
+    this.name = 'ContentCanvasActorError'
+  }
+}
+
 type GenericGoalFallbackModality = Extract<ContentNodeVariant, 'image' | 'video' | 'audio'>
 
 interface GenericGoalFallbackIntent {
@@ -253,6 +346,10 @@ interface PendingPlanEntry {
   plan: ContentCanvasTaskPlan
   sourceMessage: string
   createdAt: number
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined
 }
 
 const pendingPlans = new Map<string, PendingPlanEntry>()
@@ -491,41 +588,109 @@ function buildSnapshotPrompt(snapshot: ContentCanvasSnapshot, autoSelectionBlock
   return ['Blocks:', ...blockLines, '', 'Edges:', edgeLines].join('\n')
 }
 
-function resolveContentCanvasPlannerConfig() {
-  const provider = getEnv('LOCAL_COPILOT_PROVIDER')?.trim().toLowerCase()
-  const model = getEnv('LOCAL_COPILOT_MODEL')?.trim()
-  const apiKey = getEnv('DEEPSEEK_API_KEY')?.trim()
-
-  if (provider !== 'deepseek') {
-    throw new Error('Content canvas Copilot requires LOCAL_COPILOT_PROVIDER=deepseek')
-  }
-  if (!model) {
-    throw new Error('Content canvas Copilot requires LOCAL_COPILOT_MODEL to be configured')
-  }
-  if (!apiKey) {
-    throw new Error('Content canvas Copilot requires DEEPSEEK_API_KEY to be configured')
-  }
-
-  return { provider: 'deepseek' as const, model, apiKey }
+function normalizeActorProvider(value: string | undefined): ProviderId | null {
+  if (!value) return null
+  const normalized = value.trim().toLowerCase()
+  return normalized ? (normalized as ProviderId) : null
 }
 
-function buildPlannerSystemPrompt(thinkingLevel: 'standard' | 'extra'): string {
+function resolveActorApiKey(provider: ProviderId): string | undefined {
+  const shared = getEnv('LOCAL_COPILOT_API_KEY')?.trim()
+  if (shared) return shared
+  if (provider === 'deepseek') return getEnv('DEEPSEEK_API_KEY')?.trim()
+  if (provider === 'openai') return getEnv('OPENAI_API_KEY')?.trim()
+  return undefined
+}
+
+function resolveContentCanvasActorConfig(): ContentCanvasActorConfig {
+  const explicitProvider = normalizeActorProvider(getEnv('CONTENT_CANVAS_ACTOR_PROVIDER'))
+  const explicitModel = getEnv('CONTENT_CANVAS_ACTOR_MODEL')?.trim()
+  const explicitMode = getEnv('CONTENT_CANVAS_ACTOR_MODE') === 'tool-call' ? 'tool-call' : 'structured'
+
+  if (explicitProvider && explicitModel) {
+    return {
+      provider: explicitProvider,
+      model: explicitModel,
+      mode: explicitMode,
+      apiKey: resolveActorApiKey(explicitProvider),
+    }
+  }
+
+  const legacyProvider = normalizeActorProvider(getEnv('LOCAL_COPILOT_PROVIDER'))
+  const legacyModel = getEnv('LOCAL_COPILOT_MODEL')?.trim()
+  const inferredProvider =
+    legacyProvider ??
+    (legacyModel ? normalizeActorProvider(getProviderFromModel(legacyModel) ?? undefined) : null)
+
+  if (!legacyModel || !inferredProvider) {
+    throw new Error(
+      'Content canvas Copilot requires CONTENT_CANVAS_ACTOR_PROVIDER/MODEL or LOCAL_COPILOT_MODEL to be configured'
+    )
+  }
+
+  return {
+    provider: inferredProvider,
+    model: legacyModel,
+    mode: 'structured',
+    apiKey: resolveActorApiKey(inferredProvider),
+  }
+}
+
+function buildActorSystemPrompt(
+  thinkingLevel: 'standard' | 'extra',
+  requestKind: ContentCanvasRequestKind
+): string {
+  const kindSpecificInstructions: Record<ContentCanvasRequestKind, string[]> = {
+    create: ['For create requests, include at least one create_node action.'],
+    'edit-selection': [
+      'This is a selection-scoped edit request. Return at least one update_node action and only target selected block IDs from the snapshot.',
+      'Do not create new nodes for this request kind.',
+      'Few-shot example: {"assistantText":"我先压缩当前选中文案。","shouldContinue":false,"actions":[{"type":"update_node","blockId":"text-1","contentText":"一句话版本"}]}',
+    ],
+    'edit-existing': [
+      'This is an edit-existing request. Prefer update_node actions and do not create new nodes unless the user explicitly asks to add one.',
+      'Few-shot example: {"assistantText":"我先把文案改得更抓人。","shouldContinue":false,"actions":[{"type":"update_node","blockId":"text-1","contentText":"3 秒抓住注意力的爆款开场"}]}',
+    ],
+    connect: [
+      'This is a connect request. Return connect_nodes actions only. Do not create, delete, or rewrite nodes.',
+      'Few-shot example: {"assistantText":"我先把节点连起来。","shouldContinue":false,"actions":[{"type":"connect_nodes","sourceBlockId":"text-1","targetBlockId":"image-1"},{"type":"connect_nodes","sourceBlockId":"image-1","targetBlockId":"video-1"}]}',
+    ],
+    layout: [
+      'This is a layout request. Return layout_nodes actions only. Do not create nodes or rewrite content.',
+      'Few-shot example: {"assistantText":"我先整理成纵向布局。","shouldContinue":false,"actions":[{"type":"layout_nodes","direction":"vertical","blockIds":["text-1","image-1","video-1"]}]}',
+    ],
+    'analyze-only': [
+      'This is an analyze-only request. Return no actions and shouldContinue=false.',
+      'Few-shot example: {"assistantText":"当前画布主要是在讲一条图文到视频的内容链。","shouldContinue":false,"actions":[]}',
+    ],
+    'out-of-scope': [
+      'This request is out of scope for the content canvas. Return no actions and explain the limitation briefly.',
+      'Few-shot example: {"assistantText":"这个请求超出了内容画布 Copilot 当前能操作的范围。","shouldContinue":false,"actions":[]}',
+    ],
+  }
   return [
     'You are the Sim content canvas Copilot for TapNow-style content nodes.',
     'Only operate on content canvas nodes of type: text, image, video, audio.',
-    'Return a task intent and an ordered step list, not raw workflow mutation payloads.',
-    'Valid step types are: create_node, update_node, connect_nodes, layout_nodes, generate_output, writeback_output.',
-    'When the user only wants analysis or Q&A, set intent.shouldExecute=false and return no steps.',
+    'Return only the next small batch of canvas actions, never a full long-range plan.',
+    'Valid action types are: create_node, update_node, connect_nodes, layout_nodes, generate_output, writeback_output.',
+    'Return at most 3 actions in one response.',
+    'If the user only wants analysis or Q&A, return no actions and shouldContinue=false.',
     'Use exact existing block IDs from the snapshot when editing existing nodes.',
     'For new nodes, assign a stable clientNodeId such as new_text_1 and reference it later.',
-    'If the user asks to create, add, or generate a new node, prefer create_node instead of update_node.',
+    'If the user asks to create, add, or generate a new node, you must include at least one create_node action.',
     'Only use update_node when the user clearly wants to modify an existing node or selected node.',
     'If the user directly supplies final copy, prefer create_node/update_node contentText over generation.',
     'If the user asks AI to write, draw, create video, or create audio, include generate_output followed by writeback_output for that node.',
+    'If information is incomplete, prefer the smallest safe action batch instead of returning nothing.',
     'Selection conflicts with explicit wording should favor the wording.',
+    `Current request kind: ${requestKind}.`,
+    ...kindSpecificInstructions[requestKind],
+    'Respond with a JSON object containing assistantText, shouldContinue, actions, and optional repairHint.',
+    'Few-shot example 1: {"assistantText":"先加一个图片节点。","shouldContinue":false,"actions":[{"type":"create_node","clientNodeId":"new_image_1","nodeType":"image","title":"图片节点","prompt":"极简咖啡海报"}]}',
+    'Few-shot example 2: {"assistantText":"先补一段文案并生成。","shouldContinue":false,"actions":[{"type":"create_node","clientNodeId":"new_text_1","nodeType":"text","title":"文案节点","prompt":"写一句夏日饮品标题"},{"type":"generate_output","blockId":"new_text_1"},{"type":"writeback_output","blockId":"new_text_1","textApplyMode":"replace"}]}',
     thinkingLevel === 'extra'
-      ? 'Spend extra effort resolving ambiguity and produce a careful multi-step plan.'
-      : 'Prefer a concise plan.',
+      ? 'Spend extra effort resolving ambiguity while still returning only the next small action batch.'
+      : 'Prefer a concise action batch.',
     'Return JSON only.',
   ].join('\n')
 }
@@ -1046,6 +1211,46 @@ function legacyPlanToTaskPlan(plan: LegacyContentCanvasPlan): ContentCanvasTaskP
   }
 }
 
+function taskStepToAction(step: ContentCanvasTaskStep): ContentCanvasAction {
+  const { id: _id, ...action } = step
+  return action
+}
+
+function actionToTaskStep(action: ContentCanvasAction, index: number): ContentCanvasTaskStep {
+  return {
+    id: `action-step-${index + 1}`,
+    ...action,
+  } as ContentCanvasTaskStep
+}
+
+function actionBatchToTaskPlan(batch: ContentCanvasActionBatch): ContentCanvasTaskPlan {
+  const steps = batch.actions.map((action, index) => actionToTaskStep(action, index))
+  return {
+    assistantText: batch.assistantText,
+    summary: batch.assistantText,
+    intent: buildDefaultTaskIntent({
+      mode: steps.some((step) => step.type === 'create_node') ? 'build_from_scratch' : 'modify_existing',
+      summary: batch.assistantText,
+      shouldExecute: steps.length > 0,
+      risk: 'low',
+    }),
+    steps,
+  }
+}
+
+function taskPlanToActionBatch(plan: ContentCanvasTaskPlan): ContentCanvasActionBatch {
+  const actions = plan.steps.slice(0, 3).map(taskStepToAction)
+  return {
+    assistantText: plan.assistantText || plan.intent.summary || plan.summary,
+    shouldContinue: plan.steps.length > actions.length,
+    actions,
+  }
+}
+
+function legacyPlanToActionBatch(plan: LegacyContentCanvasPlan): ContentCanvasActionBatch {
+  return taskPlanToActionBatch(legacyPlanToTaskPlan(plan))
+}
+
 function normalizeTaskPlanForExplicitCreateIntent(params: {
   message: string
   plan: ContentCanvasTaskPlan
@@ -1166,6 +1371,81 @@ function isSelectionScopedModifyRequest(message: string, autoSelectionBlockIds: 
       normalized
     )
   )
+}
+
+function isConnectRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) return false
+
+  return (
+    /(\u8fde\u5230|\u8fde\u7ebf|\u4e32\u8d77\u6765|\u63a5\u5230|\u5206\u652f\u51fa\u53bb|\u5206\u652f\u5230|\u540c\u4e00\u4e2a.*\u8282\u70b9|\u8fd8\u6ca1\u8fde\u7ebf)/.test(
+      message
+    ) ||
+    /\b(connect|link|branch|wire|chain together)\b/.test(normalized)
+  )
+}
+
+function isLayoutRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) return false
+
+  return (
+    /(\u6a2a\u5411\u6392\u5f00|\u7eb5\u5411\u6392\u7248|\u7f51\u683c\u5e03\u5c40|\u6574\u7406\u4f4d\u7f6e|\u53ea\u79fb\u52a8\u4f4d\u7f6e|\u6392\u7248|\u5e03\u5c40|\u6574\u9f50\u4e00\u70b9)/.test(
+      message
+    ) ||
+    /\b(horizontal|vertical|grid|layout|arrange|rearrange|position)\b/.test(normalized)
+  )
+}
+
+function isOutOfScopeRequest(message: string): boolean {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) return false
+
+  return (
+    /(\u6570\u636e\u5e93\u914d\u7f6e|slack \u8282\u70b9|\u53d1\u5e03\u51fa\u53bb|\u53d1\u5e03\u9879\u76ee|\u6574\u4e2a workflow|\u5220\u9664\u6240\u6709)/i.test(
+      message
+    ) ||
+    /\b(database|sql|slack|publish|deploy|workflow config|delete all)\b/.test(normalized)
+  )
+}
+
+function isEditExistingRequest(message: string, autoSelectionBlockIds: string[]): boolean {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) return false
+  if (isExplicitCreateIntent(message)) return false
+  if (isSelectionScopedModifyRequest(message, autoSelectionBlockIds)) return false
+  if (isConnectRequest(message) || isLayoutRequest(message) || isAnalysisOnlyRequest(message)) return false
+
+  return (
+    /(\u90a3\u4e2a\u8282\u70b9|\u521a\u624d\u90a3\u5f20\u56fe|\u89c6\u9891\u8282\u70b9|\u4fee\u6539|\u6539\u5f97|\u98ce\u683c\u6539\u6210|\u538b\u7f29\u6210|\u66ff\u6362\u6210|\u4f18\u5316\u4e00\u4e0b)/.test(
+      message
+    ) ||
+    /\b(update|modify|edit|rewrite|improve|compress|change the style)\b/.test(normalized)
+  )
+}
+
+function classifyContentCanvasRequest(params: {
+  message: string
+  autoSelectionBlockIds: string[]
+}): ContentCanvasRequestKind {
+  const { message, autoSelectionBlockIds } = params
+  if (isOutOfScopeRequest(message)) return 'out-of-scope'
+  if (isAnalysisOnlyRequest(message)) return 'analyze-only'
+  if (isConnectRequest(message)) return 'connect'
+  if (isLayoutRequest(message)) return 'layout'
+  if (autoSelectionBlockIds.length > 0 && isImageToTextIntent(message)) return 'create'
+  if (isExplicitCreateIntent(message) || isHighLevelGoalRequest({ message, autoSelectionBlockIds })) {
+    return 'create'
+  }
+  if (isSelectionScopedModifyRequest(message, autoSelectionBlockIds)) return 'edit-selection'
+  if (isEditExistingRequest(message, autoSelectionBlockIds)) return 'edit-existing'
+  return autoSelectionBlockIds.length > 0 ? 'edit-selection' : 'edit-existing'
+}
+
+function buildOutOfScopeResponse(message: string): string {
+  return isChineseMessage(message)
+    ? '这个请求超出了内容画布 Copilot 当前能操作的范围。我只能处理文本、图片、视频、音频节点的创建、修改、连线、排版和生成。'
+    : 'That request is outside the current content-canvas Copilot scope. I can only create, edit, connect, lay out, and generate text, image, video, or audio nodes.'
 }
 
 function stripOuterQuotes(message: string): string {
@@ -1333,7 +1613,7 @@ function parseOrderedDeterministicCreateNodes(message: string): DeterministicCre
         shouldGenerate: !hasNoGenerateSignal(clause),
       } satisfies DeterministicCreateFallbackNode
     })
-    .filter((node): node is DeterministicCreateFallbackNode => Boolean(node))
+    .filter(isPresent)
 
   return nodes.length >= 2 ? nodes : []
 }
@@ -1372,9 +1652,10 @@ function buildDeterministicCreateFallbackTaskPlan(params: {
   const parsedNodes =
     parseOrderedDeterministicCreateNodes(params.message) ||
     ([] as DeterministicCreateFallbackNode[])
-  const nodes = parsedNodes.length > 0 ? parsedNodes : [parseSingleDeterministicCreateNode(params.message)].filter(
-    (node): node is DeterministicCreateFallbackNode => Boolean(node)
-  )
+  const nodes =
+    parsedNodes.length > 0
+      ? parsedNodes
+      : [parseSingleDeterministicCreateNode(params.message)].filter(isPresent)
 
   if (nodes.length === 0) {
     return null
@@ -1485,10 +1766,10 @@ function isHighLevelGoalRequest(params: {
   }
 
   const hasHolisticSignal =
-    /(\u5168\u5957|\u4e00\u5957|pipeline|\u5185\u5bb9\u94fe|\u5185\u5bb9\u5305|\u5b8c\u6574|\u8349\u6848|\u5927\u7eb2|\u811a\u672c|\u4ecb\u7ecd\u5185\u5bb9|\u65b9\u6848)/.test(
+    /(\u5168\u5957|\u4e00\u5957|pipeline|\u5185\u5bb9\u94fe|\u5185\u5bb9\u6d41|\u5185\u5bb9\u5305|\u5b8c\u6574|\u8349\u6848|\u5927\u7eb2|\u811a\u672c|\u4ecb\u7ecd\u5185\u5bb9|\u65b9\u6848)/.test(
       message
     ) ||
-    /\b(pipeline|content chain|content pack|package|full set|complete|outline|draft|script|deck|presentation|brief)\b/.test(
+    /\b(pipeline|content chain|content flow|content pack|package|full set|complete|outline|draft|script|deck|presentation|brief)\b/.test(
       normalized
     )
 
@@ -1648,16 +1929,266 @@ function buildGenericGoalFallbackTaskPlan(params: {
   }
 }
 
-function assertNonStreamingProviderResponse(
-  response: ProviderResponse | ReadableStream | { stream: ReadableStream; execution: unknown }
-): ProviderResponse {
-  if (response instanceof ReadableStream) {
-    throw new Error('Planner returned an unexpected stream response')
+function validateActionBatchForRequest(params: {
+  message: string
+  batch: ContentCanvasActionBatch
+  autoSelectionBlockIds: string[]
+  requestKind: ContentCanvasRequestKind
+}): void {
+  const { message, batch, autoSelectionBlockIds, requestKind } = params
+  if (batch.actions.length === 0) {
+    if (
+      requestKind === 'create' ||
+      requestKind === 'edit-selection' ||
+      requestKind === 'edit-existing' ||
+      requestKind === 'connect' ||
+      requestKind === 'layout'
+    ) {
+      throw new ContentCanvasActorError('empty_actions', 'Content canvas actor returned no actions')
+    }
+    return
   }
-  if (response && typeof response === 'object' && 'stream' in response && 'execution' in response) {
-    throw new Error('Planner returned an unexpected streaming execution response')
+
+  if (requestKind === 'analyze-only') {
+    throw new ContentCanvasActorError(
+      'analyze_only_with_actions',
+      'Content canvas actor returned actions for an analyze-only request'
+    )
   }
-  return response
+
+  if (requestKind === 'out-of-scope') {
+    throw new ContentCanvasActorError(
+      'out_of_scope_request',
+      'Content canvas actor returned actions for an out-of-scope request'
+    )
+  }
+
+  if (requestKind === 'create' && !batch.actions.some((action) => action.type === 'create_node')) {
+    throw new ContentCanvasActorError(
+      'missing_create_for_create_intent',
+      'Content canvas actor omitted create_node for an explicit create request'
+    )
+  }
+
+  if (requestKind === 'edit-selection' || requestKind === 'edit-existing') {
+    const updateActions = batch.actions.filter(
+      (action): action is Extract<ContentCanvasAction, { type: 'update_node' }> => action.type === 'update_node'
+    )
+    if (updateActions.length === 0 || batch.actions.some((action) => action.type === 'create_node')) {
+      throw new ContentCanvasActorError(
+        'missing_update_for_edit_intent',
+        'Content canvas actor omitted update_node for an edit request'
+      )
+    }
+    if (
+      requestKind === 'edit-selection' &&
+      updateActions.some((action) => !autoSelectionBlockIds.includes(action.blockId))
+    ) {
+      throw new ContentCanvasActorError(
+        'invalid_selection_target',
+        'Content canvas actor targeted a block outside the current selection'
+      )
+    }
+  }
+
+  if (
+    requestKind === 'connect' &&
+    (batch.actions.some((action) => action.type !== 'connect_nodes') ||
+      !batch.actions.some((action) => action.type === 'connect_nodes'))
+  ) {
+    throw new ContentCanvasActorError(
+      'missing_connect_for_connect_intent',
+      'Content canvas actor omitted connect_nodes for a connect request'
+    )
+  }
+
+  if (
+    requestKind === 'layout' &&
+    (batch.actions.some((action) => action.type !== 'layout_nodes') ||
+      !batch.actions.some((action) => action.type === 'layout_nodes'))
+  ) {
+    throw new ContentCanvasActorError(
+      'missing_layout_for_layout_intent',
+      'Content canvas actor omitted layout_nodes for a layout request'
+    )
+  }
+
+  const generatedBlockIds = new Set(
+    batch.actions
+      .filter((action): action is Extract<ContentCanvasAction, { type: 'generate_output' }> => action.type === 'generate_output')
+      .map((action) => action.blockId)
+  )
+  for (const blockId of generatedBlockIds) {
+    const hasWriteback = batch.actions.some(
+      (action) => action.type === 'writeback_output' && action.blockId === blockId
+    )
+    if (!hasWriteback) {
+      throw new ContentCanvasActorError(
+        'missing_generate_pair',
+        `Content canvas actor omitted writeback_output for generated block ${blockId}`
+      )
+    }
+  }
+}
+
+function buildActorUserPrompt(params: {
+  message: string
+  thinkingLevel: 'standard' | 'extra'
+  snapshot: ContentCanvasSnapshot
+  conversationHistory: PlannerMessage[]
+  autoSelectionBlockIds: string[]
+  repairContext?: string
+}): string {
+  return [
+    buildPlannerUserPrompt(params),
+    params.repairContext ? `\nRepair context:\n${params.repairContext}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function looksLikeTaskPlanPayload(value: unknown): boolean {
+  const steps = getRecordValue(value, 'steps')
+  const intent = getRecordValue(value, 'intent')
+  return Array.isArray(steps) || Boolean(intent)
+}
+
+function looksLikeLegacyActionPayload(value: unknown): boolean {
+  const actions = getRecordValue(value, 'actions')
+  if (!Array.isArray(actions)) return false
+  return actions.some((action) => {
+    const type = getStringValue(getRecordValue(action, 'type'))
+    return type === 'add_node' || type === 'generate_node_output' || type === 'delete_node'
+  })
+}
+
+function parseActorBatchResponse(content: string): ContentCanvasActionDecision {
+  try {
+    const parsed = extractAndParseJSON(content || '')
+    if (parsed && typeof parsed === 'object') {
+      if (looksLikeTaskPlanPayload(parsed)) {
+        const taskPlanResult = contentCanvasTaskPlanSchema.safeParse(parsed)
+        if (taskPlanResult.success) {
+          return {
+            batch: taskPlanToActionBatch(taskPlanResult.data),
+            compatibilityPlan: taskPlanResult.data,
+          }
+        }
+      }
+
+      if (looksLikeLegacyActionPayload(parsed)) {
+        const legacyResult = legacyContentCanvasPlanSchema.safeParse(parsed)
+        if (legacyResult.success) {
+          const compatibilityPlan = legacyPlanToTaskPlan(legacyResult.data)
+          return {
+            batch: taskPlanToActionBatch(compatibilityPlan),
+            compatibilityPlan,
+          }
+        }
+      }
+
+      const batchResult = contentCanvasActionBatchSchema.safeParse(parsed)
+      if (batchResult.success) {
+        return { batch: batchResult.data }
+      }
+    }
+  } catch (error) {
+    throw new ContentCanvasActorError(
+      'invalid_action_schema',
+      toError(error).message || 'Content canvas actor returned invalid JSON'
+    )
+  }
+
+  throw new ContentCanvasActorError('invalid_action_schema', 'Content canvas actor returned invalid JSON')
+}
+
+async function decideNextCanvasActions(params: {
+  message: string
+  thinkingLevel: 'standard' | 'extra'
+  snapshot: ContentCanvasSnapshot
+  conversationHistory: PlannerMessage[]
+  autoSelectionBlockIds: string[]
+  requestKind: ContentCanvasRequestKind
+  abortSignal?: AbortSignal
+  repairContext?: string
+}): Promise<ContentCanvasActionDecision> {
+  const config = resolveContentCanvasActorConfig()
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const repairContext =
+      attempt === 0
+        ? params.repairContext
+        : params.repairContext ??
+          'The previous response was not executable. Return the smallest valid action batch that safely moves the request forward.'
+
+    const response = await executeStructuredActorRequest(config.provider, {
+      model: config.model,
+      apiKey: config.apiKey,
+      systemPrompt: buildActorSystemPrompt(params.thinkingLevel, params.requestKind),
+      messages: [
+        {
+          role: 'user',
+          content: buildActorUserPrompt({
+            message: params.message,
+            thinkingLevel: params.thinkingLevel,
+            snapshot: params.snapshot,
+            conversationHistory: params.conversationHistory,
+            autoSelectionBlockIds: params.autoSelectionBlockIds,
+            repairContext,
+          }),
+        },
+      ],
+      temperature: params.thinkingLevel === 'extra' ? 0.15 : 0.1,
+      maxTokens: params.thinkingLevel === 'extra' ? 2000 : 1200,
+      responseFormat: {
+        name: 'content_canvas_action_batch',
+        schema: z.toJSONSchema(contentCanvasActionBatchSchema),
+        strict: true,
+      },
+      abortSignal: params.abortSignal,
+    })
+
+    try {
+      let decision = parseActorBatchResponse(response?.content || '')
+      if (decision.compatibilityPlan) {
+        const normalizedPlan = normalizeTaskPlanForExplicitCreateIntent({
+          message: params.message,
+          plan: decision.compatibilityPlan,
+          snapshot: params.snapshot,
+          autoSelectionBlockIds: params.autoSelectionBlockIds,
+        })
+        if (normalizedPlan !== decision.compatibilityPlan) {
+          decision = {
+            batch: taskPlanToActionBatch(normalizedPlan),
+            compatibilityPlan: normalizedPlan,
+          }
+        }
+      }
+      validateActionBatchForRequest({
+        message: params.message,
+        batch: decision.batch,
+        autoSelectionBlockIds: params.autoSelectionBlockIds,
+        requestKind: params.requestKind,
+      })
+      return decision
+    } catch (error) {
+      if (attempt === 1 || !(error instanceof ContentCanvasActorError)) {
+        throw error
+      }
+      params = {
+        ...params,
+        repairContext: `${error.code}: ${error.message}`,
+      }
+    }
+  }
+
+  return {
+    batch: {
+      assistantText: '',
+      shouldContinue: false,
+      actions: [],
+    },
+  }
 }
 
 async function planContentCanvas(params: {
@@ -1666,144 +2197,19 @@ async function planContentCanvas(params: {
   snapshot: ContentCanvasSnapshot
   conversationHistory: PlannerMessage[]
   autoSelectionBlockIds: string[]
+  requestKind?: ContentCanvasRequestKind
   abortSignal?: AbortSignal
 }): Promise<ContentCanvasTaskPlan> {
-  const config = resolveContentCanvasPlannerConfig()
-  const rawResponse = await executeProviderRequest(config.provider, {
-    model: config.model,
-    apiKey: config.apiKey,
-    systemPrompt: buildPlannerSystemPrompt(params.thinkingLevel),
-    messages: [
-      {
-        role: 'user',
-        content: buildPlannerUserPrompt(params),
-      },
-    ],
-    temperature: params.thinkingLevel === 'extra' ? 0.15 : 0.1,
-    maxTokens: params.thinkingLevel === 'extra' ? 3000 : 1800,
-    responseFormat: {
-      name: 'content_canvas_plan',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['assistantText', 'summary', 'intent', 'steps'],
-        properties: {
-          assistantText: { type: 'string' },
-          summary: { type: 'string' },
-          intent: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['mode', 'summary', 'shouldExecute', 'risk'],
-            properties: {
-              mode: {
-                enum: [
-                  'analyze',
-                  'build_from_scratch',
-                  'modify_existing',
-                  'extend_selection',
-                  'layout_local_cluster',
-                ],
-              },
-              summary: { type: 'string' },
-              shouldExecute: { type: 'boolean' },
-              risk: { enum: ['low', 'high'] },
-            },
-          },
-          steps: {
-            type: 'array',
-            items: {
-              anyOf: [
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'clientNodeId', 'nodeType'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'create_node' },
-                    clientNodeId: { type: 'string' },
-                    nodeType: { enum: ['text', 'image', 'video', 'audio'] },
-                    title: { type: 'string' },
-                    contentText: { type: 'string' },
-                    prompt: { type: 'string' },
-                    targetBlockId: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'blockId'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'update_node' },
-                    blockId: { type: 'string' },
-                    title: { type: 'string' },
-                    contentText: { type: 'string' },
-                    prompt: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'sourceBlockId', 'targetBlockId'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'connect_nodes' },
-                    sourceBlockId: { type: 'string' },
-                    targetBlockId: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'direction'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'layout_nodes' },
-                    direction: { enum: ['horizontal', 'vertical', 'grid'] },
-                    blockIds: { type: 'array', items: { type: 'string' } },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'blockId'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'generate_output' },
-                    blockId: { type: 'string' },
-                  },
-                },
-                {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['id', 'type', 'blockId'],
-                  properties: {
-                    id: { type: 'string' },
-                    type: { const: 'writeback_output' },
-                    blockId: { type: 'string' },
-                    textApplyMode: { enum: ['replace', 'append'] },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
-      strict: true,
-    },
-    abortSignal: params.abortSignal,
+  const decision = await decideNextCanvasActions({
+    ...params,
+    requestKind:
+      params.requestKind ??
+      classifyContentCanvasRequest({
+        message: params.message,
+        autoSelectionBlockIds: params.autoSelectionBlockIds,
+      }),
   })
-
-  const response = assertNonStreamingProviderResponse(rawResponse)
-  try {
-    const parsed = extractAndParseJSON(response.content || '')
-    if (parsed && typeof parsed === 'object' && ('steps' in parsed || 'intent' in parsed)) {
-      return contentCanvasTaskPlanSchema.parse(parsed)
-    }
-    return legacyPlanToTaskPlan(legacyContentCanvasPlanSchema.parse(parsed))
-  } catch (error) {
-    throw new Error(`Content canvas planner returned invalid JSON: ${toError(error).message}`)
-  }
+  return decision.compatibilityPlan ?? actionBatchToTaskPlan(decision.batch)
 }
 
 function buildVariantTitle(variant: ContentNodeVariant, count: number): string {
@@ -2660,6 +3066,16 @@ interface ContentCanvasExecutionRuntime {
   createStepsByRef: Map<string, Extract<ContentCanvasTaskStep, { type: 'create_node' }>>
 }
 
+function assertNonStreamingProviderResponse(
+  response: ProviderResponse | ReadableStream | { stream: unknown; execution: unknown }
+): ProviderResponse {
+  if (!response || typeof response !== 'object' || response instanceof ReadableStream || 'stream' in response) {
+    throw new Error('Expected a non-streaming provider response')
+  }
+
+  return response as ProviderResponse
+}
+
 function resolveTaskBlockId(blockId: string, runtime: ContentCanvasExecutionRuntime): string {
   return runtime.blockIdMap.get(blockId) ?? blockId
 }
@@ -3217,6 +3633,7 @@ async function executeTaskPlan(params: {
   thinkingLevel: 'standard' | 'extra'
   conversationHistory: PlannerMessage[]
   autoSelectionBlockIds: string[]
+  allowReplan?: boolean
 }): Promise<ContentCanvasSnapshot> {
   const runtime: ContentCanvasExecutionRuntime = {
     blockIdMap: new Map(),
@@ -3261,7 +3678,7 @@ async function executeTaskPlan(params: {
       })
     } catch (error) {
       const reason = toError(error).message
-      if (!replanUsed && remainingSteps.length - index > 1) {
+      if (params.allowReplan && !replanUsed && remainingSteps.length - index > 1) {
         replanUsed = true
         const replanned = await planContentCanvas({
           message: `${params.message}\n\nRepair context: continue from the latest canvas after this issue: ${reason}`,
@@ -3370,6 +3787,86 @@ async function executeTaskPlan(params: {
   })
 
   return snapshot
+}
+
+async function executeActionLoop(params: {
+  workflowId: string
+  workspaceId: string
+  userId: string
+  initialBatch: ContentCanvasActionBatch
+  requestKind: ContentCanvasRequestKind
+  snapshot: ContentCanvasSnapshot
+  context: StreamingContext
+  execContext: ExecutionContext
+  options: AgentOptions
+  message: string
+  thinkingLevel: 'standard' | 'extra'
+  conversationHistory: PlannerMessage[]
+  autoSelectionBlockIds: string[]
+}): Promise<{ snapshot: ContentCanvasSnapshot; lastBatch: ContentCanvasActionBatch }> {
+  let snapshot = params.snapshot
+  let batch = params.initialBatch
+
+  for (let round = 0; round < 6; round += 1) {
+    if (batch.actions.length === 0) {
+      return { snapshot, lastBatch: batch }
+    }
+
+    snapshot = await executeTaskPlan({
+      workflowId: params.workflowId,
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      plan: actionBatchToTaskPlan(batch),
+      snapshot,
+      context: params.context,
+      execContext: params.execContext,
+      options: params.options,
+      message: params.message,
+      thinkingLevel: params.thinkingLevel,
+      conversationHistory: params.conversationHistory,
+      autoSelectionBlockIds: params.autoSelectionBlockIds,
+      allowReplan: false,
+    })
+
+    if (!batch.shouldContinue) {
+      return { snapshot, lastBatch: batch }
+    }
+
+    const nextDecision = await decideNextCanvasActions({
+      message: params.message,
+      thinkingLevel: params.thinkingLevel,
+      snapshot,
+      conversationHistory: params.conversationHistory,
+      autoSelectionBlockIds: params.autoSelectionBlockIds,
+      requestKind: params.requestKind,
+      abortSignal: params.options.abortSignal,
+      repairContext: batch.repairHint,
+    })
+    if (nextDecision.compatibilityPlan) {
+      snapshot = await executeTaskPlan({
+        workflowId: params.workflowId,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        plan: nextDecision.compatibilityPlan,
+        snapshot,
+        context: params.context,
+        execContext: params.execContext,
+        options: params.options,
+        message: params.message,
+        thinkingLevel: params.thinkingLevel,
+        conversationHistory: params.conversationHistory,
+        autoSelectionBlockIds: params.autoSelectionBlockIds,
+        allowReplan: false,
+      })
+      return {
+        snapshot,
+        lastBatch: taskPlanToActionBatch(nextDecision.compatibilityPlan),
+      }
+    }
+    batch = nextDecision.batch
+  }
+
+  return { snapshot, lastBatch: batch }
 }
 
 function buildPreviewText(params: { message: string; plan: LegacyContentCanvasPlan }): string {
@@ -3722,6 +4219,7 @@ export async function runContentCanvasAgent(params: {
         thinkingLevel,
         conversationHistory: [],
         autoSelectionBlockIds: [],
+        allowReplan: false,
       })
 
       clearPendingPlan(chatKey)
@@ -3747,25 +4245,70 @@ export async function runContentCanvasAgent(params: {
         ? ((entry as { blockIds: string[] }).blockIds ?? [])
         : []
     )
+    const requestKind = classifyContentCanvasRequest({
+      message,
+      autoSelectionBlockIds,
+    })
 
-    let plan: ContentCanvasTaskPlan
+    if (requestKind === 'out-of-scope') {
+      await emitAssistantText(context, options, buildOutOfScopeResponse(message))
+      context.streamComplete = true
+      return
+    }
+
+    let initialDecision: ContentCanvasActionDecision = {
+      batch: {
+        assistantText: '',
+        shouldContinue: false,
+        actions: [],
+      },
+    }
+    let actorError: unknown = null
     try {
-      plan = await planContentCanvas({
+      initialDecision = await decideNextCanvasActions({
         message,
         thinkingLevel,
         snapshot,
         conversationHistory,
         autoSelectionBlockIds,
+        requestKind,
         abortSignal: options.abortSignal,
       })
     } catch (error) {
-      if (toError(error).message.includes('invalid JSON')) {
-        throw error
+      actorError = error
+      if (!(error instanceof ContentCanvasActorError)) {
+        if (toError(error).message.includes('invalid JSON')) {
+          throw error
+        }
+        throw new Error(`planner request failed: ${toError(error).message}`)
       }
-      throw new Error(`planner request failed: ${toError(error).message}`)
     }
 
-    if (plan.steps.length === 0) {
+    const initialBatch = initialDecision.batch
+    let plan = normalizeTaskPlanForExplicitCreateIntent({
+      message,
+      plan: initialDecision.compatibilityPlan ?? actionBatchToTaskPlan(initialBatch),
+      snapshot,
+      autoSelectionBlockIds,
+    })
+
+    if (
+      plan.steps.length > 0 &&
+      (requestKind === 'edit-selection' ||
+        requestKind === 'edit-existing' ||
+        requestKind === 'connect' ||
+        requestKind === 'layout')
+    ) {
+      plan = {
+        ...plan,
+        intent: {
+          ...plan.intent,
+          shouldExecute: true,
+        },
+      }
+    }
+
+    if (requestKind === 'create' && plan.steps.length === 0) {
       const fallbackPlan = buildImageToTextFallbackTaskPlan({
         message,
         snapshot,
@@ -3780,44 +4323,42 @@ export async function runContentCanvasAgent(params: {
       }
     }
 
-    plan = normalizeTaskPlanForExplicitCreateIntent({
-      message,
-      plan,
-      snapshot,
-      autoSelectionBlockIds,
-    })
-
-    const deterministicCreateFallbackPlan = buildDeterministicCreateFallbackTaskPlan({
-      message,
-      plan,
-      autoSelectionBlockIds,
-    })
-    if (deterministicCreateFallbackPlan) {
-      logger.info('Using deterministic content-create fallback plan', {
-        workflowId,
+    if (requestKind === 'create') {
+      const deterministicCreateFallbackPlan = buildDeterministicCreateFallbackTaskPlan({
+        message,
+        plan,
         autoSelectionBlockIds,
       })
-      plan = deterministicCreateFallbackPlan
-    }
+      if (deterministicCreateFallbackPlan) {
+        logger.info('Using deterministic content-create fallback plan', {
+          workflowId,
+          autoSelectionBlockIds,
+        })
+        plan = deterministicCreateFallbackPlan
+      }
 
-    const genericFallbackPlan = buildGenericGoalFallbackTaskPlan({
-      message,
-      plan,
-      autoSelectionBlockIds,
-    })
-    if (genericFallbackPlan) {
-      logger.info('Using generic goal-to-content-chain fallback plan', {
-        workflowId,
+      const genericFallbackPlan = buildGenericGoalFallbackTaskPlan({
+        message,
+        plan,
         autoSelectionBlockIds,
       })
-      plan = genericFallbackPlan
+      if (genericFallbackPlan) {
+        logger.info('Using generic goal-to-content-chain fallback plan', {
+          workflowId,
+          autoSelectionBlockIds,
+        })
+        plan = genericFallbackPlan
+      }
     }
 
     if (plan.steps.length === 0 || plan.intent.shouldExecute === false) {
       await emitAssistantText(
         context,
         options,
-        plan.assistantText.trim() || buildNoActionFallbackV2(message)
+        plan.assistantText.trim() ||
+          (actorError instanceof ContentCanvasActorError && actorError.code === 'empty_actions'
+            ? buildNoActionFallbackV2(message)
+            : buildNoActionFallbackV2(message))
       )
       context.streamComplete = true
       return
@@ -3844,20 +4385,45 @@ export async function runContentCanvasAgent(params: {
       return
     }
 
-    await executeTaskPlan({
-      workflowId,
-      workspaceId,
-      userId: execContext.userId,
-      plan,
-      snapshot,
-      context,
-      execContext,
-      options,
-      message,
-      thinkingLevel,
-      conversationHistory,
-      autoSelectionBlockIds,
-    })
+    const shouldUseActionLoop =
+      actorError === null &&
+      !initialDecision.compatibilityPlan &&
+      initialBatch.actions.length > 0 &&
+      plan.steps.length > 0 &&
+      JSON.stringify(taskPlanToActionBatch(plan).actions) === JSON.stringify(initialBatch.actions)
+
+    if (shouldUseActionLoop) {
+      await executeActionLoop({
+        workflowId,
+        workspaceId,
+        userId: execContext.userId,
+        initialBatch,
+        requestKind,
+        snapshot,
+        context,
+        execContext,
+        options,
+        message,
+        thinkingLevel,
+        conversationHistory,
+        autoSelectionBlockIds,
+      })
+    } else {
+      await executeTaskPlan({
+        workflowId,
+        workspaceId,
+        userId: execContext.userId,
+        plan,
+        snapshot,
+        context,
+        execContext,
+        options,
+        message,
+        thinkingLevel,
+        conversationHistory,
+        autoSelectionBlockIds,
+      })
+    }
     await emitAssistantText(
       context,
       options,
@@ -3886,5 +4452,5 @@ export const __contentCanvasAgentTestUtils = {
   compileEditWorkflowOperations,
   isConfirmationMessage,
   parsePendingPlanCommand,
-  resolveContentCanvasPlannerConfig,
+  resolveContentCanvasActorConfig,
 }

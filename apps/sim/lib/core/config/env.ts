@@ -142,6 +142,9 @@ export const env = createEnv({
     BLACKLISTED_MODELS:                    z.string().optional(),                  // Comma-separated model names/prefixes to hide (e.g., "gpt-4,claude-*")
     ALLOWED_MCP_DOMAINS:                   z.string().optional(),                  // Comma-separated domains for MCP servers (e.g., "internal.company.com,mcp.example.org"). Empty = all allowed.
     ALLOWED_INTEGRATIONS:                  z.string().optional(),                  // Comma-separated block types to allow (e.g., "slack,github,agent"). Empty = all allowed.
+    CONTENT_CANVAS_ACTOR_PROVIDER:         z.string().optional(),                  // Provider override for content canvas actor (e.g., openai, deepseek)
+    CONTENT_CANVAS_ACTOR_MODEL:            z.string().optional(),                  // Model override for content canvas actor
+    CONTENT_CANVAS_ACTOR_MODE:             z.enum(['structured', 'tool-call']).optional(), // Execution mode for content canvas actor
     LOCAL_COPILOT_PROVIDER:                z.string().optional(),                  // Local Copilot planner provider override (e.g., deepseek, openai, gpt)
     LOCAL_COPILOT_MODEL:                   z.string().optional(),                  // Local Copilot planner model override
     LOCAL_COPILOT_API_KEY:                 z.string().min(1).optional(),           // Shared API key override for the local Copilot planner

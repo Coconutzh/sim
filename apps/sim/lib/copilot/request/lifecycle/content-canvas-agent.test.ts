@@ -41,6 +41,7 @@ vi.mock('@sim/logger', () => ({
 
 vi.mock('@/providers', () => ({
   executeProviderRequest: mockExecuteProviderRequest,
+  executeStructuredActorRequest: mockExecuteProviderRequest,
 }))
 
 vi.mock('@/lib/copilot/tools/server/workflow/edit-workflow', () => ({
@@ -63,6 +64,9 @@ vi.mock('@/lib/core/config/env', async (importOriginal) => {
     ...actual,
     env: {
       ...actual.env,
+      CONTENT_CANVAS_ACTOR_PROVIDER: 'openai',
+      CONTENT_CANVAS_ACTOR_MODEL: 'gpt-4.1-mini',
+      CONTENT_CANVAS_ACTOR_MODE: 'structured',
       LOCAL_COPILOT_PROVIDER: 'deepseek',
       LOCAL_COPILOT_MODEL: 'deepseek-chat',
       DEEPSEEK_API_KEY: 'test-key',
@@ -730,6 +734,61 @@ function createSelectedImageWorkflowState() {
   }
 }
 
+function createContentCanvasWorkflowState() {
+  return {
+    blocks: {
+      'text-1': {
+        type: 'content',
+        name: '开场文案',
+        position: { x: 0, y: 0 },
+        subBlocks: {
+          contentVariant: { value: 'text' },
+          aiPrompt: { value: '3 秒抓住观众注意力' },
+          contentHtml: { value: '<p>3 秒抓住观众注意力</p>' },
+        },
+      },
+      'text-2': {
+        type: 'content',
+        name: '正文',
+        position: { x: 0, y: 220 },
+        subBlocks: {
+          contentVariant: { value: 'text' },
+          aiPrompt: { value: '详细介绍产品亮点' },
+          contentHtml: { value: '<p>详细介绍产品亮点</p>' },
+        },
+      },
+      'image-1': {
+        type: 'content',
+        name: '配图节点',
+        position: { x: 360, y: 0 },
+        subBlocks: {
+          contentVariant: { value: 'image' },
+          aiPrompt: { value: '极简咖啡海报' },
+        },
+      },
+      'video-1': {
+        type: 'content',
+        name: '视频节点',
+        position: { x: 720, y: 0 },
+        subBlocks: {
+          contentVariant: { value: 'video' },
+          videoPrompt: { value: '短视频分镜' },
+        },
+      },
+      'audio-1': {
+        type: 'content',
+        name: '音频节点',
+        position: { x: 360, y: 220 },
+        subBlocks: {
+          contentVariant: { value: 'audio' },
+          audioPrompt: { value: '温柔旁白' },
+        },
+      },
+    },
+    edges: [],
+  }
+}
+
 describe('content canvas agent', () => {
   const originalEnv = { ...process.env }
 
@@ -1011,6 +1070,449 @@ describe('content canvas agent', () => {
     })
 
     expect(context.accumulatedContent.trim().length).toBeGreaterThan(0)
+  })
+
+  it('updates an existing text node without creating new nodes or triggering fallback', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '我先把开场文案改得更像标题党一点。',
+        shouldContinue: false,
+        actions: [
+          {
+            type: 'update_node',
+            blockId: 'text-1',
+            contentText: '3 秒抓住注意力的爆款开场',
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        ...createContentCanvasWorkflowState(),
+        blocks: {
+          ...createContentCanvasWorkflowState().blocks,
+          'text-1': {
+            ...createContentCanvasWorkflowState().blocks['text-1'],
+            subBlocks: {
+              ...createContentCanvasWorkflowState().blocks['text-1'].subBlocks,
+              contentHtml: { value: '<p>3 秒抓住注意力的爆款开场</p>' },
+            },
+          },
+        },
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把“开场文案”那个文本节点改得更像小红书标题党一点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(1)
+    expect(mockEditWorkflowExecute.mock.calls[0]?.[0]?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'edit',
+          block_id: 'text-1',
+        }),
+      ])
+    )
+    expect(mockEditWorkflowExecute.mock.calls[0]?.[0]?.operations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+        }),
+      ])
+    )
+  })
+
+  it('does not execute actor actions for analyze-only requests', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '我来直接帮你补一个节点。',
+        shouldContinue: false,
+        actions: [
+          {
+            type: 'create_node',
+            clientNodeId: 'new_text_1',
+            nodeType: 'text',
+            title: '补充说明',
+            contentText: '这是补充说明',
+          },
+        ],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '你先看看我这个画布在讲什么，不要动任何节点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+    expect(context.accumulatedContent).not.toContain('补充说明')
+  })
+
+  it('rejects out-of-scope workflow/database requests without executing actor actions', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '我来替你新建一个配置节点。',
+        shouldContinue: false,
+        actions: [
+          {
+            type: 'create_node',
+            clientNodeId: 'new_text_1',
+            nodeType: 'text',
+            title: '数据库配置',
+            contentText: '数据库连接串',
+          },
+        ],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把整个 workflow 的数据库配置也一起改了。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+    expect(context.accumulatedContent).not.toContain('数据库配置')
+  })
+
+  it('does not create nodes when selection-scoped edit receives invalid create actions twice', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '我来新建一个节点。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'create_node',
+              clientNodeId: 'new_text_1',
+              nodeType: 'text',
+              contentText: '压缩后的句子',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '那我再新建一个节点。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'create_node',
+              clientNodeId: 'new_text_2',
+              nodeType: 'text',
+              contentText: '还是新建一个节点',
+            },
+          ],
+        }),
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '不要新建，直接修改我当前选中的节点，把内容压缩成一句话。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+        autoSelectionContexts: [
+          {
+            kind: 'blocks',
+            blockIds: ['text-1'],
+            label: 'Current canvas selection (1)',
+          },
+        ],
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteProviderRequest).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+  })
+
+  it('connects content nodes without creating new nodes', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '我先把三个节点按顺序连起来。',
+        shouldContinue: false,
+        actions: [
+          {
+            type: 'connect_nodes',
+            sourceBlockId: 'text-1',
+            targetBlockId: 'image-1',
+          },
+          {
+            type: 'connect_nodes',
+            sourceBlockId: 'image-1',
+            targetBlockId: 'video-1',
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          ...createContentCanvasWorkflowState(),
+          edges: [{ source: 'text-1', target: 'image-1' }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        workflowState: {
+          ...createContentCanvasWorkflowState(),
+          edges: [
+            { source: 'text-1', target: 'image-1' },
+            { source: 'image-1', target: 'video-1' },
+          ],
+        },
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把文案节点连到图片节点，再把图片节点连到视频节点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute.mock.calls.flatMap((call) => call[0]?.operations ?? [])).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+        }),
+      ])
+    )
+  })
+
+  it('does not create nodes when connect requests receive invalid create actions twice', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '我先加个中间节点。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'create_node',
+              clientNodeId: 'new_text_1',
+              nodeType: 'text',
+              contentText: '中间节点',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '我还是加个节点吧。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'create_node',
+              clientNodeId: 'new_text_2',
+              nodeType: 'text',
+              contentText: '还是中间节点',
+            },
+          ],
+        }),
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把文案节点连到图片节点，再把图片节点连到视频节点。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteProviderRequest).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
+  })
+
+  it('lays out nodes vertically without creating or updating node content', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '我先把画布改成纵向排版。',
+        shouldContinue: false,
+        actions: [
+          {
+            type: 'layout_nodes',
+            direction: 'vertical',
+            blockIds: ['text-1', 'image-1', 'video-1'],
+          },
+        ],
+      }),
+    })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        ...createContentCanvasWorkflowState(),
+        blocks: {
+          ...createContentCanvasWorkflowState().blocks,
+          'image-1': {
+            ...createContentCanvasWorkflowState().blocks['image-1'],
+            position: { x: 0, y: 220 },
+          },
+          'video-1': {
+            ...createContentCanvasWorkflowState().blocks['video-1'],
+            position: { x: 0, y: 440 },
+          },
+        },
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把整个画布改成纵向排版，适合从上到下阅读。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(1)
+    expect(mockEditWorkflowExecute.mock.calls[0]?.[0]?.operations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+        }),
+      ])
+    )
+  })
+
+  it('does not execute updates when layout requests receive invalid actions twice', async () => {
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createContentCanvasWorkflowState())
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '我先改一下文案内容。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'update_node',
+              blockId: 'text-1',
+              contentText: '改文案',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '我还是改一下内容吧。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'update_node',
+              blockId: 'text-2',
+              contentText: '继续改文案',
+            },
+          ],
+        }),
+      })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '把当前这些节点横向排开，别改内容，只整理位置。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteProviderRequest).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute).not.toHaveBeenCalled()
   })
 
   it('synthesizes an image-to-text plan from the selected image when the planner returns no actions', async () => {
@@ -1519,6 +2021,131 @@ describe('content canvas agent', () => {
     expect(context.accumulatedContent).not.toContain('我暂时没有需要替你执行的画布操作')
   })
 
+  it('retries the actor once before applying deterministic create fallback', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('image-block-1').mockReturnValueOnce('tool-call-1')
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '',
+          shouldContinue: true,
+          actions: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '先加一个图片节点。',
+          shouldContinue: false,
+          actions: [
+            {
+              type: 'create_node',
+              clientNodeId: 'new_image_1',
+              nodeType: 'image',
+              title: '图片节点',
+              prompt: '极简咖啡海报',
+            },
+          ],
+        }),
+      })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        blocks: {
+          'image-block-1': {
+            type: 'content',
+            name: '图片节点',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: '极简咖啡海报' },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '加一个图片节点，主题是极简咖啡海报，先不要生成，只把需求写进去。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteProviderRequest).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(1)
+    expect(mockGenerateWorkspaceImageFromPrompt).not.toHaveBeenCalled()
+  })
+
+  it('waits until actor repair attempts are exhausted before using deterministic fallback', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('image-block-1').mockReturnValueOnce('tool-call-1')
+    mockExecuteProviderRequest
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '',
+          shouldContinue: true,
+          actions: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          assistantText: '',
+          shouldContinue: false,
+          actions: [],
+        }),
+      })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        blocks: {
+          'image-block-1': {
+            type: 'content',
+            name: '图片节点',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: '极简咖啡海报' },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '加一个图片节点，主题是极简咖啡海报，先不要生成，只把需求写进去。',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteProviderRequest).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(1)
+  })
+
   it('creates an audio node when the planner no-ops on an explicit audio-node request', async () => {
     mockGenerateId.mockReset()
     let generatedIdCallCount = 0
@@ -1730,14 +2357,20 @@ describe('content canvas agent', () => {
     ])
   })
 
-  it('requires deepseek env vars for planner config', () => {
+  it('prefers explicit content canvas actor env vars for planner config', () => {
+    process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
+    process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
+    process.env.CONTENT_CANVAS_ACTOR_MODE = 'structured'
     delete process.env.LOCAL_COPILOT_PROVIDER
     delete process.env.LOCAL_COPILOT_MODEL
     delete process.env.DEEPSEEK_API_KEY
 
-    expect(() => __contentCanvasAgentTestUtils.resolveContentCanvasPlannerConfig()).toThrow(
-      'LOCAL_COPILOT_PROVIDER=deepseek'
-    )
+    expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).toEqual({
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      mode: 'structured',
+      apiKey: undefined,
+    })
   })
 
   it('surfaces an invalid workflow error when legacy unsupported blocks break edit_workflow', async () => {
