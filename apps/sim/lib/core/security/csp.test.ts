@@ -19,6 +19,8 @@ vi.mock('@/lib/core/config/env', () =>
 
 vi.mock('@/lib/core/config/feature-flags', () => featureFlagsMock)
 
+import { getEnv } from '@/lib/core/config/env'
+
 import {
   addCSPSource,
   buildCSPString,
@@ -146,6 +148,21 @@ describe('getWorkflowExecutionCSPPolicy', () => {
 })
 
 describe('generateRuntimeCSP', () => {
+  afterEach(() => {
+    vi.mocked(getEnv).mockImplementation(
+      createEnvMock({
+        NEXT_PUBLIC_APP_URL: 'https://example.com',
+        NEXT_PUBLIC_SOCKET_URL: 'https://socket.example.com',
+        OLLAMA_URL: 'http://localhost:11434',
+        NEXT_PUBLIC_BRAND_LOGO_URL: 'https://brand.example.com/logo.png',
+        NEXT_PUBLIC_PRIVACY_URL: 'https://legal.example.com/privacy',
+        NEXT_PUBLIC_TERMS_URL: 'https://legal.example.com/terms',
+      }).getEnv
+    )
+    featureFlagsMock.isDev = false
+    featureFlagsMock.isHosted = false
+  })
+
   it('should generate CSP with runtime environment variables', () => {
     const csp = generateRuntimeCSP()
 
@@ -181,6 +198,26 @@ describe('generateRuntimeCSP', () => {
 
     expect(frameSrcDirective).toBeDefined()
     expect(frameSrcDirective).toContain('blob:')
+  })
+
+  it('should allow the local realtime socket in build mode when running on localhost', () => {
+    vi.mocked(getEnv).mockImplementation(
+      createEnvMock({
+        NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+        NEXT_PUBLIC_SOCKET_URL: undefined,
+        OLLAMA_URL: undefined,
+        NEXT_PUBLIC_BRAND_LOGO_URL: 'https://brand.example.com/logo.png',
+        NEXT_PUBLIC_PRIVACY_URL: 'https://legal.example.com/privacy',
+        NEXT_PUBLIC_TERMS_URL: 'https://legal.example.com/terms',
+      }).getEnv
+    )
+    featureFlagsMock.isDev = false
+    featureFlagsMock.isHosted = false
+
+    const csp = generateRuntimeCSP()
+
+    expect(csp).toContain('http://localhost:3002')
+    expect(csp).toContain('ws://localhost:3002')
   })
 })
 

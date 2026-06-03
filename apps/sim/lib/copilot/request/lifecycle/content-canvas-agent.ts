@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { z } from 'zod'
 import { buildTextNodeAiSystemPrompt, convertGeneratedTextToContentHtml } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
+import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { getEnv } from '@/lib/core/config/env'
 import {
   MothershipStreamV1EventType,
@@ -41,6 +42,11 @@ import {
 } from '@/lib/generated-media/video/video-generation-utils'
 import { generateWorkspaceVideoFromPrompt } from '@/lib/generated-media/video/video-generation-service'
 import { getContentNodePreset, type ContentNodeVariant } from '@/lib/product/content-node-presets'
+import {
+  getContentReferenceAnchorForTarget,
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 import { executeProviderRequest } from '@/providers'
 import type { ProviderResponse } from '@/providers/types'
 import { extractAndParseJSON, getProviderFromModel } from '@/providers/utils'
@@ -78,6 +84,15 @@ interface ContentCanvasSnapshot {
     sourceHandle?: string
     targetHandle?: string
   }>
+}
+
+interface EditWorkflowExecutionOutput {
+  success?: boolean
+  workflowState?: Record<string, unknown>
+  skippedItems?: string[]
+  skippedItemsMessage?: string
+  inputValidationErrors?: string[]
+  inputValidationMessage?: string
 }
 
 interface PlannerMessage {
@@ -238,12 +253,10 @@ function getPositionValue(value: unknown): { x: number; y: number } {
   }
 }
 
-async function loadContentCanvasSnapshot(workflowId: string): Promise<ContentCanvasSnapshot> {
-  const { loadWorkflowFromNormalizedTables } = await import('@/lib/workflows/persistence/utils')
-  const normalized = await loadWorkflowFromNormalizedTables(workflowId)
-  const rawBlocks = normalized?.blocks
-  const rawEdges = normalized?.edges
-
+function parseContentCanvasSnapshot(
+  rawBlocks: unknown,
+  rawEdges: unknown
+): ContentCanvasSnapshot {
   const blocks =
     rawBlocks && typeof rawBlocks === 'object'
       ? Object.entries(rawBlocks as Record<string, unknown>).flatMap(([id, rawBlock]) => {
@@ -292,6 +305,18 @@ async function loadContentCanvasSnapshot(workflowId: string): Promise<ContentCan
     : []
 
   return { blocks, edges }
+}
+
+function snapshotFromWorkflowState(workflowState: unknown): ContentCanvasSnapshot {
+  const blocks = getRecordValue(workflowState, 'blocks')
+  const edges = getRecordValue(workflowState, 'edges')
+  return parseContentCanvasSnapshot(blocks, edges)
+}
+
+async function loadContentCanvasSnapshot(workflowId: string): Promise<ContentCanvasSnapshot> {
+  const { loadWorkflowFromNormalizedTables } = await import('@/lib/workflows/persistence/utils')
+  const normalized = await loadWorkflowFromNormalizedTables(workflowId)
+  return parseContentCanvasSnapshot(normalized?.blocks, normalized?.edges)
 }
 
 function extractConversationHistory(value: unknown): PlannerMessage[] {
@@ -393,6 +418,8 @@ function buildPlannerSystemPrompt(thinkingLevel: 'standard' | 'extra'): string {
     'When the user only wants analysis or Q&A, respond with assistantText and no actions.',
     'Use exact existing block IDs from the snapshot when editing existing nodes.',
     'For new nodes, assign a stable clientNodeId such as new_text_1 and reference it later.',
+    'If the user asks to create, add, or generate a new node, prefer add_node instead of update_node.',
+    'Only use update_node when the user clearly wants to modify an existing node or selected node.',
     'If the user directly supplies final copy, prefer add_node/update_node contentText over generation.',
     'If the user asks AI to write, draw, create video, or create audio, include generate_node_output.',
     thinkingLevel === 'extra'
@@ -400,6 +427,111 @@ function buildPlannerSystemPrompt(thinkingLevel: 'standard' | 'extra'): string {
       : 'Prefer a concise plan.',
     'Return JSON only.',
   ].join('\n')
+}
+
+function isExplicitCreateIntent(message: string): boolean {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) return false
+
+  const createPattern =
+    /(\u65b0\u5efa|\u65b0\u589e|\u52a0\u4e00\u4e2a|\u521b\u5efa|\u518d\u6765|\u751f\u6210\u4e00\u5f20|\u751f\u6210\u4e00\u6bb5|\u751f\u6210\u4e00\u4e2a|\u753b\u4e00\u5f20|\u5199\u4e00\u6bb5)/.test(
+      normalized
+    ) || /\b(new|create|add|another|generate a|generate an|draw a|write a)\b/.test(normalized)
+  const updatePattern =
+    /(\u4fee\u6539|\u66ff\u6362|\u91cd\u5199|\u4f18\u5316|\u5728\u8fd9\u5f20|\u57fa\u4e8e\u8fd9\u5f20|\u91cd\u753b|\u7ee7\u7eed\u6539)/.test(
+      normalized
+    ) || /\b(update|modify|edit|rewrite|improve|replace|based on this)\b/.test(normalized)
+
+  return createPattern && !updatePattern
+}
+
+function buildUniqueNodeName(
+  requestedName: string,
+  takenNormalizedNames: Set<string>,
+  reservedNormalizedNames: Set<string>
+): string {
+  const trimmed = requestedName.trim() || 'Content'
+  let candidate = trimmed
+  let suffix = 2
+
+  while (true) {
+    const normalized = normalizeName(candidate)
+    if (normalized && !takenNormalizedNames.has(normalized) && !reservedNormalizedNames.has(normalized)) {
+      takenNormalizedNames.add(normalized)
+      return candidate
+    }
+    candidate = `${trimmed} ${suffix++}`
+  }
+}
+
+function normalizePlanForExplicitCreateIntent(params: {
+  message: string
+  plan: ContentCanvasPlan
+  snapshot: ContentCanvasSnapshot
+  autoSelectionBlockIds: string[]
+}): ContentCanvasPlan {
+  if (!isExplicitCreateIntent(params.message)) {
+    return params.plan
+  }
+  if (params.plan.actions.some((action) => action.type === 'add_node')) {
+    return params.plan
+  }
+
+  const selectedIds = new Set(params.autoSelectionBlockIds)
+  const selectedBlocksById = new Map(
+    getSelectedBlocks(params.snapshot, params.autoSelectionBlockIds).map((block) => [block.id, block])
+  )
+  const replacementNodeIds = new Map<string, string>()
+  let replacementIndex = 1
+  let didRewrite = false
+
+  const nextActions: ContentCanvasPlanAction[] = []
+  for (const action of params.plan.actions) {
+    if (
+      action.type === 'update_node' &&
+      selectedIds.has(action.blockId) &&
+      (action.prompt || action.contentText)
+    ) {
+      const selectedBlock = selectedBlocksById.get(action.blockId)
+      if (!selectedBlock) {
+        nextActions.push(action)
+        continue
+      }
+
+      const clientNodeId = `new_${selectedBlock.variant}_${replacementIndex++}`
+      replacementNodeIds.set(action.blockId, clientNodeId)
+      nextActions.push({
+        type: 'add_node',
+        clientNodeId,
+        nodeType: selectedBlock.variant,
+        ...(action.prompt ? { prompt: action.prompt } : {}),
+        ...(action.contentText ? { contentText: action.contentText } : {}),
+      })
+      didRewrite = true
+      continue
+    }
+
+    if (action.type === 'generate_node_output') {
+      const replacementId = replacementNodeIds.get(action.blockId)
+      if (replacementId) {
+        nextActions.push({
+          ...action,
+          blockId: replacementId,
+        })
+        didRewrite = true
+        continue
+      }
+    }
+
+    nextActions.push(action)
+  }
+
+  return didRewrite
+    ? {
+        ...params.plan,
+        actions: nextActions,
+      }
+    : params.plan
 }
 
 function getNodeVariantLabel(
@@ -858,16 +990,35 @@ function buildVariantTitle(variant: ContentNodeVariant, count: number): string {
   return `${base} ${count}`
 }
 
+function buildContentReferenceConnections(params: {
+  sourceBlock: ContentCanvasBlockSnapshot
+  targetBlock: ContentCanvasBlockSnapshot
+}): Record<string, { block: string; handle: string }> {
+  const sourceAnchor = params.targetBlock.position.x >= params.sourceBlock.position.x ? 'right' : 'left'
+  const targetAnchor = getContentReferenceAnchorForTarget({
+    sourceX: params.sourceBlock.position.x,
+    targetX: params.targetBlock.position.x,
+  })
+
+  return {
+    [getContentReferenceSourceHandleId(sourceAnchor)]: {
+      block: params.targetBlock.id,
+      handle: getContentReferenceTargetHandleId(targetAnchor),
+    },
+  }
+}
+
 function buildAddNodeOperation(params: {
   action: Extract<ContentCanvasPlanAction, { type: 'add_node' }>
   snapshot: ContentCanvasSnapshot
   index: number
   generatedBlockId: string
   resolveBlockId: (rawId: string) => string
-}): EditWorkflowOperation {
+  resolvedTitle: string
+  targetBlock?: ContentCanvasBlockSnapshot
+}): { operation: EditWorkflowOperation; block: ContentCanvasBlockSnapshot } {
   const variant = params.action.nodeType
   const preset = getContentNodePreset(variant)
-  const existingCount = params.snapshot.blocks.filter((block) => block.variant === variant).length
   const lastBlock = params.snapshot.blocks.at(-1)
   const position = lastBlock
     ? {
@@ -903,14 +1054,21 @@ function buildAddNodeOperation(params: {
     inputs.audioParameters = DEFAULT_AUDIO_PARAMETERS
   }
 
+  const addedBlock: ContentCanvasBlockSnapshot = {
+    id: params.generatedBlockId,
+    name: params.resolvedTitle,
+    type: 'content',
+    variant,
+    position,
+    values: inputs,
+  }
+
   const operation: EditWorkflowOperation = {
     operation_type: 'add',
     block_id: params.generatedBlockId,
     params: {
       type: 'content',
-      name:
-        params.action.title?.trim() ||
-        buildVariantTitle(variant, existingCount + params.index + 1),
+      name: params.resolvedTitle,
       position,
       inputs,
     },
@@ -919,13 +1077,21 @@ function buildAddNodeOperation(params: {
   if (params.action.targetBlockId) {
     operation.params = {
       ...operation.params,
-      connections: {
-        source: params.resolveBlockId(params.action.targetBlockId),
-      },
+      connections: params.targetBlock
+        ? buildContentReferenceConnections({
+            sourceBlock: addedBlock,
+            targetBlock: params.targetBlock,
+          })
+        : {
+            source: params.resolveBlockId(params.action.targetBlockId),
+          },
     }
   }
 
-  return operation
+  return {
+    operation,
+    block: addedBlock,
+  }
 }
 
 function buildUpdateInputs(
@@ -961,8 +1127,19 @@ function compileEditWorkflowOperations(params: {
   blockIdMap: Map<string, string>
 } {
   const blockIdMap = new Map<string, string>()
+  const knownBlocks = new Map(
+    params.snapshot.blocks.map((block) => [block.id, block] satisfies [string, ContentCanvasBlockSnapshot])
+  )
   const operations: EditWorkflowOperation[] = []
   const resolveBlockId = (rawId: string) => blockIdMap.get(rawId) ?? rawId
+  const takenNormalizedNames = new Set(
+    params.snapshot.blocks
+      .map((block) => normalizeName(block.name || ''))
+      .filter((name) => name.length > 0)
+  )
+  const reservedNormalizedNames = new Set(
+    RESERVED_BLOCK_NAMES.map((name) => normalizeName(name)).filter((name) => name.length > 0)
+  )
 
   for (const action of params.plan.actions) {
     if (action.type === 'add_node') {
@@ -973,21 +1150,34 @@ function compileEditWorkflowOperations(params: {
   let addIndex = 0
   for (const action of params.plan.actions) {
     if (action.type !== 'add_node') continue
-    operations.push(
-      buildAddNodeOperation({
+    const existingCount = params.snapshot.blocks.filter((block) => block.variant === action.nodeType).length
+    const baseTitle =
+      action.title?.trim() || buildVariantTitle(action.nodeType, existingCount + addIndex + 1)
+    const resolvedTitle = buildUniqueNodeName(
+      baseTitle,
+      takenNormalizedNames,
+      reservedNormalizedNames
+    )
+    const targetBlock = action.targetBlockId
+      ? knownBlocks.get(resolveBlockId(action.targetBlockId))
+      : undefined
+    const { operation, block } = buildAddNodeOperation({
         action,
         snapshot: params.snapshot,
         index: addIndex++,
         generatedBlockId: resolveBlockId(action.clientNodeId),
         resolveBlockId,
+        resolvedTitle,
+        targetBlock,
       })
-    )
+    operations.push(operation)
+    knownBlocks.set(block.id, block)
   }
 
   for (const action of params.plan.actions) {
     if (action.type === 'update_node') {
       const blockId = resolveBlockId(action.blockId)
-      const block = params.snapshot.blocks.find((entry) => entry.id === blockId)
+      const block = knownBlocks.get(blockId)
       if (!block) continue
       const inputs = buildUpdateInputs(block, action)
       operations.push({
@@ -998,10 +1188,16 @@ function compileEditWorkflowOperations(params: {
           ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
         },
       })
+      knownBlocks.set(blockId, {
+        ...block,
+        name: action.title ?? block.name,
+        values: Object.keys(inputs).length > 0 ? { ...block.values, ...inputs } : block.values,
+      })
       continue
     }
 
     if (action.type === 'delete_node') {
+      knownBlocks.delete(resolveBlockId(action.blockId))
       operations.push({
         operation_type: 'delete',
         block_id: resolveBlockId(action.blockId),
@@ -1010,13 +1206,23 @@ function compileEditWorkflowOperations(params: {
     }
 
     if (action.type === 'connect_nodes') {
+      const sourceBlockId = resolveBlockId(action.sourceBlockId)
+      const targetBlockId = resolveBlockId(action.targetBlockId)
+      const sourceBlock = knownBlocks.get(sourceBlockId)
+      const targetBlock = knownBlocks.get(targetBlockId)
       operations.push({
         operation_type: 'edit',
-        block_id: resolveBlockId(action.sourceBlockId),
+        block_id: sourceBlockId,
         params: {
-          connections: {
-            source: resolveBlockId(action.targetBlockId),
-          },
+          connections:
+            sourceBlock && targetBlock
+              ? buildContentReferenceConnections({
+                  sourceBlock,
+                  targetBlock,
+                })
+              : {
+                  source: targetBlockId,
+                },
         },
       })
       continue
@@ -1046,6 +1252,13 @@ function compileEditWorkflowOperations(params: {
           block_id: blockId,
           params: { position },
         })
+        const block = knownBlocks.get(blockId)
+        if (block) {
+          knownBlocks.set(blockId, {
+            ...block,
+            position,
+          })
+        }
       })
     }
   }
@@ -1142,7 +1355,7 @@ async function executeEditWorkflowOperations(params: {
   context: StreamingContext
   execContext: ExecutionContext
   options: AgentOptions
-}): Promise<void> {
+}): Promise<EditWorkflowExecutionOutput | unknown> {
   const toolCallId = generateId()
   const toolCall = createToolCallState({
     toolCallId,
@@ -1206,6 +1419,7 @@ async function executeEditWorkflowOperations(params: {
         output,
       },
     })
+    return output
   } catch (error) {
     const errorMessage = toError(error).message
     setTerminalToolCallState(toolCall, {
@@ -1231,6 +1445,69 @@ async function executeEditWorkflowOperations(params: {
 
     throw error
   }
+}
+
+function getEditWorkflowExecutionOutput(value: unknown): EditWorkflowExecutionOutput | null {
+  if (!value || typeof value !== 'object') return null
+  return value as EditWorkflowExecutionOutput
+}
+
+function verifyPlannedStructureApplied(params: {
+  plan: ContentCanvasPlan
+  snapshotAfterStructure: ContentCanvasSnapshot
+  blockIdMap: Map<string, string>
+  structureOutput: unknown
+}): void {
+  const missingAddedBlocks = params.plan.actions
+    .filter(
+      (action): action is Extract<ContentCanvasPlanAction, { type: 'add_node' }> =>
+        action.type === 'add_node'
+    )
+    .filter((action) => {
+      const blockId = params.blockIdMap.get(action.clientNodeId)
+      return !blockId || !params.snapshotAfterStructure.blocks.some((block) => block.id === blockId)
+    })
+
+  const missingGenerateTargets = params.plan.actions
+    .filter(
+      (action): action is Extract<ContentCanvasPlanAction, { type: 'generate_node_output' }> =>
+        action.type === 'generate_node_output'
+    )
+    .filter((action) => {
+      const blockId = params.blockIdMap.get(action.blockId) ?? action.blockId
+      return !params.snapshotAfterStructure.blocks.some((block) => block.id === blockId)
+    })
+
+  if (missingAddedBlocks.length === 0 && missingGenerateTargets.length === 0) {
+    return
+  }
+
+  const output = getEditWorkflowExecutionOutput(params.structureOutput)
+  const details = [
+    ...(output?.skippedItems ?? []),
+    ...(output?.inputValidationErrors ?? []),
+    ...(output?.skippedItemsMessage ? [output.skippedItemsMessage] : []),
+    ...(output?.inputValidationMessage ? [output.inputValidationMessage] : []),
+  ].filter((entry) => entry && entry.trim().length > 0)
+
+  const missingAddLabels = missingAddedBlocks.map((action) => action.title || action.clientNodeId)
+  const missingGenerateLabels = missingGenerateTargets.map((action) => action.blockId)
+  const failureSummary = [
+    missingAddLabels.length > 0
+      ? `missing added nodes: ${missingAddLabels.join(', ')}`
+      : null,
+    missingGenerateLabels.length > 0
+      ? `missing generation targets: ${missingGenerateLabels.join(', ')}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('; ')
+
+  throw new Error(
+    `content canvas structure verification failed: ${failureSummary}${
+      details.length > 0 ? `. Details: ${details.join('; ')}` : ''
+    }`
+  )
 }
 
 async function generateTextOutput(params: {
@@ -1694,6 +1971,11 @@ function toUserFacingErrorMessage(message: string, error: unknown): string {
       ? `\u753b\u5e03\u64cd\u4f5c\u6267\u884c\u5931\u8d25\uff1a${rawMessage}`
       : `The canvas edit could not be applied: ${rawMessage}`
   }
+  if (rawMessage.includes('content canvas structure verification failed')) {
+    return chinese
+      ? `\u753b\u5e03\u7ed3\u6784\u66f4\u65b0\u540e\uff0c\u6709\u8ba1\u5212\u4e2d\u7684\u65b0\u8282\u70b9\u6216\u751f\u6210\u76ee\u6807\u6ca1\u6709\u771f\u6b63\u843d\u5230\u753b\u5e03\u4e0a\uff1a${rawMessage}`
+      : `Some planned nodes or generation targets were not actually created on the canvas: ${rawMessage}`
+  }
   if (rawMessage.includes('pending plan token is invalid')) {
     return buildInvalidPendingPlanMessageV2(message)
   }
@@ -1716,10 +1998,11 @@ async function executePlanOperations(params: {
     plan: params.plan,
     snapshot: params.snapshot,
   })
+  let structureOutput: unknown = null
 
   if (operations.length > 0) {
     try {
-      await executeEditWorkflowOperations({
+      structureOutput = await executeEditWorkflowOperations({
         workflowId: params.workflowId,
         operations,
         context: params.context,
@@ -1731,7 +2014,18 @@ async function executePlanOperations(params: {
     }
   }
 
-  const snapshotAfterStructure = await loadContentCanvasSnapshot(params.workflowId)
+  const structureResult = getEditWorkflowExecutionOutput(structureOutput)
+  const snapshotAfterStructure = structureResult?.workflowState
+    ? snapshotFromWorkflowState(structureResult.workflowState)
+    : await loadContentCanvasSnapshot(params.workflowId)
+
+  verifyPlannedStructureApplied({
+    plan: params.plan,
+    snapshotAfterStructure,
+    blockIdMap,
+    structureOutput,
+  })
+
   const writebackOperations = await buildWritebackOperations({
     plan: params.plan,
     snapshot: snapshotAfterStructure,
@@ -1887,6 +2181,13 @@ export async function runContentCanvasAgent(params: {
         plan = fallbackPlan
       }
     }
+
+    plan = normalizePlanForExplicitCreateIntent({
+      message,
+      plan,
+      snapshot,
+      autoSelectionBlockIds,
+    })
 
     if (plan.actions.length === 0) {
       await emitAssistantText(

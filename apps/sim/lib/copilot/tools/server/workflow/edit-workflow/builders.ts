@@ -3,6 +3,11 @@ import { generateId, isValidUuid } from '@sim/utils/id'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import {
+  CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
+  CONTENT_REFERENCE_TARGET_HANDLE_PREFIX,
+  createContentReferenceEdge,
+} from '@/lib/workflows/content-reference-edges'
+import {
   buildCanonicalIndex,
   buildDefaultCanonicalModes,
   isCanonicalPair,
@@ -18,6 +23,13 @@ import {
   validateSourceHandleForBlock,
   validateTargetHandle,
 } from './validation'
+
+function isContentReferenceHandlePair(sourceHandle: string, targetHandle: string): boolean {
+  return (
+    sourceHandle.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX) &&
+    targetHandle.startsWith(CONTENT_REFERENCE_TARGET_HANDLE_PREFIX)
+  )
+}
 
 /**
  * Helper to create a block state from operation params
@@ -529,14 +541,24 @@ export function createValidatedEdge(
   // Use normalized handle if available (e.g., 'if' -> 'condition-{uuid}')
   const finalSourceHandle = sourceValidation.normalizedHandle || sourceHandle
 
-  modifiedState.edges.push({
-    id: generateId(),
-    source: sourceBlockId,
-    sourceHandle: finalSourceHandle,
-    target: targetBlockId,
-    targetHandle,
-    type: 'default',
-  })
+  modifiedState.edges.push(
+    isContentReferenceHandlePair(finalSourceHandle, targetHandle)
+      ? createContentReferenceEdge({
+          id: generateId(),
+          source: sourceBlockId,
+          target: targetBlockId,
+          sourceHandle: finalSourceHandle,
+          targetHandle,
+        })
+      : {
+          id: generateId(),
+          source: sourceBlockId,
+          sourceHandle: finalSourceHandle,
+          target: targetBlockId,
+          targetHandle,
+          type: 'default',
+        }
+  )
   return true
 }
 

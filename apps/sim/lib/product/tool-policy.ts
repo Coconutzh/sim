@@ -37,6 +37,7 @@ const TAPNOW_RECOMMENDED_BLOCK_TYPES = [
   'api',
   'chat_trigger',
   'condition',
+  'content',
   'file',
   'file_v2',
   'file_v3',

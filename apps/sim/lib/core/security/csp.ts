@@ -11,9 +11,45 @@ import { isDev, isHosted, isReactGrabEnabled } from '../config/feature-flags'
 
 const DEFAULT_SOCKET_URL = 'http://localhost:3002'
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
+const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
 function toWebSocketUrl(httpUrl: string): string {
   return httpUrl.replace('http://', 'ws://').replace('https://', 'wss://')
+}
+
+function isLocalhostUrl(url: string | undefined): boolean {
+  if (!url) return false
+  try {
+    return LOCALHOST_HOSTNAMES.has(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+function shouldAllowDefaultLocalSocket(
+  appUrl: string | undefined,
+  explicitSocketUrl: string | undefined
+): boolean {
+  if (explicitSocketUrl?.trim()) return false
+  if (isDev) return true
+  if (isHosted) return false
+  return !appUrl || isLocalhostUrl(appUrl)
+}
+
+function getSocketConnectSources(
+  appUrl: string | undefined,
+  explicitSocketUrl: string | undefined
+): string[] {
+  const normalizedSocketUrl = explicitSocketUrl?.trim() || ''
+  if (normalizedSocketUrl) {
+    return [normalizedSocketUrl, toWebSocketUrl(normalizedSocketUrl)]
+  }
+
+  if (shouldAllowDefaultLocalSocket(appUrl, normalizedSocketUrl)) {
+    return [DEFAULT_SOCKET_URL, toWebSocketUrl(DEFAULT_SOCKET_URL)]
+  }
+
+  return []
 }
 
 function getHostnameFromUrl(url: string | undefined): string[] {
@@ -142,11 +178,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...STATIC_CONNECT_SRC,
     env.NEXT_PUBLIC_APP_URL || '',
     ...(env.OLLAMA_URL ? [env.OLLAMA_URL] : isDev ? [DEFAULT_OLLAMA_URL] : []),
-    ...(env.NEXT_PUBLIC_SOCKET_URL
-      ? [env.NEXT_PUBLIC_SOCKET_URL, toWebSocketUrl(env.NEXT_PUBLIC_SOCKET_URL)]
-      : isDev
-        ? [DEFAULT_SOCKET_URL, toWebSocketUrl(DEFAULT_SOCKET_URL)]
-        : []),
+    ...getSocketConnectSources(env.NEXT_PUBLIC_APP_URL, env.NEXT_PUBLIC_SOCKET_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
@@ -182,9 +214,7 @@ export function buildCSPString(directives: CSPDirectives): string {
  */
 export function generateRuntimeCSP(): string {
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL') || ''
-
-  const socketUrl = getEnv('NEXT_PUBLIC_SOCKET_URL') || (isDev ? DEFAULT_SOCKET_URL : '')
-  const socketWsUrl = socketUrl ? toWebSocketUrl(socketUrl) : ''
+  const socketConnectSources = getSocketConnectSources(appUrl, getEnv('NEXT_PUBLIC_SOCKET_URL'))
   const ollamaUrl = getEnv('OLLAMA_URL') || (isDev ? DEFAULT_OLLAMA_URL : '')
 
   const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
@@ -200,8 +230,7 @@ export function generateRuntimeCSP(): string {
       ...STATIC_CONNECT_SRC,
       appUrl,
       ollamaUrl,
-      socketUrl,
-      socketWsUrl,
+      ...socketConnectSources,
       ...brandLogoDomains,
       ...privacyDomains,
       ...termsDomains,

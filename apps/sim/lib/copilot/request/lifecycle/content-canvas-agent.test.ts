@@ -11,6 +11,7 @@ const {
   mockLoadWorkflowFromNormalizedTables,
   mockSetTerminalToolCallState,
   mockCreateLogger,
+  mockGenerateWorkspaceImageFromPrompt,
 } = vi.hoisted(() => ({
   mockGenerateId: vi.fn(),
   mockExecuteProviderRequest: vi.fn(),
@@ -23,6 +24,7 @@ const {
     error: vi.fn(),
     debug: vi.fn(),
   })),
+  mockGenerateWorkspaceImageFromPrompt: vi.fn(),
 }))
 
 vi.mock('@sim/utils/id', () => ({
@@ -77,7 +79,7 @@ vi.mock('@/lib/generated-media/audio/audio-generation-service', () => ({
 }))
 
 vi.mock('@/lib/generated-media/image/image-generation-service', () => ({
-  generateWorkspaceImageFromPrompt: vi.fn(),
+  generateWorkspaceImageFromPrompt: mockGenerateWorkspaceImageFromPrompt,
 }))
 
 vi.mock('@/lib/generated-media/video/video-generation-service', () => ({
@@ -88,6 +90,10 @@ import {
   __contentCanvasAgentTestUtils,
   runContentCanvasAgent,
 } from '@/lib/copilot/request/lifecycle/content-canvas-agent'
+import {
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 
 function createStreamingContext(): StreamingContext {
   return {
@@ -156,6 +162,17 @@ describe('content canvas agent', () => {
       .mockReturnValueOnce('tool-call-1')
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
     mockEditWorkflowExecute.mockResolvedValue({ success: true })
+    mockGenerateWorkspaceImageFromPrompt.mockResolvedValue({
+      file: {
+        id: 'generated-image-1',
+        name: 'generated-image.png',
+        url: 'https://example.com/generated-image.png',
+        key: 'files/generated-image.png',
+        size: 12345,
+        type: 'image/png',
+        context: 'generated',
+      },
+    })
     mockSetTerminalToolCallState.mockImplementation((toolCall, update) => {
       Object.assign(toolCall, {
         status: update.status,
@@ -270,6 +287,25 @@ describe('content canvas agent', () => {
 
     const optionsBlock = firstContext.contentBlocks.find((block) => block.type === 'options')
     const confirmToken = optionsBlock?.options?.[0]?.value
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('new-text-block-1').mockReturnValueOnce('tool-call-1')
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        blocks: {
+          'new-text-block-1': {
+            type: 'content',
+            name: 'Text 1',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'text' },
+              contentHtml: { value: '<p>你好</p>' },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
 
     const secondContext = createStreamingContext()
     await runContentCanvasAgent({
@@ -421,6 +457,111 @@ describe('content canvas agent', () => {
     )
   })
 
+  it('uses content reference handles when adding a linked content node', () => {
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('new-text-block-1')
+
+    const snapshot = {
+      blocks: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          type: 'content' as const,
+          variant: 'image' as const,
+          position: { x: 0, y: 0 },
+          values: {},
+        },
+      ],
+      edges: [],
+    }
+
+    const { operations } = __contentCanvasAgentTestUtils.compileEditWorkflowOperations({
+      plan: {
+        assistantText: '',
+        summary: '',
+        actions: [
+          {
+            type: 'add_node',
+            clientNodeId: 'new_text_1',
+            nodeType: 'text',
+            title: '图片描述',
+            targetBlockId: 'image-1',
+          },
+        ],
+      },
+      snapshot,
+    })
+
+    expect(operations).toEqual([
+      expect.objectContaining({
+        operation_type: 'add',
+        block_id: 'new-text-block-1',
+        params: expect.objectContaining({
+          connections: {
+            [getContentReferenceSourceHandleId('left')]: {
+              block: 'image-1',
+              handle: getContentReferenceTargetHandleId('right'),
+            },
+          },
+        }),
+      }),
+    ])
+  })
+
+  it('uses content reference handles when connecting two content nodes', () => {
+    const snapshot = {
+      blocks: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          type: 'content' as const,
+          variant: 'image' as const,
+          position: { x: 0, y: 0 },
+          values: {},
+        },
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          type: 'content' as const,
+          variant: 'text' as const,
+          position: { x: 360, y: 0 },
+          values: {},
+        },
+      ],
+      edges: [],
+    }
+
+    const { operations } = __contentCanvasAgentTestUtils.compileEditWorkflowOperations({
+      plan: {
+        assistantText: '',
+        summary: '',
+        actions: [
+          {
+            type: 'connect_nodes',
+            sourceBlockId: 'image-1',
+            targetBlockId: 'text-1',
+          },
+        ],
+      },
+      snapshot,
+    })
+
+    expect(operations).toEqual([
+      {
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          connections: {
+            [getContentReferenceSourceHandleId('right')]: {
+              block: 'text-1',
+              handle: getContentReferenceTargetHandleId('left'),
+            },
+          },
+        },
+      },
+    ])
+  })
+
   it('requires deepseek env vars for planner config', () => {
     delete process.env.LOCAL_COPILOT_PROVIDER
     delete process.env.LOCAL_COPILOT_MODEL
@@ -489,5 +630,169 @@ describe('content canvas agent', () => {
         }),
       })
     )
+  })
+
+  it('rewrites explicit create-image requests to add a new image node instead of overwriting the selected image', async () => {
+    mockGenerateId.mockReset()
+    mockGenerateId.mockReturnValueOnce('new-image-block-1').mockReturnValueOnce('tool-call-1')
+    mockLoadWorkflowFromNormalizedTables
+      .mockResolvedValueOnce(createSelectedImageWorkflowState())
+      .mockResolvedValueOnce({
+        blocks: {
+          ...createSelectedImageWorkflowState().blocks,
+          'new-image-block-1': {
+            type: 'content',
+            name: 'Image 2',
+            position: { x: 360, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: '美少女，半写实插画' },
+              aiModel: { value: 'jimeng-4.5' },
+              file: { value: null },
+            },
+          },
+        },
+        edges: [],
+      })
+    mockEditWorkflowExecute.mockResolvedValueOnce({
+      success: true,
+      workflowState: {
+        blocks: {
+          ...createSelectedImageWorkflowState().blocks,
+          'new-image-block-1': {
+            type: 'content',
+            name: 'Image 2',
+            position: { x: 360, y: 0 },
+            subBlocks: {
+              contentVariant: { value: 'image' },
+              aiPrompt: { value: '美少女，半写实插画' },
+              aiModel: { value: 'jimeng-4.5' },
+              file: { value: null },
+            },
+          },
+        },
+        edges: [],
+      },
+    })
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        actions: [
+          {
+            type: 'update_node',
+            blockId: 'image-1',
+            prompt: '美少女，半写实插画',
+          },
+          {
+            type: 'generate_node_output',
+            blockId: 'image-1',
+          },
+        ],
+      }),
+    })
+
+    const context = createStreamingContext()
+
+    await runContentCanvasAgent({
+      requestPayload: {
+        message: '帮我新建一张美少女图片',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        confirmationMode: 'auto',
+        autoSelectionContexts: [
+          {
+            kind: 'blocks',
+            blockIds: ['image-1'],
+            label: 'Current canvas selection (1)',
+          },
+        ],
+      },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      options: {},
+    })
+
+    expect(mockEditWorkflowExecute).toHaveBeenCalled()
+    const firstCall = mockEditWorkflowExecute.mock.calls[0]?.[0]
+    expect(firstCall.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'add',
+          params: expect.objectContaining({
+            type: 'content',
+            inputs: expect.objectContaining({
+              contentVariant: 'image',
+              aiPrompt: '美少女，半写实插画',
+            }),
+          }),
+        }),
+      ])
+    )
+    expect(firstCall.operations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation_type: 'edit',
+          block_id: 'image-1',
+          params: expect.objectContaining({
+            inputs: expect.objectContaining({
+              aiPrompt: '美少女，半写实插画',
+            }),
+          }),
+        }),
+      ])
+    )
+  })
+
+  it('fails visibly when planned add_node actions do not materialize in the workflow', async () => {
+    mockLoadWorkflowFromNormalizedTables
+      .mockResolvedValueOnce(createSelectedImageWorkflowState())
+      .mockResolvedValueOnce(createSelectedImageWorkflowState())
+    mockExecuteProviderRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        summary: '',
+        actions: [],
+      }),
+    })
+    mockEditWorkflowExecute.mockResolvedValue({
+      success: true,
+      skippedItems: ['Block name "图片描述" conflicts with existing block "图片描述"'],
+      skippedItemsMessage:
+        '1 operation(s) were skipped due to invalid references. Details: Block name "图片描述" conflicts with existing block "图片描述"',
+    })
+
+    const context = createStreamingContext()
+
+    await expect(
+      runContentCanvasAgent({
+        requestPayload: {
+          message: '帮我为这张图片生成文字说明',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          confirmationMode: 'auto',
+          autoSelectionContexts: [
+            {
+              kind: 'blocks',
+              blockIds: ['image-1'],
+              label: 'Current canvas selection (1)',
+            },
+          ],
+        },
+        context,
+        execContext: {
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+        },
+        options: {},
+      })
+    ).rejects.toThrow(/画布|canvas/i)
+
+    expect(context.accumulatedContent).not.toContain('已执行以下内容画布操作')
   })
 })

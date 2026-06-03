@@ -77,7 +77,16 @@ vi.mock('@/providers/utils', () => ({
   getHostedModels: () => [],
 }))
 
-import { preValidateCredentialInputs, validateInputsForBlock } from './validation'
+import {
+  preValidateCredentialInputs,
+  validateInputsForBlock,
+  validateSourceHandleForBlock,
+  validateTargetHandle,
+} from './validation'
+import {
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 
 describe('validateInputsForBlock', () => {
   beforeEach(() => {
@@ -275,5 +284,39 @@ describe('preValidateCredentialInputs', () => {
     })
     expect(result.filteredOperations[0]?.params?.inputs?.credential).toBe('shared-cred-1')
     expect(result.errors).toHaveLength(0)
+  })
+})
+
+describe('content reference handle validation', () => {
+  it('allows content blocks to use content reference source handles', () => {
+    const sourceBlock = {
+      id: 'content-1',
+      type: 'content',
+      subBlocks: {
+        contentVariant: { value: 'image' },
+      },
+    }
+
+    expect(
+      validateSourceHandleForBlock(
+        getContentReferenceSourceHandleId('left'),
+        'content',
+        sourceBlock
+      )
+    ).toEqual({ valid: true })
+    expect(
+      validateSourceHandleForBlock(
+        getContentReferenceSourceHandleId('right'),
+        'content',
+        sourceBlock
+      )
+    ).toEqual({ valid: true })
+  })
+
+  it('allows content reference target handles', () => {
+    expect(validateTargetHandle(getContentReferenceTargetHandleId('left'))).toEqual({ valid: true })
+    expect(validateTargetHandle(getContentReferenceTargetHandleId('right'))).toEqual({
+      valid: true,
+    })
   })
 })

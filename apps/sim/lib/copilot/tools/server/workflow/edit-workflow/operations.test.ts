@@ -3,6 +3,10 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { applyOperationsToWorkflowState } from './engine'
+import {
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 
 vi.mock('@/blocks/registry', () => ({
   getAllBlocks: () => [
@@ -459,5 +463,70 @@ describe('handleEditOperation nestedNodes merge', () => {
     ) as any
     expect(replacementBlock).toBeDefined()
     expect(replacementBlock.data?.parentId).toBe('outer-loop')
+  })
+})
+
+describe('content reference edges', () => {
+  it('creates content reference edges with the persisted content edge kind', () => {
+    const workflow = {
+      blocks: {
+        'image-1': {
+          id: 'image-1',
+          type: 'content',
+          name: 'Image 1',
+          position: { x: 0, y: 0 },
+          enabled: true,
+          subBlocks: {
+            contentVariant: { id: 'contentVariant', type: 'short-input', value: 'image' },
+          },
+          outputs: {},
+          data: {},
+        },
+        'text-1': {
+          id: 'text-1',
+          type: 'content',
+          name: 'Text 1',
+          position: { x: 360, y: 0 },
+          enabled: true,
+          subBlocks: {
+            contentVariant: { id: 'contentVariant', type: 'short-input', value: 'text' },
+          },
+          outputs: {},
+          data: {},
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+
+    const { state, skippedItems } = applyOperationsToWorkflowState(workflow, [
+      {
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          connections: {
+            [getContentReferenceSourceHandleId('right')]: {
+              block: 'text-1',
+              handle: getContentReferenceTargetHandleId('left'),
+            },
+          },
+        },
+      },
+    ])
+
+    expect(skippedItems).toHaveLength(0)
+    expect(state.edges).toEqual([
+      expect.objectContaining({
+        source: 'image-1',
+        target: 'text-1',
+        sourceHandle: getContentReferenceSourceHandleId('right'),
+        targetHandle: getContentReferenceTargetHandleId('left'),
+        type: 'workflowEdge',
+        data: {
+          kind: 'content_reference',
+        },
+      }),
+    ])
   })
 })

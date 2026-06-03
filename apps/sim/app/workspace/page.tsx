@@ -4,10 +4,12 @@ import { useEffect, useRef } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
+import { listMyPendingInvitationsContract } from '@/lib/api/contracts/invitations'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
+import { selectNoWorkspaceRedirect } from '@/app/workspace/no-workspace-redirect'
 import { selectCanvasLandingTarget } from '@/app/workspace/canvas-landing-target'
 import { getWorkflowRedirectPath } from '@/app/workspace/redirect-workflow'
 import { useMyWorkgroups } from '@/hooks/queries/collaboration'
@@ -129,12 +131,18 @@ async function handleNoWorkspaces(
   creationPolicy: WorkspaceCreationPolicy | null
 ): Promise<void> {
   if (creationPolicy && !creationPolicy.canCreate) {
+    const pendingInvitations = await listMyPendingInvitations()
+    const redirectPath = selectNoWorkspaceRedirect({
+      creationPolicy,
+      invitations: pendingInvitations,
+    })
     logger.warn('No canvases found and canvas creation is blocked', {
       reason: creationPolicy.reason,
       workspaceMode: creationPolicy.workspaceMode,
       organizationId: creationPolicy.organizationId,
+      pendingInvitationCount: pendingInvitations.length,
     })
-    router.replace('/')
+    router.replace(redirectPath ?? '/')
     return
   }
 
@@ -153,4 +161,14 @@ async function handleNoWorkspaces(
     logger.error('Error creating default canvas:', error)
   }
   router.replace('/login')
+}
+
+async function listMyPendingInvitations() {
+  try {
+    const data = await requestJson(listMyPendingInvitationsContract, {})
+    return data.invitations
+  } catch (error) {
+    logger.warn('Failed to load pending invitations during no-canvas redirect', { error })
+    return []
+  }
 }

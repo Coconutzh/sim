@@ -7,6 +7,10 @@ import { getModelOptions } from '@/blocks/utils'
 import { EDGE, normalizeName } from '@/executor/constants'
 import { isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
+import {
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 import type {
   EdgeHandleValidationResult,
   EditWorkflowOperation,
@@ -17,6 +21,14 @@ import type {
 import { SELECTOR_TYPES } from './types'
 
 const validationLogger = createLogger('EditWorkflowValidation')
+const CONTENT_REFERENCE_SOURCE_HANDLES = new Set([
+  getContentReferenceSourceHandleId('left'),
+  getContentReferenceSourceHandleId('right'),
+])
+const CONTENT_REFERENCE_TARGET_HANDLES = new Set([
+  getContentReferenceTargetHandleId('left'),
+  getContentReferenceTargetHandleId('right'),
+])
 
 /**
  * Finds an existing block with the same normalized name.
@@ -486,6 +498,9 @@ export function validateSourceHandleForBlock(
     }
 
     default:
+      if (sourceBlockType === 'content' && CONTENT_REFERENCE_SOURCE_HANDLES.has(sourceHandle)) {
+        return { valid: true }
+      }
       if (sourceHandle === 'source') {
         return { valid: true }
       }
@@ -691,6 +706,9 @@ export function validateRouterHandle(
  * Validates target handle is valid (must be 'target')
  */
 export function validateTargetHandle(targetHandle: string): EdgeHandleValidationResult {
+  if (CONTENT_REFERENCE_TARGET_HANDLES.has(targetHandle)) {
+    return { valid: true }
+  }
   if (targetHandle === 'target') {
     return { valid: true }
   }
