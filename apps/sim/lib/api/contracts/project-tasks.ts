@@ -64,6 +64,9 @@ export const projectTaskSchema = z.object({
   reviewedBy: projectTaskUserSchema.nullable(),
   reviewedAt: z.string().nullable(),
   reviewNote: z.string().nullable(),
+  messageCount: z.number().int().min(0),
+  lastMessageAt: z.string().nullable(),
+  reminderSentAt: z.string().nullable(),
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -161,8 +164,39 @@ export const reviewProjectTaskBodySchema = z
   })
 export type ReviewProjectTaskBody = z.input<typeof reviewProjectTaskBodySchema>
 
+export const listProjectTaskMessagesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(100),
+})
+export type ListProjectTaskMessagesQuery = z.output<typeof listProjectTaskMessagesQuerySchema>
+export type ListProjectTaskMessagesQueryInput = z.input<typeof listProjectTaskMessagesQuerySchema>
+
+export const createProjectTaskMessageBodySchema = z.object({
+  content: z.string().trim().min(1, 'Message cannot be empty').max(2000),
+})
+export type CreateProjectTaskMessageBody = z.input<typeof createProjectTaskMessageBodySchema>
+
+export const projectTaskMessageSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  sender: projectTaskUserSchema,
+  content: z.string(),
+  createdAt: z.string(),
+})
+export type ProjectTaskMessage = z.output<typeof projectTaskMessageSchema>
+
 export const projectTaskResponseSchema = z.object({ task: projectTaskSchema })
 export type ProjectTaskResponse = z.output<typeof projectTaskResponseSchema>
+
+export const projectTaskMessagesResponseSchema = z.object({
+  messages: z.array(projectTaskMessageSchema),
+  messageCount: z.number().int().min(0),
+})
+export type ProjectTaskMessagesResponse = z.output<typeof projectTaskMessagesResponseSchema>
+
+export const projectTaskMessageResponseSchema = z.object({
+  message: projectTaskMessageSchema,
+})
+export type ProjectTaskMessageResponse = z.output<typeof projectTaskMessageResponseSchema>
 
 export const archivedProjectTaskResponseSchema = z.object({
   task: projectTaskSchema,
@@ -178,6 +212,8 @@ export const projectTaskEventTypeSchema = z.enum([
   'review_started',
   'approved',
   'rejected',
+  'message_created',
+  'due_reminder',
 ])
 export type ProjectTaskEventType = z.output<typeof projectTaskEventTypeSchema>
 
@@ -210,6 +246,13 @@ export const projectTaskEventsQuerySchema = z
   })
 export type ProjectTaskEventsQuery = z.output<typeof projectTaskEventsQuerySchema>
 export type ProjectTaskEventsQueryInput = z.input<typeof projectTaskEventsQuerySchema>
+
+export const projectTaskDueReminderResponseSchema = z.object({
+  matchedCount: z.number().int().min(0),
+  notifiedCount: z.number().int().min(0),
+  taskIds: z.array(z.string()),
+})
+export type ProjectTaskDueReminderResponse = z.output<typeof projectTaskDueReminderResponseSchema>
 
 export const listProjectTasksContract = defineRouteContract({
   method: 'GET',
@@ -265,9 +308,31 @@ export const reviewProjectTaskContract = defineRouteContract({
   response: { mode: 'json', schema: projectTaskResponseSchema },
 })
 
+export const listProjectTaskMessagesContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/project-tasks/[taskId]/messages',
+  params: projectTaskParamsSchema,
+  query: listProjectTaskMessagesQuerySchema,
+  response: { mode: 'json', schema: projectTaskMessagesResponseSchema },
+})
+
+export const createProjectTaskMessageContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/project-tasks/[taskId]/messages',
+  params: projectTaskParamsSchema,
+  body: createProjectTaskMessageBodySchema,
+  response: { mode: 'json', schema: projectTaskMessageResponseSchema, status: [200, 201] },
+})
+
 export const projectTaskEventsContract = defineRouteContract({
   method: 'GET',
   path: '/api/project-tasks/events',
   query: projectTaskEventsQuerySchema,
   response: { mode: 'stream' },
+})
+
+export const dispatchProjectTaskDueRemindersContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/cron/project-task-due-reminders',
+  response: { mode: 'json', schema: projectTaskDueReminderResponseSchema },
 })

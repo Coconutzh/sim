@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import {
   discipline,
   projectTask,
+  taskMessage,
   user,
   workflow,
   workflowBlocks,
@@ -10,14 +11,19 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
-import { and, asc, desc, eq, inArray, isNull, ne, type SQL, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, type SQL, sql } from 'drizzle-orm'
 import type {
   CreateProjectTaskBody,
+  CreateProjectTaskMessageBody,
+  ListProjectTaskMessagesQuery,
   ListProjectTasksQuery,
   ProjectTask,
   ProjectTaskAssignee,
+  ProjectTaskDueReminderResponse,
   ProjectTaskListResponse,
   ProjectTaskListScope,
+  ProjectTaskMessage,
+  ProjectTaskMessagesResponse,
   ProjectTaskStatus,
   ReviewProjectTaskBody,
   SubmitProjectTaskBody,
@@ -95,6 +101,9 @@ interface ProjectTaskRow {
   reviewedBy: string | null
   reviewedAt: Date | null
   reviewNote: string | null
+  messageCount: number
+  lastMessageAt: Date | null
+  reminderSentAt: Date | null
   archivedAt: Date | null
   createdAt: Date
   updatedAt: Date
@@ -119,6 +128,17 @@ interface ProjectTaskUserSummary {
   name: string | null
   email: string | null
   avatarUrl: string | null
+}
+
+interface TaskMessageRow {
+  id: string
+  taskId: string
+  senderId: string
+  content: string
+  createdAt: Date
+  senderName: string | null
+  senderEmail: string | null
+  senderAvatarUrl: string | null
 }
 
 function formatAssignee(row: {
@@ -186,9 +206,27 @@ function formatProjectTask(
       : null,
     reviewedAt: toIso(row.reviewedAt),
     reviewNote: row.reviewNote,
+    messageCount: row.messageCount,
+    lastMessageAt: toIso(row.lastMessageAt),
+    reminderSentAt: toIso(row.reminderSentAt),
     archivedAt: toIso(row.archivedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+function formatTaskMessage(row: TaskMessageRow): ProjectTaskMessage {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    sender: {
+      id: row.senderId,
+      name: row.senderName,
+      email: row.senderEmail,
+      avatarUrl: row.senderAvatarUrl,
+    },
+    content: row.content,
+    createdAt: row.createdAt.toISOString(),
   }
 }
 
@@ -230,6 +268,9 @@ async function selectProjectTaskRows(filters: SQL[], limit: number): Promise<Pro
       reviewedBy: projectTask.reviewedBy,
       reviewedAt: projectTask.reviewedAt,
       reviewNote: projectTask.reviewNote,
+      messageCount: projectTask.messageCount,
+      lastMessageAt: projectTask.lastMessageAt,
+      reminderSentAt: projectTask.reminderSentAt,
       archivedAt: projectTask.archivedAt,
       createdAt: projectTask.createdAt,
       updatedAt: projectTask.updatedAt,
@@ -253,6 +294,48 @@ async function formatProjectTaskRows(rows: ProjectTaskRow[]): Promise<ProjectTas
     rows.flatMap((row) => [row.creatorId, row.submittedBy, row.reviewedBy])
   )
   return rows.map((row) => formatProjectTask(row, usersById))
+}
+
+async function selectTaskMessageRows(taskId: string, limit: number): Promise<TaskMessageRow[]> {
+  const rows = await db
+    .select({
+      id: taskMessage.id,
+      taskId: taskMessage.taskId,
+      senderId: taskMessage.senderId,
+      content: taskMessage.content,
+      createdAt: taskMessage.createdAt,
+      senderName: user.name,
+      senderEmail: user.email,
+      senderAvatarUrl: user.image,
+    })
+    .from(taskMessage)
+    .innerJoin(user, eq(taskMessage.senderId, user.id))
+    .where(eq(taskMessage.taskId, taskId))
+    .orderBy(desc(taskMessage.createdAt))
+    .limit(limit)
+
+  return rows.reverse()
+}
+
+async function getTaskMessageDto(messageId: string): Promise<ProjectTaskMessage> {
+  const [row] = await db
+    .select({
+      id: taskMessage.id,
+      taskId: taskMessage.taskId,
+      senderId: taskMessage.senderId,
+      content: taskMessage.content,
+      createdAt: taskMessage.createdAt,
+      senderName: user.name,
+      senderEmail: user.email,
+      senderAvatarUrl: user.image,
+    })
+    .from(taskMessage)
+    .innerJoin(user, eq(taskMessage.senderId, user.id))
+    .where(eq(taskMessage.id, messageId))
+    .limit(1)
+
+  if (!row) throw notFound('Message not found')
+  return formatTaskMessage(row)
 }
 
 async function getProjectTaskMeta(
@@ -582,7 +665,10 @@ export async function updateProjectTask(params: {
     updates.description = normalizeOptionalText(params.body.description)
   }
   const dueAt = parseNullableDate(params.body.dueAt)
-  if (dueAt !== undefined) updates.dueAt = dueAt
+  if (dueAt !== undefined) {
+    updates.dueAt = dueAt
+    updates.reminderSentAt = null
+  }
 
   await db.update(projectTask).set(updates).where(eq(projectTask.id, params.taskId))
 
@@ -720,4 +806,110 @@ export async function reviewProjectTask(params: {
     taskStatus: task.status,
   })
   return task
+}
+
+export async function listProjectTaskMessages(params: {
+  userId: string
+  taskId: string
+  query: ListProjectTaskMessagesQuery
+}): Promise<ProjectTaskMessagesResponse> {
+  const meta = await getProjectTaskMeta(params.taskId)
+  await assertCanReadTask(params.userId, meta)
+
+  const limit = params.query.limit ?? 100
+  const rows = await selectTaskMessageRows(params.taskId, limit)
+  const [task] = await db
+    .select({ messageCount: projectTask.messageCount })
+    .from(projectTask)
+    .where(eq(projectTask.id, params.taskId))
+    .limit(1)
+
+  return {
+    messages: rows.map(formatTaskMessage),
+    messageCount: task?.messageCount ?? rows.length,
+  }
+}
+
+export async function createProjectTaskMessage(params: {
+  actorUserId: string
+  taskId: string
+  body: CreateProjectTaskMessageBody
+}): Promise<ProjectTaskMessage> {
+  const meta = await getProjectTaskMeta(params.taskId)
+  await assertCanReadTask(params.actorUserId, meta)
+
+  const now = new Date()
+  const messageId = generateId()
+  await db.insert(taskMessage).values({
+    id: messageId,
+    taskId: params.taskId,
+    senderId: params.actorUserId,
+    content: params.body.content.trim(),
+    createdAt: now,
+  })
+  await db
+    .update(projectTask)
+    .set({
+      messageCount: sql`${projectTask.messageCount} + 1`,
+      lastMessageAt: now,
+      updatedAt: now,
+    })
+    .where(eq(projectTask.id, params.taskId))
+
+  const message = await getTaskMessageDto(messageId)
+  publishProjectTaskEvent({
+    type: 'message_created',
+    taskId: params.taskId,
+    organizationId: meta.organizationId,
+    assigneeWorkgroupId: meta.assigneeWorkgroupId,
+    actorUserId: params.actorUserId,
+    taskStatus: meta.status,
+  })
+  return message
+}
+
+export async function dispatchProjectTaskDueReminders(): Promise<ProjectTaskDueReminderResponse> {
+  const now = new Date()
+  const windowEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  const rows = await db
+    .select({
+      id: projectTask.id,
+      organizationId: projectTask.organizationId,
+      assigneeWorkgroupId: projectTask.assigneeWorkgroupId,
+      status: projectTask.status,
+    })
+    .from(projectTask)
+    .where(
+      and(
+        isNull(projectTask.archivedAt),
+        isNull(projectTask.reminderSentAt),
+        ne(projectTask.status, COMPLETED_STATUS),
+        gte(projectTask.dueAt, now),
+        lte(projectTask.dueAt, windowEnd)
+      )
+    )
+    .limit(500)
+
+  if (rows.length === 0) {
+    return { matchedCount: 0, notifiedCount: 0, taskIds: [] }
+  }
+
+  const taskIds = rows.map((row) => row.id)
+  await db
+    .update(projectTask)
+    .set({ reminderSentAt: now, updatedAt: now })
+    .where(inArray(projectTask.id, taskIds))
+
+  for (const row of rows) {
+    publishProjectTaskEvent({
+      type: 'due_reminder',
+      taskId: row.id,
+      organizationId: row.organizationId,
+      assigneeWorkgroupId: row.assigneeWorkgroupId,
+      actorUserId: 'system',
+      taskStatus: row.status,
+    })
+  }
+
+  return { matchedCount: rows.length, notifiedCount: rows.length, taskIds }
 }

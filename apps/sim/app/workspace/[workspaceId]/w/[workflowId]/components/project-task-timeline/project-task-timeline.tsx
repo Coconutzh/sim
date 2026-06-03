@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Archive,
   CalendarClock,
@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Clock,
   Eye,
+  MessageCircle,
   Plus,
   Send,
   UserRound,
@@ -33,6 +34,7 @@ import {
 } from '@/components/emcn'
 import type {
   CreateProjectTaskBody,
+  CreateProjectTaskMessageBody,
   ListProjectTasksQueryInput,
   ProjectTask,
   ProjectTaskAssignee,
@@ -44,7 +46,9 @@ import type {
 import {
   useArchiveProjectTask,
   useCreateProjectTask,
+  useCreateProjectTaskMessage,
   useProjectTaskEvents,
+  useProjectTaskMessages,
   useProjectTasks,
   useReviewProjectTask,
   useSubmitProjectTask,
@@ -81,6 +85,14 @@ interface TaskDetailModalProps {
   canManage: boolean
   onOpenChange: (open: boolean) => void
   onEdit: (task: ProjectTask) => void
+  onOpenChat: (task: ProjectTask) => void
+}
+
+interface TaskChatModalProps {
+  open: boolean
+  task: ProjectTask | null
+  onOpenChange: (open: boolean) => void
+  onSeen: (taskId: string, messageCount: number) => void
 }
 
 const STATUS_META: Record<
@@ -141,6 +153,21 @@ function getTaskSortTime(task: ProjectTask): number {
   return task.dueAt ? new Date(task.dueAt).getTime() : Number.MAX_SAFE_INTEGER
 }
 
+function parseReadMessageCounts(value: string | null): Record<string, number> {
+  if (!value) return {}
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([taskId, count]) =>
+        typeof count === 'number' && Number.isFinite(count) ? [[taskId, count]] : []
+      )
+    )
+  } catch {
+    return {}
+  }
+}
+
 function TaskStatusBadge({ status }: { status: ProjectTaskStatus }) {
   const meta = STATUS_META[status]
   return (
@@ -150,52 +177,87 @@ function TaskStatusBadge({ status }: { status: ProjectTaskStatus }) {
   )
 }
 
-function TaskCard({ task, onOpen }: { task: ProjectTask; onOpen: (task: ProjectTask) => void }) {
+function TaskCard({
+  task,
+  unreadCount,
+  onOpen,
+  onOpenChat,
+}: {
+  task: ProjectTask
+  unreadCount: number
+  onOpen: (task: ProjectTask) => void
+  onOpenChat: (task: ProjectTask) => void
+}) {
   const remaining = formatRemaining(task.dueAt)
   const statusMeta = STATUS_META[task.status]
 
   return (
-    <Button
-      type='button'
-      variant='ghost'
-      className='h-auto min-w-[220px] max-w-[260px] flex-col items-stretch gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-left shadow-card transition-colors hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)]'
-      onClick={() => onOpen(task)}
-    >
-      <div className='flex items-start justify-between gap-3'>
-        <div className='min-w-0'>
-          <div className='truncate font-medium text-[var(--text-primary)] text-small'>
-            {task.title}
+    <div className='min-w-[220px] max-w-[260px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-card transition-colors hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)]'>
+      <Button
+        type='button'
+        variant='ghost'
+        className='h-auto w-full flex-col items-stretch gap-3 rounded-t-lg rounded-b-none p-3 text-left'
+        onClick={() => onOpen(task)}
+      >
+        <div className='flex items-start justify-between gap-3'>
+          <div className='min-w-0'>
+            <div className='truncate font-medium text-[var(--text-primary)] text-small'>
+              {task.title}
+            </div>
+            <div className='mt-1 flex items-center gap-1 text-[var(--text-secondary)] text-xs'>
+              <UserRound className='h-3 w-3 text-[var(--text-icon)]' />
+              <span className='truncate'>{task.assigneeWorkgroup.name}</span>
+            </div>
           </div>
-          <div className='mt-1 flex items-center gap-1 text-[var(--text-secondary)] text-xs'>
-            <UserRound className='h-3 w-3 text-[var(--text-icon)]' />
-            <span className='truncate'>{task.assigneeWorkgroup.name}</span>
+          <TaskStatusBadge status={task.status} />
+        </div>
+        <div className='flex items-center justify-between gap-2'>
+          <div className='flex items-center gap-1 text-[var(--text-tertiary)] text-xs'>
+            <CalendarClock className='h-[14px] w-[14px] text-[var(--text-icon)]' />
+            <span>{formatDateTime(task.dueAt)}</span>
           </div>
+          <Badge
+            variant={
+              remaining.tone === 'danger'
+                ? 'red'
+                : remaining.tone === 'warn'
+                  ? 'amber'
+                  : 'gray-secondary'
+            }
+            size='sm'
+          >
+            {remaining.label}
+          </Badge>
         </div>
-        <TaskStatusBadge status={task.status} />
-      </div>
-      <div className='flex items-center justify-between gap-2'>
-        <div className='flex items-center gap-1 text-[var(--text-tertiary)] text-xs'>
-          <CalendarClock className='h-[14px] w-[14px] text-[var(--text-icon)]' />
-          <span>{formatDateTime(task.dueAt)}</span>
+        <div className='flex items-center gap-1 text-[var(--text-muted)] text-xs'>
+          <ClipboardCheck className='h-[14px] w-[14px] text-[var(--text-icon)]' />
+          <span>{statusMeta.actionLabel}</span>
         </div>
-        <Badge
-          variant={
-            remaining.tone === 'danger'
-              ? 'red'
-              : remaining.tone === 'warn'
-                ? 'amber'
-                : 'gray-secondary'
-          }
+      </Button>
+      <div className='border-[var(--border-muted)] border-t px-2 py-2'>
+        <Button
+          type='button'
+          variant='ghost'
           size='sm'
+          className='w-full justify-between'
+          onClick={() => onOpenChat(task)}
         >
-          {remaining.label}
-        </Badge>
+          <span className='flex items-center gap-1'>
+            <MessageCircle className='h-[14px] w-[14px]' />
+            消息
+          </span>
+          {unreadCount > 0 ? (
+            <Badge variant='red' size='sm'>
+              {unreadCount}
+            </Badge>
+          ) : task.messageCount > 0 ? (
+            <Badge variant='gray-secondary' size='sm'>
+              {task.messageCount}
+            </Badge>
+          ) : null}
+        </Button>
       </div>
-      <div className='flex items-center gap-1 text-[var(--text-muted)] text-xs'>
-        <ClipboardCheck className='h-[14px] w-[14px] text-[var(--text-icon)]' />
-        <span>{statusMeta.actionLabel}</span>
-      </div>
-    </Button>
+    </div>
   )
 }
 
@@ -376,6 +438,7 @@ function TaskDetailModal({
   canManage,
   onOpenChange,
   onEdit,
+  onOpenChat,
 }: TaskDetailModalProps) {
   const submitMutation = useSubmitProjectTask()
   const reviewMutation = useReviewProjectTask()
@@ -558,8 +621,127 @@ function TaskDetailModal({
               编辑
             </Button>
           ) : null}
+          <Button variant='default' onClick={() => onOpenChat(task)}>
+            <MessageCircle className='mr-1 h-[14px] w-[14px]' />
+            消息
+          </Button>
           <Button variant='default' onClick={() => onOpenChange(false)}>
             关闭
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  )
+}
+
+function TaskChatModal({ open, task, onOpenChange, onSeen }: TaskChatModalProps) {
+  const messagesQuery = useProjectTaskMessages({
+    taskId: task?.id,
+    query: { limit: 100 },
+    enabled: open && Boolean(task?.id),
+  })
+  const createMessageMutation = useCreateProjectTaskMessage()
+  const [content, setContent] = useState('')
+  const messageCount = messagesQuery.data?.messageCount
+
+  useEffect(() => {
+    if (open) setContent('')
+  }, [open, task?.id])
+
+  useEffect(() => {
+    if (!open || !task?.id || messageCount === undefined) return
+    onSeen(task.id, messageCount)
+  }, [messageCount, onSeen, open, task?.id])
+
+  if (!task) return null
+
+  const handleSendMessage = async () => {
+    if (!content.trim()) {
+      toast.error('请输入消息内容')
+      return
+    }
+
+    const body: CreateProjectTaskMessageBody = { content }
+    try {
+      await createMessageMutation.mutateAsync({ taskId: task.id, body })
+      setContent('')
+      toast.success('消息已发送')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发送消息失败')
+    }
+  }
+
+  const messages = messagesQuery.data?.messages ?? []
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent size='md'>
+        <ModalHeader>任务消息：{task.title}</ModalHeader>
+        <ModalBody className='flex flex-col gap-3'>
+          <div className='max-h-[360px] min-h-[220px] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3'>
+            {messagesQuery.isLoading ? (
+              <div className='flex flex-col gap-3'>
+                {[0, 1, 2].map((item) => (
+                  <Skeleton key={item} className='h-14 rounded-lg' />
+                ))}
+              </div>
+            ) : messages.length > 0 ? (
+              <div className='flex flex-col gap-3'>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className='rounded-lg border border-[var(--border-muted)] bg-[var(--surface-3)] p-3'
+                  >
+                    <div className='mb-1 flex items-center justify-between gap-3 text-xs'>
+                      <span className='font-medium text-[var(--text-primary)]'>
+                        {message.sender.name ?? message.sender.email ?? message.sender.id}
+                      </span>
+                      <span className='text-[var(--text-muted)]'>
+                        {formatDateTime(message.createdAt)}
+                      </span>
+                    </div>
+                    <div className='whitespace-pre-wrap text-[var(--text-secondary)] text-small'>
+                      {message.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className='flex h-[200px] flex-col items-center justify-center text-center'>
+                <MessageCircle className='mb-2 h-6 w-6 text-[var(--text-icon)]' />
+                <div className='font-medium text-[var(--text-primary)] text-small'>暂无消息</div>
+                <div className='mt-1 text-[var(--text-secondary)] text-xs'>
+                  围绕当前任务同步问题、反馈和返工说明。
+                </div>
+              </div>
+            )}
+          </div>
+          {messagesQuery.isError ? (
+            <div className='text-[var(--text-error)] text-xs'>
+              消息加载失败：{messagesQuery.error.message}
+            </div>
+          ) : null}
+          <FormField label='新消息' htmlFor='project-task-message-content'>
+            <Textarea
+              id='project-task-message-content'
+              value={content}
+              rows={3}
+              maxLength={2000}
+              placeholder='输入要同步给导演或工种的消息'
+              onChange={(event) => setContent(event.target.value)}
+            />
+          </FormField>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant='default' onClick={() => onOpenChange(false)}>
+            关闭
+          </Button>
+          <Button
+            variant='primary'
+            disabled={createMessageMutation.isPending}
+            onClick={handleSendMessage}
+          >
+            {createMessageMutation.isPending ? '发送中...' : '发送消息'}
           </Button>
         </ModalFooter>
       </ModalContent>
@@ -581,7 +763,11 @@ export function ProjectTaskTimeline({
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [chatTaskId, setChatTaskId] = useState<string | null>(null)
+  const [hasLoadedReadCounts, setHasLoadedReadCounts] = useState(false)
+  const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({})
   const scope = isDirector ? 'director' : 'self'
+  const readMessageCountsStorageKey = `project-task-message-read-counts:${organizationId}`
 
   const taskQuery = useMemo<ListProjectTasksQueryInput>(
     () => ({
@@ -622,6 +808,33 @@ export function ProjectTaskTimeline({
   const assignees = tasksQuery.data?.assigneeWorkgroups ?? []
   const canManage = Boolean(tasksQuery.data?.access.canManage)
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null
+  const chatTask = tasks.find((task) => task.id === chatTaskId) ?? null
+
+  const markMessagesSeen = useCallback((taskId: string, messageCount: number) => {
+    setReadMessageCounts((previous) => {
+      if ((previous[taskId] ?? 0) >= messageCount) return previous
+      return { ...previous, [taskId]: messageCount }
+    })
+  }, [])
+
+  useEffect(() => {
+    setHasLoadedReadCounts(false)
+    if (typeof window === 'undefined') {
+      setReadMessageCounts({})
+      setHasLoadedReadCounts(true)
+      return
+    }
+
+    setReadMessageCounts(
+      parseReadMessageCounts(window.localStorage.getItem(readMessageCountsStorageKey))
+    )
+    setHasLoadedReadCounts(true)
+  }, [readMessageCountsStorageKey])
+
+  useEffect(() => {
+    if (!hasLoadedReadCounts || typeof window === 'undefined') return
+    window.localStorage.setItem(readMessageCountsStorageKey, JSON.stringify(readMessageCounts))
+  }, [hasLoadedReadCounts, readMessageCounts, readMessageCountsStorageKey])
 
   return (
     <div className='pointer-events-none absolute right-4 bottom-4 left-4 z-[var(--z-dropdown)]'>
@@ -688,7 +901,9 @@ export function ProjectTaskTimeline({
                   <TaskCard
                     key={task.id}
                     task={task}
+                    unreadCount={Math.max(task.messageCount - (readMessageCounts[task.id] ?? 0), 0)}
                     onOpen={(item) => setSelectedTaskId(item.id)}
+                    onOpenChat={(item) => setChatTaskId(item.id)}
                   />
                 ))}
               </div>
@@ -733,6 +948,18 @@ export function ProjectTaskTimeline({
           setSelectedTaskId(null)
           setEditingTask(task)
         }}
+        onOpenChat={(task) => {
+          setSelectedTaskId(null)
+          setChatTaskId(task.id)
+        }}
+      />
+      <TaskChatModal
+        open={Boolean(chatTask)}
+        task={chatTask}
+        onOpenChange={(open) => {
+          if (!open) setChatTaskId(null)
+        }}
+        onSeen={markMessagesSeen}
       />
     </div>
   )

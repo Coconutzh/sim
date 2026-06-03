@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createProjectTaskMessageBodySchema,
   listProjectTasksQuerySchema,
+  projectTaskDueReminderResponseSchema,
   reviewProjectTaskBodySchema,
   submitProjectTaskBodySchema,
 } from '@/lib/api/contracts/project-tasks'
@@ -62,5 +64,31 @@ describe('reviewProjectTaskBodySchema', () => {
     }
 
     expect(result.error.issues[0]?.message).toBe('Review note is required when rejecting a task')
+  })
+})
+
+describe('createProjectTaskMessageBodySchema', () => {
+  it('requires non-empty task messages', () => {
+    const result = createProjectTaskMessageBodySchema.safeParse({ content: '   ' })
+
+    expect(result.success).toBe(false)
+
+    if (result.success) {
+      throw new Error('Expected empty task messages to be rejected')
+    }
+
+    expect(result.error.issues[0]?.message).toBe('Message cannot be empty')
+  })
+})
+
+describe('projectTaskDueReminderResponseSchema', () => {
+  it('accepts reminder dispatch summaries', () => {
+    const result = projectTaskDueReminderResponseSchema.safeParse({
+      matchedCount: 1,
+      notifiedCount: 1,
+      taskIds: ['task-1'],
+    })
+
+    expect(result.success).toBe(true)
   })
 })

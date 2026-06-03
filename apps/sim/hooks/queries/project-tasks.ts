@@ -6,9 +6,13 @@ import { requestJson } from '@/lib/api/client/request'
 import {
   archiveProjectTaskContract,
   type CreateProjectTaskBody,
+  type CreateProjectTaskMessageBody,
   createProjectTaskContract,
+  createProjectTaskMessageContract,
   getProjectTaskContract,
+  type ListProjectTaskMessagesQueryInput,
   type ListProjectTasksQueryInput,
+  listProjectTaskMessagesContract,
   listProjectTasksContract,
   type ProjectTaskEvent,
   type ProjectTaskEventsQueryInput,
@@ -31,6 +35,9 @@ export const projectTaskKeys = {
     [...projectTaskKeys.lists(), organizationId ?? '', query ?? {}] as const,
   details: () => [...projectTaskKeys.all, 'detail'] as const,
   detail: (taskId?: string) => [...projectTaskKeys.details(), taskId ?? ''] as const,
+  messages: () => [...projectTaskKeys.all, 'messages'] as const,
+  messageList: (taskId?: string, query?: ListProjectTaskMessagesQueryInput) =>
+    [...projectTaskKeys.messages(), taskId ?? '', query ?? {}] as const,
 }
 
 function invalidateProjectTaskQueries(
@@ -144,6 +151,40 @@ export function useReviewProjectTask() {
   })
 }
 
+export function useProjectTaskMessages(params: {
+  taskId?: string
+  query?: ListProjectTaskMessagesQueryInput
+  enabled?: boolean
+}) {
+  return useQuery({
+    queryKey: projectTaskKeys.messageList(params.taskId, params.query),
+    queryFn: ({ signal }) =>
+      requestJson(listProjectTaskMessagesContract, {
+        params: { taskId: params.taskId as string },
+        query: params.query ?? {},
+        signal,
+      }),
+    enabled: Boolean(params.enabled ?? true) && Boolean(params.taskId),
+    staleTime: 15 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useCreateProjectTaskMessage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { taskId: string; body: CreateProjectTaskMessageBody }) =>
+      requestJson(createProjectTaskMessageContract, {
+        params: { taskId: variables.taskId },
+        body: variables.body,
+      }),
+    onSettled: (_data, _error, variables) => {
+      invalidateProjectTaskQueries(queryClient, { taskId: variables.taskId })
+      queryClient.invalidateQueries({ queryKey: projectTaskKeys.messages() })
+    },
+  })
+}
+
 function buildProjectTaskEventsUrl(query: ProjectTaskEventsQueryInput): string {
   const params = new URLSearchParams()
   params.set('organizationId', query.organizationId)
@@ -178,6 +219,14 @@ function notifyProjectTaskEvent(event: ProjectTaskEvent) {
   }
   if (event.type === 'created') {
     toast.success('收到新的项目任务')
+    return
+  }
+  if (event.type === 'message_created') {
+    toast.success('任务收到新消息')
+    return
+  }
+  if (event.type === 'due_reminder') {
+    toast.error('任务 DDL 即将到期')
   }
 }
 
@@ -199,6 +248,7 @@ export function useProjectTaskEvents(params: {
 
       queryClient.invalidateQueries({ queryKey: projectTaskKeys.lists() })
       queryClient.invalidateQueries({ queryKey: projectTaskKeys.detail(event.taskId) })
+      queryClient.invalidateQueries({ queryKey: projectTaskKeys.messages() })
       if (params.showToast ?? true) notifyProjectTaskEvent(event)
     }
 

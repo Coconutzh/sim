@@ -1470,6 +1470,9 @@ export const projectTask = pgTable(
     reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
     reviewedAt: timestamp('reviewed_at'),
     reviewNote: text('review_note'),
+    messageCount: integer('message_count').notNull().default(0),
+    lastMessageAt: timestamp('last_message_at'),
+    reminderSentAt: timestamp('reminder_sent_at'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1491,6 +1494,30 @@ export const projectTask = pgTable(
       table.resultNodeId
     ),
     archivedAtIdx: index('project_task_archived_at_idx').on(table.archivedAt),
+    reminderDueIdx: index('project_task_reminder_due_idx').on(
+      table.reminderSentAt,
+      table.status,
+      table.dueAt
+    ),
+  })
+)
+
+export const taskMessage = pgTable(
+  'task_messages',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => projectTask.id, { onDelete: 'cascade' }),
+    senderId: text('sender_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskCreatedAtIdx: index('task_messages_task_created_at_idx').on(table.taskId, table.createdAt),
+    senderIdIdx: index('task_messages_sender_id_idx').on(table.senderId),
   })
 )
 
