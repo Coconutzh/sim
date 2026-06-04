@@ -655,16 +655,10 @@ const TerminalLogsPane = memo(function TerminalLogsPane({
   )
 })
 
-type BottomPanelTab = 'logs' | 'tasks'
-
-interface TerminalProps {
-  taskTimeline?: React.ReactNode
-}
-
 /**
  * Terminal component with resizable height that persists across page refreshes.
  */
-export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) {
+export const Terminal = memo(function Terminal() {
   const terminalRef = useRef<HTMLElement>(null)
   const prevWorkflowEntriesLengthRef = useRef(0)
   const hasInitializedEntriesRef = useRef(false)
@@ -704,10 +698,6 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
   const [showInput, setShowInput] = useState(false)
   const [autoSelectEnabled, setAutoSelectEnabled] = useState(true)
   const [mainOptionsOpen, setMainOptionsOpen] = useState(false)
-  const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('logs')
-  const hasTaskTimeline = Boolean(taskTimeline)
-  const isTaskTabActive = hasTaskTimeline && activeBottomTab === 'tasks'
-  const visibleSelectedEntry = isTaskTabActive ? null : selectedEntry
 
   const [isTrainingEnvEnabled] = useState(() =>
     isTruthy(getEnv('NEXT_PUBLIC_COPILOT_TRAINING_ENABLED'))
@@ -947,16 +937,6 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
     }
   }, [expandToLastHeight, isExpanded, setTerminalHeight])
 
-  const handleBottomTabClick = useCallback(
-    (tab: BottomPanelTab, event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      setActiveBottomTab(tab)
-      if (tab === 'tasks') setSelectedEntryId(null)
-      if (!isExpanded) expandToLastHeight()
-    },
-    [expandToLastHeight, isExpanded]
-  )
-
   const handleTransitionEnd = useCallback(() => {
     setIsToggling(false)
   }, [])
@@ -1076,12 +1056,6 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
   useEffect(() => {
     setHasHydrated(true)
   }, [setHasHydrated])
-
-  useEffect(() => {
-    if (!hasTaskTimeline && activeBottomTab !== 'logs') {
-      setActiveBottomTab('logs')
-    }
-  }, [activeBottomTab, hasTaskTimeline])
 
   useEffect(() => {
     lastExpandedHeightRef.current = useTerminalStore.getState().lastExpandedHeight
@@ -1325,187 +1299,159 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
         <div className='relative flex h-full'>
           {/* Left Section - Logs */}
           <div
-            className={clsx('flex flex-col', !visibleSelectedEntry && 'flex-1')}
-            style={
-              visibleSelectedEntry ? { width: `calc(100% - ${outputPanelWidth}px)` } : undefined
-            }
+            className={clsx('flex flex-col', !selectedEntry && 'flex-1')}
+            style={selectedEntry ? { width: `calc(100% - ${outputPanelWidth}px)` } : undefined}
           >
             {/* Header */}
             <div
               className='group flex h-[30px] flex-shrink-0 cursor-pointer items-center justify-between bg-[var(--bg)] pr-4 pl-4'
               onClick={handleHeaderClick}
             >
-              {hasTaskTimeline ? (
-                <div className='flex items-center gap-1'>
-                  <Button
-                    type='button'
-                    variant={activeBottomTab === 'logs' ? 'active' : 'ghost'}
-                    size='sm'
-                    className='h-6 px-2'
-                    onClick={(event) => handleBottomTabClick('logs', event)}
-                  >
-                    Logs
-                  </Button>
-                  <Button
-                    type='button'
-                    variant={activeBottomTab === 'tasks' ? 'active' : 'ghost'}
-                    size='sm'
-                    className='h-6 px-2'
-                    onClick={(event) => handleBottomTabClick('tasks', event)}
-                  >
-                    任务时间轴
-                  </Button>
-                </div>
-              ) : (
-                <span className={TERMINAL_CONFIG.HEADER_TEXT_CLASS}>Logs</span>
-              )}
+              {/* Left side - Logs label */}
+              <span className={TERMINAL_CONFIG.HEADER_TEXT_CLASS}>Logs</span>
 
               {/* Right side - Icons and options */}
-              {!visibleSelectedEntry && (
+              {!selectedEntry && (
                 <div className='flex items-center gap-2'>
-                  {activeBottomTab === 'logs' ? (
-                    <>
-                      {/* Sort toggle */}
-                      {allWorkflowEntries.length > 0 && (
-                        <Tooltip.Root>
-                          <Tooltip.Trigger asChild>
-                            <Button
-                              variant='ghost'
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleSort()
-                              }}
-                              aria-label='Sort by timestamp'
-                              className='!p-1.5 -m-1.5'
-                            >
-                              {sortConfig.direction === 'desc' ? (
-                                <ArrowDown className='h-3.5 w-3.5' />
-                              ) : (
-                                <ArrowUp className='h-3.5 w-3.5' />
-                              )}
-                            </Button>
-                          </Tooltip.Trigger>
-                          <Tooltip.Content>
-                            <span>Sort by time</span>
-                          </Tooltip.Content>
-                        </Tooltip.Root>
-                      )}
+                  {/* Sort toggle */}
+                  {allWorkflowEntries.length > 0 && (
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Button
+                          variant='ghost'
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleSort()
+                          }}
+                          aria-label='Sort by timestamp'
+                          className='!p-1.5 -m-1.5'
+                        >
+                          {sortConfig.direction === 'desc' ? (
+                            <ArrowDown className='h-3.5 w-3.5' />
+                          ) : (
+                            <ArrowUp className='h-3.5 w-3.5' />
+                          )}
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>
+                        <span>Sort by time</span>
+                      </Tooltip.Content>
+                    </Tooltip.Root>
+                  )}
 
-                      {isPlaygroundEnabled && (
-                        <Tooltip.Root>
-                          <Tooltip.Trigger asChild>
-                            <Link href='/playground'>
-                              <Button
-                                variant='ghost'
-                                aria-label='Component Playground'
-                                className='!p-1.5 -m-1.5'
-                              >
-                                <Palette className='h-3.5 w-3.5' />
-                              </Button>
-                            </Link>
-                          </Tooltip.Trigger>
-                          <Tooltip.Content>
-                            <span>Component Playground</span>
-                          </Tooltip.Content>
-                        </Tooltip.Root>
-                      )}
-
-                      {shouldShowTrainingButton && (
-                        <Tooltip.Root>
-                          <Tooltip.Trigger asChild>
-                            <Button
-                              variant='ghost'
-                              onClick={handleTrainingClick}
-                              aria-label={isTraining ? 'Stop training' : 'Train Copilot'}
-                              className={clsx(
-                                '!p-1.5 -m-1.5',
-                                isTraining && 'text-orange-600 dark:text-orange-400'
-                              )}
-                            >
-                              {isTraining ? (
-                                <Pause className='h-3.5 w-3.5' />
-                              ) : (
-                                <Database className='h-3.5 w-3.5' />
-                              )}
-                            </Button>
-                          </Tooltip.Trigger>
-                          <Tooltip.Content>
-                            <span>{isTraining ? 'Stop Training' : 'Train Copilot'}</span>
-                          </Tooltip.Content>
-                        </Tooltip.Root>
-                      )}
-
-                      {filteredEntries.length > 0 && (
-                        <>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <Button
-                                variant='ghost'
-                                onClick={handleExportConsole}
-                                aria-label='Download console CSV'
-                                className='!p-1.5 -m-1.5'
-                              >
-                                <ArrowDownToLine className='h-3.5 w-3.5' />
-                              </Button>
-                            </Tooltip.Trigger>
-                            <Tooltip.Content>
-                              <span>Download CSV</span>
-                            </Tooltip.Content>
-                          </Tooltip.Root>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <Button
-                                variant='ghost'
-                                onClick={handleClearConsole}
-                                aria-label='Clear console'
-                                className='!p-1.5 -m-1.5'
-                              >
-                                <Trash2 className='h-3.5 w-3.5' />
-                              </Button>
-                            </Tooltip.Trigger>
-                            <Tooltip.Content>
-                              <Tooltip.Shortcut keys='⌘D'>Clear console</Tooltip.Shortcut>
-                            </Tooltip.Content>
-                          </Tooltip.Root>
-                        </>
-                      )}
-
-                      <Popover open={mainOptionsOpen} onOpenChange={setMainOptionsOpen} size='sm'>
-                        <PopoverTrigger asChild>
+                  {isPlaygroundEnabled && (
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Link href='/playground'>
                           <Button
                             variant='ghost'
-                            onClick={(e) => {
-                              e.stopPropagation()
-                            }}
-                            aria-label='Terminal options'
+                            aria-label='Component Playground'
                             className='!p-1.5 -m-1.5'
                           >
-                            <MoreHorizontal className='h-3.5 w-3.5' />
+                            <Palette className='h-3.5 w-3.5' />
                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          side='bottom'
-                          align='end'
-                          sideOffset={4}
-                          collisionPadding={0}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{ minWidth: '140px', maxWidth: '160px' }}
-                          className='gap-0.5'
+                        </Link>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>
+                        <span>Component Playground</span>
+                      </Tooltip.Content>
+                    </Tooltip.Root>
+                  )}
+
+                  {shouldShowTrainingButton && (
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Button
+                          variant='ghost'
+                          onClick={handleTrainingClick}
+                          aria-label={isTraining ? 'Stop training' : 'Train Copilot'}
+                          className={clsx(
+                            '!p-1.5 -m-1.5',
+                            isTraining && 'text-orange-600 dark:text-orange-400'
+                          )}
                         >
-                          <PopoverItem
-                            active={openOnRun}
-                            showCheck={openOnRun}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setOpenOnRun(!openOnRun)
-                            }}
+                          {isTraining ? (
+                            <Pause className='h-3.5 w-3.5' />
+                          ) : (
+                            <Database className='h-3.5 w-3.5' />
+                          )}
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>
+                        <span>{isTraining ? 'Stop Training' : 'Train Copilot'}</span>
+                      </Tooltip.Content>
+                    </Tooltip.Root>
+                  )}
+
+                  {filteredEntries.length > 0 && (
+                    <>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <Button
+                            variant='ghost'
+                            onClick={handleExportConsole}
+                            aria-label='Download console CSV'
+                            className='!p-1.5 -m-1.5'
                           >
-                            <span>Open on run</span>
-                          </PopoverItem>
-                        </PopoverContent>
-                      </Popover>
+                            <ArrowDownToLine className='h-3.5 w-3.5' />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>
+                          <span>Download CSV</span>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <Button
+                            variant='ghost'
+                            onClick={handleClearConsole}
+                            aria-label='Clear console'
+                            className='!p-1.5 -m-1.5'
+                          >
+                            <Trash2 className='h-3.5 w-3.5' />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>
+                          <Tooltip.Shortcut keys='⌘D'>Clear console</Tooltip.Shortcut>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
                     </>
-                  ) : null}
+                  )}
+
+                  <Popover open={mainOptionsOpen} onOpenChange={setMainOptionsOpen} size='sm'>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant='ghost'
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                        aria-label='Terminal options'
+                        className='!p-1.5 -m-1.5'
+                      >
+                        <MoreHorizontal className='h-3.5 w-3.5' />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side='bottom'
+                      align='end'
+                      sideOffset={4}
+                      collisionPadding={0}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ minWidth: '140px', maxWidth: '160px' }}
+                      className='gap-0.5'
+                    >
+                      <PopoverItem
+                        active={openOnRun}
+                        showCheck={openOnRun}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setOpenOnRun(!openOnRun)
+                        }}
+                      >
+                        <span>Open on run</span>
+                      </PopoverItem>
+                    </PopoverContent>
+                  </Popover>
 
                   <ToggleButton
                     isExpanded={isExpanded}
@@ -1520,9 +1466,7 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
 
             {/* Execution list */}
             <div className='flex-1 overflow-hidden'>
-              {isTaskTabActive ? (
-                <div className='h-full min-h-0'>{taskTimeline}</div>
-              ) : executionGroups.length === 0 ? (
+              {executionGroups.length === 0 ? (
                 <div className='flex h-full items-center justify-center text-[var(--text-placeholder)] text-small'>
                   No logs yet
                 </div>
@@ -1539,9 +1483,9 @@ export const Terminal = memo(function Terminal({ taskTimeline }: TerminalProps) 
           </div>
 
           {/* Right Section - Block Output (Overlay) */}
-          {visibleSelectedEntry && (
+          {selectedEntry && (
             <OutputPanel
-              selectedEntry={visibleSelectedEntry}
+              selectedEntry={selectedEntry}
               handleOutputPanelResizeMouseDown={handleOutputPanelResizeMouseDown}
               handleHeaderClick={handleHeaderClick}
               isExpanded={isExpanded}

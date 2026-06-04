@@ -60,7 +60,6 @@ import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/compone
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
-import { ProjectTaskTimeline } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/project-task-timeline/project-task-timeline'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
 import {
   useAutoLayout,
@@ -113,7 +112,6 @@ import { isAnnotationOnlyBlock } from '@/executor/constants'
 import {
   useCopySelection,
   useMyWorkgroups,
-  useOrganizationWorkgroups,
   usePersonalWorkspace,
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
@@ -133,11 +131,11 @@ import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
 import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
-import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel/store'
+import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -273,10 +271,6 @@ interface LazyPanelProps {
   workspaceId?: string
 }
 
-interface LazyTerminalProps {
-  taskTimeline?: React.ReactNode
-}
-
 const LazyPanel = lazy(async () => {
   if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
     const mod = await import(
@@ -292,7 +286,7 @@ const LazyPanel = lazy(async () => {
 const LazyTerminal = lazy(() =>
   import('@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/terminal').then(
     (mod) => ({
-      default: mod.Terminal as React.ComponentType<LazyTerminalProps>,
+      default: mod.Terminal,
     })
   )
 )
@@ -537,24 +531,6 @@ const WorkflowContent = React.memo(
         ?.id ??
       myWorkgroupsData?.defaultWorkgroupId ??
       myWorkgroupsData?.workgroups[0]?.id
-    const activeWorkgroup =
-      myWorkgroupsData?.workgroups.find((workgroup) => workgroup.id === activeWorkgroupId) ?? null
-    const activeOrganizationId = activeWorkgroup?.organizationId
-    const { data: organizationWorkgroupsData } = useOrganizationWorkgroups(activeOrganizationId)
-    const isProjectTaskOrgAdmin = Boolean(
-      organizationWorkgroupsData?.workgroups.some(
-        (workgroup) => workgroup.currentUserRole === 'org_admin'
-      )
-    )
-    const isProjectTaskDirector = Boolean(
-      isProjectTaskOrgAdmin ||
-        (activeOrganizationId &&
-          myWorkgroupsData?.workgroups.some(
-            (workgroup) =>
-              workgroup.organizationId === activeOrganizationId &&
-              workgroup.discipline.agentCode === 'chief_director'
-          ))
-    )
     const { data: teamWorkspaceData } = useTeamWorkspace(
       IS_LOW_MEMORY_DEV ? undefined : activeWorkgroupId
     )
@@ -5100,18 +5076,6 @@ const WorkflowContent = React.memo(
 
     const shouldRenderEditorPanel = embedded || sandbox || isHeavyEditorChromeLoaded
     const shouldRenderAuxiliaryEditorChrome = !IS_LOW_MEMORY_DEV || embedded || sandbox
-    const projectTaskTimeline =
-      !embedded && !sandbox && !IS_LOW_MEMORY_DEV && activeOrganizationId && activeWorkgroupId ? (
-        <ProjectTaskTimeline
-          organizationId={activeOrganizationId}
-          workspaceId={workspaceId}
-          workflowId={workflowIdParam}
-          activeWorkgroupId={activeWorkgroupId}
-          isDirector={isProjectTaskDirector}
-          selectedNodeIds={selectedNodeIds}
-          canEditCanvas={effectivePermissions.canEdit}
-        />
-      ) : undefined
 
     return (
       <div className='flex h-full w-full overflow-hidden'>
@@ -5400,7 +5364,7 @@ const WorkflowContent = React.memo(
 
           {shouldRenderAuxiliaryEditorChrome && (
             <Suspense fallback={null}>
-              <LazyTerminal taskTimeline={projectTaskTimeline} />
+              <LazyTerminal />
             </Suspense>
           )}
         </div>

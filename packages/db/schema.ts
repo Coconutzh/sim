@@ -1284,16 +1284,6 @@ export const workgroupMember = pgTable(
   })
 )
 
-export const projectTaskStatusEnum = pgEnum('project_task_status', [
-  'todo',
-  'submitted',
-  'in_review',
-  'completed',
-  'rejected',
-])
-
-export type ProjectTaskStatus = (typeof projectTaskStatusEnum.enumValues)[number]
-
 export const member = pgTable(
   'member',
   {
@@ -1438,86 +1428,6 @@ export const personalCanvasWorkspace = pgTable(
     workspaceUnique: uniqueIndex('personal_canvas_workspace_workspace_unique').on(
       table.workspaceId
     ),
-  })
-)
-
-export const projectTask = pgTable(
-  'project_task',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    assigneeWorkgroupId: text('assignee_workgroup_id')
-      .notNull()
-      .references(() => workgroup.id, { onDelete: 'cascade' }),
-    creatorId: text('creator_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    title: text('title').notNull(),
-    description: text('description'),
-    dueAt: timestamp('due_at'),
-    status: projectTaskStatusEnum('status').notNull().default('todo'),
-    resultWorkspaceId: text('result_workspace_id').references(() => workspace.id, {
-      onDelete: 'set null',
-    }),
-    resultWorkflowId: text('result_workflow_id').references(() => workflow.id, {
-      onDelete: 'set null',
-    }),
-    resultNodeId: text('result_node_id'),
-    submittedBy: text('submitted_by').references(() => user.id, { onDelete: 'set null' }),
-    submittedAt: timestamp('submitted_at'),
-    reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
-    reviewedAt: timestamp('reviewed_at'),
-    reviewNote: text('review_note'),
-    messageCount: integer('message_count').notNull().default(0),
-    lastMessageAt: timestamp('last_message_at'),
-    reminderSentAt: timestamp('reminder_sent_at'),
-    archivedAt: timestamp('archived_at'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  },
-  (table) => ({
-    organizationStatusDueIdx: index('project_task_org_status_due_idx').on(
-      table.organizationId,
-      table.status,
-      table.dueAt
-    ),
-    assigneeStatusDueIdx: index('project_task_assignee_status_due_idx').on(
-      table.assigneeWorkgroupId,
-      table.status,
-      table.dueAt
-    ),
-    creatorIdIdx: index('project_task_creator_id_idx').on(table.creatorId),
-    resultWorkflowNodeIdx: index('project_task_result_workflow_node_idx').on(
-      table.resultWorkflowId,
-      table.resultNodeId
-    ),
-    archivedAtIdx: index('project_task_archived_at_idx').on(table.archivedAt),
-    reminderDueIdx: index('project_task_reminder_due_idx').on(
-      table.reminderSentAt,
-      table.status,
-      table.dueAt
-    ),
-  })
-)
-
-export const taskMessage = pgTable(
-  'task_messages',
-  {
-    id: text('id').primaryKey(),
-    taskId: text('task_id')
-      .notNull()
-      .references(() => projectTask.id, { onDelete: 'cascade' }),
-    senderId: text('sender_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-  },
-  (table) => ({
-    taskCreatedAtIdx: index('task_messages_task_created_at_idx').on(table.taskId, table.createdAt),
-    senderIdIdx: index('task_messages_sender_id_idx').on(table.senderId),
   })
 )
 
