@@ -37,7 +37,7 @@ interface WorkflowListProps {
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void
   fileInputRef: React.RefObject<HTMLInputElement | null>
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
-  onCreateWorkflow?: () => void
+  onCreateWorkflow?: (folderId?: string | null) => void
   onCreateFolder?: () => void
   disableCreate?: boolean
 }
@@ -462,6 +462,7 @@ export const WorkflowList = memo(function WorkflowList({
               folder={folder}
               level={level}
               dragDisabled={dragDisabled}
+              onCreateWorkflow={onCreateWorkflow}
               onFolderClick={handleFolderClick}
               onDragStart={() => handleDragStart(parentFolderId)}
               onDragEnd={handleDragEnd}
@@ -502,6 +503,7 @@ export const WorkflowList = memo(function WorkflowList({
       handleDragStart,
       handleDragEnd,
       handleFolderClick,
+      onCreateWorkflow,
       renderWorkflowItem,
     ]
   )

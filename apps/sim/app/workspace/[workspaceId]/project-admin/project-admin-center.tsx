@@ -1407,6 +1407,7 @@ export function ProjectAdminCenter() {
   const batchAddWorkgroupMembers = useBatchAddWorkgroupMembers()
   const addNotification = useNotificationStore((state) => state.addNotification)
   const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamCanvasName, setNewTeamCanvasName] = useState('')
   const [newTeamDisciplineId, setNewTeamDisciplineId] = useState('')
   const [createTeamStatus, setCreateTeamStatus] = useState<string | null>(null)
   const [archiveTeamStatus, setArchiveTeamStatus] = useState<string | null>(null)
@@ -2059,16 +2060,19 @@ export function ProjectAdminCenter() {
   const handleCreateTeam = async () => {
     if (!organizationId || !selectedNewTeamDisciplineId || !newTeamName.trim()) return
     try {
+      const requestedCanvasName = newTeamCanvasName.trim()
       const result = await createWorkgroup.mutateAsync({
         organizationId,
         name: newTeamName.trim(),
         disciplineId: selectedNewTeamDisciplineId,
+        teamCanvasName: requestedCanvasName || undefined,
       })
       setNewTeamName('')
+      setNewTeamCanvasName('')
       setCreateTeamStatus(
-        `Created ${result.workgroup.name} for ${
-          selectedNewTeamDiscipline?.name ?? 'the selected discipline'
-        }.`
+        `Created ${result.workgroup.name}${
+          requestedCanvasName ? ` with ${requestedCanvasName}` : ''
+        } for ${selectedNewTeamDiscipline?.name ?? 'the selected discipline'}.`
       )
     } catch (error) {
       setCreateTeamStatus(
@@ -3884,7 +3888,7 @@ export function ProjectAdminCenter() {
                 </p>
               </div>
             </div>
-            <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_220px_auto]'>
+            <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px_auto] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px_auto]'>
               <input
                 value={newTeamName}
                 onChange={(event) => {
@@ -3892,6 +3896,15 @@ export function ProjectAdminCenter() {
                   setCreateTeamStatus(null)
                 }}
                 placeholder='Team name, e.g. Lighting show control'
+                className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
+              />
+              <input
+                value={newTeamCanvasName}
+                onChange={(event) => {
+                  setNewTeamCanvasName(event.target.value)
+                  setCreateTeamStatus(null)
+                }}
+                placeholder='Team canvas name'
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)]'
               />
               <select

@@ -154,6 +154,7 @@ export type WorkgroupMember = z.output<typeof workgroupMemberSchema>
 export const createWorkgroupBodySchema = z.object({
   name: z.string().trim().min(1, 'Team name is required').max(120),
   disciplineId: nonEmptyIdSchema,
+  teamCanvasName: z.string().trim().min(1, 'Canvas name is required').max(120).optional(),
 })
 export type CreateWorkgroupBody = z.input<typeof createWorkgroupBodySchema>
 

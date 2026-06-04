@@ -28,7 +28,9 @@ export default function WorkflowsPage() {
       return
     }
 
-    const workspaceWorkflows = workflows.filter((w) => w.workspaceId === workspaceId)
+    const workspaceWorkflows = workflows.filter(
+      (w) => w.workspaceId === workspaceId && w.track !== 'published'
+    )
 
     if (workspaceWorkflows.length > 0) {
       router.replace(`/workspace/${workspaceId}/w/${workspaceWorkflows[0].id}`)

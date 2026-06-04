@@ -5,10 +5,14 @@ import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { useCreateWorkflow, useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { generateCreativeWorkflowName } from '@/stores/workflows/registry/utils'
 
 interface UseWorkflowOperationsProps {
   workspaceId: string
+}
+
+interface CreateWorkflowOptions {
+  name: string
+  folderId?: string | null
 }
 
 export function useWorkflowOperations({ workspaceId }: UseWorkflowOperationsProps) {
@@ -19,30 +23,38 @@ export function useWorkflowOperations({ workspaceId }: UseWorkflowOperationsProp
   const regularWorkflows = useMemo(
     () =>
       Object.values(workflows)
-        .filter((workflow) => workflow.workspaceId === workspaceId)
+        .filter(
+          (workflow) => workflow.workspaceId === workspaceId && workflow.track !== 'published'
+        )
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
     [workflows, workspaceId]
   )
 
-  const handleCreateWorkflow = useCallback((): Promise<string | null> => {
-    const { clearDiff } = useWorkflowDiffStore.getState()
-    clearDiff()
+  const handleCreateWorkflow = useCallback(
+    (options: CreateWorkflowOptions): Promise<string | null> => {
+      const { clearDiff } = useWorkflowDiffStore.getState()
+      clearDiff()
 
-    const name = generateCreativeWorkflowName()
-    const color = getNextWorkflowColor()
-    const id = generateId()
+      const name = options.name.trim()
+      if (!name) return Promise.resolve(null)
 
-    createWorkflowMutation.mutate({
-      workspaceId,
-      name,
-      color,
-      id,
-    })
+      const color = getNextWorkflowColor()
+      const id = generateId()
 
-    useWorkflowRegistry.getState().markWorkflowCreating(id)
-    router.push(`/workspace/${workspaceId}/w/${id}`)
-    return Promise.resolve(id)
-  }, [createWorkflowMutation, workspaceId, router])
+      createWorkflowMutation.mutate({
+        workspaceId,
+        name,
+        color,
+        id,
+        folderId: options.folderId ?? undefined,
+      })
+
+      useWorkflowRegistry.getState().markWorkflowCreating(id)
+      router.push(`/workspace/${workspaceId}/w/${id}`)
+      return Promise.resolve(id)
+    },
+    [createWorkflowMutation, workspaceId, router]
+  )
 
   return {
     workflows,

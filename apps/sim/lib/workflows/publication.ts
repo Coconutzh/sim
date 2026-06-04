@@ -384,6 +384,106 @@ export async function publishWorkflowToMainline(params: {
   return mapWorkflowListRow(publishedWorkflow)
 }
 
+export async function syncWorkflowMainlineContent(params: {
+  workflowId: string
+  userId: string
+}): Promise<WorkflowListRow> {
+  const authorization = await authorizeWorkflowByWorkspacePermission({
+    workflowId: params.workflowId,
+    userId: params.userId,
+    action: 'publish',
+  })
+
+  if (!authorization.allowed || !authorization.workflow) {
+    throw new Error(authorization.message || 'Access denied')
+  }
+  if (authorization.accessSource !== 'workspace') {
+    throw new Error('Canvas access required')
+  }
+
+  const sourceWorkflow = authorization.workflow
+  if (sourceWorkflow.track !== 'draft') {
+    throw new Error('Only draft workflows can update mainline content')
+  }
+
+  if (!sourceWorkflow.workspaceId) {
+    throw new Error('Draft workflow must belong to a canvas')
+  }
+
+  if (authorization.workspaceMode !== 'organization' || !authorization.workspaceWorkgroupId) {
+    throw new Error('Only organization team canvases with a workgroup can update mainline content')
+  }
+
+  const [existingPublishedWorkflow] = await db
+    .select()
+    .from(workflow)
+    .where(
+      and(
+        eq(workflow.sourceWorkflowId, sourceWorkflow.id),
+        eq(workflow.track, 'published'),
+        isNull(workflow.archivedAt)
+      )
+    )
+    .limit(1)
+
+  if (!existingPublishedWorkflow) {
+    throw new Error('Mainline publication not found')
+  }
+
+  const state = await loadSourceWorkflowState(sourceWorkflow.id)
+  const now = new Date()
+
+  await db
+    .update(workflow)
+    .set({
+      lastSynced: now,
+      publishedAt: now,
+      publishedBy: params.userId,
+      updatedAt: now,
+      variables: sourceWorkflow.variables,
+      isDeployed: sourceWorkflow.isDeployed,
+      deployedAt: sourceWorkflow.deployedAt,
+      isPublicApi: sourceWorkflow.isPublicApi,
+      locked: sourceWorkflow.locked,
+    })
+    .where(eq(workflow.id, existingPublishedWorkflow.id))
+
+  await saveWorkflowToNormalizedTables(existingPublishedWorkflow.id, state)
+
+  const [publishedWorkflow] = await db
+    .select({
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+      color: workflow.color,
+      workspaceId: workflow.workspaceId,
+      folderId: workflow.folderId,
+      sortOrder: workflow.sortOrder,
+      track: workflow.track,
+      visibility: workflow.visibility,
+      sourceWorkflowId: workflow.sourceWorkflowId,
+      publishedAt: workflow.publishedAt,
+      createdAt: workflow.createdAt,
+      updatedAt: workflow.updatedAt,
+      archivedAt: workflow.archivedAt,
+      locked: workflow.locked,
+    })
+    .from(workflow)
+    .where(eq(workflow.id, existingPublishedWorkflow.id))
+    .limit(1)
+
+  if (!publishedWorkflow) {
+    throw new Error('Published workflow was not found after sync')
+  }
+
+  logger.info('Synced draft workflow content to mainline', {
+    sourceWorkflowId: sourceWorkflow.id,
+    publishedWorkflowId: existingPublishedWorkflow.id,
+  })
+
+  return mapWorkflowListRow(publishedWorkflow)
+}
+
 export async function getWorkflowPublicationDetails(params: {
   workflowId: string
   userId: string

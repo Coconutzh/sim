@@ -25,7 +25,9 @@ const logger = createLogger('LiteCanvasNavigation')
 function getWorkspaceEditorHref(workspaceId?: string, workflows?: WorkflowMetadata[]) {
   if (!workspaceId) return '#'
   const firstWorkflow =
-    workflows?.find((workflow) => workflow.workspaceId === workspaceId) ?? workflows?.[0]
+    workflows?.find(
+      (workflow) => workflow.workspaceId === workspaceId && workflow.track !== 'published'
+    ) ?? workflows?.find((workflow) => workflow.track !== 'published')
   return firstWorkflow
     ? `/workspace/${workspaceId}/w/${firstWorkflow.id}`
     : `/workspace/${workspaceId}/home`

@@ -177,6 +177,7 @@ interface PublicationBroadcastParams {
   action: PublicationAuditAction
   event:
     | 'published'
+    | 'content_synced'
     | 'details_updated'
     | 'visibility_updated'
     | 'archived'
@@ -846,6 +847,7 @@ export async function createWorkgroup(params: {
   organizationId: string
   disciplineId: string
   name: string
+  teamCanvasName?: string
   actorUserId: string
 }) {
   await assertOrganizationAdmin(params.actorUserId, params.organizationId)
@@ -856,6 +858,9 @@ export async function createWorkgroup(params: {
   const workgroupId = generateId()
   const slug = `${toSlug(params.name)}-${generateShortId(6)}`
   const teamWorkspaceId = generateId()
+  const requestedCanvasName = params.teamCanvasName?.trim()
+  const teamCanvasName = requestedCanvasName || `${params.name} 团队画布`
+  const defaultWorkflowName = requestedCanvasName || 'Team canvas'
 
   await db.transaction(async (tx) => {
     await tx.insert(workgroup).values({
@@ -871,7 +876,7 @@ export async function createWorkgroup(params: {
 
     await tx.insert(workspace).values({
       id: teamWorkspaceId,
-      name: `${params.name} 团队画布`,
+      name: teamCanvasName,
       color: '#33C482',
       ownerId: params.actorUserId,
       organizationId: params.organizationId,
@@ -906,7 +911,7 @@ export async function createWorkgroup(params: {
   await createDefaultWorkflowForWorkspace({
     userId: params.actorUserId,
     workspaceId: teamWorkspaceId,
-    name: 'Team canvas',
+    name: defaultWorkflowName,
     description: `Default node graph for ${params.name}`,
   })
 
@@ -2590,6 +2595,97 @@ export async function createPublicationVersion(params: {
   return inserted
 }
 
+export async function syncCurrentPublicationVersionSnapshot(params: {
+  sourceWorkflowId: string
+  publishedWorkflowId: string
+  publishedBy: string
+}) {
+  const [source] = await db
+    .select({
+      workflow,
+      workspaceId: workspace.id,
+      organizationId: workspace.organizationId,
+      workgroupId: workspace.workgroupId,
+      disciplineId: workgroup.disciplineId,
+      agentCode: discipline.agentCode,
+    })
+    .from(workflow)
+    .innerJoin(workspace, eq(workflow.workspaceId, workspace.id))
+    .innerJoin(workgroup, eq(workspace.workgroupId, workgroup.id))
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(eq(workflow.id, params.sourceWorkflowId))
+    .limit(1)
+  if (!source?.organizationId || !source.workgroupId) throw new Error('Team workflow required')
+  const canPublish = await canPublishTeamCanvas(params.publishedBy, source.workgroupId)
+  if (!canPublish) throw new Error('Publication access denied')
+
+  const [currentPublication] = await db
+    .select()
+    .from(workflowPublicationVersion)
+    .where(
+      and(
+        eq(workflowPublicationVersion.sourceWorkflowId, params.sourceWorkflowId),
+        eq(workflowPublicationVersion.publishedWorkflowId, params.publishedWorkflowId),
+        eq(workflowPublicationVersion.status, 'published')
+      )
+    )
+    .orderBy(desc(workflowPublicationVersion.publishedAt))
+    .limit(1)
+  if (!currentPublication) throw new Error('Current mainline publication not found')
+
+  const state = await loadWorkflowFromNormalizedTables(params.sourceWorkflowId)
+  const now = new Date()
+  const [updated] = await db
+    .update(workflowPublicationVersion)
+    .set({
+      snapshotState: sanitizeWorkflowSnapshot(
+        state ?? { blocks: {}, edges: [], loops: {}, parallels: {} }
+      ),
+      snapshotMetadata: {
+        sourceWorkflowName: source.workflow.name,
+        sourceWorkflowDescription: source.workflow.description,
+      },
+      publishedBy: params.publishedBy,
+      publishedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(workflowPublicationVersion.id, currentPublication.id))
+    .returning()
+  if (!updated) throw new Error('Current mainline publication not found after sync')
+
+  recordAudit({
+    workspaceId: source.workspaceId,
+    actorId: params.publishedBy,
+    action: AuditAction.PUBLICATION_UPDATED,
+    resourceType: AuditResourceType.PUBLICATION,
+    resourceId: updated.id,
+    resourceName: updated.title,
+    metadata: {
+      organizationId: source.organizationId,
+      sourceWorkflowId: params.sourceWorkflowId,
+      sourceWorkgroupId: source.workgroupId,
+      publishedWorkflowId: params.publishedWorkflowId,
+      visibility: updated.visibility,
+      versionNumber: updated.versionNumber,
+      contentSync: true,
+    },
+  })
+  await recordPublicationBroadcastEvents({
+    actorUserId: params.publishedBy,
+    action: AuditAction.PUBLICATION_UPDATED,
+    event: 'content_synced',
+    publicationVersionId: updated.id,
+    title: updated.title,
+    organizationId: source.organizationId,
+    sourceWorkgroupId: source.workgroupId,
+    sourceWorkflowId: params.sourceWorkflowId,
+    publishedWorkflowId: params.publishedWorkflowId,
+    visibility: updated.visibility,
+  })
+
+  return updated
+}
+
 async function replacePublicationScopes(params: {
   publishedWorkflowId: string | null
   visibility: PublicationVisibility
@@ -2698,6 +2794,8 @@ function getPublicationBroadcastDescription(event: PublicationBroadcastParams['e
   switch (event) {
     case 'published':
       return 'Showcase publication is now visible to this team'
+    case 'content_synced':
+      return 'Showcase publication content was updated'
     case 'details_updated':
       return 'Publication details changed for this team'
     case 'visibility_updated':

@@ -27,8 +27,15 @@ import {
   DropdownMenuTrigger,
   FolderPlus,
   Home,
+  Input,
+  Label,
   Library,
   Loader,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
   Skeleton,
   Tooltip,
 } from '@/components/emcn'
@@ -423,6 +430,9 @@ export const Sidebar = memo(function Sidebar() {
 
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
+  const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false)
+  const [createWorkflowName, setCreateWorkflowName] = useState('')
+  const [createWorkflowFolderId, setCreateWorkflowFolderId] = useState<string | null>(null)
 
   /** Listens for external events to open help modal */
   useEffect(() => {
@@ -1195,14 +1205,33 @@ export const Sidebar = memo(function Sidebar() {
     }
   }, [isOnWorkflowPage, isCollapsed, setSidebarWidth])
 
-  const handleCreateWorkflow = useCallback(async () => {
-    const workflowId = await createWorkflow()
+  const openCreateWorkflowModal = useCallback((folderId?: string | null) => {
+    setCreateWorkflowFolderId(folderId ?? null)
+    setCreateWorkflowName('')
+    setIsCreateWorkflowModalOpen(true)
+  }, [])
+
+  const handleCreateWorkflow = useCallback(() => {
+    openCreateWorkflowModal(null)
+  }, [openCreateWorkflowModal])
+
+  const handleConfirmCreateWorkflow = useCallback(async () => {
+    const name = createWorkflowName.trim()
+    if (!name) return
+
+    const workflowId = await createWorkflow({ name, folderId: createWorkflowFolderId })
+    if (createWorkflowFolderId) {
+      useFolderStore.getState().setExpanded(createWorkflowFolderId, true)
+    }
     if (workflowId) {
       window.dispatchEvent(
         new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: workflowId } })
       )
     }
-  }, [createWorkflow])
+    setIsCreateWorkflowModalOpen(false)
+    setCreateWorkflowName('')
+    setCreateWorkflowFolderId(null)
+  }, [createWorkflow, createWorkflowFolderId, createWorkflowName])
 
   const handleCreateFolder = useCallback(async () => {
     const folderId = await createFolder()
@@ -1947,7 +1976,7 @@ export const Sidebar = memo(function Sidebar() {
                             handleFileChange={handleImportFileChange}
                             fileInputRef={fileInputRef}
                             scrollContainerRef={scrollContainerRef}
-                            onCreateWorkflow={handleCreateWorkflow}
+                            onCreateWorkflow={openCreateWorkflowModal}
                             onCreateFolder={handleCreateFolder}
                             disableCreate={!canEdit || isCreatingWorkflow || isCreatingFolder}
                           />
@@ -2067,6 +2096,52 @@ export const Sidebar = memo(function Sidebar() {
           />
         )}
       </div>
+
+      <Modal open={isCreateWorkflowModalOpen} onOpenChange={setIsCreateWorkflowModalOpen}>
+        <ModalContent size='sm'>
+          <ModalHeader>Create workflow</ModalHeader>
+          <ModalBody className='grid gap-3'>
+            <div className='grid gap-2'>
+              <Label
+                htmlFor='create-workflow-name'
+                className='font-medium text-[12px] text-[var(--text-muted)]'
+              >
+                Workflow name
+              </Label>
+              <Input
+                id='create-workflow-name'
+                value={createWorkflowName}
+                onChange={(event) => setCreateWorkflowName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleConfirmCreateWorkflow()
+                }}
+                placeholder='Enter a canvas name'
+                disabled={isCreatingWorkflow}
+              />
+            </div>
+            <p className='text-[12px] text-[var(--text-muted)]'>
+              This name appears in the sidebar and is used as the canvas title.
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant='default'
+              onClick={() => setIsCreateWorkflowModalOpen(false)}
+              disabled={isCreatingWorkflow}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant='primary'
+              onClick={() => void handleConfirmCreateWorkflow()}
+              disabled={isCreatingWorkflow || !createWorkflowName.trim()}
+            >
+              {isCreatingWorkflow && <Loader className='mr-2 h-[14px] w-[14px]' animate />}
+              Create
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {isSearchModalOpen && (
         <Suspense fallback={null}>

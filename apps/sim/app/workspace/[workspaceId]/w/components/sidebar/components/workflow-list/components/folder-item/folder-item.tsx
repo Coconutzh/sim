@@ -5,10 +5,9 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import clsx from 'clsx'
 import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { Lock } from '@/components/emcn/icons'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
@@ -40,11 +39,8 @@ import {
   isFolderOrAncestorLocked,
 } from '@/hooks/queries/utils/folder-tree'
 import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
-import { useCreateWorkflow } from '@/hooks/queries/workflows'
 import { useFolderStore } from '@/stores/folders/store'
 import type { FolderTreeNode } from '@/stores/folders/types'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { generateCreativeWorkflowName } from '@/stores/workflows/registry/utils'
 
 const logger = createLogger('FolderItem')
 
@@ -56,6 +52,7 @@ interface FolderItemProps {
     onDragEnter?: (e: React.DragEvent<HTMLElement>) => void
     onDragLeave?: (e: React.DragEvent<HTMLElement>) => void
   }
+  onCreateWorkflow?: (folderId?: string | null) => void
   onFolderClick?: (folderId: string, shiftKey: boolean, metaKey: boolean) => void
   onDragStart?: () => void
   onDragEnd?: () => void
@@ -66,16 +63,15 @@ export function FolderItem({
   level,
   dragDisabled = false,
   hoverHandlers,
+  onCreateWorkflow,
   onFolderClick,
   onDragStart: onDragStartProp,
   onDragEnd: onDragEndProp,
 }: FolderItemProps) {
   const { isAnyDragActive } = useSidebarDragContext()
   const params = useParams()
-  const router = useRouter()
   const workspaceId = params.workspaceId as string
   const updateFolderMutation = useUpdateFolder()
-  const createWorkflowMutation = useCreateWorkflow()
   const createFolderMutation = useCreateFolder()
   const userPermissions = useUserPermissionsContext()
   const selectedFolders = useFolderStore((state) => state.selectedFolders)
@@ -154,23 +150,9 @@ export function FolderItem({
 
   const handleCreateWorkflowInFolder = useCallback(() => {
     if (effectiveLocked) return
-    const name = generateCreativeWorkflowName()
-    const color = getNextWorkflowColor()
-    const id = generateId()
-
-    createWorkflowMutation.mutate({
-      workspaceId,
-      folderId: folder.id,
-      name,
-      color,
-      id,
-    })
-
-    useWorkflowRegistry.getState().markWorkflowCreating(id)
     expandFolder()
-    router.push(`/workspace/${workspaceId}/w/${id}`)
-    window.dispatchEvent(new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: id } }))
-  }, [createWorkflowMutation, workspaceId, folder.id, effectiveLocked, router, expandFolder])
+    onCreateWorkflow?.(folder.id)
+  }, [effectiveLocked, expandFolder, folder.id, onCreateWorkflow])
 
   const handleCreateFolderInFolder = useCallback(async () => {
     if (effectiveLocked) return
@@ -602,9 +584,7 @@ export function FolderItem({
         showDuplicate={true}
         showExport={true}
         disableRename={!userPermissions.canEdit || effectiveLocked}
-        disableCreate={
-          !userPermissions.canEdit || effectiveLocked || createWorkflowMutation.isPending
-        }
+        disableCreate={!userPermissions.canEdit || effectiveLocked || !onCreateWorkflow}
         disableCreateFolder={
           !userPermissions.canEdit || effectiveLocked || createFolderMutation.isPending
         }

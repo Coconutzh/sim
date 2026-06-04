@@ -39,6 +39,7 @@ export const POST = withRouteHandler(async (request, context) => {
       organizationId: parsed.data.params.id,
       disciplineId: parsed.data.body.disciplineId,
       name: parsed.data.body.name,
+      teamCanvasName: parsed.data.body.teamCanvasName,
     })
     return NextResponse.json({ workgroup })
   } catch (error) {

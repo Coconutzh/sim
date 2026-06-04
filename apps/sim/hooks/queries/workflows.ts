@@ -33,6 +33,7 @@ import {
   updateWorkflowPublicationContract,
 } from '@/lib/api/contracts/workflows'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
+import { collaborationKeys } from '@/hooks/queries/collaboration'
 import { deploymentKeys } from '@/hooks/queries/deployments'
 import { fetchDeploymentVersionState } from '@/hooks/queries/utils/fetch-deployment-version-state'
 import { getFolderMap } from '@/hooks/queries/utils/folder-cache'
@@ -48,7 +49,6 @@ import {
 import { useFolderStore } from '@/stores/folders/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-import { generateCreativeWorkflowName } from '@/stores/workflows/registry/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -113,14 +113,17 @@ export function useWorkflowStates(
 
 export function useWorkflows(
   workspaceId?: string,
-  options?: { scope?: WorkflowQueryScope; enabled?: boolean }
+  options?: { scope?: WorkflowQueryScope; enabled?: boolean; includePublished?: boolean }
 ) {
-  const { scope = 'active', enabled = true } = options || {}
+  const { scope = 'active', enabled = true, includePublished = false } = options || {}
 
   return useQuery({
     queryKey: workflowKeys.list(workspaceId, scope),
     queryFn:
       workspaceId && enabled ? getWorkflowListQueryOptions(workspaceId, scope).queryFn : skipToken,
+    select: includePublished
+      ? undefined
+      : (workflows) => workflows.filter((workflow) => workflow.track !== 'published'),
     placeholderData: keepPreviousData,
     staleTime: WORKFLOW_LIST_STALE_TIME,
   })
@@ -215,7 +218,7 @@ export function usePublishedWorkflowsForWorkgroup(workgroupId?: string) {
 
 interface CreateWorkflowVariables {
   workspaceId: string
-  name?: string
+  name: string
   description?: string
   color?: string
   folderId?: string | null
@@ -303,7 +306,7 @@ export function useCreateWorkflow() {
       const createdWorkflow = await requestJson(createWorkflowContract, {
         body: {
           id,
-          name: name || generateCreativeWorkflowName(),
+          name,
           description: description || 'New workflow',
           color: color || getNextWorkflowColor(),
           workspaceId,
@@ -361,7 +364,7 @@ export function useCreateWorkflow() {
 
       const optimistic: WorkflowMetadata = {
         id: tempId,
-        name: variables.name || generateCreativeWorkflowName(),
+        name: variables.name,
         lastModified: new Date(),
         createdAt: new Date(),
         description: variables.description || 'New workflow',
@@ -492,6 +495,43 @@ export function usePublishWorkflow() {
         }),
         queryClient.invalidateQueries({ queryKey: workflowKeys.trackList(variables.workspaceId) }),
         queryClient.invalidateQueries({ queryKey: workflowKeys.publication(variables.workflowId) }),
+        queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() }),
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationPublicationLists(),
+        }),
+      ])
+    },
+  })
+}
+
+interface SyncWorkflowMainlineVariables {
+  workflowId: string
+  workspaceId: string
+}
+
+export function useSyncWorkflowMainline() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (variables: SyncWorkflowMainlineVariables): Promise<WorkflowMetadata> => {
+      const response = await requestJson(publishWorkflowContract, {
+        params: { id: variables.workflowId },
+        body: { action: 'sync_content' },
+      })
+
+      return mapWorkflow(response.publishedWorkflow)
+    },
+    onSettled: async (_data, _error, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowKeys.list(variables.workspaceId, 'active'),
+        }),
+        queryClient.invalidateQueries({ queryKey: workflowKeys.trackList(variables.workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: workflowKeys.publication(variables.workflowId) }),
+        queryClient.invalidateQueries({ queryKey: collaborationKeys.publicationLists() }),
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationPublicationLists(),
+        }),
       ])
     },
   })

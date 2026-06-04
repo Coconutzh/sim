@@ -131,11 +131,11 @@ import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
 import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
+import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel/store'
-import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -945,6 +945,8 @@ const WorkflowContent = React.memo(
 
     const { userPermissions, workspacePermissions, permissionsError } =
       useWorkspacePermissionsContext()
+    const canPublishToMainline =
+      userPermissions.canAdmin && workspaceSettingsData?.settings.workspace.canvasScope === 'team'
     /** Returns read-only permissions when viewing snapshot or a locked workflow. */
     const effectivePermissions = useMemo(() => {
       if (currentWorkflow.isSnapshotView || workflowReadOnly || workflowTrackReadOnly) {
@@ -5108,7 +5110,9 @@ const WorkflowContent = React.memo(
                       workspaceId={workspaceId}
                       workflowId={workflowIdParam}
                       workflow={workflowMetadata}
-                      canPublish={userPermissions.canAdmin}
+                      canPublish={canPublishToMainline}
+                      organizationId={workspaceSettingsData?.settings.workspace.organizationId}
+                      activeWorkgroupId={activeWorkgroupId}
                       onNotify={notifyTrackAction}
                     />
                   </Suspense>

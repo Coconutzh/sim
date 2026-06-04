@@ -245,10 +245,19 @@ export function useOrganizationWorkgroups(organizationId?: string) {
 export function useCreateWorkgroup() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (variables: { organizationId: string; name: string; disciplineId: string }) =>
+    mutationFn: (variables: {
+      organizationId: string
+      name: string
+      disciplineId: string
+      teamCanvasName?: string
+    }) =>
       requestJson(createOrganizationWorkgroupContract, {
         params: { id: variables.organizationId },
-        body: { name: variables.name, disciplineId: variables.disciplineId },
+        body: {
+          name: variables.name,
+          disciplineId: variables.disciplineId,
+          teamCanvasName: variables.teamCanvasName,
+        },
       }),
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({

@@ -320,6 +320,7 @@ export const workflowTracksResponseSchema = z.object({
 export type WorkflowTracksResponse = z.output<typeof workflowTracksResponseSchema>
 
 export const publishWorkflowBodySchema = z.object({
+  action: z.enum(['publish', 'sync_content']).optional().default('publish'),
   name: z.string().min(1).optional(),
   title: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).optional(),
@@ -354,6 +355,15 @@ export const updateWorkflowPublicationBodySchema = z.object({
 })
 
 export type UpdateWorkflowPublicationBody = z.input<typeof updateWorkflowPublicationBodySchema>
+
+const workflowPublicationVersionSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  versionNumber: z.number(),
+  status: z.enum(['published', 'superseded', 'archived', 'retracted', 'draft']),
+  parentVersionId: z.string().nullable(),
+  publishedAt: z.string(),
+})
 
 export const publishedWorkflowCatalogItemSchema = z.object({
   id: z.string(),
@@ -814,16 +824,7 @@ export const publishWorkflowContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       publishedWorkflow: workflowListItemSchema,
-      publicationVersion: z
-        .object({
-          id: z.string(),
-          title: z.string(),
-          versionNumber: z.number(),
-          status: z.enum(['published', 'superseded', 'archived', 'retracted', 'draft']),
-          parentVersionId: z.string().nullable(),
-          publishedAt: z.string(),
-        })
-        .optional(),
+      publicationVersion: workflowPublicationVersionSummarySchema.optional(),
     }),
   },
 })

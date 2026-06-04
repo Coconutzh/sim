@@ -4,18 +4,40 @@ import { NextResponse } from 'next/server'
 import { publishWorkflowContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { createPublicationVersion } from '@/lib/collaboration/service'
+import {
+  createPublicationVersion,
+  syncCurrentPublicationVersionSnapshot,
+} from '@/lib/collaboration/service'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { publishWorkflowToMainline } from '@/lib/workflows/publication'
+import { publishWorkflowToMainline, syncWorkflowMainlineContent } from '@/lib/workflows/publication'
 
 const logger = createLogger('WorkflowPublishAPI')
 
 function getStatusForErrorMessage(message: string): number {
   if (message === 'Workflow not found') return 404
+  if (message.includes('not found')) return 404
   if (message === 'Canvas access required') return 403
-  if (message.includes('Access denied')) return 403
+  if (message.includes('Access denied') || message.includes('access denied')) return 403
   return 400
+}
+
+function mapPublicationVersionSummary(publicationVersion: {
+  id: string
+  title: string
+  versionNumber: number
+  status: 'published' | 'superseded' | 'archived' | 'retracted' | 'draft'
+  parentVersionId: string | null
+  publishedAt: Date
+}) {
+  return {
+    id: publicationVersion.id,
+    title: publicationVersion.title,
+    versionNumber: publicationVersion.versionNumber,
+    status: publicationVersion.status,
+    parentVersionId: publicationVersion.parentVersionId,
+    publishedAt: publicationVersion.publishedAt.toISOString(),
+  }
 }
 
 export const POST = withRouteHandler(
@@ -32,6 +54,23 @@ export const POST = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     try {
+      if (parsed.data.body.action === 'sync_content') {
+        const publishedWorkflow = await syncWorkflowMainlineContent({
+          workflowId: parsed.data.params.id,
+          userId: auth.userId,
+        })
+        const publicationVersion = await syncCurrentPublicationVersionSnapshot({
+          sourceWorkflowId: parsed.data.params.id,
+          publishedWorkflowId: publishedWorkflow.id,
+          publishedBy: auth.userId,
+        })
+
+        return NextResponse.json({
+          publishedWorkflow,
+          publicationVersion: mapPublicationVersionSummary(publicationVersion),
+        })
+      }
+
       const publishedWorkflow = await publishWorkflowToMainline({
         workflowId: parsed.data.params.id,
         userId: auth.userId,
@@ -58,14 +97,7 @@ export const POST = withRouteHandler(
       return NextResponse.json(
         {
           publishedWorkflow,
-          publicationVersion: {
-            id: publicationVersion.id,
-            title: publicationVersion.title,
-            versionNumber: publicationVersion.versionNumber,
-            status: publicationVersion.status,
-            parentVersionId: publicationVersion.parentVersionId,
-            publishedAt: publicationVersion.publishedAt.toISOString(),
-          },
+          publicationVersion: mapPublicationVersionSummary(publicationVersion),
         },
         { status: 200 }
       )

@@ -52,8 +52,17 @@ import {
   useUpdateWorkspacePermissions,
 } from '@/hooks/queries/invitations'
 import { useInviteMember } from '@/hooks/queries/organization'
-import { useCreateWorkflow, usePublishWorkflow, useWorkflows } from '@/hooks/queries/workflows'
-import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
+import {
+  useCreateWorkflow,
+  usePublishWorkflow,
+  useUpdateWorkflow,
+  useWorkflows,
+} from '@/hooks/queries/workflows'
+import {
+  useUpdateWorkspace,
+  useWorkspacePermissionsQuery,
+  useWorkspaceSettings,
+} from '@/hooks/queries/workspace'
 
 type WorkgroupRole = 'admin' | 'member'
 type PublicationVisibility = 'organization' | 'selected_workgroups'
@@ -342,6 +351,8 @@ export function WorkgroupTeamManagement() {
   const updateAgentSkill = useUpdateWorkgroupAgentSkill()
   const publishWorkflow = usePublishWorkflow()
   const createWorkflow = useCreateWorkflow()
+  const updateWorkflow = useUpdateWorkflow()
+  const updateWorkspace = useUpdateWorkspace()
   const updateWorkspacePermissions = useUpdateWorkspacePermissions()
   const cancelInvitation = useCancelWorkspaceInvitation()
   const [inviteValue, setInviteValue] = useState('')
@@ -355,6 +366,7 @@ export function WorkgroupTeamManagement() {
   const [publishDescription, setPublishDescription] = useState('')
   const [publishVisibility, setPublishVisibility] = useState<PublicationVisibility>('organization')
   const [publishTargetWorkgroupIds, setPublishTargetWorkgroupIds] = useState<string[]>([])
+  const [teamCanvasName, setTeamCanvasName] = useState('')
   const [activeTab, setActiveTab] = useState<TeamManagementTab>('members')
   const [publicationVisibilityDrafts, setPublicationVisibilityDrafts] = useState<
     Record<string, PublicationVisibilityDraft>
@@ -368,8 +380,13 @@ export function WorkgroupTeamManagement() {
   const { data: teamWorkflows = [], isLoading: isLoadingTeamWorkflows } = useWorkflows(
     isAdmin && teamWorkspaceId ? teamWorkspaceId : undefined
   )
+  const publishableTeamWorkflows = useMemo(
+    () => teamWorkflows.filter((workflow) => workflow.track !== 'published'),
+    [teamWorkflows]
+  )
   const selectedPublishWorkflow =
-    teamWorkflows.find((workflow) => workflow.id === publishWorkflowId) ?? teamWorkflows[0]
+    publishableTeamWorkflows.find((workflow) => workflow.id === publishWorkflowId) ??
+    publishableTeamWorkflows[0]
   const publishTargetWorkgroups = useMemo<PublicationTargetWorkgroup[]>(
     () =>
       (organizationWorkgroupsData?.workgroups ?? []).map((workgroup) => ({
@@ -569,6 +586,8 @@ export function WorkgroupTeamManagement() {
     updateAgentSkill.isPending ||
     publishWorkflow.isPending ||
     createWorkflow.isPending ||
+    updateWorkflow.isPending ||
+    updateWorkspace.isPending ||
     updateWorkspacePermissions.isPending ||
     cancelInvitation.isPending ||
     updateMember.isPending ||
@@ -584,13 +603,33 @@ export function WorkgroupTeamManagement() {
 
   const handleInitializeTeamCanvas = async () => {
     if (!activeWorkgroupId) return
-    const result = await createTeamWorkspace.mutateAsync({ workgroupId: activeWorkgroupId })
-    setStatusMessage('Team canvas initialized.')
-    router.push(
-      result.defaultWorkflowId
-        ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
-        : `/workspace/${result.workspace.id}/home`
-    )
+    try {
+      const result = await createTeamWorkspace.mutateAsync({ workgroupId: activeWorkgroupId })
+      const requestedName = teamCanvasName.trim()
+      if (requestedName) {
+        await Promise.all([
+          requestedName !== result.workspace.name
+            ? updateWorkspace.mutateAsync({ workspaceId: result.workspace.id, name: requestedName })
+            : Promise.resolve(),
+          result.defaultWorkflowId
+            ? updateWorkflow.mutateAsync({
+                workspaceId: result.workspace.id,
+                workflowId: result.defaultWorkflowId,
+                metadata: { name: requestedName },
+              })
+            : Promise.resolve(),
+        ])
+      }
+      setTeamCanvasName('')
+      setStatusMessage('Team canvas initialized.')
+      router.push(
+        result.defaultWorkflowId
+          ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
+          : `/workspace/${result.workspace.id}/home`
+      )
+    } catch (error) {
+      setStatusMessage(readErrorMessage(error))
+    }
   }
 
   const handleRepairTeamHealth = async () => {
@@ -605,6 +644,24 @@ export function WorkgroupTeamManagement() {
         const result = await createTeamWorkspace.mutateAsync({ workgroupId: activeWorkgroupId })
         repairedWorkspaceId = result.workspace.id
         initializedDefaultWorkflowId = result.defaultWorkflowId
+        const requestedName = teamCanvasName.trim()
+        if (requestedName) {
+          await Promise.all([
+            requestedName !== result.workspace.name
+              ? updateWorkspace.mutateAsync({
+                  workspaceId: result.workspace.id,
+                  name: requestedName,
+                })
+              : Promise.resolve(),
+            result.defaultWorkflowId
+              ? updateWorkflow.mutateAsync({
+                  workspaceId: result.workspace.id,
+                  workflowId: result.defaultWorkflowId,
+                  metadata: { name: requestedName },
+                })
+              : Promise.resolve(),
+          ])
+        }
         repaired.push('initialized the team canvas')
       }
 
@@ -637,6 +694,7 @@ export function WorkgroupTeamManagement() {
       }
 
       await refetchActivity()
+      if (repairedWorkspaceId) setTeamCanvasName('')
       setStatusMessage(
         repaired.length > 0
           ? `Health repair completed: ${repaired.join(', ')}.`
@@ -964,23 +1022,33 @@ export function WorkgroupTeamManagement() {
               personal drafts separate from team administration.
             </p>
           </div>
-          <Button
-            variant={teamWorkspaceId ? 'default' : 'primary'}
-            className='h-[32px]'
-            onClick={() =>
-              teamWorkspaceId
-                ? router.push(`/workspace/${teamWorkspaceId}/home`)
-                : void handleInitializeTeamCanvas()
-            }
-            disabled={isBusy}
-          >
-            {createTeamWorkspace.isPending ? (
-              <Loader className='mr-2 h-[14px] w-[14px]' animate />
-            ) : (
-              <Users className='mr-2 h-[14px] w-[14px]' />
+          <div className='flex flex-col gap-2 sm:min-w-[280px]'>
+            {!teamWorkspaceId && (
+              <Input
+                value={teamCanvasName}
+                onChange={(event) => setTeamCanvasName(event.target.value)}
+                placeholder={`${activeWorkgroup?.name ?? 'Team'} team canvas name`}
+                disabled={isBusy}
+              />
             )}
-            {teamWorkspaceId ? 'Open team canvas' : 'Initialize team canvas'}
-          </Button>
+            <Button
+              variant={teamWorkspaceId ? 'default' : 'primary'}
+              className='h-[32px]'
+              onClick={() =>
+                teamWorkspaceId
+                  ? router.push(`/workspace/${teamWorkspaceId}/home`)
+                  : void handleInitializeTeamCanvas()
+              }
+              disabled={isBusy}
+            >
+              {createTeamWorkspace.isPending ? (
+                <Loader className='mr-2 h-[14px] w-[14px]' animate />
+              ) : (
+                <Users className='mr-2 h-[14px] w-[14px]' />
+              )}
+              {teamWorkspaceId ? 'Open team canvas' : 'Initialize team canvas'}
+            </Button>
+          </div>
         </div>
 
         {statusMessage && (
@@ -1129,8 +1197,8 @@ export function WorkgroupTeamManagement() {
                   Create team invitation
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Create an in-app invitation for a teammate. Accepting it grants team canvas
-                  access and joins this workgroup.
+                  Create an in-app invitation for a teammate. Accepting it grants team canvas access
+                  and joins this workgroup.
                 </p>
               </div>
             </div>
@@ -1311,7 +1379,7 @@ export function WorkgroupTeamManagement() {
                   <Loader className='h-[14px] w-[14px]' animate />
                   Loading team workflows...
                 </div>
-              ) : teamWorkflows.length === 0 ? (
+              ) : publishableTeamWorkflows.length === 0 ? (
                 <div className='text-[13px] text-[var(--text-muted)]'>
                   No workflows exist in the team canvas yet.
                 </div>
@@ -1324,7 +1392,7 @@ export function WorkgroupTeamManagement() {
                       disabled={isBusy}
                       className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                     >
-                      {teamWorkflows.map((workflow) => (
+                      {publishableTeamWorkflows.map((workflow) => (
                         <option key={workflow.id} value={workflow.id}>
                           {workflow.name}
                         </option>
