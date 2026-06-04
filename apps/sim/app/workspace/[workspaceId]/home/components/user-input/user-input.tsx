@@ -12,7 +12,15 @@ import {
   useState,
 } from 'react'
 import { createLogger } from '@sim/logger'
-import { Check, ChevronDown, Image as ImageIcon, Music4, Paperclip, Type, Video } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Image as ImageIcon,
+  Music4,
+  Paperclip,
+  Type,
+  Video,
+} from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
   Button,
@@ -44,6 +52,8 @@ import {
   OVERLAY_CLASSES,
   PlusMenuDropdown,
   SendButton,
+  type SkillActionCard,
+  SkillActionCards,
   TEXTAREA_BASE_CLASSES,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import type {
@@ -206,6 +216,8 @@ interface UserInputProps {
   fixedSendOptions?: ChatSendOptions
   enableContentCanvasAgent?: boolean
   autoSelectionCards?: CanvasSelectionCard[]
+  skillActionCards?: SkillActionCard[]
+  onSkillActionSelect?: (action: SkillActionCard) => boolean | undefined
 }
 
 export interface UserInputHandle {
@@ -230,6 +242,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     fixedSendOptions,
     enableContentCanvasAgent = false,
     autoSelectionCards,
+    skillActionCards,
+    onSkillActionSelect,
   },
   ref
 ) {
@@ -254,6 +268,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     lazyResourceLoading ? INITIAL_RESOURCE_TYPES : ALL_RESOURCE_TYPES
   )
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [isTextareaFocused, setIsTextareaFocused] = useState(false)
   if (defaultValue && defaultValue !== prevDefaultValue) {
     setPrevDefaultValue(defaultValue)
     setValue(defaultValue)
@@ -702,6 +717,39 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     [textareaRef]
   )
 
+  const handleTextareaFocus = useCallback(() => {
+    setIsTextareaFocused(true)
+  }, [])
+
+  const handleTextareaBlur = useCallback(() => {
+    setIsTextareaFocused(false)
+  }, [])
+
+  const handleSkillActionSelect = useCallback(
+    (action: SkillActionCard) => {
+      if (onSkillActionSelect?.(action)) {
+        plusMenuRef.current?.close()
+        return
+      }
+
+      const nextValue = action.prompt
+      setValue(nextValue)
+      valueRef.current = nextValue
+      sttPrefixRef.current = ''
+      mentionRangeRef.current = null
+      setMentionQuery(null)
+      plusMenuRef.current?.close()
+
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (!textarea) return
+        textarea.focus()
+        textarea.setSelectionRange(nextValue.length, nextValue.length)
+      })
+    },
+    [onSkillActionSelect, textareaRef]
+  )
+
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
     const currentContext = contextRef.current
@@ -1047,6 +1095,14 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     return elements.length > 0 ? elements : <span>{'\u00A0'}</span>
   }, [value, contextManagement.selectedContexts, workflowsById])
 
+  const showSkillActionCards =
+    Boolean(skillActionCards?.length) &&
+    isTextareaFocused &&
+    value.trim().length === 0 &&
+    !hasFiles &&
+    !hasUploadingFiles &&
+    contextManagement.selectedContexts.length === 0 &&
+    !isSending
   const canAddCanvasSelectionContext = Boolean(autoSelectionCards && autoSelectionCards.length > 0)
 
   return (
@@ -1061,6 +1117,10 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
+      {showSkillActionCards && (
+        <SkillActionCards actions={skillActionCards ?? []} onSelect={handleSkillActionSelect} />
+      )}
+
       <AnimatedPlaceholderEffect textareaRef={textareaRef} isInitialView={isInitialView} />
 
       <AttachedFilesList
@@ -1088,7 +1148,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
                 </div>
               )}
               <div className='min-w-0 flex-1'>
-                <div className='truncate text-[12px] font-medium text-[var(--text-primary)]'>
+                <div className='truncate font-medium text-[12px] text-[var(--text-primary)]'>
                   {card.title}
                 </div>
                 <div className='mt-0.5 line-clamp-2 text-[11px] text-[var(--text-secondary)]'>
@@ -1113,6 +1173,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
           ref={textareaRef}
           value={value}
           onChange={handleInputChange}
+          onFocus={handleTextareaFocus}
+          onBlur={handleTextareaBlur}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onPaste={handlePaste}

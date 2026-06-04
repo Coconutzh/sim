@@ -22,28 +22,32 @@ import {
 } from '@/lib/api/contracts/copilot'
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
+import { getCopilotSkillActionCards } from '@/lib/copilot/skill-action-registry'
 import { captureEvent } from '@/lib/posthog/client'
+import { getContentNodePreset } from '@/lib/product/content-node-presets'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components/mothership-chat/mothership-chat'
+import type { SkillActionCard } from '@/app/workspace/[workspaceId]/home/components/user-input'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type {
   CanvasSelectionCard,
   ChatSendOptions,
   FileAttachmentForApi,
 } from '@/app/workspace/[workspaceId]/home/types'
+import { useCopilotAgentProfile } from '@/hooks/queries/collaboration'
+import { useCopilotSkillCards } from '@/hooks/queries/copilot-skill-cards'
 import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
 import {
   type CopilotChatListItem,
   copilotChatsKeys,
   useCopilotChats,
 } from '@/hooks/queries/copilot-chats'
-import { getContentNodePreset } from '@/lib/product/content-node-presets'
-import type { ChatContext } from '@/stores/panel'
 import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
-import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subblock/store'
+import type { ChatContext } from '@/stores/panel'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -51,7 +55,11 @@ const logger = createLogger('PanelCopilotTab')
 const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
 const EMPTY_SELECTION_IDS: string[] = []
 
-function getStoredValue<T>(source: Record<string, unknown> | undefined, key: string, fallback: T): T {
+function getStoredValue<T>(
+  source: Record<string, unknown> | undefined,
+  key: string,
+  fallback: T
+): T {
   const rawValue = source?.[key]
   if (rawValue && typeof rawValue === 'object' && 'value' in rawValue) {
     return ((rawValue as { value?: T }).value ?? fallback) as T
@@ -86,6 +94,8 @@ export function CopilotTab({
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
   const { data: session } = useSession()
+  const { data: agentProfile } = useCopilotAgentProfile(workspaceId)
+  const { data: managedSkillCardsData } = useCopilotSkillCards(workspaceId)
   const queryClient = useQueryClient()
   const { chatId: copilotChatId, setChatId: setCopilotChatId } = useCopilotChatSelection(
     activeWorkflowId ?? undefined
@@ -97,14 +107,19 @@ export function CopilotTab({
   const blocks = useWorkflowStore((state) => state.blocks)
   const selectedCanvasNodeIds = useContentCanvasSelectionStore(
     useCallback(
-      (state) => (activeWorkflowId ? state.selectionByWorkflow[activeWorkflowId] ?? EMPTY_SELECTION_IDS : EMPTY_SELECTION_IDS),
+      (state) =>
+        activeWorkflowId
+          ? (state.selectionByWorkflow[activeWorkflowId] ?? EMPTY_SELECTION_IDS)
+          : EMPTY_SELECTION_IDS,
       [activeWorkflowId]
     )
   )
   const workflowSubBlockValues = useSubBlockStore(
     useCallback(
       (state) =>
-        activeWorkflowId ? state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES : EMPTY_SUBBLOCK_VALUES,
+        activeWorkflowId
+          ? (state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES)
+          : EMPTY_SUBBLOCK_VALUES,
       [activeWorkflowId]
     )
   )
@@ -135,7 +150,10 @@ export function CopilotTab({
           variant,
           previewText:
             variant === 'text'
-              ? stripHtmlPreview(getStoredValue<string>(sourceValues, 'contentHtml', '')).slice(0, 80)
+              ? stripHtmlPreview(getStoredValue<string>(sourceValues, 'contentHtml', '')).slice(
+                  0,
+                  80
+                )
               : undefined,
           mediaPath:
             typeof file?.path === 'string'
@@ -148,6 +166,36 @@ export function CopilotTab({
       ]
     })
   }, [activeWorkflowId, blocks, isActive, selectedCanvasNodeIds, workflowSubBlockValues])
+
+  const skillActionCards = useMemo<SkillActionCard[]>(
+    () =>
+      getCopilotSkillActionCards(
+        agentProfile?.agent.code,
+        agentProfile?.skills,
+        managedSkillCardsData?.cards
+      ),
+    [agentProfile?.agent.code, agentProfile?.skills, managedSkillCardsData?.cards]
+  )
+
+  const handleSkillActionSelect = useCallback((action: SkillActionCard) => {
+    if (action.actionKind === 'create_task') {
+      window.dispatchEvent(
+        new CustomEvent('production-task:create', {
+          detail: { draft: action.taskDraft, prompt: action.prompt },
+        })
+      )
+      return true
+    }
+    if (action.actionKind === 'submit_task') {
+      window.dispatchEvent(
+        new CustomEvent('production-task:submit-selected-node', {
+          detail: { prompt: action.prompt },
+        })
+      )
+      return true
+    }
+    return false
+  }, [])
 
   const copilotChatTitle = useMemo(
     () =>
@@ -329,7 +377,12 @@ export function CopilotTab({
     ) => {
       const trimmed = text.trim()
       if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
-      copilotSendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts, options)
+      copilotSendMessage(
+        trimmed || 'Analyze the attached file(s).',
+        fileAttachments,
+        contexts,
+        options
+      )
     },
     [copilotSendMessage]
   )
@@ -438,6 +491,8 @@ export function CopilotTab({
         fixedSendOptions={{ workflowCopilotMode: 'content_canvas_v1' }}
         enableContentCanvasAgent
         autoSelectionCards={autoSelectionCards}
+        skillActionCards={skillActionCards}
+        onSkillActionSelect={handleSkillActionSelect}
       />
     </>
   )

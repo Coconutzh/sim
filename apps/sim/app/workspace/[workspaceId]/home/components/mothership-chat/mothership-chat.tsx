@@ -11,16 +11,17 @@ import {
 import { PendingTagIndicator } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import { QueuedMessages } from '@/app/workspace/[workspaceId]/home/components/queued-messages'
 import {
+  type SkillActionCard,
   UserInput,
   type UserInputHandle,
 } from '@/app/workspace/[workspaceId]/home/components/user-input'
 import { UserMessageContent } from '@/app/workspace/[workspaceId]/home/components/user-message-content'
 import type {
   CanvasSelectionCard,
-  ChatSendOptions,
   ChatMessage,
   ChatMessageAttachment,
   ChatMessageContext,
+  ChatSendOptions,
   ContentBlock,
   FileAttachmentForApi,
   MothershipResource,
@@ -57,6 +58,8 @@ interface MothershipChatProps {
   fixedSendOptions?: ChatSendOptions
   enableContentCanvasAgent?: boolean
   autoSelectionCards?: CanvasSelectionCard[]
+  skillActionCards?: SkillActionCard[]
+  onSkillActionSelect?: (action: SkillActionCard) => boolean | undefined
   initialScrollBlocked?: boolean
   animateInput?: boolean
   onInputAnimationEnd?: () => void
@@ -202,6 +205,8 @@ export function MothershipChat({
   fixedSendOptions,
   enableContentCanvasAgent = false,
   autoSelectionCards,
+  skillActionCards,
+  onSkillActionSelect,
   initialScrollBlocked = false,
   animateInput = false,
   onInputAnimationEnd,
@@ -343,6 +348,8 @@ export function MothershipChat({
             fixedSendOptions={fixedSendOptions}
             enableContentCanvasAgent={enableContentCanvasAgent}
             autoSelectionCards={autoSelectionCards}
+            skillActionCards={skillActionCards}
+            onSkillActionSelect={onSkillActionSelect}
           />
         </div>
       </div>

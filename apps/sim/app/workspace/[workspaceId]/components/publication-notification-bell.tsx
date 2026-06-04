@@ -30,7 +30,8 @@ function formatProjectNotificationBadge(
     | 'organization_management'
     | 'organization_settings'
     | 'billing_management'
-    | 'cleanup_execution',
+    | 'cleanup_execution'
+    | 'production_task',
   channel?: string | null
 ) {
   if (kind === 'publication_review') return channel?.replace('_', ' ') ?? 'publication'
@@ -44,6 +45,7 @@ function formatProjectNotificationBadge(
   if (kind === 'organization_settings') return 'settings'
   if (kind === 'billing_management') return 'billing'
   if (kind === 'cleanup_execution') return 'cleanup'
+  if (kind === 'production_task') return 'task'
   return 'failure'
 }
 
@@ -85,7 +87,7 @@ export function PublicationNotificationBell({
         >
           <Bell className='h-[16px] w-[16px] text-[var(--text-icon)]' />
           {unreadCount > 0 && (
-            <span className='absolute top-[5px] right-[5px] h-[7px] w-[7px] rounded-full bg-red-500' />
+            <span className='absolute top-[5px] right-[5px] h-[7px] w-[7px] rounded-full bg-[var(--badge-error-text)]' />
           )}
         </button>
       </DropdownMenuTrigger>
@@ -134,7 +136,7 @@ export function PublicationNotificationBell({
                   'w-full rounded-[8px] border p-3 text-left transition-colors hover-hover:bg-[var(--surface-hover)]',
                   entry.readAt
                     ? 'border-[var(--border)] bg-[var(--surface-2)]'
-                    : 'border-amber-500/30 bg-amber-500/10'
+                    : 'border-[var(--border-1)] bg-[var(--surface-3)]'
                 )}
                 onClick={() => {
                   if (!entry.readAt && !markRead.isPending) {
@@ -157,7 +159,7 @@ export function PublicationNotificationBell({
                 <div className='mt-2 flex flex-wrap gap-2 text-[10px] text-[var(--text-muted)]'>
                   <span>{entry.notificationCount} notifications</span>
                   <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
-                  {!entry.readAt && <span className='text-amber-500'>Unread</span>}
+                  {!entry.readAt && <span className='text-[var(--badge-amber-text)]'>Unread</span>}
                 </div>
               </button>
             ))

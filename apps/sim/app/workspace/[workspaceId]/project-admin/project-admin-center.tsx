@@ -54,6 +54,7 @@ import {
   type PublicationNotificationDeliveryDraft,
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
+import { CopilotSkillCardManager } from '@/app/workspace/[workspaceId]/project-admin/components/copilot-skill-card-manager'
 import { useOrganizationRetention } from '@/ee/data-retention/hooks/data-retention'
 import {
   fetchOrganizationWorkgroupActivity,
@@ -132,6 +133,7 @@ const PROJECT_NOTIFICATION_KIND_OPTIONS: {
   { value: 'organization_settings', label: 'Organization settings' },
   { value: 'billing_management', label: 'Billing management' },
   { value: 'cleanup_execution', label: 'Cleanup execution' },
+  { value: 'production_task', label: 'Production task' },
 ]
 const BATCH_IMPORT_IGNORED_CELLS = new Set([
   'email',
@@ -4656,6 +4658,13 @@ export function ProjectAdminCenter() {
             </div>
           </div>
         </section>
+
+        <CopilotSkillCardManager
+          organizationId={organizationId}
+          selectedAgentCode={selectedAgentTemplateCodeValue as AgentTemplate['code']}
+          agentTemplates={agentTemplates}
+          workgroups={organizationWorkgroups}
+        />
 
         <section className='grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.6fr)]'>
           <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>

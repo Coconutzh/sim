@@ -60,6 +60,7 @@ import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/compone
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
+import { ProductionTaskTimeline } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/production-task-timeline'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
 import {
   useAutoLayout,
@@ -131,11 +132,11 @@ import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
 import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
+import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel/store'
-import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -5112,6 +5113,10 @@ const WorkflowContent = React.memo(
                       onNotify={notifyTrackAction}
                     />
                   </Suspense>
+                )}
+
+                {!embedded && !sandbox && shouldRenderAuxiliaryEditorChrome && (
+                  <ProductionTaskTimeline workspaceId={workspaceId} workflowId={workflowIdParam} />
                 )}
 
                 <ReactFlow

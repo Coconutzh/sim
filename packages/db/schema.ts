@@ -165,8 +165,12 @@ export const workflow = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
-    folderId: text('folder_id').references(() => workflowFolder.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
+    folderId: text('folder_id').references(() => workflowFolder.id, {
+      onDelete: 'set null',
+    }),
     sortOrder: integer('sort_order').notNull().default(0),
     name: text('name').notNull(),
     description: text('description'),
@@ -178,7 +182,9 @@ export const workflow = pgTable(
     visibility: workflowVisibilityEnum('visibility').notNull().default('workspace'),
     sourceWorkflowId: text('source_workflow_id'),
     publishedAt: timestamp('published_at'),
-    publishedBy: text('published_by').references(() => user.id, { onDelete: 'set null' }),
+    publishedBy: text('published_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     isDeployed: boolean('is_deployed').notNull().default(false),
     deployedAt: timestamp('deployed_at'),
     isPublicApi: boolean('is_public_api').notNull().default(false),
@@ -216,7 +222,9 @@ export const workflowPublicationScope = pgTable(
     viewerWorkgroupId: text('viewer_workgroup_id')
       .notNull()
       .references(() => workgroup.id, { onDelete: 'cascade' }),
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -251,6 +259,25 @@ export const workflowPublicationVersionStatusEnum = pgEnum('workflow_publication
 export type WorkflowPublicationVersionStatus =
   (typeof workflowPublicationVersionStatusEnum.enumValues)[number]
 
+export const productionTaskStatusEnum = pgEnum('production_task_status', [
+  'todo',
+  'in_progress',
+  'submitted',
+  'approved',
+  'changes_requested',
+  'archived',
+])
+
+export type ProductionTaskStatus = (typeof productionTaskStatusEnum.enumValues)[number]
+
+export const copilotSkillCardActionKindEnum = pgEnum('copilot_skill_card_action_kind', [
+  'prompt',
+  'create_task',
+  'submit_task',
+])
+
+export type CopilotSkillCardActionKind = (typeof copilotSkillCardActionKindEnum.enumValues)[number]
+
 export const workflowPublicationVersion = pgTable(
   'workflow_publication_version',
   {
@@ -281,7 +308,9 @@ export const workflowPublicationVersion = pgTable(
     status: workflowPublicationVersionStatusEnum('status').notNull().default('published'),
     snapshotState: jsonb('snapshot_state').notNull(),
     snapshotMetadata: jsonb('snapshot_metadata').notNull().default('{}'),
-    publishedBy: text('published_by').references(() => user.id, { onDelete: 'set null' }),
+    publishedBy: text('published_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     publishedAt: timestamp('published_at').defaultNow().notNull(),
     archivedAt: timestamp('archived_at'),
     retractedAt: timestamp('retracted_at'),
@@ -291,7 +320,9 @@ export const workflowPublicationVersion = pgTable(
     lifecycleUpdatedAt: timestamp('lifecycle_updated_at'),
     reviewState: text('review_state'),
     riskLevel: text('risk_level'),
-    reviewerUserId: text('reviewer_user_id').references(() => user.id, { onDelete: 'set null' }),
+    reviewerUserId: text('reviewer_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     reviewerAssignedBy: text('reviewer_assigned_by').references(() => user.id, {
       onDelete: 'set null',
     }),
@@ -429,7 +460,9 @@ export const workflowExecutionSnapshots = pgTable(
   'workflow_execution_snapshots',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
     stateHash: text('state_hash').notNull(),
     stateData: jsonb('state_data').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -449,7 +482,9 @@ export const workflowExecutionLogs = pgTable(
   'workflow_execution_logs',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
@@ -600,7 +635,9 @@ export const workspaceBYOKKeys = pgTable(
       .references(() => workspace.id, { onDelete: 'cascade' }),
     providerId: text('provider_id').notNull(),
     encryptedApiKey: text('encrypted_api_key').notNull(),
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -665,7 +702,9 @@ export const workflowSchedule = pgTable(
   'workflow_schedule',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'cascade',
+    }),
     deploymentVersionId: text('deployment_version_id').references(
       () => workflowDeploymentVersion.id,
       { onDelete: 'cascade' }
@@ -689,7 +728,9 @@ export const workflowSchedule = pgTable(
     runCount: integer('run_count').notNull().default(0),
     sourceChatId: text('source_chat_id'),
     sourceTaskName: text('source_task_name'),
-    sourceUserId: text('source_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    sourceUserId: text('source_user_id').references(() => user.id, {
+      onDelete: 'cascade',
+    }),
     sourceWorkspaceId: text('source_workspace_id').references(() => workspace.id, {
       onDelete: 'cascade',
     }),
@@ -718,7 +759,9 @@ export const jobExecutionLogs = pgTable(
   'job_execution_logs',
   {
     id: text('id').primaryKey(),
-    scheduleId: text('schedule_id').references(() => workflowSchedule.id, { onDelete: 'set null' }),
+    scheduleId: text('schedule_id').references(() => workflowSchedule.id, {
+      onDelete: 'set null',
+    }),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
@@ -859,7 +902,9 @@ export const workspaceNotificationDelivery = pgTable(
     id: text('id').primaryKey(),
     subscriptionId: text('subscription_id')
       .notNull()
-      .references(() => workspaceNotificationSubscription.id, { onDelete: 'cascade' }),
+      .references(() => workspaceNotificationSubscription.id, {
+        onDelete: 'cascade',
+      }),
     workflowId: text('workflow_id')
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
@@ -893,8 +938,12 @@ export const apiKey = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }), // Only set for workspace keys
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }), // Only set for workspace keys
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     name: text('name').notNull(),
     key: text('key').notNull().unique(),
     keyHash: text('key_hash'),
@@ -967,7 +1016,9 @@ export const customTools = pgTable(
   'custom_tools',
   {
     id: text('id').primaryKey(),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     title: text('title').notNull(),
     schema: json('schema').notNull(),
@@ -988,7 +1039,9 @@ export const skill = pgTable(
   'skill',
   {
     id: text('id').primaryKey(),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     description: text('description').notNull(),
@@ -1181,7 +1234,9 @@ export const organizationAgentTemplate = pgTable(
       .references(() => organization.id, { onDelete: 'cascade' }),
     agentCode: text('agent_code').notNull(),
     projectInstructions: text('project_instructions').notNull().default(''),
-    updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
+    updatedBy: text('updated_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -1431,6 +1486,207 @@ export const personalCanvasWorkspace = pgTable(
   })
 )
 
+export const productionTask = pgTable(
+  'production_task',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    sourceWorkspaceId: text('source_workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    sourceWorkflowId: text('source_workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
+    sourceWorkgroupId: text('source_workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    assigneeWorkgroupId: text('assignee_workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    title: text('title').notNull(),
+    description: text('description'),
+    dueAt: timestamp('due_at'),
+    status: productionTaskStatusEnum('status').notNull().default('todo'),
+    resultWorkflowId: text('result_workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
+    resultNodeId: text('result_node_id'),
+    submissionNote: text('submission_note'),
+    reviewNote: text('review_note'),
+    submittedBy: text('submitted_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    submittedAt: timestamp('submitted_at'),
+    reviewedBy: text('reviewed_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    reviewedAt: timestamp('reviewed_at'),
+    reminderSentAt: timestamp('reminder_sent_at'),
+    archivedAt: timestamp('archived_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationStatusDueIdx: index('production_task_org_status_due_idx').on(
+      table.organizationId,
+      table.status,
+      table.dueAt
+    ),
+    assigneeStatusDueIdx: index('production_task_assignee_status_due_idx').on(
+      table.assigneeWorkgroupId,
+      table.status,
+      table.dueAt
+    ),
+    sourceWorkgroupIdx: index('production_task_source_workgroup_idx').on(table.sourceWorkgroupId),
+    resultWorkflowIdx: index('production_task_result_workflow_idx').on(table.resultWorkflowId),
+    reminderDueIdx: index('production_task_reminder_due_idx').on(
+      table.reminderSentAt,
+      table.dueAt,
+      table.status
+    ),
+  })
+)
+
+export const productionTaskMessage = pgTable(
+  'production_task_message',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    senderUserId: text('sender_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    senderAgentCode: text('sender_agent_code'),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskCreatedAtIdx: index('production_task_message_task_created_at_idx').on(
+      table.taskId,
+      table.createdAt
+    ),
+    senderUserIdx: index('production_task_message_sender_user_idx').on(table.senderUserId),
+  })
+)
+
+export const productionTaskReadReceipt = pgTable(
+  'production_task_read_receipt',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    lastReadAt: timestamp('last_read_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskUserUnique: uniqueIndex('production_task_read_receipt_task_user_unique').on(
+      table.taskId,
+      table.userId
+    ),
+    userUpdatedIdx: index('production_task_read_receipt_user_updated_idx').on(
+      table.userId,
+      table.updatedAt
+    ),
+  })
+)
+
+export const productionTaskDependency = pgTable(
+  'production_task_dependency',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    dependsOnTaskId: text('depends_on_task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdx: index('production_task_dependency_task_idx').on(table.taskId),
+    dependsOnIdx: index('production_task_dependency_depends_on_idx').on(table.dependsOnTaskId),
+    taskDependsOnUnique: uniqueIndex('production_task_dependency_unique').on(
+      table.taskId,
+      table.dependsOnTaskId
+    ),
+  })
+)
+
+export const productionTaskAttachment = pgTable(
+  'production_task_attachment',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    source: text('source').notNull().default('url'),
+    workspaceFileId: text('workspace_file_id').references((): AnyPgColumn => workspaceFiles.id, {
+      onDelete: 'set null',
+    }),
+    key: text('key'),
+    contentType: text('content_type'),
+    size: integer('size'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskCreatedAtIdx: index('production_task_attachment_task_created_at_idx').on(
+      table.taskId,
+      table.createdAt
+    ),
+    workspaceFileIdx: index('production_task_attachment_workspace_file_idx').on(
+      table.workspaceFileId
+    ),
+  })
+)
+
+export const productionTaskSubmissionAttachment = pgTable(
+  'production_task_submission_attachment',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    source: text('source').notNull().default('url'),
+    workspaceFileId: text('workspace_file_id').references((): AnyPgColumn => workspaceFiles.id, {
+      onDelete: 'set null',
+    }),
+    key: text('key'),
+    contentType: text('content_type'),
+    size: integer('size'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskCreatedAtIdx: index('production_task_submission_attachment_task_created_at_idx').on(
+      table.taskId,
+      table.createdAt
+    ),
+    workspaceFileIdx: index('production_task_submission_attachment_workspace_file_idx').on(
+      table.workspaceFileId
+    ),
+  })
+)
+
 export const workspaceFile = pgTable(
   'workspace_file',
   {
@@ -1466,9 +1722,13 @@ export const workspaceFiles = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
     context: text('context').notNull(), // 'workspace', 'mothership', 'copilot', 'chat', 'knowledge-base', 'profile-pictures', 'general', 'execution'
-    chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'cascade' }),
+    chatId: uuid('chat_id').references(() => copilotChats.id, {
+      onDelete: 'cascade',
+    }),
     originalName: text('original_name').notNull(),
     /**
      * Collision-disambiguated name exposed to the copilot VFS as `uploads/<displayName>`.
@@ -1628,6 +1888,47 @@ export const agentSkillBinding = pgTable(
       table.skillId,
       table.scope
     ),
+  })
+)
+
+export const copilotSkillCard = pgTable(
+  'copilot_skill_card',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    agentCode: text('agent_code').notNull(),
+    workgroupId: text('workgroup_id').references(() => workgroup.id, {
+      onDelete: 'cascade',
+    }),
+    title: text('title').notNull(),
+    description: text('description'),
+    prompt: text('prompt').notNull(),
+    actionKind: copilotSkillCardActionKindEnum('action_kind').notNull().default('prompt'),
+    taskTitle: text('task_title'),
+    taskDescription: text('task_description'),
+    dueAtOffsetHours: integer('due_at_offset_hours'),
+    enabled: boolean('enabled').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    updatedBy: text('updated_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationAgentIdx: index('copilot_skill_card_org_agent_idx').on(
+      table.organizationId,
+      table.agentCode,
+      table.enabled,
+      table.sortOrder
+    ),
+    workgroupIdx: index('copilot_skill_card_workgroup_idx').on(table.workgroupId),
+    updatedAtIdx: index('copilot_skill_card_updated_at_idx').on(table.updatedAt),
   })
 )
 
@@ -2043,8 +2344,12 @@ export const copilotChats = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'cascade',
+    }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
     type: chatTypeEnum('type').notNull().default('copilot'),
     title: text('title'),
     messages: jsonb('messages').notNull().default('[]'),
@@ -2182,8 +2487,12 @@ export const copilotRuns = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'cascade',
+    }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'cascade',
+    }),
     streamId: text('stream_id').notNull(),
     agent: text('agent'),
     model: text('model'),
@@ -2291,7 +2600,9 @@ export const templateCreators = pgTable(
     profileImageUrl: text('profile_image_url'),
     details: jsonb('details'),
     verified: boolean('verified').notNull().default(false),
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -2309,10 +2620,14 @@ export const templates = pgTable(
   'templates',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
     name: text('name').notNull(),
     details: jsonb('details'),
-    creatorId: text('creator_id').references(() => templateCreators.id, { onDelete: 'set null' }),
+    creatorId: text('creator_id').references(() => templateCreators.id, {
+      onDelete: 'set null',
+    }),
     views: integer('views').notNull().default(0),
     stars: integer('stars').notNull().default(0),
     status: templateStatusEnum('status').notNull().default('pending'),
@@ -2487,7 +2802,9 @@ export const mcpServers = pgTable(
       .references(() => workspace.id, { onDelete: 'cascade' }),
 
     // Track who created the server, but workspace owns it
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
 
     name: text('name').notNull(),
     description: text('description'),
@@ -2773,8 +3090,12 @@ export const auditLog = pgTable(
   'audit_log',
   {
     id: text('id').primaryKey(),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
-    actorId: text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    actorId: text('actor_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
@@ -2833,8 +3154,12 @@ export const usageLog = pgTable(
 
     cost: decimal('cost').notNull(),
 
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
-    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
     executionId: text('execution_id'),
 
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -2869,9 +3194,13 @@ export const credential = pgTable(
     displayName: text('display_name').notNull(),
     description: text('description'),
     providerId: text('provider_id'),
-    accountId: text('account_id').references(() => account.id, { onDelete: 'cascade' }),
+    accountId: text('account_id').references(() => account.id, {
+      onDelete: 'cascade',
+    }),
     envKey: text('env_key'),
-    envOwnerUserId: text('env_owner_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    envOwnerUserId: text('env_owner_user_id').references(() => user.id, {
+      onDelete: 'cascade',
+    }),
     encryptedServiceAccountKey: text('encrypted_service_account_key'),
     createdBy: text('created_by')
       .notNull()
@@ -2929,7 +3258,9 @@ export const credentialMember = pgTable(
     role: credentialMemberRoleEnum('role').notNull().default('member'),
     status: credentialMemberStatusEnum('status').notNull().default('active'),
     joinedAt: timestamp('joined_at'),
-    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+    invitedBy: text('invited_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -2954,7 +3285,9 @@ export const pendingCredentialDraft = pgTable(
     providerId: text('provider_id').notNull(),
     displayName: text('display_name').notNull(),
     description: text('description'),
-    credentialId: text('credential_id').references(() => credential.id, { onDelete: 'cascade' }),
+    credentialId: text('credential_id').references(() => credential.id, {
+      onDelete: 'cascade',
+    }),
     expiresAt: timestamp('expires_at').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
@@ -3011,7 +3344,9 @@ export const credentialSetMember = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     status: credentialSetMemberStatusEnum('status').notNull().default('pending'),
     joinedAt: timestamp('joined_at'),
-    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+    invitedBy: text('invited_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -3102,7 +3437,9 @@ export const permissionGroupMember = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    assignedBy: text('assigned_by').references(() => user.id, { onDelete: 'set null' }),
+    assignedBy: text('assigned_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     assignedAt: timestamp('assigned_at').notNull().defaultNow(),
   },
   (table) => ({
@@ -3284,7 +3621,9 @@ export const userTableRows = pgTable(
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => ({
     tableIdIdx: index('user_table_rows_table_id_idx').on(table.tableId),
@@ -3404,7 +3743,9 @@ export const mothershipInboxTask = pgTable(
     responseMessageId: text('response_message_id'),
     agentmailMessageId: text('agentmail_message_id'),
     status: text('status').notNull().default('received'),
-    chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'set null' }),
+    chatId: uuid('chat_id').references(() => copilotChats.id, {
+      onDelete: 'set null',
+    }),
     triggerJobId: text('trigger_job_id'),
     resultSummary: text('result_summary'),
     errorMessage: text('error_message'),
