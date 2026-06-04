@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
+import type { Node } from 'reactflow'
 import { useReactFlow } from 'reactflow'
 import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import {
@@ -10,6 +11,192 @@ import {
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('NodeUtilities')
+
+const CONTAINER_HEADER_HEIGHT = 50
+const CONTAINER_LEFT_PADDING = 16
+const CONTAINER_TOP_PADDING = 16
+
+type GeometryBlockRecord = Record<
+  string,
+  {
+    type?: string
+    data?: {
+      parentId?: string
+      width?: number
+      height?: number
+    }
+    height?: number
+  }
+>
+
+interface ContainerHit {
+  loopId: string
+  loopPosition: { x: number; y: number }
+  dimensions: { width: number; height: number }
+}
+
+interface NodeGeometrySnapshot {
+  nodeById: Map<string, Node>
+  getNodeDepth: (nodeId: string, maxDepth?: number) => number
+  getNodeHierarchy: (nodeId: string, maxDepth?: number) => string[]
+  isDescendantOf: (ancestorId: string, nodeId: string) => boolean
+  getNodeAbsolutePosition: (nodeId: string) => { x: number; y: number }
+  getContainingContainers: (position: { x: number; y: number }, isContainerType: (type: string) => boolean) => ContainerHit[]
+}
+
+export function createNodeGeometrySnapshot(
+  nodes: Node[],
+  blocks: GeometryBlockRecord
+): NodeGeometrySnapshot {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const depthCache = new Map<string, number>()
+  const hierarchyCache = new Map<string, string[]>()
+  const absolutePositionCache = new Map<string, { x: number; y: number }>()
+
+  const getParentId = (nodeId: string): string | undefined => blocks[nodeId]?.data?.parentId
+
+  const getNodeDepth = (nodeId: string, maxDepth = 100, visited = new Set<string>()): number => {
+    const cached = depthCache.get(nodeId)
+    if (cached !== undefined) return cached
+
+    const node = nodeById.get(nodeId)
+    const parentId = getParentId(nodeId)
+    if (!node || !parentId || maxDepth <= 0 || visited.has(nodeId)) {
+      return 0
+    }
+
+    visited.add(nodeId)
+    const depth = 1 + getNodeDepth(parentId, maxDepth - 1, visited)
+    depthCache.set(nodeId, depth)
+    return depth
+  }
+
+  const getNodeHierarchy = (
+    nodeId: string,
+    maxDepth = 100,
+    visited = new Set<string>()
+  ): string[] => {
+    const cached = hierarchyCache.get(nodeId)
+    if (cached) return cached
+
+    const node = nodeById.get(nodeId)
+    const parentId = getParentId(nodeId)
+    if (!node || maxDepth <= 0 || visited.has(nodeId)) {
+      return [nodeId]
+    }
+
+    if (!parentId) {
+      const hierarchy = [nodeId]
+      hierarchyCache.set(nodeId, hierarchy)
+      return hierarchy
+    }
+
+    visited.add(nodeId)
+    const hierarchy = [...getNodeHierarchy(parentId, maxDepth - 1, visited), nodeId]
+    hierarchyCache.set(nodeId, hierarchy)
+    return hierarchy
+  }
+
+  const isDescendantOf = (ancestorId: string, nodeId: string): boolean => {
+    const visited = new Set<string>()
+    let currentId: string | undefined = nodeId
+    let depth = 0
+
+    while (currentId && depth < 100) {
+      if (currentId === ancestorId) return true
+      if (visited.has(currentId)) return false
+      visited.add(currentId)
+      currentId = getParentId(currentId)
+      depth += 1
+    }
+
+    return false
+  }
+
+  const getNodeAbsolutePosition = (
+    nodeId: string,
+    visited = new Set<string>()
+  ): { x: number; y: number } => {
+    const cached = absolutePositionCache.get(nodeId)
+    if (cached) return cached
+
+    const node = nodeById.get(nodeId)
+    if (!node) {
+      return { x: 0, y: 0 }
+    }
+
+    const parentId = getParentId(nodeId)
+    if (!parentId) {
+      absolutePositionCache.set(nodeId, node.position)
+      return node.position
+    }
+
+    if (isDescendantOf(nodeId, parentId)) {
+      absolutePositionCache.set(nodeId, node.position)
+      return node.position
+    }
+
+    if (visited.has(nodeId)) {
+      return node.position
+    }
+
+    const parentNode = nodeById.get(parentId)
+    if (!parentNode) {
+      absolutePositionCache.set(nodeId, node.position)
+      return node.position
+    }
+
+    visited.add(nodeId)
+    const parentPosition = getNodeAbsolutePosition(parentId, visited)
+    const absolutePosition = {
+      x: parentPosition.x + CONTAINER_LEFT_PADDING + node.position.x,
+      y: parentPosition.y + CONTAINER_HEADER_HEIGHT + CONTAINER_TOP_PADDING + node.position.y,
+    }
+    absolutePositionCache.set(nodeId, absolutePosition)
+    return absolutePosition
+  }
+
+  const getContainingContainers = (
+    position: { x: number; y: number },
+    isContainerType: (type: string) => boolean
+  ): ContainerHit[] => {
+    return nodes
+      .filter((node) => node.type && isContainerType(node.type))
+      .filter((node) => {
+        const absolutePosition = getNodeAbsolutePosition(node.id)
+        const rect = {
+          left: absolutePosition.x,
+          right: absolutePosition.x + (node.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH),
+          top: absolutePosition.y,
+          bottom: absolutePosition.y + (node.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT),
+        }
+
+        return (
+          position.x >= rect.left &&
+          position.x <= rect.right &&
+          position.y >= rect.top &&
+          position.y <= rect.bottom
+        )
+      })
+      .map((node) => ({
+        loopId: node.id,
+        loopPosition: getNodeAbsolutePosition(node.id),
+        dimensions: {
+          width: node.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH,
+          height: node.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
+        },
+      }))
+  }
+
+  return {
+    nodeById,
+    getNodeDepth: (nodeId: string, maxDepth = 100) => getNodeDepth(nodeId, maxDepth),
+    getNodeHierarchy: (nodeId: string, maxDepth = 100) => getNodeHierarchy(nodeId, maxDepth),
+    isDescendantOf,
+    getNodeAbsolutePosition: (nodeId: string) => getNodeAbsolutePosition(nodeId),
+    getContainingContainers,
+  }
+}
 
 /**
  * Hook providing utilities for node position, hierarchy, and dimension calculations
@@ -66,11 +253,8 @@ export function useNodeUtilities(blocks: Record<string, any>) {
    */
   const getNodeDepth = useCallback(
     (nodeId: string, maxDepth = 100): number => {
-      const node = getNodes().find((n) => n.id === nodeId)
-      if (!node || maxDepth <= 0) return 0
-      const parentId = blocks?.[nodeId]?.data?.parentId
-      if (!parentId) return 0
-      return 1 + getNodeDepth(parentId, maxDepth - 1)
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      return snapshot.getNodeDepth(nodeId, maxDepth)
     },
     [getNodes, blocks]
   )
@@ -82,11 +266,8 @@ export function useNodeUtilities(blocks: Record<string, any>) {
    */
   const getNodeHierarchy = useCallback(
     (nodeId: string, maxDepth = 100): string[] => {
-      const node = getNodes().find((n) => n.id === nodeId)
-      if (!node || maxDepth <= 0) return [nodeId]
-      const parentId = blocks?.[nodeId]?.data?.parentId
-      if (!parentId) return [nodeId]
-      return [...getNodeHierarchy(parentId, maxDepth - 1), nodeId]
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      return snapshot.getNodeHierarchy(nodeId, maxDepth)
     },
     [getNodes, blocks]
   )
@@ -102,20 +283,10 @@ export function useNodeUtilities(blocks: Record<string, any>) {
    */
   const isDescendantOf = useCallback(
     (ancestorId: string, nodeId: string): boolean => {
-      const visited = new Set<string>()
-      const maxDepth = 100
-      let currentId: string | undefined = nodeId
-      let depth = 0
-      while (currentId && depth < maxDepth) {
-        if (currentId === ancestorId) return true
-        if (visited.has(currentId)) return false
-        visited.add(currentId)
-        currentId = blocks?.[currentId]?.data?.parentId
-        depth += 1
-      }
-      return false
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      return snapshot.isDescendantOf(ancestorId, nodeId)
     },
-    [blocks]
+    [getNodes, blocks]
   )
 
   /**
@@ -126,7 +297,8 @@ export function useNodeUtilities(blocks: Record<string, any>) {
    */
   const getNodeAbsolutePosition = useCallback(
     (nodeId: string): { x: number; y: number } => {
-      const node = getNodes().find((n) => n.id === nodeId)
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      const node = snapshot.nodeById.get(nodeId)
       if (!node) {
         logger.warn('Attempted to get position of non-existent node', { nodeId })
         return { x: 0, y: 0 }
@@ -137,7 +309,7 @@ export function useNodeUtilities(blocks: Record<string, any>) {
         return node.position
       }
 
-      const parentNode = getNodes().find((n) => n.id === parentId)
+      const parentNode = snapshot.nodeById.get(parentId)
       if (!parentNode) {
         logger.warn('Node references non-existent parent', {
           nodeId,
@@ -146,31 +318,15 @@ export function useNodeUtilities(blocks: Record<string, any>) {
         return node.position
       }
 
-      const visited = new Set<string>()
-      let currentId = nodeId
-      while (currentId && blocks?.[currentId]?.data?.parentId) {
-        const currentParentId = blocks[currentId].data.parentId
-        if (visited.has(currentParentId)) {
-          logger.error('Circular parent reference detected', {
-            nodeId,
-            parentChain: Array.from(visited),
-          })
-          return node.position
-        }
-        visited.add(currentId)
-        currentId = currentParentId
+      if (snapshot.isDescendantOf(nodeId, parentId)) {
+        logger.error('Circular parent reference detected', {
+          nodeId,
+          parentId,
+        })
+        return node.position
       }
 
-      const parentPos = getNodeAbsolutePosition(parentId)
-
-      const headerHeight = 50
-      const leftPadding = 16
-      const topPadding = 16
-
-      return {
-        x: parentPos.x + leftPadding + node.position.x,
-        y: parentPos.y + headerHeight + topPadding + node.position.y,
-      }
+      return snapshot.getNodeAbsolutePosition(nodeId)
     },
     [getNodes, blocks]
   )
@@ -186,8 +342,9 @@ export function useNodeUtilities(blocks: Record<string, any>) {
    */
   const calculateRelativePosition = useCallback(
     (nodeId: string, newParentId: string, skipClamping?: boolean): { x: number; y: number } => {
-      const nodeAbsPos = getNodeAbsolutePosition(nodeId)
-      const parentAbsPos = getNodeAbsolutePosition(newParentId)
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      const nodeAbsPos = snapshot.getNodeAbsolutePosition(nodeId)
+      const parentAbsPos = snapshot.getNodeAbsolutePosition(newParentId)
 
       const rawPosition = {
         x: nodeAbsPos.x - parentAbsPos.x,
@@ -198,7 +355,7 @@ export function useNodeUtilities(blocks: Record<string, any>) {
         return rawPosition
       }
 
-      const parentNode = getNodes().find((n) => n.id === newParentId)
+      const parentNode = snapshot.nodeById.get(newParentId)
       const containerDimensions = {
         width: parentNode?.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH,
         height: parentNode?.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
@@ -207,7 +364,7 @@ export function useNodeUtilities(blocks: Record<string, any>) {
 
       return clampPositionToContainer(rawPosition, containerDimensions, blockDimensions)
     },
-    [getNodeAbsolutePosition, getNodes, getBlockDimensions]
+    [blocks, getNodes, getBlockDimensions]
   )
 
   /**
@@ -224,33 +381,8 @@ export function useNodeUtilities(blocks: Record<string, any>) {
       loopPosition: { x: number; y: number }
       dimensions: { width: number; height: number }
     } | null => {
-      const containingNodes = getNodes()
-        .filter((n) => n.type && isContainerType(n.type))
-        .filter((n) => {
-          // Use absolute coordinates for nested containers
-          const absolutePos = getNodeAbsolutePosition(n.id)
-          const rect = {
-            left: absolutePos.x,
-            right: absolutePos.x + (n.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH),
-            top: absolutePos.y,
-            bottom: absolutePos.y + (n.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT),
-          }
-
-          return (
-            position.x >= rect.left &&
-            position.x <= rect.right &&
-            position.y >= rect.top &&
-            position.y <= rect.bottom
-          )
-        })
-        .map((n) => ({
-          loopId: n.id,
-          loopPosition: getNodeAbsolutePosition(n.id),
-          dimensions: {
-            width: n.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH,
-            height: n.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
-          },
-        }))
+      const snapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+      const containingNodes = snapshot.getContainingContainers(position, isContainerType)
 
       if (containingNodes.length > 0) {
         return containingNodes.sort((a, b) => {
@@ -262,7 +394,7 @@ export function useNodeUtilities(blocks: Record<string, any>) {
 
       return null
     },
-    [getNodes, isContainerType, getNodeAbsolutePosition]
+    [getNodes, blocks, isContainerType]
   )
 
   /**

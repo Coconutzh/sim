@@ -76,6 +76,7 @@ import {
   useShiftSelectionLock,
   useWorkflowExecution,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import { createNodeGeometrySnapshot } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-node-utilities'
 import {
   calculateContainerDimensions,
   clampPositionToContainer,
@@ -83,6 +84,7 @@ import {
   computeClampedPositionUpdates,
   estimateBlockDimensions,
   filterProtectedBlocks,
+  getDragHighlightTransition,
   getClampedPositionForNode,
   getDescendantBlockIds,
   getEdgeSelectionContextId,
@@ -91,6 +93,7 @@ import {
   isBlockProtected,
   isEdgeProtected,
   isInEditableElement,
+  pickBestContainerMatch,
   resolveSelectionConflicts,
   validateTriggerPaste,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
@@ -804,9 +807,22 @@ const WorkflowContent = React.memo(
       []
     )
 
+    /** Clears the active drag highlight only when the target actually changes. */
+    const resetDragHighlights = useCallback(() => {
+      if (getDragHighlightTransition(highlightedContainerRef.current, null) === 'noop') {
+        return
+      }
+      clearDragHighlights()
+      highlightedContainerRef.current = null
+    }, [])
+
     /** Applies highlight styling to a container node during drag operations. */
     const highlightContainerNode = useCallback(
       (containerId: string, containerKind: 'loop' | 'parallel') => {
+        if (getDragHighlightTransition(highlightedContainerRef.current, containerId) === 'noop') {
+          return
+        }
+
         clearDragHighlights()
         const containerElement = document.querySelector(`[data-id="${containerId}"]`)
         if (containerElement) {
@@ -814,7 +830,11 @@ const WorkflowContent = React.memo(
             containerKind === 'loop' ? 'loop-node-drag-over' : 'parallel-node-drag-over'
           )
           document.body.style.cursor = 'copy'
+          highlightedContainerRef.current = containerId
+          return
         }
+
+        highlightedContainerRef.current = null
       },
       []
     )
@@ -880,6 +900,7 @@ const WorkflowContent = React.memo(
     const multiNodeDragStartRef = useRef<Map<string, { x: number; y: number; parentId?: string }>>(
       new Map()
     )
+    const highlightedContainerRef = useRef<string | null>(null)
 
     /** Re-applies diff markers when blocks change after socket rehydration. */
     const blocksRef = useRef(blocks)
@@ -2335,7 +2356,7 @@ const WorkflowContent = React.memo(
         try {
           const containerInfo = isPointInLoopNode(position)
 
-          clearDragHighlights()
+          resetDragHighlights()
 
           if (data.type === 'loop' || data.type === 'parallel') {
             const id = generateId()
@@ -2846,14 +2867,13 @@ const WorkflowContent = React.memo(
               }
             }
           } else {
-            clearDragHighlights()
-            document.body.style.cursor = ''
+            resetDragHighlights()
           }
         } catch (err) {
           logger.error('Error in onDragOver', { err })
         }
       },
-      [screenToFlowPosition, isPointInLoopNode, getNodes, highlightContainerNode]
+      [screenToFlowPosition, isPointInLoopNode, getNodes, highlightContainerNode, resetDragHighlights]
     )
 
     const loadingWorkflowRef = useRef<string | null>(null)
@@ -3818,17 +3838,20 @@ const WorkflowContent = React.memo(
         if (isStarterBlock) {
           // If it's a starter block, remove any highlighting and don't allow it to be dragged into containers
           if (potentialParentId) {
-            clearDragHighlights()
+            resetDragHighlights()
             setPotentialParentId(null)
           }
           return // Exit early - don't process any container intersections for starter blocks
         }
 
+        const geometrySnapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+        const allNodes = Array.from(geometrySnapshot.nodeById.values())
+
         // Get the node's absolute position to properly calculate intersections
-        const nodeAbsolutePos = getNodeAbsolutePosition(node.id)
+        const nodeAbsolutePos = geometrySnapshot.getNodeAbsolutePosition(node.id)
 
         // Find intersections with container nodes using absolute coordinates
-        const intersectingNodes = getNodes()
+        const intersectingNodes = allNodes
           .filter((n) => {
             // Only consider container nodes that aren't the dragged node
             if (n.type !== 'subflowNode' || n.id === node.id) return false
@@ -3837,7 +3860,7 @@ const WorkflowContent = React.memo(
             if (blocks[n.id]?.locked) return false
 
             // Get the container's absolute position
-            const containerAbsolutePos = getNodeAbsolutePosition(n.id)
+            const containerAbsolutePos = geometrySnapshot.getNodeAbsolutePosition(n.id)
 
             // Get dimensions based on node type (must match actual rendered dimensions)
             const nodeWidth =
@@ -3876,8 +3899,9 @@ const WorkflowContent = React.memo(
           })
           // Add more information for sorting
           .map((n) => ({
+            id: n.id,
             container: n,
-            depth: getNodeDepth(n.id),
+            depth: geometrySnapshot.getNodeDepth(n.id),
             // Calculate size for secondary sorting
             size:
               (n.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH) *
@@ -3886,26 +3910,16 @@ const WorkflowContent = React.memo(
 
         // Update potential parent if there's at least one intersecting container node
         if (intersectingNodes.length > 0) {
-          // Sort by depth first (deepest/most nested containers first), then by size if same depth
-          const sortedContainers = intersectingNodes.sort((a, b) => {
-            // First try to compare by hierarchy depth
-            if (a.depth !== b.depth) {
-              return b.depth - a.depth // Higher depth (more nested) comes first
-            }
-            // If same depth, use size as secondary criterion
-            return a.size - b.size // Smaller container takes precedence
-          })
-
-          // Exclude containers that are inside the dragged node (would create a cycle)
-          const validContainers = sortedContainers.filter(
-            ({ container }) => !isDescendantOf(node.id, container.id)
+          const bestContainerMatch = pickBestContainerMatch(
+            intersectingNodes,
+            node.id,
+            geometrySnapshot.isDescendantOf
           )
 
-          // Use the most appropriate container (deepest or smallest at same depth)
-          const bestContainerMatch = validContainers[0]
-
           if (bestContainerMatch) {
-            setPotentialParentId(bestContainerMatch.container.id)
+            if (bestContainerMatch.container.id !== potentialParentId) {
+              setPotentialParentId(bestContainerMatch.container.id)
+            }
 
             // Add highlight class and change cursor
             const kind = (bestContainerMatch.container.data as SubflowNodeData)?.kind
@@ -3913,13 +3927,15 @@ const WorkflowContent = React.memo(
               highlightContainerNode(bestContainerMatch.container.id, kind)
             }
           } else {
-            clearDragHighlights()
-            setPotentialParentId(null)
+            resetDragHighlights()
+            if (potentialParentId) {
+              setPotentialParentId(null)
+            }
           }
         } else {
           // Remove highlighting if no longer over a container
-          if (potentialParentId) {
-            clearDragHighlights()
+          if (potentialParentId || highlightedContainerRef.current) {
+            resetDragHighlights()
             setPotentialParentId(null)
           }
         }
@@ -3928,11 +3944,9 @@ const WorkflowContent = React.memo(
         getNodes,
         potentialParentId,
         blocks,
-        getNodeAbsolutePosition,
-        getNodeDepth,
-        isDescendantOf,
         updateContainerDimensionsDuringMove,
         highlightContainerNode,
+        resetDragHighlights,
       ]
     )
 
@@ -4005,7 +4019,7 @@ const WorkflowContent = React.memo(
     /** Handles node drag stop to establish parent-child relationships. */
     const onNodeDragStop = useCallback(
       (_event: React.MouseEvent, node: any) => {
-        clearDragHighlights()
+        resetDragHighlights()
 
         // Get all selected nodes to update their positions too
         const allNodes = getNodes()
@@ -4250,6 +4264,7 @@ const WorkflowContent = React.memo(
         activeWorkflowId,
         collaborativeBatchUpdatePositions,
         executeBatchParentUpdate,
+        resetDragHighlights,
       ]
     )
 
@@ -4297,12 +4312,15 @@ const WorkflowContent = React.memo(
 
         // If no eligible nodes, clear any potential parent
         if (eligibleNodes.length === 0) {
-          if (potentialParentId) {
-            clearDragHighlights()
+          if (potentialParentId || highlightedContainerRef.current) {
+            resetDragHighlights()
             setPotentialParentId(null)
           }
           return
         }
+
+        const geometrySnapshot = createNodeGeometrySnapshot(getNodes(), blocks)
+        const allNodes = Array.from(geometrySnapshot.nodeById.values())
 
         // Calculate bounding box of all dragged nodes using absolute positions
         let minX = Number.POSITIVE_INFINITY
@@ -4311,7 +4329,7 @@ const WorkflowContent = React.memo(
         let maxY = Number.NEGATIVE_INFINITY
 
         eligibleNodes.forEach((node) => {
-          const absolutePos = getNodeAbsolutePosition(node.id)
+          const absolutePos = geometrySnapshot.getNodeAbsolutePosition(node.id)
           const width = BLOCK_DIMENSIONS.FIXED_WIDTH
           const height = Math.max(
             node.height || BLOCK_DIMENSIONS.MIN_HEIGHT,
@@ -4328,14 +4346,13 @@ const WorkflowContent = React.memo(
         const selectionRect = { left: minX, right: maxX, top: minY, bottom: maxY }
 
         // Find containers that intersect with the selection bounding box
-        const allNodes = getNodes()
         const intersectingContainers = allNodes
           .filter((containerNode) => {
             if (containerNode.type !== 'subflowNode') return false
             // Skip if any dragged node is this container
             if (nodes.some((n) => n.id === containerNode.id)) return false
 
-            const containerAbsolutePos = getNodeAbsolutePosition(containerNode.id)
+            const containerAbsolutePos = geometrySnapshot.getNodeAbsolutePosition(containerNode.id)
             const containerRect = {
               left: containerAbsolutePos.x,
               right:
@@ -4356,33 +4373,34 @@ const WorkflowContent = React.memo(
             )
           })
           .map((n) => ({
+            id: n.id,
             container: n,
-            depth: getNodeDepth(n.id),
+            depth: geometrySnapshot.getNodeDepth(n.id),
             size:
               (n.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH) *
               (n.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT),
           }))
 
         if (intersectingContainers.length > 0) {
-          // Sort by depth first (deepest first), then by size
-          const sortedContainers = intersectingContainers.sort((a, b) => {
-            if (a.depth !== b.depth) return b.depth - a.depth
-            return a.size - b.size
-          })
+          const bestMatch = pickBestContainerMatch(
+            intersectingContainers,
+            '__selection__',
+            (_ancestorId, containerId) =>
+              nodes.some((draggedNode) => geometrySnapshot.isDescendantOf(draggedNode.id, containerId))
+          )
 
-          const bestMatch = sortedContainers[0]
-
-          if (bestMatch.container.id !== potentialParentId) {
+          if (bestMatch && bestMatch.container.id !== potentialParentId) {
             setPotentialParentId(bestMatch.container.id)
+          }
 
-            // Add highlight
+          if (bestMatch) {
             const kind = (bestMatch.container.data as SubflowNodeData)?.kind
             if (kind === 'loop' || kind === 'parallel') {
               highlightContainerNode(bestMatch.container.id, kind)
             }
           }
-        } else if (potentialParentId) {
-          clearDragHighlights()
+        } else if (potentialParentId || highlightedContainerRef.current) {
+          resetDragHighlights()
           setPotentialParentId(null)
         }
       },
@@ -4390,16 +4408,15 @@ const WorkflowContent = React.memo(
         canNodeEnterContainer,
         getNodes,
         potentialParentId,
-        getNodeAbsolutePosition,
-        getNodeDepth,
-        clearDragHighlights,
+        blocks,
         highlightContainerNode,
+        resetDragHighlights,
       ]
     )
 
     const onSelectionDragStop = useCallback(
       (_event: React.MouseEvent, nodes: any[]) => {
-        clearDragHighlights()
+        resetDragHighlights()
         if (nodes.length === 0) return
 
         const allNodes = getNodes()
@@ -4421,8 +4438,8 @@ const WorkflowContent = React.memo(
         getNodes,
         collaborativeBatchUpdatePositions,
         potentialParentId,
-        clearDragHighlights,
         executeBatchParentUpdate,
+        resetDragHighlights,
       ]
     )
 
