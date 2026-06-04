@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sanitizeFileName } from '@/executor/constants'
-import '@/lib/uploads/core/setup.server'
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import {
   uploadFilesFormFieldsSchema,
@@ -71,6 +70,9 @@ async function ensureWritableWorkspace(
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
+    const { ensureUploadsRuntimeReady } = await import('@/lib/uploads/core/setup.server')
+    await ensureUploadsRuntimeReady()
+
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

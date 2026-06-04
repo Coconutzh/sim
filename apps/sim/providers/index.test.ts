@@ -286,4 +286,45 @@ describe('executeProviderRequest — BYOK regression', () => {
       })
     )
   })
+
+  it('injects explicit JSON schema instructions for DeepSeek structured outputs', async () => {
+    mockGetApiKeyWithBYOK.mockResolvedValue({
+      apiKey: 'sk-deepseek-env',
+      isBYOK: false,
+      source: 'env-deepseek-api-key',
+    })
+    mockExecuteRequest.mockResolvedValue({
+      content: '{"assistantText":"ok","summary":"","intent":{"mode":"build_from_scratch","summary":"","shouldExecute":true,"risk":"low"},"steps":[]}',
+      model: 'deepseek-chat',
+    } satisfies ProviderResponse)
+
+    await executeProviderRequest('deepseek', {
+      model: 'deepseek-chat',
+      workspaceId: 'ws-1',
+      systemPrompt: 'base planner prompt',
+      responseFormat: {
+        name: 'content_canvas_plan',
+        schema: {
+          type: 'object',
+          properties: {
+            assistantText: { type: 'string' },
+          },
+          required: ['assistantText'],
+        },
+      },
+    })
+
+    expect(mockExecuteRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining(
+          'IMPORTANT: You must respond with a valid JSON object'
+        ),
+      })
+    )
+    expect(mockExecuteRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining('Schema name: content_canvas_plan'),
+      })
+    )
+  })
 })

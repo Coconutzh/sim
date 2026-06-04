@@ -121,6 +121,46 @@ describe('persisted-message', () => {
     ])
   })
 
+  it('round-trips action event blocks through persistence and normalization', () => {
+    const result: OrchestratorResult = {
+      success: true,
+      content: 'done',
+      requestId: 'req-action-event-1',
+      contentBlocks: [
+        {
+          type: 'action_event',
+          timestamp: 1_700_000_000_003,
+          actionEvent: {
+            name: 'created_node',
+            text: '已新建图片节点',
+            status: 'success',
+          },
+        },
+      ],
+      toolCalls: [],
+    }
+
+    const persisted = buildPersistedAssistantMessage(result)
+    const normalized = normalizeMessage(persisted as unknown as Record<string, unknown>)
+
+    expect(normalized.contentBlocks).toEqual([
+      {
+        type: 'action_event',
+        timestamp: 1_700_000_000_003,
+        actionEvent: {
+          name: 'created_node',
+          text: '已新建图片节点',
+          status: 'success',
+        },
+      },
+      {
+        type: 'text',
+        channel: 'assistant',
+        content: 'done',
+      },
+    ])
+  })
+
   it('prefers an explicit persisted request ID override', () => {
     const result: OrchestratorResult = {
       success: true,

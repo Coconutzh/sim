@@ -7,6 +7,7 @@ import { getProviderExecutor } from '@/providers/registry'
 import type { ProviderId, ProviderRequest, ProviderResponse } from '@/providers/types'
 import {
   calculateCost,
+  generateSchemaInstructions,
   generateStructuredOutputInstructions,
   shouldBillModelUsage,
   sumToolCosts,
@@ -196,9 +197,13 @@ export async function executeProviderRequest(
       logger.info('Empty response format provided, ignoring it')
       sanitizedRequest.responseFormat = undefined
     } else {
-      const structuredOutputInstructions = generateStructuredOutputInstructions(
-        sanitizedRequest.responseFormat
-      )
+      const structuredOutputInstructions =
+        providerId === 'deepseek' && sanitizedRequest.responseFormat?.schema
+          ? generateSchemaInstructions(
+              sanitizedRequest.responseFormat.schema,
+              sanitizedRequest.responseFormat.name
+            )
+          : generateStructuredOutputInstructions(sanitizedRequest.responseFormat)
 
       if (structuredOutputInstructions.trim()) {
         const originalPrompt = sanitizedRequest.systemPrompt || ''
@@ -273,6 +278,19 @@ export async function executeProviderRequest(
   if (toolCost > 0 && response.cost) {
     response.cost.toolCost = toolCost
     response.cost.total += toolCost
+  }
+
+  return response
+}
+
+export async function executeStructuredActorRequest(
+  providerId: string,
+  request: ProviderRequest
+): Promise<ProviderResponse> {
+  const response = await executeProviderRequest(providerId, request)
+
+  if (isStreamingExecution(response) || isReadableStream(response)) {
+    throw new Error('Structured actor requests must return a non-streaming provider response')
   }
 
   return response

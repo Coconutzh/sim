@@ -98,6 +98,10 @@ vi.mock('@/lib/uploads', () => ({
 
 vi.mock('@/lib/uploads/core/storage-service', () => storageServiceMock)
 
+vi.mock('@/lib/uploads/core/setup.server', () => ({
+  ensureUploadsRuntimeReady: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/lib/uploads/setup.server', () => ({
   UPLOAD_DIR_SERVER: '/tmp/test-uploads',
 }))

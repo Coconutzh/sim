@@ -45,11 +45,28 @@ export interface OptionItem {
   value?: string
 }
 
+export type ActionEventName =
+  | 'understood_request'
+  | 'created_node'
+  | 'updated_node'
+  | 'connected_nodes'
+  | 'generated_output'
+  | 'repaired_step'
+  | 'blocked_step'
+  | 'completed_request'
+
+export interface ActionEventItem {
+  name: ActionEventName
+  text: string
+  status?: 'info' | 'success' | 'warning' | 'error'
+}
+
 export const ContentBlockType = {
   text: 'text',
   thinking: 'thinking',
   tool_call: 'tool_call',
   options: 'options',
+  action_event: 'action_event',
   subagent_text: 'subagent_text',
   subagent_thinking: 'subagent_thinking',
   subagent: 'subagent',
@@ -60,6 +77,7 @@ export interface ContentBlock {
   type: ContentBlockType
   content?: string
   options?: OptionItem[]
+  actionEvent?: ActionEventItem
   toolCall?: ToolCallState
   calledBy?: string
   timestamp: number

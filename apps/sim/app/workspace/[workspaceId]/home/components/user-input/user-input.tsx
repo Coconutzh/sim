@@ -259,8 +259,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   })
   const overlayRef = useRef<HTMLDivElement>(null)
   const plusMenuRef = useRef<PlusMenuHandle>(null)
-  const [confirmationMode, setConfirmationMode] = useState<ConfirmationMode>('manual')
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('standard')
+  const [confirmationMode, setConfirmationMode] = useState<ConfirmationMode>('auto')
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('extra')
 
   const [prevDefaultValue, setPrevDefaultValue] = useState(defaultValue)
   const [resourceLookupEnabled, setResourceLookupEnabled] = useState(!lazyResourceLoading)
