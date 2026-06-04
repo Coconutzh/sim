@@ -119,6 +119,15 @@ export const AuditAction = {
   // Project admin
   PROJECT_ADMIN_FAILURE_RECORDED: 'project_admin_failure.recorded',
 
+  // Production tasks
+  PRODUCTION_TASK_CREATED: 'production_task.created',
+  PRODUCTION_TASK_UPDATED: 'production_task.updated',
+  PRODUCTION_TASK_SUBMITTED: 'production_task.submitted',
+  PRODUCTION_TASK_APPROVED: 'production_task.approved',
+  PRODUCTION_TASK_CHANGES_REQUESTED: 'production_task.changes_requested',
+  PRODUCTION_TASK_MESSAGE_CREATED: 'production_task.message_created',
+  PRODUCTION_TASK_DDL_REMINDER: 'production_task.ddl_reminder',
+
   // OAuth / Credentials
   OAUTH_DISCONNECTED: 'oauth.disconnected',
   CREDENTIAL_CREATED: 'credential.created',
@@ -232,6 +241,7 @@ export const AuditResourceType = {
   ORGANIZATION: 'organization',
   PASSWORD: 'password',
   PERMISSION_GROUP: 'permission_group',
+  PRODUCTION_TASK: 'production_task',
   PUBLICATION: 'publication',
   SCHEDULE: 'schedule',
   SKILL: 'skill',

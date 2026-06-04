@@ -108,6 +108,23 @@ const PUBLICATION_GOVERNANCE_AUDIT_ACTIONS = [
   AuditAction.PUBLICATION_RETRACTED,
   AuditAction.PUBLICATION_RESTORED,
 ] as const
+type ProductionTaskAuditAction =
+  | typeof AuditAction.PRODUCTION_TASK_CREATED
+  | typeof AuditAction.PRODUCTION_TASK_UPDATED
+  | typeof AuditAction.PRODUCTION_TASK_SUBMITTED
+  | typeof AuditAction.PRODUCTION_TASK_APPROVED
+  | typeof AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED
+  | typeof AuditAction.PRODUCTION_TASK_MESSAGE_CREATED
+  | typeof AuditAction.PRODUCTION_TASK_DDL_REMINDER
+const PRODUCTION_TASK_AUDIT_ACTIONS = [
+  AuditAction.PRODUCTION_TASK_CREATED,
+  AuditAction.PRODUCTION_TASK_UPDATED,
+  AuditAction.PRODUCTION_TASK_SUBMITTED,
+  AuditAction.PRODUCTION_TASK_APPROVED,
+  AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED,
+  AuditAction.PRODUCTION_TASK_MESSAGE_CREATED,
+  AuditAction.PRODUCTION_TASK_DDL_REMINDER,
+] as const
 type MemberManagementAuditAction =
   | typeof AuditAction.MEMBER_INVITED
   | typeof AuditAction.MEMBER_BATCH_ASSIGNED
@@ -236,6 +253,7 @@ type ProjectNotificationCenterKind =
   | 'organization_settings'
   | 'billing_management'
   | 'cleanup_execution'
+  | 'production_task'
 
 export interface ProjectNotificationCenterEntry {
   id: string
@@ -869,7 +887,6 @@ export async function createWorkgroup(params: {
       name: params.name,
       slug,
       disciplineId: params.disciplineId,
-      teamWorkspaceId,
       createdAt: now,
       updatedAt: now,
     })
@@ -887,6 +904,11 @@ export async function createWorkgroup(params: {
       createdAt: now,
       updatedAt: now,
     })
+
+    await tx
+      .update(workgroup)
+      .set({ teamWorkspaceId, updatedAt: now })
+      .where(eq(workgroup.id, workgroupId))
 
     await tx.insert(workgroupMember).values({
       id: generateId(),
@@ -1686,6 +1708,7 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     auditLog.action,
     PUBLICATION_GOVERNANCE_AUDIT_ACTIONS
   )
+  const productionTaskCondition = inArray(auditLog.action, PRODUCTION_TASK_AUDIT_ACTIONS)
   const memberManagementCondition = inArray(auditLog.action, MEMBER_MANAGEMENT_AUDIT_ACTIONS)
   const teamManagementCondition = or(
     eq(auditLog.action, AuditAction.WORKGROUP_ARCHIVED),
@@ -1736,6 +1759,7 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
   if (kind === 'publication_review') return publicationReviewCondition
   if (kind === 'project_admin_failure') return failureCondition
   if (kind === 'publication_governance') return publicationGovernanceCondition
+  if (kind === 'production_task') return productionTaskCondition
   if (kind === 'member_management') return memberManagementCondition
   if (kind === 'team_management') return teamManagementCondition
   if (kind === 'agent_policy') return agentPolicyCondition
@@ -1749,6 +1773,7 @@ function projectNotificationCenterScopeCondition(kind?: ProjectNotificationCente
     publicationReviewCondition,
     failureCondition,
     publicationGovernanceCondition,
+    productionTaskCondition,
     memberManagementCondition,
     teamManagementCondition,
     agentPolicyCondition,
@@ -1788,6 +1813,39 @@ function getPublicationGovernanceTitle(
 
 function getPublicationGovernanceSeverity(action: PublicationAuditAction) {
   return action === AuditAction.PUBLICATION_ARCHIVED || action === AuditAction.PUBLICATION_RETRACTED
+    ? 'warning'
+    : 'info'
+}
+
+function isProductionTaskAction(action: string): action is ProductionTaskAuditAction {
+  return PRODUCTION_TASK_AUDIT_ACTIONS.some((taskAction) => taskAction === action)
+}
+
+function getProductionTaskTitle(action: ProductionTaskAuditAction, resourceName: string | null) {
+  const name = resourceName?.trim()
+  switch (action) {
+    case AuditAction.PRODUCTION_TASK_CREATED:
+      return name ? `生产任务已创建：${name}` : '生产任务已创建'
+    case AuditAction.PRODUCTION_TASK_UPDATED:
+      return name ? `生产任务已更新：${name}` : '生产任务已更新'
+    case AuditAction.PRODUCTION_TASK_SUBMITTED:
+      return name ? `任务已提交审核：${name}` : '任务已提交审核'
+    case AuditAction.PRODUCTION_TASK_APPROVED:
+      return name ? `任务审核通过：${name}` : '任务审核通过'
+    case AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED:
+      return name ? `任务需要修改：${name}` : '任务需要修改'
+    case AuditAction.PRODUCTION_TASK_MESSAGE_CREATED:
+      return name ? `任务有新消息：${name}` : '任务有新消息'
+    case AuditAction.PRODUCTION_TASK_DDL_REMINDER:
+      return name ? `DDL 即将到期：${name}` : 'DDL 即将到期'
+  }
+}
+
+function getProductionTaskSeverity(
+  action: ProductionTaskAuditAction
+): ProjectNotificationCenterEntry['severity'] {
+  return action === AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED ||
+    action === AuditAction.PRODUCTION_TASK_DDL_REMINDER
     ? 'warning'
     : 'info'
 }
@@ -2121,6 +2179,27 @@ function getProjectNotificationCenterEntry(
       kind: 'publication_governance',
       severity: getPublicationGovernanceSeverity(row.action),
       title: getPublicationGovernanceTitle(row.action, row.resourceName),
+      detail: row.description ?? '',
+      channel: null,
+      body: row.resourceName,
+      notificationCount: 1,
+      actorName: row.actorName,
+      actorEmail: row.actorEmail,
+      createdAt: row.createdAt.toISOString(),
+      readAt,
+    }
+  }
+
+  if (isProductionTaskAction(row.action)) {
+    const readAt =
+      row.metadata && typeof row.metadata === 'object'
+        ? getPublicationNotificationReadAt(row.metadata as Record<string, unknown>, userId)
+        : null
+    return {
+      id: row.id,
+      kind: 'production_task',
+      severity: getProductionTaskSeverity(row.action),
+      title: getProductionTaskTitle(row.action, row.resourceName),
       detail: row.description ?? '',
       channel: null,
       body: row.resourceName,
@@ -4259,7 +4338,7 @@ export async function resolveAgentForWorkspace(params: { userId: string; workspa
       code: row.disciplineCode ?? 'chief_director',
       name: row.disciplineName ?? '总导演',
     },
-    workgroup: { id: row.workgroupId, name: row.workgroupName },
+    workgroup: { id: row.workgroupId, name: row.workgroupName, organizationId: row.organizationId },
     skills: skillRows.map((item) => ({
       id: item.id,
       name: item.name,

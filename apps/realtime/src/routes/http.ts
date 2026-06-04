@@ -154,6 +154,35 @@ export function createHttpHandler(roomManager: IRoomManager, logger: Logger) {
       return
     }
 
+    // Handle production task collaboration notifications from the main API
+    if (req.method === 'POST' && req.url === '/api/production-task-updated') {
+      try {
+        const body = await readRequestBody(req)
+        const { workflowIds, organizationId, taskId, event } = JSON.parse(body)
+        if (!Array.isArray(workflowIds) || typeof taskId !== 'string') {
+          sendError(res, 'Invalid production task notification payload', 400)
+          return
+        }
+
+        const timestamp = Date.now()
+        for (const workflowId of workflowIds) {
+          if (typeof workflowId !== 'string' || !workflowId) continue
+          roomManager.emitToWorkflow(workflowId, 'production-task-updated', {
+            workflowId,
+            organizationId: typeof organizationId === 'string' ? organizationId : null,
+            taskId,
+            event: typeof event === 'string' ? event : 'updated',
+            timestamp,
+          })
+        }
+        sendSuccess(res)
+      } catch (error) {
+        logger.error('Error handling production task update notification:', error)
+        sendError(res, 'Failed to process production task notification')
+      }
+      return
+    }
+
     res.writeHead(404, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ error: 'Not found' }))
   }

@@ -485,6 +485,7 @@ export const projectNotificationCenterKindSchema = z.enum([
   'organization_settings',
   'billing_management',
   'cleanup_execution',
+  'production_task',
 ])
 export type ProjectNotificationCenterKind = z.output<typeof projectNotificationCenterKindSchema>
 export const projectNotificationCenterQuerySchema = z.object({
@@ -745,7 +746,7 @@ export const getCopilotAgentProfileContract = defineRouteContract({
         systemPrompt: z.string(),
       }),
       discipline: z.object({ id: z.string(), code: z.string(), name: z.string() }),
-      workgroup: z.object({ id: z.string(), name: z.string() }),
+      workgroup: z.object({ id: z.string(), name: z.string(), organizationId: z.string() }),
       skills: z.array(
         z.object({
           id: z.string(),

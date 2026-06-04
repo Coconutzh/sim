@@ -60,6 +60,7 @@ import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/compone
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
+import { ProductionTaskTimeline } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/production-task-timeline'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
 import {
   useAutoLayout,
@@ -5116,6 +5117,10 @@ const WorkflowContent = React.memo(
                       onNotify={notifyTrackAction}
                     />
                   </Suspense>
+                )}
+
+                {!embedded && !sandbox && shouldRenderAuxiliaryEditorChrome && (
+                  <ProductionTaskTimeline workspaceId={workspaceId} workflowId={workflowIdParam} />
                 )}
 
                 <ReactFlow

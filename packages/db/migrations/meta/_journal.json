@@ -1443,6 +1443,69 @@
       "when": 1779369954327,
       "tag": "0206_cheerful_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1779369954328,
+      "tag": "0207_personal_canvas_multiple_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1779369954329,
+      "tag": "0208_publication_lifecycle_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1779369954330,
+      "tag": "0209_workgroup_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1779369954331,
+      "tag": "0210_organization_agent_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1779369954332,
+      "tag": "0211_publication_reviewer_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1779369954333,
+      "tag": "0212_production_task_collaboration",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1779369954334,
+      "tag": "0213_production_task_v2_collaboration",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1779369954335,
+      "tag": "0214_production_attachments_skill_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1779369954336,
+      "tag": "0215_production_task_submission_deliverables",
+      "breakpoints": true
     }
   ]
 }

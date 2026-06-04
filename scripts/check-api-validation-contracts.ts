@@ -9,8 +9,8 @@ const QUERY_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/queries')
 const SELECTOR_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/selectors')
 
 const BASELINE = {
-  totalRoutes: 427,
-  zodRoutes: 402,
+  totalRoutes: 438,
+  zodRoutes: 413,
   nonZodRoutes: 25,
 } as const
 
@@ -458,15 +458,27 @@ function findRawFetchFindings(
 
       const annotation = extractAnnotation(content, i, 'raw-fetch')
       if (annotation.missingReason) {
-        missingReasons.push({ path: relativePath, line: i + 1, kind: 'raw-fetch' })
-        findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+        missingReasons.push({
+          path: relativePath,
+          line: i + 1,
+          kind: 'raw-fetch',
+        })
+        findings.push({
+          path: relativePath,
+          line: i + 1,
+          preview: buildPreview(line),
+        })
         continue
       }
       if (annotation.allowed) {
         exemptions += 1
         continue
       }
-      findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+      findings.push({
+        path: relativePath,
+        line: i + 1,
+        preview: buildPreview(line),
+      })
     }
   }
 
@@ -493,15 +505,27 @@ function findDoubleCastFindings(
     while (DOUBLE_CAST_PATTERN.exec(line) !== null) {
       const annotation = extractAnnotation(content, i, 'double-cast')
       if (annotation.missingReason) {
-        missingReasons.push({ path: relativePath, line: i + 1, kind: 'double-cast' })
-        findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+        missingReasons.push({
+          path: relativePath,
+          line: i + 1,
+          kind: 'double-cast',
+        })
+        findings.push({
+          path: relativePath,
+          line: i + 1,
+          preview: buildPreview(line),
+        })
         continue
       }
       if (annotation.allowed) {
         exemptions += 1
         continue
       }
-      findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+      findings.push({
+        path: relativePath,
+        line: i + 1,
+        preview: buildPreview(line),
+      })
     }
   }
 
@@ -544,15 +568,27 @@ function findRawJsonFindings(
     while (RAW_JSON_READ_PATTERN.exec(line) !== null) {
       const annotation = extractAnnotation(content, i, 'raw-json')
       if (annotation.missingReason) {
-        missingReasons.push({ path: relativePath, line: i + 1, kind: 'raw-json' })
-        findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+        missingReasons.push({
+          path: relativePath,
+          line: i + 1,
+          kind: 'raw-json',
+        })
+        findings.push({
+          path: relativePath,
+          line: i + 1,
+          preview: buildPreview(line),
+        })
         continue
       }
       if (annotation.allowed) {
         exemptions += 1
         continue
       }
-      findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+      findings.push({
+        path: relativePath,
+        line: i + 1,
+        preview: buildPreview(line),
+      })
     }
   }
 
@@ -595,15 +631,27 @@ function findUntypedResponseFindings(
     while (UNTYPED_RESPONSE_PATTERN.exec(line) !== null) {
       const annotation = extractAnnotation(content, i, 'untyped-response')
       if (annotation.missingReason) {
-        missingReasons.push({ path: relativePath, line: i + 1, kind: 'untyped-response' })
-        findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+        missingReasons.push({
+          path: relativePath,
+          line: i + 1,
+          kind: 'untyped-response',
+        })
+        findings.push({
+          path: relativePath,
+          line: i + 1,
+          preview: buildPreview(line),
+        })
         continue
       }
       if (annotation.allowed) {
         exemptions += 1
         continue
       }
-      findings.push({ path: relativePath, line: i + 1, preview: buildPreview(line) })
+      findings.push({
+        path: relativePath,
+        line: i + 1,
+        preview: buildPreview(line),
+      })
     }
   }
 
@@ -668,15 +716,27 @@ function findSameOriginApiFetchFindings(
 
     const annotation = extractAnnotation(content, lineIndex, 'raw-fetch')
     if (annotation.missingReason) {
-      missingReasons.push({ path: relativePath, line: lineNumber, kind: 'raw-fetch' })
-      findings.push({ path: relativePath, line: lineNumber, preview: buildPreview(line) })
+      missingReasons.push({
+        path: relativePath,
+        line: lineNumber,
+        kind: 'raw-fetch',
+      })
+      findings.push({
+        path: relativePath,
+        line: lineNumber,
+        preview: buildPreview(line),
+      })
       continue
     }
     if (annotation.allowed) {
       exemptions += 1
       continue
     }
-    findings.push({ path: relativePath, line: lineNumber, preview: buildPreview(line) })
+    findings.push({
+      path: relativePath,
+      line: lineNumber,
+      preview: buildPreview(line),
+    })
   }
 
   return { findings, exemptions, missingReasons }
@@ -861,7 +921,10 @@ function buildBoundaryPolicyMetrics(
   },
   doubleCastSummary: { findings: DoubleCastFinding[]; exemptions: number },
   rawJsonSummary: { findings: RawJsonFinding[]; exemptions: number },
-  untypedResponseSummary: { findings: UntypedResponseFinding[]; exemptions: number },
+  untypedResponseSummary: {
+    findings: UntypedResponseFinding[]
+    exemptions: number
+  },
   annotationsMissingReason: AnnotationMissingReasonFinding[]
 ): {
   ratchetedMetrics: BoundaryPolicyMetric[]
@@ -1296,7 +1359,10 @@ async function main() {
     },
     { findings: doubleCastFindings, exemptions: doubleCastExemptions },
     { findings: rawJsonFindings, exemptions: rawJsonExemptions },
-    { findings: untypedResponseFindings, exemptions: untypedResponseExemptions },
+    {
+      findings: untypedResponseFindings,
+      exemptions: untypedResponseExemptions,
+    },
     annotationsMissingReason
   )
 
