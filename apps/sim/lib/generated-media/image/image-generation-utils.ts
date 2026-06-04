@@ -12,6 +12,11 @@ export const IMAGE_GENERATION_MODEL_OPTIONS = [
     label: '即梦 4.0',
     description: '速度更稳，适合快速探索方向',
   },
+  {
+    id: 'gemini-3.1-flash-image-preview',
+    label: 'Gemini 3.1 Flash Image',
+    description: 'Supports reference images and fast edits',
+  },
 ] as const
 
 export const IMAGE_ASPECT_RATIO_OPTIONS = [

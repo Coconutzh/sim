@@ -10,6 +10,8 @@ import {
   type VideoMediaType,
   type VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
+import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
+import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GeneratedVideoProviders')
 
@@ -116,8 +118,32 @@ function isPrivateHostname(hostname: string) {
   return false
 }
 
-function resolveDashScopeMediaUrl(file: UserFileLike) {
-  const absoluteUrl = ensureAbsoluteUrl(file.url)
+function arrayBufferToBase64(buffer: Buffer) {
+  return buffer.toString('base64')
+}
+
+function getImageMimeType(file: UserFileLike) {
+  if (file.type?.startsWith('image/')) {
+    return file.type
+  }
+
+  const normalizedName = `${file.name ?? ''} ${file.url ?? ''}`.toLowerCase()
+  if (normalizedName.includes('.webp')) return 'image/webp'
+  if (normalizedName.includes('.jpg') || normalizedName.includes('.jpeg')) return 'image/jpeg'
+  return 'image/png'
+}
+
+async function resolveDashScopeImageInput(file: UserFileLike) {
+  const originalUrl = file.url?.trim()
+  if (!originalUrl) {
+    throw new Error('Frame images must have a valid URL before sending to DashScope.')
+  }
+
+  if (originalUrl.startsWith('data:image/')) {
+    return originalUrl
+  }
+
+  const absoluteUrl = ensureAbsoluteUrl(originalUrl)
 
   let parsedUrl: URL
   try {
@@ -130,16 +156,18 @@ function resolveDashScopeMediaUrl(file: UserFileLike) {
     throw new Error('DashScope only supports HTTP or HTTPS image URLs for first and last frames.')
   }
 
-  if (isLocalhostUrl(parsedUrl.toString()) || isPrivateHostname(parsedUrl.hostname)) {
-    throw new Error(
-      'DashScope needs publicly accessible image URLs for the first and last frames. Configure NEXT_PUBLIC_APP_URL with a public domain, or use images hosted on a public URL.'
-    )
+  if (!isLocalhostUrl(parsedUrl.toString()) && !isPrivateHostname(parsedUrl.hostname)) {
+    return parsedUrl.toString()
   }
 
-  return parsedUrl.toString()
+  const fileBuffer = await downloadFileFromUrl(
+    isInternalFileUrl(originalUrl) ? originalUrl : absoluteUrl
+  )
+
+  return `data:${getImageMimeType(file)};base64,${arrayBufferToBase64(fileBuffer)}`
 }
 
-function buildDashScopePayload({
+async function buildDashScopePayload({
   model,
   prompt,
   media,
@@ -150,10 +178,12 @@ function buildDashScopePayload({
       model,
       input: {
         prompt,
-        media: media.map((item) => ({
-          type: item.type,
-          url: resolveDashScopeMediaUrl(item.file),
-        })),
+        media: await Promise.all(
+          media.map(async (item) => ({
+            type: item.type,
+            url: await resolveDashScopeImageInput(item.file),
+          }))
+        ),
       },
       parameters: {
         resolution: parameters.resolution,
@@ -194,7 +224,7 @@ function buildDashScopePayload({
     model,
     input: {
       prompt,
-      img_url: resolveDashScopeMediaUrl(firstFrameFile),
+      img_url: await resolveDashScopeImageInput(firstFrameFile),
     },
     parameters: {
       size,
@@ -218,7 +248,7 @@ export async function generateVideoWithProvider({
   parameters,
 }: GenerateVideoWithProviderInput): Promise<GeneratedVideoProviderResult> {
   const apiKey = getDashScopeApiKey()
-  const payload = buildDashScopePayload({
+  const payload = await buildDashScopePayload({
     model,
     prompt,
     media,

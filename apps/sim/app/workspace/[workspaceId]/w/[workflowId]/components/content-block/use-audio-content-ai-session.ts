@@ -26,6 +26,9 @@ interface UseAudioContentAiSessionOptions {
   prompt: string
   model: AudioGenerationModelId
   parameters: AudioGenerationParametersValue
+  referenceContext?: {
+    text: string[]
+  }
   onChangeFile: (value: UploadedFileValue | null) => void
 }
 
@@ -45,6 +48,7 @@ export function useAudioContentAiSession({
   prompt,
   model,
   parameters,
+  referenceContext,
   onChangeFile,
 }: UseAudioContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -112,6 +116,7 @@ export function useAudioContentAiSession({
           model,
           prompt: nextPrompt,
           parameters,
+          referenceContext,
         },
         signal: controller.signal,
       })
@@ -136,7 +141,7 @@ export function useAudioContentAiSession({
         setIsGenerating(false)
       }
     }
-  }, [model, onChangeFile, parameters, prompt, workspaceId])
+  }, [model, onChangeFile, parameters, prompt, referenceContext, workspaceId])
 
   return {
     modelOptions,

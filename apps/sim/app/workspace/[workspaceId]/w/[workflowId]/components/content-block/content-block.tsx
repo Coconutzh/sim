@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import type { ChangeEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
-import { createElement, memo, useCallback, useEffect, useRef, useState } from 'react'
+import { createElement, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Copy as CopyIcon,
   ImageIcon,
@@ -53,6 +53,18 @@ import {
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
 } from '@/lib/workflows/content-reference-edges'
+import {
+  buildContentReferencePromptContext,
+  buildStructuredContentReferenceContext,
+  findMatchingContentReferenceEdgeIds,
+  getAllowedReferenceSourceVariants,
+  getModelDisabledReason,
+  inferContentReferencesFromCanvas,
+  normalizeContentReferences,
+  removeContentReference,
+  type ContentReferenceRecord,
+  type PromptContextReferencedNode,
+} from '@/lib/workflows/content-references'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
@@ -73,8 +85,12 @@ import { useContentReferenceSelectionStore } from '@/stores/content/content-refe
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { usePanelEditorStore } from '@/stores/panel'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import {
+  EMPTY_SUBBLOCK_VALUES,
+  useSubBlockStore,
+} from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -415,6 +431,120 @@ function renderContentHtml(input: string | null | undefined, emptyStateText: str
   return Array.from(doc.body.childNodes).map((child, index) => renderNode(child, `root-${index}`))
 }
 
+function getReferenceChipLabel(
+  reference: ContentReferenceRecord,
+  node: PromptContextReferencedNode | undefined
+): string {
+  if (node?.name?.trim()) return node.name.trim()
+  if (node?.variant === 'text' && node.textContent?.trim()) {
+    return node.textContent.trim().slice(0, 36)
+  }
+  if (node?.file?.name?.trim()) return node.file.name.trim()
+  return `${reference.sourceVariant}:${reference.sourceBlockId}`
+}
+
+function getReferenceChipPreview(node: PromptContextReferencedNode | undefined): ReactNode {
+  if (node?.variant === 'image' && node.file?.url) {
+    return (
+      <img
+        src={node.file.url}
+        alt={node.file.name || node.name || 'reference image'}
+        className='h-8 w-8 rounded-lg object-cover'
+      />
+    )
+  }
+
+  const iconClassName = 'h-3.5 w-3.5'
+  const icon =
+    node?.variant === 'text' ? (
+      <Type className={iconClassName} />
+    ) : node?.variant === 'video' ? (
+      <Video className={iconClassName} />
+    ) : node?.variant === 'audio' ? (
+      <Music4 className={iconClassName} />
+    ) : (
+      <ImageIcon className={iconClassName} />
+    )
+
+  return (
+    <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-white/8 text-[#D6DBE5]'>
+      {icon}
+    </span>
+  )
+}
+
+function ReferenceComposerHeader({
+  canEdit,
+  references,
+  referencedNodes,
+  onAddReference,
+  onRemoveReference,
+}: {
+  canEdit: boolean
+  references: ContentReferenceRecord[]
+  referencedNodes: Record<string, PromptContextReferencedNode>
+  onAddReference: () => void
+  onRemoveReference: (reference: ContentReferenceRecord) => void
+}) {
+  return (
+    <div className='flex flex-wrap items-start gap-2'>
+      <button
+        type='button'
+        disabled={!canEdit}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onAddReference()
+        }}
+        className={cn(
+          'flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#F5F7FA] transition-colors',
+          canEdit ? 'hover-hover:bg-white/10' : 'cursor-not-allowed opacity-60'
+        )}
+        aria-label='Add canvas reference'
+      >
+        <Plus className='h-4 w-4' />
+      </button>
+
+      {references.map((reference) => {
+        const node = referencedNodes[reference.sourceBlockId]
+        return (
+          <div
+            key={`${reference.sourceBlockId}:${reference.role}`}
+            className='flex max-w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[11px] text-[#D6DBE5]'
+          >
+            {getReferenceChipPreview(node)}
+            <span className='truncate'>{getReferenceChipLabel(reference, node)}</span>
+            <button
+              type='button'
+              disabled={!canEdit}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onRemoveReference(reference)
+              }}
+              className={cn(
+                'text-[#9FA5B2] transition-colors',
+                canEdit ? 'hover-hover:text-white' : 'cursor-not-allowed opacity-60'
+              )}
+              aria-label='Remove reference'
+            >
+              x
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function TextToolbarButton({
   label,
   onClick,
@@ -468,6 +598,10 @@ function TextContentCard({
   height,
   aiPrompt,
   aiModel,
+  contentReferences,
+  referencedNodes,
+  onAddReference,
+  onRemoveReference,
   onChangeHtml,
   onChangeBlockStyle,
   onChangeBackgroundColor,
@@ -490,6 +624,10 @@ function TextContentCard({
   height: number
   aiPrompt: string
   aiModel: string
+  contentReferences: ContentReferenceRecord[]
+  referencedNodes: Record<string, PromptContextReferencedNode>
+  onAddReference: () => void
+  onRemoveReference: (reference: ContentReferenceRecord) => void
   onChangeHtml: (value: string) => void
   onChangeBlockStyle: (value: string) => void
   onChangeBackgroundColor: (value: string) => void
@@ -503,6 +641,22 @@ function TextContentCard({
   const params = useParams<{ workspaceId: string }>()
   const [isEditing, setIsEditing] = useState(false)
   const [draftHtml, setDraftHtml] = useState(html)
+  const referenceContextText = useMemo(
+    () =>
+      buildContentReferencePromptContext({
+        references: contentReferences,
+        referencedNodes,
+      }),
+    [contentReferences, referencedNodes]
+  )
+  const structuredReferenceContext = useMemo(
+    () =>
+      buildStructuredContentReferenceContext({
+        references: contentReferences,
+        referencedNodes,
+      }),
+    [contentReferences, referencedNodes]
+  )
   const {
     modelOptions,
     isGenerating,
@@ -517,8 +671,22 @@ function TextContentCard({
     html,
     prompt: aiPrompt,
     model: aiModel,
+    referenceContextText,
+    referenceImages: structuredReferenceContext.images,
     onChangeHtml,
   })
+  const modelOptionsWithDisabledReason = useMemo(
+    () =>
+      modelOptions.map((option) => ({
+        ...option,
+        disabledReason: getModelDisabledReason({
+          targetVariant: 'text',
+          model: option.id,
+          references: contentReferences,
+        }),
+      })),
+    [contentReferences, modelOptions]
+  )
 
   useEffect(() => {
     if (!isEditing) {
@@ -768,10 +936,19 @@ function TextContentCard({
           selected={selected}
           prompt={aiPrompt}
           model={aiModel}
-          modelOptions={modelOptions}
+          modelOptions={modelOptionsWithDisabledReason}
           isGenerating={isGenerating}
           error={error}
           hasPendingResult={pendingActionChoice && Boolean(pendingGeneratedText)}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
           onChangePrompt={onChangeAiPrompt}
           onChangeModel={onChangeAiModel}
           onSubmit={submitPrompt}
@@ -802,6 +979,10 @@ function MediaContentCard({
   videoMedia,
   videoParameters,
   videoFrameAspectRatioPreset,
+  contentReferences,
+  referencedNodes,
+  onAddReference,
+  onRemoveReference,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
@@ -833,6 +1014,10 @@ function MediaContentCard({
   videoMedia: Array<VideoMediaFileSlot<UploadedFileValue>>
   videoParameters: VideoParametersValue
   videoFrameAspectRatioPreset: VideoFrameAspectRatioPreset
+  contentReferences: ContentReferenceRecord[]
+  referencedNodes: Record<string, PromptContextReferencedNode>
+  onAddReference: () => void
+  onRemoveReference: (reference: ContentReferenceRecord) => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
@@ -948,6 +1133,14 @@ function MediaContentCard({
     storedAspectRatio: aiAspectRatio,
     inferredAspectRatio,
   })
+  const structuredReferenceContext = useMemo(
+    () =>
+      buildStructuredContentReferenceContext({
+        references: contentReferences,
+        referencedNodes,
+      }),
+    [contentReferences, referencedNodes]
+  )
   const {
     modelOptions,
     aspectRatioOptions,
@@ -960,6 +1153,7 @@ function MediaContentCard({
     prompt: aiPrompt,
     model: (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId,
     aspectRatio: resolvedAspectRatio,
+    referenceContext: structuredReferenceContext,
     onChangeFile,
   })
   const {
@@ -993,8 +1187,33 @@ function MediaContentCard({
     prompt: audioPrompt,
     model: audioModel,
     parameters: audioParameters,
+    referenceContext: { text: structuredReferenceContext.text },
     onChangeFile,
   })
+  const imageModelOptionsWithDisabledReason = useMemo(
+    () =>
+      modelOptions.map((option) => ({
+        ...option,
+        disabledReason: getModelDisabledReason({
+          targetVariant: 'image',
+          model: option.id,
+          references: contentReferences,
+        }),
+      })),
+    [contentReferences, modelOptions]
+  )
+  const audioModelOptionsWithDisabledReason = useMemo(
+    () =>
+      audioModelOptions.map((option) => ({
+        ...option,
+        disabledReason: getModelDisabledReason({
+          targetVariant: 'audio',
+          model: option.id,
+          references: contentReferences,
+        }),
+      })),
+    [audioModelOptions, contentReferences]
+  )
 
   const openFileDialog = useCallback(() => {
     if (!canUpload) return
@@ -1191,7 +1410,16 @@ function MediaContentCard({
           aspectRatio={resolvedAspectRatio}
           isGenerating={isGenerating}
           error={generationError}
-          modelOptions={modelOptions}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
+          modelOptions={imageModelOptionsWithDisabledReason}
           aspectRatioOptions={aspectRatioOptions}
           onChangePrompt={onChangeAiPrompt}
           onChangeModel={onChangeAiModel}
@@ -1201,65 +1429,74 @@ function MediaContentCard({
       )}
 
       {variant === 'video' && !isPreview && !isEmbedded && (
-        <VideoContentAiComposer
-          canEdit={canEdit}
-          selected={selected}
-          prompt={videoPrompt}
-          modelFamily={videoModelFamily}
-          aspectRatioPreset={videoFrameAspectRatioPreset}
-          resolution={videoParameters.resolution}
-          durationSeconds={videoParameters.duration}
-          firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
-          lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
-          isGenerating={isVideoGenerating}
-          error={videoGenerationError}
-          isSelectingFrame={frameSelection?.targetBlockId === blockId}
-          selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
-          modelOptions={videoModelOptions}
-          aspectRatioOptions={videoAspectRatioOptions}
-          resolutionOptions={videoResolutionOptions}
-          durationOptions={videoDurationOptions}
-          onChangePrompt={onChangeVideoPrompt}
-          onChangeModelFamily={onChangeVideoModelFamily}
-          onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
-          onChangeResolution={(value) =>
-            onChangeVideoParameters({
-              ...videoParameters,
-              resolution: value,
-              promptExtend: true,
-              watermark: false,
-            })
-          }
-          onChangeDurationSeconds={(value) =>
-            onChangeVideoParameters({
-              ...videoParameters,
-              duration: normalizeVideoDuration(value),
-              promptExtend: true,
-              watermark: false,
-            })
-          }
-          onSelectFrame={(slot) =>
-            beginFrameSelection({
-              targetBlockId: blockId,
-              slot,
-              modelFamily: videoModelFamily,
-              requiredAspectRatioPreset: videoFrameAspectRatioPreset,
-            })
-          }
-          onClearFrame={(slot) => {
-            const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
-            onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
-            window.dispatchEvent(
-              new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
-                detail: {
-                  blockId,
-                  autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
-                },
+        <div className='mt-3 flex flex-col gap-3'>
+          <ReferenceComposerHeader
+            canEdit={canEdit}
+            references={contentReferences}
+            referencedNodes={referencedNodes}
+            onAddReference={onAddReference}
+            onRemoveReference={onRemoveReference}
+          />
+          <VideoContentAiComposer
+            canEdit={canEdit}
+            selected={selected}
+            prompt={videoPrompt}
+            modelFamily={videoModelFamily}
+            aspectRatioPreset={videoFrameAspectRatioPreset}
+            resolution={videoParameters.resolution}
+            durationSeconds={videoParameters.duration}
+            firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
+            lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
+            isGenerating={isVideoGenerating}
+            error={videoGenerationError}
+            isSelectingFrame={frameSelection?.targetBlockId === blockId}
+            selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
+            modelOptions={videoModelOptions}
+            aspectRatioOptions={videoAspectRatioOptions}
+            resolutionOptions={videoResolutionOptions}
+            durationOptions={videoDurationOptions}
+            onChangePrompt={onChangeVideoPrompt}
+            onChangeModelFamily={onChangeVideoModelFamily}
+            onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
+            onChangeResolution={(value) =>
+              onChangeVideoParameters({
+                ...videoParameters,
+                resolution: value,
+                promptExtend: true,
+                watermark: false,
               })
-            )
-          }}
-          onSubmit={submitVideoPrompt}
-        />
+            }
+            onChangeDurationSeconds={(value) =>
+              onChangeVideoParameters({
+                ...videoParameters,
+                duration: normalizeVideoDuration(value),
+                promptExtend: true,
+                watermark: false,
+              })
+            }
+            onSelectFrame={(slot) =>
+              beginFrameSelection({
+                targetBlockId: blockId,
+                slot,
+                modelFamily: videoModelFamily,
+                requiredAspectRatioPreset: videoFrameAspectRatioPreset,
+              })
+            }
+            onClearFrame={(slot) => {
+              const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
+              onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
+              window.dispatchEvent(
+                new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
+                  detail: {
+                    blockId,
+                    autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
+                  },
+                })
+              )
+            }}
+            onSubmit={submitVideoPrompt}
+          />
+        </div>
       )}
 
       {variant === 'audio' && !isPreview && !isEmbedded && (
@@ -1271,7 +1508,16 @@ function MediaContentCard({
           parameters={audioParameters}
           isGenerating={isAudioGenerating}
           error={audioGenerationError}
-          modelOptions={audioModelOptions}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
+          modelOptions={audioModelOptionsWithDisabledReason}
           onChangePrompt={onChangeAudioPrompt}
           onChangeModel={onChangeAudioModel}
           onChangeParameters={onChangeAudioParameters}
@@ -1339,6 +1585,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [videoFrameAspectRatioPresetValue, setVideoFrameAspectRatioPresetValue] =
     useSubBlockValue<string>(id, 'videoFrameAspectRatioPreset')
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
+  const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
+    ContentReferenceRecord[]
+  >(id, 'contentReferences')
 
   const userPermissions = useUserPermissionsContext()
   const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
@@ -1347,6 +1596,16 @@ export const ContentBlock = memo(function ContentBlock({
     (state) => state.beginSelection
   )
   const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
+  const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
+  const workflowBlocks = useWorkflowStore((state) => state.blocks)
+  const workflowEdges = useWorkflowStore((state) => state.edges)
+  const workflowValues = useSubBlockStore(
+    useCallback(
+      (state) => (activeWorkflowId ? state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES : EMPTY_SUBBLOCK_VALUES),
+      [activeWorkflowId]
+    )
+  )
+  const { collaborativeBatchRemoveEdges, collaborativeBatchAddEdges } = useCollaborativeWorkflow()
 
   const resolvedVariant = resolveContentVariant(
     variant,
@@ -1499,11 +1758,192 @@ export const ContentBlock = memo(function ContentBlock({
         DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
       ) as VideoFrameAspectRatioPreset)
     : DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET
+  const resolvedContentReferences = normalizeContentReferences(
+    extractStoredValue<unknown>(
+      data.isPreview
+        ? sourceValues
+        : ({ contentReferences: contentReferencesValue } as StoredValueRecord),
+      'contentReferences',
+      []
+    )
+  )
+  const videoReferenceModelId =
+    resolvedVideoModelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+  const selectionModel =
+    resolvedVariant === 'text'
+      ? resolvedAiModel
+      : resolvedVariant === 'image'
+        ? resolvedAiModel
+        : resolvedVariant === 'audio'
+          ? resolvedAudioModel
+          : videoReferenceModelId
+  const allowedReferenceSourceVariants = getAllowedReferenceSourceVariants(
+    resolvedVariant,
+    selectionModel
+  )
+
+  const resolveBlockSourceValues = useCallback(
+    (blockId: string): StoredValueRecord => {
+      const liveValues = workflowValues[blockId]
+      if (liveValues) {
+        return liveValues as StoredValueRecord
+      }
+      const block = workflowBlocks[blockId]
+      return (block?.subBlocks as StoredValueRecord) ?? undefined
+    },
+    [workflowBlocks, workflowValues]
+  )
+  const resolveBlockVariant = useCallback(
+    (blockId: string): ContentVariant | null => {
+      const block = workflowBlocks[blockId]
+      if (block?.type !== 'content') return null
+      const source = resolveBlockSourceValues(blockId)
+      return resolveContentVariant(block?.subBlocks?.contentVariant?.value, source, source?.file)
+    },
+    [resolveBlockSourceValues, workflowBlocks]
+  )
+  const resolveBlockFileKey = useCallback(
+    (blockId: string): string | null => {
+      const source = resolveBlockSourceValues(blockId)
+      const file = extractStoredValue<UploadedFileValue | null>(source, 'file', null)
+      return file?.key ?? null
+    },
+    [resolveBlockSourceValues]
+  )
+  const referencedNodes = useMemo(() => {
+    const nodes: Record<string, PromptContextReferencedNode> = {}
+    for (const reference of resolvedContentReferences) {
+      const block = workflowBlocks[reference.sourceBlockId]
+      if (block?.type !== 'content') continue
+      const source = resolveBlockSourceValues(reference.sourceBlockId)
+      const variant = resolveBlockVariant(reference.sourceBlockId)
+      if (!variant) continue
+      nodes[reference.sourceBlockId] = {
+        name: block.name,
+        variant,
+        textContent:
+          variant === 'text'
+            ? getPlainTextFromHtml(extractStoredValue<string>(source, 'contentHtml', DEFAULT_TEXT_HTML))
+            : null,
+        file:
+          variant === 'text'
+            ? null
+            : (() => {
+                const file = extractStoredValue<UploadedFileValue | null>(source, 'file', null)
+                if (!file?.key) return null
+                return {
+                  id: file.id ?? '',
+                  name: file.name ?? file.key,
+                  url: file.path ?? '',
+                  key: file.key,
+                  size: file.size ?? 0,
+                  type: file.type,
+                  context: file.context,
+                }
+              })(),
+      }
+    }
+    return nodes
+  }, [resolveBlockSourceValues, resolveBlockVariant, resolvedContentReferences, workflowBlocks])
 
   const cardRef = useRef<HTMLDivElement>(null)
   const showContentReferenceHandles =
     canEditWorkflow && !data.isPreview && !data.isEmbedded && !frameSelection
   const isContentReferenceSource = contentReferenceSelection?.sourceBlockId === id
+  const isReferenceSelectionTarget =
+    Boolean(contentReferenceSelection) &&
+    !isContentReferenceSource &&
+    contentReferenceSelection?.allowedSourceVariants.includes(resolvedVariant)
+  const isReferenceSelectionDisabled =
+    Boolean(contentReferenceSelection) &&
+    !isContentReferenceSource &&
+    !contentReferenceSelection?.allowedSourceVariants.includes(resolvedVariant)
+  const isFrameSelectionDisabled = Boolean(frameSelection) && resolvedVariant !== 'image'
+  const frameSelectionBadgeLabel =
+    frameSelection && !isFrameSelectionDisabled
+      ? frameSelection.slot === 'first'
+        ? '点击设置首帧'
+        : '点击设置尾帧'
+      : null
+  const startReferenceSelection = useCallback(
+    (anchor: 'left' | 'right' = 'left') => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
+
+      if (resolvedVariant === 'video') {
+        const hasFirstFrame = Boolean(getVideoMediaFileForType(resolvedVideoMedia, 'first_frame')?.key)
+        const slot =
+          resolvedVideoModelFamily === 'wan2.7' && hasFirstFrame ? 'last' : 'first'
+        beginFrameSelection({
+          targetBlockId: id,
+          slot,
+          modelFamily: resolvedVideoModelFamily,
+          requiredAspectRatioPreset: resolvedVideoFrameAspectRatioPreset,
+        })
+        return
+      }
+
+      beginContentReferenceSelection({
+        sourceBlockId: id,
+        sourceVariant: resolvedVariant,
+        sourceModel: selectionModel,
+        allowedSourceVariants: allowedReferenceSourceVariants,
+        sourceAnchor: anchor,
+        mode: CONTENT_REFERENCE_EDGE_KIND,
+      })
+    },
+    [
+      allowedReferenceSourceVariants,
+      beginContentReferenceSelection,
+      beginFrameSelection,
+      canEditWorkflow,
+      data.isEmbedded,
+      data.isPreview,
+      id,
+      resolvedVariant,
+      resolvedVideoFrameAspectRatioPreset,
+      resolvedVideoMedia,
+      resolvedVideoModelFamily,
+      selectionModel,
+    ]
+  )
+  const removeReferenceAndEdges = useCallback(
+    (reference: ContentReferenceRecord) => {
+      if (data.isPreview || data.isEmbedded) return
+
+      const nextReferences = removeContentReference(resolvedContentReferences, reference)
+      setContentReferencesValue(nextReferences)
+
+      if (resolvedVariant === 'video') {
+        if (reference.role === 'video_first_frame') {
+          setVideoMediaValue(removeVideoMediaFileForType(resolvedVideoMedia, 'first_frame'))
+        }
+        if (reference.role === 'video_last_frame') {
+          setVideoMediaValue(removeVideoMediaFileForType(resolvedVideoMedia, 'last_frame'))
+        }
+      }
+
+      const edgeIds = findMatchingContentReferenceEdgeIds({
+        targetBlockId: id,
+        reference,
+        edges: workflowEdges,
+      })
+      if (edgeIds.length > 0) {
+        collaborativeBatchRemoveEdges(edgeIds)
+      }
+    },
+    [
+      collaborativeBatchRemoveEdges,
+      data.isEmbedded,
+      data.isPreview,
+      id,
+      resolvedContentReferences,
+      resolvedVariant,
+      resolvedVideoMedia,
+      setContentReferencesValue,
+      setVideoMediaValue,
+      workflowEdges,
+    ]
+  )
 
   useBlockDimensions({
     blockId: id,
@@ -1553,6 +1993,95 @@ export const ContentBlock = memo(function ContentBlock({
     ],
   })
 
+  useEffect(() => {
+    if (data.isPreview || data.isEmbedded || resolvedContentReferences.length > 0) return
+
+    const inferredReferences = inferContentReferencesFromCanvas({
+      targetBlockId: id,
+      targetVariant: resolvedVariant,
+      model: selectionModel,
+      edges: workflowEdges,
+      candidateBlockIds: Object.keys(workflowBlocks),
+      resolveVariant: resolveBlockVariant,
+      resolveFileKey: resolveBlockFileKey,
+      videoMedia: resolvedVideoMedia.map((item) => ({
+        type: item.type,
+        file: { key: item.file?.key ?? null },
+      })),
+    })
+
+    if (inferredReferences.length > 0) {
+      setContentReferencesValue(inferredReferences)
+    }
+  }, [
+    data.isEmbedded,
+    data.isPreview,
+    id,
+    resolveBlockFileKey,
+    resolveBlockVariant,
+    resolvedContentReferences.length,
+    resolvedVariant,
+    resolvedVideoMedia,
+    selectionModel,
+    setContentReferencesValue,
+    workflowBlocks,
+    workflowEdges,
+  ])
+
+  useEffect(() => {
+    if (data.isPreview || data.isEmbedded || resolvedContentReferences.length === 0) return
+
+    const missingEdges = resolvedContentReferences.flatMap((reference) => {
+      if (
+        findMatchingContentReferenceEdgeIds({
+          targetBlockId: id,
+          reference,
+          edges: workflowEdges,
+        }).length > 0
+      ) {
+        return []
+      }
+
+      const isVideoRole =
+        reference.role === 'video_first_frame' || reference.role === 'video_last_frame'
+      const sourceBlockId = isVideoRole ? reference.sourceBlockId : id
+      const targetBlockId = isVideoRole ? id : reference.sourceBlockId
+      const sourceX = workflowBlocks[sourceBlockId]?.position.x ?? 0
+      const targetX = workflowBlocks[targetBlockId]?.position.x ?? 0
+
+      return [
+        {
+          id: `${sourceBlockId}:${targetBlockId}:${reference.role}`,
+          source: sourceBlockId,
+          target: targetBlockId,
+          sourceHandle: getContentReferenceSourceHandleId(targetX >= sourceX ? 'right' : 'left'),
+          targetHandle: getContentReferenceTargetHandleId(targetX >= sourceX ? 'left' : 'right'),
+          type: 'workflowEdge',
+          data: {
+            kind: CONTENT_REFERENCE_EDGE_KIND,
+            ...(reference.role === 'video_first_frame'
+              ? { autoLinkType: 'video_first_frame' as const }
+              : reference.role === 'video_last_frame'
+                ? { autoLinkType: 'video_last_frame' as const }
+                : {}),
+          },
+        },
+      ]
+    })
+
+    if (missingEdges.length > 0) {
+      collaborativeBatchAddEdges(missingEdges, { skipUndoRedo: true })
+    }
+  }, [
+    collaborativeBatchAddEdges,
+    data.isEmbedded,
+    data.isPreview,
+    id,
+    resolvedContentReferences,
+    workflowBlocks,
+    workflowEdges,
+  ])
+
   return (
     <div className='group relative'>
       {!data.isPreview &&
@@ -1592,11 +2121,7 @@ export const ContentBlock = memo(function ContentBlock({
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                beginContentReferenceSelection({
-                  sourceBlockId: id,
-                  sourceAnchor: anchor,
-                  mode: CONTENT_REFERENCE_EDGE_KIND,
-                })
+                startReferenceSelection(anchor)
               }}
               className={cn(
                 'nodrag nopan -translate-y-1/2 absolute top-1/2 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] shadow-sm transition-all hover-hover:bg-[var(--surface-3)]',
@@ -1614,12 +2139,15 @@ export const ContentBlock = memo(function ContentBlock({
         </>
       )}
 
-      <div
-        ref={cardRef}
-        role='button'
-        tabIndex={0}
-        className='relative z-[20] cursor-grab select-none content-drag-handle [&:active]:cursor-grabbing'
-        onClick={handleClick}
+        <div
+          ref={cardRef}
+          role='button'
+          tabIndex={0}
+          className={cn(
+            'relative z-[20] cursor-grab select-none content-drag-handle transition-opacity [&:active]:cursor-grabbing',
+            (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
+          )}
+          onClick={handleClick}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) {
             return
@@ -1658,6 +2186,10 @@ export const ContentBlock = memo(function ContentBlock({
             videoMedia={resolvedVideoMedia}
             videoParameters={resolvedVideoParameters}
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
+            contentReferences={resolvedContentReferences}
+            referencedNodes={referencedNodes}
+            onAddReference={() => startReferenceSelection()}
+            onRemoveReference={removeReferenceAndEdges}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}
@@ -1710,6 +2242,10 @@ export const ContentBlock = memo(function ContentBlock({
             height={resolvedHeight}
             aiPrompt={resolvedAiPrompt}
             aiModel={resolvedAiModel}
+            contentReferences={resolvedContentReferences}
+            referencedNodes={referencedNodes}
+            onAddReference={() => startReferenceSelection()}
+            onRemoveReference={removeReferenceAndEdges}
             onChangeHtml={(value) => {
               if (!data.isPreview) setContentHtmlValue(value)
             }}
@@ -1741,6 +2277,18 @@ export const ContentBlock = memo(function ContentBlock({
           <div
             className={cn('pointer-events-none absolute inset-0 z-40 rounded-2xl', ringStyles)}
           />
+        )}
+
+        {isReferenceSelectionTarget && (
+          <div className='pointer-events-none absolute top-3 right-3 z-40 rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2.5 py-1 text-[11px] text-emerald-100 shadow-sm backdrop-blur'>
+            点击引用
+          </div>
+        )}
+
+        {frameSelectionBadgeLabel && resolvedVariant === 'image' && (
+          <div className='pointer-events-none absolute top-3 right-3 z-40 rounded-full border border-amber-400/30 bg-amber-500/20 px-2.5 py-1 text-[11px] text-amber-100 shadow-sm backdrop-blur'>
+            {frameSelectionBadgeLabel}
+          </div>
         )}
 
         {isContentReferenceSource && (

@@ -63,6 +63,19 @@ describe('POST /api/media/images/generate', () => {
         model: 'jimeng-4.5',
         prompt: 'A cinematic city skyline at dusk',
         aspectRatio: '16:9',
+        referenceContext: {
+          text: ['Neon alley moodboard copy'],
+          images: [
+            {
+              id: 'image-1',
+              name: 'moodboard.png',
+              url: 'https://example.com/moodboard.png',
+              key: 'workspace/moodboard.png',
+              size: 100,
+              type: 'image/png',
+            },
+          ],
+        },
       },
       {
         'content-type': 'application/json',
@@ -81,6 +94,19 @@ describe('POST /api/media/images/generate', () => {
       model: 'jimeng-4.5',
       prompt: 'A cinematic city skyline at dusk',
       aspectRatio: '16:9',
+      referenceContext: {
+        text: ['Neon alley moodboard copy'],
+        images: [
+          {
+            id: 'image-1',
+            name: 'moodboard.png',
+            url: 'https://example.com/moodboard.png',
+            key: 'workspace/moodboard.png',
+            size: 100,
+            type: 'image/png',
+          },
+        ],
+      },
     })
     expect(body).toMatchObject({
       success: true,

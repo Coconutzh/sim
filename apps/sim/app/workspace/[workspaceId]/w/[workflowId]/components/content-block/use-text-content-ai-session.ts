@@ -10,6 +10,11 @@ import {
   DEFAULT_TEXT_AI_MODEL,
   getTextAiModelOptions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
+import {
+  buildTextContentAiUserMessage,
+  hydrateReferenceImagesForTextAi,
+  type TextAiReferenceImageSource,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-request'
 import { getProviderFromModel } from '@/providers/models'
 
 interface UseTextContentAiSessionOptions {
@@ -18,6 +23,8 @@ interface UseTextContentAiSessionOptions {
   html: string
   prompt: string
   model: string
+  referenceContextText?: string
+  referenceImages?: TextAiReferenceImageSource[]
   onChangeHtml: (value: string) => void
 }
 
@@ -37,6 +44,8 @@ export function useTextContentAiSession({
   html,
   prompt,
   model,
+  referenceContextText,
+  referenceImages,
   onChangeHtml,
 }: UseTextContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -95,13 +104,25 @@ export function useTextContentAiSession({
     setPendingActionChoice(false)
 
     try {
+      const provider = getProviderFromModel(resolvedModel)
+      const hydratedReferenceImages =
+        provider === 'google' && referenceImages?.length
+          ? await hydrateReferenceImagesForTextAi(referenceImages)
+          : []
+
       const response = await requestJson(executeProviderContract, {
         body: {
           workspaceId,
-          provider: getProviderFromModel(resolvedModel),
+          provider,
           model: resolvedModel,
           systemPrompt: buildTextNodeAiSystemPrompt(),
-          messages: [{ role: 'user', content: nextPrompt }],
+          messages: [
+            buildTextContentAiUserMessage({
+              prompt: nextPrompt,
+              referenceContextText,
+              referenceImages: hydratedReferenceImages,
+            }),
+          ],
         },
         signal: controller.signal,
       })
@@ -124,7 +145,7 @@ export function useTextContentAiSession({
         setIsGenerating(false)
       }
     }
-  }, [model, prompt, workspaceId])
+  }, [model, prompt, referenceContextText, referenceImages, workspaceId])
 
   const applyPendingGeneratedText = useCallback(
     (mode: 'replace' | 'append') => {

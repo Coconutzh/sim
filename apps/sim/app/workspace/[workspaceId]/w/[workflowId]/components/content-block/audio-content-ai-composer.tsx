@@ -24,10 +24,12 @@ interface AudioContentAiComposerProps {
   parameters: AudioGenerationParametersValue
   isGenerating: boolean
   error: string | null
+  header?: ReactNode
   modelOptions: ReadonlyArray<{
     id: AudioGenerationModelId
     label: string
     description: string
+    disabledReason?: string | null
   }>
   onChangePrompt: (value: string) => void
   onChangeModel: (value: AudioGenerationModelId) => void
@@ -157,6 +159,7 @@ export function AudioContentAiComposer({
   parameters,
   isGenerating,
   error,
+  header,
   modelOptions,
   onChangePrompt,
   onChangeModel,
@@ -185,6 +188,7 @@ export function AudioContentAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成音频...'
       error={error}
+      header={header}
       afterFooter={
         settingsOpen ? (
           <div className='border-white/5 border-t bg-[#1B1D21] px-4 py-4'>
@@ -207,7 +211,7 @@ export function AudioContentAiComposer({
                   }}
                   className='rounded-full border border-white/10 px-2 py-1 text-[11px] text-[#B9C0CC]'
                 >
-                  收起
+                  关闭
                 </button>
               </div>
 
@@ -226,7 +230,7 @@ export function AudioContentAiComposer({
               />
 
               <SegmentedControl
-                label='演唱'
+                label='器乐'
                 disabled={!canEdit || isGenerating}
                 value={parameters.instrumental ? 'instrumental' : 'vocal'}
                 icon={<Music4 className='h-3.5 w-3.5' />}
@@ -256,14 +260,14 @@ export function AudioContentAiComposer({
                     onChange={(value) => onChangeParameters({ ...parameters, title: value })}
                   />
                   <PanelInput
-                    label='排除项（Exclude）'
+                    label='排除标签（Exclude）'
                     value={parameters.negativeTags}
                     placeholder='例如：metal, scream, low quality'
                     disabled={!canEdit || isGenerating}
                     onChange={(value) => onChangeParameters({ ...parameters, negativeTags: value })}
                   />
                   <PanelInput
-                    label='人声性别'
+                    label='演唱性别'
                     value={parameters.vocalGender}
                     placeholder='例如：female / male'
                     disabled={!canEdit || isGenerating}
@@ -292,8 +296,9 @@ export function AudioContentAiComposer({
                 className='max-w-[140px] truncate bg-transparent outline-none'
               >
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
+                  <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)}>
                     {option.label}
+                    {option.disabledReason ? ' (Unavailable)' : ''}
                   </option>
                 ))}
               </select>

@@ -4,11 +4,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const originalEnv = process.env
+const { mockDownloadFileFromUrl } = vi.hoisted(() => ({
+  mockDownloadFileFromUrl: vi.fn(),
+}))
+
+vi.mock('@/lib/uploads/utils/file-utils.server', () => ({
+  downloadFileFromUrl: (...args: unknown[]) => mockDownloadFileFromUrl(...args),
+}))
 
 describe('generateVideoWithProvider', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.restoreAllMocks()
+    mockDownloadFileFromUrl.mockReset()
     process.env = {
       ...originalEnv,
       DASHSCOPE_API_KEY: 'dashscope-test-key',
@@ -186,55 +194,82 @@ describe('generateVideoWithProvider', () => {
     ).rejects.toThrow('The size is not match xxxxxx')
   })
 
-  it('rejects local workspace frame URLs that are not publicly accessible to DashScope', async () => {
+  it('converts local Wan 2.7 frame images to base64 data URLs when they are not public', async () => {
     process.env = {
       ...originalEnv,
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     }
 
-    const fetchMock = vi.fn()
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          output: {
+            task_id: 'task-local-27',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/generated.mp4',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'video/mp4' }),
+        arrayBuffer: async () => Buffer.from('video-binary'),
+      })
     vi.stubGlobal('fetch', fetchMock)
 
     const { generateVideoWithProvider } = await import('@/lib/generated-media/video/providers')
 
-    await expect(
-      generateVideoWithProvider({
-        model: 'wan2.7-i2v',
-        prompt: 'Prompt',
-        media: [
-          {
-            type: 'first_frame',
-            file: {
-              id: 'frame-1',
-              name: 'first.png',
-              url: '/api/files/serve/workspace/first.png?context=workspace',
-              key: 'workspace/first.png',
-            },
+    await generateVideoWithProvider({
+      model: 'wan2.7-i2v',
+      prompt: 'Prompt',
+      media: [
+        {
+          type: 'first_frame',
+          file: {
+            id: 'frame-1',
+            name: 'first.png',
+            url: '/api/files/serve/workspace/first.png?context=workspace',
+            key: 'workspace/first.png',
+            type: 'image/png',
           },
-          {
-            type: 'last_frame',
-            file: {
-              id: 'frame-2',
-              name: 'last.png',
-              url: '/api/files/serve/workspace/last.png?context=workspace',
-              key: 'workspace/last.png',
-            },
-          },
-        ],
-        parameters: {
-          aspectRatioPreset: '16:9',
-          resolution: '720P',
-          duration: 5,
-          promptExtend: true,
-          watermark: false,
         },
-      })
-    ).rejects.toThrow(
-      'DashScope needs publicly accessible image URLs for the first and last frames.'
-    )
+        {
+          type: 'last_frame',
+          file: {
+            id: 'frame-2',
+            name: 'last.png',
+            url: '/api/files/serve/workspace/last.png?context=workspace',
+            key: 'workspace/last.png',
+            type: 'image/png',
+          },
+        },
+      ],
+      parameters: {
+        aspectRatioPreset: '16:9',
+        resolution: '720P',
+        duration: 5,
+        promptExtend: true,
+        watermark: false,
+      },
+    })
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mockDownloadFileFromUrl).toHaveBeenCalledTimes(2)
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(payload.input.media).toEqual([
+      {
+        type: 'first_frame',
+        url: 'data:image/png;base64,ZnJhbWUtYmluYXJ5',
+      },
+      {
+        type: 'last_frame',
+        url: 'data:image/png;base64,ZnJhbWUtYmluYXJ5',
+      },
+    ])
   })
 
   it('creates a Wan 2.6 text-to-video task without media URLs', async () => {
@@ -347,5 +382,67 @@ describe('generateVideoWithProvider', () => {
         audio: true,
       },
     })
+  })
+
+  it('converts a local Wan 2.6 first frame image to a base64 data URL', async () => {
+    process.env = {
+      ...originalEnv,
+      DASHSCOPE_API_KEY: 'dashscope-test-key',
+      NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    }
+
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          output: {
+            task_id: 'task-26-i2v-local',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/i2v-local.mp4',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'video/mp4' }),
+        arrayBuffer: async () => Buffer.from('video-binary'),
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateVideoWithProvider } = await import('@/lib/generated-media/video/providers')
+
+    await generateVideoWithProvider({
+      model: 'wan2.6-i2v-flash',
+      prompt: 'A cinematic drone rise over a frozen waterfall.',
+      media: [
+        {
+          type: 'first_frame',
+          file: {
+            id: 'frame-1',
+            name: 'first.png',
+            url: '/api/files/serve/workspace/first.png?context=workspace',
+            key: 'workspace/first.png',
+            type: 'image/png',
+          },
+        },
+      ],
+      parameters: {
+        aspectRatioPreset: '16:9',
+        resolution: '720P',
+        duration: 6,
+        promptExtend: true,
+        watermark: false,
+      },
+    })
+
+    expect(mockDownloadFileFromUrl).toHaveBeenCalledWith(
+      '/api/files/serve/workspace/first.png?context=workspace'
+    )
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(payload.input.img_url).toBe('data:image/png;base64,ZnJhbWUtYmluYXJ5')
   })
 })

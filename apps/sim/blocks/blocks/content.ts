@@ -87,6 +87,14 @@ export const ContentBlock: BlockConfig = {
       defaultValue: 'auto',
     },
     {
+      id: 'contentReferences',
+      title: 'Content References',
+      type: 'short-input',
+      defaultValue: [],
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
       id: 'file',
       title: 'Media',
       type: 'file-upload',

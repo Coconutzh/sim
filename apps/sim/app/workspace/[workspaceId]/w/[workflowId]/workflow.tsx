@@ -52,6 +52,12 @@ import {
   isContentBlockState,
   isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
+import {
+  getDefaultReferenceRole,
+  normalizeContentReferences,
+  upsertContentReference,
+  type ContentReferenceRecord,
+} from '@/lib/workflows/content-references'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
@@ -4491,6 +4497,26 @@ const WorkflowContent = React.memo(
       []
     )
 
+    const getCurrentContentReferences = useCallback(
+      (blockId: string): ContentReferenceRecord[] => {
+        const storeValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[blockId]
+          : undefined
+        if (storeValues?.contentReferences !== undefined) {
+          return normalizeContentReferences(storeValues.contentReferences)
+        }
+        return normalizeContentReferences(blocks[blockId]?.subBlocks?.contentReferences?.value)
+      },
+      [activeWorkflowId, blocks]
+    )
+
+    const setContentReferencesForBlock = useCallback(
+      (blockId: string, references: ContentReferenceRecord[]) => {
+        collaborativeSetSubblockValue(blockId, 'contentReferences', normalizeContentReferences(references))
+      },
+      [collaborativeSetSubblockValue]
+    )
+
     const clearVideoFrameMediaForAutoLink = useCallback(
       (videoBlockId: string, autoLinkType: ContentReferenceAutoLinkType) => {
         const targetBlock = blocks[videoBlockId]
@@ -4511,8 +4537,21 @@ const WorkflowContent = React.memo(
         )
 
         collaborativeSetSubblockValue(videoBlockId, 'videoMedia', nextVideoMedia)
+
+        const nextReferences = getCurrentContentReferences(videoBlockId).filter(
+          (reference) =>
+            reference.role !==
+            (autoLinkType === 'video_first_frame' ? 'video_first_frame' : 'video_last_frame')
+        )
+        setContentReferencesForBlock(videoBlockId, nextReferences)
       },
-      [activeWorkflowId, blocks, collaborativeSetSubblockValue]
+      [
+        activeWorkflowId,
+        blocks,
+        collaborativeSetSubblockValue,
+        getCurrentContentReferences,
+        setContentReferencesForBlock,
+      ]
     )
 
     const removeContentReferenceEdgeWithSync = useCallback(
@@ -4523,11 +4562,22 @@ const WorkflowContent = React.memo(
         const autoLinkType = getContentReferenceAutoLinkType(edge)
         if (autoLinkType) {
           clearVideoFrameMediaForAutoLink(edge.target, autoLinkType)
+        } else {
+          const nextReferences = getCurrentContentReferences(edge.source).filter(
+            (reference) => reference.sourceBlockId !== edge.target
+          )
+          setContentReferencesForBlock(edge.source, nextReferences)
         }
 
         collaborativeBatchRemoveEdges([edgeId])
       },
-      [clearVideoFrameMediaForAutoLink, collaborativeBatchRemoveEdges, edges]
+      [
+        clearVideoFrameMediaForAutoLink,
+        collaborativeBatchRemoveEdges,
+        edges,
+        getCurrentContentReferences,
+        setContentReferencesForBlock,
+      ]
     )
 
     const replaceVideoFrameAutoReferenceEdge = useCallback(
@@ -4613,8 +4663,17 @@ const WorkflowContent = React.memo(
           frameSelection.slot === 'first' ? 'first_frame' : 'last_frame',
           { ...fileSnapshot }
         )
+        const nextReferences = upsertContentReference(
+          getCurrentContentReferences(frameSelection.targetBlockId),
+          {
+            sourceBlockId: node.id,
+            sourceVariant: 'image',
+            role: frameSelection.slot === 'first' ? 'video_first_frame' : 'video_last_frame',
+          }
+        )
 
         collaborativeSetSubblockValue(frameSelection.targetBlockId, 'videoMedia', nextVideoMedia)
+        setContentReferencesForBlock(frameSelection.targetBlockId, nextReferences)
         replaceVideoFrameAutoReferenceEdge(
           frameSelection.targetBlockId,
           node.id,
@@ -4632,9 +4691,11 @@ const WorkflowContent = React.memo(
         clearFrameSelection,
         collaborativeSetSubblockValue,
         frameSelection,
+        getCurrentContentReferences,
         replaceVideoFrameAutoReferenceEdge,
         resolveLiveContentFileSnapshot,
         resolveLiveContentVariant,
+        setContentReferencesForBlock,
       ]
     )
 
@@ -4732,7 +4793,45 @@ const WorkflowContent = React.memo(
             return
           }
 
-          addEdge(
+          const fileSnapshot = resolveLiveContentFileSnapshot(node.id, node)
+          const targetVariant = resolveLiveContentVariant(node.id, node, fileSnapshot)
+          if (!targetVariant) {
+            return
+          }
+
+          if (!contentReferenceSelection.allowedSourceVariants.includes(targetVariant)) {
+            return
+          }
+
+          const referenceRole = getDefaultReferenceRole({
+            targetVariant: contentReferenceSelection.sourceVariant,
+            model: contentReferenceSelection.sourceModel,
+            sourceVariant: targetVariant,
+          })
+          if (!referenceRole) {
+            return
+          }
+
+          const nextReferences = upsertContentReference(
+            getCurrentContentReferences(contentReferenceSelection.sourceBlockId),
+            {
+              sourceBlockId: node.id,
+              sourceVariant: targetVariant,
+              role: referenceRole,
+            }
+          )
+          setContentReferencesForBlock(contentReferenceSelection.sourceBlockId, nextReferences)
+
+          const alreadyLinked = edges.some(
+            (edge) =>
+              isContentReferenceEdge(edge) &&
+              !getContentReferenceAutoLinkType(edge) &&
+              edge.source === contentReferenceSelection.sourceBlockId &&
+              edge.target === node.id
+          )
+
+          if (!alreadyLinked) {
+            collaborativeBatchAddEdges([
             createContentReferenceEdge({
               id: generateId(),
               source: contentReferenceSelection.sourceBlockId,
@@ -4742,9 +4841,9 @@ const WorkflowContent = React.memo(
                 targetX: blocks[node.id]?.position.x ?? 0,
                 sourceAnchor: contentReferenceSelection.sourceAnchor,
               }),
-            })
-          )
-          clearContentReferenceSelection()
+            }),
+            ])
+          }
           toast.success('内容引用线已创建。', { duration: 1800 })
           return
         }
@@ -4777,14 +4876,18 @@ const WorkflowContent = React.memo(
         })
       },
       [
-        addEdge,
         applyVideoFrameSelection,
         blocks,
-        clearContentReferenceSelection,
         buildContentReferenceHandles,
+        collaborativeBatchAddEdges,
         contentReferenceSelection,
+        edges,
         frameSelection,
+        getCurrentContentReferences,
         getNodes,
+        resolveLiveContentFileSnapshot,
+        resolveLiveContentVariant,
+        setContentReferencesForBlock,
       ]
     )
 
@@ -5215,6 +5318,21 @@ const WorkflowContent = React.memo(
                   autoPanOnConnect={effectivePermissions.canEdit}
                   autoPanOnNodeDrag={effectivePermissions.canEdit}
                 />
+
+                {(contentReferenceSelection || frameSelection) && !embedded && (
+                  <div className='pointer-events-none fixed top-5 left-1/2 z-[1150] -translate-x-1/2'>
+                    <div className='rounded-2xl border border-white/10 bg-[#11161F]/95 px-4 py-3 text-white shadow-2xl backdrop-blur'>
+                      <div className='font-medium text-sm'>
+                        {frameSelection ? '正在选择视频参考帧' : '正在选择引用节点'}
+                      </div>
+                      <div className='mt-1 text-[12px] text-white/75'>
+                        {frameSelection
+                          ? `请点击一张图片作为${frameSelection.slot === 'first' ? '首帧' : '尾帧'}，按 Esc 取消。`
+                          : '请点击画布上可引用的节点完成添加，按 Esc 取消。'}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <Cursors />
 

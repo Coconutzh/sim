@@ -1,17 +1,20 @@
 import { createLogger } from '@sim/logger'
+import { GoogleGenAI, type Part } from '@google/genai'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
 import {
   type ImageAspectRatioValue,
   type ImageGenerationModelId,
   mapImageAspectRatioToProviderSize,
 } from '@/lib/generated-media/image/image-generation-utils'
+import type { UserFileLike } from '@/lib/core/utils/user-file'
 
 const logger = createLogger('GeneratedImageProviders')
 
 const ARK_BASE_URL = env.ARK_BASE_URL ?? 'https://ark.cn-beijing.volces.com/api/v3'
 const ARK_IMAGE_ENDPOINT = `${ARK_BASE_URL.replace(/\/$/, '')}/images/generations`
 
-const JIMENG_PROVIDER_MODEL_MAP: Record<ImageGenerationModelId, string> = {
+const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>> = {
   'jimeng-4.0': 'doubao-seedream-4-0-250828',
   'jimeng-4.5': 'doubao-seedream-4-5-251128',
 }
@@ -20,6 +23,10 @@ interface GenerateImageWithProviderInput {
   model: ImageGenerationModelId
   prompt: string
   aspectRatio: ImageAspectRatioValue
+  referenceContext?: {
+    text: string[]
+    images: UserFileLike[]
+  }
 }
 
 export interface GeneratedImageProviderResult {
@@ -55,12 +62,89 @@ function inferMimeTypeFromUrl(url: string | undefined): string {
   return 'image/png'
 }
 
+async function generateImageWithGemini({
+  model,
+  prompt,
+  aspectRatio,
+  referenceContext,
+}: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
+  const apiKey = getRotatingApiKey('gemini')
+  const ai = new GoogleGenAI({ apiKey })
+  const parts: Part[] = []
+
+  for (const image of referenceContext?.images ?? []) {
+    if (!image.base64 || !image.type) continue
+    parts.push({
+      inlineData: {
+        mimeType: image.type,
+        data: image.base64,
+      },
+    })
+  }
+
+  const textSections = [...(referenceContext?.text ?? [])].filter((section) => section.trim().length > 0)
+  const composedPrompt = [
+    prompt,
+    ...textSections.map((section, index) => `Reference context ${index + 1}:\n${section}`),
+    `Use a ${aspectRatio} aspect ratio.`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
+  parts.push({ text: composedPrompt })
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ role: 'user', parts }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+    },
+  })
+
+  const responseParts = response.candidates?.[0]?.content?.parts ?? []
+  const imagePart = responseParts.find((part) => part.inlineData?.data)
+  if (!imagePart?.inlineData?.data) {
+    throw new Error('Gemini image request returned no image data')
+  }
+
+  return {
+    buffer: Buffer.from(imagePart.inlineData.data, 'base64'),
+    mimeType: imagePart.inlineData.mimeType || 'image/png',
+    provider: 'gemini',
+    providerModel: model,
+    revisedPrompt: responseParts
+      .map((part) => part.text)
+      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+      .join(' ')
+      .trim() || undefined,
+  }
+}
+
 export async function generateImageWithProvider({
   model,
   prompt,
   aspectRatio,
+  referenceContext,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
+  if (model === 'gemini-3.1-flash-image-preview') {
+    return generateImageWithGemini({
+      model,
+      prompt,
+      aspectRatio,
+      referenceContext,
+    })
+  }
+
+  const promptWithReferenceText = [
+    prompt,
+    ...(referenceContext?.text ?? []).filter((section) => section.trim().length > 0),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
   const providerModel = JIMENG_PROVIDER_MODEL_MAP[model]
+  if (!providerModel) {
+    throw new Error(`Unsupported image model: ${model}`)
+  }
   const apiKey = getArkApiKey()
   const response = await fetch(ARK_IMAGE_ENDPOINT, {
     method: 'POST',
@@ -70,7 +154,7 @@ export async function generateImageWithProvider({
     },
     body: JSON.stringify({
       model: providerModel,
-      prompt,
+      prompt: promptWithReferenceText,
       size: mapImageAspectRatioToProviderSize(aspectRatio),
       response_format: 'b64_json',
     }),

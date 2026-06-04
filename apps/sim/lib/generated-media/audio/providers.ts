@@ -16,6 +16,9 @@ interface GenerateAudioWithProviderInput {
   model: AudioGenerationModelId
   prompt: string
   parameters: AudioGenerationParametersValue
+  referenceContext?: {
+    text: string[]
+  }
 }
 
 export interface GeneratedAudioProviderResult {
@@ -123,12 +126,20 @@ function buildEvolinkPayload({
   model,
   prompt,
   parameters,
+  referenceContext,
 }: GenerateAudioWithProviderInput) {
+  const promptWithContext = [
+    prompt,
+    ...(referenceContext?.text ?? []).filter((section) => section.trim().length > 0),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
   const payload: Record<string, unknown> = {
     model,
     custom_mode: parameters.customMode,
     instrumental: parameters.instrumental,
-    prompt,
+    prompt: promptWithContext,
   }
 
   if (parameters.customMode) {

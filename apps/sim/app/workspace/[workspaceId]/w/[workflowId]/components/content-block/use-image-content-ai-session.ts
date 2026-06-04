@@ -12,6 +12,7 @@ import {
 } from '@/lib/generated-media/image/image-generation-utils'
 
 interface UploadedFileValue {
+  id?: string
   name?: string
   path?: string
   key?: string
@@ -25,6 +26,19 @@ interface UseImageContentAiSessionOptions {
   prompt: string
   model: ImageGenerationModelId
   aspectRatio: ImageAspectRatioValue
+  referenceContext?: {
+    text: string[]
+    images: Array<{
+      id?: string
+      name: string
+      url?: string
+      key: string
+      size: number
+      type?: string
+      context?: string
+      base64?: string
+    }>
+  }
   onChangeFile: (value: UploadedFileValue | null) => void
 }
 
@@ -44,6 +58,7 @@ export function useImageContentAiSession({
   prompt,
   model,
   aspectRatio,
+  referenceContext,
   onChangeFile,
 }: UseImageContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -102,6 +117,7 @@ export function useImageContentAiSession({
           model,
           prompt: nextPrompt,
           aspectRatio,
+          referenceContext,
         },
         signal: controller.signal,
       })
@@ -109,6 +125,7 @@ export function useImageContentAiSession({
       if (requestSequenceRef.current !== requestId) return
 
       onChangeFile({
+        id: response.file.id,
         name: response.file.name,
         path: response.file.url,
         key: response.file.key,
@@ -124,7 +141,7 @@ export function useImageContentAiSession({
         setIsGenerating(false)
       }
     }
-  }, [aspectRatio, model, onChangeFile, prompt, workspaceId])
+  }, [aspectRatio, model, onChangeFile, prompt, referenceContext, workspaceId])
 
   return {
     modelOptions,

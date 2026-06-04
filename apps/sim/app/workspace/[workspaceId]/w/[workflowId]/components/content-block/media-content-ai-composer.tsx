@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { ImageIcon, Sparkles } from 'lucide-react'
 import type {
   ImageAspectRatioValue,
@@ -18,10 +19,12 @@ interface MediaContentAiComposerProps {
   aspectRatio: ImageAspectRatioValue
   isGenerating: boolean
   error: string | null
+  header?: ReactNode
   modelOptions: ReadonlyArray<{
     id: ImageGenerationModelId
     label: string
     description: string
+    disabledReason?: string | null
   }>
   aspectRatioOptions: ReadonlyArray<{
     id: ImageAspectRatioValue
@@ -41,6 +44,7 @@ export function MediaContentAiComposer({
   aspectRatio,
   isGenerating,
   error,
+  header,
   modelOptions,
   aspectRatioOptions,
   onChangePrompt,
@@ -57,6 +61,7 @@ export function MediaContentAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成图片...'
       error={error}
+      header={header}
       onChangePrompt={onChangePrompt}
       onSubmit={onSubmit}
       footer={
@@ -74,8 +79,9 @@ export function MediaContentAiComposer({
                 onFocus={(event) => event.stopPropagation()}
               >
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
+                  <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)}>
                     {option.label} - {option.description}
+                    {option.disabledReason ? ' (Unavailable)' : ''}
                   </option>
                 ))}
               </select>

@@ -55,12 +55,18 @@ describe('generateWorkspaceAudioFromPrompt', () => {
         negativeTags: '',
         vocalGender: '',
       },
+      referenceContext: {
+        text: ['Reference text node: sparse drums, warm tape, midnight subway ambience.'],
+      },
     })
 
     expect(mockGenerateAudioWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'suno-v5-beta',
         prompt: 'A dreamy indie pop song about late-night trains.',
+        referenceContext: {
+          text: ['Reference text node: sparse drums, warm tape, midnight subway ambience.'],
+        },
       })
     )
     expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(

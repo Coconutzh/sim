@@ -1,7 +1,12 @@
 import { z } from 'zod'
+import { userFileSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
-export const imageGenerationModelSchema = z.enum(['jimeng-4.0', 'jimeng-4.5'])
+export const imageGenerationModelSchema = z.enum([
+  'jimeng-4.0',
+  'jimeng-4.5',
+  'gemini-3.1-flash-image-preview',
+])
 export const imageGenerationAspectRatioSchema = z.enum([
   'auto',
   '1:1',
@@ -14,11 +19,17 @@ export const imageGenerationAspectRatioSchema = z.enum([
   '21:9',
 ])
 
+export const imageReferenceContextSchema = z.object({
+  text: z.array(z.string()).default([]),
+  images: z.array(userFileSchema).default([]),
+})
+
 export const generateWorkspaceImageBodySchema = z.object({
   workspaceId: z.string().min(1, 'workspaceId is required'),
   model: imageGenerationModelSchema,
   prompt: z.string().min(1, 'prompt is required'),
   aspectRatio: imageGenerationAspectRatioSchema.default('auto'),
+  referenceContext: imageReferenceContextSchema.optional(),
 })
 
 const generatedWorkspaceFileSchema = z.object({

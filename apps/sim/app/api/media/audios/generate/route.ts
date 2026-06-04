@@ -27,7 +27,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const validation = await parseRequest(generateWorkspaceAudioContract, request, {}, {})
   if (!validation.success) return validation.response
 
-  const { workspaceId, model, prompt, parameters } = validation.data.body
+  const { workspaceId, model, prompt, parameters, referenceContext } = validation.data.body
   const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
   if (!workspaceAccess.hasAccess) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -41,6 +41,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       model,
       prompt,
       parameters,
+      referenceContext,
     })
   } catch (error) {
     return getAudioGenerationErrorResponse(error)
