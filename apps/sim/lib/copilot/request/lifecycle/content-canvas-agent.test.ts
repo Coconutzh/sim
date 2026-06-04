@@ -2373,6 +2373,20 @@ describe('content canvas agent', () => {
     })
   })
 
+  it('prefers the new content-canvas text env before legacy actor env', () => {
+    process.env.CONTENT_TEXT_GLM_API_KEY = 'content-glm-key'
+    process.env.CONTENT_TEXT_GLM_ENABLED_MODELS = 'glm-4.7'
+    process.env.CONTENT_TEXT_GLM_DEFAULT_MODEL = 'glm-4.7'
+    process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
+    process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
+
+    expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).toEqual({
+      model: 'glm-4.7',
+      mode: 'structured',
+      useContentCanvasTextResolver: true,
+    })
+  })
+
   it('surfaces an invalid workflow error when legacy unsupported blocks break edit_workflow', async () => {
     mockExecuteProviderRequest.mockResolvedValue({
       content: JSON.stringify({

@@ -22,6 +22,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'https://app.example.com',
     }
+    delete process.env.DASHSCOPE_BASE_URL
+    delete process.env.CONTENT_VIDEO_BASE_URL
+    delete process.env.CONTENT_VIDEO_API_KEY
   })
 
   it('creates a Wan 2.7 task, polls until success, and downloads the mp4 result', async () => {
@@ -200,6 +203,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     }
+    delete process.env.DASHSCOPE_BASE_URL
+    delete process.env.CONTENT_VIDEO_BASE_URL
+    delete process.env.CONTENT_VIDEO_API_KEY
 
     mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
 
@@ -390,6 +396,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     }
+    delete process.env.DASHSCOPE_BASE_URL
+    delete process.env.CONTENT_VIDEO_BASE_URL
+    delete process.env.CONTENT_VIDEO_API_KEY
 
     mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
 

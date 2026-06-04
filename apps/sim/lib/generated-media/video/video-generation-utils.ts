@@ -1,3 +1,4 @@
+import { getContentCanvasModelFamilyOptions, getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 
 export const DEFAULT_VIDEO_MODEL = 'wan2.7-i2v' as const
@@ -5,37 +6,6 @@ export const DEFAULT_VIDEO_MODEL_FAMILY = 'wan2.7' as const
 export const DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET = '16:9' as const
 export const DEFAULT_VIDEO_RESOLUTION = '720P' as const
 export const DEFAULT_VIDEO_DURATION_SECONDS = 5 as const
-
-export const VIDEO_GENERATION_MODEL_OPTIONS = [
-  {
-    id: 'wan2.7-i2v',
-    label: 'Wan 2.7',
-    description: 'First/last-frame image-to-video',
-  },
-  {
-    id: 'wan2.6-t2v',
-    label: 'Wan 2.6 Text',
-    description: 'Text-to-video',
-  },
-  {
-    id: 'wan2.6-i2v-flash',
-    label: 'Wan 2.6 Image',
-    description: 'First-frame image-to-video',
-  },
-] as const
-
-export const VIDEO_MODEL_FAMILY_OPTIONS = [
-  {
-    id: 'wan2.7',
-    label: 'Wan 2.7',
-    description: 'First/last-frame video generation',
-  },
-  {
-    id: 'wan2.6',
-    label: 'Wan 2.6',
-    description: 'Auto-switch between text-only and first-frame generation',
-  },
-] as const
 
 export const VIDEO_FRAME_ASPECT_RATIO_OPTIONS = [
   { id: '16:9', label: '16:9' },
@@ -63,8 +33,8 @@ const VIDEO_SIZE_BY_PRESET = {
   },
 } as const
 
-export type VideoGenerationModelId = (typeof VIDEO_GENERATION_MODEL_OPTIONS)[number]['id']
-export type VideoModelFamily = (typeof VIDEO_MODEL_FAMILY_OPTIONS)[number]['id']
+export type VideoGenerationModelId = 'wan2.7-i2v' | 'wan2.6-t2v' | 'wan2.6-i2v-flash'
+export type VideoModelFamily = 'wan2.7' | 'wan2.6'
 export type VideoFrameAspectRatioPreset = (typeof VIDEO_FRAME_ASPECT_RATIO_OPTIONS)[number]['id']
 export type VideoResolution = (typeof VIDEO_RESOLUTION_OPTIONS)[number]['id']
 export type VideoMediaType = (typeof VIDEO_MEDIA_TYPES)[number]
@@ -76,12 +46,43 @@ export interface VideoMediaFileSlot<TFile = UserFileLike> {
   file: TFile
 }
 
-export function getVideoGenerationModelOptions() {
-  return VIDEO_GENERATION_MODEL_OPTIONS
+export function getVideoGenerationModelOptions(
+  enabledModelIds?: readonly string[]
+): ReadonlyArray<{
+  id: VideoGenerationModelId
+  label: string
+  description: string
+}> {
+  const options = getContentCanvasModelOptions('video') as Array<{
+    id: VideoGenerationModelId
+    label: string
+    description: string
+  }>
+  if (!enabledModelIds) return options
+
+  const enabledSet = new Set(enabledModelIds)
+  return options.filter((option) => enabledSet.has(option.id))
 }
 
-export function getVideoGenerationModelFamilyOptions() {
-  return VIDEO_MODEL_FAMILY_OPTIONS
+export function getVideoGenerationModelFamilyOptions(
+  enabledModelIds?: readonly string[]
+): ReadonlyArray<{
+  id: VideoModelFamily
+  label: string
+  description: string
+}> {
+  const options = getContentCanvasModelFamilyOptions('video').filter(
+    (option): option is { id: VideoModelFamily; label: string; description: string } =>
+      option.id === 'wan2.7' || option.id === 'wan2.6'
+  )
+  if (!enabledModelIds) return options
+
+  const enabledModelFamilies = new Set(
+    getVideoGenerationModelOptions(enabledModelIds).map((option) =>
+      option.id === 'wan2.7-i2v' ? 'wan2.7' : 'wan2.6'
+    )
+  )
+  return options.filter((option) => enabledModelFamilies.has(option.id))
 }
 
 export function getVideoFrameAspectRatioOptions() {
@@ -106,7 +107,7 @@ export function isVideoFrameAspectRatioPreset(
 }
 
 export function isVideoModelFamily(value: unknown): value is VideoModelFamily {
-  return VIDEO_MODEL_FAMILY_OPTIONS.some((option) => option.id === value)
+  return value === 'wan2.7' || value === 'wan2.6'
 }
 
 export function getVideoModelFamilyFromModelId(model: VideoGenerationModelId): VideoModelFamily {

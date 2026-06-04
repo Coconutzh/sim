@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { env } from '@/lib/core/config/env'
+import { resolveContentService } from '@/lib/content-canvas/service-config'
 import { ensureAbsoluteUrl, isLocalhostUrl } from '@/lib/core/utils/urls'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
@@ -14,13 +14,6 @@ import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GeneratedVideoProviders')
-
-const DASHSCOPE_BASE_URL =
-  process.env.NODE_ENV === 'test'
-    ? 'https://dashscope-intl.aliyuncs.com/api/v1'
-    : (env.DASHSCOPE_BASE_URL ?? 'https://dashscope-intl.aliyuncs.com/api/v1')
-const DASHSCOPE_VIDEO_ENDPOINT = `${DASHSCOPE_BASE_URL.replace(/\/$/, '')}/services/aigc/video-generation/video-synthesis`
-const DASHSCOPE_TASKS_ENDPOINT = `${DASHSCOPE_BASE_URL.replace(/\/$/, '')}/tasks`
 const DASHSCOPE_POLL_INTERVAL_MS = 1500
 
 interface GenerateVideoWithProviderInput {
@@ -64,14 +57,6 @@ interface DashScopeTaskPayload {
   request_id?: string
   message?: string
   code?: string
-}
-
-function getDashScopeApiKey(): string {
-  const apiKey = env.DASHSCOPE_API_KEY
-  if (!apiKey) {
-    throw new Error('DASHSCOPE_API_KEY is not configured')
-  }
-  return apiKey
 }
 
 function getProviderErrorMessage(payload: DashScopeTaskPayload, fallback: string) {
@@ -247,7 +232,14 @@ export async function generateVideoWithProvider({
   media,
   parameters,
 }: GenerateVideoWithProviderInput): Promise<GeneratedVideoProviderResult> {
-  const apiKey = getDashScopeApiKey()
+  const service = resolveContentService({ capability: 'video', modelId: model })
+  if (!service.apiKey) {
+    throw new Error(`No API key configured for content-canvas video model ${model}`)
+  }
+
+  const baseUrl = service.baseUrl.replace(/\/$/, '')
+  const createEndpoint = `${baseUrl}/services/aigc/video-generation/video-synthesis`
+  const tasksEndpoint = `${baseUrl}/tasks`
   const payload = await buildDashScopePayload({
     model,
     prompt,
@@ -255,10 +247,10 @@ export async function generateVideoWithProvider({
     parameters,
   })
 
-  const createResponse = await fetch(DASHSCOPE_VIDEO_ENDPOINT, {
+  const createResponse = await fetch(createEndpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
       'X-DashScope-Async': 'enable',
     },
@@ -293,10 +285,10 @@ export async function generateVideoWithProvider({
 
     await sleep(DASHSCOPE_POLL_INTERVAL_MS)
 
-    const pollResponse = await fetch(`${DASHSCOPE_TASKS_ENDPOINT}/${taskId}`, {
+    const pollResponse = await fetch(`${tasksEndpoint}/${taskId}`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${service.apiKey}`,
       },
     })
     latestPayload = (await pollResponse.json().catch(() => ({}))) as DashScopeTaskPayload

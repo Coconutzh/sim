@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
-import { executeProviderContract } from '@/lib/api/contracts/providers'
+import {
+  generateContentCanvasTextContract,
+  type ContentCanvasModelAvailabilitySnapshot,
+} from '@/lib/api/contracts/content-canvas'
 import {
   applyGeneratedTextToContentHtml,
-  buildTextNodeAiSystemPrompt,
   DEFAULT_TEXT_AI_MODEL,
   getTextAiModelOptions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import {
-  buildTextContentAiUserMessage,
   hydrateReferenceImagesForTextAi,
   type TextAiReferenceImageSource,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-request'
-import { getProviderFromModel } from '@/providers/models'
 
 interface UseTextContentAiSessionOptions {
   blockId: string
@@ -23,6 +23,7 @@ interface UseTextContentAiSessionOptions {
   html: string
   prompt: string
   model: string
+  availability?: ContentCanvasModelAvailabilitySnapshot | null
   referenceContextText?: string
   referenceImages?: TextAiReferenceImageSource[]
   onChangeHtml: (value: string) => void
@@ -44,6 +45,7 @@ export function useTextContentAiSession({
   html,
   prompt,
   model,
+  availability,
   referenceContextText,
   referenceImages,
   onChangeHtml,
@@ -55,7 +57,10 @@ export function useTextContentAiSession({
   const requestSequenceRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const modelOptions = useMemo(() => getTextAiModelOptions(), [])
+  const modelOptions = useMemo(
+    () => getTextAiModelOptions(availability?.text.enabledModelIds),
+    [availability?.text.enabledModelIds]
+  )
 
   useEffect(() => {
     setError(null)
@@ -104,25 +109,17 @@ export function useTextContentAiSession({
     setPendingActionChoice(false)
 
     try {
-      const provider = getProviderFromModel(resolvedModel)
-      const hydratedReferenceImages =
-        provider === 'google' && referenceImages?.length
-          ? await hydrateReferenceImagesForTextAi(referenceImages)
-          : []
+      const hydratedReferenceImages = referenceImages?.length
+        ? await hydrateReferenceImagesForTextAi(referenceImages)
+        : []
 
-      const response = await requestJson(executeProviderContract, {
+      const response = await requestJson(generateContentCanvasTextContract, {
         body: {
           workspaceId,
-          provider,
           model: resolvedModel,
-          systemPrompt: buildTextNodeAiSystemPrompt(),
-          messages: [
-            buildTextContentAiUserMessage({
-              prompt: nextPrompt,
-              referenceContextText,
-              referenceImages: hydratedReferenceImages,
-            }),
-          ],
+          prompt: nextPrompt,
+          referenceContextText,
+          referenceImages: hydratedReferenceImages,
         },
         signal: controller.signal,
       })

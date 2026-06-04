@@ -1,26 +1,10 @@
+import { getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog'
+
 export const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5' as const
 export const DEFAULT_IMAGE_ASPECT_RATIO = 'auto' as const
 
-export const IMAGE_GENERATION_MODEL_OPTIONS = [
-  {
-    id: 'jimeng-4.5',
-    label: '即梦 4.5',
-    description: '画质更高，适合成片感更强的图片',
-  },
-  {
-    id: 'jimeng-4.0',
-    label: '即梦 4.0',
-    description: '速度更稳，适合快速探索方向',
-  },
-  {
-    id: 'gemini-3.1-flash-image-preview',
-    label: 'Gemini 3.1 Flash Image',
-    description: 'Supports reference images and fast edits',
-  },
-] as const
-
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
-  { id: 'auto', label: '自适应(4K)' },
+  { id: 'auto', label: '鑷€傚簲(4K)' },
   { id: '1:1', label: '1:1' },
   { id: '4:3', label: '4:3' },
   { id: '3:4', label: '3:4' },
@@ -31,7 +15,10 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { id: '21:9', label: '21:9' },
 ] as const
 
-export type ImageGenerationModelId = (typeof IMAGE_GENERATION_MODEL_OPTIONS)[number]['id']
+export type ImageGenerationModelId =
+  | 'jimeng-4.5'
+  | 'jimeng-4.0'
+  | 'gemini-3.1-flash-image-preview'
 export type ImageAspectRatioValue = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]['id']
 
 const IMAGE_ASPECT_RATIO_TO_NUMERIC: Record<Exclude<ImageAspectRatioValue, 'auto'>, number> = {
@@ -57,8 +44,22 @@ const IMAGE_ASPECT_RATIO_TO_PROVIDER_SIZE: Record<ImageAspectRatioValue, string>
   '21:9': '3136x1344',
 }
 
-export function getImageGenerationModelOptions() {
-  return IMAGE_GENERATION_MODEL_OPTIONS
+export function getImageGenerationModelOptions(
+  enabledModelIds?: readonly string[]
+): ReadonlyArray<{
+  id: ImageGenerationModelId
+  label: string
+  description: string
+}> {
+  const options = getContentCanvasModelOptions('image') as Array<{
+    id: ImageGenerationModelId
+    label: string
+    description: string
+  }>
+  if (!enabledModelIds) return options
+
+  const enabledSet = new Set(enabledModelIds)
+  return options.filter((option) => enabledSet.has(option.id))
 }
 
 export function getImageAspectRatioOptions() {

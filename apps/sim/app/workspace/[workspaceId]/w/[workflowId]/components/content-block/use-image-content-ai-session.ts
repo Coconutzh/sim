@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import { generateWorkspaceImageContract } from '@/lib/api/contracts/media-images'
 import {
   getImageAspectRatioOptions,
@@ -25,6 +26,7 @@ interface UseImageContentAiSessionOptions {
   workspaceId?: string
   prompt: string
   model: ImageGenerationModelId
+  availability?: ContentCanvasModelAvailabilitySnapshot | null
   aspectRatio: ImageAspectRatioValue
   referenceContext?: {
     text: string[]
@@ -57,6 +59,7 @@ export function useImageContentAiSession({
   workspaceId,
   prompt,
   model,
+  availability,
   aspectRatio,
   referenceContext,
   onChangeFile,
@@ -66,7 +69,10 @@ export function useImageContentAiSession({
   const requestSequenceRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const modelOptions = useMemo(() => getImageGenerationModelOptions(), [])
+  const modelOptions = useMemo(
+    () => getImageGenerationModelOptions(availability?.image.enabledModelIds),
+    [availability?.image.enabledModelIds]
+  )
   const aspectRatioOptions = useMemo(() => getImageAspectRatioOptions(), [])
 
   useEffect(() => {

@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const originalEnv = process.env
 const { loggerMock } = vi.hoisted(() => ({
   loggerMock: {
     info: vi.fn(),
@@ -23,24 +24,23 @@ vi.mock('@sim/logger', () => ({
   createLogger: vi.fn(() => loggerMock),
 }))
 
-vi.mock('@/lib/core/config/env', () => ({
-  env: {
-    ARK_API_KEY: 'test-ark-api-key',
-    ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3',
-  },
-}))
-
-import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
-
 describe('generateImageWithProvider', () => {
   const originalFetch = global.fetch
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.resetModules()
+    process.env = {
+      ...originalEnv,
+      CONTENT_IMAGE_ARK_API_KEY: 'test-ark-api-key',
+    }
+    delete process.env.ARK_API_KEY
+    delete process.env.CONTENT_IMAGE_GEMINI_API_KEY
   })
 
   afterEach(() => {
     global.fetch = originalFetch
+    process.env = originalEnv
   })
 
   it('calls Ark image generation with the full Seedream model id', async () => {
@@ -50,6 +50,8 @@ describe('generateImageWithProvider', () => {
         data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
       }),
     }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
 
     await generateImageWithProvider({
       model: 'jimeng-4.5',

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import { generateWorkspaceAudioContract } from '@/lib/api/contracts/media-audios'
 import type {
   AudioGenerationModelId,
@@ -25,6 +26,7 @@ interface UseAudioContentAiSessionOptions {
   workspaceId?: string
   prompt: string
   model: AudioGenerationModelId
+  availability?: ContentCanvasModelAvailabilitySnapshot | null
   parameters: AudioGenerationParametersValue
   referenceContext?: {
     text: string[]
@@ -47,6 +49,7 @@ export function useAudioContentAiSession({
   workspaceId,
   prompt,
   model,
+  availability,
   parameters,
   referenceContext,
   onChangeFile,
@@ -56,7 +59,10 @@ export function useAudioContentAiSession({
   const requestSequenceRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const modelOptions = useMemo(() => getAudioGenerationModelOptions(), [])
+  const modelOptions = useMemo(
+    () => getAudioGenerationModelOptions(availability?.audio.enabledModelIds),
+    [availability?.audio.enabledModelIds]
+  )
 
   useEffect(() => {
     setError(null)

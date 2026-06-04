@@ -71,6 +71,7 @@ import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflo
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
+import { useContentCanvasModelAvailability } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-content-canvas-model-availability'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
@@ -91,6 +92,7 @@ import {
 } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -112,6 +114,50 @@ interface VideoParametersValue {
   duration: number
   promptExtend: boolean
   watermark: boolean
+}
+
+function getEffectiveContentModelId(params: {
+  requestedModelId: string
+  availability: ContentCanvasModelAvailabilitySnapshot[keyof ContentCanvasModelAvailabilitySnapshot] | null
+  fallbackModelId: string
+}) {
+  if (!params.availability) {
+    return params.requestedModelId || params.fallbackModelId
+  }
+
+  if (params.availability.enabledModelIds.includes(params.requestedModelId)) {
+    return params.requestedModelId
+  }
+
+  return (
+    params.availability.defaultModelId ??
+    params.availability.enabledModelIds[0] ??
+    params.requestedModelId ??
+    params.fallbackModelId
+  )
+}
+
+function getEffectiveVideoModelFamily(params: {
+  requestedFamily: VideoModelFamily
+  availability: ContentCanvasModelAvailabilitySnapshot['video'] | null
+}) {
+  if (!params.availability) return params.requestedFamily
+
+  const enabledFamilies = new Set(
+    params.availability.enabledModelIds.map((modelId) =>
+      getVideoModelFamilyFromModelId(modelId as VideoGenerationModelId)
+    )
+  )
+
+  if (enabledFamilies.has(params.requestedFamily)) {
+    return params.requestedFamily
+  }
+
+  if (params.availability.defaultModelId) {
+    return getVideoModelFamilyFromModelId(params.availability.defaultModelId as VideoGenerationModelId)
+  }
+
+  return enabledFamilies.values().next().value ?? params.requestedFamily
 }
 
 const CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT = 'clear-video-frame-auto-link'
@@ -598,6 +644,7 @@ function TextContentCard({
   height,
   aiPrompt,
   aiModel,
+  modelAvailability,
   contentReferences,
   referencedNodes,
   onAddReference,
@@ -624,6 +671,7 @@ function TextContentCard({
   height: number
   aiPrompt: string
   aiModel: string
+  modelAvailability?: ContentCanvasModelAvailabilitySnapshot | null
   contentReferences: ContentReferenceRecord[]
   referencedNodes: Record<string, PromptContextReferencedNode>
   onAddReference: () => void
@@ -671,6 +719,7 @@ function TextContentCard({
     html,
     prompt: aiPrompt,
     model: aiModel,
+    availability: modelAvailability,
     referenceContextText,
     referenceImages: structuredReferenceContext.images,
     onChangeHtml,
@@ -970,6 +1019,7 @@ function MediaContentCard({
   selected,
   aiPrompt,
   aiModel,
+  modelAvailability,
   aiAspectRatio,
   audioPrompt,
   audioModel,
@@ -1005,6 +1055,7 @@ function MediaContentCard({
   selected: boolean
   aiPrompt: string
   aiModel: string
+  modelAvailability?: ContentCanvasModelAvailabilitySnapshot | null
   aiAspectRatio: ImageAspectRatioValue
   audioPrompt: string
   audioModel: AudioGenerationModelId
@@ -1152,6 +1203,7 @@ function MediaContentCard({
     workspaceId: params.workspaceId,
     prompt: aiPrompt,
     model: (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId,
+    availability: modelAvailability,
     aspectRatio: resolvedAspectRatio,
     referenceContext: structuredReferenceContext,
     onChangeFile,
@@ -1169,6 +1221,7 @@ function MediaContentCard({
     workspaceId: params.workspaceId,
     prompt: videoPrompt,
     modelFamily: videoModelFamily,
+    availability: modelAvailability,
     aspectRatioPreset: videoFrameAspectRatioPreset,
     resolution: videoParameters.resolution,
     durationSeconds: videoParameters.duration,
@@ -1186,6 +1239,7 @@ function MediaContentCard({
     workspaceId: params.workspaceId,
     prompt: audioPrompt,
     model: audioModel,
+    availability: modelAvailability,
     parameters: audioParameters,
     referenceContext: { text: structuredReferenceContext.text },
     onChangeFile,
@@ -1533,6 +1587,7 @@ export const ContentBlock = memo(function ContentBlock({
   data,
   selected,
 }: NodeProps<ContentBlockNodeData>) {
+  const params = useParams<{ workspaceId: string }>()
   const variant = data.contentVariant as ContentVariant | undefined
 
   const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual({
@@ -1767,15 +1822,35 @@ export const ContentBlock = memo(function ContentBlock({
       []
     )
   )
+  const modelAvailability = useContentCanvasModelAvailability(params.workspaceId)
+  const effectiveTextModel = getEffectiveContentModelId({
+    requestedModelId: resolvedAiModel,
+    availability: modelAvailability?.text ?? null,
+    fallbackModelId: DEFAULT_TEXT_AI_MODEL,
+  })
+  const effectiveImageModel = getEffectiveContentModelId({
+    requestedModelId: resolvedAiModel,
+    availability: modelAvailability?.image ?? null,
+    fallbackModelId: DEFAULT_IMAGE_AI_MODEL,
+  })
+  const effectiveAudioModel = getEffectiveContentModelId({
+    requestedModelId: resolvedAudioModel,
+    availability: modelAvailability?.audio ?? null,
+    fallbackModelId: DEFAULT_AUDIO_MODEL,
+  }) as AudioGenerationModelId
+  const effectiveVideoModelFamily = getEffectiveVideoModelFamily({
+    requestedFamily: resolvedVideoModelFamily,
+    availability: modelAvailability?.video ?? null,
+  })
   const videoReferenceModelId =
-    resolvedVideoModelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+    effectiveVideoModelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
   const selectionModel =
     resolvedVariant === 'text'
-      ? resolvedAiModel
+      ? effectiveTextModel
       : resolvedVariant === 'image'
-        ? resolvedAiModel
+        ? effectiveImageModel
         : resolvedVariant === 'audio'
-          ? resolvedAudioModel
+          ? effectiveAudioModel
           : videoReferenceModelId
   const allowedReferenceSourceVariants = getAllowedReferenceSourceVariants(
     resolvedVariant,
@@ -2176,13 +2251,14 @@ export const ContentBlock = memo(function ContentBlock({
             file={resolvedFile}
             selected={selected}
             aiPrompt={resolvedAiPrompt}
-            aiModel={resolvedAiModel}
+            aiModel={effectiveImageModel}
+            modelAvailability={modelAvailability}
             aiAspectRatio={resolvedAiAspectRatio}
             audioPrompt={resolvedAudioPrompt}
-            audioModel={resolvedAudioModel}
+            audioModel={effectiveAudioModel}
             audioParameters={resolvedAudioParameters}
             videoPrompt={resolvedVideoPrompt}
-            videoModelFamily={resolvedVideoModelFamily}
+            videoModelFamily={effectiveVideoModelFamily}
             videoMedia={resolvedVideoMedia}
             videoParameters={resolvedVideoParameters}
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
@@ -2241,7 +2317,8 @@ export const ContentBlock = memo(function ContentBlock({
             width={resolvedWidth}
             height={resolvedHeight}
             aiPrompt={resolvedAiPrompt}
-            aiModel={resolvedAiModel}
+            aiModel={effectiveTextModel}
+            modelAvailability={modelAvailability}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
             onAddReference={() => startReferenceSelection()}

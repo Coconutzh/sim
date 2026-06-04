@@ -1,35 +1,23 @@
 import { uniq } from 'es-toolkit/array'
+import { getContentReferenceCapability as getCatalogContentReferenceCapability } from '@/lib/content-canvas/model-catalog'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
-
-export type ContentNodeVariant = 'text' | 'image' | 'video' | 'audio'
-export type ContentReferenceSelectionMode = 'multi' | 'slot'
-export type ContentReferenceRole =
-  | 'text_context'
-  | 'image_reference'
-  | 'video_first_frame'
-  | 'video_last_frame'
-  | 'audio_reference'
+export type {
+  ContentNodeVariant,
+  ContentReferenceCapability,
+  ContentReferenceRole,
+  ContentReferenceSelectionMode,
+  ContentReferenceSlotCapability,
+} from '@/lib/workflows/content-reference-types'
+import type {
+  ContentNodeVariant,
+  ContentReferenceCapability,
+  ContentReferenceRole,
+} from '@/lib/workflows/content-reference-types'
 
 export interface ContentReferenceRecord {
   sourceBlockId: string
   sourceVariant: ContentNodeVariant
   role: ContentReferenceRole
-}
-
-export interface ContentReferenceSlotCapability {
-  role: ContentReferenceRole
-  sourceVariants: ContentNodeVariant[]
-  maxCount?: number
-}
-
-export interface ContentReferenceCapability {
-  authMode: 'api_key_only'
-  targetVariant: ContentNodeVariant
-  model: string
-  selectionMode: ContentReferenceSelectionMode
-  allowedSourceVariants: ContentNodeVariant[]
-  supportedRoles: ContentReferenceRole[]
-  slots: ContentReferenceSlotCapability[]
 }
 
 export interface PromptContextReferencedNode {
@@ -55,29 +43,6 @@ interface VideoMediaReferenceLike {
     key?: string | null
   }
 }
-
-const GEMINI_TEXT_MODELS = [
-  'gemini-3.1-flash-lite-preview',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-3.1-pro-preview',
- ] as const
-
-const GLM_TEXT_MODELS = [
-  'glm-4.7-flash',
-  'glm-4.7',
-  'glm-4.6',
-  'glm-4.5',
-] as const
-
-const IMAGE_MODELS = [
-  'jimeng-4.0',
-  'jimeng-4.5',
-  'gemini-3.1-flash-image-preview',
-] as const
-
-const VIDEO_MODELS = ['wan2.7-i2v', 'wan2.6-t2v', 'wan2.6-i2v-flash'] as const
-const AUDIO_MODELS = ['suno-v5-beta', 'suno-v4.5-beta', 'suno-v4-beta'] as const
 
 const TEXT_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
@@ -153,41 +118,6 @@ const VIDEO_FIRST_AND_LAST_CAPABILITY: Omit<ContentReferenceCapability, 'model'>
     { role: 'video_last_frame', sourceVariants: ['image'], maxCount: 1 },
   ],
 }
-
-const CAPABILITY_REGISTRY: Record<string, ContentReferenceCapability> = Object.fromEntries([
-  ...GEMINI_TEXT_MODELS.map((model) => [
-    capabilityKey('text', model),
-    { ...TEXT_MULTIMODAL_CAPABILITY, model },
-  ]),
-  ...GLM_TEXT_MODELS.map((model) => [capabilityKey('text', model), { ...TEXT_MULTI_CAPABILITY, model }]),
-  ...AUDIO_MODELS.map((model) => [
-    capabilityKey('audio', model),
-    { ...AUDIO_MULTI_CAPABILITY, model },
-  ]),
-  ...(['jimeng-4.0', 'jimeng-4.5'] as const).map((model) => [
-    capabilityKey('image', model),
-    { ...IMAGE_TEXT_ONLY_CAPABILITY, model },
-  ]),
-  [
-    capabilityKey('image', 'gemini-3.1-flash-image-preview'),
-    {
-      ...IMAGE_TEXT_AND_IMAGE_CAPABILITY,
-      model: 'gemini-3.1-flash-image-preview',
-    },
-  ],
-  [
-    capabilityKey('video', 'wan2.6-t2v'),
-    { ...VIDEO_TEXT_ONLY_CAPABILITY, model: 'wan2.6-t2v' },
-  ],
-  [
-    capabilityKey('video', 'wan2.6-i2v-flash'),
-    { ...VIDEO_FIRST_FRAME_CAPABILITY, model: 'wan2.6-i2v-flash' },
-  ],
-  [
-    capabilityKey('video', 'wan2.7-i2v'),
-    { ...VIDEO_FIRST_AND_LAST_CAPABILITY, model: 'wan2.7-i2v' },
-  ],
-]) as Record<string, ContentReferenceCapability>
 
 function capabilityKey(targetVariant: ContentNodeVariant, model: string): string {
   return `${targetVariant}:${model}`
@@ -281,8 +211,10 @@ export function getContentReferenceCapability(
   model: string
 ): ContentReferenceCapability {
   return (
-    CAPABILITY_REGISTRY[capabilityKey(targetVariant, model)] ??
-    defaultCapabilityForVariant(targetVariant, model)
+    getCatalogContentReferenceCapability({
+      targetVariant,
+      model,
+    }) ?? defaultCapabilityForVariant(targetVariant, model)
   )
 }
 

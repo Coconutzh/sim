@@ -1,15 +1,11 @@
 import { createLogger } from '@sim/logger'
-import { env } from '@/lib/core/config/env'
-import type { AudioGenerationParametersValue, AudioGenerationModelId } from '@/lib/generated-media/audio/audio-generation-utils'
+import { resolveContentService } from '@/lib/content-canvas/service-config'
+import type {
+  AudioGenerationModelId,
+  AudioGenerationParametersValue,
+} from '@/lib/generated-media/audio/audio-generation-utils'
 
 const logger = createLogger('GeneratedAudioProviders')
-
-const EVOLINK_BASE_URL =
-  process.env.NODE_ENV === 'test'
-    ? 'https://api.evolink.ai/v1'
-    : (env.EVOLINK_BASE_URL ?? 'https://api.evolink.ai/v1')
-const EVOLINK_AUDIO_ENDPOINT = `${EVOLINK_BASE_URL.replace(/\/$/, '')}/audios/generations`
-const EVOLINK_TASKS_ENDPOINT = `${EVOLINK_BASE_URL.replace(/\/$/, '')}/tasks`
 const EVOLINK_POLL_INTERVAL_MS = 1500
 
 interface GenerateAudioWithProviderInput {
@@ -44,14 +40,6 @@ interface EvolinkTaskPayload {
     error?: string | { code?: string; message?: string; type?: string }
     results?: unknown
   }
-}
-
-function getEvolinkApiKey(): string {
-  const apiKey = env.EVOLINK_API_KEY
-  if (!apiKey) {
-    throw new Error('EVOLINK_API_KEY is not configured')
-  }
-  return apiKey
 }
 
 function getProviderErrorMessage(payload: EvolinkTaskPayload, fallback: string) {
@@ -160,14 +148,22 @@ export async function generateAudioWithProvider({
   model,
   prompt,
   parameters,
+  referenceContext,
 }: GenerateAudioWithProviderInput): Promise<GeneratedAudioProviderResult> {
-  const apiKey = getEvolinkApiKey()
-  const payload = buildEvolinkPayload({ model, prompt, parameters })
+  const service = resolveContentService({ capability: 'audio', modelId: model })
+  if (!service.apiKey) {
+    throw new Error(`No API key configured for content-canvas audio model ${model}`)
+  }
 
-  const createResponse = await fetch(EVOLINK_AUDIO_ENDPOINT, {
+  const baseUrl = service.baseUrl.replace(/\/$/, '')
+  const createEndpoint = `${baseUrl}/audios/generations`
+  const tasksEndpoint = `${baseUrl}/tasks`
+  const payload = buildEvolinkPayload({ model, prompt, parameters, referenceContext })
+
+  const createResponse = await fetch(createEndpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
@@ -199,10 +195,10 @@ export async function generateAudioWithProvider({
 
     await sleep(EVOLINK_POLL_INTERVAL_MS)
 
-    const pollResponse = await fetch(`${EVOLINK_TASKS_ENDPOINT}/${taskId}`, {
+    const pollResponse = await fetch(`${tasksEndpoint}/${taskId}`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${service.apiKey}`,
       },
     })
     latestPayload = (await pollResponse.json().catch(() => ({}))) as EvolinkTaskPayload
