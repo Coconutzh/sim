@@ -43,6 +43,7 @@ import type {
   ProjectTaskStatus,
   UpdateProjectTaskBody,
 } from '@/lib/api/contracts/project-tasks'
+import { cn } from '@/lib/core/utils/cn'
 import {
   useArchiveProjectTask,
   useCreateProjectTask,
@@ -63,6 +64,7 @@ interface ProjectTaskTimelineProps {
   isDirector: boolean
   selectedNodeIds: string[]
   canEditCanvas: boolean
+  className?: string
 }
 
 interface TaskFormModalProps {
@@ -288,6 +290,31 @@ function EmptyTimeline({ canManage }: { canManage: boolean }) {
       <div className='mt-1 text-[var(--text-secondary)] text-xs'>
         {canManage ? '可从右上角新建任务并指派给工种。' : '导演组指派后会在这里显示。'}
       </div>
+    </div>
+  )
+}
+
+function TimelineError({
+  message,
+  isRetrying,
+  onRetry,
+}: {
+  message: string
+  isRetrying: boolean
+  onRetry: () => void
+}) {
+  return (
+    <div className='flex h-full min-h-[140px] flex-col items-center justify-center px-4 py-5 text-center'>
+      <div className='mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-4)]'>
+        <CalendarClock className='h-[16px] w-[16px] text-[var(--text-icon)]' />
+      </div>
+      <div className='font-medium text-[var(--text-primary)] text-small'>任务加载失败</div>
+      <div className='mt-1 max-w-[520px] text-[var(--text-secondary)] text-xs'>
+        请确认数据库迁移已执行到 0212/0213 后重试。原始错误：{message}
+      </div>
+      <Button variant='default' size='sm' className='mt-3' disabled={isRetrying} onClick={onRetry}>
+        {isRetrying ? '重试中...' : '重试'}
+      </Button>
     </div>
   )
 }
@@ -757,6 +784,7 @@ export function ProjectTaskTimeline({
   isDirector,
   selectedNodeIds,
   canEditCanvas,
+  className,
 }: ProjectTaskTimelineProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [includeCompleted, setIncludeCompleted] = useState(false)
@@ -837,9 +865,9 @@ export function ProjectTaskTimeline({
   }, [hasLoadedReadCounts, readMessageCounts, readMessageCountsStorageKey])
 
   return (
-    <div className='pointer-events-none absolute right-4 bottom-4 left-4 z-[var(--z-dropdown)]'>
-      <div className='pointer-events-auto mx-auto max-w-[1120px] rounded-xl border border-[var(--border)] bg-[var(--surface-1)] shadow-overlay'>
-        <div className='flex items-center justify-between gap-3 border-[var(--border-muted)] border-b px-3 py-2'>
+    <div className={cn('h-full min-h-0', className)}>
+      <div className='flex h-full min-h-0 flex-col bg-[var(--bg)]'>
+        <div className='flex flex-shrink-0 items-center justify-between gap-3 border-[var(--border-muted)] border-b px-3 py-2'>
           <div className='flex min-w-0 items-center gap-2'>
             <div className='flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--surface-4)]'>
               <CalendarClock className='h-[16px] w-[16px] text-[var(--text-icon)]' />
@@ -891,12 +919,20 @@ export function ProjectTaskTimeline({
         </div>
 
         {isExpanded ? (
-          <div className='relative'>
+          <div className='relative min-h-0 flex-1'>
             <div className='pointer-events-none absolute top-1/2 right-3 left-3 h-px bg-[var(--border-muted)]' />
             {tasksQuery.isLoading ? (
               <TimelineSkeleton />
+            ) : tasksQuery.isError ? (
+              <TimelineError
+                message={tasksQuery.error.message}
+                isRetrying={tasksQuery.isFetching}
+                onRetry={() => {
+                  void tasksQuery.refetch()
+                }}
+              />
             ) : tasks.length > 0 ? (
-              <div className='allow-scroll relative flex gap-3 overflow-x-auto px-3 py-3'>
+              <div className='allow-scroll relative flex h-full gap-3 overflow-x-auto overflow-y-auto px-3 py-3'>
                 {tasks.map((task) => (
                   <TaskCard
                     key={task.id}
@@ -910,11 +946,6 @@ export function ProjectTaskTimeline({
             ) : (
               <EmptyTimeline canManage={canManage} />
             )}
-            {tasksQuery.isError ? (
-              <div className='border-[var(--border-muted)] border-t px-4 py-2 text-[var(--text-error)] text-xs'>
-                任务加载失败：{tasksQuery.error.message}
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>

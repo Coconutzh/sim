@@ -210,7 +210,7 @@ export function PublishedWorkflowDetail() {
 
   if (!isLoading && (isShowcaseRoute ? !publication : !publishedWorkflow)) {
     return (
-      <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
+      <div className='flex h-full flex-1 flex-col overflow-y-auto bg-[var(--bg)]'>
         <ResourceHeader
           icon={Compass}
           title={isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow'}
@@ -254,21 +254,19 @@ export function PublishedWorkflowDetail() {
     publishedWorkflow?.name ??
     (isShowcaseRoute ? 'Showcase Canvas' : 'Published Workflow')
   const detailDescription = publication?.description ?? publishedWorkflow?.description ?? null
-  const detailVisibility = publication?.visibility ?? workflowPublication?.visibility ?? publishedWorkflow?.visibility
+  const detailVisibility =
+    publication?.visibility ?? workflowPublication?.visibility ?? publishedWorkflow?.visibility
   const detailPublishedAt = publication?.publishedAt
     ? formatPublicationDate(publication.publishedAt)
     : formatPublishedAt(publishedWorkflow?.publishedAt)
-  const sourceDraftLabel = publication?.snapshotMetadata.sourceWorkflowName
-    ?? workflowPublication?.sourceWorkflowId
-    ?? 'Unknown'
+  const sourceDraftLabel =
+    publication?.snapshotMetadata.sourceWorkflowName ??
+    workflowPublication?.sourceWorkflowId ??
+    'Unknown'
 
   return (
-    <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-      <ResourceHeader
-        icon={Compass}
-        title={detailTitle}
-        actions={headerActions}
-      />
+    <div className='flex h-full flex-1 flex-col overflow-y-auto bg-[var(--bg)]'>
+      <ResourceHeader icon={Compass} title={detailTitle} actions={headerActions} />
       <div className='border-[var(--border)] border-b px-6 py-4'>
         <div className='grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4'>
           <div className='rounded-[14px] border border-[var(--border)] bg-[var(--surface-2)] p-4'>
@@ -320,8 +318,9 @@ export function PublishedWorkflowDetail() {
         </div>
       </div>
       {isShowcaseRoute && publication && (
-        <div className='border-[var(--border)] border-b px-6 py-5'>
+        <div className='shrink-0 border-[var(--border)] border-b px-6 py-5'>
           <ShowcaseReadOnlyCanvas
+            canvasHeightClassName='h-[calc(100vh-320px)] min-h-[640px]'
             snapshotState={publication.snapshotState}
             title={detailTitle}
             description={detailDescription}

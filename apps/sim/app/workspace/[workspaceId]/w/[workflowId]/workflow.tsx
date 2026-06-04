@@ -273,6 +273,10 @@ interface LazyPanelProps {
   workspaceId?: string
 }
 
+interface LazyTerminalProps {
+  taskTimeline?: React.ReactNode
+}
+
 const LazyPanel = lazy(async () => {
   if (process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true') {
     const mod = await import(
@@ -288,7 +292,7 @@ const LazyPanel = lazy(async () => {
 const LazyTerminal = lazy(() =>
   import('@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/terminal').then(
     (mod) => ({
-      default: mod.Terminal,
+      default: mod.Terminal as React.ComponentType<LazyTerminalProps>,
     })
   )
 )
@@ -5096,6 +5100,18 @@ const WorkflowContent = React.memo(
 
     const shouldRenderEditorPanel = embedded || sandbox || isHeavyEditorChromeLoaded
     const shouldRenderAuxiliaryEditorChrome = !IS_LOW_MEMORY_DEV || embedded || sandbox
+    const projectTaskTimeline =
+      !embedded && !sandbox && !IS_LOW_MEMORY_DEV && activeOrganizationId && activeWorkgroupId ? (
+        <ProjectTaskTimeline
+          organizationId={activeOrganizationId}
+          workspaceId={workspaceId}
+          workflowId={workflowIdParam}
+          activeWorkgroupId={activeWorkgroupId}
+          isDirector={isProjectTaskDirector}
+          selectedNodeIds={selectedNodeIds}
+          canEditCanvas={effectivePermissions.canEdit}
+        />
+      ) : undefined
 
     return (
       <div className='flex h-full w-full overflow-hidden'>
@@ -5237,22 +5253,6 @@ const WorkflowContent = React.memo(
                 />
 
                 <Cursors />
-
-                {!embedded &&
-                  !sandbox &&
-                  !IS_LOW_MEMORY_DEV &&
-                  activeOrganizationId &&
-                  activeWorkgroupId && (
-                    <ProjectTaskTimeline
-                      organizationId={activeOrganizationId}
-                      workspaceId={workspaceId}
-                      workflowId={workflowIdParam}
-                      activeWorkgroupId={activeWorkgroupId}
-                      isDirector={isProjectTaskDirector}
-                      selectedNodeIds={selectedNodeIds}
-                      canEditCanvas={effectivePermissions.canEdit}
-                    />
-                  )}
 
                 {!embedded && (
                   <>
@@ -5400,7 +5400,7 @@ const WorkflowContent = React.memo(
 
           {shouldRenderAuxiliaryEditorChrome && (
             <Suspense fallback={null}>
-              <LazyTerminal />
+              <LazyTerminal taskTimeline={projectTaskTimeline} />
             </Suspense>
           )}
         </div>
