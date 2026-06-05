@@ -16,6 +16,7 @@ import {
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position } from 'reactflow'
 import { cn } from '@/lib/core/utils/cn'
+import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
 import {
   type AudioGenerationModelId,
   type AudioGenerationParametersValue,
@@ -1909,7 +1910,7 @@ export const ContentBlock = memo(function ContentBlock({
                 return {
                   id: file.id ?? '',
                   name: file.name ?? file.key,
-                  url: file.path ?? '',
+                  url: resolveUserFileUrl(file),
                   key: file.key,
                   size: file.size ?? 0,
                   type: file.type,

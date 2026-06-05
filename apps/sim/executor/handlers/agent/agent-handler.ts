@@ -6,6 +6,7 @@ import { sleep } from '@sim/utils/helpers'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
 import { createMcpToolId } from '@/lib/mcp/utils'
+import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
@@ -669,7 +670,61 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
+    await this.hydrateReferencedImageParts(ctx, messages)
+
     return messages.length > 0 ? messages : undefined
+  }
+
+  private async hydrateReferencedImageParts(
+    ctx: ExecutionContext,
+    messages: Message[]
+  ): Promise<void> {
+    await Promise.all(
+      messages.map(async (message, index) => {
+        if (
+          (message.role !== 'user' && message.role !== 'system') ||
+          !Array.isArray(message.referencedFiles) ||
+          message.referencedFiles.length === 0
+        ) {
+          return
+        }
+
+        const hydratedFiles = await hydrateUserFilesWithBase64(message.referencedFiles, {
+          requestId: ctx.executionId ?? ctx.workflowId,
+          executionId: ctx.executionId,
+          maxBytes: ctx.base64MaxBytes,
+          allowUnknownSize: true,
+        })
+
+        const imageParts = hydratedFiles
+          .filter(
+            (
+              file
+            ): file is typeof file & {
+              type: string
+              base64: string
+            } =>
+              typeof file.type === 'string' &&
+              file.type.toLowerCase().startsWith('image/') &&
+              typeof file.base64 === 'string' &&
+              file.base64.length > 0
+          )
+          .map((file) => ({
+            type: 'image' as const,
+            mimeType: file.type,
+            data: file.base64!,
+          }))
+
+        if (imageParts.length === 0) {
+          return
+        }
+
+        messages[index] = {
+          ...message,
+          parts: [{ type: 'text', text: message.content }, ...imageParts],
+        }
+      })
+    )
   }
 
   private extractValidMessages(messages?: Message[]): Message[] {
@@ -815,7 +870,7 @@ export class AgentBlockHandler implements BlockHandler {
       workspaceId: ctx.workspaceId,
       userId: ctx.userId,
       stream: streaming,
-      messages: messages?.map(({ executionId, ...msg }) => msg),
+      messages: messages?.map(({ executionId, referencedFiles, ...msg }) => msg),
       environmentVariables: normalizeStringRecord(ctx.environmentVariables),
       workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
       blockData,

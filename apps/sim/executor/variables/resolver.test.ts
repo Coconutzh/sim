@@ -318,4 +318,68 @@ describe('VariableResolver function block inputs', () => {
     expect(result.displayInputs.code).toBe('# don\'t confuse quote tracking\necho "hello world"')
     expect(result.contextVariables).toEqual({ __blockRef_0: 'hello world' })
   })
+
+  it('keeps agent message text resolution and preserves referenced image files for multimodal providers', () => {
+    const producer = createBlock('producer', 'Producer', BlockType.API)
+    const agentBlock = createBlock('agent', 'Agent', BlockType.AGENT, {})
+    const workflow: SerializedWorkflow = {
+      version: '1',
+      blocks: [producer, agentBlock],
+      connections: [],
+      loops: {},
+      parallels: {},
+    }
+    const state = new ExecutionState()
+    state.setBlockOutput('producer', {
+      file: {
+        id: 'img-1',
+        name: 'reference.png',
+        url: 'https://example.com/reference.png',
+        key: 'workspace/reference.png',
+        size: 128,
+        type: 'image/png',
+      },
+    })
+
+    const resolver = new VariableResolver(workflow, {}, state)
+    const ctx = {
+      blockStates: state.getBlockStates(),
+      blockLogs: [],
+      environmentVariables: {},
+      workflowVariables: {},
+      decisions: { router: new Map(), condition: new Map() },
+      loopExecutions: new Map(),
+      executedBlocks: new Set(),
+      activeExecutionPath: new Set(),
+      completedLoops: new Set(),
+      metadata: {},
+    } as ExecutionContext
+
+    const result = resolver.resolveInputs(
+      ctx,
+      'agent',
+      {
+        messages: [{ role: 'user', content: 'Please analyze <Producer>' }],
+      },
+      agentBlock
+    )
+
+    expect(result.messages).toEqual([
+      {
+        role: 'user',
+        content:
+          'Please analyze {"file":{"id":"img-1","name":"reference.png","url":"https://example.com/reference.png","key":"workspace/reference.png","size":128,"type":"image/png"}}',
+        referencedFiles: [
+          {
+            id: 'img-1',
+            name: 'reference.png',
+            url: 'https://example.com/reference.png',
+            key: 'workspace/reference.png',
+            size: 128,
+            type: 'image/png',
+          },
+        ],
+      },
+    ])
+  })
 })
