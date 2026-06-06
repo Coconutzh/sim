@@ -17,7 +17,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const validation = await parseRequest(generateWorkspaceImageContract, request, {}, {})
   if (!validation.success) return validation.response
 
-  const { workspaceId, model, prompt, aspectRatio } = validation.data.body
+  const { workspaceId, model, prompt, aspectRatio, referenceContext } = validation.data.body
   const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
   if (!workspaceAccess.hasAccess) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -29,6 +29,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     model,
     prompt,
     aspectRatio,
+    referenceContext,
   })
 
   return NextResponse.json({

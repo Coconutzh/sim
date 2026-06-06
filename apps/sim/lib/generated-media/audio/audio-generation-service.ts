@@ -12,6 +12,9 @@ interface GenerateWorkspaceAudioFromPromptInput {
   model: AudioGenerationModelId
   prompt: string
   parameters: AudioGenerationParametersValue
+  referenceContext?: {
+    text: string[]
+  }
 }
 
 interface GenerateWorkspaceAudioFromPromptResult {
@@ -37,11 +40,13 @@ export async function generateWorkspaceAudioFromPrompt({
   model,
   prompt,
   parameters,
+  referenceContext,
 }: GenerateWorkspaceAudioFromPromptInput): Promise<GenerateWorkspaceAudioFromPromptResult> {
   const generatedAudio = await generateAudioWithProvider({
     model,
     prompt,
     parameters,
+    referenceContext,
   })
 
   const file = await uploadWorkspaceFile(

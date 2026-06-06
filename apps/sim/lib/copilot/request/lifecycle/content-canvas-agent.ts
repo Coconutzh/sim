@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { buildTextNodeAiSystemPrompt, convertGeneratedTextToContentHtml } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { getEnv } from '@/lib/core/config/env'
+import { getContentCanvasModelAvailability } from '@/lib/content-canvas/service-config'
+import { executeContentCanvasTextRequest, generateContentCanvasText } from '@/lib/content-canvas/text-executor'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
@@ -286,10 +288,11 @@ type ContentCanvasRequestKind =
   | 'out-of-scope'
 
 interface ContentCanvasActorConfig {
-  provider: ProviderId
   model: string
   mode: 'structured' | 'tool-call'
+  provider?: ProviderId
   apiKey?: string
+  useContentCanvasTextResolver?: boolean
 }
 
 type ContentCanvasActorFailureCode =
@@ -602,7 +605,22 @@ function resolveActorApiKey(provider: ProviderId): string | undefined {
   return undefined
 }
 
+function hasExplicitContentCanvasTextConfig() {
+  return Boolean(
+    getEnv('CONTENT_TEXT_GEMINI_API_KEY')?.trim() || getEnv('CONTENT_TEXT_GLM_API_KEY')?.trim()
+  )
+}
+
 function resolveContentCanvasActorConfig(): ContentCanvasActorConfig {
+  const contentCanvasAvailability = getContentCanvasModelAvailability()
+  if (hasExplicitContentCanvasTextConfig() && contentCanvasAvailability.text.defaultModelId) {
+    return {
+      model: contentCanvasAvailability.text.defaultModelId,
+      mode: 'structured',
+      useContentCanvasTextResolver: true,
+    }
+  }
+
   const explicitProvider = normalizeActorProvider(getEnv('CONTENT_CANVAS_ACTOR_PROVIDER'))
   const explicitModel = getEnv('CONTENT_CANVAS_ACTOR_MODEL')?.trim()
   const explicitMode = getEnv('CONTENT_CANVAS_ACTOR_MODE') === 'tool-call' ? 'tool-call' : 'structured'
@@ -624,7 +642,7 @@ function resolveContentCanvasActorConfig(): ContentCanvasActorConfig {
 
   if (!legacyModel || !inferredProvider) {
     throw new Error(
-      'Content canvas Copilot requires CONTENT_CANVAS_ACTOR_PROVIDER/MODEL or LOCAL_COPILOT_MODEL to be configured'
+      'Content canvas Copilot requires content-canvas text env, CONTENT_CANVAS_ACTOR_PROVIDER/MODEL, or LOCAL_COPILOT_MODEL with LOCAL_COPILOT_PROVIDER'
     )
   }
 
@@ -2121,13 +2139,13 @@ async function decideNextCanvasActions(params: {
         : params.repairContext ??
           'The previous response was not executable. Return the smallest valid action batch that safely moves the request forward.'
 
-    const response = await executeStructuredActorRequest(config.provider, {
+    const request = {
       model: config.model,
       apiKey: config.apiKey,
       systemPrompt: buildActorSystemPrompt(params.thinkingLevel, params.requestKind),
       messages: [
         {
-          role: 'user',
+          role: 'user' as const,
           content: buildActorUserPrompt({
             message: params.message,
             thinkingLevel: params.thinkingLevel,
@@ -2146,7 +2164,19 @@ async function decideNextCanvasActions(params: {
         strict: true,
       },
       abortSignal: params.abortSignal,
-    })
+    }
+
+    const response = config.useContentCanvasTextResolver
+      ? await executeContentCanvasTextRequest({
+          workspaceId: '',
+          model: request.model,
+          systemPrompt: request.systemPrompt,
+          prompt: String(request.messages[0]?.content ?? ''),
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
+          responseFormat: request.responseFormat,
+        })
+      : await executeStructuredActorRequest(config.provider!, request)
 
     try {
       let decision = parseActorBatchResponse(response?.content || '')
@@ -2768,19 +2798,13 @@ async function generateTextOutput(params: {
     throw new Error(`Text node "${params.block.name}" is missing an AI prompt`)
   }
 
-  const rawResponse = await executeProviderRequest(getProviderFromModel(model), {
+  return generateContentCanvasText({
     workspaceId: params.workspaceId,
     model,
     systemPrompt: buildTextNodeAiSystemPrompt(),
-    messages: [{ role: 'user', content: prompt }],
+    prompt,
     maxTokens: 1800,
   })
-  const response = assertNonStreamingProviderResponse(rawResponse)
-  const generated = response.content?.trim()
-  if (!generated) {
-    throw new Error(`Text node "${params.block.name}" did not return generated content`)
-  }
-  return generated
 }
 
 async function generateImageOutput(params: {

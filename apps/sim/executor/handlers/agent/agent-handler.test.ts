@@ -1121,6 +1121,56 @@ describe('AgentBlockHandler', () => {
       expect(requestBody.messages[6].content).toBe('Continue our conversation.')
     })
 
+    it('attaches referenced image files as multimodal message parts for agent user messages', async () => {
+      const inputs = {
+        model: 'gemini-3.1-pro-preview',
+        messages: [
+          {
+            role: 'user' as const,
+            content:
+              'Please analyze {"file":{"id":"img-1","name":"reference.png","url":"https://example.com/reference.png","key":"workspace/reference.png","size":128,"type":"image/png"}}',
+            referencedFiles: [
+              {
+                id: 'img-1',
+                name: 'reference.png',
+                url: 'https://example.com/reference.png',
+                key: 'workspace/reference.png',
+                size: 128,
+                type: 'image/png',
+                base64: 'ZmFrZS1pbWFnZS1iYXNlNjQ=',
+              },
+            ],
+          },
+        ],
+        apiKey: 'test-api-key',
+      }
+
+      await handler.execute(mockContext, mockBlock, inputs)
+
+      const providerCall = mockExecuteProviderRequest.mock.calls[0]
+      const requestBody = providerCall[1]
+
+      expect(requestBody.messages).toEqual([
+        {
+          role: 'user',
+          content:
+            'Please analyze {"file":{"id":"img-1","name":"reference.png","url":"https://example.com/reference.png","key":"workspace/reference.png","size":128,"type":"image/png"}}',
+          parts: [
+            {
+              type: 'text',
+              text:
+                'Please analyze {"file":{"id":"img-1","name":"reference.png","url":"https://example.com/reference.png","key":"workspace/reference.png","size":128,"type":"image/png"}}',
+            },
+            {
+              type: 'image',
+              mimeType: 'image/png',
+              data: 'ZmFrZS1pbWFnZS1iYXNlNjQ=',
+            },
+          ],
+        },
+      ])
+    })
+
     it('should preserve multiple system messages when no explicit systemPrompt is provided', async () => {
       const inputs = {
         model: 'gpt-4o',

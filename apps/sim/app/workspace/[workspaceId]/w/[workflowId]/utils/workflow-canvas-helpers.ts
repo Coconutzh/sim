@@ -98,6 +98,42 @@ export function clearDragHighlights(): void {
   document.body.style.cursor = ''
 }
 
+export type DragHighlightTransition = 'noop' | 'apply' | 'clear'
+
+export function getDragHighlightTransition(
+  currentContainerId: string | null,
+  nextContainerId: string | null
+): DragHighlightTransition {
+  if (currentContainerId === nextContainerId) {
+    return 'noop'
+  }
+
+  return nextContainerId ? 'apply' : 'clear'
+}
+
+interface ContainerMatchCandidate {
+  id: string
+  depth: number
+  size: number
+}
+
+export function pickBestContainerMatch<T extends ContainerMatchCandidate>(
+  candidates: T[],
+  draggedNodeId: string,
+  isDescendantOf: (ancestorId: string, nodeId: string) => boolean
+): T | null {
+  const sortedCandidates = [...candidates].sort((a, b) => {
+    if (a.depth !== b.depth) {
+      return b.depth - a.depth
+    }
+    return a.size - b.size
+  })
+
+  return (
+    sortedCandidates.find((candidate) => !isDescendantOf(draggedNodeId, candidate.id)) ?? null
+  )
+}
+
 interface BlockData {
   height?: number
   data?: {

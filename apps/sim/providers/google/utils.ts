@@ -14,7 +14,7 @@ import {
 } from '@google/genai'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { ProviderRequest } from '@/providers/types'
+import type { Message, ProviderRequest } from '@/providers/types'
 import { trackForcedToolUsage } from '@/providers/utils'
 
 const logger = createLogger('GoogleUtils')
@@ -192,9 +192,10 @@ export function convertToGeminiFormat(request: ProviderRequest): {
         }
       } else if (message.role === 'user' || message.role === 'assistant') {
         const geminiRole = message.role === 'user' ? 'user' : 'model'
+        const parts = toGeminiMessageParts(message)
 
-        if (message.content) {
-          contents.push({ role: geminiRole, parts: [{ text: message.content }] })
+        if (parts.length > 0) {
+          contents.push({ role: geminiRole, parts })
         }
 
         if (message.role === 'assistant' && message.tool_calls?.length) {
@@ -271,6 +272,35 @@ export function convertToGeminiFormat(request: ProviderRequest): {
   })
 
   return { contents, tools, systemInstruction }
+}
+
+function toGeminiMessageParts(message: Message): Part[] {
+  if (message.parts?.length) {
+    return message.parts.flatMap<Part>((part) => {
+      if (part.type === 'text' && part.text.trim()) {
+        return [{ text: part.text }]
+      }
+
+      if (part.type === 'image' && part.data.trim()) {
+        return [
+          {
+            inlineData: {
+              mimeType: part.mimeType,
+              data: part.data,
+            },
+          },
+        ]
+      }
+
+      return []
+    })
+  }
+
+  if (message.content) {
+    return [{ text: message.content }]
+  }
+
+  return []
 }
 
 /**

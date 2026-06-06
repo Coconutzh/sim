@@ -56,6 +56,7 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
       height: 160,
       aiPrompt: '',
       aiModel: DEFAULT_TEXT_AI_MODEL,
+      contentReferences: [],
     },
     advancedPanelLabel: 'Text settings',
   },
@@ -74,6 +75,7 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
       aiModel: DEFAULT_IMAGE_AI_MODEL,
       aiAspectRatio: 'auto',
       file: null,
+      contentReferences: [],
     },
     advancedPanelLabel: 'Image settings',
   },
@@ -89,6 +91,7 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
     presetSubBlockValues: {
       contentVariant: 'video',
       file: null,
+      contentReferences: [],
     },
     advancedPanelLabel: 'Video settings',
   },
@@ -104,6 +107,7 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
     presetSubBlockValues: {
       contentVariant: 'audio',
       file: null,
+      contentReferences: [],
     },
     advancedPanelLabel: 'Audio settings',
   },

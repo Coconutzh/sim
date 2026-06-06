@@ -57,6 +57,25 @@ export function filterUserFileForDisplay(data: Record<string, unknown>): Record<
 }
 
 /**
+ * Resolves the best available display URL for a file-like object.
+ * Prefers `url` and falls back to legacy `path`.
+ */
+export function resolveUserFileUrl(fileInput: unknown): string {
+  if (!fileInput || typeof fileInput !== 'object') {
+    return ''
+  }
+
+  const record = fileInput as Record<string, unknown>
+  if (typeof record.url === 'string' && record.url.trim()) {
+    return record.url.trim()
+  }
+  if (typeof record.path === 'string' && record.path.trim()) {
+    return record.path.trim()
+  }
+  return ''
+}
+
+/**
  * Extracts base64 content from either a raw base64 string or a UserFile object.
  * Useful for tools that accept file input in either format.
  * @returns The base64 string, or undefined if not found

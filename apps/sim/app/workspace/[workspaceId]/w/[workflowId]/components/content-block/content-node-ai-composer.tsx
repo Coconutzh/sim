@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import {
   ComposerActionChip,
@@ -13,10 +14,11 @@ interface ContentNodeAiComposerProps {
   selected: boolean
   prompt: string
   model: string
-  modelOptions: readonly TextAiModelOption[]
+  modelOptions: ReadonlyArray<TextAiModelOption & { disabledReason?: string | null }>
   isGenerating: boolean
   error: string | null
   hasPendingResult: boolean
+  header?: ReactNode
   onChangePrompt: (value: string) => void
   onChangeModel: (value: string) => void
   onSubmit: () => void
@@ -33,6 +35,7 @@ export function ContentNodeAiComposer({
   isGenerating,
   error,
   hasPendingResult,
+  header,
   onChangePrompt,
   onChangeModel,
   onSubmit,
@@ -48,6 +51,7 @@ export function ContentNodeAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成内容...'
       error={error}
+      header={header}
       onChangePrompt={onChangePrompt}
       onSubmit={onSubmit}
       footer={
@@ -64,8 +68,9 @@ export function ContentNodeAiComposer({
               onFocus={(event) => event.stopPropagation()}
             >
               {modelOptions.map((option) => (
-                <option key={option.id} value={option.id}>
+                <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)}>
                   {option.label} - {option.description}
+                  {option.disabledReason ? ' (Unavailable)' : ''}
                 </option>
               ))}
             </select>

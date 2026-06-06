@@ -71,6 +71,9 @@ describe('POST /api/media/audios/generate', () => {
           negativeTags: '',
           vocalGender: '',
         },
+        referenceContext: {
+          text: ['Reference text node: sparse drums, warm tape, midnight subway ambience.'],
+        },
       },
       {
         'content-type': 'application/json',
@@ -94,6 +97,9 @@ describe('POST /api/media/audios/generate', () => {
         title: '',
         negativeTags: '',
         vocalGender: '',
+      },
+      referenceContext: {
+        text: ['Reference text node: sparse drums, warm tape, midnight subway ambience.'],
       },
     })
     expect(body).toMatchObject({

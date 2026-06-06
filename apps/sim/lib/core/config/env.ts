@@ -145,6 +145,30 @@ export const env = createEnv({
     CONTENT_CANVAS_ACTOR_PROVIDER:         z.string().optional(),                  // Provider override for content canvas actor (e.g., openai, deepseek)
     CONTENT_CANVAS_ACTOR_MODEL:            z.string().optional(),                  // Model override for content canvas actor
     CONTENT_CANVAS_ACTOR_MODE:             z.enum(['structured', 'tool-call']).optional(), // Execution mode for content canvas actor
+    CONTENT_TEXT_GEMINI_BASE_URL:          z.string().url().optional(),            // Content canvas Gemini text gateway override
+    CONTENT_TEXT_GEMINI_API_KEY:           z.string().min(1).optional(),           // Content canvas Gemini text key
+    CONTENT_TEXT_GEMINI_ENABLED_MODELS:    z.string().optional(),                  // Content canvas Gemini text model allowlist
+    CONTENT_TEXT_GEMINI_DEFAULT_MODEL:     z.string().optional(),                  // Content canvas Gemini text default model
+    CONTENT_TEXT_GLM_BASE_URL:             z.string().url().optional(),            // Content canvas GLM text gateway override
+    CONTENT_TEXT_GLM_API_KEY:              z.string().min(1).optional(),           // Content canvas GLM text key
+    CONTENT_TEXT_GLM_ENABLED_MODELS:       z.string().optional(),                  // Content canvas GLM text model allowlist
+    CONTENT_TEXT_GLM_DEFAULT_MODEL:        z.string().optional(),                  // Content canvas GLM text default model
+    CONTENT_IMAGE_GEMINI_BASE_URL:         z.string().url().optional(),            // Content canvas Gemini image gateway override
+    CONTENT_IMAGE_GEMINI_API_KEY:          z.string().min(1).optional(),           // Content canvas Gemini image key
+    CONTENT_IMAGE_GEMINI_ENABLED_MODELS:   z.string().optional(),                  // Content canvas Gemini image model allowlist
+    CONTENT_IMAGE_GEMINI_DEFAULT_MODEL:    z.string().optional(),                  // Content canvas Gemini image default model
+    CONTENT_IMAGE_ARK_BASE_URL:            z.string().url().optional(),            // Content canvas Ark image base URL override
+    CONTENT_IMAGE_ARK_API_KEY:             z.string().min(1).optional(),           // Content canvas Ark image key
+    CONTENT_IMAGE_ARK_ENABLED_MODELS:      z.string().optional(),                  // Content canvas Ark image model allowlist
+    CONTENT_IMAGE_ARK_DEFAULT_MODEL:       z.string().optional(),                  // Content canvas Ark image default model
+    CONTENT_AUDIO_BASE_URL:                z.string().url().optional(),            // Content canvas audio base URL override
+    CONTENT_AUDIO_API_KEY:                 z.string().min(1).optional(),           // Content canvas audio key
+    CONTENT_AUDIO_ENABLED_MODELS:          z.string().optional(),                  // Content canvas audio model allowlist
+    CONTENT_AUDIO_DEFAULT_MODEL:           z.string().optional(),                  // Content canvas audio default model
+    CONTENT_VIDEO_BASE_URL:                z.string().url().optional(),            // Content canvas video base URL override
+    CONTENT_VIDEO_API_KEY:                 z.string().min(1).optional(),           // Content canvas video key
+    CONTENT_VIDEO_ENABLED_MODELS:          z.string().optional(),                  // Content canvas video model allowlist
+    CONTENT_VIDEO_DEFAULT_MODEL:           z.string().optional(),                  // Content canvas video default model
     LOCAL_COPILOT_PROVIDER:                z.string().optional(),                  // Local Copilot planner provider override (e.g., deepseek, openai, gpt)
     LOCAL_COPILOT_MODEL:                   z.string().optional(),                  // Local Copilot planner model override
     LOCAL_COPILOT_API_KEY:                 z.string().min(1).optional(),           // Shared API key override for the local Copilot planner

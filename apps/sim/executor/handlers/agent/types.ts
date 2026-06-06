@@ -1,3 +1,5 @@
+import type { UserFileLike } from '@/lib/core/utils/user-file'
+
 export interface SkillInput {
   skillId: string
   name?: string
@@ -66,6 +68,18 @@ export interface ToolInput {
 export interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
+  parts?: Array<
+    | {
+        type: 'text'
+        text: string
+      }
+    | {
+        type: 'image'
+        mimeType: string
+        data: string
+      }
+  >
+  referencedFiles?: UserFileLike[]
   executionId?: string
   function_call?: any
   tool_calls?: any[]

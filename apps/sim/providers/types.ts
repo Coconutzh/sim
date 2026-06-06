@@ -120,8 +120,20 @@ export interface ProviderToolConfig {
 }
 
 export interface Message {
+  [key: string]: unknown
   role: 'system' | 'user' | 'assistant' | 'function' | 'tool'
   content: string | null
+  parts?: Array<
+    | {
+        type: 'text'
+        text: string
+      }
+    | {
+        type: 'image'
+        mimeType: string
+        data: string
+      }
+  >
   name?: string
   function_call?: {
     name: string

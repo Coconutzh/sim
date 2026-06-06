@@ -1,3 +1,5 @@
+import { getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog'
+
 export const DEFAULT_TEXT_AI_MODEL = 'gemini-3.1-flash-lite-preview'
 const EMPTY_TEXT_HTML = '<p></p>'
 
@@ -12,49 +14,6 @@ export interface ApplyGeneratedTextOptions {
   generatedText: string
   mode: 'replace' | 'append'
 }
-
-const TEXT_AI_MODEL_OPTIONS: readonly TextAiModelOption[] = [
-  {
-    id: 'gemini-3.1-flash-lite-preview',
-    label: 'Gemini 3.1 Flash Lite',
-    description: 'Fast draft',
-  },
-  {
-    id: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    description: 'Balanced',
-  },
-  {
-    id: 'gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro',
-    description: 'Best quality',
-  },
-  {
-    id: 'gemini-3.1-pro-preview',
-    label: 'Gemini 3.1 Pro',
-    description: 'Deep writing',
-  },
-  {
-    id: 'glm-4.7-flash',
-    label: 'GLM 4.7 Flash',
-    description: 'Fast Chinese',
-  },
-  {
-    id: 'glm-4.7',
-    label: 'GLM 4.7',
-    description: 'Best Chinese',
-  },
-  {
-    id: 'glm-4.6',
-    label: 'GLM 4.6',
-    description: 'Balanced Chinese',
-  },
-  {
-    id: 'glm-4.5',
-    label: 'GLM 4.5',
-    description: 'Compatibility',
-  },
-] as const
 
 function escapeHtml(value: string): string {
   return value
@@ -90,8 +49,12 @@ function joinParagraphLines(lines: string[]): string {
     .join(' ')
 }
 
-export function getTextAiModelOptions(): readonly TextAiModelOption[] {
-  return TEXT_AI_MODEL_OPTIONS
+export function getTextAiModelOptions(enabledModelIds?: readonly string[]): readonly TextAiModelOption[] {
+  const options = getContentCanvasModelOptions('text') as readonly TextAiModelOption[]
+  if (!enabledModelIds) return options
+
+  const enabledSet = new Set(enabledModelIds)
+  return options.filter((option) => enabledSet.has(option.id))
 }
 
 export function buildTextNodeAiSystemPrompt(): string {

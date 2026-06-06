@@ -8,6 +8,9 @@ describe('ContentBlock', () => {
     const aiAspectRatioSubBlock = ContentBlock.subBlocks.find(
       (subBlock) => subBlock.id === 'aiAspectRatio'
     )
+    const contentReferencesSubBlock = ContentBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'contentReferences'
+    )
 
     expect(aiPromptSubBlock).toMatchObject({
       id: 'aiPrompt',
@@ -23,6 +26,13 @@ describe('ContentBlock', () => {
       id: 'aiAspectRatio',
       type: 'short-input',
       defaultValue: 'auto',
+    })
+    expect(contentReferencesSubBlock).toMatchObject({
+      id: 'contentReferences',
+      type: 'short-input',
+      hidden: true,
+      paramVisibility: 'hidden',
+      defaultValue: [],
     })
   })
 })

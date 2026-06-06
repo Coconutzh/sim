@@ -1,4 +1,5 @@
 import type { Edge } from 'reactflow'
+import type { ContentNodeVariant } from '@/lib/workflows/content-references'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 export const CONTENT_REFERENCE_EDGE_KIND = 'content_reference'
@@ -15,6 +16,9 @@ export interface ContentReferenceEdgeData {
 
 export interface ContentReferenceSelectionSession {
   sourceBlockId: string
+  sourceVariant: ContentNodeVariant
+  sourceModel: string
+  allowedSourceVariants: ContentNodeVariant[]
   sourceAnchor: ContentReferenceAnchor
   mode: 'content_reference'
 }

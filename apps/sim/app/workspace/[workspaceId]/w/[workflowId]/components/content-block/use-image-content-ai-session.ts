@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import { generateWorkspaceImageContract } from '@/lib/api/contracts/media-images'
 import {
   getImageAspectRatioOptions,
@@ -12,6 +13,7 @@ import {
 } from '@/lib/generated-media/image/image-generation-utils'
 
 interface UploadedFileValue {
+  id?: string
   name?: string
   path?: string
   key?: string
@@ -24,7 +26,21 @@ interface UseImageContentAiSessionOptions {
   workspaceId?: string
   prompt: string
   model: ImageGenerationModelId
+  availability?: ContentCanvasModelAvailabilitySnapshot | null
   aspectRatio: ImageAspectRatioValue
+  referenceContext?: {
+    text: string[]
+    images: Array<{
+      id?: string
+      name: string
+      url?: string
+      key: string
+      size: number
+      type?: string
+      context?: string
+      base64?: string
+    }>
+  }
   onChangeFile: (value: UploadedFileValue | null) => void
 }
 
@@ -43,7 +59,9 @@ export function useImageContentAiSession({
   workspaceId,
   prompt,
   model,
+  availability,
   aspectRatio,
+  referenceContext,
   onChangeFile,
 }: UseImageContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -51,7 +69,10 @@ export function useImageContentAiSession({
   const requestSequenceRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const modelOptions = useMemo(() => getImageGenerationModelOptions(), [])
+  const modelOptions = useMemo(
+    () => getImageGenerationModelOptions(availability?.image.enabledModelIds),
+    [availability?.image.enabledModelIds]
+  )
   const aspectRatioOptions = useMemo(() => getImageAspectRatioOptions(), [])
 
   useEffect(() => {
@@ -102,6 +123,7 @@ export function useImageContentAiSession({
           model,
           prompt: nextPrompt,
           aspectRatio,
+          referenceContext,
         },
         signal: controller.signal,
       })
@@ -109,6 +131,7 @@ export function useImageContentAiSession({
       if (requestSequenceRef.current !== requestId) return
 
       onChangeFile({
+        id: response.file.id,
         name: response.file.name,
         path: response.file.url,
         key: response.file.key,
@@ -124,7 +147,7 @@ export function useImageContentAiSession({
         setIsGenerating(false)
       }
     }
-  }, [aspectRatio, model, onChangeFile, prompt, workspaceId])
+  }, [aspectRatio, model, onChangeFile, prompt, referenceContext, workspaceId])
 
   return {
     modelOptions,

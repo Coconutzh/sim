@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import { generateWorkspaceVideoContract } from '@/lib/api/contracts/media-videos'
 import {
   getVideoDurationOptions,
@@ -30,6 +31,7 @@ interface UseVideoContentAiSessionOptions {
   workspaceId?: string
   prompt: string
   modelFamily: VideoModelFamily
+  availability?: ContentCanvasModelAvailabilitySnapshot | null
   aspectRatioPreset: VideoFrameAspectRatioPreset
   resolution: VideoResolution
   durationSeconds: number
@@ -67,6 +69,7 @@ export function useVideoContentAiSession({
   workspaceId,
   prompt,
   modelFamily,
+  availability,
   aspectRatioPreset,
   resolution,
   durationSeconds,
@@ -79,7 +82,10 @@ export function useVideoContentAiSession({
   const requestSequenceRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const modelOptions = useMemo(() => getVideoGenerationModelFamilyOptions(), [])
+  const modelOptions = useMemo(
+    () => getVideoGenerationModelFamilyOptions(availability?.video.enabledModelIds),
+    [availability?.video.enabledModelIds]
+  )
   const aspectRatioOptions = useMemo(() => getVideoFrameAspectRatioOptions(), [])
   const resolutionOptions = useMemo(() => getVideoResolutionOptions(), [])
   const durationOptions = useMemo(() => getVideoDurationOptions(), [])

@@ -1,24 +1,7 @@
+import { getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 
 export const DEFAULT_AUDIO_MODEL = 'suno-v5-beta' as const
-
-export const AUDIO_GENERATION_MODEL_OPTIONS = [
-  {
-    id: 'suno-v5-beta',
-    label: 'Suno v5',
-    description: 'Newest Suno music generation model',
-  },
-  {
-    id: 'suno-v4.5-beta',
-    label: 'Suno v4.5',
-    description: 'Balanced quality and speed',
-  },
-  {
-    id: 'suno-v4-beta',
-    label: 'Suno v4',
-    description: 'Previous stable music model',
-  },
-] as const
 
 export const AUDIO_MODE_OPTIONS = [
   { id: 'simple', label: '简单' },
@@ -30,7 +13,7 @@ export const AUDIO_VOICE_MODE_OPTIONS = [
   { id: 'instrumental', label: '器乐' },
 ] as const
 
-export type AudioGenerationModelId = (typeof AUDIO_GENERATION_MODEL_OPTIONS)[number]['id']
+export type AudioGenerationModelId = 'suno-v5-beta' | 'suno-v4.5-beta' | 'suno-v4-beta'
 
 export interface AudioGenerationParametersValue {
   customMode: boolean
@@ -52,12 +35,26 @@ export const DEFAULT_AUDIO_PARAMETERS: AudioGenerationParametersValue = {
   vocalGender: '',
 }
 
-export function getAudioGenerationModelOptions() {
-  return AUDIO_GENERATION_MODEL_OPTIONS
+export function getAudioGenerationModelOptions(
+  enabledModelIds?: readonly string[]
+): ReadonlyArray<{
+  id: AudioGenerationModelId
+  label: string
+  description: string
+}> {
+  const options = getContentCanvasModelOptions('audio') as Array<{
+    id: AudioGenerationModelId
+    label: string
+    description: string
+  }>
+  if (!enabledModelIds) return options
+
+  const enabledSet = new Set(enabledModelIds)
+  return options.filter((option) => enabledSet.has(option.id))
 }
 
 export function isAudioGenerationModel(value: unknown): value is AudioGenerationModelId {
-  return AUDIO_GENERATION_MODEL_OPTIONS.some((option) => option.id === value)
+  return getAudioGenerationModelOptions().some((option) => option.id === value)
 }
 
 export function buildAudioGenerationSummary({

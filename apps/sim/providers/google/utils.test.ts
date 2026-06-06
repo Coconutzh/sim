@@ -111,6 +111,44 @@ describe('ensureStructResponse', () => {
 })
 
 describe('convertToGeminiFormat', () => {
+  describe('multimodal message handling', () => {
+    it('converts user message parts into Gemini text and inline image parts', () => {
+      const request: ProviderRequest = {
+        model: 'gemini-2.5-flash',
+        messages: [
+          {
+            role: 'user',
+            content: 'Please rewrite this scene.',
+            parts: [
+              { type: 'text', text: 'Please rewrite this scene.' },
+              {
+                type: 'image',
+                mimeType: 'image/png',
+                data: 'ZmFrZS1pbWFnZS1iYXNlNjQ=',
+              },
+            ],
+          },
+        ],
+      }
+
+      const result = convertToGeminiFormat(request)
+
+      expect(result.contents).toHaveLength(1)
+      expect(result.contents[0]).toMatchObject({
+        role: 'user',
+        parts: [
+          { text: 'Please rewrite this scene.' },
+          {
+            inlineData: {
+              mimeType: 'image/png',
+              data: 'ZmFrZS1pbWFnZS1iYXNlNjQ=',
+            },
+          },
+        ],
+      })
+    })
+  })
+
   describe('tool message handling', () => {
     it('should convert tool message with object response correctly', () => {
       const request: ProviderRequest = {

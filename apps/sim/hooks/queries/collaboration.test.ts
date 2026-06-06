@@ -37,7 +37,7 @@ describe('collaboration query invalidation', () => {
 
     await mutation.onSettled()
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(5)
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: collaborationKeys.myWorkgroups(),
     })
@@ -46,6 +46,9 @@ describe('collaboration query invalidation', () => {
     })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: collaborationKeys.publicationLists(),
+    })
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: collaborationKeys.organizationPublicationLists(),
     })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: collaborationKeys.agentProfiles(),

@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { env } from '@/lib/core/config/env'
+import { resolveContentService } from '@/lib/content-canvas/service-config'
 import { ensureAbsoluteUrl, isLocalhostUrl } from '@/lib/core/utils/urls'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
@@ -10,15 +10,10 @@ import {
   type VideoMediaType,
   type VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
+import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
+import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GeneratedVideoProviders')
-
-const DASHSCOPE_BASE_URL =
-  process.env.NODE_ENV === 'test'
-    ? 'https://dashscope-intl.aliyuncs.com/api/v1'
-    : (env.DASHSCOPE_BASE_URL ?? 'https://dashscope-intl.aliyuncs.com/api/v1')
-const DASHSCOPE_VIDEO_ENDPOINT = `${DASHSCOPE_BASE_URL.replace(/\/$/, '')}/services/aigc/video-generation/video-synthesis`
-const DASHSCOPE_TASKS_ENDPOINT = `${DASHSCOPE_BASE_URL.replace(/\/$/, '')}/tasks`
 const DASHSCOPE_POLL_INTERVAL_MS = 1500
 
 interface GenerateVideoWithProviderInput {
@@ -62,14 +57,6 @@ interface DashScopeTaskPayload {
   request_id?: string
   message?: string
   code?: string
-}
-
-function getDashScopeApiKey(): string {
-  const apiKey = env.DASHSCOPE_API_KEY
-  if (!apiKey) {
-    throw new Error('DASHSCOPE_API_KEY is not configured')
-  }
-  return apiKey
 }
 
 function getProviderErrorMessage(payload: DashScopeTaskPayload, fallback: string) {
@@ -116,8 +103,32 @@ function isPrivateHostname(hostname: string) {
   return false
 }
 
-function resolveDashScopeMediaUrl(file: UserFileLike) {
-  const absoluteUrl = ensureAbsoluteUrl(file.url)
+function arrayBufferToBase64(buffer: Buffer) {
+  return buffer.toString('base64')
+}
+
+function getImageMimeType(file: UserFileLike) {
+  if (file.type?.startsWith('image/')) {
+    return file.type
+  }
+
+  const normalizedName = `${file.name ?? ''} ${file.url ?? ''}`.toLowerCase()
+  if (normalizedName.includes('.webp')) return 'image/webp'
+  if (normalizedName.includes('.jpg') || normalizedName.includes('.jpeg')) return 'image/jpeg'
+  return 'image/png'
+}
+
+async function resolveDashScopeImageInput(file: UserFileLike) {
+  const originalUrl = file.url?.trim()
+  if (!originalUrl) {
+    throw new Error('Frame images must have a valid URL before sending to DashScope.')
+  }
+
+  if (originalUrl.startsWith('data:image/')) {
+    return originalUrl
+  }
+
+  const absoluteUrl = ensureAbsoluteUrl(originalUrl)
 
   let parsedUrl: URL
   try {
@@ -130,16 +141,18 @@ function resolveDashScopeMediaUrl(file: UserFileLike) {
     throw new Error('DashScope only supports HTTP or HTTPS image URLs for first and last frames.')
   }
 
-  if (isLocalhostUrl(parsedUrl.toString()) || isPrivateHostname(parsedUrl.hostname)) {
-    throw new Error(
-      'DashScope needs publicly accessible image URLs for the first and last frames. Configure NEXT_PUBLIC_APP_URL with a public domain, or use images hosted on a public URL.'
-    )
+  if (!isLocalhostUrl(parsedUrl.toString()) && !isPrivateHostname(parsedUrl.hostname)) {
+    return parsedUrl.toString()
   }
 
-  return parsedUrl.toString()
+  const fileBuffer = await downloadFileFromUrl(
+    isInternalFileUrl(originalUrl) ? originalUrl : absoluteUrl
+  )
+
+  return `data:${getImageMimeType(file)};base64,${arrayBufferToBase64(fileBuffer)}`
 }
 
-function buildDashScopePayload({
+async function buildDashScopePayload({
   model,
   prompt,
   media,
@@ -150,10 +163,12 @@ function buildDashScopePayload({
       model,
       input: {
         prompt,
-        media: media.map((item) => ({
-          type: item.type,
-          url: resolveDashScopeMediaUrl(item.file),
-        })),
+        media: await Promise.all(
+          media.map(async (item) => ({
+            type: item.type,
+            url: await resolveDashScopeImageInput(item.file),
+          }))
+        ),
       },
       parameters: {
         resolution: parameters.resolution,
@@ -194,7 +209,7 @@ function buildDashScopePayload({
     model,
     input: {
       prompt,
-      img_url: resolveDashScopeMediaUrl(firstFrameFile),
+      img_url: await resolveDashScopeImageInput(firstFrameFile),
     },
     parameters: {
       size,
@@ -217,18 +232,25 @@ export async function generateVideoWithProvider({
   media,
   parameters,
 }: GenerateVideoWithProviderInput): Promise<GeneratedVideoProviderResult> {
-  const apiKey = getDashScopeApiKey()
-  const payload = buildDashScopePayload({
+  const service = resolveContentService({ capability: 'video', modelId: model })
+  if (!service.apiKey) {
+    throw new Error(`No API key configured for content-canvas video model ${model}`)
+  }
+
+  const baseUrl = service.baseUrl.replace(/\/$/, '')
+  const createEndpoint = `${baseUrl}/services/aigc/video-generation/video-synthesis`
+  const tasksEndpoint = `${baseUrl}/tasks`
+  const payload = await buildDashScopePayload({
     model,
     prompt,
     media,
     parameters,
   })
 
-  const createResponse = await fetch(DASHSCOPE_VIDEO_ENDPOINT, {
+  const createResponse = await fetch(createEndpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
       'X-DashScope-Async': 'enable',
     },
@@ -263,10 +285,10 @@ export async function generateVideoWithProvider({
 
     await sleep(DASHSCOPE_POLL_INTERVAL_MS)
 
-    const pollResponse = await fetch(`${DASHSCOPE_TASKS_ENDPOINT}/${taskId}`, {
+    const pollResponse = await fetch(`${tasksEndpoint}/${taskId}`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${service.apiKey}`,
       },
     })
     latestPayload = (await pollResponse.json().catch(() => ({}))) as DashScopeTaskPayload

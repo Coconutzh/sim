@@ -17,11 +17,16 @@ export const audioGenerationParametersSchema = z.object({
   vocalGender: z.string().default(''),
 })
 
+export const audioReferenceContextSchema = z.object({
+  text: z.array(z.string()).default([]),
+})
+
 export const generateWorkspaceAudioBodySchema = z.object({
   workspaceId: workspaceIdSchema,
   model: audioGenerationModelSchema,
   prompt: z.string().min(1, 'prompt is required'),
   parameters: audioGenerationParametersSchema,
+  referenceContext: audioReferenceContextSchema.optional(),
 })
 
 const generatedWorkspaceFileSchema = z.object({

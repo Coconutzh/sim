@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AUDIO_GENERATION_MODEL_OPTIONS,
   buildAudioGenerationSummary,
   DEFAULT_AUDIO_MODEL,
+  getAudioGenerationModelOptions,
 } from '@/lib/generated-media/audio/audio-generation-utils'
 
 describe('audio-generation-utils', () => {
@@ -11,7 +11,7 @@ describe('audio-generation-utils', () => {
   })
 
   it('returns the expected public model options', () => {
-    expect(AUDIO_GENERATION_MODEL_OPTIONS.map((option) => option.label)).toEqual([
+    expect(getAudioGenerationModelOptions().map((option) => option.label)).toEqual([
       'Suno v5',
       'Suno v4.5',
       'Suno v4',

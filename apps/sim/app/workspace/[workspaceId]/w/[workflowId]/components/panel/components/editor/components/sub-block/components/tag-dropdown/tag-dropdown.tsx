@@ -15,6 +15,7 @@ import {
   usePopoverContext,
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
 import {
   getEffectiveBlockOutputType,
   getOutputPathsFromSchema,
@@ -398,6 +399,14 @@ const TagIcon: React.FC<{
       })()
     )}
   </div>
+)
+
+const TagPreview: React.FC<{ src: string; alt: string }> = ({ src, alt }) => (
+  <img
+    src={src}
+    alt={alt}
+    className='h-[14px] w-[14px] flex-shrink-0 rounded object-cover'
+  />
 )
 
 /**
@@ -813,6 +822,8 @@ const BlockRootTagItem: React.FC<{
   tagIcon: string | React.ComponentType<{ className?: string }>
   blockColor: string
   blockName: string
+  previewUrl?: string
+  previewAlt?: string
 }> = ({
   rootTag,
   rootTagGlobalIndex,
@@ -824,6 +835,8 @@ const BlockRootTagItem: React.FC<{
   tagIcon,
   blockColor,
   blockName,
+  previewUrl,
+  previewAlt,
 }) => {
   const handleMouseEnter = useKeyboardAwareMouseEnter(setSelectedIndex)
 
@@ -843,7 +856,11 @@ const BlockRootTagItem: React.FC<{
         }
       }}
     >
-      <TagIcon icon={tagIcon} color={blockColor} />
+      {previewUrl ? (
+        <TagPreview src={previewUrl} alt={previewAlt ?? blockName} />
+      ) : (
+        <TagIcon icon={tagIcon} color={blockColor} />
+      )}
       <span className='flex-1 truncate font-medium'>{blockName}</span>
     </PopoverItem>
   )
@@ -1024,6 +1041,27 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
    * Computes tags, variable info, and block tag groups
    */
   const { tags, variableInfoMap, blockTagGroups } = useMemo<TagComputationResult>(() => {
+    const resolveContentImagePreview = (
+      mergedSubBlocks: Record<string, any>
+    ): { previewUrl?: string; previewAlt?: string } => {
+      const variant = mergedSubBlocks?.contentVariant?.value
+      if (variant !== 'image') {
+        return {}
+      }
+
+      const file = mergedSubBlocks?.file?.value
+      const previewUrl = resolveUserFileUrl(file)
+      if (!previewUrl) {
+        return {}
+      }
+
+      return {
+        previewUrl,
+        previewAlt:
+          typeof file?.name === 'string' && file.name.trim() ? file.name.trim() : 'Referenced image',
+      }
+    }
+
     if (activeSourceBlockId) {
       const sourceBlock = blocks[activeSourceBlockId]
       if (!sourceBlock) {
@@ -1318,6 +1356,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         blockType: accessibleBlock.type,
         tags: blockTags,
         distance: blockDistances[accessibleBlockId] || 0,
+        ...(accessibleBlock.type === 'content' ? resolveContentImagePreview(mergedSubBlocks) : {}),
       })
 
       allBlockTags.push(...blockTags)
@@ -1788,6 +1827,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                         tagIcon={tagIcon}
                         blockColor={blockColor}
                         blockName={group.blockName}
+                        previewUrl={group.previewUrl}
+                        previewAlt={group.previewAlt}
                       />
                       {group.nestedTags.map((nestedTag) => {
                         if (nestedTag.fullTag === rootTag) {

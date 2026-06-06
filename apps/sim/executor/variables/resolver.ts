@@ -2,8 +2,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { BlockType } from '@/executor/constants'
 import type { ExecutionState, LoopScope } from '@/executor/execution/state'
+import type { Message as AgentMessage } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'
 import { createEnvVarPattern, replaceValidReferences } from '@/executor/utils/reference-validation'
+import { extractImageFilesFromValue } from '@/lib/core/utils/image-file'
 import { BlockResolver } from '@/executor/variables/resolvers/block'
 import { EnvResolver } from '@/executor/variables/resolvers/env'
 import { LoopResolver } from '@/executor/variables/resolvers/loop'
@@ -187,9 +189,89 @@ export class VariableResolver {
       if (isConditionBlock && key === 'conditions') {
         continue
       }
+      if (block?.metadata?.id === BlockType.AGENT && key === 'messages' && Array.isArray(value)) {
+        resolved[key] = this.resolveAgentMessages(ctx, currentNodeId, value, block)
+        continue
+      }
       resolved[key] = this.resolveValue(ctx, currentNodeId, value, undefined, block)
     }
     return resolved
+  }
+
+  private resolveAgentMessages(
+    ctx: ExecutionContext,
+    currentNodeId: string,
+    messages: unknown[],
+    block: SerializedBlock
+  ): unknown[] {
+    return messages.map((message) => {
+      if (
+        !message ||
+        typeof message !== 'object' ||
+        typeof (message as { content?: unknown }).content !== 'string'
+      ) {
+        return this.resolveValue(ctx, currentNodeId, message, undefined, block)
+      }
+
+      const resolvedMessage = this.resolveValue(
+        ctx,
+        currentNodeId,
+        message,
+        undefined,
+        block
+      ) as AgentMessage
+      const referencedFiles = this.collectReferencedImageFiles(
+        ctx,
+        currentNodeId,
+        (message as { content: string }).content
+      )
+
+      if (referencedFiles.length === 0) {
+        return resolvedMessage
+      }
+
+      return {
+        ...resolvedMessage,
+        referencedFiles,
+      }
+    })
+  }
+
+  private collectReferencedImageFiles(
+    ctx: ExecutionContext,
+    currentNodeId: string,
+    template: string,
+    loopScope?: LoopScope
+  ) {
+    const resolutionContext: ResolutionContext = {
+      executionContext: ctx,
+      executionState: this.state,
+      currentNodeId,
+      loopScope,
+    }
+
+    const referencedFiles: ReturnType<typeof extractImageFilesFromValue> = []
+
+    replaceValidReferences(template, (match) => {
+      const resolved = this.resolveReference(match, resolutionContext)
+      if (resolved === undefined || resolved === RESOLVED_EMPTY) {
+        return match
+      }
+
+      referencedFiles.push(...extractImageFilesFromValue(resolved))
+      return match
+    })
+
+    return referencedFiles.filter(
+      (file, index, items) =>
+        items.findIndex((candidate) =>
+          candidate.key
+            ? candidate.key === file.key
+            : candidate.id
+              ? candidate.id === file.id
+              : candidate.url === file.url
+        ) === index
+    )
   }
 
   resolveSingleReference(

@@ -9,12 +9,15 @@ import {
 } from '@/lib/generated-media/image/image-generation-utils'
 
 describe('image-generation-utils', () => {
-  it('exposes the fixed Jimeng model list and defaults to Jimeng 4.5', () => {
+  it('exposes the catalog-backed image model list and defaults to Jimeng 4.5', () => {
     expect(DEFAULT_IMAGE_AI_MODEL).toBe('jimeng-4.5')
-    expect(getImageGenerationModelOptions()).toEqual([
-      expect.objectContaining({ id: 'jimeng-4.5', label: '即梦 4.5' }),
-      expect.objectContaining({ id: 'jimeng-4.0', label: '即梦 4.0' }),
-    ])
+    expect(getImageGenerationModelOptions()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'jimeng-4.5' }),
+        expect.objectContaining({ id: 'jimeng-4.0' }),
+        expect.objectContaining({ id: 'gemini-3.1-flash-image-preview' }),
+      ])
+    )
   })
 
   it('maps auto and fixed ratios to provider size hints', () => {
