@@ -1425,11 +1425,8 @@ function MediaContentCard({
           )
         ) : (
           <div
-            onPointerDown={(event) => {
-              event.stopPropagation()
-            }}
             className={cn(
-              'nodrag nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)]',
+              'nopan flex flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-secondary)]',
               variant === 'audio' ? 'h-[132px] w-[360px]' : 'h-[240px] w-full'
             )}
           >
