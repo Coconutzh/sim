@@ -30,7 +30,21 @@ function buildContext(): LocalAgentContext {
         url: 'https://storage.example.test/private/brief.pdf',
       },
     ],
-    attachedContexts: [],
+    attachedContexts: [
+      {
+        type: 'file',
+        tag: '@brief.pdf',
+        content: [
+          'Brief content.',
+          'storageKey=uploads/private/brief.pdf',
+          'url=https://storage.example.test/private/brief.pdf',
+          'path=/api/files/serve/uploads/private/brief.pdf?context=workspace',
+          '-----BEGIN PRIVATE KEY-----',
+          'secret',
+          '-----END PRIVATE KEY-----',
+        ].join('\n'),
+      },
+    ],
     conversationHistory: [],
     skills: [],
     model: { model: 'test-model', mode: 'structured' },
@@ -64,5 +78,8 @@ describe('local canvas context manager', () => {
     expect(contextText).not.toContain('uploads/private')
     expect(contextText).not.toContain('https://storage.example.test')
     expect(contextText).not.toContain('file-1')
+    expect(contextText).not.toContain('/api/files/serve')
+    expect(contextText).not.toContain('BEGIN PRIVATE KEY')
+    expect(contextText).toContain('[redacted]')
   })
 })

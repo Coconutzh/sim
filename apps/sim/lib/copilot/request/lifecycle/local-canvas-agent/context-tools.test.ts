@@ -59,7 +59,15 @@ function buildContext(): LocalAgentContext {
       {
         type: 'file',
         tag: '@brief.pdf',
-        content: 'Brief content for the spring launch visual direction.',
+        content: [
+          'Brief content for the spring launch visual direction.',
+          'storageKey=uploads/private/brief.pdf',
+          'url=https://storage.example.test/private/brief.pdf',
+          'path=/api/files/serve/uploads/private/brief.pdf?context=workspace',
+          '-----BEGIN PRIVATE KEY-----',
+          'secret',
+          '-----END PRIVATE KEY-----',
+        ].join('\n'),
       },
       {
         type: 'knowledge',
@@ -143,6 +151,11 @@ describe('local canvas context tools', () => {
     )
     expect(JSON.stringify(result.output)).not.toContain('uploads/brief.pdf')
     expect(JSON.stringify(result.output)).not.toContain('/files/brief.pdf')
+    expect(JSON.stringify(result.output)).not.toContain('uploads/private')
+    expect(JSON.stringify(result.output)).not.toContain('https://storage.example.test')
+    expect(JSON.stringify(result.output)).not.toContain('/api/files/serve')
+    expect(JSON.stringify(result.output)).not.toContain('BEGIN PRIVATE KEY')
+    expect(JSON.stringify(result.output)).toContain('[redacted]')
   })
 
   it('queries attached knowledge and docs context', async () => {

@@ -8,6 +8,7 @@ import {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import { resolveLocalCanvasAgentModelConfig } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { resolveLocalAgentPermissions } from '@/lib/copilot/request/lifecycle/local-canvas-agent/permissions'
+import { redactAgentVisibleFileContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/redaction'
 import { loadEnabledAgentSkills } from '@/lib/copilot/request/lifecycle/local-canvas-agent/skills'
 import type {
   CanvasSnapshot,
@@ -357,12 +358,14 @@ function buildAttachedContextsContext(contexts: LocalAgentAttachedContext[] | un
   if (!contexts?.length) return ''
   return contexts
     .slice(0, 8)
-    .map((context) =>
-      [
+    .map((context) => {
+      const content =
+        context.type === 'file' ? redactAgentVisibleFileContext(context.content) : context.content
+      return [
         `### ${context.type} ${context.tag}`,
-        clip(context.content, Math.max(500, Math.floor(CONTEXT_BUDGET.attachments / 2))),
+        clip(content, Math.max(500, Math.floor(CONTEXT_BUDGET.attachments / 2))),
       ].join('\n')
-    )
+    })
     .join('\n\n')
 }
 

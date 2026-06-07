@@ -1,5 +1,6 @@
 import type { ProductionTaskStatus } from '@/lib/api/contracts/production-tasks'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
+import { redactAgentVisibleFileContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/redaction'
 import type {
   LocalAgentAttachedContext,
   LocalAgentAttachment,
@@ -135,7 +136,7 @@ function readFileContext(context: LocalAgentContext, input: Record<string, unkno
     contexts: fileContexts.map((item) => ({
       type: item.type,
       tag: item.tag,
-      content: clip(item.content),
+      content: clip(redactAgentVisibleFileContext(item.content)),
     })),
     summary: fileContexts.length
       ? `Read ${fileContexts.length} attached file context(s)`
