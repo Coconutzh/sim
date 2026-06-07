@@ -6262,3 +6262,59 @@ edgePathCount: 5
 ```
 
 总结：C-01/C-02/C-03 当前源码只读理解通过。三条请求均未调用 mutation/generation，workflow state hash 不变，页面侧 ReactFlow 节点和连接保持完整。后续只在 `canvas.read_summary`、`canvas.search_nodes`、edge summarization、actor answer 或 node adapter summary 改动后回归。
+
+## 2026-06-08 03:18 F-01 live refresh 追加回归
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 阶段 1 执行，目标是确认右侧 Copilot `canvas.apply_patch` 成功后依赖的 committed workflow reload / socket broadcast / ReactFlow position reconcile 链路仍然有效。未改代码，未 push，未清理 C 组临时文件。
+
+### 当前状态
+
+```text
+git status --short: tracked diff 为空；仅剩 .vitest-cache/、tmp-*、tmp-local-canvas-agent-* 等未跟踪临时/缓存/日志文件
+current preview: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+CDP port: 9226
+```
+
+### Focused 测试
+
+```powershell
+cd apps/sim
+bunx vitest run "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-canvas-helpers.test.ts" "stores/workflows/workflow/validation.test.ts"
+```
+
+结果：
+
+```text
+Test Files 3 passed
+Tests 12 passed
+```
+
+覆盖点：
+
+- `copilot-tab.tsx`：`canvas.apply_patch` / `canvas.generate_node_output` 成功 tool result 会调用 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`；stream end 也会触发 reload。
+- `workflow-canvas-helpers.ts`：`reconcileDisplayNodePositions()` 能在节点集合一致时把 committed store position 覆盖到 ReactFlow display nodes。
+- `validation.ts`：旧 content-reference edge normalization 回归。
+
+### 3007 current-source preview live refresh 复验
+
+用 3007 页签通过 CDP 抽样 ReactFlow DOM，并用 `PUT /api/workflows/:id/state` 走保存后 `/api/workflow-updated` 广播链路，把全部节点 `position.y` 临时改为 `-333`，等待 DOM transform 与 API state 对齐，然后恢复原 state。
+
+结果：
+
+```text
+targetUrl: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+baseline nodeCount: 7
+baseline edgeCount: 5
+baseline edgePathCount: 5
+baseline appError: false
+PUT changed: {"success":true,"warnings":[]}
+changedMatched: true
+changedElapsedMs: 211
+changed DOM: 7 nodes / 5 edges / 5 edge paths / appError=false
+PUT restored: {"success":true,"warnings":[]}
+restoredMatched: true
+restoredElapsedMs: 218
+restored DOM: 7 nodes / 5 edges / 5 edge paths / appError=false
+```
+
+结论：F-01 当前源码 live refresh 仍通过。当前兜底链路有效：后端 workflow state 更新后，无需刷新页面，ReactFlow DOM position 在同一 3007 页签内跟随同步，节点和连接不丢失。因此本轮不需要继续追 `workflow.tsx` / store hydration / collaborative reload / ReactFlow node state 的半失效路径。后续只在 `copilot-tab.tsx` stream/tool callback、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` display node hydration、socket `workflow-updated` 或 edge normalization 改动后回归。
