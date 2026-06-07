@@ -5761,3 +5761,43 @@ DELETE /api/workflows/c89f99c8-015c-4ff0-a7bf-10f51593b541
 ```
 
 结论：G-05 一次性真实 API/SSE 失败样本通过。无效 text model 触发 generation tool error，未进入 verify/apply_patch，旧 `contentHtml` 未清空，workflow state hash 不变，最终回答明确失败且不假报完成。
+
+## 2026-06-08 01:38 G-01 浏览器文本节点展示补强
+
+本轮继续按方案推进 G-01 生成回归保护。目标是补强文本生成写回后的浏览器展示证据：`contentHtml` 已写回后，ReactFlow 文本节点无需再靠 API state 推断，页面 DOM 中应显示生成后的正文。未改功能代码，未 push，未清理 C 组临时文件。
+
+入口：
+
+```text
+CDP: http://127.0.0.1:9226/json/new
+页面: http://localhost:3000/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/0e1e4970-a7e6-488b-8893-f86426ca8f95
+workflowId: 0e1e4970-a7e6-488b-8893-f86426ca8f95
+textNodeId: g01-text-node
+```
+
+API state：
+
+```text
+contentHtml length: 94
+oldContentPresentInState: false
+contentHtml: <p>春风有信，万物更新。当第一缕暖阳撞进镜头，所有的沉闷都已悄然退场。在这个生机勃勃的春天，让我们一起，把关于未来的无限遐想，全部写进此刻的闪光。出发吧，去赴一场春日的盛大邀约！</p>
+```
+
+浏览器 DOM：
+
+```text
+title: Workflow | Sim
+ReactFlow nodeCount: 2
+textNode.id: g01-text-node
+textNode.visible: true
+textNode.text: 春风有信，万物更新。当第一缕暖阳撞进镜头，所有的沉闷都已悄然退场。在这个生机勃勃的春天，让我们一起，把关于未来的无限遐想，全部写进此刻的闪光。出发吧，去赴一场春日的盛大邀约！
+bodyContainsOld: false
+```
+
+清理：
+
+```text
+CDP target 99D21D30C0672538B00B17F8513D21AD 已关闭。
+```
+
+结论：G-01 preview 浏览器文本节点展示补强通过。生成后的 `contentHtml` 在 ReactFlow DOM 中可见，旧文案不再出现。

@@ -192,7 +192,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | F-02 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx`、`options.tsx` | Confirm/Revise 展示，未确认前 state 不变 |
 | F-03 | preview 浏览器级通过 | runtime + tool loop | `runtime.ts`、`tool-loop.ts` | 同一 chatId 执行 pending plan，一次性消费，随后 verify |
 | F-04 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx` | Revise 不执行 patch，pending 清理，state 不变 |
-| G-01 | current-source preview API/state 证据通过；仍可补强浏览器文本展示刷新 | generation + verify + UI | `canvas-tools.ts`、`tool-loop.ts`、`text-executor.ts`、`content-block.tsx` | 后续作为回归保护：写回 `contentHtml`，verify 指向该字段，文本节点刷新 |
+| G-01 | current-source preview API/state 和浏览器文本节点展示均通过 | generation + verify + UI | `canvas-tools.ts`、`tool-loop.ts`、`text-executor.ts`、`content-block.tsx` | 后续作为回归保护：写回 `contentHtml`，verify 指向该字段，文本节点刷新 |
 | G-02 | current-source 真实 provider 生成写回和浏览器预览通过 | generation + file preview + redaction | `canvas-tools.ts`、image service/provider、`content-block.tsx` | 已写回 `file`、字段级 verify、图片预览刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-03 | current-source 真实 provider 生成写回、上游 image first_frame 代码/测试证据和浏览器视频预览通过 | generation + upstream reference + file preview | `canvas-tools.ts`、video service/provider | 已写回 `file`、字段级 verify、视频预览刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-04 | current-source 真实 provider 生成写回和浏览器播放器通过 | generation + file preview | `canvas-tools.ts`、audio service/provider | 已写回 `file`、字段级 verify、播放器刷新、不泄露 key/url/path；后续作为回归保护 |
@@ -619,9 +619,9 @@ bun run type-check
 
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
-1. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
+1. G-02/G-03/G-04：作为媒体生成回归保护。判断通过：`file` 写回，预览刷新，不泄露 key/url/path。
 2. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
-3. G-05：已有 dedicated unit 和一次性 workflow API/SSE 失败样本；后续只在 generation/provider/verifier 改动后回归。
+3. G-01/G-05：已有 API/SSE、浏览器或 dedicated unit 证据；后续只在 text generation/provider/verifier 或 text UI 改动后回归。
 4. 附件/文件脱敏专项：已有 fake attachment metadata 真实 SSE 无泄露证据和 focused `read_file` 成功路径测试；后续重启 current-source server 后可补成功 `read_file` 端到端样本。
 5. H-04：已具备浏览器核心样本、chatId API/SSE 样本和 preview 浏览器 UI 二次样本；后续只在 stop/abort/cancel 链路改动后回归。
 
