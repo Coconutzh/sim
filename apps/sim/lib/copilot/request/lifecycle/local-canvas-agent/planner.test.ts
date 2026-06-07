@@ -195,6 +195,60 @@ describe('local canvas planner', () => {
     }
   })
 
+  it('does not write rewrite formatting instructions into selected text contentHtml', async () => {
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: { contentHtml: '<p>探索未知，触手可及。</p>' },
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+    mockLoadCanvasSnapshot.mockResolvedValue(snapshot)
+    mockReadCanvasNodeDetail.mockReturnValue({
+      id: 'text-1',
+      name: 'Text 1',
+      blockType: 'content',
+      kind: 'text',
+      position: { x: 0, y: 0 },
+      selected: true,
+      summary: '探索未知，触手可及。',
+      capabilities: {
+        canRead: true,
+        canWrite: true,
+        canGenerate: true,
+        canReferenceFile: false,
+      },
+      fields: { contentHtml: '<p>探索未知，触手可及。</p>' },
+      textContent: '探索未知，触手可及。',
+      file: null,
+    } satisfies CanvasNodeDetail)
+    mockExecuteLocalAgentModelRequest.mockResolvedValueOnce({
+      content:
+        'Do not use markdown such as `#`, `**`, or JSON. Just plain text with line breaks. Short video tone? Yes.',
+    })
+
+    const plan = await buildLocalAgentPlan(buildContext())
+    const update = plan.patch?.operations.find(
+      (operation) => operation.type === 'update_node' && operation.nodeId === 'text-1'
+    )
+
+    expect(update?.type).toBe('update_node')
+    if (update?.type === 'update_node') {
+      expect(update.fields.contentHtml).not.toContain('Do not use markdown')
+      expect(update.fields.contentHtml).not.toContain('Just plain text')
+      expect(update.fields.contentHtml).toContain('年轻用户')
+    }
+  })
+
   it('fallback update patches image prompts without text-only fields', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',

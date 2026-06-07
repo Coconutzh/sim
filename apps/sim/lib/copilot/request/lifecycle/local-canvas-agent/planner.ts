@@ -155,6 +155,19 @@ function hasPersonaLeak(value: string): boolean {
   )
 }
 
+function hasRewriteInstructionLeak(value: string): boolean {
+  const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase()
+  if (!normalized) return false
+
+  return (
+    /\b(?:do not|don't|return only|just plain text|no markdown|no json|line breaks|system prompt|user request|current selected text)\b/.test(
+      normalized
+    ) ||
+    (/\b(?:markdown|json|formatting|format)\b/.test(normalized) &&
+      /[`*_#{}\[\]]/.test(normalized))
+  )
+}
+
 async function rewriteSelectedTextContent(params: {
   context: LocalAgentContext
   snapshot: CanvasSnapshot
@@ -184,7 +197,7 @@ async function rewriteSelectedTextContent(params: {
       abortSignal: params.context.options.abortSignal,
     })
     const rewritten = response.content?.trim()
-    if (rewritten && !hasPersonaLeak(rewritten)) {
+    if (rewritten && !hasPersonaLeak(rewritten) && !hasRewriteInstructionLeak(rewritten)) {
       return rewritten
     }
   } catch {}
