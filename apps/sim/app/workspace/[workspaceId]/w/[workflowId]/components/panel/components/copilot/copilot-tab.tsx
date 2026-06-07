@@ -35,13 +35,13 @@ import type {
   FileAttachmentForApi,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useCopilotAgentProfile } from '@/hooks/queries/collaboration'
-import { useCopilotSkillCards } from '@/hooks/queries/copilot-skill-cards'
 import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
 import {
   type CopilotChatListItem,
   copilotChatsKeys,
   useCopilotChats,
 } from '@/hooks/queries/copilot-chats'
+import { useCopilotSkillCards } from '@/hooks/queries/copilot-skill-cards'
 import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-selection/store'
 import type { ChatContext } from '@/stores/panel'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -54,6 +54,7 @@ import type { WorkflowState } from '@/stores/workflows/workflow/types'
 const logger = createLogger('PanelCopilotTab')
 const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
 const EMPTY_SELECTION_IDS: string[] = []
+const LOCAL_CANVAS_MUTATION_TOOLS = new Set(['canvas.apply_patch', 'canvas.generate_node_output'])
 
 function getStoredValue<T>(
   source: Record<string, unknown> | undefined,
@@ -252,11 +253,34 @@ export function CopilotTab({
     [copilotChatId, loadCopilotChats, setCopilotChatId]
   )
 
+  const reloadWorkflowAfterLocalCanvasMutation = useCallback(
+    (workflowId: string, source: string, toolName?: string) => {
+      useWorkflowRegistry
+        .getState()
+        .loadWorkflowState(workflowId)
+        .catch((err) => {
+          logger.error('Failed to reload workflow after local canvas mutation', {
+            error: toError(err).message,
+            source,
+            ...(toolName ? { toolName } : {}),
+            workflowId,
+          })
+        })
+    },
+    []
+  )
+
   const handleCopilotToolResult = useCallback(
     (toolName: string, success: boolean, _output: unknown) => {
-      if (toolName !== 'edit_workflow' || !success) return
+      if (toolName !== 'edit_workflow' && !LOCAL_CANVAS_MUTATION_TOOLS.has(toolName)) return
+      if (!success) return
       const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
       if (!workflowId) return
+
+      if (LOCAL_CANVAS_MUTATION_TOOLS.has(toolName)) {
+        reloadWorkflowAfterLocalCanvasMutation(workflowId, 'tool-result', toolName)
+        return
+      }
 
       const baselineWorkflow = captureBaselineSnapshot(workflowId)
 
@@ -275,7 +299,16 @@ export function CopilotTab({
           })
         })
     },
-    [activeWorkflowId]
+    [activeWorkflowId, reloadWorkflowAfterLocalCanvasMutation]
+  )
+
+  const handleCopilotStreamEnd = useCallback(
+    (_chatId: string) => {
+      const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
+      if (!workflowId) return
+      reloadWorkflowAfterLocalCanvasMutation(workflowId, 'stream-end')
+    },
+    [activeWorkflowId, reloadWorkflowAfterLocalCanvasMutation]
   )
 
   const {
@@ -298,6 +331,7 @@ export function CopilotTab({
       fixedSendOptions: { workflowCopilotMode: 'content_canvas_v1' },
       onTitleUpdate: loadCopilotChats,
       onToolResult: handleCopilotToolResult,
+      onStreamEnd: handleCopilotStreamEnd,
       onRequestStarted: ({ requestId, userMessageId }) => {
         captureEvent(posthogRef.current, 'task_request_started', {
           workspace_id: workspaceId,
@@ -355,9 +389,13 @@ export function CopilotTab({
   useEffect(() => {
     if (wasCopilotSendingRef.current && !copilotIsSending) {
       loadCopilotChats()
+      const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
+      if (workflowId) {
+        reloadWorkflowAfterLocalCanvasMutation(workflowId, 'send-settled')
+      }
     }
     wasCopilotSendingRef.current = copilotIsSending
-  }, [copilotIsSending, loadCopilotChats])
+  }, [activeWorkflowId, copilotIsSending, loadCopilotChats, reloadWorkflowAfterLocalCanvasMutation])
 
   const handleCopilotStopGeneration = useCallback(() => {
     captureEvent(posthogRef.current, 'task_generation_aborted', {
