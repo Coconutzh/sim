@@ -158,6 +158,25 @@ describe('local canvas context tools', () => {
     expect(JSON.stringify(result.output)).toContain('[redacted]')
   })
 
+  it('matches attached file context when the query contains the file name in a sentence', async () => {
+    const result = await executeContextTool(buildContext(), {
+      name: 'read_file',
+      input: { query: 'Read the attached file brief.pdf and report only safe metadata.' },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary).toBe('Read 1 attached file context(s)')
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        files: [expect.objectContaining({ name: 'brief.pdf', type: 'application/pdf' })],
+        contexts: [expect.objectContaining({ content: expect.stringContaining('spring launch') })],
+      })
+    )
+    expect(JSON.stringify(result.output)).not.toContain('uploads/brief.pdf')
+    expect(JSON.stringify(result.output)).not.toContain('/files/brief.pdf')
+    expect(JSON.stringify(result.output)).not.toContain('BEGIN PRIVATE KEY')
+  })
+
   it('queries attached knowledge and docs context', async () => {
     await expect(
       executeContextTool(buildContext(), {

@@ -49,9 +49,9 @@ function contextMatches(context: LocalAgentAttachedContext, query: string): bool
   if (!query) return true
   const normalized = query.toLowerCase()
   return (
-    context.tag.toLowerCase().includes(normalized) ||
-    context.type.toLowerCase().includes(normalized) ||
-    context.content.toLowerCase().includes(normalized)
+    textMatchesQuery(context.tag, normalized) ||
+    textMatchesQuery(context.type, normalized) ||
+    textMatchesQuery(context.content, normalized)
   )
 }
 
@@ -60,7 +60,12 @@ function attachmentMatches(attachment: LocalAgentAttachment, query: string): boo
   const normalized = query.toLowerCase()
   return [attachment.name, attachment.type, attachment.id, attachment.key, attachment.url]
     .filter((value): value is string => typeof value === 'string')
-    .some((value) => value.toLowerCase().includes(normalized))
+    .some((value) => textMatchesQuery(value, normalized))
+}
+
+function textMatchesQuery(value: string, normalizedQuery: string): boolean {
+  const normalizedValue = value.toLowerCase()
+  return normalizedValue.includes(normalizedQuery) || normalizedQuery.includes(normalizedValue)
 }
 
 function sanitizeAttachmentForAgent(
