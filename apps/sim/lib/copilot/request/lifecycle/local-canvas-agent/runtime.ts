@@ -312,7 +312,7 @@ export async function runLocalCanvasAgent(params: {
 
   if (await maybeHandlePendingPlan(localContext)) return
 
-  await emitLocalAgentThinking(params.context, params.options, '正在解析画布、工种和可用技能。')
+  await emitLocalAgentThinking(params.context, params.options, '正在读取当前画布内容。')
   const memory = await loadMemoryBestEffort(localContext)
   const contextWithMemory = { ...localContext, memory }
 

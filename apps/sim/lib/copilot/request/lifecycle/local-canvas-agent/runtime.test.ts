@@ -227,6 +227,22 @@ describe('local canvas runtime manual confirmation', () => {
         }),
       ])
     )
+    expect(streamContext.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentBlockType.thinking,
+          content: '正在读取当前画布内容。',
+        }),
+      ])
+    )
+    expect(streamContext.contentBlocks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentBlockType.thinking,
+          content: expect.stringMatching(/工种|可用技能/),
+        }),
+      ])
+    )
     expect(
       events.some(
         (event) =>
