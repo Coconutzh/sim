@@ -5801,3 +5801,103 @@ CDP target 99D21D30C0672538B00B17F8513D21AD 已关闭。
 ```
 
 结论：G-01 preview 浏览器文本节点展示补强通过。生成后的 `contentHtml` 在 ReactFlow DOM 中可见，旧文案不再出现。
+
+## 2026-06-08 02:10 F-01 live refresh 连接显示追查与当前源码阻断
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 执行，目标是复核 F-01：`canvas.apply_patch` 成功后，后端 workflow state 与 ReactFlow DOM 节点位置和连接显示同步。先做只读状态检查，工作区仅有 C 组未跟踪临时文件；随后在 3005/3006 当前源码页面和 3000 preview 页面上做 CDP 取样。
+
+已提交的相关修复：
+
+```text
+8a8e8e38c fix local canvas content edge reload
+7e31e4c58 fix content block numeric coercion
+```
+
+代码层验证：
+
+```text
+cd apps/sim; bunx vitest run "stores/workflows/workflow/validation.test.ts" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-canvas-helpers.test.ts"
+结果：3 files / 12 tests passed
+
+cd apps/sim; bunx biome check --no-errors-on-unmatched "stores/workflows/workflow/validation.ts" "stores/workflows/workflow/validation.test.ts"
+结果：通过
+
+git diff --check -- apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-block.tsx
+结果：通过
+```
+
+`content-block.tsx` 的定向 Biome 结果：
+
+```text
+cd apps/sim; bunx biome check --no-errors-on-unmatched "app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-block.tsx"
+结果：失败
+原因：该文件既有 import 排序、class 排序和格式化问题；本轮只新增 `coerceNumber()` helper，未做全文件格式化以避免大范围无关 diff。
+```
+
+追查结果：
+
+1. 3005 low-memory dev 页面最初停在 error boundary。CDP console 明确报错：
+
+```text
+ReferenceError: coerceNumber is not defined
+at ContentBlock (.../components/content-block/content-block.tsx)
+```
+
+已在 `content-block.tsx` 增加本地 `coerceNumber(value, fallback)`，用于 `fontSize`、`width`、`height` 这些可能来自字符串或数字的 stored value。修复后 3005 不再停在该 error boundary，但 low-memory 的 `Load editor panels` 门控点击后仍未进入 ReactFlow，不适合作为有效 F-01 样本。
+
+2. 3000 preview 旧 tab 初始显示 ReactFlow 7 nodes / 5 edges，但节点 transform 与 API state 不一致；受控 reload 后节点 transform 与 API state 完全对齐：
+
+```text
+state positions:
+Start -220,-360
+text 140,-360
+video 500,-360
+audio 860,-360
+补充文案 1220,-360
+创意说明 1580,-360
+image 1940,-360
+
+DOM transform after reload:
+translate(-220px, -360px)
+translate(140px, -360px)
+translate(500px, -360px)
+translate(860px, -360px)
+translate(1220px, -360px)
+translate(1580px, -360px)
+translate(1940px, -360px)
+```
+
+但 reload 后 `.react-flow__edge` / `.react-flow__edge-path` 持续为 0。API state 中仍有 5 条边，且 source/target 都在，但这些旧边是：
+
+```text
+type: default
+data: {}
+sourceHandle: content-reference-source-right
+targetHandle: content-reference-target-left
+```
+
+这不是当前 `edit-workflow` builder 的规范输出；当前 builder 已有测试证明 content-reference handle pair 会生成：
+
+```text
+type: workflowEdge
+data.kind: content_reference
+```
+
+因此本轮把兼容点放在 `stores/workflows/workflow/validation.ts`：`normalizeWorkflowState()` 在 `validateEdges()` 前识别 source/target 都是 content 且 handle 是 content-reference 前缀的旧 malformed edge，并升级为 `workflowEdge + data.kind=content_reference`。新增 `validation.test.ts` 覆盖旧 edge 在 reload/hydration 时不被当作普通 edge 丢失语义。
+
+3. 为避开 3005 low-memory 门控，本轮停止前序任务创建的 3005 临时 dev server，启动 3006 非 low-memory current-source dev server。3006 页面没有再出现 `coerceNumber` error，但当前 dev server 长时间处在按需编译和 Fast Refresh 状态，并伴随：
+
+```text
+GET /api/permission-groups/user?workspaceId=... 403
+页面 body: Loading... / workspace shell / workflow list
+reactFlowPresent: false
+nodeCount: 0
+edgeCount: 0
+```
+
+结论：
+
+- F-01 的代码级链路继续成立：local canvas mutation 后 reload committed workflow state、position-only reconcile 有 focused tests；本轮新增旧 content-reference edge normalization，修复了“刷新后节点位置对齐但连接不显示”的兼容缺口。
+- `ContentBlock` 当前源码页面挂载阻断的 `coerceNumber` runtime error 已修复。
+- 本轮尚未取得“修复后的同端口 current-source ReactFlow DOM 显示 7 nodes / 5 edges”的有效浏览器通过证据；3006 阻断点是 dev server 按需编译/权限请求/页面 shell loading，而不是新的 local canvas patch 写入失败。
+- 下一步若继续 F-01，应优先使用稳定 current-source preview build，或让 3006 完成首轮编译后重新导航目标 workflow，再观察 `.react-flow__node`、`.react-flow__edge`、Network `/api/workflows/:id/state` 和 console error。
