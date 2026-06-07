@@ -5541,3 +5541,84 @@ rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "A-01|A-0
 ```
 
 结论：附件/file context 脱敏已有代码级实现和 focused tests。下一步如需完成专项手工验收，应构造带 key/url/path/private-key 样本文本的真实 file attachment 请求，观察 Network payload、SSE observation、tool output 和 final answer 均只出现安全文件名/脱敏占位符。
+
+## 2026-06-08 01:15 H-04 浏览器 UI 二次样本
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 执行。目标是补强 H-04：在真实页面中点击 Stop 后，UI 停止、Network 发出 abort/stop 请求，并确认没有迟到写回。未改功能代码，未 push，未清理 C 组临时文件。
+
+环境与入口：
+
+```text
+CDP: http://127.0.0.1:9226/json/list
+页面: http://localhost:3000/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+```
+
+发送内容：
+
+```text
+请根据当前画布中的图片、视频和音频节点生成输出并写回，我会在开始后立即点击停止。
+```
+
+操作与观察：
+
+```text
+beforeState:
+  blockCount: 7
+  edgeCount: 5
+  files:
+    - generated-audio (2).mp3
+    - generated-image (2).png
+    - generated-video (2).mp4
+  hash: 14680279081603930949
+
+preDom:
+  ReactFlow nodes: 7
+  send button exists: true
+  stop button exists before send: false
+  textarea exists: true
+
+stop:
+  stopVisibleAt: 0
+  stopClick.clicked: true
+
+Network:
+  POST http://localhost:3000/api/mothership/chat
+  GET  http://localhost:3000/api/copilot/chats
+  POST http://localhost:3000/api/mothership/chat/abort
+  POST http://localhost:3000/api/mothership/chat/stop
+
+postDom:
+  stopExists: false
+  sendExists: true
+  textarea: ""
+```
+
+12 秒后 state：
+
+```text
+blockCount: 7
+edgeCount: 5
+files:
+  - generated-audio (2).mp3
+  - generated-image (2).png
+  - generated-video (2).mp4
+hash: 14680279081603930949
+stateUnchanged: true
+```
+
+再延长约 20 秒后复查：
+
+```text
+blockCount: 7
+edgeCount: 5
+files:
+  - generated-audio (2).mp3
+  - generated-image (2).png
+  - generated-video (2).mp4
+hash: 14680279081603930949
+```
+
+结论：H-04 preview 浏览器 UI 二次样本通过。真实页面中 Stop button 立即出现并被点击，Network 发出 abort/stop 请求，UI 停止态结束，约 30 秒后 workflow state hash、节点数、边数和生成文件名均未变化，无迟到写回。
+
+限制说明：本次 CDP Network 记录到了 abort/stop request，但未保存 response body；chatId 已解析后 abort body 和 `aborted=true/settled=true` 仍由 19:18 API/SSE 样本覆盖。若后续改 `use-chat.ts`、abort route、stream buffer、tool loop 或 provider cancel，需要重新回归 H-04。

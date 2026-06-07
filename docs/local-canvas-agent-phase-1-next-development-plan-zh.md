@@ -68,11 +68,11 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - `routing.ts` 已不再永远 true。当前有 `canvas | non_canvas | ambiguous` 分类，A-03 已有 preview 浏览器级通过证据。
 - 生成写回后已有字段级 verify 链路：`generate_node_output -> verifiedField -> verify_patch({ generation })`。
 - manual Confirm/Revise pending plan 已有 30 分钟 TTL 和一次性消费逻辑。第一阶段仍不做 DB 持久化。
-- 生成服务、tool loop、前端 stop 已有取消信号链路。H-04 有 preview 浏览器核心通过证据；server log 可观测性已有 abort handler 代码级和 route test 证据；chatId 已解析后停止已有 current-source API/SSE 样本，浏览器 UI 二次样本仍可补强。
+- 生成服务、tool loop、前端 stop 已有取消信号链路。H-04 有 preview 浏览器核心通过证据；server log 可观测性已有 abort handler 代码级和 route test 证据；chatId 已解析后停止已有 current-source API/SSE 样本；2026-06-08 已补 preview 浏览器 UI 二次样本，点击 Stop 后出现 `/api/mothership/chat/abort` 和 `/api/mothership/chat/stop` 请求，30 秒后 workflow state hash 不变。
 - 附件和节点 file detail 已有脱敏实现，但仍需用专门手工/grep 证明 prompt、SSE、tool output、最终回答都不泄露。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强和 chatId API/SSE 停止样本的基础上，继续补强 H-04 浏览器 UI 二次样本、附件脱敏专项、必要的生成失败真实路径证据和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本的基础上，继续补附件脱敏专项真实请求证据、必要的生成失败真实路径证据和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -142,7 +142,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 相关代码位置 | `use-chat.ts`：stop/abort；`runtime.ts`：`throwIfAborted()`；`tool-loop.ts`：工具调用前后 abort 检查；`canvas-tools.ts`：生成前、生成后、写回前 `throwIfAborted()`；`text-executor.ts`；`generated-media/{image,video,audio}/providers.ts`。 |
 | 当前代码状态 | 前端 stop 会 abort 当前 fetch，并向 `/api/mothership/chat/abort` 发请求。tool loop 在工具调用前后检查 abort。生成服务调用传入 `abortSignal`，写回前再检查。H-04 preview 浏览器核心路径已通过：stop button 被点击、abort 200、UI loading 结束、等待后 state hash 不变。 |
 | 根因假设 | 本地写回可阻断，但远端 provider 任务可能已经提交且不可完全撤销。第一阶段验收应定义为：停止后本地 runtime 不继续写回画布，UI 状态明确。 |
-| 是否需要进一步验证 | server log 可观测性已有 abort handler 结构化日志和 route test 证据；chatId 已解析后停止已有 current-source API/SSE 样本，返回 `aborted=true/settled=true`、SSE `cancelled`、state hash 不变。浏览器 UI 二次样本仍可补强。核心验收已有证据。 |
+| 是否需要进一步验证 | server log 可观测性已有 abort handler 结构化日志和 route test 证据；chatId 已解析后停止已有 current-source API/SSE 样本，返回 `aborted=true/settled=true`、SSE `cancelled`、state hash 不变。2026-06-08 preview 浏览器 UI 二次样本已补：Stop button 立即出现并点击，Network 有 abort/stop 请求，30 秒后 state hash 不变。后续只在 stop UI、abort route、stream buffer、tool loop 或 provider cancel 改动后回归。 |
 
 ### 7. 附件 / 文件脱敏
 
@@ -200,7 +200,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | H-01 | 服务级通过，缺浏览器回归 | planner + canvas tool | `canvas-tools.ts`、`models/actor.ts` | 找不到节点，不修改画布 |
 | H-02 | 服务级通过，缺浏览器回归 | adapter + planner | `node-adapters/{document,table,image-editor}.ts` | 只读/未支持类型拒绝写入，不调用 mutation |
 | H-03 | 服务级通过，缺浏览器回归 | planner safety guard | `planner.ts` | 破坏性全画布请求不直接执行 |
-| H-04 | preview 浏览器核心通过，日志可观测性已有代码级补强，chatId 已解析后 API/SSE 样本通过，浏览器 UI 二次样本仍可补强 | UI abort + runtime + provider | `use-chat.ts`、`app/api/copilot/chat/abort/route.ts`、`session/abort.ts`、`session/buffer.ts`、`tool-loop.ts`、`canvas-tools.ts`、providers | stop 后 UI 结束 loading，abort 到服务端，本地不迟到写回；server log 可按 streamId/chatId 追踪 |
+| H-04 | preview 浏览器核心通过，日志可观测性已有代码级补强，chatId 已解析后 API/SSE 样本通过，preview 浏览器 UI 二次样本已补 | UI abort + runtime + provider | `use-chat.ts`、`app/api/copilot/chat/abort/route.ts`、`session/abort.ts`、`session/buffer.ts`、`tool-loop.ts`、`canvas-tools.ts`、providers | stop 后 UI 结束 loading，abort 到服务端，本地不迟到写回；server log 可按 streamId/chatId 追踪 |
 
 ## 二、目标状态
 
@@ -391,7 +391,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 
 ### 阶段 5：H-04 可观测性补强
 
-- 目标：在已有 H-04 核心通过基础上，保持 server log 可观测性和 chatId 已解析后的 API/SSE 停止样本；浏览器 UI 二次样本作为补强项。
+- 目标：在已有 H-04 核心通过基础上，保持 server log 可观测性、chatId 已解析后的 API/SSE 停止样本和 preview 浏览器 UI 二次样本。
 - 要改的文件：
   - `use-chat.ts`
   - `start.ts` 或 abort endpoint 相关代码
@@ -417,7 +417,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 手工验证步骤：
   - 先跑“发送后立即 stop”样本，确认与当前 H-04 一致。
   - 已补 API/SSE 版“chatId 已解析后 stop”样本：`streamId=h04-node-stream-1780831081015`、`chatId=388771b6-d911-4839-9d3e-560f6d605a0c`、abort 返回 `aborted=true/settled=true`、SSE finalStatus 为 `cancelled`、15 秒后 state hash 不变。
-  - 浏览器 UI 二次样本仍可补强：等待 chatId 出现在 Network/DOM 后点击 Stop，确认 abort body 同时带 streamId/chatId。
+  - 已补 preview 浏览器 UI 二次样本：`localhost:3000` workflow `e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a`，Stop button 立即出现并点击，Network 有 `/api/mothership/chat/abort` 和 `/api/mothership/chat/stop` 请求，30 秒后 state hash 仍为 `14680279081603930949`，blocks/edges/files 不变。该样本证明 UI stop 与无迟到写回；chatId 已解析 body 仍由 API/SSE 样本覆盖。
   - 等待 15 到 60 秒后取 workflow hash，确认不变。
 - 风险和回滚点：
   - 不要求撤销已经提交到第三方的远端生成任务；只要求本地不继续写回。
@@ -619,17 +619,17 @@ bun run type-check
 
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
-1. H-04：长任务中 stop 的浏览器 UI 二次样本。判断通过：点击 Stop 后 loading 结束，state 不被后台写回，server log 能按 chatId/streamId 追踪 cancel。
-2. 附件/文件脱敏专项：判断通过：tool output、SSE、final answer 都不泄露 key/url/path/private storage path。
-3. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
-4. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
-5. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+1. 附件/文件脱敏专项：判断通过：tool output、SSE、final answer 都不泄露 key/url/path/private storage path。
+2. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
+3. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
+4. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+5. H-04：已具备浏览器核心样本、chatId API/SSE 样本和 preview 浏览器 UI 二次样本；后续只在 stop/abort/cancel 链路改动后回归。
 
 第二优先级：已通过但高风险的回归点。
 
 1. A-03：明显非画布请求不读不改；对照“以该主题创建内容链”仍走 canvas。
-2. H-04：长任务中 stop；server log 可观测性和 chatId API/SSE 样本已有证据，继续补浏览器 UI 二次样本。
-3. F-02/F-03/F-04：manual plan、Confirm、Revise 真实页面点击，同一 chatId，一次性消费。
+2. F-02/F-03/F-04：manual plan、Confirm、Revise 真实页面点击，同一 chatId，一次性消费。
+3. H-04：长任务中 stop；当前已有浏览器核心样本、server log 可观测性、chatId API/SSE 样本和 preview 浏览器 UI 二次样本，后续作为回归保护。
 4. B-02/B-04：仅在 selection 或 UserInput payload 改动后回归；当前已有 preview 浏览器级通过证据。
 
 第三优先级：全量回归。
