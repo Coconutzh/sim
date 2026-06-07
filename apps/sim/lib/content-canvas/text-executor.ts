@@ -1,6 +1,6 @@
+import { resolveContentService } from '@/lib/content-canvas/service-config'
 import { executeProviderRequest } from '@/providers'
 import type { Message, ProviderRequest, ProviderResponse } from '@/providers/types'
-import { resolveContentService } from '@/lib/content-canvas/service-config'
 import { getProviderFromModel } from '@/providers/utils'
 
 export interface ContentCanvasReferenceImage {
@@ -18,6 +18,7 @@ interface ExecuteContentCanvasTextInput {
   temperature?: number
   maxTokens?: number
   responseFormat?: ProviderRequest['responseFormat']
+  abortSignal?: AbortSignal
 }
 
 function buildPrompt(prompt: string, referenceContextText?: string) {
@@ -165,6 +166,7 @@ export async function executeContentCanvasTextRequest(
         temperature: params.temperature,
         maxTokens: params.maxTokens,
         responseFormat: params.responseFormat,
+        abortSignal: params.abortSignal,
         messages: [
           buildNativeGoogleMessage({
             prompt: params.prompt,
@@ -186,6 +188,7 @@ export async function executeContentCanvasTextRequest(
         temperature: params.temperature,
         maxTokens: params.maxTokens,
         responseFormat: params.responseFormat,
+        abortSignal: params.abortSignal,
         messages: [
           buildNativeGoogleMessage({
             prompt: params.prompt,
@@ -200,6 +203,7 @@ export async function executeContentCanvasTextRequest(
 
   const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
+    signal: params.abortSignal,
     headers: {
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',

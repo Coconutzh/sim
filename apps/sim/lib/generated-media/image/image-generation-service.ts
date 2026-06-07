@@ -1,8 +1,8 @@
+import type { UserFileLike } from '@/lib/core/utils/user-file'
 import type {
   ImageAspectRatioValue,
   ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
-import type { UserFileLike } from '@/lib/core/utils/user-file'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
 import {
   fetchWorkspaceFileBuffer,
@@ -21,6 +21,7 @@ interface GenerateWorkspaceImageFromPromptInput {
     text: string[]
     images: UserFileLike[]
   }
+  abortSignal?: AbortSignal
 }
 
 interface GenerateWorkspaceImageFromPromptResult {
@@ -97,6 +98,7 @@ export async function generateWorkspaceImageFromPrompt({
   prompt,
   aspectRatio,
   referenceContext,
+  abortSignal,
 }: GenerateWorkspaceImageFromPromptInput): Promise<GenerateWorkspaceImageFromPromptResult> {
   const hydratedReferenceContext = await hydrateImageReferenceContext(workspaceId, referenceContext)
 
@@ -105,6 +107,7 @@ export async function generateWorkspaceImageFromPrompt({
     prompt,
     aspectRatio,
     referenceContext: hydratedReferenceContext,
+    abortSignal,
   })
 
   const file = await uploadWorkspaceFile(

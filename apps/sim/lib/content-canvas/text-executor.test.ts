@@ -14,13 +14,13 @@ vi.mock('@/providers', () => ({
 
 function resetExecutorEnv() {
   process.env = { ...ORIGINAL_ENV }
-  delete process.env.CONTENT_TEXT_GEMINI_BASE_URL
-  delete process.env.CONTENT_TEXT_GEMINI_API_KEY
-  delete process.env.CONTENT_TEXT_GLM_BASE_URL
-  delete process.env.CONTENT_TEXT_GLM_API_KEY
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_API_KEY_1
-  delete process.env.ZHIPU_API_KEY
+  process.env.CONTENT_TEXT_GEMINI_BASE_URL = undefined
+  process.env.CONTENT_TEXT_GEMINI_API_KEY = undefined
+  process.env.CONTENT_TEXT_GLM_BASE_URL = undefined
+  process.env.CONTENT_TEXT_GLM_API_KEY = undefined
+  process.env.GEMINI_API_KEY = undefined
+  process.env.GEMINI_API_KEY_1 = undefined
+  process.env.ZHIPU_API_KEY = undefined
 }
 
 describe('content-canvas text executor', () => {
@@ -38,6 +38,7 @@ describe('content-canvas text executor', () => {
   it('routes Gemini text through the configured compatible gateway and preserves reference images', async () => {
     process.env.CONTENT_TEXT_GEMINI_BASE_URL = 'https://gateway.example.com/v1'
     process.env.CONTENT_TEXT_GEMINI_API_KEY = 'gateway-key'
+    const abortController = new AbortController()
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -56,6 +57,7 @@ describe('content-canvas text executor', () => {
         model: 'gemini-2.5-pro',
         systemPrompt: 'System prompt',
         prompt: 'Write a caption',
+        abortSignal: abortController.signal,
         referenceContextText: 'Referenced canvas context',
         referenceImages: [{ mimeType: 'image/png', data: 'ZmFrZS1pbWFnZQ==' }],
       })
@@ -65,6 +67,7 @@ describe('content-canvas text executor', () => {
       'https://gateway.example.com/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
+        signal: abortController.signal,
         headers: expect.objectContaining({
           Authorization: 'Bearer gateway-key',
         }),
@@ -76,6 +79,7 @@ describe('content-canvas text executor', () => {
 
   it('routes Gemini text through the native Google provider when no compatible baseUrl is configured', async () => {
     process.env.GEMINI_API_KEY = 'legacy-gemini-key'
+    const abortController = new AbortController()
     mockExecuteProviderRequest.mockResolvedValue({
       content: 'native result',
       model: 'gemini-3.1-flash-lite-preview',
@@ -89,6 +93,7 @@ describe('content-canvas text executor', () => {
         model: 'gemini-3.1-flash-lite-preview',
         systemPrompt: 'System prompt',
         prompt: 'Write a caption',
+        abortSignal: abortController.signal,
         referenceContextText: 'Referenced canvas context',
         referenceImages: [{ mimeType: 'image/png', data: 'ZmFrZS1pbWFnZQ==' }],
       })
@@ -100,6 +105,7 @@ describe('content-canvas text executor', () => {
         workspaceId: 'ws-1',
         model: 'gemini-3.1-flash-lite-preview',
         apiKey: 'legacy-gemini-key',
+        abortSignal: abortController.signal,
         messages: [
           expect.objectContaining({
             parts: [

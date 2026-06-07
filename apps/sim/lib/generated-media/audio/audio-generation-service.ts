@@ -1,10 +1,10 @@
-import type { UserFile } from '@/executor/types'
-import { generateAudioWithProvider } from '@/lib/generated-media/audio/providers'
 import type {
   AudioGenerationModelId,
   AudioGenerationParametersValue,
 } from '@/lib/generated-media/audio/audio-generation-utils'
+import { generateAudioWithProvider } from '@/lib/generated-media/audio/providers'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import type { UserFile } from '@/executor/types'
 
 interface GenerateWorkspaceAudioFromPromptInput {
   workspaceId: string
@@ -15,6 +15,7 @@ interface GenerateWorkspaceAudioFromPromptInput {
   referenceContext?: {
     text: string[]
   }
+  abortSignal?: AbortSignal
 }
 
 interface GenerateWorkspaceAudioFromPromptResult {
@@ -41,12 +42,14 @@ export async function generateWorkspaceAudioFromPrompt({
   prompt,
   parameters,
   referenceContext,
+  abortSignal,
 }: GenerateWorkspaceAudioFromPromptInput): Promise<GenerateWorkspaceAudioFromPromptResult> {
   const generatedAudio = await generateAudioWithProvider({
     model,
     prompt,
     parameters,
     referenceContext,
+    abortSignal,
   })
 
   const file = await uploadWorkspaceFile(

@@ -15,6 +15,7 @@ interface GenerateAudioWithProviderInput {
   referenceContext?: {
     text: string[]
   }
+  abortSignal?: AbortSignal
 }
 
 export interface GeneratedAudioProviderResult {
@@ -42,6 +43,28 @@ interface EvolinkTaskPayload {
   }
 }
 
+async function abortableSleep(ms: number, abortSignal?: AbortSignal) {
+  if (!abortSignal) {
+    await new Promise((resolve) => setTimeout(resolve, ms))
+    return
+  }
+  if (abortSignal.aborted) throw new Error('Request was cancelled')
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, ms)
+    const abort = () => {
+      clearTimeout(timeout)
+      reject(new Error('Request was cancelled'))
+    }
+    abortSignal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function throwIfAborted(abortSignal?: AbortSignal): void {
+  if (abortSignal?.aborted) {
+    throw new Error('Request was cancelled')
+  }
+}
+
 function getProviderErrorMessage(payload: EvolinkTaskPayload, fallback: string) {
   const errorMessage =
     typeof payload.error === 'object' && payload.error
@@ -56,13 +79,7 @@ function getProviderErrorMessage(payload: EvolinkTaskPayload, fallback: string) 
         ? payload.data.error
         : undefined
 
-  return (
-    errorMessage ||
-    payload.message ||
-    nestedErrorMessage ||
-    payload.data?.message ||
-    fallback
-  )
+  return errorMessage || payload.message || nestedErrorMessage || payload.data?.message || fallback
 }
 
 function getTaskId(payload: EvolinkTaskPayload) {
@@ -140,16 +157,14 @@ function buildEvolinkPayload({
   return payload
 }
 
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 export async function generateAudioWithProvider({
   model,
   prompt,
   parameters,
   referenceContext,
+  abortSignal,
 }: GenerateAudioWithProviderInput): Promise<GeneratedAudioProviderResult> {
+  throwIfAborted(abortSignal)
   const service = resolveContentService({ capability: 'audio', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas audio model ${model}`)
@@ -162,6 +177,7 @@ export async function generateAudioWithProvider({
 
   const createResponse = await fetch(createEndpoint, {
     method: 'POST',
+    signal: abortSignal,
     headers: {
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
@@ -190,13 +206,16 @@ export async function generateAudioWithProvider({
     const status = getTaskStatus(latestPayload)
     if (status === 'SUCCEEDED') break
     if (status === 'FAILED' || status === 'CANCELED') {
-      throw new Error(getProviderErrorMessage(latestPayload, `EvoLink task ${status.toLowerCase()}`))
+      throw new Error(
+        getProviderErrorMessage(latestPayload, `EvoLink task ${status.toLowerCase()}`)
+      )
     }
 
-    await sleep(EVOLINK_POLL_INTERVAL_MS)
+    await abortableSleep(EVOLINK_POLL_INTERVAL_MS, abortSignal)
 
     const pollResponse = await fetch(`${tasksEndpoint}/${taskId}`, {
       method: 'GET',
+      signal: abortSignal,
       headers: {
         Authorization: `Bearer ${service.apiKey}`,
       },
@@ -205,7 +224,10 @@ export async function generateAudioWithProvider({
 
     if (!pollResponse.ok) {
       throw new Error(
-        getProviderErrorMessage(latestPayload, `EvoLink task polling failed (${pollResponse.status})`)
+        getProviderErrorMessage(
+          latestPayload,
+          `EvoLink task polling failed (${pollResponse.status})`
+        )
       )
     }
   }
@@ -215,7 +237,8 @@ export async function generateAudioWithProvider({
     throw new Error('EvoLink task succeeded but returned no audio result URL')
   }
 
-  const downloadResponse = await fetch(resultUrl)
+  throwIfAborted(abortSignal)
+  const downloadResponse = await fetch(resultUrl, { signal: abortSignal })
   if (!downloadResponse.ok) {
     throw new Error(`Failed to download generated audio (${downloadResponse.status})`)
   }

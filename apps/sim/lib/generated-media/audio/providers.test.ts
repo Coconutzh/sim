@@ -11,6 +11,7 @@ describe('generateAudioWithProvider', () => {
     vi.restoreAllMocks()
     process.env = {
       ...originalEnv,
+      CONTENT_AUDIO_API_KEY: 'evolink-test-key',
       EVOLINK_API_KEY: 'evolink-test-key',
     }
   })

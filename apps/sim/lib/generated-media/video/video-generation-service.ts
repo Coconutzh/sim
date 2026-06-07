@@ -1,4 +1,3 @@
-import type { UserFile } from '@/executor/types'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import { generateVideoWithProvider } from '@/lib/generated-media/video/providers'
 import type {
@@ -8,6 +7,7 @@ import type {
   VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import type { UserFile } from '@/executor/types'
 
 interface GenerateWorkspaceVideoFromPromptInput {
   workspaceId: string
@@ -25,6 +25,7 @@ interface GenerateWorkspaceVideoFromPromptInput {
     promptExtend: boolean
     watermark: boolean
   }
+  abortSignal?: AbortSignal
 }
 
 interface GenerateWorkspaceVideoFromPromptResult {
@@ -50,12 +51,14 @@ export async function generateWorkspaceVideoFromPrompt({
   prompt,
   media,
   parameters,
+  abortSignal,
 }: GenerateWorkspaceVideoFromPromptInput): Promise<GenerateWorkspaceVideoFromPromptResult> {
   const generatedVideo = await generateVideoWithProvider({
     model,
     prompt,
     media,
     parameters,
+    abortSignal,
   })
 
   const file = await uploadWorkspaceFile(

@@ -23,6 +23,7 @@ interface GenerateImageWithProviderInput {
     text: string[]
     images: UserFileLike[]
   }
+  abortSignal?: AbortSignal
 }
 
 export interface GeneratedImageProviderResult {
@@ -36,6 +37,12 @@ export interface GeneratedImageProviderResult {
 function getKeyFingerprint(apiKey: string): string {
   if (apiKey.length <= 8) return `${apiKey.slice(0, 2)}***`
   return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`
+}
+
+function throwIfAborted(abortSignal?: AbortSignal): void {
+  if (abortSignal?.aborted) {
+    throw new Error('Request was cancelled')
+  }
 }
 
 function looksLikeBase64Value(apiKey: string): boolean {
@@ -55,7 +62,9 @@ function buildImagePrompt({
   aspectRatio,
   referenceContext,
 }: Pick<GenerateImageWithProviderInput, 'prompt' | 'aspectRatio' | 'referenceContext'>) {
-  const textSections = [...(referenceContext?.text ?? [])].filter((section) => section.trim().length > 0)
+  const textSections = [...(referenceContext?.text ?? [])].filter(
+    (section) => section.trim().length > 0
+  )
   return [
     prompt,
     ...textSections.map((section, index) => `Reference context ${index + 1}:\n${section}`),
@@ -93,8 +102,12 @@ function parseCompatibleImagePayload(payload: any): {
     ...(Array.isArray(payload?.data) ? payload.data : []),
     ...(Array.isArray(payload?.images) ? payload.images : []),
     ...(Array.isArray(payload?.output) ? payload.output : []),
-    ...(Array.isArray(payload?.choices?.[0]?.message?.images) ? payload.choices[0].message.images : []),
-    ...(Array.isArray(payload?.choices?.[0]?.message?.content) ? payload.choices[0].message.content : []),
+    ...(Array.isArray(payload?.choices?.[0]?.message?.images)
+      ? payload.choices[0].message.images
+      : []),
+    ...(Array.isArray(payload?.choices?.[0]?.message?.content)
+      ? payload.choices[0].message.content
+      : []),
   ]
 
   for (const item of candidateResults) {
@@ -138,8 +151,7 @@ function parseCompatibleImagePayload(payload: any): {
         return {
           buffer: decoded.buffer,
           mimeType: decoded.mimeType,
-          revisedPrompt:
-            typeof item.revised_prompt === 'string' ? item.revised_prompt : undefined,
+          revisedPrompt: typeof item.revised_prompt === 'string' ? item.revised_prompt : undefined,
         }
       }
     }
@@ -153,7 +165,9 @@ async function generateImageWithGeminiNative({
   prompt,
   aspectRatio,
   referenceContext,
+  abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
+  throwIfAborted(abortSignal)
   const service = resolveContentService({ capability: 'image', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
@@ -183,6 +197,7 @@ async function generateImageWithGeminiNative({
       responseModalities: ['IMAGE', 'TEXT'],
     },
   })
+  throwIfAborted(abortSignal)
 
   const responseParts = response.candidates?.[0]?.content?.parts ?? []
   const imagePart = responseParts.find((part) => part.inlineData?.data)
@@ -195,11 +210,12 @@ async function generateImageWithGeminiNative({
     mimeType: imagePart.inlineData.mimeType || 'image/png',
     provider: 'gemini',
     providerModel: model,
-    revisedPrompt: responseParts
-      .map((part) => part.text)
-      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-      .join(' ')
-      .trim() || undefined,
+    revisedPrompt:
+      responseParts
+        .map((part) => part.text)
+        .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+        .join(' ')
+        .trim() || undefined,
   }
 }
 
@@ -208,7 +224,9 @@ async function generateImageWithGeminiCompatible({
   prompt,
   aspectRatio,
   referenceContext,
+  abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
+  throwIfAborted(abortSignal)
   const service = resolveContentService({ capability: 'image', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
@@ -230,6 +248,7 @@ async function generateImageWithGeminiCompatible({
 
   const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
+    signal: abortSignal,
     headers: {
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
@@ -275,7 +294,9 @@ async function generateImageWithArk({
   prompt,
   aspectRatio,
   referenceContext,
+  abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
+  throwIfAborted(abortSignal)
   const service = resolveContentService({ capability: 'image', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
@@ -296,6 +317,7 @@ async function generateImageWithArk({
   const endpoint = `${service.baseUrl.replace(/\/$/, '')}/images/generations`
   const response = await fetch(endpoint, {
     method: 'POST',
+    signal: abortSignal,
     headers: {
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
@@ -354,7 +376,8 @@ async function generateImageWithArk({
     throw new Error('Image provider returned neither b64_json nor url')
   }
 
-  const imageResponse = await fetch(firstResult.url)
+  throwIfAborted(abortSignal)
+  const imageResponse = await fetch(firstResult.url, { signal: abortSignal })
   if (!imageResponse.ok) {
     throw new Error(`Failed to download generated image (${imageResponse.status})`)
   }

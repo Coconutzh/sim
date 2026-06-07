@@ -10,8 +10,8 @@ import {
   type VideoMediaType,
   type VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
-import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 
 const logger = createLogger('GeneratedVideoProviders')
 const DASHSCOPE_POLL_INTERVAL_MS = 1500
@@ -30,6 +30,7 @@ interface GenerateVideoWithProviderInput {
     promptExtend: boolean
     watermark: boolean
   }
+  abortSignal?: AbortSignal
 }
 
 export interface GeneratedVideoProviderResult {
@@ -61,11 +62,7 @@ interface DashScopeTaskPayload {
 
 function getProviderErrorMessage(payload: DashScopeTaskPayload, fallback: string) {
   return (
-    payload.output?.message ||
-    payload.message ||
-    payload.output?.code ||
-    payload.code ||
-    fallback
+    payload.output?.message || payload.message || payload.output?.code || payload.code || fallback
   )
 }
 
@@ -226,12 +223,36 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function abortableSleep(ms: number, abortSignal?: AbortSignal) {
+  if (!abortSignal) {
+    await sleep(ms)
+    return
+  }
+  if (abortSignal.aborted) throw new Error('Request was cancelled')
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, ms)
+    const abort = () => {
+      clearTimeout(timeout)
+      reject(new Error('Request was cancelled'))
+    }
+    abortSignal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function throwIfAborted(abortSignal?: AbortSignal): void {
+  if (abortSignal?.aborted) {
+    throw new Error('Request was cancelled')
+  }
+}
+
 export async function generateVideoWithProvider({
   model,
   prompt,
   media,
   parameters,
+  abortSignal,
 }: GenerateVideoWithProviderInput): Promise<GeneratedVideoProviderResult> {
+  throwIfAborted(abortSignal)
   const service = resolveContentService({ capability: 'video', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas video model ${model}`)
@@ -249,6 +270,7 @@ export async function generateVideoWithProvider({
 
   const createResponse = await fetch(createEndpoint, {
     method: 'POST',
+    signal: abortSignal,
     headers: {
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
@@ -279,14 +301,18 @@ export async function generateVideoWithProvider({
     if (status === 'SUCCEEDED') break
     if (status === 'FAILED' || status === 'CANCELED') {
       throw new Error(
-        getProviderErrorMessage(latestPayload, `DashScope task ${status?.toLowerCase() ?? 'failed'}`)
+        getProviderErrorMessage(
+          latestPayload,
+          `DashScope task ${status?.toLowerCase() ?? 'failed'}`
+        )
       )
     }
 
-    await sleep(DASHSCOPE_POLL_INTERVAL_MS)
+    await abortableSleep(DASHSCOPE_POLL_INTERVAL_MS, abortSignal)
 
     const pollResponse = await fetch(`${tasksEndpoint}/${taskId}`, {
       method: 'GET',
+      signal: abortSignal,
       headers: {
         Authorization: `Bearer ${service.apiKey}`,
       },
@@ -308,7 +334,8 @@ export async function generateVideoWithProvider({
     throw new Error('DashScope task succeeded but returned no video URL')
   }
 
-  const downloadResponse = await fetch(videoUrl)
+  throwIfAborted(abortSignal)
+  const downloadResponse = await fetch(videoUrl, { signal: abortSignal })
   if (!downloadResponse.ok) {
     throw new Error(`Failed to download generated video (${downloadResponse.status})`)
   }
