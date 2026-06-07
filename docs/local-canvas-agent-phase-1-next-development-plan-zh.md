@@ -42,7 +42,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts:340-352`、`context-tools.ts:65-74`、`context-tools.ts:121-140`、`canvas-tools.ts:321-334`：agent-visible 附件和节点 file detail 当前只输出 name/type/size 或文件名；内部 key/url/path 仍只用于匹配、读取和写回。
 - `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/runtime.ts:39-77`、`193-238`、`319-346`：manual Confirm/Revise pending plan 当前有 30 分钟 TTL、过期清理、一次性消费和 Revise 删除逻辑。
 - `apps/sim/lib/copilot/request/lifecycle/content-canvas-agent.ts:4236-4240`：旧 `runContentCanvasAgent()` 已标注 deprecated，作为迁移参考和 legacy 测试保留。
-- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx:57`、`256-311`、`333-334`：右侧 Copilot 当前已把 `canvas.apply_patch` / `canvas.generate_node_output` 成功结果分流到 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`，legacy `edit_workflow` 仍走 `workflowDiffStore.setProposedChanges()`；同时 `onStreamEnd` 会兜底 reload 当前 workflow。最新 F-01 有效失败样本发生在 stream-end 兜底补上之前；补上兜底后的浏览器复测被 Next dev server OOM / ConnectionRefused 打断，因此 F-01 的剩余缺口是“当前实现是否真的让 ReactFlow DOM transform 无刷新同步”，不是后端 patch/verify 或 handler 分流是否已经编写。
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx`：右侧 Copilot 当前已把 `canvas.apply_patch` / `canvas.generate_node_output` 成功结果、local canvas stream end、send settled 都分流到 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`；legacy `edit_workflow` 仍走 `workflowDiffStore.setProposedChanges()`。2026-06-08 current-source 浏览器复测已证明 F-01 无刷新同步：后端 state 横向后，ReactFlow DOM transform 同步为 `-220/140/500/860/1220/1580/1940`。
 - `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/workflow.tsx:3083-3310`：F-01 前端根因候选已进一步收窄。`blocksStructureHash` 明确排除 `position` 以避免拖拽时重建节点；`derivedNodes` 依赖 `blocksStructureHash` 和 `blocks`，`displayNodes` 通过 effect 从 `derivedNodes` 同步。若 committed store reload 只改变 block position，ReactFlow 内部 nodes 可能继续持有旧 transform。这与“workflow state position 已横向、DOM transform 仍凌乱”的有效失败样本吻合。下一步应先复测 stream-end reload 是否已经足够；若仍失败，优先在 `workflow.tsx` 做 position-only reconcile，而不是继续改 planner 或 patch。
 
 本轮测试污染只读 grep 结果：在 `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent`、`apps/sim/app/workspace/[workspaceId]/home`、`apps/sim/app/workspace/[workspaceId]/w/[workflowId]` 的非测试生产文件范围内，未命中 `A-01` 到 `H-04` 测试编号，也未命中“总导演”“各组注意”“导演这边”“各位团队成员”“总导演 Agent”“高考”“春季发布会主视觉”等 local-canvas-agent 泄露复查关键词。后续改 prompt/guard 后仍必须按第五节重新 grep。
@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现，但仍需用专门手工/grep 证明 prompt、SSE、tool output、最终回答都不泄露。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：先复测并在必要时继续收敛 F-01 暴露出的右侧 Copilot mutation 后画布 live refresh 问题；随后在 D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state 证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强和 chatId API/SSE 停止样本的基础上，补强必要 UI 展示回归、H-04 浏览器 UI 二次样本、附件脱敏专项、测试污染复查和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强和 chatId API/SSE 停止样本的基础上，继续补强 H-04 浏览器 UI 二次样本、附件脱敏专项、必要的生成失败真实路径证据和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -151,9 +151,9 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 对应测试编号 | B-03、B-02、B-04、G-02、G-03、G-04、附件专项 |
 | 当前失败表现 | 审计指出附件/file context 曾可能暴露 private key、storage path、URL。 |
 | 相关代码位置 | `canvas-tools.ts`：`sanitizeCanvasNodeDetailForAgent()`；`context-manager.ts`：`extractAttachments()`、`buildAttachmentContext()`；`context-tools.ts`：`sanitizeAttachmentForAgent()`、`readFileContext()`；`node-adapters/{image,video,audio,document,image-editor}.ts`。 |
-| 当前代码状态 | 节点 detail 对 agent 只保留 file name；prompt attachment context 只输出 name/type/size；`read_file` 输出 attachments 时使用 `sanitizeAttachmentForAgent()`。内部 attachment 仍保留 key/url 供匹配/读取。 |
+| 当前代码状态 | 节点 detail 对 agent 只保留 file name；prompt attachment context 只输出 name/type/size；`read_file` 输出 attachments 时使用 `sanitizeAttachmentForAgent()`。`attachedContexts.type === 'file'` 的 prompt context 和 `read_file` context content 已接入 `redactAgentVisibleFileContext()`，覆盖 storage key/path、`/api/files/serve`、HTTP URL、Windows/Unix path 和 PEM private key block。内部 attachment 仍保留 key/url 供匹配、读取和写回。 |
 | 根因假设 | 风险在“内部字段误流到 agent-visible 输出”，不是内部存储本身。尤其要检查 attachedContexts.content、workspace context、SSE observation、最终回答。 |
-| 是否需要进一步验证 | 需要专项 grep 和真实请求证据：Network/SSE/server log/final answer 不含 storage key、path、URL。 |
+| 是否需要进一步验证 | focused tests 已覆盖 prompt context 与 `read_file` output 脱敏；仍需专项真实请求证据：Network/SSE/server log/final answer 不含 storage key、path、URL 或 private key。 |
 
 ### 8. 中危测试污染清理
 
@@ -622,11 +622,11 @@ bun run type-check
 
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
-1. F-01：布局 live refresh。判断通过：后端 workflow state position 变化，节点和边不丢；不刷新页面时 ReactFlow DOM transform 同步变化，最终回答与 verify 一致。
-2. G-02/G-03/G-04：作为回归保护。判断通过：`file` 写回，图片/视频/音频预览刷新，不泄露 key/url/path；G-03 同时确认上游 image 作为参考/首帧的代码/测试证据。
-3. G-01：作为回归保护或 UI 展示补强。判断通过：`contentHtml` 非空且变化，verify generation field 为 `contentHtml`，文本节点刷新。
-4. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
-5. E-03/E-04：作为回归保护或 UI 展示补强。判断通过：state 和右侧属性面板都能看到 `videoPrompt`/`videoParameters.duration` 或 `audioPrompt` 变化，verify 成功。
+1. H-04：长任务中 stop 的浏览器 UI 二次样本。判断通过：点击 Stop 后 loading 结束，state 不被后台写回，server log 能按 chatId/streamId 追踪 cancel。
+2. 附件/文件脱敏专项：判断通过：tool output、SSE、final answer 都不泄露 key/url/path/private storage path。
+3. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
+4. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
+5. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
 
 第二优先级：已通过但高风险的回归点。
 

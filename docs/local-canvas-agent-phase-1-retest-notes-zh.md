@@ -5288,3 +5288,256 @@ FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaS
 2. 如果 stream-end reload 后 DOM 仍不刷新，下一步要检查 `loadWorkflowState()` 是否成功调用以及 `useWorkflowStore.replaceWorkflowState()` 后 ReactFlow selector 是否收到变更。
 3. F-01 当前不得标为通过；必须补到 workflow state 与 ReactFlow DOM transform 同步变化的证据。
 ```
+
+## 2026-06-08 F-01 live refresh 通过证据与 E-03/E-04 UI 参数解析补强
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 阶段 1 和阶段 3 执行。
+
+### F-01 live refresh
+
+代码提交：
+
+```text
+f3ef998b4 fix local canvas live refresh
+```
+
+关键改动：
+
+```text
+apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx
+```
+
+- `canvas.apply_patch` / `canvas.generate_node_output` 成功 tool result 后 reload committed workflow state。
+- local canvas stream end 后 reload 当前 workflow state。
+- sending 状态从 true 回到 false 时增加 `send-settled` 兜底 reload，覆盖 tool block 或 complete 回调未稳定到达但后端 state 已提交的路径。
+- legacy `edit_workflow` 仍保留 proposed diff 路径。
+
+浏览器复测证据：
+
+```text
+server: http://localhost:3005 current-source low-memory dev server
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+message: 把当前画布按内容生产顺序从左到右整理一下。
+```
+
+复测链路：
+
+```text
+1. 页面初始 DOM 是凌乱 transform：
+   Start 1200,260；文本 980,-180；视频 1510,100；音频 320,-360；
+   补充文案 1780,-260；创意说明 620,340；图片 -220,420。
+2. 真实右侧 Copilot 发送 F-01 请求后，assistant 显示“已完成画布修改，并完成验证。”
+3. workflow state 已变为横向顺序：
+   Start -220,-360；文本 140,-360；视频 500,-360；音频 860,-360；
+   补充文案 1220,-360；创意说明 1580,-360；图片 1940,-360。
+4. 无需刷新页面，send-settled reload 兜底完成后 ReactFlow DOM transform 同步为同一横向顺序。
+5. 节点数 7、边数 5 未丢。
+```
+
+定向验证：
+
+```powershell
+bunx biome check --no-errors-on-unmatched "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx"
+```
+
+结果：
+
+```text
+Checked 1 file in 23ms. No fixes applied.
+```
+
+补充回归：
+
+```powershell
+cd apps/sim
+bunx vitest run "app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-canvas-helpers.test.ts"
+```
+
+结果包含在本轮 focused UI helper 复跑中：
+
+```text
+2 files / 12 tests passed
+```
+
+结论：F-01 当前源码浏览器通过。后续若改 `copilot-tab.tsx`、`use-chat.ts` stream terminal callback、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` displayNodes 或 `reconcileDisplayNodePositions()`，必须回归 F-01。
+
+### E-03/E-04 UI 参数解析
+
+代码提交：
+
+```text
+1c2dfe3d6 fix content generation parameter normalization
+```
+
+关键改动：
+
+```text
+apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters.ts
+apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters.test.ts
+apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-block.tsx
+```
+
+- video/audio 参数归一化从 `content-block.tsx` 抽出为纯 helper。
+- `normalizeVideoParameters()` 支持 persisted JSON string，例如 `{"resolution":"720P","duration":5}`。
+- `normalizeAudioParameters()` 支持 persisted JSON string。
+- 覆盖非法 video 参数字符串 fallback、duration clamp、audio custom/style/title 等字段。
+
+浏览器 UI 证据：
+
+```text
+真实 workflow e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a：
+- 选中 video 节点后，节点 UI 显示 Wan 2.7，摘要 `首尾帧 · 16:9 · 720P · 5s`，textarea 包含“5 秒，并让镜头更有推进感。”
+- 选中 audio 节点后，节点 UI 显示 Suno v5，摘要 `简单 · 人声 · 描述`，textarea 包含“方向更有节奏感的电子风格。”
+```
+
+自动化验证：
+
+```powershell
+cd apps/sim
+bunx vitest run "app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters.test.ts"
+```
+
+结果：
+
+```text
+1 file / 4 tests passed
+```
+
+```powershell
+bunx biome check --no-errors-on-unmatched "app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters.ts" "app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters.test.ts"
+```
+
+结果：
+
+```text
+Checked 2 files. No fixes applied.
+```
+
+`content-block.tsx` 定向 lint 结果只剩既有 class 排序 warning，未引入新的 import/unused/type lint 问题。
+
+### 测试污染复查
+
+本轮执行生产路径 grep，排除 docs/tests/spec：
+
+```powershell
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "A-01|A-02|A-03|B-01|B-02|B-03|B-04|C-01|C-02|C-03|D-01|D-02|D-03|E-01|E-02|E-03|E-04|F-01|F-02|F-03|F-04|G-01|G-02|G-03|G-04|G-05|H-01|H-02|H-03|H-04" apps/sim/lib/copilot apps/sim/app/api apps/sim/app/workspace packages
+
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "总导演|各组注意|导演这边|chief_director|director" apps/sim/lib/copilot apps/sim/app/api apps/sim/app/workspace packages
+
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "patch\\.operations is required|new_text_after_selection|欢迎邮件|春季发布会主视觉|把当前画布按内容生产顺序|问高考|高考" apps/sim/lib/copilot apps/sim/app/api apps/sim/app/workspace packages
+```
+
+结论：
+
+```text
+- 生产代码未命中 A-H 测试编号。
+- local canvas 生产路径未命中“总导演 / 各组注意 / 导演这边”。
+- `director` / `chief_director` 命中来自真实协作产品定义或通用 persona guard；local canvas prompt/guard 没有硬编码中文测试禁用词。
+- `patch.operations is required` 是通用 tool 参数校验。
+- `new_text_before_selection` / `new_text_after_selection` 是 patch 内部 clientNodeId，用于同一 patch 内 create/connect 引用；测试断言该内部引用，不是复制用户测试输入或预期回答。
+```
+
+## 2026-06-08 F-01 自动回归与附件/file context 脱敏补强
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 执行。目标是继续巩固 F-01 live refresh 和附件/file 脱敏专项。未 push，未清理 C 组临时文件。
+
+### F-01 live refresh 回归测试
+
+代码提交：
+
+```text
+90aa2edd9 test local canvas live refresh hooks
+```
+
+新增测试：
+
+```text
+apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx
+```
+
+覆盖点：
+
+```text
+- `canvas.apply_patch` 成功 tool result 会触发 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`。
+- `canvas.generate_node_output` 成功 tool result 会触发同一 committed workflow reload。
+- failed tool result 和非 local canvas tool result 不触发 reload。
+- local canvas stream end 会触发 reload 兜底。
+```
+
+验证命令：
+
+```powershell
+cd apps/sim
+bunx vitest run "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"
+bunx biome check --no-errors-on-unmatched "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"
+```
+
+结果：
+
+```text
+Vitest: 1 file / 3 tests passed
+Biome: Checked 1 file. No fixes applied.
+```
+
+补充浏览器状态：
+
+```text
+- current-source 3005 dev server 仍可读 `/api/workflows/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a`，后端 state 为 7 节点横向布局。
+- 3005 浏览器 tab 在低内存 dev server 重启期间一度进入 error boundary；受控 reload 后进入 `Load editor panels`，随后 dev server 再次触发内存阈值重启，未形成新的稳定 DOM transform 样本。
+- 3000 preview tab 可渲染 ReactFlow 7 nodes，但该 tab 不是当前 3005 dev 进程，DOM transform 与当前 API state 不一致，不能作为当前 checkout 的 F-01 通过证据。
+```
+
+结论：F-01 的当前源码修复已由既有 current-source 浏览器样本和新增自动回归测试共同保护。3005 低内存 dev server 的二次 DOM 复验仍不稳定，属于环境验证风险；后续若重启稳定 preview/dev，应再补一次同端口 API state + ReactFlow DOM transform 对齐样本。
+
+### 附件/file context 脱敏补强
+
+代码提交：
+
+```text
+bf54b423a redact local canvas file context
+```
+
+关键改动：
+
+```text
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/redaction.ts
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-tools.ts
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.test.ts
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts
+```
+
+- 新增 `redactAgentVisibleFileContext()`，用于 agent-visible file context 文本。
+- token-aware prompt context 中，`attachedContexts.type === 'file'` 的内容会先脱敏再进入 prompt。
+- `read_file` tool output 中的 attached file context 内容会先脱敏再返回给 actor/verifier。
+- 覆盖 storage key、storage path、`/api/files/serve` URL、HTTP URL、Windows/Unix 路径和 PEM private key block。
+- attachment 元数据和节点 file detail 继续只输出安全文件名/type/size。
+
+验证命令：
+
+```powershell
+cd apps/sim
+bunx vitest run "lib/copilot/request/lifecycle/local-canvas-agent/context-manager.test.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts"
+bunx biome check --no-errors-on-unmatched "lib/copilot/request/lifecycle/local-canvas-agent/redaction.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-manager.test.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts"
+```
+
+结果：
+
+```text
+Vitest: 2 files / 5 tests passed
+Biome: Checked 5 files. No fixes applied.
+```
+
+生产泄露 grep：
+
+```powershell
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "A-01|A-02|A-03|B-01|B-02|B-03|B-04|C-01|C-02|C-03|D-01|D-02|D-03|E-01|E-02|E-03|E-04|F-01|F-02|F-03|F-04|G-01|G-02|G-03|G-04|G-05|H-01|H-02|H-03|H-04|总导演|各组注意|导演这边|各位团队成员|总导演 Agent|高考|春季发布会主视觉" apps/sim/lib/copilot/request/lifecycle/local-canvas-agent apps/sim/app/workspace/[workspaceId]/home apps/sim/app/workspace/[workspaceId]/w/[workflowId]
+```
+
+结果：
+
+```text
+无输出；生产范围未命中测试编号、测试预期中文词或完整手工输入。
+```
+
+结论：附件/file context 脱敏已有代码级实现和 focused tests。下一步如需完成专项手工验收，应构造带 key/url/path/private-key 样本文本的真实 file attachment 请求，观察 Network payload、SSE observation、tool output 和 final answer 均只出现安全文件名/脱敏占位符。
