@@ -6111,3 +6111,61 @@ SSE/final answer forbidden values:
 ```
 
 结论：B-03 current-source preview API/SSE 通过。选中视频节点 detail 包含完整生成设置，agent-visible 输出只暴露安全文件名，不暴露 storage key、serve URL 或 path。
+
+## 2026-06-08 03:26 F-01 current-source preview live refresh 同端口复验
+
+继续处理 F-01：确认后端 workflow state 变化后，当前已打开的 ReactFlow 页面不刷新也能显示最新布局。复用 3007 current-source preview 页签：
+
+```text
+url: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+baseline API: 7 blocks / 5 edges
+baseline DOM: 7 ReactFlow nodes / 5 ReactFlow edges
+```
+
+先尝试通过右侧 Copilot UI 直接发送低风险布局请求：
+
+```text
+请把所有画布节点整体下移 40px，只修改节点 position.y，保持 x 不变，不改内容和连线。自动确认执行。
+```
+
+该 UI 请求 180 秒内没有进入后端 active stream，`/api/copilot/chats` 中对应 workflow 没有 `activeStreamId`，workflow API 和 DOM 均未变化；因此此样本不计作 F-01 通过或失败证据。刷新当前 3007 页签后页面恢复正常，`Send message` disabled 仅因输入为空。
+
+随后改用与 `canvas.apply_patch` 保存后相同的 workflow update 广播链路做可控复验。依据代码：
+
+```text
+canvas.apply_patch -> editWorkflowServerTool -> saveWorkflowToNormalizedTables -> /api/workflow-updated
+PUT /api/workflows/:id/state -> saveWorkflowToNormalizedTables -> /api/workflow-updated
+```
+
+复验脚本先记录 API positions 和当前页 DOM transform；再通过 `PUT /api/workflows/:id/state` 把全部节点 `position.y` 从 `-360` 改为 `-320`；不刷新页面，轮询当前 3007 页签 ReactFlow DOM；最后用同一路径恢复到 `-360`。
+
+结果：
+
+```text
+PUT target -> 200 {"success":true,"warnings":[]}
+target poll elapsedMs: 1054
+API all y=-320: true
+DOM all y=-320 and x matches API: true
+
+PUT restore -> 200 {"success":true,"warnings":[]}
+restore poll elapsedMs: 1049
+API all y=-360: true
+DOM all y=-360 and x matches API: true
+```
+
+目标变更时 ReactFlow DOM transform 同步为：
+
+```text
+Start: translate(-220px, -320px)
+视频节点: translate(500px, -320px)
+音频节点: translate(860px, -320px)
+补充文案: translate(1220px, -320px)
+创意说明: translate(1580px, -320px)
+视觉画面: translate(1940px, -320px)
+春季发布会主视觉文案: translate(140px, -320px)
+```
+
+恢复后同页 DOM 又同步回 `y=-360`，节点数量和连线数量保持 7 / 5。
+
+结论：F-01 current-source preview live refresh 通过。后端 state 保存并广播后，当前 ReactFlow 页面无需刷新即可在约 1 秒内同步节点位置；恢复操作同样同步。`canvas.apply_patch` 的保存后广播链路与本次可控 PUT 路径同样落到 `/api/workflow-updated`，同时右侧 Copilot 还有 tool-result / stream-end / send-settled 的 `loadWorkflowState()` 兜底。后续只在 `editWorkflowServerTool` 保存通知、workflow state API、socket workflow-updated、`useCollaborativeWorkflow` reload、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` display nodes 或 `reconcileDisplayNodePositions()` 改动后回归。
