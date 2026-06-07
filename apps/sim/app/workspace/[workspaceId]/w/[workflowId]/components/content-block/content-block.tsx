@@ -17,12 +17,9 @@ import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position } from 'reactflow'
 import { cn } from '@/lib/core/utils/cn'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
-import {
-  type AudioGenerationModelId,
-  type AudioGenerationParametersValue,
-  DEFAULT_AUDIO_MODEL,
-  DEFAULT_AUDIO_PARAMETERS,
-  isAudioGenerationModel,
+import type {
+  AudioGenerationModelId,
+  AudioGenerationParametersValue,
 } from '@/lib/generated-media/audio/audio-generation-utils'
 import {
   DEFAULT_IMAGE_AI_MODEL,
@@ -33,11 +30,9 @@ import {
   type ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
-  DEFAULT_VIDEO_DURATION_SECONDS,
   DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
   DEFAULT_VIDEO_MODEL,
   DEFAULT_VIDEO_MODEL_FAMILY,
-  DEFAULT_VIDEO_RESOLUTION,
   getVideoMediaFileForType,
   getVideoModelFamilyFromModelId,
   isVideoFrameAspectRatioPreset,
@@ -47,7 +42,6 @@ import {
   type VideoGenerationModelId,
   type VideoMediaFileSlot,
   type VideoModelFamily,
-  type VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
 import {
   CONTENT_REFERENCE_EDGE_KIND,
@@ -69,6 +63,13 @@ import {
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
+import {
+  normalizeAudioModel,
+  normalizeAudioParameters,
+  normalizeVideoDuration,
+  normalizeVideoParameters,
+  type VideoParametersValue,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
@@ -108,13 +109,6 @@ interface UploadedFileValue {
   size?: number
   type?: string
   context?: string
-}
-
-interface VideoParametersValue {
-  resolution: VideoResolution
-  duration: number
-  promptExtend: boolean
-  watermark: boolean
 }
 
 function getEffectiveContentModelId(params: {
@@ -180,13 +174,6 @@ const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
 const AUDIO_CARD_HEIGHT = 132
-const DEFAULT_VIDEO_PARAMETERS: VideoParametersValue = {
-  resolution: DEFAULT_VIDEO_RESOLUTION,
-  duration: DEFAULT_VIDEO_DURATION_SECONDS,
-  promptExtend: true,
-  watermark: false,
-}
-
 const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const
 const BACKGROUND_COLORS = ['#FFF8C5', '#FEE2E2', '#DBEAFE', '#DCFCE7', '#F3E8FF'] as const
 
@@ -196,15 +183,6 @@ function extractStoredValue<T>(source: StoredValueRecord, key: string, fallback:
     return ((rawValue as { value?: T }).value ?? fallback) as T
   }
   return (rawValue ?? fallback) as T
-}
-
-function coerceNumber(value: unknown, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
 }
 
 function clampTextWidth(value: number): number {
@@ -273,28 +251,6 @@ function normalizeVideoModelFamily(value: unknown, legacyModelValue?: unknown): 
   return DEFAULT_VIDEO_MODEL_FAMILY
 }
 
-function normalizeVideoResolution(value: unknown): VideoResolution {
-  return value === '1080P' || value === '720P' ? value : DEFAULT_VIDEO_RESOLUTION
-}
-
-function normalizeVideoDuration(value: unknown): number {
-  return Math.max(2, Math.min(15, Math.round(coerceNumber(value, DEFAULT_VIDEO_DURATION_SECONDS))))
-}
-
-function normalizeVideoParameters(value: unknown): VideoParametersValue {
-  if (!value || typeof value !== 'object') {
-    return DEFAULT_VIDEO_PARAMETERS
-  }
-
-  const candidate = value as Partial<VideoParametersValue>
-  return {
-    resolution: normalizeVideoResolution(candidate.resolution),
-    duration: normalizeVideoDuration(candidate.duration),
-    promptExtend: candidate.promptExtend ?? true,
-    watermark: candidate.watermark ?? false,
-  }
-}
-
 function normalizeVideoMedia(value: unknown): Array<VideoMediaFileSlot<UploadedFileValue>> {
   if (!Array.isArray(value)) return []
 
@@ -307,26 +263,6 @@ function normalizeVideoMedia(value: unknown): Array<VideoMediaFileSlot<UploadedF
     }
     return [{ type, file }]
   })
-}
-
-function normalizeAudioModel(value: unknown): AudioGenerationModelId {
-  return isAudioGenerationModel(value) ? value : DEFAULT_AUDIO_MODEL
-}
-
-function normalizeAudioParameters(value: unknown): AudioGenerationParametersValue {
-  if (!value || typeof value !== 'object') {
-    return DEFAULT_AUDIO_PARAMETERS
-  }
-
-  const candidate = value as Partial<AudioGenerationParametersValue>
-  return {
-    customMode: candidate.customMode ?? DEFAULT_AUDIO_PARAMETERS.customMode,
-    instrumental: candidate.instrumental ?? DEFAULT_AUDIO_PARAMETERS.instrumental,
-    style: typeof candidate.style === 'string' ? candidate.style : '',
-    title: typeof candidate.title === 'string' ? candidate.title : '',
-    negativeTags: typeof candidate.negativeTags === 'string' ? candidate.negativeTags : '',
-    vocalGender: typeof candidate.vocalGender === 'string' ? candidate.vocalGender : '',
-  }
 }
 
 function resolveContentVariant(
