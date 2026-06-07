@@ -6318,3 +6318,139 @@ restored DOM: 7 nodes / 5 edges / 5 edge paths / appError=false
 ```
 
 结论：F-01 当前源码 live refresh 仍通过。当前兜底链路有效：后端 workflow state 更新后，无需刷新页面，ReactFlow DOM position 在同一 3007 页签内跟随同步，节点和连接不丢失。因此本轮不需要继续追 `workflow.tsx` / store hydration / collaborative reload / ReactFlow node state 的半失效路径。后续只在 `copilot-tab.tsx` stream/tool callback、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` display node hydration、socket `workflow-updated` 或 edge normalization 改动后回归。
+
+## 2026-06-08 03:45 E-01/E-02 current-source preview 字段展示回归
+
+本轮继续按 `docs/local-canvas-agent-phase-1-next-development-plan-zh.md` 推进 E 类剩余浏览器证据。过程中 E-01 暴露一个真实质量问题：模型 rewrite 输出曾把格式约束残片写进 `contentHtml`，例如 `Do not use markdown... Just plain text...` 一类英文元指令。已用通用 `hasRewriteInstructionLeak()` guard 修复，不硬编码手工测试中文禁用词；命中 markdown/json/plain-text/system/user-request/current-selected-text 等通用格式指令残片时，回退到 deterministic rewrite。
+
+### 代码修复
+
+提交：
+
+```text
+80943dacf fix local canvas text rewrite instruction leak
+```
+
+改动：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/planner.ts`
+  - 新增 `hasRewriteInstructionLeak()`。
+  - `rewriteSelectedTextContent()` 对模型输出同时检查 persona leak 和 rewrite instruction leak。
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/planner.test.ts`
+  - 新增测试：模型返回 markdown/json/plain-text 格式约束残片时，不写入 `contentHtml`，而是回退到 deterministic rewrite。
+
+验证：
+
+```powershell
+cd apps/sim
+bunx vitest run "lib/copilot/request/lifecycle/local-canvas-agent/planner.test.ts"
+```
+
+结果：
+
+```text
+Test Files 1 passed
+Tests 26 passed
+```
+
+随后从 repo root 运行：
+
+```powershell
+bun run preview:build
+```
+
+结果：exit 0。构建有既有 Next/logger edge-runtime warning、`maxDuration` warning、Better Auth provider missing env warning；未阻断 build。
+
+### E-01 更新文本节点
+
+环境：
+
+```text
+preview: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+text node: a4660798-e240-48da-9367-49a5bc19599b
+message: 把选中文案改成更适合年轻用户的短视频口吻。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_selected_nodes, canvas.read_summary, canvas.apply_patch, canvas.verify_patch
+canvas.generate_node_output: false
+contentHtml changed: true
+before length: 177
+after length: 53
+node count: 7 -> 7
+edge count: 5 -> 5
+has instruction leak: false
+after sample: 家人们谁懂啊！春季发布会主视觉「跃动·生机」来啦！这次主打一个“万物复苏，破界生长”！极光绿、晨曦粉加上超
+```
+
+CDP/ReactFlow DOM：
+
+```text
+found: true
+nodeCount: 7
+edgeCount: 5
+edgePathCount: 5
+appError: false
+containsAfterSample: true
+textSample: 家人们谁懂啊！春季发布会主视觉「跃动·生机」来啦！这次主打一个“万物复苏，破界生长”！极光绿、晨曦粉加上超
+```
+
+取证后恢复：
+
+```text
+restored: true
+restoredContentMatches: true
+domRestoredContainsOriginal: true
+```
+
+结论：E-01 current-source preview 通过。选中文本节点真实写回 `contentHtml`，不新建无关节点，ReactFlow DOM 同步显示更新正文；修复后不再把格式/系统指令残片写进正文。
+
+### E-02 更新图片节点
+
+环境：
+
+```text
+preview: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+image node: d7749ae0-abb6-474c-a454-74837f6221a4
+message: 把这个图片节点的提示词改成更明亮、更有舞台灯光感。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_selected_nodes, canvas.read_summary, canvas.apply_patch, canvas.verify_patch
+canvas.generate_node_output: false
+aiPrompt changed: true
+node count: 7 -> 7
+edge count: 5 -> 5
+file preserved: true
+contains operation words: false
+beforePrompt: 根据当前主题，创建一个短视频内容链：脚本、主视觉、视频、配乐，并按生产顺序连接。
+afterPrompt: 根据当前主题，创建一个短视频内容链：脚本、主视觉、视频、配乐，并按生产顺序连接。
+更明亮、更有舞台灯光感。
+```
+
+CDP/浏览器字段展示：
+
+```text
+selectedIds: d7749ae0-abb6-474c-a454-74837f6221a4
+nodeCount: 7
+edgeCount: 5
+imageAlt: generated-image (2).png
+node AI composer textarea value: 根据当前主题，创建一个短视频内容链：脚本、主视觉、视频、配乐，并按生产顺序连接。\n更明亮、更有舞台灯光感。
+panel AI Prompt textarea value: 根据当前主题，创建一个短视频内容链：脚本、主视觉、视频、配乐，并按生产顺序连接。\n更明亮、更有舞台灯光感。
+file input value: generated-image (2).png (2.4 MB)
+```
+
+取证后恢复：
+
+```text
+restored: true
+restoredPromptMatches: true
+```
+
+结论：E-02 current-source preview 通过。`aiPrompt` 只追加视觉方向，不写入“把这个图片节点/提示词改成/改成更明亮”等操作话术；图片 file 保持，属性面板和节点内 AI composer 均显示更新后的 prompt。

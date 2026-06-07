@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 B-01/B-03 已补 current-source preview 选中节点 detail 和文件脱敏 API/SSE 证据，C-01/C-02/C-03 已补 current-source preview 只读理解 API/SSE 和浏览器 DOM 未损坏证据，F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容、3007 current-source preview DOM 连接复验证据和同端口保存广播 live refresh 证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做剩余 A/E 类浏览器补强和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 B-01/B-03 已补 current-source preview 选中节点 detail 和文件脱敏 API/SSE 证据，C-01/C-02/C-03 已补 current-source preview 只读理解 API/SSE 和浏览器 DOM 未损坏证据，F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容、3007 current-source preview DOM 连接复验证据和同端口保存广播 live refresh 证据，D-01/D-02/D-03 已有 current-source preview 证据，E-01/E-02 已有 current-source preview state/verify/browser 字段展示证据且 E-01 已修复 rewrite 格式指令残片写入问题，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做剩余 A 类浏览器补强和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -98,7 +98,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 相关代码位置 | `context-manager.ts`：`extractSelectedNodeIds()`；`planner.ts`：`resolveTargetSelectedNode()`、`isSelectionScopedCreateTextRequest()`、`buildSelectedUpdatePatch()`；`models/actor.ts`：只读回答；`user-input.tsx`：`buildAutoSelectionContexts()`、`confirmationMode`、`thinkingLevel`；`copilot-tab.tsx`：右侧 Copilot 固定 `workflowCopilotMode: 'content_canvas_v1'`。 |
 | 当前代码状态 | `context-manager.ts` 从 `autoSelectionContexts`、`contexts`、`selectedContexts`、`selectedNodeIds` 汇总 selected node ids。`planner.ts` 会按用户话语中的 kind 偏好选择 text/image/video/audio，并把只读意图与“补节点”意图分开。B-02/B-04 已有 preview 浏览器证据：真实 ReactFlow 选中 image/audio 后，Network payload 的 `autoSelectionContexts.blockIds` 正确，回答目标正确，workflow state 不变。2026-06-08 3007 current-source preview API/SSE 又补 B-01/B-03：选中文本可提炼真实长文本关键词，选中视频可读取 videoPrompt、模型族、参数和安全文件名，均不修改 state。 |
 | 根因假设 | 原失败来自 intent 分类和目标节点选择过粗；当前剩余风险转到 D/E 类写入任务：同一选中上下文下，planner 是否持续把更新写到正确 nodeId 和字段。 |
-| 是否需要进一步验证 | B-01/B-02/B-03/B-04 均已有 current-source 或 preview 证据；后续只在 selection、Copilot tab、`UserInput` payload、node adapter、file redaction 或 planner target 变动后回归。D-02/D-03 已同步 current-source preview 证据；E-03/E-04 已有 current-source preview API/state 字段写入证据，仍可补强右侧属性面板浏览器展示。 |
+| 是否需要进一步验证 | B-01/B-02/B-03/B-04 均已有 current-source 或 preview 证据；后续只在 selection、Copilot tab、`UserInput` payload、node adapter、file redaction 或 planner target 变动后回归。D-02/D-03 已同步 current-source preview 证据；E-01/E-02/E-03/E-04 均已有 current-source preview 字段写入和浏览器展示证据，后续仅在对应 planner、verify、content block 或属性面板改动后回归。 |
 
 ### 3. 创建 / 更新 / 连接 / 布局 patch 可靠性
 
@@ -109,7 +109,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 相关代码位置 | `canvas-tools.ts`：`requirePatch()`、`normalizeLegacyCanvasPatch()`、`normalizeInstructionCanvasPatch()`、`executeCanvasTool()`；`canvas-patch.ts`：patch 校验与 `editWorkflowServerTool` operation 构造；`canvas-verify.ts`：create/update/connect/layout 验证；`planner.ts`：内容链、补前后节点、更新字段、布局计划；`copilot-tab.tsx`：`handleCopilotToolResult()` 的 mutation 后 UI refresh。 |
 | 当前代码状态 | 工具边界已兼容标准 `patch.operations`、旧形态 `addNodes/addEdges`、direct operation、instruction-only chain。`canvas-verify.ts` 已验证 create/update/connect/layout。D-01 已有 current-source preview 浏览器级通过证据：空白 workflow 从 1 节点/0 边变为 5 节点/3 边，ReactFlow live refresh 显示 5 nodes / 3 edges，无 `patch.operations is required` 或 cancelled。D-02/D-03 已同步 current-source preview 证据：选中 video/image 后新增 text 并形成 `video -> text`、`text -> image` 连线，当前 preview state 复核仍可见目标节点和边。F-01 的 position/edge 同步链路已实现：`copilot-tab.tsx` 把 local canvas mutation tool success、stream end、send settled 接到 committed workflow reload；`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 覆盖 position-only committed reload；`normalizeWorkflowState()` 兼容旧 content-reference edge。2026-06-08 3007 current-source preview 复验显示 7 nodes / 5 edges / 5 edge paths；同一 3007 页签保存广播复验显示后端 state `y=-360 -> -320 -> -360` 时 ReactFlow DOM transform 约 1.05 秒内跟随 API 同步，无需刷新页面。 |
 | 根因假设 | D-01 原因是模型真实输出旧参数形态与工具 schema 不兼容。D-02/D-03 是 selected target 和 connect reference 问题。E-03/E-04 是字段提取和 verify 不足导致“说改了但没改”。F-01 根因已收敛为前端同步链路：local canvas mutation 不能走 legacy proposed diff 路径，position-only committed reload 需要显式 reconcile 到 ReactFlow display nodes；旧 malformed content-reference edge 还需要在 workflow state normalization 阶段补语义，以免刷新后连接不显示。 |
-| 是否需要进一步验证 | F-01 当前已补稳定 current-source preview DOM 节点/连线证据和同端口 live refresh 保存广播证据；后续只在 stream/store/hydration/socket workflow-updated/normalization/ReactFlow rendering 或 content block 默认参数逻辑改动后回归。D-01/D-02/D-03 和 E-03/E-04 后续作为回归保护；E 类若改 UI 字段展示，还需补属性面板浏览器回归。 |
+| 是否需要进一步验证 | F-01 当前已补稳定 current-source preview DOM 节点/连线证据和同端口 live refresh 保存广播证据；后续只在 stream/store/hydration/socket workflow-updated/normalization/ReactFlow rendering 或 content block 默认参数逻辑改动后回归。D-01/D-02/D-03 和 E-01/E-02/E-03/E-04 后续作为回归保护。 |
 
 ### 4. 生成写回和字段级 verify
 
@@ -184,8 +184,8 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | D-01 | current-source preview 浏览器级通过；历史失败为 `patch.operations is required` | tool boundary / patch / UI refresh | `canvas-tools.ts`、`canvas-patch.ts`、`canvas-verify.ts`、`content-block.tsx` | 后续作为回归保护：空白 workflow 出现 text/image/video/audio 四节点和三条顺序连接，UI 同步显示 |
 | D-02 | current-source preview 证据通过；选中 video 后新增 text 并连接 `video -> text` | planner + selection payload + connect | `planner.ts`、`user-input.tsx`、`canvas-verify.ts` | 后续作为回归保护：选中 video 后新增 text，连接 `video -> text`，不破坏已有边 |
 | D-03 | current-source preview 证据通过；选中 image 后新增 text 并连接 `text -> image` | target selection + connect | `planner.ts`、`canvas-patch.ts` | 后续作为回归保护：选中 image 后新增 text，连接 `text -> image` |
-| E-01 | 服务级通过；首轮 UI 显示不全待界定 | adapter / UI display | `node-adapters/text.ts`、`content-block.tsx` | state 中 `contentHtml` 完整；若 UI 截断，记录为独立 UI 问题 |
-| E-02 | 服务级通过；需浏览器字段展示回归 | planner field extraction | `planner.ts` | `aiPrompt` 不包含“把提示词改成”这类操作话术 |
+| E-01 | current-source preview 通过；已修复 rewrite 格式指令残片写入 | planner rewrite / adapter / UI display | `planner.ts`、`node-adapters/text.ts`、`content-block.tsx` | `contentHtml` 真实变化，ReactFlow DOM 显示更新正文，不包含 markdown/json/plain-text/system/user-request 等元指令残片 |
+| E-02 | current-source preview 通过；浏览器字段展示已补 | planner field extraction / UI display | `planner.ts`、`content-block.tsx` | `aiPrompt` 不包含“把提示词改成”这类操作话术；节点 AI composer 和属性面板 textarea 均显示更新 prompt，file 保留 |
 | E-03 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + verify | `planner.ts`、`canvas-verify.ts` | 后续作为回归保护：`videoParameters.duration = 5`，`videoPrompt` 含推进感，verify 成功 |
 | E-04 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + actor | `planner.ts`、`models/actor.ts` | 后续作为回归保护：更新 `audioPrompt`，不误读 video，不误走 generation |
 | F-01 | current-source preview 通过；已有 position 同步、旧 content-reference edge normalization、3007 DOM edge 复验证据，以及同端口保存广播后 DOM 约 1 秒同步证据 | UI refresh + workflow store hydration + ReactFlow position/edge reconcile | `copilot-tab.tsx`、`workflow.tsx`、`stores/workflows/registry/store.ts`、`hooks/use-collaborative-workflow.ts`、`stores/workflows/workflow/validation.ts`、`content-block.tsx` | 后端 state position/edges 变化，ReactFlow DOM transform 和 edge path 同步变化，无需刷新页面；节点和边不丢，回答与 verify 一致 |
@@ -637,8 +637,9 @@ bun run type-check
 1. A-01、A-02。
 2. B-01、B-03。
 3. C-01、C-02、C-03。
-4. E-01、E-02。
-5. H-01、H-02、H-03。
+4. H-01、H-02、H-03。
+
+E-01/E-02 当前已有 current-source preview state/verify/browser 字段展示证据；后续只在 text rewrite、image prompt extraction、content block、属性面板或 live refresh 改动后回归。
 
 每个手工用例必须观察：
 
