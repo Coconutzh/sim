@@ -417,11 +417,17 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
       // in-flight `publisher.publish` calls silently no-op (prevents
       // enqueueing on a closed controller).
       //
-      // Browser disconnect is NOT an abort — firing the controller
-      // here retroactively reclassifies in-flight successful streams
-      // as aborted and skips assistant persistence. Let the
+      // Browser disconnect is normally NOT an abort — firing the
+      // controller here retroactively reclassifies in-flight successful
+      // streams as aborted and skips assistant persistence. Let the
       // orchestrator drain naturally; publish no-ops post-disconnect.
       // Explicit Stop still fires the controller via /chat/abort.
+      //
+      // Local Canvas Agent still relies on the explicit /chat/abort
+      // side channel and abort marker poller for cancellation. The
+      // client may legitimately close the initial POST reader when it
+      // hands off to replay/batch polling; treating that normal handoff
+      // as abort cancels canvas edits before tools can run.
       publisher.markDisconnected()
     },
   })

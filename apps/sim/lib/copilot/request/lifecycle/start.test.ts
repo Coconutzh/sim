@@ -255,6 +255,51 @@ describe('createSSEStream terminal error handling', () => {
     )
   })
 
+  it('does not abort local canvas orchestration when the initial stream reader disconnects', async () => {
+    let capturedAbortSignal: AbortSignal | undefined
+    let resolveLifecycle!: () => void
+    const lifecycleStarted = new Promise<void>((resolve) => {
+      runCopilotLifecycle.mockImplementation(async (_payload, options) => {
+        capturedAbortSignal = options.abortSignal
+        resolve()
+        await new Promise<void>((resolveInner) => {
+          resolveLifecycle = resolveInner
+        })
+        return {
+          success: true,
+          content: 'OK',
+          contentBlocks: [],
+          toolCalls: [],
+        }
+      })
+    })
+
+    const stream = createSSEStream({
+      requestPayload: { message: 'hello', workflowCopilotMode: 'content_canvas_v1' },
+      userId: 'user-1',
+      streamId: 'stream-local-canvas',
+      executionId: 'exec-local-canvas',
+      runId: 'run-local-canvas',
+      currentChat: null,
+      isNewChat: false,
+      message: 'hello',
+      titleModel: 'gpt-5.4',
+      requestId: 'req-local-canvas-disconnect',
+      orchestrateOptions: {},
+    })
+
+    const reader = stream.getReader()
+    const readPromise = reader.read().catch(() => undefined)
+    await lifecycleStarted
+
+    await reader.cancel()
+
+    expect(capturedAbortSignal?.aborted).toBe(false)
+
+    resolveLifecycle()
+    await readPromise
+  })
+
   it('passes an OTel context into the streaming lifecycle', async () => {
     let lifecycleTraceparent = ''
     runCopilotLifecycle.mockImplementation(async (_payload, options) => {

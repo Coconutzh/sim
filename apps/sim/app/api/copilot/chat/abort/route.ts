@@ -92,6 +92,12 @@ export const POST = withRouteHandler((request: NextRequest) =>
       // cancelled by then.
       const aborted = await abortActiveStream(streamId)
       rootSpan.setAttribute(TraceAttr.CopilotAbortLocalAborted, aborted)
+      logger.info('Copilot chat abort requested', {
+        streamId,
+        ...(chatId ? { chatId } : {}),
+        reason: 'user_stop',
+        localAborted: aborted,
+      })
 
       let goAbortOk = false
       try {
@@ -127,6 +133,7 @@ export const POST = withRouteHandler((request: NextRequest) =>
       } catch (err) {
         logger.warn('Explicit abort marker request failed after local abort', {
           streamId,
+          ...(chatId ? { chatId } : {}),
           error: err instanceof Error ? err.message : String(err),
         })
       }
@@ -156,16 +163,39 @@ export const POST = withRouteHandler((request: NextRequest) =>
         )
         if (!settled) {
           rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.SettleTimeout)
+          logger.warn('Copilot chat abort did not settle before timeout', {
+            streamId,
+            chatId,
+            reason: 'user_stop',
+            localAborted: aborted,
+            goAbortOk,
+            settled: false,
+          })
           return NextResponse.json(
             { error: 'Previous response is still shutting down', aborted, settled: false },
             { status: 409 }
           )
         }
         rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.Settled)
+        logger.info('Copilot chat abort settled', {
+          streamId,
+          chatId,
+          reason: 'user_stop',
+          localAborted: aborted,
+          goAbortOk,
+          settled: true,
+        })
         return NextResponse.json({ aborted, settled: true })
       }
 
       rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.NoChatId)
+      logger.info('Copilot chat abort completed without chat id', {
+        streamId,
+        reason: 'user_stop',
+        localAborted: aborted,
+        goAbortOk,
+        settled: null,
+      })
       return NextResponse.json({ aborted })
     }
   )

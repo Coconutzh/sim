@@ -22,7 +22,12 @@ vi.mock('@/lib/copilot/request/otel', () => ({
     fn({ setAttribute: vi.fn() }),
 }))
 
-import { startAbortPoller } from '@/lib/copilot/request/session/abort'
+import {
+  abortActiveStream,
+  registerActiveStream,
+  startAbortPoller,
+  unregisterActiveStream,
+} from '@/lib/copilot/request/session/abort'
 
 describe('startAbortPoller heartbeat', () => {
   beforeEach(() => {
@@ -156,6 +161,27 @@ describe('startAbortPoller heartbeat', () => {
       expect(redisConfigMockFns.mockExtendLock).toHaveBeenCalledTimes(1)
     } finally {
       clearInterval(interval)
+    }
+  })
+})
+
+describe('active stream abort registry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('aborts a registered active stream controller', async () => {
+    const controller = new AbortController()
+    registerActiveStream('stream-active-1', controller)
+
+    try {
+      await expect(abortActiveStream('stream-active-1')).resolves.toBe(true)
+
+      expect(mockWriteAbortMarker).toHaveBeenCalledWith('stream-active-1')
+      expect(controller.signal.aborted).toBe(true)
+      await expect(abortActiveStream('stream-active-1')).resolves.toBe(false)
+    } finally {
+      unregisterActiveStream('stream-active-1')
     }
   })
 })

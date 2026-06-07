@@ -23,7 +23,21 @@ type InMemoryStreamBufferState = {
   expiresAt: number | null
 }
 
-const inMemoryStreamBuffers = new Map<string, InMemoryStreamBufferState>()
+type SessionBufferState = {
+  inMemoryStreamBuffers: Map<string, InMemoryStreamBufferState>
+}
+
+const sessionBufferGlobal = globalThis as typeof globalThis & {
+  __simCopilotSessionBufferState?: SessionBufferState
+}
+
+const sessionBufferState =
+  sessionBufferGlobal.__simCopilotSessionBufferState ??
+  (sessionBufferGlobal.__simCopilotSessionBufferState = {
+    inMemoryStreamBuffers: new Map<string, InMemoryStreamBufferState>(),
+  })
+
+const { inMemoryStreamBuffers } = sessionBufferState
 
 type RedisOperationMetadata = {
   operation: string

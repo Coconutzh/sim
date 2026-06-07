@@ -11,11 +11,31 @@ import { clearAbortMarker, hasAbortMarker, writeAbortMarker } from './buffer'
 
 const logger = createLogger('SessionAbort')
 
-const activeStreams = new Map<string, AbortController>()
-const pendingChatStreams = new Map<
-  string,
-  { promise: Promise<void>; resolve: () => void; streamId: string }
->()
+type PendingChatStreamEntry = {
+  promise: Promise<void>
+  resolve: () => void
+  streamId: string
+}
+
+type SessionAbortState = {
+  activeStreams: Map<string, AbortController>
+  pendingChatStreams: Map<string, PendingChatStreamEntry>
+  pollingStreams: Set<string>
+}
+
+const sessionAbortGlobal = globalThis as typeof globalThis & {
+  __simCopilotSessionAbortState?: SessionAbortState
+}
+
+const sessionAbortState =
+  sessionAbortGlobal.__simCopilotSessionAbortState ??
+  (sessionAbortGlobal.__simCopilotSessionAbortState = {
+    activeStreams: new Map<string, AbortController>(),
+    pendingChatStreams: new Map<string, PendingChatStreamEntry>(),
+    pollingStreams: new Set<string>(),
+  })
+
+const { activeStreams, pendingChatStreams, pollingStreams } = sessionAbortState
 
 const DEFAULT_ABORT_POLL_MS = 250
 
@@ -271,8 +291,6 @@ export type { AbortReasonValue } from './abort-reason'
  * stop.
  */
 export { AbortReason, isExplicitStopReason } from './abort-reason'
-
-const pollingStreams = new Set<string>()
 
 export function startAbortPoller(
   streamId: string,
