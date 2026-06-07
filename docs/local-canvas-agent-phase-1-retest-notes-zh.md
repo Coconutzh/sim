@@ -6043,3 +6043,71 @@ edgePathCount: 5
 ```
 
 结论：H-01/H-02/H-03 当前源码 preview 安全边界通过。三类请求均未调用 mutation/generation，workflow state hash 不变，页面侧 ReactFlow 节点和连接没有损坏。后续只在 planner safety、unsupported-node guard、manual-confirm destructive flow 或 canvas mutation tool guard 改动后回归。
+
+## 2026-06-08 03:03 B-01/B-03 current-source preview 选中节点 detail 复验
+
+继续复用 3007 current-source preview，补强选中节点 detail 证据。为避免 PowerShell 管道编码问题，请求脚本继续使用 Unicode escape 构造中文 message。
+
+基线：
+
+```text
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+state hash: a32bd16296cf37a920d7674d84d747522bc4d2b51e80735e26d446a72a06958c
+state: 7 blocks / 5 edges
+```
+
+### B-01 选中文本节点理解
+
+前置：选中文本节点 `a4660798-e240-48da-9367-49a5bc19599b`。
+
+输入：
+
+```text
+基于我选中的节点，提炼 3 个关键卖点。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_selected_nodes
+canvas.apply_patch: false
+canvas.verify_patch: false
+canvas.generate_node_output: false
+state hash: unchanged
+blocks/edges: 7/5 -> 7/5
+assistant target: 春季发布会主视觉文案（文本）
+assistant evidence: 万物复苏，破界生长；极光绿、晨曦粉与液态银；螺旋向上的流体几何形态
+```
+
+结论：B-01 current-source preview API/SSE 通过。选中文本节点 detail 可读到真实长文本关键词，不修改画布。
+
+### B-03 选中视频节点理解和文件脱敏
+
+前置：选中视频节点 `394dd61c-8fac-4d20-a5b7-17bdfe901a3e`。
+
+输入：
+
+```text
+检查这个视频节点的生成设置是否完整。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_selected_nodes
+canvas.apply_patch: false
+canvas.verify_patch: false
+canvas.generate_node_output: false
+state hash: unchanged
+blocks/edges: 7/5 -> 7/5
+assistant target: 视频节点（视频）
+assistant fields: videoPrompt 已填写；模型族 wan2.7；时长 5 秒；分辨率 720P；已有生成文件 generated-video (2).mp4
+SSE/final answer forbidden values:
+  workspace/: false
+  /api/files/serve: false
+  workspace%2F: false
+```
+
+结论：B-03 current-source preview API/SSE 通过。选中视频节点 detail 包含完整生成设置，agent-visible 输出只暴露安全文件名，不暴露 storage key、serve URL 或 path。

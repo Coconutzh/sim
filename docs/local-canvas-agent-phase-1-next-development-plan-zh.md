@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 B-01/B-03 已补 current-source preview 选中节点 detail 和文件脱敏 API/SSE 证据，F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做剩余读画布/搜索类浏览器补强和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -96,9 +96,9 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 对应测试编号 | B-01、B-02、B-03、B-04、D-02、D-03、E-01、E-02、E-03、E-04 |
 | 当前失败表现 | B-02 曾把只读说明误判为创建 `new_text_after_selection`；B-04 曾选中 audio 却答成 video；D-02/D-03/E-03/E-04 依赖正确目标节点选择。 |
 | 相关代码位置 | `context-manager.ts`：`extractSelectedNodeIds()`；`planner.ts`：`resolveTargetSelectedNode()`、`isSelectionScopedCreateTextRequest()`、`buildSelectedUpdatePatch()`；`models/actor.ts`：只读回答；`user-input.tsx`：`buildAutoSelectionContexts()`、`confirmationMode`、`thinkingLevel`；`copilot-tab.tsx`：右侧 Copilot 固定 `workflowCopilotMode: 'content_canvas_v1'`。 |
-| 当前代码状态 | `context-manager.ts` 从 `autoSelectionContexts`、`contexts`、`selectedContexts`、`selectedNodeIds` 汇总 selected node ids。`planner.ts` 会按用户话语中的 kind 偏好选择 text/image/video/audio，并把只读意图与“补节点”意图分开。B-02/B-04 已有 preview 浏览器证据：真实 ReactFlow 选中 image/audio 后，Network payload 的 `autoSelectionContexts.blockIds` 正确，回答目标正确，workflow state 不变。 |
+| 当前代码状态 | `context-manager.ts` 从 `autoSelectionContexts`、`contexts`、`selectedContexts`、`selectedNodeIds` 汇总 selected node ids。`planner.ts` 会按用户话语中的 kind 偏好选择 text/image/video/audio，并把只读意图与“补节点”意图分开。B-02/B-04 已有 preview 浏览器证据：真实 ReactFlow 选中 image/audio 后，Network payload 的 `autoSelectionContexts.blockIds` 正确，回答目标正确，workflow state 不变。2026-06-08 3007 current-source preview API/SSE 又补 B-01/B-03：选中文本可提炼真实长文本关键词，选中视频可读取 videoPrompt、模型族、参数和安全文件名，均不修改 state。 |
 | 根因假设 | 原失败来自 intent 分类和目标节点选择过粗；当前剩余风险转到 D/E 类写入任务：同一选中上下文下，planner 是否持续把更新写到正确 nodeId 和字段。 |
-| 是否需要进一步验证 | B-02/B-04 已有浏览器级证据，后续只在 selection、Copilot tab、`UserInput` payload 或 planner target 变动后回归。D-02/D-03 已同步 current-source preview 证据；E-03/E-04 已有 current-source preview API/state 字段写入证据，仍可补强右侧属性面板浏览器展示。 |
+| 是否需要进一步验证 | B-01/B-02/B-03/B-04 均已有 current-source 或 preview 证据；后续只在 selection、Copilot tab、`UserInput` payload、node adapter、file redaction 或 planner target 变动后回归。D-02/D-03 已同步 current-source preview 证据；E-03/E-04 已有 current-source preview API/state 字段写入证据，仍可补强右侧属性面板浏览器展示。 |
 
 ### 3. 创建 / 更新 / 连接 / 布局 patch 可靠性
 
