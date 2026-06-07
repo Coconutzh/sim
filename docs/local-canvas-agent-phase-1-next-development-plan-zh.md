@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 B-01/B-03 已补 current-source preview 选中节点 detail 和文件脱敏 API/SSE 证据，F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做剩余读画布/搜索类浏览器补强和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 B-01/B-03 已补 current-source preview 选中节点 detail 和文件脱敏 API/SSE 证据，C-01/C-02/C-03 已补 current-source preview 只读理解 API/SSE 和浏览器 DOM 未损坏证据，F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容、3007 current-source preview DOM 连接复验证据和同端口保存广播 live refresh 证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做剩余 A/E 类浏览器补强和验收文档收尾。
 
 ## 一、当前问题归并
 

@@ -6169,3 +6169,96 @@ Start: translate(-220px, -320px)
 恢复后同页 DOM 又同步回 `y=-360`，节点数量和连线数量保持 7 / 5。
 
 结论：F-01 current-source preview live refresh 通过。后端 state 保存并广播后，当前 ReactFlow 页面无需刷新即可在约 1 秒内同步节点位置；恢复操作同样同步。`canvas.apply_patch` 的保存后广播链路与本次可控 PUT 路径同样落到 `/api/workflow-updated`，同时右侧 Copilot 还有 tool-result / stream-end / send-settled 的 `loadWorkflowState()` 兜底。后续只在 `editWorkflowServerTool` 保存通知、workflow state API、socket workflow-updated、`useCollaborativeWorkflow` reload、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` display nodes 或 `reconcileDisplayNodePositions()` 改动后回归。
+
+## 2026-06-08 03:34 C-01/C-02/C-03 current-source preview 只读理解复验
+
+继续复用 3007 current-source preview workflow：
+
+```text
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+baseline state hash: f7151cf9881db017687330bae91d20a023079491386674e5ebbd834ee964d991
+state: 7 blocks / 5 edges
+```
+
+### C-01 搜索节点
+
+输入：
+
+```text
+找到包含“春季发布会主视觉”的节点，并说明它连接到了哪里。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_summary, canvas.search_nodes
+canvas.apply_patch: false
+canvas.verify_patch: false
+canvas.generate_node_output: false
+state hash: unchanged
+assistant target: 春季发布会主视觉文案（文本）
+assistant connection: 作为 source，连接到 视觉画面（图片）
+```
+
+结论：C-01 current-source preview API/SSE 通过。原始关键词能定位正确 text 节点，并说明它通过 content-reference 连接到图片节点；不修改画布。
+
+### C-02 图片下游理解
+
+输入：
+
+```text
+找出图片节点后面的所有节点，并说明它们各自承担什么作用。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_summary
+canvas.apply_patch: false
+canvas.verify_patch: false
+canvas.generate_node_output: false
+state hash: unchanged
+assistant downstream:
+  视觉画面（图片） -> 视频节点（视频）
+  视频节点（视频） -> 音频节点（音频）
+  视频节点（视频） -> 补充文案（文本）
+```
+
+结论：C-02 current-source preview API/SSE 通过。agent 沿连接关系解释图片后的内容链，不修改画布。
+
+### C-03 孤立节点识别
+
+输入：
+
+```text
+当前画布有没有孤立节点？如果有，请说明它们可能应该连到哪里。
+```
+
+结果：
+
+```text
+HTTP 200
+tools: canvas.read_summary
+canvas.apply_patch: false
+canvas.verify_patch: false
+canvas.generate_node_output: false
+state hash: unchanged
+assistant isolated: Start（generic_workflow_block）
+assistant safety: 建议先根据内容语义手动确认连接方向；不会在未确认的情况下自动改动连接
+```
+
+结论：C-03 current-source preview API/SSE 通过。当前复测画布中只有 Start 未接入 content-reference 链；agent 只建议，不自动修改。
+
+复测后同一 3007 页签 CDP 抽样：
+
+```text
+appError: false
+reactFlowPresent: true
+nodeCount: 7
+edgeCount: 5
+edgePathCount: 5
+```
+
+总结：C-01/C-02/C-03 当前源码只读理解通过。三条请求均未调用 mutation/generation，workflow state hash 不变，页面侧 ReactFlow 节点和连接保持完整。后续只在 `canvas.read_summary`、`canvas.search_nodes`、edge summarization、actor answer 或 node adapter summary 改动后回归。
