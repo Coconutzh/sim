@@ -185,6 +185,11 @@ function extractStoredValue<T>(source: StoredValueRecord, key: string, fallback:
   return (rawValue ?? fallback) as T
 }
 
+function coerceNumber(value: unknown, fallback: number): number {
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numericValue) ? numericValue : fallback
+}
+
 function clampTextWidth(value: number): number {
   return Math.max(MIN_TEXT_WIDTH, Math.min(MAX_TEXT_WIDTH, value))
 }
