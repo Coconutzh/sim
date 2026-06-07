@@ -17,11 +17,11 @@ import {
   CopilotBackendError,
   runStreamLoop,
 } from '@/lib/copilot/request/go/stream'
+import { runLocalCanvasAgent } from '@/lib/copilot/request/lifecycle/local-canvas-agent'
 import {
   runLocalWorkflowFallback,
   shouldUseLocalWorkflowFallback,
 } from '@/lib/copilot/request/lifecycle/local-workflow-fallback'
-import { runContentCanvasAgent } from '@/lib/copilot/request/lifecycle/content-canvas-agent'
 import {
   getToolCallTerminalData,
   requireToolCallStateResult,
@@ -141,7 +141,7 @@ export async function runCopilotLifecycle(
 
   try {
     if (requestPayload.workflowCopilotMode === 'content_canvas_v1') {
-      await runContentCanvasAgent({
+      await runLocalCanvasAgent({
         requestPayload,
         context,
         execContext,

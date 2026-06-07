@@ -1,0 +1,1134 @@
+import { z } from 'zod'
+import {
+  loadCanvasSnapshot,
+  readCanvasNodeDetail,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
+import { buildTokenAwareLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
+import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
+import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
+import type {
+  CanvasSnapshot,
+  LocalAgentContext,
+  LocalAgentPlan,
+  LocalAgentToolName,
+  LocalCanvasNodeKind,
+  LocalCanvasPatch,
+  LocalCanvasToolName,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+
+const plannerResponseSchema = z.object({
+  goal: z.string().catch(''),
+  risk: z.enum(['low', 'medium', 'high']).catch('low'),
+  requiresClarification: z.boolean().catch(false),
+  clarificationQuestion: z.string().optional(),
+  steps: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        intent: z.enum(['inspect', 'create', 'update', 'connect', 'generate', 'verify', 'answer']),
+        toolHints: z.array(
+          z.enum([
+            'canvas.read_summary',
+            'canvas.read_node',
+            'canvas.read_selected_nodes',
+            'canvas.search_nodes',
+            'canvas.inspect_schema',
+            'canvas.propose_patch',
+            'canvas.apply_patch',
+            'canvas.verify_patch',
+            'canvas.generate_node_output',
+            'read_file',
+            'search_workspace',
+            'materialize_file',
+            'query_knowledge',
+            'search_docs',
+            'read_tasks',
+            'update_task_result',
+            'submit_task_result',
+          ])
+        ),
+        expectedObservation: z.string(),
+      })
+    )
+    .catch([]),
+  successCriteria: z.array(z.string()).catch([]),
+  patch: z.unknown().optional(),
+  generateNodeIds: z.array(z.string()).optional(),
+  readNodeIds: z.array(z.string()).optional(),
+})
+
+function parseJsonObject(content: string): unknown {
+  const trimmed = content.trim()
+  if (!trimmed) return null
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    const match = trimmed.match(/\{[\s\S]*\}/)
+    return match ? JSON.parse(match[0]) : null
+  }
+}
+
+function includesAny(message: string, terms: string[]): boolean {
+  const normalized = message.toLowerCase()
+  return terms.some((term) => normalized.includes(term.toLowerCase()))
+}
+
+const REQUESTED_KIND_TERMS: Array<{ kind: LocalCanvasNodeKind; terms: string[] }> = [
+  { kind: 'image', terms: ['图片', '图像', '视觉', '主视觉', 'image'] },
+  { kind: 'video', terms: ['视频', '镜头', '画面动态', 'video'] },
+  { kind: 'audio', terms: ['音频', '音乐', '配乐', '声音', 'audio', 'music'] },
+  { kind: 'text', terms: ['文本', '文案', '脚本', '口播', 'caption', 'copy', 'text'] },
+]
+
+function inferRequestedKinds(message: string): LocalCanvasNodeKind[] {
+  const normalized = message.toLowerCase()
+  return REQUESTED_KIND_TERMS.map(({ kind, terms }) => {
+    const indexes = terms
+      .map((term) => normalized.indexOf(term.toLowerCase()))
+      .filter((index) => index >= 0)
+    return indexes.length ? { kind, index: Math.min(...indexes) } : null
+  })
+    .filter((item): item is { kind: LocalCanvasNodeKind; index: number } => Boolean(item))
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.kind)
+}
+
+function inferTextCreateAnchorKinds(message: string): LocalCanvasNodeKind[] {
+  const requested = inferRequestedKinds(message).filter((kind) => kind !== 'text')
+  return requested.length ? requested : ['text', 'image', 'video', 'audio']
+}
+
+function resolveTargetSelectedNode(params: {
+  snapshot: CanvasSnapshot
+  selectedNodeIds: string[]
+  message: string
+  preferredKinds?: LocalCanvasNodeKind[]
+}): string | undefined {
+  const selectedSet = new Set(params.selectedNodeIds)
+  const selectedNodes = params.snapshot.nodes.filter((node) => selectedSet.has(node.id))
+  const preferredKinds = params.preferredKinds ?? inferRequestedKinds(params.message)
+  for (const kind of preferredKinds) {
+    const matched = selectedNodes.find((node) => node.kind === kind)
+    if (matched) return matched.id
+  }
+  return params.selectedNodeIds[0]
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function textToContentHtml(value: string): string {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+  return paragraphs.length
+    ? paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
+    : '<p></p>'
+}
+
+function buildDeterministicRewrite(params: { currentText: string }): string {
+  const source = params.currentText.trim()
+  const core = source
+    .split(/[。！？!?]/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 8 && !item.includes('方案'))
+  return [
+    core
+      ? `${core}，现在用更直接、更有节奏的方式说给年轻用户听。`
+      : '把灵感打开，用更轻、更快、更有画面感的方式进入主题。',
+    '别等以后，就现在出发。把体验、效率和态度一次拉满，让每一次点击都更有爽感。',
+    '适合短视频口播：节奏更快，表达更短，重点更清楚。',
+  ].join('\n')
+}
+
+function hasPersonaLeak(value: string): boolean {
+  return /(?:我是|作为|这里是).{0,18}(?:agent|代理|助手|角色|负责人|统筹|导演)|(?:各位|各组|团队|成员).{0,18}(?:注意|同步|请看|请确认|大家)|(?:以|用).{0,12}(?:agent|代理|角色|负责人|统筹|导演).{0,12}(?:身份|口吻|视角)/i.test(
+    value
+  )
+}
+
+async function rewriteSelectedTextContent(params: {
+  context: LocalAgentContext
+  snapshot: CanvasSnapshot
+  nodeId: string
+}): Promise<string> {
+  const detail = readCanvasNodeDetail(
+    params.snapshot,
+    params.nodeId,
+    params.context.selectedNodeIds
+  )
+  const currentText = detail?.textContent?.trim() || detail?.summary || ''
+  try {
+    const response = await executeLocalAgentModelRequest(params.context.model, {
+      role: 'actor',
+      workspaceId: params.context.workspaceId,
+      systemPrompt: [
+        'You rewrite selected canvas text for the user.',
+        'Return only the rewritten copy in Chinese. Do not introduce yourself, do not mention any agent role, and do not include JSON or markdown.',
+      ].join('\n'),
+      prompt: [
+        `User request:\n${params.context.message}`,
+        `Current selected text:\n${currentText}`,
+        'Rewrite the selected text so it satisfies the request. Keep it suitable for writing back to a text canvas node.',
+      ].join('\n\n'),
+      temperature: 0.35,
+      maxTokens: 1200,
+      abortSignal: params.context.options.abortSignal,
+    })
+    const rewritten = response.content?.trim()
+    if (rewritten && !hasPersonaLeak(rewritten)) {
+      return rewritten
+    }
+  } catch {}
+  return buildDeterministicRewrite({ currentText })
+}
+
+function parseDurationSeconds(message: string): number | null {
+  const match = message.match(/(\d+(?:\.\d+)?)\s*(?:秒|s|sec|second)/i)
+  if (!match) return null
+  const value = Number(match[1])
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function extractFieldInstruction(message: string): string {
+  const cleaned = message
+    .replace(
+      /把\s*(?:这个|当前|选中(?:的)?)?\s*(?:图片|图像|视频|音频|音乐|配乐|节点)?\s*(?:节点)?\s*(?:的)?/g,
+      ''
+    )
+    .replace(/(?:提示词|prompt|视频时长|时长|音乐方向|音频方向)\s*/gi, '')
+    .replace(/改成|修改成|调整成|优化成|改为|修改为|调整为|优化为/g, '')
+    .replace(/^[，,。.\s]+/, '')
+    .trim()
+  return cleaned || message.trim()
+}
+
+function mergePromptInstruction(existingPrompt: string, instruction: string): string {
+  const normalizedInstruction = instruction.trim()
+  if (!existingPrompt.trim()) return normalizedInstruction
+  if (!normalizedInstruction || existingPrompt.includes(normalizedInstruction))
+    return existingPrompt
+  return [existingPrompt.trim(), normalizedInstruction].join('\n')
+}
+
+function getNodePosition(snapshot: CanvasSnapshot, nodeId: string): { x: number; y: number } {
+  return snapshot.nodes.find((node) => node.id === nodeId)?.position ?? { x: 0, y: 0 }
+}
+
+function isSelectionScopedUpdateRequest(message: string): boolean {
+  return (
+    includesAny(message, ['选中', '当前节点', '这个节点', 'this node', 'selected']) &&
+    isUpdateRequest(message)
+  )
+}
+
+function isUpdateRequest(message: string): boolean {
+  return includesAny(message, ['修改', '改成', '优化', 'rewrite', 'update', '调整'])
+}
+
+function isSelectionScopedReadRequest(message: string): boolean {
+  return includesAny(message, ['选中', '当前节点', '这个节点', 'this node', 'selected'])
+}
+
+function isSelectedGenerationRequest(message: string): boolean {
+  if (includesAny(message, ['检查', '判断', '分析', '是否完整', '设置是否完整'])) return false
+  return (
+    includesAny(message, ['生成', 'generate']) &&
+    includesAny(message, ['这个节点', '选中', '当前节点', '写回', 'aiPrompt', 'prompt', '内容'])
+  )
+}
+
+function isSelectionScopedCreateTextRequest(message: string): boolean {
+  return (
+    includesAny(message, ['文案', 'copy', 'caption', '口播', '文本']) &&
+    includesAny(message, [
+      '补',
+      '创建',
+      '新建',
+      '加一个',
+      '加上',
+      '写一段',
+      '接到',
+      '连接',
+      '前面',
+      '后面',
+      '后续',
+      '结尾',
+      'before',
+      'after',
+      'create',
+    ]) &&
+    !includesAny(message, ['说明它', '说明一下', '分析', '检查', '判断', '适合接什么'])
+  )
+}
+
+function wantsBeforeSelectedNode(message: string): boolean {
+  return includesAny(message, ['前面', '前置', '之前', '上游', 'before'])
+}
+
+function isSearchRequest(message: string): boolean {
+  return includesAny(message, ['找到', '搜索', '包含', '含有', '定位', 'search'])
+}
+
+function isConnectionReasoningRequest(message: string): boolean {
+  return includesAny(message, ['下游', '上游', '后面', '前面', '连接到了', '连到', '连接关系'])
+}
+
+function isIsolatedNodeRequest(message: string): boolean {
+  return includesAny(message, ['孤立', '未连接', '没有连接', '没连接', 'isolated'])
+}
+
+function isDestructiveCanvasRequest(message: string): boolean {
+  return (
+    includesAny(message, ['删除', '删掉', '清空', '移除', 'delete', 'remove', 'clear']) &&
+    includesAny(message, ['所有', '全部', '整个', '全都', 'all', 'everything', '画布'])
+  )
+}
+
+function inferContextToolHints(context: LocalAgentContext): LocalAgentToolName[] {
+  const message = context.message
+  const hints: LocalAgentToolName[] = []
+  if (
+    includesAny(message, [
+      '附件',
+      '文件',
+      '上传',
+      'brief',
+      'pdf',
+      'doc',
+      'file',
+      '@file',
+      '@文件',
+    ]) ||
+    context.attachments?.length
+  ) {
+    hints.push('read_file')
+  }
+  if (
+    includesAny(message, [
+      '保存附件',
+      '保存文件',
+      '持久化文件',
+      '导入文件',
+      '导入 workflow',
+      '导入工作流',
+      'materialize',
+      'import file',
+      'save file',
+    ])
+  ) {
+    hints.push('materialize_file')
+  }
+  if (
+    includesAny(message, [
+      '知识库',
+      '知识',
+      '规范',
+      '品牌规范',
+      'brand guide',
+      'knowledge',
+      '@knowledge',
+    ])
+  ) {
+    hints.push('query_knowledge')
+  }
+  if (
+    includesAny(message, ['文档', '说明文档', '帮助', '怎么用', 'docs', 'documentation', '@docs'])
+  ) {
+    hints.push('search_docs')
+  }
+  if (
+    includesAny(message, ['提交任务', '提交结果', '提交当前节点', 'submit task', 'submit result'])
+  ) {
+    hints.push('submit_task_result')
+  } else if (includesAny(message, ['更新任务', '开始任务', '标记任务', 'update task'])) {
+    hints.push('update_task_result')
+  }
+  if (
+    includesAny(message, [
+      '任务',
+      '待办',
+      '提交',
+      '审核',
+      '生产任务',
+      'production task',
+      'task',
+      'todo',
+    ])
+  ) {
+    hints.push('read_tasks')
+  }
+  if (includesAny(message, ['工作区', '项目里', '有哪些文件', 'workspace', 'inventory', '资源'])) {
+    hints.push('search_workspace')
+  }
+  return [...new Set(hints)]
+}
+
+function buildContextInspectionPlan(
+  context: LocalAgentContext,
+  toolHints: LocalAgentToolName[]
+): LocalAgentPlan {
+  const hasContextMutation = toolHints.some(
+    (toolHint) =>
+      toolHint === 'materialize_file' ||
+      toolHint === 'update_task_result' ||
+      toolHint === 'submit_task_result'
+  )
+  return {
+    goal: context.message || 'Read local agent context',
+    risk: hasContextMutation ? 'medium' : 'low',
+    requiresClarification: false,
+    steps: [
+      {
+        id: 'inspect_context',
+        title: hasContextMutation
+          ? 'Execute requested local context action'
+          : 'Read requested local context',
+        intent: hasContextMutation ? 'update' : 'inspect',
+        toolHints,
+        expectedObservation:
+          'Requested file, workspace, knowledge, docs, or task context action is completed',
+      },
+      {
+        id: 'answer_context',
+        title: 'Answer from local context',
+        intent: 'answer',
+        toolHints: [],
+        expectedObservation: 'User receives a concise answer from the retrieved context',
+      },
+    ],
+    successCriteria: [
+      hasContextMutation
+        ? 'Execute the explicitly requested local context action without modifying the canvas'
+        : 'Answer using retrieved local context without modifying the canvas',
+    ],
+  }
+}
+
+function extractExplicitNodeIds(message: string): string[] {
+  const quoted = [...message.matchAll(/[“"']([^”"']{3,120})[”"']/g)]
+    .map((match) => match[1]?.trim())
+    .filter((value): value is string => Boolean(value))
+  const unquoted = [
+    ...message.matchAll(/\b(?:node|block|content)[-_][a-zA-Z0-9][a-zA-Z0-9_-]{2,}\b/g),
+  ]
+    .map((match) => match[0])
+    .filter(Boolean)
+  return [...new Set([...quoted, ...unquoted])]
+}
+
+function buildExplicitReadNodePlan(context: LocalAgentContext, nodeIds: string[]): LocalAgentPlan {
+  return {
+    goal: context.message || 'Read an explicitly referenced canvas node',
+    risk: 'low',
+    requiresClarification: false,
+    steps: [
+      {
+        id: 'read_explicit_node',
+        title: 'Read explicitly referenced node',
+        intent: 'inspect',
+        toolHints: ['canvas.read_node'],
+        expectedObservation:
+          'Explicitly referenced node detail is available or a not-found error is returned',
+      },
+    ],
+    successCriteria: ['Do not modify the canvas unless the explicitly referenced node exists'],
+    readNodeIds: nodeIds,
+  }
+}
+
+function buildReadonlySelectedWriteRefusalPlan(params: {
+  context: LocalAgentContext
+  detailKind: string
+}): LocalAgentPlan {
+  return {
+    goal: params.context.message || 'Refuse unsupported selected node write',
+    risk: 'low',
+    requiresClarification: true,
+    clarificationQuestion: `我可以读取当前选中的 ${params.detailKind} 节点，但第一版暂不支持写入这种节点类型。请换成 text/image/video/audio 内容节点，或只让我做摘要和分析。`,
+    steps: [
+      {
+        id: 'refuse_readonly_selected_write',
+        title: 'Refuse unsupported selected node write',
+        intent: 'answer',
+        toolHints: [],
+        expectedObservation: 'Selected node type is read-only or unsupported for writes',
+      },
+    ],
+    successCriteria: ['No canvas patch is executed for read-only selected nodes'],
+  }
+}
+
+async function buildSelectedUpdatePatch(params: {
+  context: LocalAgentContext
+  snapshot: CanvasSnapshot
+  nodeId: string
+}): Promise<LocalCanvasPatch | undefined> {
+  const detail = readCanvasNodeDetail(
+    params.snapshot,
+    params.nodeId,
+    params.context.selectedNodeIds
+  )
+  if (!detail) return undefined
+
+  if (detail.kind === 'text') {
+    const rewrittenText = await rewriteSelectedTextContent(params)
+    return {
+      reason: 'Update selected text node',
+      operations: [
+        {
+          type: 'update_node',
+          nodeId: params.nodeId,
+          fields: {
+            aiPrompt: params.context.message,
+            contentHtml: textToContentHtml(rewrittenText),
+          },
+        },
+      ],
+    }
+  }
+
+  if (detail.kind === 'image') {
+    const existingPrompt =
+      typeof detail.fields.aiPrompt === 'string' ? detail.fields.aiPrompt.trim() : ''
+    const instruction = extractFieldInstruction(params.context.message)
+    return {
+      reason: 'Update selected image prompt',
+      operations: [
+        {
+          type: 'update_node',
+          nodeId: params.nodeId,
+          fields: {
+            aiPrompt: mergePromptInstruction(existingPrompt, instruction),
+          },
+        },
+      ],
+    }
+  }
+
+  if (detail.kind === 'video') {
+    const existingPrompt =
+      typeof detail.fields.videoPrompt === 'string' ? detail.fields.videoPrompt.trim() : ''
+    const existingParameters =
+      detail.fields.videoParameters && typeof detail.fields.videoParameters === 'object'
+        ? detail.fields.videoParameters
+        : {}
+    const duration = parseDurationSeconds(params.context.message)
+    const instruction = extractFieldInstruction(params.context.message)
+    return {
+      reason: 'Update selected video settings',
+      operations: [
+        {
+          type: 'update_node',
+          nodeId: params.nodeId,
+          fields: {
+            videoPrompt: mergePromptInstruction(existingPrompt, instruction),
+            videoParameters: {
+              ...existingParameters,
+              ...(duration ? { duration } : {}),
+            },
+          },
+        },
+      ],
+    }
+  }
+
+  if (detail.kind === 'audio') {
+    const existingPrompt =
+      typeof detail.fields.audioPrompt === 'string' ? detail.fields.audioPrompt.trim() : ''
+    const instruction = extractFieldInstruction(params.context.message)
+    return {
+      reason: 'Update selected audio prompt',
+      operations: [
+        {
+          type: 'update_node',
+          nodeId: params.nodeId,
+          fields: {
+            audioPrompt: mergePromptInstruction(existingPrompt, instruction),
+          },
+        },
+      ],
+    }
+  }
+
+  return undefined
+}
+
+async function buildFallbackPatch(
+  context: LocalAgentContext,
+  snapshot: CanvasSnapshot
+): Promise<LocalCanvasPatch | undefined> {
+  const message = context.message
+  const wantsChain = includesAny(message, ['完整短视频', '内容链', '一组', 'chain', 'storyboard'])
+  if (wantsChain) {
+    return {
+      reason: 'Create a complete content chain from the current canvas request',
+      operations: [
+        {
+          type: 'create_node',
+          clientNodeId: 'new_script',
+          kind: 'text',
+          title: '短视频脚本',
+          position: { x: 0, y: 0 },
+          fields: {
+            aiPrompt: message,
+            contentHtml: `<p>${message}</p>`,
+          },
+        },
+        {
+          type: 'create_node',
+          clientNodeId: 'new_image',
+          kind: 'image',
+          title: '视觉画面',
+          position: { x: 360, y: 0 },
+          fields: { aiPrompt: message },
+        },
+        {
+          type: 'create_node',
+          clientNodeId: 'new_video',
+          kind: 'video',
+          title: '视频节点',
+          position: { x: 720, y: 0 },
+          fields: { videoPrompt: message },
+        },
+        {
+          type: 'create_node',
+          clientNodeId: 'new_audio',
+          kind: 'audio',
+          title: '音频节点',
+          position: { x: 1080, y: 0 },
+          fields: { audioPrompt: message },
+        },
+        { type: 'connect', sourceNodeId: 'new_script', targetNodeId: 'new_image' },
+        { type: 'connect', sourceNodeId: 'new_image', targetNodeId: 'new_video' },
+        { type: 'connect', sourceNodeId: 'new_video', targetNodeId: 'new_audio' },
+      ],
+    }
+  }
+
+  const selected = resolveTargetSelectedNode({
+    snapshot,
+    selectedNodeIds: context.selectedNodeIds,
+    message,
+  })
+  if (selected && isUpdateRequest(message)) {
+    return buildSelectedUpdatePatch({ context, snapshot, nodeId: selected })
+  }
+
+  const textCreateTarget = resolveTargetSelectedNode({
+    snapshot,
+    selectedNodeIds: context.selectedNodeIds,
+    message,
+    preferredKinds: inferTextCreateAnchorKinds(message),
+  })
+  if (textCreateTarget && isSelectionScopedCreateTextRequest(message)) {
+    const selected = textCreateTarget
+    const selectedPosition = getNodePosition(snapshot, selected)
+    const before = wantsBeforeSelectedNode(message)
+    const clientNodeId = before ? 'new_text_before_selection' : 'new_text_after_selection'
+    return {
+      reason: 'Create a text node from the selected canvas node',
+      operations: [
+        {
+          type: 'create_node',
+          clientNodeId,
+          kind: 'text',
+          title: before ? '创意说明' : '补充文案',
+          position: {
+            x: selectedPosition.x + (before ? -360 : 360),
+            y: selectedPosition.y,
+          },
+          fields: {
+            aiPrompt: message,
+            contentHtml: `<p>${message}</p>`,
+          },
+        },
+        before
+          ? { type: 'connect', sourceNodeId: clientNodeId, targetNodeId: selected }
+          : { type: 'connect', sourceNodeId: selected, targetNodeId: clientNodeId },
+      ],
+    }
+  }
+
+  if (includesAny(message, ['整理', '布局', 'layout', '排列'])) {
+    return {
+      reason: 'Lay out current canvas nodes',
+      operations: [{ type: 'layout_nodes', direction: 'horizontal' }],
+    }
+  }
+
+  return undefined
+}
+
+async function buildFallbackPlan(
+  context: LocalAgentContext,
+  snapshot: CanvasSnapshot
+): Promise<LocalAgentPlan> {
+  if (isDestructiveCanvasRequest(context.message)) {
+    return {
+      goal: context.message || 'Handle destructive canvas request',
+      risk: 'high',
+      requiresClarification: true,
+      clarificationQuestion:
+        '这个请求会破坏当前画布的大量内容，我不会直接执行。请明确说明要删除的具体节点，或先在手动确认模式下给出可审查的删除范围。',
+      steps: [
+        {
+          id: 'guard_destructive_request',
+          title: 'Guard destructive canvas request',
+          intent: 'answer',
+          toolHints: ['canvas.read_summary'],
+          expectedObservation: 'Destructive request is not executed without explicit scope',
+        },
+      ],
+      successCriteria: ['No destructive canvas change is executed without explicit confirmation'],
+    }
+  }
+
+  if (context.selectedNodeIds.length === 0 && isSelectionScopedUpdateRequest(context.message)) {
+    return {
+      goal: context.message || 'Update selected canvas node',
+      risk: 'low',
+      requiresClarification: true,
+      clarificationQuestion:
+        '我没有收到当前选中的画布节点。请先选中要修改的内容节点，再发送这条修改需求。',
+      steps: [
+        {
+          id: 'clarify_selection',
+          title: 'Ask for selected node',
+          intent: 'answer',
+          toolHints: [],
+          expectedObservation: 'User selects a node before modification',
+        },
+      ],
+      successCriteria: ['A selected node is available before modifying the canvas'],
+    }
+  }
+
+  if (context.selectedNodeIds.length === 0 && isSelectionScopedReadRequest(context.message)) {
+    return {
+      goal: context.message || 'Read selected canvas node',
+      risk: 'low',
+      requiresClarification: true,
+      clarificationQuestion:
+        '我没有收到当前选中的画布节点。请先在画布上选中要分析的内容节点，再发送这条需求。',
+      steps: [
+        {
+          id: 'clarify_selected_read',
+          title: 'Ask for selected node before analysis',
+          intent: 'answer',
+          toolHints: [],
+          expectedObservation: 'User selects a node before selected-node analysis',
+        },
+      ],
+      successCriteria: ['A selected node is available before selected-node analysis'],
+    }
+  }
+
+  if (context.selectedNodeIds.length === 0 && isSelectedGenerationRequest(context.message)) {
+    return {
+      goal: context.message || 'Generate selected node output',
+      risk: 'low',
+      requiresClarification: true,
+      clarificationQuestion:
+        '我没有收到当前选中的画布节点。请先选中要生成并写回的内容节点，再发送生成请求。',
+      steps: [
+        {
+          id: 'clarify_generation_selection',
+          title: 'Ask for selected node before generation',
+          intent: 'answer',
+          toolHints: [],
+          expectedObservation: 'User selects a node before generation',
+        },
+      ],
+      successCriteria: ['A selected generatable node is available before generation'],
+    }
+  }
+
+  if (context.selectedNodeIds.length > 0 && isSelectedGenerationRequest(context.message)) {
+    const selected = resolveTargetSelectedNode({
+      snapshot,
+      selectedNodeIds: context.selectedNodeIds,
+      message: context.message,
+    })
+    return {
+      goal: context.message || 'Generate selected node output',
+      risk: 'medium',
+      requiresClarification: false,
+      steps: [
+        {
+          id: 'inspect_selected',
+          title: 'Read selected node before generation',
+          intent: 'inspect',
+          toolHints: ['canvas.read_selected_nodes'],
+          expectedObservation: 'Selected node generation fields are available',
+        },
+        {
+          id: 'generate_selected',
+          title: 'Generate selected node output',
+          intent: 'generate',
+          toolHints: ['canvas.generate_node_output'],
+          expectedObservation: 'Generated output is written back to the selected node',
+        },
+        {
+          id: 'verify_generation',
+          title: 'Verify generated output writeback',
+          intent: 'verify',
+          toolHints: ['canvas.verify_patch'],
+          expectedObservation: 'Generated output exists on the selected node',
+        },
+      ],
+      successCriteria: ['Generated output is written back to the selected node'],
+      generateNodeIds: selected ? [selected] : [context.selectedNodeIds[0]],
+    }
+  }
+
+  const patch = await buildFallbackPatch(context, snapshot)
+  const shouldInspectSelected = context.selectedNodeIds.length > 0
+  const toolHints: LocalCanvasToolName[] = []
+  if (shouldInspectSelected) toolHints.push('canvas.read_selected_nodes')
+  if (
+    !shouldInspectSelected ||
+    isSearchRequest(context.message) ||
+    isConnectionReasoningRequest(context.message) ||
+    isIsolatedNodeRequest(context.message) ||
+    patch
+  ) {
+    toolHints.push('canvas.read_summary')
+  }
+  if (isSearchRequest(context.message)) toolHints.push('canvas.search_nodes')
+  if (patch) toolHints.push('canvas.apply_patch', 'canvas.verify_patch')
+  return {
+    goal: context.message || 'Analyze the current canvas',
+    risk: 'low',
+    requiresClarification: false,
+    steps: [
+      {
+        id: 'inspect',
+        title: shouldInspectSelected ? 'Read selected nodes' : 'Read canvas summary',
+        intent: 'inspect',
+        toolHints,
+        expectedObservation: 'Canvas context is available',
+      },
+      ...(patch
+        ? [
+            {
+              id: 'apply',
+              title: 'Apply canvas changes',
+              intent: 'create' as const,
+              toolHints: ['canvas.apply_patch' as const],
+              expectedObservation: 'Canvas patch is applied',
+            },
+            {
+              id: 'verify',
+              title: 'Verify canvas changes',
+              intent: 'verify' as const,
+              toolHints: ['canvas.verify_patch' as const],
+              expectedObservation: 'Canvas changes are verified',
+            },
+          ]
+        : []),
+    ],
+    successCriteria: patch
+      ? ['Canvas reflects the requested change']
+      : ['Answer based on current canvas'],
+    patch,
+  }
+}
+
+async function ensureSelectedTextRewritePatch(params: {
+  context: LocalAgentContext
+  snapshot: CanvasSnapshot
+  plan: LocalAgentPlan
+}): Promise<LocalAgentPlan> {
+  const selected = resolveTargetSelectedNode({
+    snapshot: params.snapshot,
+    selectedNodeIds: params.context.selectedNodeIds,
+    message: params.context.message,
+    preferredKinds: ['text'],
+  })
+  if (
+    !selected ||
+    !includesAny(params.context.message, ['修改', '改成', '优化', 'rewrite', 'update'])
+  ) {
+    return params.plan
+  }
+
+  const detail = readCanvasNodeDetail(params.snapshot, selected, params.context.selectedNodeIds)
+  if (detail?.kind !== 'text') return params.plan
+
+  const operations = params.plan.patch?.operations ?? []
+  const hasSelectedUpdate = operations.some(
+    (operation) => operation.type === 'update_node' && operation.nodeId === selected
+  )
+  const hasContentHtmlUpdate = operations.some(
+    (operation) =>
+      operation.type === 'update_node' &&
+      operation.nodeId === selected &&
+      typeof operation.fields.contentHtml === 'string'
+  )
+
+  if (hasContentHtmlUpdate) return params.plan
+
+  const rewrittenText = await rewriteSelectedTextContent({
+    context: params.context,
+    snapshot: params.snapshot,
+    nodeId: selected,
+  })
+  const rewriteOperation = {
+    type: 'update_node' as const,
+    nodeId: selected,
+    fields: {
+      aiPrompt: params.context.message,
+      contentHtml: textToContentHtml(rewrittenText),
+    },
+  }
+
+  return {
+    ...params.plan,
+    patch: {
+      reason: params.plan.patch?.reason ?? 'Rewrite selected text content',
+      operations: hasSelectedUpdate
+        ? operations.map((operation) =>
+            operation.type === 'update_node' && operation.nodeId === selected
+              ? {
+                  ...operation,
+                  fields: {
+                    ...operation.fields,
+                    contentHtml: textToContentHtml(rewrittenText),
+                  },
+                }
+              : operation
+          )
+        : [...operations, rewriteOperation],
+    },
+    steps: params.plan.steps.some((step) => step.toolHints.includes('canvas.apply_patch'))
+      ? params.plan.steps
+      : [
+          ...params.plan.steps,
+          {
+            id: 'apply_rewrite',
+            title: 'Update selected text content',
+            intent: 'update',
+            toolHints: ['canvas.apply_patch'],
+            expectedObservation: 'Selected text content is updated',
+          },
+          {
+            id: 'verify_rewrite',
+            title: 'Verify selected text update',
+            intent: 'verify',
+            toolHints: ['canvas.verify_patch'],
+            expectedObservation: 'Selected text update is verified',
+          },
+        ],
+    successCriteria: params.plan.successCriteria.length
+      ? params.plan.successCriteria
+      : ['Selected text node content is rewritten'],
+  }
+}
+
+function withToolHints(
+  plan: LocalAgentPlan,
+  requiredToolHints: LocalAgentToolName[]
+): LocalAgentPlan {
+  if (requiredToolHints.length === 0) return plan
+  const hasInspectStep = plan.steps.length > 0
+  if (!hasInspectStep) {
+    return {
+      ...plan,
+      steps: [
+        {
+          id: 'inspect',
+          title: 'Read canvas context',
+          intent: 'inspect',
+          toolHints: requiredToolHints,
+          expectedObservation: 'Canvas context is available',
+        },
+      ],
+    }
+  }
+  const [firstStep, ...rest] = plan.steps
+  return {
+    ...plan,
+    steps: [
+      {
+        ...firstStep,
+        toolHints: [...new Set([...firstStep.toolHints, ...requiredToolHints])],
+      },
+      ...rest,
+    ],
+  }
+}
+
+function ensureReadOnlyInspectionCoverage(
+  context: LocalAgentContext,
+  plan: LocalAgentPlan
+): LocalAgentPlan {
+  if (plan.patch || plan.generateNodeIds?.length) return plan
+  const requiredToolHints: LocalAgentToolName[] = []
+  requiredToolHints.push(...inferContextToolHints(context))
+  if (context.selectedNodeIds.length > 0) requiredToolHints.push('canvas.read_selected_nodes')
+  if (
+    context.selectedNodeIds.length === 0 ||
+    isSearchRequest(context.message) ||
+    isConnectionReasoningRequest(context.message) ||
+    isIsolatedNodeRequest(context.message)
+  ) {
+    requiredToolHints.push('canvas.read_summary')
+  }
+  if (isSearchRequest(context.message)) requiredToolHints.push('canvas.search_nodes')
+  return withToolHints(plan, [...new Set(requiredToolHints)])
+}
+
+function buildPlannerPrompt(context: LocalAgentContext, tokenAwareContext: string): string {
+  return [
+    `Token-aware context:\n${tokenAwareContext}`,
+    'Return JSON for a multi-step local canvas agent plan. Use high-level patch operations only. Do not output raw EditWorkflowOperation.',
+    'When the user asks to inspect or summarize, prefer read tools and an answer step. When the user asks to modify, plan inspect -> apply_patch -> verify_patch.',
+    'Use read_file for attached file context, query_knowledge for attached knowledge context, search_docs for documentation context, search_workspace for workspace inventory, and read_tasks for production task status.',
+    'Use materialize_file only when the user explicitly asks to save/import an uploaded file. Use update_task_result or submit_task_result only with an explicit task id or bound task context.',
+  ].join('\n\n')
+}
+
+export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<LocalAgentPlan> {
+  const snapshot = await loadCanvasSnapshot({
+    workflowId: context.workflowId,
+    workspaceId: context.workspaceId,
+  })
+
+  if (isDestructiveCanvasRequest(context.message)) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (context.selectedNodeIds.length === 0 && isSelectionScopedUpdateRequest(context.message)) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (context.selectedNodeIds.length === 0 && isSelectionScopedReadRequest(context.message)) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  const contextToolHints = inferContextToolHints(context)
+  if (
+    contextToolHints.length > 0 &&
+    !isSelectionScopedUpdateRequest(context.message) &&
+    !isSelectedGenerationRequest(context.message)
+  ) {
+    return buildContextInspectionPlan(
+      context,
+      context.selectedNodeIds.length > 0
+        ? ['canvas.read_selected_nodes', ...contextToolHints]
+        : contextToolHints
+    )
+  }
+
+  if (context.selectedNodeIds.length > 0 && isUpdateRequest(context.message)) {
+    const selected = resolveTargetSelectedNode({
+      snapshot,
+      selectedNodeIds: context.selectedNodeIds,
+      message: context.message,
+    })
+    const detail = selected
+      ? readCanvasNodeDetail(snapshot, selected, context.selectedNodeIds)
+      : null
+    if (detail && !detail.capabilities.canWrite) {
+      return buildReadonlySelectedWriteRefusalPlan({ context, detailKind: detail.kind })
+    }
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (isSelectedGenerationRequest(context.message)) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (
+    isSearchRequest(context.message) ||
+    isConnectionReasoningRequest(context.message) ||
+    isIsolatedNodeRequest(context.message)
+  ) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (
+    context.selectedNodeIds.length > 0 &&
+    (isSelectionScopedReadRequest(context.message) ||
+      isConnectionReasoningRequest(context.message) ||
+      includesAny(context.message, ['检查', '分析', '判断']))
+  ) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  if (
+    context.selectedNodeIds.length > 0 &&
+    (isSelectionScopedUpdateRequest(context.message) ||
+      isSelectionScopedReadRequest(context.message))
+  ) {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  const explicitNodeIds = extractExplicitNodeIds(context.message)
+  if (
+    explicitNodeIds.length > 0 &&
+    includesAny(context.message, ['读取', 'read', '修改', 'update'])
+  ) {
+    return buildExplicitReadNodePlan(context, explicitNodeIds)
+  }
+
+  const tokenAwareContext = buildTokenAwareLocalAgentContext({ context, snapshot })
+
+  try {
+    const response = await executeLocalAgentModelRequest(context.model, {
+      role: 'planner',
+      workspaceId: context.workspaceId,
+      systemPrompt: buildLocalAgentRoleSystemPrompt({
+        context,
+        role: 'planner',
+        roleInstruction:
+          'You are planning for a local TapNow-style canvas agent. Plans may inspect, patch, generate, verify, or answer. Use JSON only.',
+      }),
+      prompt: buildPlannerPrompt(context, tokenAwareContext),
+      temperature: context.thinkingLevel === 'extra' ? 0.15 : 0.05,
+      maxTokens: context.thinkingLevel === 'extra' ? 3000 : 1800,
+      responseFormat: {
+        name: 'local_canvas_agent_plan',
+        schema: z.toJSONSchema(plannerResponseSchema),
+        strict: true,
+      },
+      abortSignal: context.options.abortSignal,
+    })
+    const parsed = plannerResponseSchema.safeParse(parseJsonObject(response.content ?? ''))
+    if (parsed.success) {
+      const coveredPlan = ensureReadOnlyInspectionCoverage(context, {
+        goal: parsed.data.goal || context.message,
+        risk: parsed.data.risk,
+        requiresClarification: parsed.data.requiresClarification,
+        clarificationQuestion: parsed.data.clarificationQuestion,
+        steps: parsed.data.steps,
+        successCriteria: parsed.data.successCriteria,
+        patch: parsed.data.patch as LocalCanvasPatch | undefined,
+        generateNodeIds: parsed.data.generateNodeIds,
+        readNodeIds: parsed.data.readNodeIds,
+      })
+      if (!coveredPlan.patch && !coveredPlan.generateNodeIds?.length) {
+        const fallbackPatch = await buildFallbackPatch(context, snapshot)
+        if (fallbackPatch) return buildFallbackPlan(context, snapshot)
+      }
+      return ensureSelectedTextRewritePatch({
+        context,
+        snapshot,
+        plan: coveredPlan,
+      })
+    }
+  } catch {
+    return buildFallbackPlan(context, snapshot)
+  }
+
+  return buildFallbackPlan(context, snapshot)
+}

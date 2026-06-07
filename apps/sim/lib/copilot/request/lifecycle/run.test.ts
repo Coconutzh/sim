@@ -7,15 +7,17 @@ const {
   mockRunStreamLoop,
   mockRunLocalWorkflowFallback,
   mockShouldUseLocalWorkflowFallback,
-  mockRunContentCanvasAgent,
+  mockRunLocalCanvasAgent,
   mockPrepareExecutionContext,
 } = vi.hoisted(() => ({
   mockRunStreamLoop: vi.fn(),
   mockRunLocalWorkflowFallback: vi.fn(),
   mockShouldUseLocalWorkflowFallback: vi.fn(() => false),
-  mockRunContentCanvasAgent: vi.fn(async ({ context }: { context: { accumulatedContent: string } }) => {
-    context.accumulatedContent = 'agent done'
-  }),
+  mockRunLocalCanvasAgent: vi.fn(
+    async ({ context }: { context: { accumulatedContent: string } }) => {
+      context.accumulatedContent = 'agent done'
+    }
+  ),
   mockPrepareExecutionContext: vi.fn(async () => ({
     userId: 'user-1',
     workflowId: 'workflow-1',
@@ -44,6 +46,10 @@ vi.mock('@/lib/copilot/request/context/request-context', () => ({
   })),
 }))
 
+vi.mock('@sim/db', () => ({
+  db: {},
+}))
+
 vi.mock('@/lib/copilot/request/context/result', () => ({
   buildToolCallSummaries: vi.fn(() => []),
 }))
@@ -67,8 +73,8 @@ vi.mock('@/lib/copilot/request/lifecycle/local-workflow-fallback', () => ({
   shouldUseLocalWorkflowFallback: mockShouldUseLocalWorkflowFallback,
 }))
 
-vi.mock('@/lib/copilot/request/lifecycle/content-canvas-agent', () => ({
-  runContentCanvasAgent: mockRunContentCanvasAgent,
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent', () => ({
+  runLocalCanvasAgent: mockRunLocalCanvasAgent,
 }))
 
 vi.mock('@/lib/copilot/request/tool-call-state', () => ({
@@ -123,7 +129,7 @@ describe('runCopilotLifecycle', () => {
       }
     )
 
-    expect(mockRunContentCanvasAgent).toHaveBeenCalledTimes(1)
+    expect(mockRunLocalCanvasAgent).toHaveBeenCalledTimes(1)
     expect(mockRunStreamLoop).not.toHaveBeenCalled()
     expect(mockRunLocalWorkflowFallback).not.toHaveBeenCalled()
     expect(result.success).toBe(true)
