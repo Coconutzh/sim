@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_IMAGE_AI_MODEL,
   DEFAULT_IMAGE_ASPECT_RATIO,
+  getImageAspectRatioOptions,
   getImageGenerationModelOptions,
   getNearestSupportedImageAspectRatio,
   getResolvedImageAspectRatio,
@@ -25,6 +26,12 @@ describe('image-generation-utils', () => {
     expect(mapImageAspectRatioToProviderSize('auto')).toBe('4K')
     expect(mapImageAspectRatioToProviderSize('16:9')).toBe('2560x1440')
     expect(mapImageAspectRatioToProviderSize('3:2')).toBe('2496x1664')
+  })
+
+  it('uses a readable UTF-8 label for the automatic 4K aspect ratio option', () => {
+    expect(getImageAspectRatioOptions().find((option) => option.id === 'auto')?.label).toBe(
+      '自适应(4K)'
+    )
   })
 
   it('finds the nearest supported ratio for existing images', () => {

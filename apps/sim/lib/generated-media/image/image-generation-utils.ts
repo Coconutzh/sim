@@ -4,7 +4,7 @@ export const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5' as const
 export const DEFAULT_IMAGE_ASPECT_RATIO = 'auto' as const
 
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
-  { id: 'auto', label: '鑷€傚簲(4K)' },
+  { id: 'auto', label: '自适应(4K)' },
   { id: '1:1', label: '1:1' },
   { id: '4:3', label: '4:3' },
   { id: '3:4', label: '3:4' },
@@ -15,10 +15,7 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { id: '21:9', label: '21:9' },
 ] as const
 
-export type ImageGenerationModelId =
-  | 'jimeng-4.5'
-  | 'jimeng-4.0'
-  | 'gemini-3.1-flash-image-preview'
+export type ImageGenerationModelId = 'jimeng-4.5' | 'jimeng-4.0' | 'gemini-3.1-flash-image-preview'
 export type ImageAspectRatioValue = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]['id']
 
 const IMAGE_ASPECT_RATIO_TO_NUMERIC: Record<Exclude<ImageAspectRatioValue, 'auto'>, number> = {
@@ -44,9 +41,7 @@ const IMAGE_ASPECT_RATIO_TO_PROVIDER_SIZE: Record<ImageAspectRatioValue, string>
   '21:9': '3136x1344',
 }
 
-export function getImageGenerationModelOptions(
-  enabledModelIds?: readonly string[]
-): ReadonlyArray<{
+export function getImageGenerationModelOptions(enabledModelIds?: readonly string[]): ReadonlyArray<{
   id: ImageGenerationModelId
   label: string
   description: string
