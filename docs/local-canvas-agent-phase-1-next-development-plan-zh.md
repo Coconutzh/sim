@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-01/H-02/H-03 已有 current-source API/SSE 安全边界和浏览器 DOM 未损坏证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -197,9 +197,9 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | G-03 | current-source 真实 provider 生成写回、上游 image first_frame 代码/测试证据和浏览器视频预览通过 | generation + upstream reference + file preview | `canvas-tools.ts`、video service/provider | 已写回 `file`、字段级 verify、视频预览刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-04 | current-source 真实 provider 生成写回和浏览器播放器通过 | generation + file preview | `canvas-tools.ts`、audio service/provider | 已写回 `file`、字段级 verify、播放器刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-05 | dedicated unit 证据通过；一次性 workflow API/SSE 失败样本通过 | provider error + verifier | `canvas-tools.ts`、`models/verifier.ts` | 后续作为回归保护：失败不清空旧值，不假报完成 |
-| H-01 | 服务级通过，缺浏览器回归 | planner + canvas tool | `canvas-tools.ts`、`models/actor.ts` | 找不到节点，不修改画布 |
-| H-02 | 服务级通过，缺浏览器回归 | adapter + planner | `node-adapters/{document,table,image-editor}.ts` | 只读/未支持类型拒绝写入，不调用 mutation |
-| H-03 | 服务级通过，缺浏览器回归 | planner safety guard | `planner.ts` | 破坏性全画布请求不直接执行 |
+| H-01 | current-source preview API/SSE 通过；复测后浏览器 DOM 未损坏 | planner + canvas tool | `canvas-tools.ts`、`models/actor.ts` | 找不到节点，不修改画布，不调用 mutation；ReactFlow 仍为 7 nodes / 5 edges |
+| H-02 | current-source preview API/SSE 通过；复测后浏览器 DOM 未损坏 | adapter + planner | `node-adapters/{document,table,image-editor}.ts`、selected start node guard | 只读/未支持类型拒绝写入，不调用 mutation；ReactFlow 仍为 7 nodes / 5 edges |
+| H-03 | current-source preview API/SSE 通过；复测后浏览器 DOM 未损坏 | planner safety guard | `planner.ts` | 破坏性全画布请求不直接执行，要求明确范围或手动确认；ReactFlow 仍为 7 nodes / 5 edges |
 | H-04 | preview 浏览器核心通过，日志可观测性已有代码级补强，chatId 已解析后 API/SSE 样本通过，preview 浏览器 UI 二次样本已补 | UI abort + runtime + provider | `use-chat.ts`、`app/api/copilot/chat/abort/route.ts`、`session/abort.ts`、`session/buffer.ts`、`tool-loop.ts`、`canvas-tools.ts`、providers | stop 后 UI 结束 loading，abort 到服务端，本地不迟到写回；server log 可按 streamId/chatId 追踪 |
 
 ## 二、目标状态
