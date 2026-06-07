@@ -105,11 +105,11 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 项目 | 内容 |
 |---|---|
 | 对应测试编号 | D-01、D-02、D-03、E-01、E-02、E-03、E-04、F-01 |
-| 当前失败表现 | D-01 曾失败为 `patch.operations is required`；D-02 曾只复述输入；D-03 曾第一次找不到图片；E-03 曾声称修改视频但 state 不变；F-01 最新浏览器样本显示后端 state 已按生产顺序横向布局并完成 verify，但 ReactFlow DOM 未实时更新，仍显示旧 position。 |
+| 当前失败表现 | D-01 曾失败为 `patch.operations is required`；D-02 曾只复述输入；D-03 曾第一次找不到图片；E-03 曾声称修改视频但 state 不变；F-01 曾失败为后端 state 已按生产顺序横向布局并完成 verify，但 ReactFlow DOM 未实时更新，仍显示旧 position。 |
 | 相关代码位置 | `canvas-tools.ts`：`requirePatch()`、`normalizeLegacyCanvasPatch()`、`normalizeInstructionCanvasPatch()`、`executeCanvasTool()`；`canvas-patch.ts`：patch 校验与 `editWorkflowServerTool` operation 构造；`canvas-verify.ts`：create/update/connect/layout 验证；`planner.ts`：内容链、补前后节点、更新字段、布局计划；`copilot-tab.tsx`：`handleCopilotToolResult()` 的 mutation 后 UI refresh。 |
-| 当前代码状态 | 工具边界已兼容标准 `patch.operations`、旧形态 `addNodes/addEdges`、direct operation、instruction-only chain。`canvas-verify.ts` 已验证 create/update/connect/layout。D-01 已有 current-source preview 浏览器级通过证据：空白 workflow 从 1 节点/0 边变为 5 节点/3 边，ReactFlow live refresh 显示 5 nodes / 3 edges，无 `patch.operations is required` 或 cancelled。D-02/D-03 已同步 current-source preview 证据：选中 video/image 后新增 text 并形成 `video -> text`、`text -> image` 连线，当前 preview state 复核仍可见目标节点和边。F-01 目前 patch/planner/verify 成功；`copilot-tab.tsx` 已把 local canvas mutation tool success 和 stream end 都接到 committed workflow reload，但追加 stream-end 兜底后的真实浏览器复测被 dev server OOM 打断，尚无 ReactFlow DOM transform 通过证据。 |
-| 根因假设 | D-01 原因是模型真实输出旧参数形态与工具 schema 不兼容。D-02/D-03 是 selected target 和 connect reference 问题。E-03/E-04 是字段提取和 verify 不足导致“说改了但没改”。F-01 当前更像前端 ReactFlow 同步问题：`workflow.tsx` 的 `blocksStructureHash` 排除了 `position`，position-only reload 可能没有推动 `displayNodes` / ReactFlow 内部 nodes 更新。 |
-| 是否需要进一步验证 | 需要。F-01 必须先重启稳定 current-source dev server 复测，并用 workflow state + ReactFlow DOM transform 双重证明 position 更新；若仍失败，再检查 `loadWorkflowState()`、`replaceWorkflowState()`、`workflow.tsx` 的 `derivedNodes -> displayNodes -> nodesForRender` 链路，并实现 position-only reconcile。D-01/D-02/D-03 和 E-03/E-04 后续作为回归保护；E 类若改 UI 字段展示，还需补属性面板浏览器回归。 |
+| 当前代码状态 | 工具边界已兼容标准 `patch.operations`、旧形态 `addNodes/addEdges`、direct operation、instruction-only chain。`canvas-verify.ts` 已验证 create/update/connect/layout。D-01 已有 current-source preview 浏览器级通过证据：空白 workflow 从 1 节点/0 边变为 5 节点/3 边，ReactFlow live refresh 显示 5 nodes / 3 edges，无 `patch.operations is required` 或 cancelled。D-02/D-03 已同步 current-source preview 证据：选中 video/image 后新增 text 并形成 `video -> text`、`text -> image` 连线，当前 preview state 复核仍可见目标节点和边。F-01 已通过：`copilot-tab.tsx` 把 local canvas mutation tool success、stream end、send settled 接到 committed workflow reload；`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 覆盖 position-only committed reload。已有真实浏览器证据显示 workflow state 横向后 ReactFlow DOM transform 无刷新同步；本轮 focused test 也覆盖 mutation reload 和 position reconcile。 |
+| 根因假设 | D-01 原因是模型真实输出旧参数形态与工具 schema 不兼容。D-02/D-03 是 selected target 和 connect reference 问题。E-03/E-04 是字段提取和 verify 不足导致“说改了但没改”。F-01 根因已收敛为前端同步链路：local canvas mutation 不能走 legacy proposed diff 路径，position-only committed reload 需要显式 reconcile 到 ReactFlow display nodes。 |
+| 是否需要进一步验证 | F-01 当前不再是阻塞项；后续只在 `copilot-tab.tsx`、`use-chat.ts` stream terminal callback、`useWorkflowRegistry.loadWorkflowState()`、`workflow.tsx` displayNodes 或 `reconcileDisplayNodePositions()` 改动后回归。D-01/D-02/D-03 和 E-03/E-04 后续作为回归保护；E 类若改 UI 字段展示，还需补属性面板浏览器回归。 |
 
 ### 4. 生成写回和字段级 verify
 
@@ -188,7 +188,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | E-02 | 服务级通过；需浏览器字段展示回归 | planner field extraction | `planner.ts` | `aiPrompt` 不包含“把提示词改成”这类操作话术 |
 | E-03 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + verify | `planner.ts`、`canvas-verify.ts` | 后续作为回归保护：`videoParameters.duration = 5`，`videoPrompt` 含推进感，verify 成功 |
 | E-04 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + actor | `planner.ts`、`models/actor.ts` | 后续作为回归保护：更新 `audioPrompt`，不误读 video，不误走 generation |
-| F-01 | patch/planner/verify 已通过；`copilot-tab.tsx` 已加 local canvas mutation reload 和 stream-end 兜底，但浏览器 ReactFlow live refresh 尚未验证通过；`workflow.tsx` position-only 同步是当前最高概率根因 | UI refresh + workflow store hydration + ReactFlow position reconcile | `copilot-tab.tsx`、`workflow.tsx`、`stores/workflows/registry/store.ts`、`stores/workflows/workflow/store.ts` | 后端 state position 变化，ReactFlow DOM transform 同步变化，无需刷新页面；节点和边不丢，回答与 verify 一致 |
+| F-01 | current-source 浏览器通过，且已有 focused 自动回归；后续作为 regression guard | UI refresh + workflow store hydration + ReactFlow position reconcile | `copilot-tab.tsx`、`workflow.tsx`、`stores/workflows/registry/store.ts`、`stores/workflows/workflow/store.ts` | 后端 state position 变化，ReactFlow DOM transform 同步变化，无需刷新页面；节点和边不丢，回答与 verify 一致 |
 | F-02 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx`、`options.tsx` | Confirm/Revise 展示，未确认前 state 不变 |
 | F-03 | preview 浏览器级通过 | runtime + tool loop | `runtime.ts`、`tool-loop.ts` | 同一 chatId 执行 pending plan，一次性消费，随后 verify |
 | F-04 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx` | Revise 不执行 patch，pending 清理，state 不变 |
@@ -266,40 +266,37 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 
 ### 阶段 1：F-01 右侧 Copilot mutation 后画布 live refresh
 
-- 目标：验证并收敛 `canvas.apply_patch` / `canvas.generate_node_output` 成功后，后端 workflow state 已更新但 ReactFlow 仍显示旧节点位置或旧文件预览的问题。F-01 当前已经证明 patch/planner/verify 成功；当前代码已加入 tool-result reload 和 stream-end reload，下一步先用稳定 dev server 取浏览器证据。若 stream-end reload 仍不能更新 DOM，优先修 `workflow.tsx` 的 position-only 同步，而不是继续改 agent patch。
+- 目标：维护并回归 `canvas.apply_patch` / `canvas.generate_node_output` 成功后的无刷新画布同步。F-01 当前已通过：后端 workflow state 变化后，右侧 Copilot 会 reload committed workflow state，ReactFlow display nodes 会同步 position-only 变化。后续只有在 Copilot stream handling、workflow hydration 或 ReactFlow display node 链路改动时才需要重新作为首要验证项。
 - 要改的文件：
   - `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx`
   - `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/workflow.tsx`
   - `apps/sim/stores/workflows/registry/store.ts`
   - `apps/sim/stores/workflows/workflow/store.ts`
-  - 如需补测试：右侧 Copilot tool-result / stream-end handler 的邻近测试文件，或新增 focused component/hook test。
+  - 已补测试：右侧 Copilot tool-result / stream-end handler 的邻近测试文件，以及 `reconcileDisplayNodePositions()` focused helper test。
   - 不优先改 `canvas-tools.ts`、`canvas-patch.ts`、`canvas-verify.ts`，除非复测发现 state 本身未写入。
 - 具体实现思路：
   - 已有实现：保留 legacy `edit_workflow` 的现有 diff/proposed changes 行为，避免影响旧 Copilot 工作流。
   - 已有实现：对 `LOCAL_CANVAS_MUTATION_TOOLS` 即 `canvas.apply_patch` 和 `canvas.generate_node_output`，成功后调用 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`，让 committed workflow state reload 到 `useWorkflowStore.replaceWorkflowState()` 和 subblock store 初始化链路。
-  - 已有实现：`onStreamEnd` 兜底 reload 当前 workflow，用来覆盖真实页面未稳定暴露 local canvas tool result callback 的情况。
-  - 下一步若浏览器仍失败：给 reload 成功/失败增加可观测证据，检查 registry hydration scope 是否存在；必要时改成直接 `requestJson(getWorkflowStateContract)` 后写入 `useWorkflowStore.replaceWorkflowState()` 和 subblock 初始化，但优先保留 registry 入口。
-  - 若 workflow store 已收到新 blocks 但 DOM 仍旧，新增只处理外部 committed position 变化的 reconcile：
+  - 已有实现：`onStreamEnd` 和 send settled 兜底 reload 当前 workflow，用来覆盖真实页面未稳定暴露 local canvas tool result callback 的情况。
+  - 已有实现：workflow store 收到新 blocks 后，`workflow.tsx` 用只处理外部 committed position 变化的 reconcile：
     - 比较 `blocks[id].position` 与当前 `displayNodes[id].position`。
     - 只在节点 id 集合相同、非拖拽中的情况下更新 `displayNodes` 的 `position`、`parentId`、`extent` 等 ReactFlow 位置相关字段。
     - 保留当前 selection、zIndex 和交互状态，避免影响拖拽体验。
     - 不把 `position` 加回 `blocksStructureHash`，否则会让拖拽过程频繁重建节点。
-  - 如果仍需要刷新 React Query normalized state，可在 reload 后定向 invalidate `getWorkflowNormalizedStateContract` 对应 query，但不要只写入 `useWorkflowDiffStore.setProposedChanges()`。
+  - 如果后续发现 normalized state 相关 UI 仍需刷新，可在 reload 后定向 invalidate `getWorkflowNormalizedStateContract` 对应 query，但不要只写入 `useWorkflowDiffStore.setProposedChanges()`。
 - 数据流/调用链变化：
   - 旧失败链路：`SSE tool result -> handleCopilotToolResult -> fetch normalized state -> workflowDiffStore.setProposedChanges(skipPersist) -> ReactFlow 未必更新 committed store`
   - 当前目标链路：`SSE canvas.apply_patch/generate_node_output success 或 stream end -> workflowRegistry.loadWorkflowState(workflowId) -> workflowStore.replaceWorkflowState + subblock hydration -> ReactFlow live refresh`
-  - 若加入 position reconcile：`replaceWorkflowState -> blocks reference/position 变化 -> workflow.tsx reconcile effect -> setDisplayNodes(position-only merge) -> ReactFlow DOM transform 更新`
+  - Position reconcile 链路：`replaceWorkflowState -> blocks reference/position 变化 -> workflow.tsx reconcile effect -> setDisplayNodes(position-only merge) -> ReactFlow DOM transform 更新`
   - `edit_workflow` 仍走原 diff proposal 链路。
 - 需要新增或修改的测试：
-  - 若能低成本抽出 handler：覆盖 `canvas.apply_patch` 成功时调用 `loadWorkflowState(workflowId)`，不调用 `setProposedChanges()`。
-  - 覆盖 `canvas.generate_node_output` 成功时同样 reload committed state。
-  - 覆盖 right-side `onStreamEnd` 触发 reload，并确认不会破坏 `edit_workflow` 的 diff/proposal 分支。
-  - 覆盖 `edit_workflow` 成功时仍调用 `setProposedChanges()`，防止 legacy 行为回归。
-  - 若改 `workflow.tsx`，优先抽纯 helper，例如 `reconcileDisplayNodePositions(displayNodes, blocks)`，用轻量单元测试覆盖：position-only committed update 能改变节点位置、selection 保留、缺失或新增节点交给 `derivedNodes` 结构重建、拖拽中不覆盖用户正在移动的位置。
-  - 如果组件级测试成本过高，至少在 retest notes 记录真实浏览器 evidence，并把后续测试债标明。
+  - 已覆盖 `canvas.apply_patch` 成功时调用 `loadWorkflowState(workflowId)`，不走 legacy `edit_workflow` diff/proposal 分支。
+  - 已覆盖 `canvas.generate_node_output` 成功时同样 reload committed state。
+  - 已覆盖 right-side `onStreamEnd` 触发 reload。
+  - 已覆盖 `reconcileDisplayNodePositions(displayNodes, blocks)`：position-only committed update 能改变节点位置、selection 保留、缺失或新增节点交给 `derivedNodes` 结构重建。
+  - 后续如改 `edit_workflow` 分支，应补充确认 legacy 成功时仍调用 `setProposedChanges()`，防止旧 Copilot diff/proposal 行为回归。
 - 手工验证步骤：
-  - 使用 F-01 目标 workflow，先通过 state API 手工设置凌乱 positions。
-  - 浏览器确认 ReactFlow DOM transform 已是凌乱位置。
+  - 使用 F-01 目标 workflow 或等价 workflow，先记录 state API positions 和 ReactFlow DOM transform。
   - 在右侧 Copilot 发送 UTF-8 正确的“把当前画布按内容生产顺序从左到右整理一下。”。
   - 观察 Network payload：`workflowCopilotMode: content_canvas_v1`、`confirmationMode`、`thinkingLevel`、`chatId` 正确。
   - 观察 tool blocks：`Canvas.read Summary`、`Canvas.apply Patch`、`Canvas.verify Patch`。
@@ -307,7 +304,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
   - 不刷新页面，直接检查 ReactFlow DOM transform 必须同步变为新 positions。
 - 风险和回滚点：
   - 风险是误把 legacy `edit_workflow` 的 proposal/diff 体验改成直接提交展示。因此实现必须只分流 local canvas mutation tools。
-  - 如果 `loadWorkflowState()` 引发额外网络或 subblock 初始化副作用，可回滚到“fetch normalized state 后直接 `useWorkflowStore.replaceWorkflowState()` + `useSubBlockStore` 初始化”的更窄实现，但应优先复用 registry 的既有入口。
+  - 如果 `loadWorkflowState()` 后续引发额外网络或 subblock 初始化副作用，可回滚到“fetch normalized state 后直接 `useWorkflowStore.replaceWorkflowState()` + `useSubBlockStore` 初始化”的更窄实现，但应优先复用 registry 的既有入口。
 
 ### 阶段 2：D-01/D-02/D-03 回归保护
 
