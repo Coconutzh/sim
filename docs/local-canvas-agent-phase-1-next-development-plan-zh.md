@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本的基础上，继续补附件脱敏专项真实请求证据、必要的生成失败真实路径证据和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -120,7 +120,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 相关代码位置 | `canvas-tools.ts`：`generateNodeOutput()`、`assertGeneratedFieldWritten()`；`tool-loop.ts`：`pendingVerifyAfterGenerate`；`runtime.ts`：`buildGenerationVerifyInput()`；`canvas-verify.ts`：`verifyLocalCanvasPatch({ generation })`；`text-executor.ts`；`generated-media/{image,video,audio}/**`。 |
 | 当前代码状态 | text 生成写回 `contentHtml`，image/video/audio 生成写回 `file`。`generateNodeOutput()` 返回 `verifiedField`；`tool-loop.ts` 将其转成 `canvas.verify_patch({ generation: { nodeId, field } })`；`canvas-verify.ts` 校验目标节点存在且目标字段非空。更新类字段如 `aiPrompt`、`videoParameters`、`audioPrompt` 通过 patch update verify 覆盖。 |
 | 根因假设 | 代码层字段级 verify 已补上，但真实 provider、生成失败、UI 文件预览刷新、上游参考图传递仍可能有缺口。 |
-| 是否需要进一步验证 | 需要。G-01 已有 current-source preview API/state 证据，G-02/G-03/G-04 已有真实 provider 生成写回、字段级 verify 和浏览器预览证据，G-05 已有 dedicated unit 证据；后续仅在 generation、provider、file writeback、preview 或脱敏逻辑改动后回归。 |
+| 是否需要进一步验证 | G-01 已有 current-source preview API/state 证据，G-02/G-03/G-04 已有真实 provider 生成写回、字段级 verify 和浏览器预览证据。G-05 已有 dedicated unit 证据和 2026-06-08 一次性 workflow API/SSE 失败样本：无效 text model 触发 `canvas.generate_node_output` error，旧 `contentHtml` 与 state hash 不变，最终回答不含完成态。后续仅在 generation、provider、file writeback、preview 或脱敏逻辑改动后回归。 |
 
 ### 5. Manual Confirm / Revise
 
@@ -196,7 +196,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | G-02 | current-source 真实 provider 生成写回和浏览器预览通过 | generation + file preview + redaction | `canvas-tools.ts`、image service/provider、`content-block.tsx` | 已写回 `file`、字段级 verify、图片预览刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-03 | current-source 真实 provider 生成写回、上游 image first_frame 代码/测试证据和浏览器视频预览通过 | generation + upstream reference + file preview | `canvas-tools.ts`、video service/provider | 已写回 `file`、字段级 verify、视频预览刷新、不泄露 key/url/path；后续作为回归保护 |
 | G-04 | current-source 真实 provider 生成写回和浏览器播放器通过 | generation + file preview | `canvas-tools.ts`、audio service/provider | 已写回 `file`、字段级 verify、播放器刷新、不泄露 key/url/path；后续作为回归保护 |
-| G-05 | dedicated unit 证据通过；真实服务失败最终回答仍可补强 | provider error + verifier | `canvas-tools.ts`、`models/verifier.ts` | 后续作为回归保护：失败不清空旧值，不假报完成 |
+| G-05 | dedicated unit 证据通过；一次性 workflow API/SSE 失败样本通过 | provider error + verifier | `canvas-tools.ts`、`models/verifier.ts` | 后续作为回归保护：失败不清空旧值，不假报完成 |
 | H-01 | 服务级通过，缺浏览器回归 | planner + canvas tool | `canvas-tools.ts`、`models/actor.ts` | 找不到节点，不修改画布 |
 | H-02 | 服务级通过，缺浏览器回归 | adapter + planner | `node-adapters/{document,table,image-editor}.ts` | 只读/未支持类型拒绝写入，不调用 mutation |
 | H-03 | 服务级通过，缺浏览器回归 | planner safety guard | `planner.ts` | 破坏性全画布请求不直接执行 |
@@ -619,9 +619,9 @@ bun run type-check
 
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
-1. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
-2. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
-3. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+1. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
+2. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+3. G-05：已有 dedicated unit 和一次性 workflow API/SSE 失败样本；后续只在 generation/provider/verifier 改动后回归。
 4. 附件/文件脱敏专项：已有 fake attachment metadata 真实 SSE 无泄露证据和 focused `read_file` 成功路径测试；后续重启 current-source server 后可补成功 `read_file` 端到端样本。
 5. H-04：已具备浏览器核心样本、chatId API/SSE 样本和 preview 浏览器 UI 二次样本；后续只在 stop/abort/cancel 链路改动后回归。
 

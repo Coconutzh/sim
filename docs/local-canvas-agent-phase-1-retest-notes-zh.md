@@ -5694,3 +5694,70 @@ No matching attached file context was found
 ```
 
 判断：运行中的 preview/dev route chunk 没有加载本轮源码匹配补丁，因此真实请求暂未覆盖成功 `read_file` tool result；但真实 SSE 已证明 fake key/url/path/private-key marker 不进入 stream/final answer，源码成功路径由 focused test 覆盖。后续如重启 current-source dev/preview，应再补一次成功 `read_file` 端到端样本。
+
+## 2026-06-08 01:34 G-05 一次性 workflow 真实失败样本
+
+本轮继续按方案推进 G-05。目标是补强“真实 API/SSE 失败路径最终回答”：生成失败时旧字段不清空，state 不变，最终回答显示失败且不说“已完成”。未改功能代码，未 push，未清理 C 组临时文件。
+
+构造方式：
+
+```text
+server: http://localhost:3000
+workspaceId: 6008600b-37eb-4598-9ef7-02098086468b
+createdWorkflowId: c89f99c8-015c-4ff0-a7bf-10f51593b541
+textNodeId: g05-failing-text-node
+```
+
+一次性 workflow state：
+
+```text
+blocks: start + g05-failing-text-node
+edges: []
+contentVariant: text
+aiModel: not-a-real-content-model
+aiPrompt: Write one short sentence. This should fail because the model id is invalid.
+contentHtml before: <p>old content should remain</p>
+beforeHash: 15009262683483515653
+```
+
+请求：
+
+```text
+POST /api/mothership/chat
+message: Generate this selected node content from its aiPrompt and write it back.
+workflowCopilotMode: content_canvas_v1
+confirmationMode: auto
+thinkingLevel: extra
+autoSelectionContexts.blockIds: ["g05-failing-text-node"]
+```
+
+结果：
+
+```text
+chatStatus: 200
+containsGenerateTool: true
+containsVerifyTool: false
+containsApplyPatch: false
+toolErrors:
+  - toolName: canvas.generate_node_output
+    status: error
+    success: false
+    error: Unknown content-canvas text model: not-a-real-content-model
+
+finalText: 我已停止在安全边界内执行：Unknown content-canvas text model: not-a-real-content-model
+finalMentionsFailure: true
+finalClaimsComplete: false
+afterHash: 15009262683483515653
+stateUnchanged: true
+afterContent: <p>old content should remain</p>
+contentUnchanged: true
+```
+
+清理：
+
+```text
+DELETE /api/workflows/c89f99c8-015c-4ff0-a7bf-10f51593b541
+复核 GET /api/workflows/c89f99c8-015c-4ff0-a7bf-10f51593b541/state 返回 404
+```
+
+结论：G-05 一次性真实 API/SSE 失败样本通过。无效 text model 触发 generation tool error，未进入 verify/apply_patch，旧 `contentHtml` 未清空，workflow state hash 不变，最终回答明确失败且不假报完成。
