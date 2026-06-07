@@ -132,8 +132,8 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type {
-  ChatSendOptions,
   ChatMessage,
+  ChatSendOptions,
   ContentBlock,
   FileAttachmentForApi,
   GenericResourceData,
@@ -408,11 +408,7 @@ function isChatSendOptions(value: unknown): value is ChatSendOptions {
   ) {
     return false
   }
-  if (
-    thinkingLevel !== undefined &&
-    thinkingLevel !== 'standard' &&
-    thinkingLevel !== 'extra'
-  ) {
+  if (thinkingLevel !== undefined && thinkingLevel !== 'standard' && thinkingLevel !== 'extra') {
     return false
   }
   if (
@@ -424,6 +420,101 @@ function isChatSendOptions(value: unknown): value is ChatSendOptions {
   }
 
   return true
+}
+
+interface MothershipChatResourceAttachment {
+  type: MothershipResource['type']
+  id: string
+  title: string
+  active: boolean
+}
+
+interface BuildMothershipChatRequestBodyInput {
+  message: string
+  workspaceId: string
+  userMessageId: string
+  createNewChat: boolean
+  chatId?: string
+  fileAttachments?: FileAttachmentForApi[]
+  resourceAttachments?: MothershipChatResourceAttachment[]
+  contexts?: ChatContext[]
+  workflowId?: string
+  sendOptions?: ChatSendOptions
+  userTimezone: string
+}
+
+interface BuildMothershipChatAbortRequestInitInput {
+  streamId: string
+  chatId?: string
+  traceparent?: string
+  signal?: AbortSignal
+}
+
+export function mergeChatSendOptions(
+  fixedSendOptions?: ChatSendOptions,
+  sendOptions?: ChatSendOptions
+): ChatSendOptions | undefined {
+  return sendOptions || fixedSendOptions
+    ? {
+        ...fixedSendOptions,
+        ...sendOptions,
+      }
+    : undefined
+}
+
+export function buildMothershipChatAbortRequestInit({
+  streamId,
+  chatId,
+  traceparent,
+  signal,
+}: BuildMothershipChatAbortRequestInitInput): RequestInit {
+  return {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(traceparent ? { traceparent } : {}),
+    },
+    body: JSON.stringify({
+      streamId,
+      ...(chatId ? { chatId } : {}),
+    }),
+  }
+}
+
+export function buildMothershipChatRequestBody({
+  message,
+  workspaceId,
+  userMessageId,
+  createNewChat,
+  chatId,
+  fileAttachments,
+  resourceAttachments,
+  contexts,
+  workflowId,
+  sendOptions,
+  userTimezone,
+}: BuildMothershipChatRequestBodyInput): Record<string, unknown> {
+  return {
+    message,
+    workspaceId,
+    userMessageId,
+    createNewChat,
+    ...(chatId ? { chatId } : {}),
+    ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
+    ...(resourceAttachments ? { resourceAttachments } : {}),
+    ...(contexts && contexts.length > 0 ? { contexts } : {}),
+    ...(workflowId ? { workflowId } : {}),
+    ...(sendOptions?.workflowCopilotMode
+      ? { workflowCopilotMode: sendOptions.workflowCopilotMode }
+      : {}),
+    ...(sendOptions?.confirmationMode ? { confirmationMode: sendOptions.confirmationMode } : {}),
+    ...(sendOptions?.thinkingLevel ? { thinkingLevel: sendOptions.thinkingLevel } : {}),
+    ...(sendOptions?.autoSelectionContexts && sendOptions.autoSelectionContexts.length > 0
+      ? { autoSelectionContexts: sendOptions.autoSelectionContexts }
+      : {}),
+    userTimezone,
+  }
 }
 
 function readQueuedSendHandoffState(): QueuedSendHandoffState | null {
@@ -1353,6 +1444,26 @@ export function getReplayCompletedWorkflowToolCallIds(events: StreamBatchEvent[]
     }
   }
   return completedToolCallIds
+}
+
+export function applyTextStreamChunk(params: {
+  existingBlockContent?: string
+  runningText: string
+  chunk: string
+  textMode: 'append' | 'replace'
+  needsBoundaryNewline: boolean
+}): { blockContent: string; runningText: string } {
+  const normalizedChunk = params.needsBoundaryNewline ? `\n${params.chunk}` : params.chunk
+  if (params.textMode === 'replace') {
+    return {
+      blockContent: normalizedChunk,
+      runningText: normalizedChunk,
+    }
+  }
+  return {
+    blockContent: `${params.existingBlockContent ?? ''}${normalizedChunk}`,
+    runningText: `${params.runningText}${normalizedChunk}`,
+  }
 }
 
 function buildRecoverySubjectKey(
@@ -2829,6 +2940,10 @@ export function useChat(
               const chunk = parsed.payload.text
               if (chunk) {
                 const eventTs = typeof parsed.ts === 'string' ? parsed.ts : undefined
+                const textMode =
+                  'textMode' in parsed.payload && parsed.payload.textMode === 'replace'
+                    ? 'replace'
+                    : 'append'
                 if (parsed.payload.channel === MothershipStreamV1TextChannel.thinking) {
                   const scopedParentForBlock = resolveParentForSubagentBlock(
                     scopedSubagent,
@@ -2850,9 +2965,15 @@ export function useChat(
                   scopedParentToolCallId
                 )
                 const tb = ensureTextBlock(scopedSubagent, scopedParentForBlock, eventTs)
-                const normalizedChunk = needsBoundaryNewline ? `\n${chunk}` : chunk
-                tb.content = (tb.content ?? '') + normalizedChunk
-                runningText += normalizedChunk
+                const nextText = applyTextStreamChunk({
+                  existingBlockContent: tb.content,
+                  runningText,
+                  chunk,
+                  textMode,
+                  needsBoundaryNewline,
+                })
+                tb.content = nextText.blockContent
+                runningText = nextText.runningText
                 lastContentSource = contentSource
                 streamingContentRef.current = runningText
                 flushText()
@@ -4453,13 +4574,7 @@ export function useChat(
           activeTurnRef.current?.userMessageId
         : undefined
 
-      const mergedSendOptions =
-        sendOptions || fixedSendOptionsRef.current
-          ? {
-              ...fixedSendOptionsRef.current,
-              ...sendOptions,
-            }
-          : undefined
+      const mergedSendOptions = mergeChatSendOptions(fixedSendOptionsRef.current, sendOptions)
 
       let consumedByTranscript = false
 
@@ -4684,31 +4799,21 @@ export function useChat(
         const response = await fetch(apiPathRef.current, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message,
-            workspaceId,
-            userMessageId,
-            createNewChat: !requestChatId,
-            ...(requestChatId ? { chatId: requestChatId } : {}),
-            ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
-            ...(resourceAttachments ? { resourceAttachments } : {}),
-            ...(contexts && contexts.length > 0 ? { contexts } : {}),
-            ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
-            ...(mergedSendOptions?.workflowCopilotMode
-              ? { workflowCopilotMode: mergedSendOptions.workflowCopilotMode }
-              : {}),
-            ...(mergedSendOptions?.confirmationMode
-              ? { confirmationMode: mergedSendOptions.confirmationMode }
-              : {}),
-            ...(mergedSendOptions?.thinkingLevel
-              ? { thinkingLevel: mergedSendOptions.thinkingLevel }
-              : {}),
-            ...(mergedSendOptions?.autoSelectionContexts &&
-            mergedSendOptions.autoSelectionContexts.length > 0
-              ? { autoSelectionContexts: mergedSendOptions.autoSelectionContexts }
-              : {}),
-            userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }),
+          body: JSON.stringify(
+            buildMothershipChatRequestBody({
+              message,
+              workspaceId,
+              userMessageId,
+              createNewChat: !requestChatId,
+              ...(requestChatId ? { chatId: requestChatId } : {}),
+              ...(fileAttachments ? { fileAttachments } : {}),
+              ...(resourceAttachments ? { resourceAttachments } : {}),
+              ...(contexts ? { contexts } : {}),
+              ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
+              ...(mergedSendOptions ? { sendOptions: mergedSendOptions } : {}),
+              userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            })
+          ),
           signal: abortController.signal,
         })
 
@@ -5261,18 +5366,15 @@ export function useChat(
           const postAbortRequest = async (chatId?: string): Promise<boolean> => {
             if (!sid) return true
             // boundary-raw-fetch: stream-abort endpoint requires propagating the snapshotted traceparent header from the in-flight stream and has no contract authored yet
-            const res = await fetch('/api/mothership/chat/abort', {
-              method: 'POST',
-              signal: createTimeoutSignal(STOP_REQUEST_TIMEOUT_MS),
-              headers: {
-                'Content-Type': 'application/json',
-                ...(stopTraceparentSnapshot ? { traceparent: stopTraceparentSnapshot } : {}),
-              },
-              body: JSON.stringify({
+            const res = await fetch(
+              '/api/mothership/chat/abort',
+              buildMothershipChatAbortRequestInit({
                 streamId: sid,
-                ...(chatId ? { chatId } : {}),
-              }),
-            })
+                chatId,
+                traceparent: stopTraceparentSnapshot,
+                signal: createTimeoutSignal(STOP_REQUEST_TIMEOUT_MS),
+              })
+            )
             const payload: unknown = await res.json().catch(() => null)
             if (isRecord(payload) && payload.aborted === true) {
               abortSucceeded = true

@@ -28,6 +28,8 @@ export const SendButton = React.memo(function SendButton({
       <Button
         onClick={onStopGeneration}
         variant='ghost'
+        aria-label='Stop generation'
+        data-testid='chat-stop-generation'
         className={cn(SEND_BUTTON_BASE, SEND_BUTTON_ACTIVE)}
         title='Stop generation'
       >
@@ -45,6 +47,8 @@ export const SendButton = React.memo(function SendButton({
     <Button
       onClick={onSubmit}
       variant='ghost'
+      aria-label='Send message'
+      data-testid='chat-send-message'
       disabled={!canSubmit}
       className={cn(SEND_BUTTON_BASE, canSubmit ? SEND_BUTTON_ACTIVE : SEND_BUTTON_DISABLED)}
     >

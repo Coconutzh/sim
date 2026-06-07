@@ -9,7 +9,11 @@ import {
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { StreamBatchEvent } from '@/lib/copilot/request/session/types'
 import {
+  applyTextStreamChunk,
+  buildMothershipChatAbortRequestInit,
+  buildMothershipChatRequestBody,
   getReplayCompletedWorkflowToolCallIds,
+  mergeChatSendOptions,
   reconcileLiveAssistantTurn,
   selectReconnectReplayState,
 } from '@/app/workspace/[workspaceId]/home/hooks/use-chat'
@@ -141,6 +145,39 @@ describe('reconcileLiveAssistantTurn', () => {
   })
 })
 
+describe('Local Canvas Agent stop request payload', () => {
+  it('builds the mothership abort request with stream id, chat id, traceparent, and timeout signal', () => {
+    const abortController = new AbortController()
+    const request = buildMothershipChatAbortRequestInit({
+      streamId: 'stream-1',
+      chatId: 'chat-1',
+      traceparent: '00-trace-span-01',
+      signal: abortController.signal,
+    })
+
+    expect(request.method).toBe('POST')
+    expect(request.signal).toBe(abortController.signal)
+    expect(request.headers).toEqual({
+      'Content-Type': 'application/json',
+      traceparent: '00-trace-span-01',
+    })
+    expect(JSON.parse(String(request.body))).toEqual({
+      streamId: 'stream-1',
+      chatId: 'chat-1',
+    })
+  })
+
+  it('does not send an empty chat id when aborting a stream before chat resolution', () => {
+    const request = buildMothershipChatAbortRequestInit({
+      streamId: 'stream-1',
+    })
+
+    expect(JSON.parse(String(request.body))).toEqual({
+      streamId: 'stream-1',
+    })
+  })
+})
+
 describe('selectReconnectReplayState', () => {
   it('hydrates nonzero cursor replay from a cached live assistant that is ahead', () => {
     const cachedBlock: ContentBlock = { type: 'text', content: 'Hello world' }
@@ -230,5 +267,107 @@ describe('getReplayCompletedWorkflowToolCallIds', () => {
     ])
 
     expect(result).toEqual(new Set(['workflow-complete']))
+  })
+})
+
+describe('applyTextStreamChunk', () => {
+  it('appends assistant text chunks for normal streaming deltas', () => {
+    const result = applyTextStreamChunk({
+      existingBlockContent: '当前画布',
+      runningText: '当前画布',
+      chunk: '包含 4 个内容节点。',
+      textMode: 'append',
+      needsBoundaryNewline: false,
+    })
+
+    expect(result).toEqual({
+      blockContent: '当前画布包含 4 个内容节点。',
+      runningText: '当前画布包含 4 个内容节点。',
+    })
+  })
+
+  it('replaces assistant text with the full local-agent snapshot instead of appending or truncating', () => {
+    const fullText =
+      '当前画布内容节点如下：\n- Text 1（文本）：春季发布会主视觉脚本\n- Video 1（视频）：镜头推进，5 秒，1080p\n连接关系：\n- Text 1（文本） -> Video 1（视频）'
+
+    const result = applyTextStreamChunk({
+      existingBlockContent: '各位团队成员，作为总导演，我已对当前项目画布中的内容',
+      runningText: '各位团队成员，作为总导演，我已对当前项目画布中的内容',
+      chunk: fullText,
+      textMode: 'replace',
+      needsBoundaryNewline: false,
+    })
+
+    expect(result).toEqual({
+      blockContent: fullText,
+      runningText: fullText,
+    })
+    expect(result.runningText).not.toContain('作为总导演')
+  })
+})
+
+describe('Local Canvas Agent chat request payload', () => {
+  it('preserves fixed content-canvas send options for inline Confirm and Revise tokens', () => {
+    const fixedSendOptions = {
+      workflowCopilotMode: 'content_canvas_v1' as const,
+      confirmationMode: 'manual' as const,
+      thinkingLevel: 'extra' as const,
+      autoSelectionContexts: [
+        {
+          kind: 'blocks' as const,
+          blockIds: ['video-1'],
+          label: 'Current canvas selection (1)',
+        },
+      ],
+    }
+
+    const merged = mergeChatSendOptions(fixedSendOptions)
+    const body = buildMothershipChatRequestBody({
+      message: '__local_canvas_revise__:token-1',
+      workspaceId: 'workspace-1',
+      userMessageId: 'user-message-1',
+      createNewChat: false,
+      chatId: 'chat-1',
+      workflowId: 'workflow-1',
+      sendOptions: merged,
+      userTimezone: 'Asia/Shanghai',
+    })
+
+    expect(body).toMatchObject({
+      message: '__local_canvas_revise__:token-1',
+      workspaceId: 'workspace-1',
+      chatId: 'chat-1',
+      workflowId: 'workflow-1',
+      workflowCopilotMode: 'content_canvas_v1',
+      confirmationMode: 'manual',
+      thinkingLevel: 'extra',
+      autoSelectionContexts: [
+        {
+          kind: 'blocks',
+          blockIds: ['video-1'],
+          label: 'Current canvas selection (1)',
+        },
+      ],
+      userTimezone: 'Asia/Shanghai',
+    })
+  })
+
+  it('lets per-send options override fixed confirmation mode without dropping canvas mode', () => {
+    const merged = mergeChatSendOptions(
+      {
+        workflowCopilotMode: 'content_canvas_v1',
+        confirmationMode: 'auto',
+        thinkingLevel: 'extra',
+      },
+      {
+        confirmationMode: 'manual',
+      }
+    )
+
+    expect(merged).toEqual({
+      workflowCopilotMode: 'content_canvas_v1',
+      confirmationMode: 'manual',
+      thinkingLevel: 'extra',
+    })
   })
 })
