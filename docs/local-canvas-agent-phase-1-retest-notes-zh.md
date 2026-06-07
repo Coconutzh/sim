@@ -6516,3 +6516,27 @@ app error: false
 ```
 
 结论：A-01/A-02 已具备 current-source API/SSE + 浏览器 DOM 未损坏等价证据。后续仅在 routing、actor read summary、thinking 文案、SSE 渲染或 workflow state hydration 改动后回归。
+
+## 2026-06-08 测试集泄露复查
+
+本轮在生产代码范围内复查 local-canvas-agent 相关 prompt/guard/UI/runtime，排除 test 与 docs：
+
+```powershell
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "A-01|A-02|A-03|B-01|B-02|B-03|B-04|C-01|C-02|C-03|D-01|D-02|D-03|E-01|E-02|E-03|E-04|F-01|F-02|F-03|F-04|G-01|G-02|G-03|G-04|G-05|H-01|H-02|H-03|H-04|总导演|各组注意|导演这边|各位团队成员|总导演 Agent|高考|春季发布会主视觉" apps/sim/lib/copilot/request/lifecycle/local-canvas-agent "apps/sim/app/workspace/[workspaceId]/home" "apps/sim/app/workspace/[workspaceId]/w/[workflowId]"
+```
+
+结果：无命中。
+
+继续复查完整测试输入和最近修过的 thinking/persona 相关词：
+
+```powershell
+rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "总结当前画布里有哪些内容节点|请判断这个画布现在像一个什么内容生产流程|高考可能会考什么内容|找到包含|基于我选中的节点，提炼 3 个关键卖点|把选中文案改成更适合年轻用户|把这个图片节点的提示词改成|把视频时长改成 5 秒|把音乐方向改成更有节奏感|根据这个节点的 aiPrompt 生成正文并写回|生成这个图片节点的图片并写回|把所有节点都删掉|工种|可用技能|Do not use markdown|Just plain text|user request" apps/sim/lib/copilot/request/lifecycle/local-canvas-agent "apps/sim/app/workspace/[workspaceId]/home" "apps/sim/app/workspace/[workspaceId]/w/[workflowId]"
+```
+
+允许命中：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/planner.ts`：通用英文元指令残片过滤规则，覆盖 `just plain text`、`no markdown`、`user request` 等模型输出污染，不是中文测试预期硬编码。
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/models/verifier.ts`：通用 verifier prompt 中的 `user request`。
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/production-task-timeline.tsx`：真实 team/task 产品 UI 里的“工种”文案，不属于 local-canvas-agent prompt/guard。
+
+结论：当前生产 prompt/guard 范围未发现 `A-01` 到 `H-04` 测试编号、完整中文测试输入，或“总导演/各组注意/导演这边/各位团队成员/总导演 Agent”等测试期望泄露。`planner.ts` 保留的是通用语义化污染过滤，不复制中文测试预期。
