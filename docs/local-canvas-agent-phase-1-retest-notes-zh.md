@@ -5901,3 +5901,53 @@ edgeCount: 0
 - `ContentBlock` 当前源码页面挂载阻断的 `coerceNumber` runtime error 已修复。
 - 本轮尚未取得“修复后的同端口 current-source ReactFlow DOM 显示 7 nodes / 5 edges”的有效浏览器通过证据；3006 阻断点是 dev server 按需编译/权限请求/页面 shell loading，而不是新的 local canvas patch 写入失败。
 - 下一步若继续 F-01，应优先使用稳定 current-source preview build，或让 3006 完成首轮编译后重新导航目标 workflow，再观察 `.react-flow__node`、`.react-flow__edge`、Network `/api/workflows/:id/state` 和 console error。
+
+## 2026-06-08 02:36 F-01 current-source preview 连接显示复验通过
+
+继续处理上节遗留的 F-01 DOM edge 证据缺口。3006 current-source dev server 在 reload 后出现 `workspace-full-root-layout` chunk error，并最终 OOM；该样本不再作为有效浏览器证据。随后改用稳定 current-source preview：
+
+```text
+bun run preview:build
+结果：第一次失败，暴露 content-block.tsx 缺失 DEFAULT_AUDIO_MODEL；补齐 DEFAULT_AUDIO_MODEL、DEFAULT_AUDIO_PARAMETERS、DEFAULT_VIDEO_PARAMETERS imports 后重跑通过。
+
+临时启动：
+DISABLE_AUTH=true ... bunx next start -p 3007
+GET /api/workflows/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a/state -> 200
+```
+
+离线 normalization 验证：
+
+```text
+输入 API state：7 blocks / 5 edges
+raw edge: type=default, data.kind 缺失, sourceHandle=content-reference-source-right, targetHandle=content-reference-target-left
+normalizeWorkflowState(state) 后：5 edges 全部为 type=workflowEdge, data.kind=content_reference
+warnings: []
+```
+
+3007 current-source preview CDP DOM 证据：
+
+```text
+url: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+ReactFlow:
+  reactFlowPresent: true
+  nodeCount: 7
+  edgeCount: 5
+  edgePathCount: 5
+  handleCount: 25
+  appError: false
+
+node transforms:
+  Start: translate(-220px, -360px)
+  春季发布会主视觉文案: translate(140px, -360px)
+  视频节点: translate(500px, -360px)
+  音频节点: translate(860px, -360px)
+  补充文案: translate(1220px, -360px)
+  创意说明: translate(1580px, -360px)
+  视觉画面: translate(1940px, -360px)
+
+edge DOM:
+  5 x class="react-flow__edge react-flow__edge-workflowEdge nopan"
+  5 x class="react-flow__edge-path"
+```
+
+结论：F-01 当前源码 preview 浏览器复验通过。即使后端 API 仍返回旧 `type=default/data={}` content-reference edges，前端 workflow state normalization 会在 hydration/reload 时升级为 `workflowEdge/content_reference`，ReactFlow DOM 连接显示恢复为 5 条。后续只在 Copilot stream handling、workflow store hydration、`normalizeWorkflowState()`、ReactFlow edge rendering 或 content block 默认参数逻辑改动后回归。

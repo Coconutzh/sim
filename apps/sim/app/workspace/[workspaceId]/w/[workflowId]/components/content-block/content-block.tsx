@@ -22,6 +22,10 @@ import type {
   AudioGenerationParametersValue,
 } from '@/lib/generated-media/audio/audio-generation-utils'
 import {
+  DEFAULT_AUDIO_MODEL,
+  DEFAULT_AUDIO_PARAMETERS,
+} from '@/lib/generated-media/audio/audio-generation-utils'
+import {
   DEFAULT_IMAGE_AI_MODEL,
   DEFAULT_IMAGE_ASPECT_RATIO,
   getNearestSupportedImageAspectRatio,
@@ -64,6 +68,7 @@ import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/provide
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
 import {
+  DEFAULT_VIDEO_PARAMETERS,
   normalizeAudioModel,
   normalizeAudioParameters,
   normalizeVideoDuration,

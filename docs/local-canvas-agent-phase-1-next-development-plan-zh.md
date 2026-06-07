@@ -42,8 +42,8 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts:340-352`、`context-tools.ts:65-74`、`context-tools.ts:121-140`、`canvas-tools.ts:321-334`：agent-visible 附件和节点 file detail 当前只输出 name/type/size 或文件名；内部 key/url/path 仍只用于匹配、读取和写回。
 - `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/runtime.ts:39-77`、`193-238`、`319-346`：manual Confirm/Revise pending plan 当前有 30 分钟 TTL、过期清理、一次性消费和 Revise 删除逻辑。
 - `apps/sim/lib/copilot/request/lifecycle/content-canvas-agent.ts:4236-4240`：旧 `runContentCanvasAgent()` 已标注 deprecated，作为迁移参考和 legacy 测试保留。
-- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx`：右侧 Copilot 当前已把 `canvas.apply_patch` / `canvas.generate_node_output` 成功结果、local canvas stream end、send settled 都分流到 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`；legacy `edit_workflow` 仍走 `workflowDiffStore.setProposedChanges()`。2026-06-08 既有 current-source 浏览器样本已证明 F-01 节点 position 无刷新同步：后端 state 横向后，ReactFlow DOM transform 同步为 `-220/140/500/860/1220/1580/1940`。
-- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/workflow.tsx:3083-3310`、`stores/workflows/workflow/validation.ts`、`components/content-block/content-block.tsx`：F-01 前端根因已拆成三段。`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 处理 position-only committed reload；`validation.ts` 本轮新增旧 content-reference edge normalization，兼容只有 `content-reference-*` handles 但缺少 `data.kind=content_reference` 的旧边，避免刷新后节点位置对齐但连接不显示；`content-block.tsx` 本轮补回 `coerceNumber()`，修复 current-source 页面挂载时的 `ReferenceError`。本轮 3006 current-source dev server 仍停在按需编译 / workspace shell loading，尚未补到修复后的同端口 ReactFlow DOM `nodeCount=7 + edgeCount=5` 新证据。
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx`：右侧 Copilot 当前已把 `canvas.apply_patch` / `canvas.generate_node_output` 成功结果、local canvas stream end、send settled 都分流到 `useWorkflowRegistry.getState().loadWorkflowState(workflowId)`；legacy `edit_workflow` 仍走 `workflowDiffStore.setProposedChanges()`。2026-06-08 current-source 浏览器样本已证明 F-01 节点 position 无刷新同步：后端 state 横向后，ReactFlow DOM transform 同步为 `-220/140/500/860/1220/1580/1940`。
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/workflow.tsx:3083-3310`、`stores/workflows/workflow/validation.ts`、`components/content-block/content-block.tsx`：F-01 前端根因已拆成三段。`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 处理 position-only committed reload；`validation.ts` 本轮新增旧 content-reference edge normalization，兼容只有 `content-reference-*` handles 但缺少 `data.kind=content_reference` 的旧边，避免刷新后节点位置对齐但连接不显示；`content-block.tsx` 本轮补回 `coerceNumber()` 和缺失的 audio/video default imports，修复 current-source 页面挂载与 preview build 阻断。2026-06-08 3007 current-source preview 已补到修复后的同端口 ReactFlow DOM 证据：API 仍为 7 blocks / 5 legacy edges，DOM 显示 7 nodes / 5 `workflowEdge` / 5 edge paths。
 
 本轮测试污染只读 grep 结果：在 `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent`、`apps/sim/app/workspace/[workspaceId]/home`、`apps/sim/app/workspace/[workspaceId]/w/[workflowId]` 的非测试生产文件范围内，未命中 `A-01` 到 `H-04` 测试编号，也未命中“总导演”“各组注意”“导演这边”“各位团队成员”“总导演 Agent”“高考”“春季发布会主视觉”等 local-canvas-agent 泄露复查关键词。后续改 prompt/guard 后仍必须按第五节重新 grep。
 
@@ -72,7 +72,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
-第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有节点 position live refresh 证据、并已补旧 content-reference edge hydration 兼容与 `ContentBlock` runtime 修复但仍需稳定 current-source DOM 连接复验，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
+第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有节点 position live refresh、旧 content-reference edge hydration 兼容和 3007 current-source preview DOM 连接复验证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本、附件脱敏已有 fake attachment metadata 真实 SSE 无泄露证据的基础上，继续做生成回归保护、Confirm/Revise 浏览器回归和验收文档收尾。
 
 ## 一、当前问题归并
 
@@ -107,9 +107,9 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 对应测试编号 | D-01、D-02、D-03、E-01、E-02、E-03、E-04、F-01 |
 | 当前失败表现 | D-01 曾失败为 `patch.operations is required`；D-02 曾只复述输入；D-03 曾第一次找不到图片；E-03 曾声称修改视频但 state 不变；F-01 曾失败为后端 state 已按生产顺序横向布局并完成 verify，但 ReactFlow DOM 未实时更新，仍显示旧 position。 |
 | 相关代码位置 | `canvas-tools.ts`：`requirePatch()`、`normalizeLegacyCanvasPatch()`、`normalizeInstructionCanvasPatch()`、`executeCanvasTool()`；`canvas-patch.ts`：patch 校验与 `editWorkflowServerTool` operation 构造；`canvas-verify.ts`：create/update/connect/layout 验证；`planner.ts`：内容链、补前后节点、更新字段、布局计划；`copilot-tab.tsx`：`handleCopilotToolResult()` 的 mutation 后 UI refresh。 |
-| 当前代码状态 | 工具边界已兼容标准 `patch.operations`、旧形态 `addNodes/addEdges`、direct operation、instruction-only chain。`canvas-verify.ts` 已验证 create/update/connect/layout。D-01 已有 current-source preview 浏览器级通过证据：空白 workflow 从 1 节点/0 边变为 5 节点/3 边，ReactFlow live refresh 显示 5 nodes / 3 edges，无 `patch.operations is required` 或 cancelled。D-02/D-03 已同步 current-source preview 证据：选中 video/image 后新增 text 并形成 `video -> text`、`text -> image` 连线，当前 preview state 复核仍可见目标节点和边。F-01 的 position 同步链路已实现：`copilot-tab.tsx` 把 local canvas mutation tool success、stream end、send settled 接到 committed workflow reload；`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 覆盖 position-only committed reload。2026-06-08 本轮又补 `normalizeWorkflowState()` 旧 content-reference edge 兼容和 `ContentBlock.coerceNumber()` runtime 修复。 |
+| 当前代码状态 | 工具边界已兼容标准 `patch.operations`、旧形态 `addNodes/addEdges`、direct operation、instruction-only chain。`canvas-verify.ts` 已验证 create/update/connect/layout。D-01 已有 current-source preview 浏览器级通过证据：空白 workflow 从 1 节点/0 边变为 5 节点/3 边，ReactFlow live refresh 显示 5 nodes / 3 edges，无 `patch.operations is required` 或 cancelled。D-02/D-03 已同步 current-source preview 证据：选中 video/image 后新增 text 并形成 `video -> text`、`text -> image` 连线，当前 preview state 复核仍可见目标节点和边。F-01 的 position/edge 同步链路已实现：`copilot-tab.tsx` 把 local canvas mutation tool success、stream end、send settled 接到 committed workflow reload；`workflow.tsx` 通过 `reconcileDisplayNodePositions()` 覆盖 position-only committed reload；`normalizeWorkflowState()` 兼容旧 content-reference edge。2026-06-08 3007 current-source preview 复验显示 7 nodes / 5 edges / 5 edge paths。 |
 | 根因假设 | D-01 原因是模型真实输出旧参数形态与工具 schema 不兼容。D-02/D-03 是 selected target 和 connect reference 问题。E-03/E-04 是字段提取和 verify 不足导致“说改了但没改”。F-01 根因已收敛为前端同步链路：local canvas mutation 不能走 legacy proposed diff 路径，position-only committed reload 需要显式 reconcile 到 ReactFlow display nodes；旧 malformed content-reference edge 还需要在 workflow state normalization 阶段补语义，以免刷新后连接不显示。 |
-| 是否需要进一步验证 | F-01 当前代码阻塞已修；仍需在稳定 current-source 页面补一次修复后的 DOM 证据：同一 workflow API state 5 条 edge，ReactFlow DOM `.react-flow__edge` / `.react-flow__edge-path` 也显示 5 条，节点 transform 与 state position 对齐。D-01/D-02/D-03 和 E-03/E-04 后续作为回归保护；E 类若改 UI 字段展示，还需补属性面板浏览器回归。 |
+| 是否需要进一步验证 | F-01 当前已补稳定 current-source preview DOM 证据；后续只在 stream/store/hydration/normalization/ReactFlow rendering 或 content block 默认参数逻辑改动后回归。D-01/D-02/D-03 和 E-03/E-04 后续作为回归保护；E 类若改 UI 字段展示，还需补属性面板浏览器回归。 |
 
 ### 4. 生成写回和字段级 verify
 
@@ -188,7 +188,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | E-02 | 服务级通过；需浏览器字段展示回归 | planner field extraction | `planner.ts` | `aiPrompt` 不包含“把提示词改成”这类操作话术 |
 | E-03 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + verify | `planner.ts`、`canvas-verify.ts` | 后续作为回归保护：`videoParameters.duration = 5`，`videoPrompt` 含推进感，verify 成功 |
 | E-04 | current-source preview API/state 证据通过；仍可补强右侧属性面板展示 | planner + actor | `planner.ts`、`models/actor.ts` | 后续作为回归保护：更新 `audioPrompt`，不误读 video，不误走 generation |
-| F-01 | position 同步已有 current-source 浏览器证据和 focused 自动回归；本轮已修旧 content-reference edge reload 和 `ContentBlock` runtime error；仍需补修复后的同端口 DOM edge 复验 | UI refresh + workflow store hydration + ReactFlow position/edge reconcile | `copilot-tab.tsx`、`workflow.tsx`、`stores/workflows/registry/store.ts`、`stores/workflows/workflow/validation.ts`、`content-block.tsx` | 后端 state position/edges 变化，ReactFlow DOM transform 和 edge path 同步变化，无需刷新页面；节点和边不丢，回答与 verify 一致 |
+| F-01 | current-source preview 通过；已有 position 同步、旧 content-reference edge normalization 和 3007 DOM edge 复验证据 | UI refresh + workflow store hydration + ReactFlow position/edge reconcile | `copilot-tab.tsx`、`workflow.tsx`、`stores/workflows/registry/store.ts`、`stores/workflows/workflow/validation.ts`、`content-block.tsx` | 后端 state position/edges 变化，ReactFlow DOM transform 和 edge path 同步变化，无需刷新页面；节点和边不丢，回答与 verify 一致 |
 | F-02 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx`、`options.tsx` | Confirm/Revise 展示，未确认前 state 不变 |
 | F-03 | preview 浏览器级通过 | runtime + tool loop | `runtime.ts`、`tool-loop.ts` | 同一 chatId 执行 pending plan，一次性消费，随后 verify |
 | F-04 | preview 浏览器级通过 | runtime + UI | `runtime.ts`、`special-tags.tsx` | Revise 不执行 patch，pending 清理，state 不变 |
@@ -266,7 +266,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 
 ### 阶段 1：F-01 右侧 Copilot mutation 后画布 live refresh
 
-- 目标：维护并回归 `canvas.apply_patch` / `canvas.generate_node_output` 成功后的无刷新画布同步。F-01 的 position 同步当前已有通过证据：后端 workflow state 变化后，右侧 Copilot 会 reload committed workflow state，ReactFlow display nodes 会同步 position-only 变化。本轮已补旧 content-reference edge hydration 兼容；下一次稳定 current-source 页面挂载后，还需要补 `edgeCount=5` / `edgePathCount=5` 的同端口 DOM 复验证据。
+- 目标：维护并回归 `canvas.apply_patch` / `canvas.generate_node_output` 成功后的无刷新画布同步。F-01 当前已有通过证据：后端 workflow state 变化后，右侧 Copilot 会 reload committed workflow state，ReactFlow display nodes 会同步 position-only 变化；旧 content-reference edge hydration 兼容后，3007 current-source preview DOM 显示 `nodeCount=7`、`edgeCount=5`、`edgePathCount=5`。
 - 要改的文件：
   - `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.tsx`
   - `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/workflow.tsx`
@@ -620,7 +620,7 @@ bun run type-check
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
 1. G-02/G-03/G-04：作为媒体生成回归保护。判断通过：`file` 写回，预览刷新，不泄露 key/url/path。
-2. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 position 已通过，但本轮改了 workflow state normalization 和 ContentBlock 页面挂载链路，仍需在稳定 current-source 页面补连接 DOM 复验。
+2. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已补 current-source preview DOM 连接复验，后续仅作为 stream/store/rendering 回归点。
 3. G-01/G-05：已有 API/SSE、浏览器或 dedicated unit 证据；后续只在 text generation/provider/verifier 或 text UI 改动后回归。
 4. 附件/文件脱敏专项：已有 fake attachment metadata 真实 SSE 无泄露证据和 focused `read_file` 成功路径测试；后续重启 current-source server 后可补成功 `read_file` 端到端样本。
 5. H-04：已具备浏览器核心样本、chatId API/SSE 样本和 preview 浏览器 UI 二次样本；后续只在 stop/abort/cancel 链路改动后回归。
