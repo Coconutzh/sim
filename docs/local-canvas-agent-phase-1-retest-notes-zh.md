@@ -6454,3 +6454,65 @@ restoredPromptMatches: true
 ```
 
 结论：E-02 current-source preview 通过。`aiPrompt` 只追加视觉方向，不写入“把这个图片节点/提示词改成/改成更明亮”等操作话术；图片 file 保持，属性面板和节点内 AI composer 均显示更新后的 prompt。
+
+## 2026-06-08 A-01/A-02 current-source preview 复测
+
+本轮在 3007 current-source preview 上复测 A-01/A-02，只读请求不应修改画布。
+
+环境：
+
+```text
+server: http://localhost:3007
+workspaceId: 6008600b-37eb-4598-9ef7-02098086468b
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+stateHash: f7151cf9881db017687330bae91d20a023079491386674e5ebbd834ee964d991
+```
+
+A-01：
+
+```text
+message: 总结当前画布里有哪些内容节点，以及它们之间的关系。
+HTTP: 200
+tools: canvas.read_summary
+mutation tools: none
+generation tools: none
+state hash before/after: unchanged
+thinking text: 正在读取当前画布内容。
+persona leak keywords: none
+```
+
+回答内容覆盖 text/image/video/audio 内容节点摘要，并列出 5 条连接关系：
+
+```text
+春季发布会主视觉文案（文本） -> 视觉画面（图片）
+视觉画面（图片） -> 视频节点（视频）
+视频节点（视频） -> 音频节点（音频）
+视频节点（视频） -> 补充文案（文本）
+创意说明（文本） -> 视觉画面（图片）
+```
+
+A-02：
+
+```text
+message: 请判断这个画布现在像一个什么内容生产流程，缺少哪些环节？
+HTTP: 200
+tools: canvas.read_summary
+mutation tools: none
+generation tools: none
+state hash before/after: unchanged
+persona leak keywords: none
+```
+
+回答能按当前连接结构理解为短视频内容生产流程，并建议继续细化提示词和生成参数；没有自动修改画布。
+
+浏览器 DOM 复核：
+
+```text
+CDP page: http://localhost:3007/workspace/6008600b-37eb-4598-9ef7-02098086468b/w/e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+ReactFlow nodes: 7
+ReactFlow edges: 5
+ReactFlow edge paths: 5
+app error: false
+```
+
+结论：A-01/A-02 已具备 current-source API/SSE + 浏览器 DOM 未损坏等价证据。后续仅在 routing、actor read summary、thinking 文案、SSE 渲染或 workflow state hydration 改动后回归。
