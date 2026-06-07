@@ -411,6 +411,10 @@ interface OptionsDisplayProps {
   onSelect?: (id: string) => void
 }
 
+function getOptionTestId(label: string): string {
+  return `chat-option-${label.trim().toLowerCase().replace(/\s+/g, '-')}`
+}
+
 function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
   const disabled = !onSelect
   const [collapsedByUser, setCollapsedByUser] = useState(false)
@@ -450,6 +454,8 @@ function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
                 <button
                   key={key}
                   type='button'
+                  aria-label={`Chat option: ${title}`}
+                  data-testid={getOptionTestId(title)}
                   disabled={disabled}
                   onClick={() => onSelect?.(key)}
                   className={cn(

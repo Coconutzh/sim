@@ -1,8 +1,6 @@
-/**
- * @vitest-environment jsdom
- */
+// @vitest-environment jsdom
 
-import React from 'react'
+import type React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -75,16 +73,25 @@ vi.mock('@/app/workspace/[workspaceId]/home/components/user-input/components', (
   OVERLAY_CLASSES: '',
   PlusMenuDropdown: () => null,
   SendButton: ({
+    isSending,
     onSubmit,
     canSubmit,
+    onStopGeneration,
   }: {
+    isSending: boolean
     onSubmit: () => void
     canSubmit: boolean
-  }) => (
-    <button type='button' onClick={onSubmit} disabled={!canSubmit}>
-      send
-    </button>
-  ),
+    onStopGeneration: () => void
+  }) =>
+    isSending ? (
+      <button type='button' data-testid='chat-stop-generation' onClick={onStopGeneration}>
+        stop
+      </button>
+    ) : (
+      <button type='button' onClick={onSubmit} disabled={!canSubmit}>
+        send
+      </button>
+    ),
   TEXTAREA_BASE_CLASSES: '',
 }))
 
@@ -196,6 +203,11 @@ describe('UserInput integration', () => {
     )
     expect(textarea).not.toBeNull()
     expect(sendButton).not.toBeNull()
+    const confirmationModeTrigger = container.querySelector(
+      '[data-testid="content-canvas-confirmation-mode-trigger"]'
+    )
+    expect(confirmationModeTrigger).toHaveAttribute('aria-label', 'Confirmation mode: auto')
+    expect(confirmationModeTrigger?.textContent).toContain('自动确认')
 
     await act(async () => {
       sendButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -220,6 +232,35 @@ describe('UserInput integration', () => {
     )
     expect(clearAttachedFiles).toHaveBeenCalled()
     expect(clearContexts).toHaveBeenCalled()
+
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('routes the composer stop button to onStopGeneration while sending', async () => {
+    const onStopGeneration = vi.fn()
+
+    const { container, root } = renderIntoDocument(
+      <UserInput
+        defaultValue='正在生成内容'
+        onSubmit={vi.fn()}
+        isSending
+        onStopGeneration={onStopGeneration}
+        enableContentCanvasAgent
+      />
+    )
+
+    const stopButton = container.querySelector('[data-testid="chat-stop-generation"]')
+    expect(stopButton).not.toBeNull()
+
+    await act(async () => {
+      stopButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onStopGeneration).toHaveBeenCalledOnce()
 
     await act(async () => {
       root.unmount()

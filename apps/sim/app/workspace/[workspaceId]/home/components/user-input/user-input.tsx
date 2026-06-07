@@ -1248,6 +1248,8 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
                   <Button
                     type='button'
                     variant='ghost'
+                    aria-label={`Confirmation mode: ${confirmationMode}`}
+                    data-testid='content-canvas-confirmation-mode-trigger'
                     className='h-[28px] rounded-full border border-[var(--border-1)] px-2 text-[12px] text-[var(--text-secondary)] hover-hover:bg-[var(--surface-hover)]'
                   >
                     {confirmationMode === 'manual' ? '手动确认' : '自动确认'}
@@ -1255,13 +1257,19 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align='start' side='top' sideOffset={8}>
-                  <DropdownMenuItem onClick={() => setConfirmationMode('manual')}>
+                  <DropdownMenuItem
+                    data-testid='content-canvas-confirmation-mode-manual'
+                    onClick={() => setConfirmationMode('manual')}
+                  >
                     <span className='flex items-center gap-2'>
                       {confirmationMode === 'manual' && <Check className='h-3.5 w-3.5' />}
                       <span>手动确认</span>
                     </span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setConfirmationMode('auto')}>
+                  <DropdownMenuItem
+                    data-testid='content-canvas-confirmation-mode-auto'
+                    onClick={() => setConfirmationMode('auto')}
+                  >
                     <span className='flex items-center gap-2'>
                       {confirmationMode === 'auto' && <Check className='h-3.5 w-3.5' />}
                       <span>自动确认</span>
