@@ -111,6 +111,42 @@ export function getDragHighlightTransition(
   return nextContainerId ? 'apply' : 'clear'
 }
 
+function positionsMatch(
+  left: { x: number; y: number } | undefined,
+  right: { x: number; y: number } | undefined
+): boolean {
+  return left?.x === right?.x && left?.y === right?.y
+}
+
+/**
+ * Merges authoritative store positions into ReactFlow display nodes without
+ * recreating nodes for ordinary drag updates.
+ */
+export function reconcileDisplayNodePositions(
+  nodes: Node[],
+  blocks: Record<string, BlockState>
+): Node[] {
+  const blockIds = new Set(Object.keys(blocks))
+  if (nodes.length !== blockIds.size) return nodes
+
+  for (const node of nodes) {
+    const block = blocks[node.id]
+    if (!block) return nodes
+    const parentId = typeof block.data?.parentId === 'string' ? block.data.parentId : undefined
+    if ((node.parentId ?? undefined) !== parentId) return nodes
+  }
+
+  let changed = false
+  const reconciled = nodes.map((node) => {
+    const block = blocks[node.id]
+    if (!block || positionsMatch(node.position, block.position)) return node
+    changed = true
+    return { ...node, position: block.position }
+  })
+
+  return changed ? reconciled : nodes
+}
+
 interface ContainerMatchCandidate {
   id: string
   depth: number
@@ -129,9 +165,7 @@ export function pickBestContainerMatch<T extends ContainerMatchCandidate>(
     return a.size - b.size
   })
 
-  return (
-    sortedCandidates.find((candidate) => !isDescendantOf(draggedNodeId, candidate.id)) ?? null
-  )
+  return sortedCandidates.find((candidate) => !isDescendantOf(draggedNodeId, candidate.id)) ?? null
 }
 
 interface BlockData {

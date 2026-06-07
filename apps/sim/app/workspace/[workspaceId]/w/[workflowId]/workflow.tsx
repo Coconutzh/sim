@@ -53,10 +53,10 @@ import {
   isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
+  type ContentReferenceRecord,
   getDefaultReferenceRole,
   normalizeContentReferences,
   upsertContentReference,
-  type ContentReferenceRecord,
 } from '@/lib/workflows/content-references'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
@@ -85,9 +85,9 @@ import {
   computeClampedPositionUpdates,
   estimateBlockDimensions,
   filterProtectedBlocks,
-  getDragHighlightTransition,
   getClampedPositionForNode,
   getDescendantBlockIds,
+  getDragHighlightTransition,
   getEdgeSelectionContextId,
   getNodeSelectionContextId,
   getWorkflowLockToggleIds,
@@ -95,6 +95,7 @@ import {
   isEdgeProtected,
   isInEditableElement,
   pickBestContainerMatch,
+  reconcileDisplayNodePositions,
   resolveSelectionConflicts,
   validateTriggerPaste,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
@@ -3308,6 +3309,12 @@ const WorkflowContent = React.memo(
         }))
       })
     }, [derivedNodes, blocks, pendingSelection, clearPendingSelection])
+
+    useEffect(() => {
+      if (!isWorkflowReady) return
+      if (getDragStartPosition() !== null || multiNodeDragStartRef.current.size > 0) return
+      setDisplayNodes((currentNodes) => reconcileDisplayNodePositions(currentNodes, blocks))
+    }, [blocks, getDragStartPosition, isWorkflowReady])
 
     /** Pans viewport to pending blocks once they have valid dimensions. */
     useEffect(() => {
