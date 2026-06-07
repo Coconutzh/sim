@@ -5622,3 +5622,75 @@ hash: 14680279081603930949
 结论：H-04 preview 浏览器 UI 二次样本通过。真实页面中 Stop button 立即出现并被点击，Network 发出 abort/stop 请求，UI 停止态结束，约 30 秒后 workflow state hash、节点数、边数和生成文件名均未变化，无迟到写回。
 
 限制说明：本次 CDP Network 记录到了 abort/stop request，但未保存 response body；chatId 已解析后 abort body 和 `aborted=true/settled=true` 仍由 19:18 API/SSE 样本覆盖。若后续改 `use-chat.ts`、abort route、stream buffer、tool loop 或 provider cancel，需要重新回归 H-04。
+
+## 2026-06-08 01:27 附件脱敏真实请求与匹配修复
+
+本轮继续按方案推进附件/file context 脱敏专项。目标是构造包含 fake storage key、serve URL、Windows path、external URL 和 fake private-key marker 的真实 chat 请求，检查 SSE/tool/final answer 是否泄露。过程中发现并修复 `read_file` 对模型整句 query 的匹配缺口。
+
+代码修复：
+
+```text
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-tools.ts
+apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts
+```
+
+- `contextMatches()` / `attachmentMatches()` 改为双向包含匹配。
+- 覆盖模型常见输出：`Read the attached file brief.pdf and report only safe metadata.` 这种整句 query 里包含文件名时，也能命中 `brief.pdf`。
+- 输出仍走 `sanitizeAttachmentForAgent()` 和 `redactAgentVisibleFileContext()`，不会返回 key/url/path/private key。
+
+验证命令：
+
+```powershell
+cd apps/sim
+bunx vitest run "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts"
+bunx biome check --no-errors-on-unmatched "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.ts" "lib/copilot/request/lifecycle/local-canvas-agent/context-tools.test.ts"
+```
+
+结果：
+
+```text
+Vitest: 1 file / 5 tests passed
+Biome: Checked 2 files. No fixes applied.
+```
+
+真实请求样本：
+
+```text
+POST http://localhost:3000/api/mothership/chat
+POST http://localhost:3005/api/mothership/chat
+
+workflowId: e9f8bb55-52e6-4c2b-b8f8-35f60e9c0c6a
+workspaceId: 6008600b-37eb-4598-9ef7-02098086468b
+message: In the current canvas context, read the attached file secret-brief.txt and report only its file name, MIME type, and size. Do not modify the canvas.
+```
+
+fake `fileAttachments[0]` 包含：
+
+```text
+filename: secret-brief.txt
+media_type: text/plain
+size: 1234
+key: workspace/6008600b-37eb-4598-9ef7-02098086468b/private/fake-secret.txt
+url: /api/files/serve/workspace%2F6008600b-37eb-4598-9ef7-02098086468b%2Fprivate%2Ffake-secret.txt?context=workspace
+path: C:\Users\zzh\.ssh\id_rsa
+previewUrl: https://files.example.invalid/private/fake-secret.txt
+content: FAKE_PRIVATE_KEY_SHOULD_NOT_APPEAR
+```
+
+观察结果：
+
+```text
+status: 200
+containsApplyPatch: false
+containsReadFile: true
+forbiddenHits: []
+safeHints: ["secret-brief.txt"]
+```
+
+`read_file` 在当前运行中的 3000/3005 进程仍返回旧错误：
+
+```text
+No matching attached file context was found
+```
+
+判断：运行中的 preview/dev route chunk 没有加载本轮源码匹配补丁，因此真实请求暂未覆盖成功 `read_file` tool result；但真实 SSE 已证明 fake key/url/path/private-key marker 不进入 stream/final answer，源码成功路径由 focused test 覆盖。后续如重启 current-source dev/preview，应再补一次成功 `read_file` 端到端样本。

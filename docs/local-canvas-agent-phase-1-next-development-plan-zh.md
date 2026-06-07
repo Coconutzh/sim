@@ -69,7 +69,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 - 生成写回后已有字段级 verify 链路：`generate_node_output -> verifiedField -> verify_patch({ generation })`。
 - manual Confirm/Revise pending plan 已有 30 分钟 TTL 和一次性消费逻辑。第一阶段仍不做 DB 持久化。
 - 生成服务、tool loop、前端 stop 已有取消信号链路。H-04 有 preview 浏览器核心通过证据；server log 可观测性已有 abort handler 代码级和 route test 证据；chatId 已解析后停止已有 current-source API/SSE 样本；2026-06-08 已补 preview 浏览器 UI 二次样本，点击 Stop 后出现 `/api/mothership/chat/abort` 和 `/api/mothership/chat/stop` 请求，30 秒后 workflow state hash 不变。
-- 附件和节点 file detail 已有脱敏实现，但仍需用专门手工/grep 证明 prompt、SSE、tool output、最终回答都不泄露。
+- 附件和节点 file detail 已有脱敏实现。2026-06-08 已补 fake `fileAttachments` 真实 SSE 请求：payload 中包含 storage key、serve URL、Windows path、external URL、fake private-key marker，SSE/tool/final answer 均未命中 forbidden 值；同时已修复 `read_file` 整句 query 包含文件名时匹配失败的问题，并用 focused test 覆盖成功路径脱敏。
 - `content-canvas-agent.ts` 已标注 deprecated；生产 `content_canvas_v1` 入口在 `run.ts` 中走 `runLocalCanvasAgent()`。
 
 第一阶段当前主要剩余工作不是从零实现 runtime，而是：在 F-01 已有 current-source 浏览器 live refresh 通过证据，D-01/D-02/D-03 已有 current-source preview 证据，E-03/E-04 已有 current-source preview API/state、浏览器节点展示和 JSON string 参数解析测试证据，G-01/G-02/G-03/G-04/G-05 已有 current-source 或 focused unit 证据，H-04 已有 server log 代码级补强、chatId API/SSE 停止样本和 preview 浏览器 UI 二次样本的基础上，继续补附件脱敏专项真实请求证据、必要的生成失败真实路径证据和验收文档收尾。
@@ -153,7 +153,7 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 | 相关代码位置 | `canvas-tools.ts`：`sanitizeCanvasNodeDetailForAgent()`；`context-manager.ts`：`extractAttachments()`、`buildAttachmentContext()`；`context-tools.ts`：`sanitizeAttachmentForAgent()`、`readFileContext()`；`node-adapters/{image,video,audio,document,image-editor}.ts`。 |
 | 当前代码状态 | 节点 detail 对 agent 只保留 file name；prompt attachment context 只输出 name/type/size；`read_file` 输出 attachments 时使用 `sanitizeAttachmentForAgent()`。`attachedContexts.type === 'file'` 的 prompt context 和 `read_file` context content 已接入 `redactAgentVisibleFileContext()`，覆盖 storage key/path、`/api/files/serve`、HTTP URL、Windows/Unix path 和 PEM private key block。内部 attachment 仍保留 key/url 供匹配、读取和写回。 |
 | 根因假设 | 风险在“内部字段误流到 agent-visible 输出”，不是内部存储本身。尤其要检查 attachedContexts.content、workspace context、SSE observation、最终回答。 |
-| 是否需要进一步验证 | focused tests 已覆盖 prompt context 与 `read_file` output 脱敏；仍需专项真实请求证据：Network/SSE/server log/final answer 不含 storage key、path、URL 或 private key。 |
+| 是否需要进一步验证 | focused tests 已覆盖 prompt context 与 `read_file` output 脱敏。2026-06-08 fake attachment metadata 真实 SSE 请求已证明 final/tool stream 不输出 storage key、path、URL 或 private-key marker；`read_file` 成功路径由 focused test 覆盖，因为当前 3000/3005 运行进程未加载新匹配补丁，真实请求仍命中旧的 query matching error。后续如重启 current-source dev/preview，可补一次成功 `read_file` 的端到端样本。 |
 
 ### 8. 中危测试污染清理
 
@@ -619,10 +619,10 @@ bun run type-check
 
 第一优先级：仍缺浏览器证据或 UI 刷新证据的失败/高风险点。
 
-1. 附件/文件脱敏专项：判断通过：tool output、SSE、final answer 都不泄露 key/url/path/private storage path。
-2. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
-3. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
-4. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+1. G-05：作为回归保护或真实失败最终回答补强。判断通过：旧字段不清空，最终回答显示失败，不出现“已完成”。
+2. G-01/G-02/G-03/G-04：作为生成回归保护。判断通过：`contentHtml` 或 `file` 写回，预览刷新，不泄露 key/url/path。
+3. F-02/F-03/F-04：manual Confirm/Revise 真实页面回归；F-01 已通过，但若改 stream/store/displayNodes 仍需回归。
+4. 附件/文件脱敏专项：已有 fake attachment metadata 真实 SSE 无泄露证据和 focused `read_file` 成功路径测试；后续重启 current-source server 后可补成功 `read_file` 端到端样本。
 5. H-04：已具备浏览器核心样本、chatId API/SSE 样本和 preview 浏览器 UI 二次样本；后续只在 stop/abort/cancel 链路改动后回归。
 
 第二优先级：已通过但高风险的回归点。
