@@ -349,7 +349,17 @@ export interface LocalAgentAskClarificationDecision {
 export interface LocalAgentFinalAnswerDecision {
   type: 'final_answer'
   answer: string
-  memoryUpdate?: Record<string, unknown>
+  memoryUpdate?: LocalAgentThreadMemoryUpdate
+}
+
+export interface LocalAgentThreadMemoryUpdate {
+  conversationSummary?: string
+  canvasSummary?: string
+  taskState?: {
+    goal?: string
+    openQuestions?: string[]
+    lastObservation?: string
+  }
 }
 
 export interface LocalAgentToolResult {

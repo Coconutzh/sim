@@ -13,6 +13,7 @@ import type {
   LocalAgentDecision,
   LocalAgentObservation,
   LocalAgentPlan,
+  LocalAgentThreadMemoryUpdate,
   LocalAgentToolCall,
   LocalAgentToolLoopResult,
   LocalCanvasMutationPolicy,
@@ -464,6 +465,31 @@ function buildDecisionObservation(summary: string, success: boolean): LocalAgent
   }
 }
 
+function summarizeDecisionMemoryUpdate(update: LocalAgentThreadMemoryUpdate): string {
+  return [
+    update.conversationSummary ? 'conversationSummary' : '',
+    update.canvasSummary ? 'canvasSummary' : '',
+    update.taskState?.goal ? 'taskState.goal' : '',
+    update.taskState?.openQuestions?.length ? 'taskState.openQuestions' : '',
+    update.taskState?.lastObservation ? 'taskState.lastObservation' : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+function buildMemoryUpdateObservation(update: LocalAgentThreadMemoryUpdate): LocalAgentObservation {
+  const changedFields = summarizeDecisionMemoryUpdate(update)
+  return {
+    toolName: 'memory',
+    summary: changedFields
+      ? `Model requested thread memory update: ${changedFields}`
+      : 'Model requested thread memory update.',
+    success: true,
+    timestamp: new Date().toISOString(),
+    output: update,
+  }
+}
+
 function buildVerificationInputFromToolResult(
   call: LocalAgentToolCall,
   output: unknown
@@ -673,6 +699,9 @@ async function runModelDrivenLocalAgentToolLoop(
       if (state.pendingVerification) {
         await executePendingVerification({ context, state })
         continue
+      }
+      if (decision.memoryUpdate) {
+        state.observations.push(buildMemoryUpdateObservation(decision.memoryUpdate))
       }
       return { plan: state.plan, observations: state.observations, answer: decision.answer }
     }

@@ -138,6 +138,49 @@ describe('local canvas summarizer', () => {
     )
   })
 
+  it('merges model final-answer memory observations into deterministic thread memory', async () => {
+    mockExecuteLocalAgentModelRequest.mockRejectedValue(new Error('model unavailable'))
+    const plan: LocalAgentPlan = {
+      goal: '总结高考内容链',
+      risk: 'low',
+      userIntent: 'inspect_canvas',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'required',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['记录后续问题'],
+    }
+
+    const summary = await summarizeLocalAgentRun({
+      context: buildContext(),
+      memory: buildMemory(),
+      plan,
+      observations: [
+        {
+          toolName: 'memory',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Model requested thread memory update: conversationSummary, canvasSummary',
+          output: {
+            conversationSummary: '用户正在推进高考主题短视频内容链。',
+            canvasSummary: '画布已有脚本、主视觉、视频和配乐。',
+            taskState: {
+              goal: '继续优化高考主题内容链',
+              openQuestions: ['是否继续生成各节点输出？'],
+              lastObservation: '内容链已经验证。',
+            },
+          },
+        },
+      ],
+    })
+
+    expect(summary.conversationSummary).toContain('高考主题短视频内容链')
+    expect(summary.canvasSummary).toContain('脚本、主视觉、视频和配乐')
+    expect(summary.taskState.goal).toBe('继续优化高考主题内容链')
+    expect(summary.taskState.openQuestions).toContain('是否继续生成各节点输出？')
+    expect(summary.taskState.lastObservation).toBe('内容链已经验证。')
+  })
+
   it('merges structured model memory updates without trusting unverified completed steps', async () => {
     mockExecuteLocalAgentModelRequest.mockResolvedValue({
       content: JSON.stringify({

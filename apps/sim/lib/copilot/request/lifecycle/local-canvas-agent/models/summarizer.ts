@@ -6,6 +6,7 @@ import type {
   LocalAgentMemoryData,
   LocalAgentObservation,
   LocalAgentPlan,
+  LocalAgentThreadMemoryUpdate,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const summarizerResponseSchema = z.object({
@@ -76,6 +77,46 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+function getStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined
+}
+
+function extractDecisionMemoryUpdate(
+  observations: LocalAgentObservation[]
+): LocalAgentThreadMemoryUpdate | null {
+  let output: unknown
+  for (let index = observations.length - 1; index >= 0; index -= 1) {
+    const observation = observations[index]
+    if (observation.toolName === 'memory' && observation.success) {
+      output = observation.output
+      break
+    }
+  }
+  const record = asRecord(output)
+  if (Object.keys(record).length === 0) return null
+  const taskState = asRecord(record.taskState)
+  const openQuestions = getStringArray(taskState.openQuestions)
+  return {
+    ...(typeof record.conversationSummary === 'string'
+      ? { conversationSummary: record.conversationSummary }
+      : {}),
+    ...(typeof record.canvasSummary === 'string' ? { canvasSummary: record.canvasSummary } : {}),
+    ...(Object.keys(taskState).length > 0
+      ? {
+          taskState: {
+            ...(typeof taskState.goal === 'string' ? { goal: taskState.goal } : {}),
+            ...(openQuestions ? { openQuestions } : {}),
+            ...(typeof taskState.lastObservation === 'string'
+              ? { lastObservation: taskState.lastObservation }
+              : {}),
+          },
+        }
+      : {}),
+  }
+}
+
 function extractCanvasSummary(observations: LocalAgentObservation[]): string | undefined {
   const readSummary = observations.find(
     (observation) => observation.toolName === 'canvas.read_summary' && observation.success
@@ -143,27 +184,46 @@ function buildDeterministicSummary(params: {
 }): LocalAgentMemoryData {
   const completedSteps = getTrustedCompletedStepSummaries(params.observations).slice(-8)
   const lastObservation = params.observations.at(-1)?.summary
+  const decisionMemoryUpdate = extractDecisionMemoryUpdate(params.observations)
   return {
     ...params.memory,
     conversationSummary: [
       params.memory.conversationSummary,
       sanitizeMemoryText(params.context.message),
+      decisionMemoryUpdate?.conversationSummary
+        ? sanitizeMemoryText(decisionMemoryUpdate.conversationSummary)
+        : '',
     ]
       .filter(Boolean)
       .join('\n')
       .slice(-4000),
     taskState: {
-      goal: sanitizeMemoryText(params.plan.goal || params.memory.taskState.goal || ''),
+      goal: sanitizeMemoryText(
+        decisionMemoryUpdate?.taskState?.goal ||
+          params.plan.goal ||
+          params.memory.taskState.goal ||
+          ''
+      ),
       completedSteps: sanitizeList(
         [...params.memory.taskState.completedSteps, ...completedSteps],
         20,
         240
       ),
-      openQuestions: sanitizeList(inferOpenQuestions(params), 8, 240),
-      lastObservation: lastObservation ? sanitizeMemoryText(lastObservation) : undefined,
+      openQuestions: sanitizeList(
+        decisionMemoryUpdate?.taskState?.openQuestions ?? inferOpenQuestions(params),
+        8,
+        240
+      ),
+      lastObservation: decisionMemoryUpdate?.taskState?.lastObservation
+        ? sanitizeMemoryText(decisionMemoryUpdate.taskState.lastObservation)
+        : lastObservation
+          ? sanitizeMemoryText(lastObservation)
+          : undefined,
     },
     canvasSummary: sanitizeMemoryText(
-      extractCanvasSummary(params.observations) ?? params.memory.canvasSummary
+      decisionMemoryUpdate?.canvasSummary ??
+        extractCanvasSummary(params.observations) ??
+        params.memory.canvasSummary
     ),
     recentObservations: [
       ...params.memory.recentObservations.map(compactObservation),

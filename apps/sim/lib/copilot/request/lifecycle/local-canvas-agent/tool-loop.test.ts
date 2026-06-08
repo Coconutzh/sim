@@ -176,6 +176,131 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已更新并验证布局。')
   })
 
+  it('runs a model-authored short-video content-chain patch without planner fallback', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'script',
+          kind: 'text' as const,
+          title: '高考脚本',
+          fields: { contentHtml: '<p>高考冲刺，用三个问题带出短视频开场。</p>' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'visual',
+          kind: 'image' as const,
+          title: '高考主视觉',
+          fields: { aiPrompt: '清晨教室、倒计时牌、明亮励志的短视频主视觉。' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'video',
+          kind: 'video' as const,
+          title: '高考视频',
+          fields: {
+            videoPrompt: '镜头从课桌推向黑板倒计时，节奏轻快、励志。',
+            videoParameters: { duration: 5, resolution: '720P' },
+          },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'audio',
+          kind: 'audio' as const,
+          title: '高考配乐',
+          fields: { audioPrompt: '轻快、明亮、带一点紧张推进感的电子配乐。' },
+        },
+        { type: 'connect' as const, sourceNodeId: 'script', targetNodeId: 'visual' },
+        { type: 'connect' as const, sourceNodeId: 'visual', targetNodeId: 'video' },
+        { type: 'connect' as const, sourceNodeId: 'video', targetNodeId: 'audio' },
+      ],
+      reason: '模型直接构造高考主题短视频内容链。',
+    }
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch },
+        userVisibleReason: '我会创建脚本、主视觉、视频和配乐节点并连接。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已创建内容链。',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已创建并验证内容链。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '以高考为主题创建短视频内容链。',
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(JSON.stringify(patch)).not.toContain('以高考为主题创建短视频内容链')
+    expect(result.answer).toBe('已创建并验证内容链。')
+  })
+
+  it('records model final-answer thread memory updates for persistence', async () => {
+    const memoryUpdate = {
+      conversationSummary: '用户正在推进高考主题短视频内容链。',
+      canvasSummary: '画布已有高考主题脚本、主视觉、视频和配乐。',
+      taskState: {
+        goal: '继续优化高考主题内容链',
+        openQuestions: ['是否继续生成各节点输出？'],
+        lastObservation: '内容链已经验证。',
+      },
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'final_answer',
+      answer: '已记录当前进展。',
+      memoryUpdate,
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '记住这个内容链后续还要继续优化。',
+      })
+    )
+
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'memory',
+          success: true,
+          output: memoryUpdate,
+        }),
+      ])
+    )
+    expect(result.answer).toBe('已记录当前进展。')
+  })
+
   it('blocks model mutation calls when intent policy is read-only', async () => {
     mockRequestLocalAgentDecision
       .mockResolvedValueOnce({

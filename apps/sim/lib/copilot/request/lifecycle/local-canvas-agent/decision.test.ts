@@ -64,6 +64,33 @@ describe('local canvas agent decision', () => {
     ).toThrow('Invalid AgentDecision')
   })
 
+  it('parses final-answer thread memory updates with a narrow schema', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        type: 'final_answer',
+        answer: '已完成总结。',
+        memoryUpdate: {
+          conversationSummary: '用户正在推进高考主题短视频内容链。',
+          canvasSummary: '画布已有脚本、主视觉、视频和配乐节点。',
+          taskState: {
+            goal: '继续优化高考主题短视频',
+            openQuestions: ['是否继续生成各节点输出？'],
+            lastObservation: '内容链已验证。',
+          },
+        },
+      })
+    )
+
+    expect(decision).toMatchObject({
+      type: 'final_answer',
+      memoryUpdate: {
+        taskState: {
+          openQuestions: ['是否继续生成各节点输出？'],
+        },
+      },
+    })
+  })
+
   it('budgets large tool outputs in the prompt with a stable output ref', () => {
     const observations: LocalAgentObservation[] = [
       {

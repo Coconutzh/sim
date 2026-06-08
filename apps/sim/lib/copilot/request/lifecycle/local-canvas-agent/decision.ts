@@ -62,10 +62,21 @@ const askClarificationSchema = z.object({
   type: z.literal('ask_clarification'),
   question: z.string().min(1),
 })
+const memoryUpdateSchema = z.object({
+  conversationSummary: z.string().optional(),
+  canvasSummary: z.string().optional(),
+  taskState: z
+    .object({
+      goal: z.string().optional(),
+      openQuestions: z.array(z.string()).optional(),
+      lastObservation: z.string().optional(),
+    })
+    .optional(),
+})
 const finalAnswerSchema = z.object({
   type: z.literal('final_answer'),
   answer: z.string().min(1),
-  memoryUpdate: z.record(z.string(), z.unknown()).optional(),
+  memoryUpdate: memoryUpdateSchema.optional(),
 })
 
 export const localAgentDecisionSchema = z.discriminatedUnion('type', [
