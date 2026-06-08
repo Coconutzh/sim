@@ -11,6 +11,22 @@ import type {
 export function buildLocalAgentMemoryKey(
   context: Pick<LocalAgentContext, 'userId' | 'workspaceId' | 'workflowId' | 'chatId' | 'agent'>
 ): string {
+  const chatId = context.chatId?.trim() || 'no-chat'
+  return [
+    'local-canvas-agent',
+    'v2',
+    'thread',
+    context.userId,
+    context.workspaceId,
+    context.workflowId,
+    context.agent.code,
+    chatId,
+  ].join(':')
+}
+
+function buildLegacyLocalAgentMemoryKey(
+  context: Pick<LocalAgentContext, 'userId' | 'workspaceId' | 'workflowId' | 'chatId' | 'agent'>
+): string {
   return [
     'local-canvas-agent',
     'v1',
@@ -23,10 +39,16 @@ export function buildLocalAgentMemoryKey(
   ].join(':')
 }
 
+export function canPersistLocalAgentThreadMemory(
+  context: Pick<LocalAgentContext, 'chatId'>
+): boolean {
+  return Boolean(context.chatId?.trim())
+}
+
 function createEmptyMemory(context: LocalAgentContext): LocalAgentMemoryData {
   return {
-    version: 1,
-    scope: 'personal',
+    version: 2,
+    scope: 'thread',
     userId: context.userId,
     workspaceId: context.workspaceId,
     workflowId: context.workflowId,
@@ -46,10 +68,17 @@ function createEmptyMemory(context: LocalAgentContext): LocalAgentMemoryData {
 function parseMemoryData(value: unknown, context: LocalAgentContext): LocalAgentMemoryData {
   if (!value || typeof value !== 'object') return createEmptyMemory(context)
   const data = value as Partial<LocalAgentMemoryData>
-  if (data.version !== 1 || data.scope !== 'personal') return createEmptyMemory(context)
+  if (
+    (data.version !== 1 && data.version !== 2) ||
+    (data.scope !== 'personal' && data.scope !== 'thread')
+  )
+    return createEmptyMemory(context)
   return {
     ...createEmptyMemory(context),
     ...data,
+    version: 2,
+    scope: 'thread',
+    chatId: context.chatId,
     taskState: {
       completedSteps: data.taskState?.completedSteps ?? [],
       openQuestions: data.taskState?.openQuestions ?? [],
@@ -70,6 +99,7 @@ function parseMemoryData(value: unknown, context: LocalAgentContext): LocalAgent
 export async function loadLocalAgentMemory(
   context: LocalAgentContext
 ): Promise<LocalAgentMemoryData> {
+  if (!canPersistLocalAgentThreadMemory(context)) return createEmptyMemory(context)
   const key = buildLocalAgentMemoryKey(context)
   const [row] = await db
     .select({ data: memory.data })
@@ -82,29 +112,50 @@ export async function loadLocalAgentMemory(
       )
     )
     .limit(1)
-  return parseMemoryData(row?.data, context)
+  if (row?.data) return parseMemoryData(row.data, context)
+
+  const [legacyRow] = await db
+    .select({ data: memory.data })
+    .from(memory)
+    .where(
+      and(
+        eq(memory.workspaceId, context.workspaceId),
+        eq(memory.key, buildLegacyLocalAgentMemoryKey(context)),
+        isNull(memory.deletedAt)
+      )
+    )
+    .limit(1)
+  return parseMemoryData(legacyRow?.data, context)
 }
 
 export async function saveLocalAgentMemory(
   context: LocalAgentContext,
   data: LocalAgentMemoryData
 ): Promise<void> {
+  if (!canPersistLocalAgentThreadMemory(context)) return
   const key = buildLocalAgentMemoryKey(context)
   const now = new Date()
+  const normalizedData = {
+    ...data,
+    version: 2,
+    scope: 'thread',
+    chatId: context.chatId,
+    updatedAt: now.toISOString(),
+  } satisfies LocalAgentMemoryData
   await db
     .insert(memory)
     .values({
       id: generateId(),
       workspaceId: context.workspaceId,
       key,
-      data: { ...data, updatedAt: now.toISOString() },
+      data: normalizedData,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [memory.workspaceId, memory.key],
       set: {
-        data: sql`${JSON.stringify({ ...data, updatedAt: now.toISOString() })}::jsonb`,
+        data: sql`${JSON.stringify(normalizedData)}::jsonb`,
         updatedAt: now,
         deletedAt: null,
       },

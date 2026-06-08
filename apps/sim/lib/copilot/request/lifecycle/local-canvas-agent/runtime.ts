@@ -168,8 +168,8 @@ async function loadMemoryBestEffort(context: LocalAgentContext): Promise<LocalAg
       error: toError(error).message,
     })
     return {
-      version: 1,
-      scope: 'personal',
+      version: 2,
+      scope: 'thread',
       userId: context.userId,
       workspaceId: context.workspaceId,
       workflowId: context.workflowId,

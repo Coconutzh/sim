@@ -88,15 +88,36 @@ function extractCanvasSummary(observations: LocalAgentObservation[]): string | u
   return readSummary.summary
 }
 
-function isCompletedStepObservation(observation: LocalAgentObservation): boolean {
-  return (
-    observation.success &&
-    (observation.toolName === 'canvas.apply_patch' ||
-      observation.toolName === 'canvas.generate_node_output' ||
-      observation.toolName === 'materialize_file' ||
-      observation.toolName === 'update_task_result' ||
-      observation.toolName === 'submit_task_result')
+function hasSuccessfulVerification(observations: LocalAgentObservation[]): boolean {
+  return observations.some(
+    (observation) => observation.toolName === 'canvas.verify_patch' && observation.success
   )
+}
+
+function hasEmbeddedApplyVerification(observation: LocalAgentObservation): boolean {
+  const output = asRecord(observation.output)
+  const verification = asRecord(output.verification)
+  return verification.success === true
+}
+
+function getTrustedCompletedStepSummaries(observations: LocalAgentObservation[]): string[] {
+  const verifiedCanvasTurn = hasSuccessfulVerification(observations)
+  return observations
+    .filter((observation) => {
+      if (!observation.success) return false
+      if (observation.toolName === 'canvas.apply_patch') {
+        return verifiedCanvasTurn || hasEmbeddedApplyVerification(observation)
+      }
+      if (observation.toolName === 'canvas.generate_node_output') {
+        return verifiedCanvasTurn
+      }
+      return (
+        observation.toolName === 'materialize_file' ||
+        observation.toolName === 'update_task_result' ||
+        observation.toolName === 'submit_task_result'
+      )
+    })
+    .map((observation) => observation.summary)
 }
 
 function inferOpenQuestions(params: {
@@ -120,10 +141,7 @@ function buildDeterministicSummary(params: {
   plan: LocalAgentPlan
   observations: LocalAgentObservation[]
 }): LocalAgentMemoryData {
-  const completedSteps = params.observations
-    .filter(isCompletedStepObservation)
-    .map((observation) => observation.summary)
-    .slice(-8)
+  const completedSteps = getTrustedCompletedStepSummaries(params.observations).slice(-8)
   const lastObservation = params.observations.at(-1)?.summary
   return {
     ...params.memory,
@@ -204,13 +222,7 @@ function mergeModelSummary(
       goal: data.taskState?.goal
         ? clip(sanitizeMemoryText(data.taskState.goal), 240)
         : fallback.taskState.goal,
-      completedSteps: sanitizeList(
-        data.taskState?.completedSteps?.length
-          ? data.taskState.completedSteps
-          : fallback.taskState.completedSteps,
-        20,
-        240
-      ),
+      completedSteps: fallback.taskState.completedSteps,
       openQuestions: sanitizeList(
         data.taskState?.openQuestions?.length
           ? data.taskState.openQuestions

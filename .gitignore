@@ -91,5 +91,6 @@ i18n.cache
 apps/sim/.vitest-cache/
 test-results/
 tmp-smoke/
+tmp-local-canvas-agent-*
 temp-agent-logs/
 imgs

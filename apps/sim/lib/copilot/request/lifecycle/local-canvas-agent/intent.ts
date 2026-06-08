@@ -9,6 +9,9 @@ export interface LocalCanvasIntentDecision {
   userIntent: LocalCanvasUserIntent
   mutationPolicy: LocalCanvasMutationPolicy
   canvasReadPolicy: LocalCanvasReadPolicy
+  confidence: number
+  evidence: string[]
+  requiresUserConfirmation: boolean
   reason: string
 }
 
@@ -54,12 +57,19 @@ const MUTATION_TERMS = [
   '布局',
   '整理',
   '排列',
+  '删除',
+  '删掉',
+  '清空',
+  '移除',
   'create',
   'add',
   'update',
   'rewrite',
   'connect',
   'layout',
+  'delete',
+  'remove',
+  'clear',
 ] as const
 
 const STRONG_CANVAS_MUTATION_TERMS = [
@@ -80,12 +90,19 @@ const STRONG_CANVAS_MUTATION_TERMS = [
   '布局',
   '整理',
   '排列',
+  '删除',
+  '删掉',
+  '清空',
+  '移除',
   'create',
   'add',
   'update',
   'rewrite',
   'connect',
   'layout',
+  'delete',
+  'remove',
+  'clear',
 ] as const
 
 const CONTEXT_WRITE_TERMS = [
@@ -148,6 +165,55 @@ const CANVAS_CONTEXT_TERMS = [
   '配乐',
 ] as const
 
+const NON_CANVAS_TERMS = [
+  '考试',
+  '试卷',
+  '出题',
+  '考题',
+  '天气',
+  '气温',
+  '新闻',
+  '热搜',
+  '百科',
+  '历史事件',
+  '股票',
+  '汇率',
+  '航班',
+  '写代码',
+  '代码报错',
+  'debug',
+  'typescript',
+  'python',
+  'java',
+] as const
+
+const NON_CANVAS_PATTERNS = [/[中高]考/, /考研|升学|备考/] as const
+
+const DESTRUCTIVE_PATTERNS = [
+  /(?:删除|删掉|清空|移除).{0,12}(?:所有|全部|整个|全都|all|everything).{0,12}(?:节点|画布|workflow|canvas)/i,
+  /(?:delete|remove|clear).{0,20}(?:all|everything|entire).{0,20}(?:nodes|canvas|workflow)/i,
+] as const
+
+const EXECUTE_FOLLOW_UP_PATTERNS = [
+  /(?:现在|那就|就按|按刚才|按这个|可以|确认).{0,12}(?:创建|执行|开始|落实|生成|做出来|改画布|应用)/,
+  /^(?:继续|开始执行|执行吧|确认|可以执行|go ahead|run it)$/i,
+] as const
+
+const DISCUSSION_FOLLOW_UP_PATTERNS = [
+  /(?:继续|再).{0,8}(?:讨论|聊|完善|调整|规划|设计)/,
+  /(?:偏|更偏|风格|受众|时长|口播|不要创建|先不创建|先不改)/,
+] as const
+
+const EXPLICIT_CURRENT_CANVAS_TERMS = [
+  '当前画布',
+  '这个画布',
+  '基于画布',
+  '基于当前',
+  '选中',
+  '当前节点',
+  '这个节点',
+] as const
+
 function hasConsultSignal(message: string): boolean {
   return matchesAny(message, CONSULT_PATTERNS)
 }
@@ -182,9 +248,53 @@ function hasInspectionSignal(message: string): boolean {
 
 function wantsCurrentCanvas(message: string, context: LocalAgentContext): boolean {
   return (
-    context.selectedNodeIds.length > 0 ||
-    includesAny(message, ['当前画布', '这个画布', '选中', '当前节点', '基于画布', '基于当前'])
+    Boolean(context.selectedNodeIds.length > 0 && includesAny(message, ['它', '这个'])) ||
+    includesAny(message, EXPLICIT_CURRENT_CANVAS_TERMS)
   )
+}
+
+function hasTaskMemorySignal(context: LocalAgentContext): boolean {
+  return Boolean(
+    context.memory?.taskState.goal?.trim() ||
+      context.memory?.taskState.openQuestions.length ||
+      context.memory?.taskState.lastObservation?.trim()
+  )
+}
+
+function hasExecuteFollowUpSignal(message: string): boolean {
+  return matchesAny(message, EXECUTE_FOLLOW_UP_PATTERNS)
+}
+
+function hasDiscussionFollowUpSignal(message: string): boolean {
+  return matchesAny(message, DISCUSSION_FOLLOW_UP_PATTERNS)
+}
+
+function hasDestructiveSignal(message: string): boolean {
+  return matchesAny(message, DESTRUCTIVE_PATTERNS)
+}
+
+function hasNonCanvasSignal(message: string): boolean {
+  return includesAny(message, NON_CANVAS_TERMS) || matchesAny(message, NON_CANVAS_PATTERNS)
+}
+
+function makeDecision(params: {
+  userIntent: LocalCanvasUserIntent
+  mutationPolicy: LocalCanvasMutationPolicy
+  canvasReadPolicy: LocalCanvasReadPolicy
+  reason: string
+  confidence: number
+  evidence: string[]
+  requiresUserConfirmation?: boolean
+}): LocalCanvasIntentDecision {
+  return {
+    userIntent: params.userIntent,
+    mutationPolicy: params.mutationPolicy,
+    canvasReadPolicy: params.canvasReadPolicy,
+    reason: params.reason,
+    confidence: Math.max(0, Math.min(1, params.confidence)),
+    evidence: [...new Set(params.evidence)].filter(Boolean),
+    requiresUserConfirmation: params.requiresUserConfirmation ?? false,
+  }
 }
 
 export function classifyLocalCanvasUserIntent(
@@ -192,12 +302,14 @@ export function classifyLocalCanvasUserIntent(
 ): LocalCanvasIntentDecision {
   const message = context.message.trim()
   if (!message) {
-    return {
+    return makeDecision({
       userIntent: 'inspect_canvas',
       mutationPolicy: 'read_only',
       canvasReadPolicy: 'none',
       reason: 'empty message',
-    }
+      confidence: 0.4,
+      evidence: ['empty_message'],
+    })
   }
 
   const consult = hasConsultSignal(message)
@@ -208,74 +320,177 @@ export function classifyLocalCanvasUserIntent(
   const inspect = hasInspectionSignal(message)
   const canvas = hasCanvasSignal(message)
   const currentCanvas = wantsCurrentCanvas(message, context)
+  const hasTaskMemory = hasTaskMemorySignal(context)
+  const executeFollowUp = hasExecuteFollowUpSignal(message)
+  const discussionFollowUp = hasDiscussionFollowUpSignal(message)
+  const destructive = hasDestructiveSignal(message)
+  const nonCanvas = hasNonCanvasSignal(message)
+
+  if (destructive) {
+    return makeDecision({
+      userIntent: 'propose_plan',
+      mutationPolicy: 'propose_only',
+      canvasReadPolicy: 'required',
+      reason: 'destructive canvas changes require explicit confirmation',
+      confidence: 0.95,
+      evidence: ['destructive_canvas_request'],
+      requiresUserConfirmation: true,
+    })
+  }
+
+  if (hasTaskMemory && discussionFollowUp && !executeFollowUp) {
+    return makeDecision({
+      userIntent: 'consult_design',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: currentCanvas ? 'optional' : 'none',
+      reason: 'user follow-up continues an open design discussion',
+      confidence: 0.78,
+      evidence: ['task_memory_signal', 'discussion_follow_up_signal'],
+    })
+  }
 
   if (proposeOnly) {
-    return {
+    return makeDecision({
       userIntent: 'propose_plan',
       mutationPolicy: 'propose_only',
       canvasReadPolicy: currentCanvas ? 'required' : 'optional',
       reason: 'user asked for a plan or confirmation before changes',
-    }
+      confidence: 0.9,
+      evidence: [
+        'propose_only_signal',
+        currentCanvas ? 'current_canvas_reference' : 'no_current_canvas_reference',
+      ],
+      requiresUserConfirmation: true,
+    })
   }
 
   if (hasContextWriteSignal(message)) {
-    return {
+    return makeDecision({
       userIntent: 'mutate_canvas',
       mutationPolicy: 'allow_mutation',
       canvasReadPolicy: currentCanvas ? 'required' : 'optional',
       reason: 'user explicitly requested a local context write action',
-    }
+      confidence: 0.86,
+      evidence: ['context_write_signal'],
+    })
+  }
+
+  if (nonCanvas && !canvas && !currentCanvas) {
+    return makeDecision({
+      userIntent: 'non_canvas',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'none',
+      reason: 'message is clearly outside current canvas operations',
+      confidence: 0.9,
+      evidence: ['non_canvas_signal'],
+    })
+  }
+
+  if (hasTaskMemory && executeFollowUp) {
+    return makeDecision({
+      userIntent: 'mutate_canvas',
+      mutationPolicy: 'allow_mutation',
+      canvasReadPolicy: 'required',
+      reason: 'user follow-up asks to execute the remembered task plan',
+      confidence: 0.82,
+      evidence: ['task_memory_signal', 'execute_follow_up_signal'],
+    })
+  }
+
+  if (hasTaskMemory && discussionFollowUp && !mutate) {
+    return makeDecision({
+      userIntent: 'consult_design',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: currentCanvas ? 'optional' : 'none',
+      reason: 'user follow-up continues an open design discussion',
+      confidence: 0.78,
+      evidence: ['task_memory_signal', 'discussion_follow_up_signal'],
+    })
   }
 
   if (consult && canvas && !strongCanvasMutation) {
-    return {
+    return makeDecision({
       userIntent: 'consult_design',
       mutationPolicy: 'read_only',
       canvasReadPolicy: currentCanvas ? 'optional' : 'none',
       reason: 'user asks to discuss or design before canvas changes',
-    }
+      confidence: 0.88,
+      evidence: ['consult_signal', 'canvas_topic_signal', 'no_strong_mutation_signal'],
+    })
   }
 
   if (consult && !mutate) {
-    return {
+    return makeDecision({
       userIntent: 'consult_design',
       mutationPolicy: 'read_only',
       canvasReadPolicy: currentCanvas ? 'optional' : 'none',
       reason: 'user asks for consultation rather than execution',
-    }
+      confidence: 0.82,
+      evidence: [
+        'consult_signal',
+        currentCanvas ? 'current_canvas_reference' : 'no_mutation_signal',
+      ],
+    })
   }
 
   if (generate) {
-    return {
+    return makeDecision({
       userIntent: 'generate_output',
       mutationPolicy: 'allow_mutation',
       canvasReadPolicy: 'required',
       reason: 'user asks to generate node output',
-    }
+      confidence: 0.86,
+      evidence: ['generation_signal'],
+    })
   }
 
   if (mutate) {
-    return {
+    return makeDecision({
       userIntent: 'mutate_canvas',
       mutationPolicy: 'allow_mutation',
       canvasReadPolicy: 'required',
       reason: 'user asks to change the canvas',
-    }
+      confidence: nonCanvas && canvas ? 0.76 : 0.88,
+      evidence: [
+        'mutation_signal',
+        canvas ? 'canvas_topic_signal' : 'implicit_canvas_change_signal',
+        nonCanvas ? 'non_canvas_topic_used_as_canvas_subject' : '',
+      ],
+    })
   }
 
   if (inspect || canvas || currentCanvas) {
-    return {
+    return makeDecision({
       userIntent: 'inspect_canvas',
       mutationPolicy: 'read_only',
       canvasReadPolicy: currentCanvas || inspect ? 'required' : 'optional',
       reason: 'user asks to inspect or reason about canvas context',
-    }
+      confidence: 0.78,
+      evidence: [
+        inspect ? 'inspection_signal' : '',
+        canvas ? 'canvas_topic_signal' : '',
+        currentCanvas ? 'current_canvas_reference' : '',
+      ],
+    })
   }
 
-  return {
+  if (hasTaskMemory && !nonCanvas) {
+    return makeDecision({
+      userIntent: 'consult_design',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'none',
+      reason: 'user follow-up belongs to an open local agent task',
+      confidence: 0.66,
+      evidence: ['task_memory_signal', 'ambiguous_follow_up'],
+    })
+  }
+
+  return makeDecision({
     userIntent: 'non_canvas',
     mutationPolicy: 'read_only',
     canvasReadPolicy: 'none',
     reason: 'no canvas intent detected',
-  }
+    confidence: nonCanvas ? 0.9 : 0.6,
+    evidence: [nonCanvas ? 'non_canvas_signal' : 'no_canvas_signal'],
+  })
 }

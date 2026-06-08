@@ -7,7 +7,10 @@ import {
   validateLocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-patch'
 import { buildTokenAwareLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
-import { buildLocalAgentMemoryKey } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
+import {
+  buildLocalAgentMemoryKey,
+  canPersistLocalAgentThreadMemory,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
 import { getCanvasNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters'
 import { mergeAgentSkillRows } from '@/lib/copilot/request/lifecycle/local-canvas-agent/skills'
 import {
@@ -111,10 +114,10 @@ const emptySnapshot: CanvasSnapshot = {
 }
 
 describe('local canvas agent foundation', () => {
-  it('isolates personal memory by user, workspace, workflow, agent, and chat', () => {
+  it('isolates thread memory by user, workspace, workflow, agent, and chat', () => {
     const base = buildLocalAgentMemoryKey(buildMemoryContext({ chatId: 'chat-1' }))
     expect(base).toBe(
-      'local-canvas-agent:v1:personal:user-1:workspace-1:workflow-1:chief_director:chat-1'
+      'local-canvas-agent:v2:thread:user-1:workspace-1:workflow-1:chief_director:chat-1'
     )
     expect(
       buildLocalAgentMemoryKey(buildMemoryContext({ userId: 'user-2', chatId: 'chat-1' }))
@@ -122,6 +125,11 @@ describe('local canvas agent foundation', () => {
     expect(
       buildLocalAgentMemoryKey(buildMemoryContext({ agentCode: 'lighting', chatId: 'chat-1' }))
     ).not.toBe(base)
+  })
+
+  it('does not persist thread memory when a chat id is not available', () => {
+    expect(canPersistLocalAgentThreadMemory(buildMemoryContext({ chatId: 'chat-1' }))).toBe(true)
+    expect(canPersistLocalAgentThreadMemory(buildMemoryContext({}))).toBe(false)
   })
 
   it('keeps reserved node types readable but not writable', () => {
@@ -555,6 +563,27 @@ describe('local canvas agent foundation', () => {
         }),
       })
     )
+  })
+
+  it('validates tool input before execution', async () => {
+    const streamContext = {
+      contentBlocks: [],
+      toolCalls: new Map(),
+    } as unknown as LocalAgentContext['streamContext']
+    const result = await executeLocalAgentTool(
+      buildLocalContext({
+        streamContext,
+      }),
+      {
+        name: 'canvas.read_node',
+        input: {},
+      }
+    )
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('nodeId is required'),
+    })
   })
 
   it('emits full assistant text without server-side truncation', async () => {

@@ -233,7 +233,7 @@ function isToolCallAllowedByPolicy(plan: LocalAgentPlan, call: LocalAgentToolCal
     return false
   }
   if (policy === 'read_only' && call.name === 'canvas.propose_patch') return false
-  if (policy === 'propose_only' && call.name === 'canvas.verify_patch') return false
+  if (call.name === 'canvas.verify_patch') return false
   return true
 }
 

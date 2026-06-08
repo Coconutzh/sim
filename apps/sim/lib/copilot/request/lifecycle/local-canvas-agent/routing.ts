@@ -48,6 +48,11 @@ const CANVAS_TERMS = [
   '视频',
   '音频',
   '配乐',
+  '提示词',
+  'prompt',
+] as const
+
+const CANVAS_ACTION_TERMS = [
   '生成',
   '写回',
   '连接',
@@ -58,8 +63,20 @@ const CANVAS_TERMS = [
   '新建',
   '修改',
   '更新',
-  '提示词',
-  'prompt',
+  '改成',
+  '调整',
+  '调整成',
+  '重写',
+] as const
+
+const EXPLICIT_CANVAS_REFERENCE_TERMS = [
+  '当前画布',
+  '这个画布',
+  '基于画布',
+  '基于当前',
+  '选中',
+  '当前节点',
+  '这个节点',
 ] as const
 
 function includesAny(value: string, terms: readonly string[]): boolean {
@@ -79,6 +96,10 @@ function hasCanvasContext(context: LocalAgentContext): boolean {
   )
 }
 
+function hasExplicitCanvasReference(message: string): boolean {
+  return includesAny(message, EXPLICIT_CANVAS_REFERENCE_TERMS)
+}
+
 export function classifyLocalCanvasAgentRouting(
   context: LocalAgentContext
 ): LocalCanvasAgentRoutingDecision {
@@ -87,17 +108,27 @@ export function classifyLocalCanvasAgentRouting(
     return { kind: 'ambiguous', reason: 'empty user message' }
   }
 
-  if (hasCanvasContext(context)) {
+  if (hasCanvasContext(context) && hasExplicitCanvasReference(message)) {
     return { kind: 'canvas', reason: 'request includes selected canvas nodes or attached context' }
   }
 
   const hasCanvasIntent = includesAny(message, CANVAS_TERMS)
+  const hasCanvasAction = includesAny(message, CANVAS_ACTION_TERMS)
+  const hasNonCanvasIntent =
+    includesAny(message, NON_CANVAS_TERMS) || matchesAny(message, NON_CANVAS_PATTERNS)
+
+  if (hasNonCanvasIntent && !hasCanvasIntent) {
+    return { kind: 'non_canvas', reason: 'message is clearly outside current canvas operations' }
+  }
+
   if (hasCanvasIntent) {
     return { kind: 'canvas', reason: 'message includes canvas intent' }
   }
 
-  const hasNonCanvasIntent =
-    includesAny(message, NON_CANVAS_TERMS) || matchesAny(message, NON_CANVAS_PATTERNS)
+  if (hasCanvasAction && !hasNonCanvasIntent) {
+    return { kind: 'canvas', reason: 'message includes canvas action intent' }
+  }
+
   if (hasNonCanvasIntent) {
     return { kind: 'non_canvas', reason: 'message is clearly outside current canvas operations' }
   }

@@ -251,6 +251,46 @@ describe('local canvas tool loop', () => {
     )
   })
 
+  it('does not execute verify calls for read-only plans with stale patch hints', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Inspect current canvas only',
+      risk: 'low',
+      userIntent: 'inspect_canvas',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'required',
+      requiresClarification: false,
+      steps: [
+        {
+          id: 'read',
+          title: 'Read canvas',
+          intent: 'inspect',
+          toolHints: ['canvas.read_summary', 'canvas.verify_patch'],
+          expectedObservation: 'Canvas is read without verification side effects',
+        },
+      ],
+      successCriteria: ['No mutation or verify runs'],
+      patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] },
+    }
+    mockBuildLocalAgentPlan.mockResolvedValue(plan)
+    mockExecuteLocalAgentTool.mockResolvedValue({
+      name: 'canvas.read_summary',
+      success: true,
+      output: {},
+      summary: 'Canvas summary read',
+    })
+
+    await runLocalAgentToolLoop(buildContext({ message: '总结当前画布。' }))
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'canvas.verify_patch' })
+    )
+  })
+
   it('executes multiple planned tool hints from the same step', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Search current canvas',
