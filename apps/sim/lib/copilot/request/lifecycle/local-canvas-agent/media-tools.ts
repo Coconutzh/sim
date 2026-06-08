@@ -13,8 +13,15 @@ import type {
 
 type LocalMediaToolCall = LocalAgentToolCall & { name: LocalMediaToolName }
 type MediaAnalysisMode = 'prompt_only' | 'file_metadata' | 'stored_media_context'
+type MediaAnalysisGoal = 'describe' | 'quality_check' | 'extract_prompt' | 'compare_with_prompt'
 
 const MEDIA_KINDS = new Set(['image', 'video', 'audio'])
+const MEDIA_ANALYSIS_GOALS = new Set<MediaAnalysisGoal>([
+  'describe',
+  'quality_check',
+  'extract_prompt',
+  'compare_with_prompt',
+])
 const MAX_CONTEXT_CHARS = 3000
 
 function asString(value: unknown): string {
@@ -68,15 +75,24 @@ function resolveAnalysisMode(params: {
   return params.storedContext ? 'stored_media_context' : 'file_metadata'
 }
 
+function resolveAnalysisGoal(input: Record<string, unknown>): MediaAnalysisGoal {
+  const goal = asString(input.analysisGoal)
+  return MEDIA_ANALYSIS_GOALS.has(goal as MediaAnalysisGoal)
+    ? (goal as MediaAnalysisGoal)
+    : 'describe'
+}
+
 function buildAnalysisLines(params: {
   detail: CanvasNodeDetail
   file: Record<string, unknown> | null
   storedContext: string
   promptField: { field: string; value: string }
+  analysisGoal: MediaAnalysisGoal
   question: string
 }): string[] {
   const lines = [
     `节点 "${params.detail.name}" 是 ${params.detail.kind} 类型。`,
+    `分析目标：${params.analysisGoal}。`,
     params.promptField.value
       ? `生成提示来自 ${params.promptField.field}：${params.promptField.value}`
       : '这个节点没有可读的生成提示。',
@@ -116,12 +132,14 @@ async function analyzeNodeMedia(
   const storedContext = clip(asString(fileRecord?.context))
   const promptField = getPromptField(detail)
   const mode = resolveAnalysisMode({ file: fileRecord, storedContext })
+  const analysisGoal = resolveAnalysisGoal(input)
 
   return {
     nodeId: detail.id,
     kind: detail.kind,
     title: detail.name,
     analysisMode: mode,
+    analysisGoal,
     hasFile: Boolean(fileRecord),
     file: summarizeFile(fileRecord),
     prompt: {
@@ -133,6 +151,7 @@ async function analyzeNodeMedia(
       file: fileRecord,
       storedContext,
       promptField,
+      analysisGoal,
       question,
     }),
     limitations:

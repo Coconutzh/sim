@@ -420,6 +420,72 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已更新并验证选中节点。')
   })
 
+  it('analyzes selected media through the model tool loop without mutating canvas', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.read_selected_nodes',
+        toolInput: {},
+        userVisibleReason: '我先读取当前选中的媒体节点。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'media.analyze_node_media',
+        toolInput: { nodeId: 'video-1', analysisGoal: 'describe' },
+        userVisibleReason: '我会分析这个视频节点已有的媒体上下文。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '这个视频是高考冲刺主题，画面从课桌推进到倒计时牌。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.read_selected_nodes',
+        success: true,
+        output: {
+          nodes: [{ id: 'video-1', kind: 'video', file: { name: 'gaokao.mp4' } }],
+        },
+        summary: 'Read selected video node with file',
+      })
+      .mockResolvedValueOnce({
+        name: 'media.analyze_node_media',
+        success: true,
+        output: {
+          nodeId: 'video-1',
+          kind: 'video',
+          analysisMode: 'stored_media_context',
+          analysisGoal: 'describe',
+          analysis: ['视频画面从课桌推进到倒计时牌。'],
+        },
+        summary: 'Analyzed video node "高考视频" (stored_media_context, with file)',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['video-1'],
+        message: '描述这个视频。',
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.read_selected_nodes',
+      input: {},
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'media.analyze_node_media',
+      input: { nodeId: 'video-1', analysisGoal: 'describe' },
+    })
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'canvas.apply_patch' })
+    )
+    expect(result.answer).toContain('高考冲刺主题')
+  })
+
   it('blocks model mutation calls when intent policy is read-only', async () => {
     mockRequestLocalAgentDecision
       .mockResolvedValueOnce({

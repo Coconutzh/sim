@@ -101,7 +101,11 @@ describe('local canvas media tools', () => {
   it('analyzes a media node from stored context without exposing private file paths', async () => {
     const result = await executeMediaTool(buildContext(), {
       name: 'media.analyze_node_media',
-      input: { nodeId: 'video-1', question: '这段视频内容是什么？' },
+      input: {
+        nodeId: 'video-1',
+        analysisGoal: 'compare_with_prompt',
+        question: '这段视频内容是否符合提示？',
+      },
     })
 
     expect(result.success).toBe(true)
@@ -112,6 +116,7 @@ describe('local canvas media tools', () => {
       nodeId: 'video-1',
       kind: 'video',
       analysisMode: 'stored_media_context',
+      analysisGoal: 'compare_with_prompt',
       hasFile: true,
       file: {
         name: 'launch.mp4',
@@ -127,6 +132,7 @@ describe('local canvas media tools', () => {
     expect(JSON.stringify(result.output)).not.toContain('private/generated/launch.mp4')
     expect(JSON.stringify(result.output)).not.toContain('https://private.example.test')
     expect(JSON.stringify(result.output)).toContain('镜头从观众席推向主屏')
+    expect(JSON.stringify(result.output)).toContain('分析目标：compare_with_prompt')
   })
 
   it('falls back to prompt-only analysis when no media file exists', async () => {

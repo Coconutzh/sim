@@ -43,6 +43,9 @@ const nodeInputSchema = z
 const mediaAnalyzeInputSchema = z
   .object({
     nodeId: requiredString('nodeId'),
+    analysisGoal: z
+      .enum(['describe', 'quality_check', 'extract_prompt', 'compare_with_prompt'])
+      .optional(),
     question: z.string().optional(),
   })
   .passthrough()

@@ -67,12 +67,13 @@
 - `final_answer.memoryUpdate` 收窄为结构化 thread memory update；model loop 会把该更新记录成 `memory` observation，再由 summarizer 合并进当前 chat 的 deterministic memory。
 - decision prompt 明确 patch 示例只是 recipe，不是固定模板；选中节点修改必须先读选中节点，再只更新对应 `nodeId` 的可编辑字段；媒体描述必须区分 prompt/metadata 与真实 file。
 - tool observation prompt 现在限制最近 observation 数量、单个 output preview 和整体 prompt 长度；较早结果只保留 omitted 说明，较大输出通过稳定 `outputRef` + preview 暴露。
+- `media.analyze_node_media` 支持 `analysisGoal=describe|quality_check|extract_prompt|compare_with_prompt`，model loop 覆盖“读取选中视频 -> 媒体分析 -> 最终回答”且不触发画布写入。
 
 ## 2. 当前已跑验证命令
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 170 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 171 tests passed
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed
