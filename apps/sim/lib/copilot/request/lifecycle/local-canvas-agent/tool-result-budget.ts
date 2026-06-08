@@ -4,7 +4,15 @@ import type {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const DEFAULT_MAX_OUTPUT_CHARS = 2400
+const DEFAULT_MAX_OBSERVATIONS = 8
+const DEFAULT_MAX_PROMPT_CHARS = 9000
 const PREVIEW_SUFFIX = '\n...[truncated]'
+
+interface BudgetedObservationPromptOptions {
+  maxOutputChars?: number
+  maxObservations?: number
+  maxPromptChars?: number
+}
 
 function stringifyForPrompt(value: unknown): string {
   if (value === undefined) return ''
@@ -51,9 +59,33 @@ export function compactLocalAgentObservationForPrompt(
 
 export function buildBudgetedObservationPrompt(observations: LocalAgentObservation[]): string {
   if (observations.length === 0) return 'No tool observations yet.'
-  return observations
-    .map((observation, index) => compactLocalAgentObservationForPrompt(observation, index))
+  return buildBudgetedObservationPromptWithOptions(observations)
+}
+
+export function buildBudgetedObservationPromptWithOptions(
+  observations: LocalAgentObservation[],
+  options: BudgetedObservationPromptOptions = {}
+): string {
+  if (observations.length === 0) return 'No tool observations yet.'
+  const maxObservations = Math.max(1, options.maxObservations ?? DEFAULT_MAX_OBSERVATIONS)
+  const maxOutputChars = Math.max(120, options.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS)
+  const maxPromptChars = Math.max(1200, options.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS)
+  const startIndex = Math.max(0, observations.length - maxObservations)
+  const omitted =
+    startIndex > 0 ? `Omitted ${startIndex} older tool observations from this prompt.` : ''
+  const prompt = [
+    omitted,
+    ...observations
+      .slice(startIndex)
+      .map((observation, offset) =>
+        compactLocalAgentObservationForPrompt(observation, startIndex + offset, maxOutputChars)
+      ),
+  ]
+    .filter(Boolean)
     .join('\n\n')
+  if (prompt.length <= maxPromptChars) return prompt
+  const prefix = '...[older observation context truncated]\n'
+  return `${prefix}${prompt.slice(Math.max(0, prompt.length - maxPromptChars + prefix.length))}`
 }
 
 export function summarizeAvailableToolNames(toolNames: LocalAgentToolName[]): string {
