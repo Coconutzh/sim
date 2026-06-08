@@ -714,13 +714,12 @@ async function runModelDrivenLocalAgentToolLoop(
     pendingVerification: null,
     toolCallsExecuted: 0,
   }
+  let stopSummary: string | null = null
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (context.options.abortSignal?.aborted) {
       context.streamContext.wasAborted = true
-      state.observations.push(
-        buildDecisionObservation('Stopped because the request was cancelled.', false)
-      )
+      stopSummary = 'Stopped because the request was cancelled.'
       break
     }
 
@@ -735,6 +734,7 @@ async function runModelDrivenLocalAgentToolLoop(
       if (options.allowInitialFallback && state.toolCallsExecuted === 0) return null
       const summary = error instanceof Error ? error.message : 'Failed to get AgentDecision'
       state.observations.push(buildDecisionObservation(summary, false))
+      stopSummary = 'Stopped because the model decision could not be produced.'
       break
     }
 
@@ -795,7 +795,7 @@ async function runModelDrivenLocalAgentToolLoop(
   }
   state.observations.push(
     buildDecisionObservation(
-      `Stopped after reaching the local canvas agent max step limit (${MAX_STEPS}).`,
+      stopSummary ?? `Stopped after reaching the local canvas agent max step limit (${MAX_STEPS}).`,
       false
     )
   )

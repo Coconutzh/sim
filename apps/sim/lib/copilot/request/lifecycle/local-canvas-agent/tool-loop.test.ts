@@ -160,6 +160,18 @@ describe('local canvas tool loop', () => {
             success: false,
             summary: 'model decision unavailable',
           }),
+          expect.objectContaining({
+            toolName: 'decision',
+            success: false,
+            summary: 'Stopped because the model decision could not be produced.',
+          }),
+        ])
+      )
+      expect(result.observations).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            summary: expect.stringContaining('max step limit'),
+          }),
         ])
       )
     } finally {
