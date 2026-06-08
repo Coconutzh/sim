@@ -47,6 +47,21 @@ const toolCallSchema = z.object({
   userVisibleReason: z.string().min(1),
   risk: localAgentRiskSchema.catch('low'),
 })
+const parallelToolCallsSchema = z.object({
+  type: z.literal('tool_calls'),
+  toolCalls: z
+    .array(
+      z.object({
+        toolName: localAgentToolNameSchema,
+        toolInput: z.record(z.string(), z.unknown()).catch({}),
+        userVisibleReason: z.string().min(1).optional(),
+      })
+    )
+    .min(1)
+    .max(4),
+  userVisibleReason: z.string().min(1),
+  risk: localAgentRiskSchema.catch('low'),
+})
 const askConfirmationSchema = z.object({
   type: z.literal('ask_confirmation'),
   question: z.string().min(1),
@@ -81,6 +96,7 @@ const finalAnswerSchema = z.object({
 
 export const localAgentDecisionSchema = z.discriminatedUnion('type', [
   toolCallSchema,
+  parallelToolCallsSchema,
   askConfirmationSchema,
   askClarificationSchema,
   finalAnswerSchema,
@@ -261,6 +277,7 @@ export function buildLocalAgentDecisionPrompt(params: {
       'Use tools to read canvas state instead of guessing from memory.',
       'If a user asks to discuss, plan, or wait for confirmation, do not call mutation tools.',
       'If a user asks for a destructive action, ask for confirmation first.',
+      'Use type=tool_calls only for independent read-only concurrency-safe tools; never include mutation, generation, verification, or destructive tools in tool_calls.',
       'Never invent generated file outputs. Use canvas.generate_node_output for real generation.',
       'After canvas.apply_patch or canvas.generate_node_output succeeds, verify with canvas.verify_patch before final_answer.',
     ].join('\n'),

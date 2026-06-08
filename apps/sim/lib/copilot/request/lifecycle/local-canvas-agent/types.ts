@@ -322,6 +322,7 @@ export interface LocalAgentToolCall {
 
 export type LocalAgentDecision =
   | LocalAgentToolCallDecision
+  | LocalAgentParallelToolCallsDecision
   | LocalAgentAskConfirmationDecision
   | LocalAgentAskClarificationDecision
   | LocalAgentFinalAnswerDecision
@@ -330,6 +331,17 @@ export interface LocalAgentToolCallDecision {
   type: 'tool_call'
   toolName: LocalAgentToolName
   toolInput: Record<string, unknown>
+  userVisibleReason: string
+  risk: LocalAgentRisk
+}
+
+export interface LocalAgentParallelToolCallsDecision {
+  type: 'tool_calls'
+  toolCalls: Array<{
+    toolName: LocalAgentToolName
+    toolInput: Record<string, unknown>
+    userVisibleReason?: string
+  }>
   userVisibleReason: string
   risk: LocalAgentRisk
 }

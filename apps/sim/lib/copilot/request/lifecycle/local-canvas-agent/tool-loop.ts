@@ -613,6 +613,73 @@ async function executeDecisionToolCall(params: {
   }
 }
 
+async function executeParallelDecisionToolCalls(params: {
+  context: LocalAgentContext
+  decision: Extract<LocalAgentDecision, { type: 'tool_calls' }>
+  state: ModelDrivenLoopState
+}): Promise<void> {
+  const calls: LocalAgentToolCall[] = []
+  params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
+
+  for (const requestedCall of params.decision.toolCalls) {
+    const descriptor = getLocalAgentToolDescriptor(requestedCall.toolName)
+    if (!descriptor?.isEnabled(params.context)) {
+      params.state.observations.push(
+        buildDecisionObservation(`Tool ${requestedCall.toolName} is not available.`, false)
+      )
+      continue
+    }
+
+    const parsedInput = descriptor.inputSchema.safeParse(requestedCall.toolInput)
+    if (!parsedInput.success) {
+      params.state.observations.push(
+        buildDecisionObservation(
+          `Tool ${requestedCall.toolName} input was invalid: ${parsedInput.error.issues
+            .map((issue) => issue.message)
+            .join('; ')}`,
+          false
+        )
+      )
+      continue
+    }
+
+    const call = {
+      name: requestedCall.toolName,
+      input: parsedInput.data,
+    } satisfies LocalAgentToolCall
+    const policyViolation = getPolicyViolationSummary({
+      mutationPolicy: params.state.plan.mutationPolicy,
+      call,
+      readOnly: descriptor.isReadOnly(parsedInput.data),
+    })
+    if (policyViolation) {
+      params.state.observations.push(buildDecisionObservation(policyViolation, false))
+      continue
+    }
+
+    if (
+      !descriptor.isReadOnly(parsedInput.data) ||
+      !descriptor.isConcurrencySafe(parsedInput.data)
+    ) {
+      params.state.observations.push(
+        buildDecisionObservation(
+          `Blocked ${call.name} from parallel execution because it is not read-only and concurrency-safe.`,
+          false
+        )
+      )
+      continue
+    }
+
+    calls.push(call)
+  }
+
+  const results = await Promise.all(
+    calls.map((call) => executeLocalAgentTool(params.context, call))
+  )
+  params.state.toolCallsExecuted += results.length
+  params.state.observations.push(...results.map(observationFromToolResult))
+}
+
 async function executePendingVerification(params: {
   context: LocalAgentContext
   state: ModelDrivenLoopState
@@ -704,6 +771,11 @@ async function runModelDrivenLocalAgentToolLoop(
         state.observations.push(buildMemoryUpdateObservation(decision.memoryUpdate))
       }
       return { plan: state.plan, observations: state.observations, answer: decision.answer }
+    }
+
+    if (decision.type === 'tool_calls') {
+      await executeParallelDecisionToolCalls({ context, decision, state })
+      continue
     }
 
     await executeDecisionToolCall({ context, decision, state })

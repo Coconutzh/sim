@@ -130,6 +130,110 @@ describe('local canvas tool loop', () => {
     )
   })
 
+  it('runs parallel model read-only tool calls without planner fallback', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        userVisibleReason: '我会并行读取画布摘要和选中节点。',
+        risk: 'low',
+        toolCalls: [
+          { toolName: 'canvas.read_summary', toolInput: {} },
+          { toolName: 'canvas.read_selected_nodes', toolInput: {} },
+        ],
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已读取画布和选中节点。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.read_summary',
+        success: true,
+        output: { nodes: [{ id: 'video-1' }], edges: [] },
+        summary: 'Read canvas summary',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.read_selected_nodes',
+        success: true,
+        output: { nodes: [{ id: 'video-1', kind: 'video' }] },
+        summary: 'Read selected video node',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['video-1'],
+        message: '总结当前画布并说明选中节点。',
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.read_selected_nodes',
+      input: {},
+    })
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: 'canvas.read_summary', success: true }),
+        expect.objectContaining({ toolName: 'canvas.read_selected_nodes', success: true }),
+      ])
+    )
+    expect(result.answer).toBe('已读取画布和选中节点。')
+  })
+
+  it('blocks mutation tools from parallel model tool calls', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        userVisibleReason: '我会并行读取和修改画布。',
+        risk: 'low',
+        toolCalls: [
+          { toolName: 'canvas.read_summary', toolInput: {} },
+          {
+            toolName: 'canvas.apply_patch',
+            toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'grid' }] } },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '我只读取了画布，写入工具不能并行执行。',
+      })
+    mockExecuteLocalAgentTool.mockResolvedValueOnce({
+      name: 'canvas.read_summary',
+      success: true,
+      output: { nodes: [] },
+      summary: 'Read canvas summary',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '更新画布布局并读取当前画布。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledTimes(1)
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('not read-only and concurrency-safe'),
+        }),
+      ])
+    )
+    expect(result.answer).toBe('我只读取了画布，写入工具不能并行执行。')
+  })
+
   it('auto-verifies successful model-driven apply_patch before final answer', async () => {
     const patch = { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] }
     mockRequestLocalAgentDecision

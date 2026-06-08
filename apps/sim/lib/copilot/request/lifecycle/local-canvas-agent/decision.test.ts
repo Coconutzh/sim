@@ -91,6 +91,32 @@ describe('local canvas agent decision', () => {
     })
   })
 
+  it('parses bounded parallel read-only tool decisions', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        type: 'tool_calls',
+        userVisibleReason: '我会并行读取画布摘要和选中节点。',
+        risk: 'low',
+        toolCalls: [
+          { toolName: 'canvas.read_summary', toolInput: {} },
+          {
+            toolName: 'canvas.read_selected_nodes',
+            toolInput: {},
+            userVisibleReason: '读取选中节点。',
+          },
+        ],
+      })
+    )
+
+    expect(decision).toMatchObject({
+      type: 'tool_calls',
+      toolCalls: [
+        { toolName: 'canvas.read_summary', toolInput: {} },
+        { toolName: 'canvas.read_selected_nodes', toolInput: {} },
+      ],
+    })
+  })
+
   it('budgets large tool outputs in the prompt with a stable output ref', () => {
     const observations: LocalAgentObservation[] = [
       {
@@ -158,5 +184,6 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('update only the exact selected nodeId')
     expect(prompt).toContain('For media description')
     expect(prompt).toContain('Do not force text->image->video->audio')
+    expect(prompt).toContain('Use type=tool_calls only for independent read-only')
   })
 })
