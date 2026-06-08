@@ -49,6 +49,31 @@ const mediaAnalyzeInputSchema = z
     question: z.string().optional(),
   })
   .passthrough()
+const mediaContentAccessOutputSchema = z.object({
+  hasFile: z.boolean(),
+  binaryFetched: z.literal(false),
+  contentEvidence: z.enum(['prompt_only', 'file_metadata_only', 'stored_media_context']),
+  canDescribeActualMedia: z.boolean(),
+  safeDescriptionScope: z.string().min(1),
+})
+const mediaAnalyzeOutputSchema = z
+  .object({
+    nodeId: z.string().min(1),
+    kind: z.enum(['image', 'video', 'audio']),
+    title: z.string(),
+    analysisMode: z.enum(['prompt_only', 'file_metadata', 'stored_media_context']),
+    analysisGoal: z.enum(['describe', 'quality_check', 'extract_prompt', 'compare_with_prompt']),
+    hasFile: z.boolean(),
+    mediaContentAccess: mediaContentAccessOutputSchema,
+    file: z.record(z.string(), z.unknown()).nullable(),
+    prompt: z.object({
+      field: z.string().min(1),
+      value: z.string(),
+    }),
+    analysis: z.array(z.string()),
+    limitations: z.string().min(1),
+  })
+  .passthrough()
 const searchInputSchema = z
   .object({
     query: z.string().optional(),
@@ -98,6 +123,7 @@ function descriptor<Input extends Record<string, unknown>>(params: {
   title: string
   description: string
   inputSchema?: z.ZodType<Input>
+  outputSchema?: z.ZodType<unknown>
   enabled?: (context: LocalAgentContext) => boolean
   readOnly: boolean | ((input: Input) => boolean)
   destructive?: (input: Input) => boolean
@@ -109,6 +135,7 @@ function descriptor<Input extends Record<string, unknown>>(params: {
     title: params.title,
     description: params.description,
     inputSchema: params.inputSchema ?? (genericInputSchema as z.ZodType<Input>),
+    outputSchema: params.outputSchema,
     isEnabled: params.enabled ?? ((context) => context.permissions.canRead),
     isReadOnly: (input) =>
       typeof params.readOnly === 'function' ? params.readOnly(input) : params.readOnly,
@@ -205,6 +232,7 @@ const DESCRIPTORS = [
     description:
       'Analyze an image, video, or audio canvas node using stored media context, file metadata, and prompt fields.',
     inputSchema: mediaAnalyzeInputSchema,
+    outputSchema: mediaAnalyzeOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),

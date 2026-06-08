@@ -25,6 +25,28 @@ function isMediaToolName(toolName: LocalAgentToolCall['name']): toolName is Loca
   return toolName.startsWith('media.')
 }
 
+function validateToolOutput(
+  call: LocalAgentToolCall,
+  result: LocalAgentToolResult
+): LocalAgentToolResult {
+  const descriptor = getLocalAgentToolDescriptor(call.name)
+  if (!result.success || !descriptor?.outputSchema) return result
+  const parsedOutput = descriptor.outputSchema.safeParse(result.output)
+  if (parsedOutput.success) {
+    return {
+      ...result,
+      output: parsedOutput.data,
+    }
+  }
+  const error = parsedOutput.error.issues.map((issue) => issue.message).join('; ')
+  return {
+    name: call.name,
+    success: false,
+    error,
+    summary: `Tool ${call.name} output was invalid: ${error}`,
+  }
+}
+
 export async function executeLocalAgentTool(
   context: LocalAgentContext,
   call: LocalAgentToolCall
@@ -76,11 +98,12 @@ export async function executeLocalAgentTool(
     return result
   }
 
-  const result = isCanvasToolName(call.name)
+  const rawResult = isCanvasToolName(call.name)
     ? await executeCanvasTool(context, { name: call.name, input: parsedInput.data })
     : isMediaToolName(call.name)
       ? await executeMediaTool(context, { name: call.name, input: parsedInput.data })
       : await executeContextTool(context, { name: call.name, input: parsedInput.data })
+  const result = validateToolOutput(call, rawResult)
   await emitLocalAgentToolResult({
     context: context.streamContext,
     options: context.options,

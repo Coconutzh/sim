@@ -61,6 +61,7 @@
 - 新增 `decision.ts`：模型每轮返回 `AgentDecision` JSON，支持 `tool_call`、`ask_confirmation`、`ask_clarification`、`final_answer`。
 - `tool-loop.ts` 支持 `LOCAL_CANVAS_AGENT_MODE=legacy|hybrid|model_tool_loop`；当前默认 `model_tool_loop`，不再在模型 decision 不可用时静默降级；`legacy` 和 `hybrid` 只作为显式调试/兼容开关。
 - 模型调用工具前由 runtime 再次校验 descriptor availability、input schema、mutation policy 和 destructive guard。
+- tool executor bridge 会对已声明 `outputSchema` 的成功工具结果做输出校验；不符合 schema 的结果会被转成失败 observation/SSE result，避免非法工具输出继续进入模型上下文。
 - `canvas.apply_patch` / `canvas.generate_node_output` 成功后如果模型直接 final answer，runtime 会自动补 `canvas.verify_patch`，避免未验证写入被汇报为完成。
 - 新增 `tool-result-budget.ts`，decision prompt 只放带 `outputRef` 的预算化 observation preview，不把大 tool output 全量塞回上下文。
 - 新增 `media.analyze_node_media` 只读工具：可读取 image/video/audio 节点的 prompt、safe file metadata、已存媒体 context；无 file 时明确降级为 prompt-only，不假装看过真实媒体。
@@ -77,7 +78,7 @@
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 180 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：19 files / 182 tests passed
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed

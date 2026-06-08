@@ -19,6 +19,7 @@ vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context', () 
 }))
 
 import { executeMediaTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/media-tools'
+import { getLocalAgentToolDescriptor } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 
 const emptySnapshot: CanvasSnapshot = {
   workflowId: 'workflow-1',
@@ -139,6 +140,17 @@ describe('local canvas media tools', () => {
     expect(JSON.stringify(result.output)).not.toContain('https://private.example.test')
     expect(JSON.stringify(result.output)).toContain('镜头从观众席推向主屏')
     expect(JSON.stringify(result.output)).toContain('分析目标：compare_with_prompt')
+  })
+
+  it('returns output that satisfies the media tool descriptor schema', async () => {
+    const result = await executeMediaTool(buildContext(), {
+      name: 'media.analyze_node_media',
+      input: { nodeId: 'video-1' },
+    })
+    const descriptor = getLocalAgentToolDescriptor('media.analyze_node_media')
+
+    expect(result.success).toBe(true)
+    expect(descriptor?.outputSchema?.safeParse(result.output).success).toBe(true)
   })
 
   it('limits file-only media analysis to metadata and prompt claims', async () => {
