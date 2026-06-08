@@ -1,5 +1,6 @@
 import { executeCanvasTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools'
 import { executeContextTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-tools'
+import { executeMediaTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/media-tools'
 import {
   emitLocalAgentToolCall,
   emitLocalAgentToolResult,
@@ -13,10 +14,15 @@ import type {
   LocalAgentToolCall,
   LocalAgentToolResult,
   LocalCanvasToolName,
+  LocalMediaToolName,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 function isCanvasToolName(toolName: LocalAgentToolCall['name']): toolName is LocalCanvasToolName {
   return toolName.startsWith('canvas.')
+}
+
+function isMediaToolName(toolName: LocalAgentToolCall['name']): toolName is LocalMediaToolName {
+  return toolName.startsWith('media.')
 }
 
 export async function executeLocalAgentTool(
@@ -72,7 +78,9 @@ export async function executeLocalAgentTool(
 
   const result = isCanvasToolName(call.name)
     ? await executeCanvasTool(context, { name: call.name, input: parsedInput.data })
-    : await executeContextTool(context, { name: call.name, input: parsedInput.data })
+    : isMediaToolName(call.name)
+      ? await executeMediaTool(context, { name: call.name, input: parsedInput.data })
+      : await executeContextTool(context, { name: call.name, input: parsedInput.data })
   await emitLocalAgentToolResult({
     context: context.streamContext,
     options: context.options,

@@ -40,6 +40,12 @@ const nodeInputSchema = z
     nodeId: requiredString('nodeId'),
   })
   .passthrough()
+const mediaAnalyzeInputSchema = z
+  .object({
+    nodeId: requiredString('nodeId'),
+    question: z.string().optional(),
+  })
+  .passthrough()
 const searchInputSchema = z
   .object({
     query: z.string().optional(),
@@ -193,9 +199,9 @@ const DESCRIPTORS = [
   descriptor({
     name: 'media.analyze_node_media',
     title: '分析媒体',
-    description: 'Analyze a selected image, video, or audio file attached to a canvas node.',
-    inputSchema: nodeInputSchema,
-    enabled: () => false,
+    description:
+      'Analyze an image, video, or audio canvas node using stored media context, file metadata, and prompt fields.',
+    inputSchema: mediaAnalyzeInputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),

@@ -502,6 +502,7 @@ describe('local canvas agent foundation', () => {
         'query_knowledge',
         'search_docs',
         'read_tasks',
+        'media.analyze_node_media',
       ])
     )
     expect(tools).not.toContain('canvas.apply_patch')
