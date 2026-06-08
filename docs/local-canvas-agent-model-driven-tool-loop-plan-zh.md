@@ -1137,11 +1137,12 @@ apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/media-tools.ts
 LOCAL_CANVAS_AGENT_MODE=legacy | model_tool_loop | hybrid
 ```
 
-建议默认先 hybrid：
+灰度策略：
 
-- 简单低风险请求可以走旧 simple fallback。
-- 复杂、多步、媒体、内容链、选中节点理解走新 loop。
-- 稳定后切到 `model_tool_loop`。
+- 当前主路径默认应是 `model_tool_loop`，不再在模型 decision 不可用时静默降级旧 planner。
+- `legacy` 保留为显式回退开关，用于定位旧 plan-driven 行为和做差异对比。
+- `hybrid` 保留为显式兼容开关，只在首轮 decision 不可用且尚未执行工具时回退旧 planner。
+- 内容链、选中节点修改、媒体理解和 manual Confirm / Revise 都应优先走模型工具循环。
 
 ## 18. 实施阶段
 
@@ -1431,4 +1432,3 @@ final_answer
 ```
 
 不会自动读旧 chat summary。
-

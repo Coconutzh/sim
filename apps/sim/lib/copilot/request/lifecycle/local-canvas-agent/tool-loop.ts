@@ -65,7 +65,7 @@ function resolveLocalCanvasAgentRuntimeMode(
   const payloadMode = asString(context.requestPayload.localAgentMode)
   if (isRuntimeMode(payloadMode)) return payloadMode
   const envMode = process.env.LOCAL_CANVAS_AGENT_MODE?.trim()
-  return envMode && isRuntimeMode(envMode) ? envMode : 'hybrid'
+  return envMode && isRuntimeMode(envMode) ? envMode : 'model_tool_loop'
 }
 
 function buildInitialDecisionPlan(

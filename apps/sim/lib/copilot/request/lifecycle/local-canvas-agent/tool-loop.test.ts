@@ -69,6 +69,16 @@ function buildContext(overrides: Partial<LocalAgentContext> = {}): LocalAgentCon
   }
 }
 
+function buildLegacyContext(overrides: Partial<LocalAgentContext> = {}): LocalAgentContext {
+  return buildContext({
+    ...overrides,
+    requestPayload: {
+      ...overrides.requestPayload,
+      localAgentMode: 'legacy',
+    },
+  })
+}
+
 describe('local canvas tool loop', () => {
   beforeEach(() => {
     mockBuildLocalAgentPlan.mockReset()
@@ -128,6 +138,67 @@ describe('local canvas tool loop', () => {
         }),
       ])
     )
+  })
+
+  it('defaults to model_tool_loop without silently falling back to planner', async () => {
+    vi.stubEnv('LOCAL_CANVAS_AGENT_MODE', '')
+
+    try {
+      const result = await runLocalAgentToolLoop(
+        buildContext({
+          message: '当前画布有什么？',
+        })
+      )
+
+      expect(mockRequestLocalAgentDecision).toHaveBeenCalled()
+      expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+      expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+      expect(result.observations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolName: 'decision',
+            success: false,
+            summary: 'model decision unavailable',
+          }),
+        ])
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('uses the legacy planner fallback when hybrid mode is explicitly requested', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Read the current canvas with legacy fallback',
+      risk: 'low',
+      userIntent: 'inspect_canvas',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'required',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['Canvas summary is read'],
+    }
+    mockBuildLocalAgentPlan.mockResolvedValue(plan)
+    mockExecuteLocalAgentTool.mockResolvedValueOnce({
+      name: 'canvas.read_summary',
+      success: true,
+      output: {},
+      summary: 'Canvas summary read',
+    })
+
+    await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'hybrid' },
+        message: '总结当前画布。',
+      })
+    )
+
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalled()
+    expect(mockBuildLocalAgentPlan).toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
   })
 
   it('runs parallel model read-only tool calls without planner fallback', async () => {
@@ -711,7 +782,7 @@ describe('local canvas tool loop', () => {
     }
     mockBuildLocalAgentPlan.mockResolvedValue(plan)
 
-    const result = await runLocalAgentToolLoop(buildContext())
+    const result = await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.read_node',
@@ -763,7 +834,7 @@ describe('local canvas tool loop', () => {
       }
     })
 
-    const context = buildContext({
+    const context = buildLegacyContext({
       options: { abortSignal: abortController.signal },
       streamContext: { wasAborted: false } as LocalAgentContext['streamContext'],
     })
@@ -810,7 +881,7 @@ describe('local canvas tool loop', () => {
       summary: 'Prepared canvas patch proposal',
     })
 
-    await runLocalAgentToolLoop(buildContext())
+    await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.read_summary',
@@ -853,7 +924,7 @@ describe('local canvas tool loop', () => {
     mockBuildLocalAgentPlan.mockResolvedValue(plan)
 
     await runLocalAgentToolLoop(
-      buildContext({
+      buildLegacyContext({
         message: '先和我讨论这个小红书视频工作流怎么设计。',
       })
     )
@@ -897,7 +968,7 @@ describe('local canvas tool loop', () => {
       summary: 'Canvas summary read',
     })
 
-    await runLocalAgentToolLoop(buildContext({ message: '总结当前画布。' }))
+    await runLocalAgentToolLoop(buildLegacyContext({ message: '总结当前画布。' }))
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.read_summary',
@@ -940,7 +1011,7 @@ describe('local canvas tool loop', () => {
         summary: 'Search completed',
       })
 
-    await runLocalAgentToolLoop(buildContext({ message: '找到包含“城市霓虹漫游”的节点。' }))
+    await runLocalAgentToolLoop(buildLegacyContext({ message: '找到包含“城市霓虹漫游”的节点。' }))
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.read_summary',
@@ -987,7 +1058,7 @@ describe('local canvas tool loop', () => {
     }
     mockBuildLocalAgentPlan.mockResolvedValue(plan)
 
-    const result = await runLocalAgentToolLoop(buildContext())
+    const result = await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledTimes(1)
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
@@ -1034,7 +1105,7 @@ describe('local canvas tool loop', () => {
         summary: 'Verified generated image',
       })
 
-    await runLocalAgentToolLoop(buildContext())
+    await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.verify_patch',
@@ -1084,7 +1155,7 @@ describe('local canvas tool loop', () => {
         summary: 'Verified generated video',
       })
 
-    await runLocalAgentToolLoop(buildContext())
+    await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.verify_patch',
@@ -1117,7 +1188,7 @@ describe('local canvas tool loop', () => {
       summary: 'Generated node',
     })
 
-    const result = await runLocalAgentToolLoop(buildContext())
+    const result = await runLocalAgentToolLoop(buildLegacyContext())
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledTimes(10)
     expect(result.observations).toEqual(
