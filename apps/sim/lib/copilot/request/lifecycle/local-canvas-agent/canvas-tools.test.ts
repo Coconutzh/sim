@@ -70,7 +70,10 @@ vi.mock('@/lib/generated-media/audio/audio-generation-service', () => ({
   generateWorkspaceAudioFromPrompt: mockGenerateWorkspaceAudioFromPrompt,
 }))
 
-import { executeCanvasTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools'
+import {
+  CANVAS_TOOL_TITLES,
+  executeCanvasTool,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools'
 
 function buildContext(): LocalAgentContext {
   return {
@@ -738,6 +741,59 @@ describe('local canvas tools', () => {
     expect(executeContext).toEqual(
       expect.objectContaining({ userId: 'user-1', workspaceId: 'workspace-1' })
     )
+  })
+
+  it('normalizes direct nodes/edges patch proposals', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.propose_patch',
+        input: {
+          nodes: [
+            {
+              id: 'node_script',
+              title: '脚本',
+              kind: 'text',
+              position: { x: 300, y: 0 },
+              fields: { contentHtml: '<p>脚本</p>' },
+            },
+            {
+              id: 'node_visual',
+              title: '主视觉',
+              kind: 'image',
+              position: { x: 600, y: 0 },
+              fields: { aiPrompt: '主视觉提示词' },
+            },
+          ],
+          edges: [{ source: 'start-1', target: 'node_script' }, { from: 'node_script', to: 'node_visual' }],
+        },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        patch: expect.objectContaining({
+          operations: expect.arrayContaining([
+            expect.objectContaining({ type: 'create_node', title: '脚本', kind: 'text' }),
+            expect.objectContaining({ type: 'create_node', title: '主视觉', kind: 'image' }),
+            expect.objectContaining({
+              type: 'connect',
+              sourceNodeId: 'node_script',
+              targetNodeId: 'node_visual',
+            }),
+          ]),
+        }),
+      })
+    )
+  })
+
+  it('uses Chinese tool titles for user-visible canvas actions', () => {
+    expect(CANVAS_TOOL_TITLES['canvas.read_summary']).toBe('读取画布')
+    expect(CANVAS_TOOL_TITLES['canvas.apply_patch']).toBe('更新画布')
+    expect(CANVAS_TOOL_TITLES['canvas.generate_node_output']).toBe('生成节点内容')
   })
 
   it('normalizes instruction-only patch proposals into create and connect operations', async () => {

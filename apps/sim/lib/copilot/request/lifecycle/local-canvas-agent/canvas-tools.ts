@@ -86,32 +86,74 @@ function legacyBlockTypeToKind(blockType: unknown): LocalCanvasNodeKind {
 
 function normalizeLegacyCanvasPatch(patch: Record<string, unknown>): LocalCanvasPatch | null {
   const operations: LocalCanvasPatchOperation[] = []
-  const addNodes = Array.isArray(patch.addNodes) ? patch.addNodes : []
-  const addEdges = Array.isArray(patch.addEdges) ? patch.addEdges : []
+  const addNodes = [
+    ...(Array.isArray(patch.addNodes) ? patch.addNodes : []),
+    ...(Array.isArray(patch.nodes) ? patch.nodes : []),
+    ...(Array.isArray(patch.createNodes) ? patch.createNodes : []),
+  ]
+  const addEdges = [
+    ...(Array.isArray(patch.addEdges) ? patch.addEdges : []),
+    ...(Array.isArray(patch.edges) ? patch.edges : []),
+    ...(Array.isArray(patch.connectEdges) ? patch.connectEdges : []),
+  ]
 
   for (const item of addNodes) {
     const node = parseLegacyPatchItem(item)
     if (!node) continue
-    const id = typeof node.id === 'string' && node.id.trim() ? node.id : ''
-    const title = typeof node.name === 'string' && node.name.trim() ? node.name : id || '内容节点'
+    const id =
+      typeof node.clientNodeId === 'string' && node.clientNodeId.trim()
+        ? node.clientNodeId
+        : typeof node.id === 'string' && node.id.trim()
+          ? node.id
+          : ''
+    const title =
+      typeof node.title === 'string' && node.title.trim()
+        ? node.title
+        : typeof node.name === 'string' && node.name.trim()
+          ? node.name
+          : id || '内容节点'
     const rawPosition = asRecord(node.position)
     const x = typeof rawPosition.x === 'number' ? rawPosition.x : 0
     const y = typeof rawPosition.y === 'number' ? rawPosition.y : 0
+    const rawFields =
+      node.fields && typeof node.fields === 'object'
+        ? node.fields
+        : node.data && typeof node.data === 'object'
+          ? node.data
+          : {}
     operations.push({
       type: 'create_node',
       ...(id ? { clientNodeId: id } : {}),
-      kind: legacyBlockTypeToKind(node.blockType),
+      kind: legacyBlockTypeToKind(node.kind ?? node.type ?? node.blockType),
       title,
       position: { x, y },
-      fields: asRecord(node.fields),
+      fields: asRecord(rawFields),
     })
   }
 
   for (const item of addEdges) {
     const edge = parseLegacyPatchItem(item)
     if (!edge) continue
-    const sourceNodeId = typeof edge.source === 'string' ? edge.source : ''
-    const targetNodeId = typeof edge.target === 'string' ? edge.target : ''
+    const sourceNodeId =
+      typeof edge.sourceNodeId === 'string'
+        ? edge.sourceNodeId
+        : typeof edge.source === 'string'
+          ? edge.source
+          : typeof edge.sourceId === 'string'
+            ? edge.sourceId
+            : typeof edge.from === 'string'
+              ? edge.from
+              : ''
+    const targetNodeId =
+      typeof edge.targetNodeId === 'string'
+        ? edge.targetNodeId
+        : typeof edge.target === 'string'
+          ? edge.target
+          : typeof edge.targetId === 'string'
+            ? edge.targetId
+            : typeof edge.to === 'string'
+              ? edge.to
+              : ''
     if (!sourceNodeId || !targetNodeId) continue
     operations.push({ type: 'connect', sourceNodeId, targetNodeId })
   }
@@ -173,6 +215,7 @@ function normalizeDirectCanvasPatchOperation(
         : typeof patch.name === 'string' && patch.name.trim()
           ? patch.name
           : '内容节点'
+    const rawPosition = asRecord(patch.position)
     return {
       operations: [
         {
@@ -181,7 +224,10 @@ function normalizeDirectCanvasPatchOperation(
           ...(typeof patch.clientNodeId === 'string' ? { clientNodeId: patch.clientNodeId } : {}),
           kind,
           title,
-          position: asRecord(patch.position) as { x: number; y: number },
+          position: {
+            x: typeof rawPosition.x === 'number' ? rawPosition.x : 0,
+            y: typeof rawPosition.y === 'number' ? rawPosition.y : 0,
+          },
           fields: asRecord(patch.fields),
         },
       ],
@@ -273,18 +319,33 @@ function normalizeInstructionCanvasPatch(patch: Record<string, unknown>): LocalC
   return { operations }
 }
 
-function requirePatch(input: Record<string, unknown>): LocalCanvasPatch {
-  const patch = input.patch
-  const patchRecord = asRecord(patch)
-  if (Array.isArray((patch as LocalCanvasPatch | undefined)?.operations)) {
-    return patch as LocalCanvasPatch
+function normalizeCanvasPatchLike(value: unknown, depth = 0): LocalCanvasPatch | null {
+  if (depth > 3) return null
+  if (!value || typeof value !== 'object') return null
+  const patchRecord = asRecord(value)
+  if (Array.isArray((value as LocalCanvasPatch | undefined)?.operations)) {
+    return value as LocalCanvasPatch
   }
   const normalized =
     normalizeLegacyCanvasPatch(patchRecord) ??
     normalizeDirectCanvasPatchOperation(patchRecord) ??
     normalizeInstructionCanvasPatch(patchRecord)
+  if (normalized) return normalized
+  for (const key of ['patch', 'canvasPatch', 'workflowPatch', 'plan', 'input']) {
+    if (key in patchRecord) {
+      const nested = normalizeCanvasPatchLike(patchRecord[key], depth + 1)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+function requirePatch(input: Record<string, unknown>): LocalCanvasPatch {
+  const normalized = normalizeCanvasPatchLike(input.patch ?? input)
   if (!normalized) {
-    throw new Error('patch.operations is required')
+    throw new Error(
+      'A canvas patch with operations, nodes/edges, addNodes/addEdges, or instructions is required'
+    )
   }
   return normalized
 }
@@ -830,13 +891,13 @@ async function executeCanvasToolUnchecked(
 }
 
 export const CANVAS_TOOL_TITLES: Record<LocalCanvasToolName, string> = {
-  'canvas.read_summary': 'Reading canvas',
-  'canvas.read_node': 'Reading node',
-  'canvas.read_selected_nodes': 'Reading selected nodes',
-  'canvas.search_nodes': 'Searching canvas',
-  'canvas.inspect_schema': 'Inspecting node schema',
-  'canvas.propose_patch': 'Preparing canvas update',
-  'canvas.apply_patch': 'Updating canvas',
-  'canvas.verify_patch': 'Verifying canvas',
-  'canvas.generate_node_output': 'Generating node output',
+  'canvas.read_summary': '读取画布',
+  'canvas.read_node': '读取节点',
+  'canvas.read_selected_nodes': '读取选中节点',
+  'canvas.search_nodes': '搜索画布节点',
+  'canvas.inspect_schema': '检查节点结构',
+  'canvas.propose_patch': '准备画布修改方案',
+  'canvas.apply_patch': '更新画布',
+  'canvas.verify_patch': '验证画布',
+  'canvas.generate_node_output': '生成节点内容',
 }

@@ -212,6 +212,45 @@ describe('local canvas tool loop', () => {
     )
   })
 
+  it('does not execute mutation tools when the plan is read-only', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Discuss a workflow design',
+      risk: 'low',
+      userIntent: 'consult_design',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'none',
+      requiresClarification: false,
+      steps: [
+        {
+          id: 'bad_apply',
+          title: 'Model accidentally tries to apply',
+          intent: 'update',
+          toolHints: ['canvas.apply_patch'],
+          expectedObservation: 'Should not run',
+        },
+      ],
+      successCriteria: ['No canvas mutation occurs'],
+      patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] },
+    }
+    mockBuildLocalAgentPlan.mockResolvedValue(plan)
+
+    await runLocalAgentToolLoop(
+      buildContext({
+        message: '先和我讨论这个小红书视频工作流怎么设计。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(mockBuildLocalAgentAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan,
+        observations: expect.arrayContaining([
+          expect.objectContaining({ toolName: 'planner', success: true }),
+        ]),
+      })
+    )
+  })
+
   it('executes multiple planned tool hints from the same step', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Search current canvas',

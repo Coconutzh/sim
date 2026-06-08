@@ -10,6 +10,15 @@ import type { ProviderId, ProviderRequest } from '@/providers/types'
 export type LocalAgentSessionScope = 'personal' | 'team' | 'task'
 export type LocalAgentRole = 'planner' | 'actor' | 'verifier' | 'summarizer'
 export type LocalAgentRisk = 'low' | 'medium' | 'high'
+export type LocalCanvasUserIntent =
+  | 'consult_design'
+  | 'inspect_canvas'
+  | 'propose_plan'
+  | 'mutate_canvas'
+  | 'generate_output'
+  | 'non_canvas'
+export type LocalCanvasMutationPolicy = 'read_only' | 'propose_only' | 'allow_mutation'
+export type LocalCanvasReadPolicy = 'none' | 'optional' | 'required'
 export type LocalCanvasNodeKind = ContentNodePresetId | 'generic_workflow_block'
 export type LocalCanvasToolName =
   | 'canvas.read_summary'
@@ -272,6 +281,9 @@ export interface LocalAgentPlanStep {
 export interface LocalAgentPlan {
   goal: string
   risk: LocalAgentRisk
+  userIntent?: LocalCanvasUserIntent
+  mutationPolicy?: LocalCanvasMutationPolicy
+  canvasReadPolicy?: LocalCanvasReadPolicy
   requiresClarification: boolean
   clarificationQuestion?: string
   steps: LocalAgentPlanStep[]

@@ -142,6 +142,30 @@ describe('local canvas planner', () => {
     }
   })
 
+  it('classifies workflow design discussion as read-only consult intent', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: [],
+        message: '你好，我想做一个小红书的小猫ai视频生成工作流，先告诉我工作流如何设计，和我讨论一下',
+      })
+    )
+
+    expect(mockExecuteLocalAgentModelRequest).not.toHaveBeenCalled()
+    expect(plan.userIntent).toBe('consult_design')
+    expect(plan.mutationPolicy).toBe('read_only')
+    expect(plan.canvasReadPolicy).toBe('none')
+    expect(plan.patch).toBeUndefined()
+    expect(plan.generateNodeIds).toBeUndefined()
+    expect(plan.steps.flatMap((step) => step.toolHints)).toEqual([])
+  })
+
   it('does not write persona-leaking rewrite output into selected text contentHtml', async () => {
     const snapshot: CanvasSnapshot = {
       workflowId: 'workflow-1',
@@ -673,6 +697,49 @@ describe('local canvas planner', () => {
     )
   })
 
+  it('creates node-specific content chain fields instead of copying the raw instruction', async () => {
+    const message =
+      '创建一条用于小红书短视频的内容链，包含种草文案、产品主图、短视频、配乐四个节点，并从左到右排好。'
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: [],
+        message,
+      })
+    )
+
+    const createOperations =
+      plan.patch?.operations.filter((operation) => operation.type === 'create_node') ?? []
+    expect(createOperations).toHaveLength(4)
+    for (const operation of createOperations) {
+      if (operation.type !== 'create_node') continue
+      expect(JSON.stringify(operation.fields)).not.toContain(message)
+      expect(JSON.stringify(operation.fields)).not.toContain('创建一条用于')
+    }
+    const textNode = createOperations.find(
+      (operation) => operation.type === 'create_node' && operation.kind === 'text'
+    )
+    const imageNode = createOperations.find(
+      (operation) => operation.type === 'create_node' && operation.kind === 'image'
+    )
+    expect(textNode?.type).toBe('create_node')
+    expect(imageNode?.type).toBe('create_node')
+    if (textNode?.type === 'create_node') {
+      expect(String(textNode.fields.contentHtml)).toContain('小红书')
+      expect(String(textNode.fields.contentHtml)).toContain('短视频')
+    }
+    if (imageNode?.type === 'create_node') {
+      expect(String(imageNode.fields.aiPrompt)).toContain('小红书')
+      expect(String(imageNode.fields.aiPrompt)).toContain('主视觉')
+    }
+  })
+
   it('uses deterministic create-chain patch when the model omits mutation steps', async () => {
     mockExecuteLocalAgentModelRequest.mockResolvedValue({
       content: JSON.stringify({
@@ -716,6 +783,28 @@ describe('local canvas planner', () => {
     expect(plan.steps.flatMap((step) => step.toolHints)).toEqual(
       expect.arrayContaining(['canvas.apply_patch', 'canvas.verify_patch'])
     )
+  })
+
+  it('plans proposal-only canvas changes when user asks to wait for confirmation', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: [],
+        message: '先给我一个短视频内容链创建方案，等我确认后再执行。',
+      })
+    )
+
+    expect(plan.userIntent).toBe('propose_plan')
+    expect(plan.mutationPolicy).toBe('propose_only')
+    expect(plan.patch?.operations.length).toBeGreaterThan(0)
+    expect(plan.steps.flatMap((step) => step.toolHints)).toContain('canvas.propose_patch')
+    expect(plan.steps.flatMap((step) => step.toolHints)).not.toContain('canvas.apply_patch')
   })
 
   it('plans a horizontal layout patch for canvas organization requests', async () => {

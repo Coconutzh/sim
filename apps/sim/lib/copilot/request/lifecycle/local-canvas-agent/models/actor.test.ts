@@ -84,6 +84,41 @@ describe('local canvas actor', () => {
     ).toEqual({ name: 'canvas.read_summary', input: {} })
   })
 
+  it('answers consult-design requests without summarizing current canvas', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Discuss a Xiaohongshu cat AI video workflow',
+      risk: 'low',
+      userIntent: 'consult_design',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'none',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['Discuss before changing canvas'],
+    }
+
+    const answer = await buildLocalAgentAnswer({
+      context: buildContext(
+        '你好，我想做一个小红书的小猫ai视频生成工作流，先告诉我工作流如何设计，和我讨论一下'
+      ),
+      plan,
+      observations: [
+        {
+          toolName: 'planner',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: plan.goal,
+        },
+      ],
+    })
+
+    expect(answer).toContain('先不改画布')
+    expect(answer).toContain('脚本')
+    expect(answer).toContain('主视觉')
+    expect(answer).toContain('配乐')
+    expect(answer).not.toContain('当前画布内容节点如下')
+    expect(answer).not.toContain('总导演')
+  })
+
   it('answers canvas summary questions without leaking raw tool JSON', () => {
     const answer = buildDeterministicLocalAgentAnswer({
       context: buildContext('总结当前画布里有哪些内容节点，以及它们之间的关系。'),

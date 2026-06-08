@@ -4,6 +4,10 @@ import {
   readCanvasNodeDetail,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import { buildTokenAwareLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
+import {
+  classifyLocalCanvasUserIntent,
+  type LocalCanvasIntentDecision,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/intent'
 import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
 import type {
@@ -16,9 +20,23 @@ import type {
   LocalCanvasToolName,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
+const localCanvasUserIntentSchema = z.enum([
+  'consult_design',
+  'inspect_canvas',
+  'propose_plan',
+  'mutate_canvas',
+  'generate_output',
+  'non_canvas',
+])
+const localCanvasMutationPolicySchema = z.enum(['read_only', 'propose_only', 'allow_mutation'])
+const localCanvasReadPolicySchema = z.enum(['none', 'optional', 'required'])
+
 const plannerResponseSchema = z.object({
   goal: z.string().catch(''),
   risk: z.enum(['low', 'medium', 'high']).catch('low'),
+  userIntent: localCanvasUserIntentSchema.optional(),
+  mutationPolicy: localCanvasMutationPolicySchema.optional(),
+  canvasReadPolicy: localCanvasReadPolicySchema.optional(),
   requiresClarification: z.boolean().catch(false),
   clarificationQuestion: z.string().optional(),
   steps: z
@@ -72,6 +90,98 @@ function parseJsonObject(content: string): unknown {
 function includesAny(message: string, terms: string[]): boolean {
   const normalized = message.toLowerCase()
   return terms.some((term) => normalized.includes(term.toLowerCase()))
+}
+
+function isMutationToolHint(toolName: LocalAgentToolName): boolean {
+  return (
+    toolName === 'canvas.apply_patch' ||
+    toolName === 'canvas.generate_node_output' ||
+    toolName === 'materialize_file' ||
+    toolName === 'update_task_result' ||
+    toolName === 'submit_task_result'
+  )
+}
+
+function filterToolHintsByPolicy(
+  toolHints: LocalAgentToolName[],
+  decision: LocalCanvasIntentDecision
+): LocalAgentToolName[] {
+  if (decision.mutationPolicy === 'allow_mutation') return toolHints
+  return toolHints.filter((toolName) => {
+    if (isMutationToolHint(toolName)) return false
+    if (decision.mutationPolicy === 'read_only' && toolName === 'canvas.propose_patch') {
+      return false
+    }
+    if (decision.mutationPolicy === 'propose_only' && toolName === 'canvas.verify_patch') {
+      return false
+    }
+    if (
+      decision.canvasReadPolicy === 'none' &&
+      (toolName === 'canvas.read_summary' ||
+        toolName === 'canvas.read_node' ||
+        toolName === 'canvas.read_selected_nodes' ||
+        toolName === 'canvas.search_nodes' ||
+        toolName === 'canvas.inspect_schema')
+    ) {
+      return false
+    }
+    return true
+  })
+}
+
+function applyIntentPolicy(
+  plan: LocalAgentPlan,
+  decision: LocalCanvasIntentDecision
+): LocalAgentPlan {
+  const basePlan: LocalAgentPlan = {
+    ...plan,
+    userIntent: plan.userIntent ?? decision.userIntent,
+    mutationPolicy: plan.mutationPolicy ?? decision.mutationPolicy,
+    canvasReadPolicy: plan.canvasReadPolicy ?? decision.canvasReadPolicy,
+  }
+
+  if (basePlan.mutationPolicy === 'allow_mutation') return basePlan
+
+  const policyDecision: LocalCanvasIntentDecision = {
+    ...decision,
+    userIntent: basePlan.userIntent,
+    mutationPolicy: basePlan.mutationPolicy,
+    canvasReadPolicy: basePlan.canvasReadPolicy,
+  }
+  const steps = basePlan.steps
+    .map((step) => ({
+      ...step,
+      toolHints: filterToolHintsByPolicy(step.toolHints, policyDecision),
+    }))
+    .filter((step) => step.toolHints.length > 0 || step.intent === 'answer')
+
+  if (basePlan.mutationPolicy === 'read_only') {
+    return {
+      ...basePlan,
+      patch: undefined,
+      generateNodeIds: undefined,
+      steps,
+    }
+  }
+
+  const hasProposeStep = steps.some((step) => step.toolHints.includes('canvas.propose_patch'))
+  return {
+    ...basePlan,
+    generateNodeIds: undefined,
+    steps:
+      basePlan.patch && !hasProposeStep
+        ? [
+            ...steps,
+            {
+              id: 'propose_patch',
+              title: 'Prepare canvas change proposal',
+              intent: 'update',
+              toolHints: ['canvas.propose_patch'],
+              expectedObservation: 'Canvas patch is validated as a proposal only',
+            },
+          ]
+        : steps,
+  }
 }
 
 const REQUESTED_KIND_TERMS: Array<{ kind: LocalCanvasNodeKind; terms: string[] }> = [
@@ -147,6 +257,80 @@ function buildDeterministicRewrite(params: { currentText: string }): string {
     '别等以后，就现在出发。把体验、效率和态度一次拉满，让每一次点击都更有爽感。',
     '适合短视频口播：节奏更快，表达更短，重点更清楚。',
   ].join('\n')
+}
+
+function stripCanvasCommandLanguage(message: string): string {
+  return message
+    .replace(/^(请|帮我|麻烦)?\s*/g, '')
+    .replace(/(?:根据|基于)?当前主题[，,:：]*/g, '')
+    .replace(
+      /(?:创建|新建|新增|生成|做|搭建|建立|设计)\s*(?:一条|一个|一组|用于)?/g,
+      ''
+    )
+    .replace(/(?:内容链|工作流|节点|并按生产顺序连接|从左到右排好|连接|排好)/g, '')
+    .replace(/[：:，,。；;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function inferContentChainTheme(context: LocalAgentContext): {
+  platform: string
+  subject: string
+  theme: string
+} {
+  const message = context.message
+  const memoryGoal = context.memory?.taskState.goal?.trim() ?? ''
+  const memorySummary = context.memory?.conversationSummary?.trim() ?? ''
+  const cleaned = stripCanvasCommandLanguage(message)
+  const source = [cleaned, memoryGoal, memorySummary].find((item) => item.length > 0) ?? '当前主题'
+  const platform = /小红书|xiaohongshu|rednote/i.test(source)
+    ? '小红书'
+    : /抖音|douyin|tiktok/i.test(source)
+      ? '短视频平台'
+      : '短视频'
+  const subjectMatch = source.match(
+    /(小猫|猫咪|猫|产品|新品|口红|护肤|咖啡|旅行|露营|家居|美食|发布会|高考|学习|AI\s*视频|ai\s*视频)/i
+  )
+  const subject = subjectMatch?.[1] ?? source.slice(0, 40)
+  return {
+    platform,
+    subject,
+    theme: source,
+  }
+}
+
+function buildContentChainFields(context: LocalAgentContext): {
+  text: Record<string, unknown>
+  image: Record<string, unknown>
+  video: Record<string, unknown>
+  audio: Record<string, unknown>
+} {
+  const { platform, subject, theme } = inferContentChainTheme(context)
+  const scriptText = [
+    `开场：用一个有画面感的问题切入 ${subject}，先抓住 ${platform} 用户注意力。`,
+    `中段：展开 ${theme} 的核心卖点或故事冲突，保持口语化和短句节奏。`,
+    '收尾：给出明确行动或情绪落点，方便继续生成主视觉、视频和配乐。',
+  ].join('\n')
+  return {
+    text: {
+      aiPrompt: `为${platform}短视频策划一段围绕“${theme}”的脚本，要求口语化、有镜头感、适合继续生成图片、视频和配乐。`,
+      contentHtml: textToContentHtml(scriptText),
+    },
+    image: {
+      aiPrompt: `${platform}短视频主视觉，主题“${theme}”，主体突出${subject}，明亮干净，强情绪钩子，竖屏构图，适合作为视频第一帧。`,
+      aiAspectRatio: '9:16',
+    },
+    video: {
+      videoPrompt: `${platform}短视频镜头，围绕“${theme}”做 5 秒动态展示：开场快速吸引注意，中段展示主体细节，结尾留出标题或行动引导空间。`,
+      videoParameters: {
+        duration: 5,
+        resolution: '720P',
+      },
+    },
+    audio: {
+      audioPrompt: `${platform}短视频配乐，围绕“${theme}”营造轻快、有记忆点的节奏，适合种草、治愈或产品展示氛围。`,
+    },
+  }
 }
 
 function hasPersonaLeak(value: string): boolean {
@@ -426,6 +610,85 @@ function buildContextInspectionPlan(
   }
 }
 
+function buildConsultDesignPlan(
+  context: LocalAgentContext,
+  decision: LocalCanvasIntentDecision
+): LocalAgentPlan {
+  return applyIntentPolicy(
+    {
+      goal: context.message || 'Discuss a canvas workflow design before making changes',
+      risk: 'low',
+      requiresClarification: false,
+      steps: [
+        {
+          id: 'consult_design',
+          title: 'Discuss workflow design without changing canvas',
+          intent: 'answer',
+          toolHints: [],
+          expectedObservation: 'User receives a design discussion and open questions',
+        },
+      ],
+      successCriteria: [
+        'Discuss the workflow design without reading or modifying the canvas unless explicitly needed',
+      ],
+    },
+    decision
+  )
+}
+
+function buildProposeOnlyPlan(params: {
+  context: LocalAgentContext
+  decision: LocalCanvasIntentDecision
+  patch?: LocalCanvasPatch
+}): LocalAgentPlan {
+  return applyIntentPolicy(
+    {
+      goal: params.context.message || 'Propose canvas changes without applying them',
+      risk: params.patch ? 'medium' : 'low',
+      requiresClarification: false,
+      steps: [
+        ...(params.decision.canvasReadPolicy === 'required'
+          ? [
+              {
+                id: 'inspect_for_proposal',
+                title: 'Read canvas context for proposal',
+                intent: 'inspect' as const,
+                toolHints: [
+                  params.context.selectedNodeIds.length > 0
+                    ? 'canvas.read_selected_nodes'
+                    : 'canvas.read_summary',
+                ] as LocalAgentToolName[],
+                expectedObservation: 'Canvas context is available before proposal',
+              },
+            ]
+          : []),
+        ...(params.patch
+          ? [
+              {
+                id: 'propose_patch',
+                title: 'Prepare canvas change proposal',
+                intent: 'update' as const,
+                toolHints: ['canvas.propose_patch' as const],
+                expectedObservation: 'Canvas patch is validated but not applied',
+              },
+            ]
+          : [
+              {
+                id: 'answer_plan',
+                title: 'Describe the proposed approach',
+                intent: 'answer' as const,
+                toolHints: [],
+                expectedObservation: 'User receives a proposal without canvas mutation',
+              },
+            ]),
+      ],
+      successCriteria: ['No canvas mutation is applied before user confirmation'],
+      patch: params.patch,
+    },
+    params.decision
+  )
+}
+
 function extractExplicitNodeIds(message: string): string[] {
   const quoted = [...message.matchAll(/[“"']([^”"']{3,120})[”"']/g)]
     .map((match) => match[1]?.trim())
@@ -582,6 +845,7 @@ async function buildFallbackPatch(
   const message = context.message
   const wantsChain = includesAny(message, ['完整短视频', '内容链', '一组', 'chain', 'storyboard'])
   if (wantsChain) {
+    const fields = buildContentChainFields(context)
     return {
       reason: 'Create a complete content chain from the current canvas request',
       operations: [
@@ -591,10 +855,7 @@ async function buildFallbackPatch(
           kind: 'text',
           title: '短视频脚本',
           position: { x: 0, y: 0 },
-          fields: {
-            aiPrompt: message,
-            contentHtml: `<p>${message}</p>`,
-          },
+          fields: fields.text,
         },
         {
           type: 'create_node',
@@ -602,7 +863,7 @@ async function buildFallbackPatch(
           kind: 'image',
           title: '视觉画面',
           position: { x: 360, y: 0 },
-          fields: { aiPrompt: message },
+          fields: fields.image,
         },
         {
           type: 'create_node',
@@ -610,7 +871,7 @@ async function buildFallbackPatch(
           kind: 'video',
           title: '视频节点',
           position: { x: 720, y: 0 },
-          fields: { videoPrompt: message },
+          fields: fields.video,
         },
         {
           type: 'create_node',
@@ -618,7 +879,7 @@ async function buildFallbackPatch(
           kind: 'audio',
           title: '音频节点',
           position: { x: 1080, y: 0 },
-          fields: { audioPrompt: message },
+          fields: fields.audio,
         },
         { type: 'connect', sourceNodeId: 'new_script', targetNodeId: 'new_image' },
         { type: 'connect', sourceNodeId: 'new_image', targetNodeId: 'new_video' },
@@ -1015,17 +1276,27 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
     workflowId: context.workflowId,
     workspaceId: context.workspaceId,
   })
+  const intentDecision = classifyLocalCanvasUserIntent(context)
 
   if (isDestructiveCanvasRequest(context.message)) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (context.selectedNodeIds.length === 0 && isSelectionScopedUpdateRequest(context.message)) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (context.selectedNodeIds.length === 0 && isSelectionScopedReadRequest(context.message)) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
+  }
+
+  if (intentDecision.userIntent === 'consult_design') {
+    return buildConsultDesignPlan(context, intentDecision)
+  }
+
+  if (intentDecision.mutationPolicy === 'propose_only') {
+    const patch = await buildFallbackPatch(context, snapshot)
+    return buildProposeOnlyPlan({ context, decision: intentDecision, patch })
   }
 
   const contextToolHints = inferContextToolHints(context)
@@ -1034,11 +1305,14 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
     !isSelectionScopedUpdateRequest(context.message) &&
     !isSelectedGenerationRequest(context.message)
   ) {
-    return buildContextInspectionPlan(
-      context,
-      context.selectedNodeIds.length > 0
-        ? ['canvas.read_selected_nodes', ...contextToolHints]
-        : contextToolHints
+    return applyIntentPolicy(
+      buildContextInspectionPlan(
+        context,
+        context.selectedNodeIds.length > 0
+          ? ['canvas.read_selected_nodes', ...contextToolHints]
+          : contextToolHints
+      ),
+      intentDecision
     )
   }
 
@@ -1052,13 +1326,16 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
       ? readCanvasNodeDetail(snapshot, selected, context.selectedNodeIds)
       : null
     if (detail && !detail.capabilities.canWrite) {
-      return buildReadonlySelectedWriteRefusalPlan({ context, detailKind: detail.kind })
+      return applyIntentPolicy(
+        buildReadonlySelectedWriteRefusalPlan({ context, detailKind: detail.kind }),
+        intentDecision
+      )
     }
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (isSelectedGenerationRequest(context.message)) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (
@@ -1066,7 +1343,7 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
     isConnectionReasoningRequest(context.message) ||
     isIsolatedNodeRequest(context.message)
   ) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (
@@ -1075,7 +1352,7 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
       isConnectionReasoningRequest(context.message) ||
       includesAny(context.message, ['检查', '分析', '判断']))
   ) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   if (
@@ -1083,7 +1360,7 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
     (isSelectionScopedUpdateRequest(context.message) ||
       isSelectionScopedReadRequest(context.message))
   ) {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
   const explicitNodeIds = extractExplicitNodeIds(context.message)
@@ -1091,7 +1368,7 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
     explicitNodeIds.length > 0 &&
     includesAny(context.message, ['读取', 'read', '修改', 'update'])
   ) {
-    return buildExplicitReadNodePlan(context, explicitNodeIds)
+    return applyIntentPolicy(buildExplicitReadNodePlan(context, explicitNodeIds), intentDecision)
   }
 
   const tokenAwareContext = buildTokenAwareLocalAgentContext({ context, snapshot })
@@ -1121,6 +1398,9 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
       const coveredPlan = ensureReadOnlyInspectionCoverage(context, {
         goal: parsed.data.goal || context.message,
         risk: parsed.data.risk,
+        userIntent: parsed.data.userIntent ?? intentDecision.userIntent,
+        mutationPolicy: parsed.data.mutationPolicy ?? intentDecision.mutationPolicy,
+        canvasReadPolicy: parsed.data.canvasReadPolicy ?? intentDecision.canvasReadPolicy,
         requiresClarification: parsed.data.requiresClarification,
         clarificationQuestion: parsed.data.clarificationQuestion,
         steps: parsed.data.steps,
@@ -1131,17 +1411,21 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
       })
       if (!coveredPlan.patch && !coveredPlan.generateNodeIds?.length) {
         const fallbackPatch = await buildFallbackPatch(context, snapshot)
-        if (fallbackPatch) return buildFallbackPlan(context, snapshot)
+        if (fallbackPatch)
+          return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
       }
-      return ensureSelectedTextRewritePatch({
-        context,
-        snapshot,
-        plan: coveredPlan,
-      })
+      return applyIntentPolicy(
+        await ensureSelectedTextRewritePatch({
+          context,
+          snapshot,
+          plan: coveredPlan,
+        }),
+        intentDecision
+      )
     }
   } catch {
-    return buildFallbackPlan(context, snapshot)
+    return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
   }
 
-  return buildFallbackPlan(context, snapshot)
+  return applyIntentPolicy(await buildFallbackPlan(context, snapshot), intentDecision)
 }

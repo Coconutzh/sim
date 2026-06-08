@@ -161,8 +161,11 @@ function buildStepToolCalls(
 
 function buildRequiredInspectionCalls(
   context: LocalAgentContext,
+  plan: LocalAgentPlan,
   calls: LocalAgentToolCall[]
 ): LocalAgentToolCall[] {
+  if (plan.canvasReadPolicy === 'none') return []
+  if (plan.canvasReadPolicy === 'optional' && !hasReadCall(calls)) return []
   if (hasReadCall(calls)) return []
   return [
     {
@@ -210,10 +213,28 @@ function hasSuccessfulMutation(observations: LocalAgentObservation[]): boolean {
 
 function isProposalOnlyPlan(plan: LocalAgentPlan, plannedCalls: LocalAgentToolCall[]): boolean {
   return Boolean(
-    plan.patch &&
-      plannedCalls.some((call) => call.name === 'canvas.propose_patch') &&
-      !plannedCalls.some((call) => call.name === 'canvas.apply_patch')
+    plan.mutationPolicy === 'propose_only' ||
+      (plan.patch &&
+        plannedCalls.some((call) => call.name === 'canvas.propose_patch') &&
+        !plannedCalls.some((call) => call.name === 'canvas.apply_patch'))
   )
+}
+
+function isToolCallAllowedByPolicy(plan: LocalAgentPlan, call: LocalAgentToolCall): boolean {
+  const policy = plan.mutationPolicy ?? 'allow_mutation'
+  if (policy === 'allow_mutation') return true
+  if (
+    call.name === 'canvas.apply_patch' ||
+    call.name === 'canvas.generate_node_output' ||
+    call.name === 'materialize_file' ||
+    call.name === 'update_task_result' ||
+    call.name === 'submit_task_result'
+  ) {
+    return false
+  }
+  if (policy === 'read_only' && call.name === 'canvas.propose_patch') return false
+  if (policy === 'propose_only' && call.name === 'canvas.verify_patch') return false
+  return true
 }
 
 function getNextPlannedStepCall(
@@ -240,8 +261,10 @@ function getNextImplicitCall(
   const alreadyVerified = state.observations.some(
     (observation) => observation.toolName === 'canvas.verify_patch'
   )
+  const canMutate = (state.plan.mutationPolicy ?? 'allow_mutation') === 'allow_mutation'
 
   if (
+    canMutate &&
     state.plan.patch &&
     state.plan.patch.operations.length > 0 &&
     !proposalOnly &&
@@ -251,6 +274,7 @@ function getNextImplicitCall(
   }
 
   if (
+    canMutate &&
     state.plan.patch &&
     state.plan.patch.operations.length > 0 &&
     !proposalOnly &&
@@ -261,13 +285,17 @@ function getNextImplicitCall(
   }
 
   if (state.pendingVerifyAfterGenerate) {
+    if (!canMutate) {
+      state.pendingVerifyAfterGenerate = null
+      return null
+    }
     const generation = state.pendingVerifyAfterGenerate
     state.pendingVerifyAfterGenerate = null
     return { name: 'canvas.verify_patch', input: { generation } }
   }
 
   const generateNodeIds = state.plan.generateNodeIds ?? []
-  if (state.generatedNodeIndex < generateNodeIds.length) {
+  if (canMutate && state.generatedNodeIndex < generateNodeIds.length) {
     const nodeId = generateNodeIds[state.generatedNodeIndex]
     state.generatedNodeIndex += 1
     return { name: 'canvas.generate_node_output', input: { nodeId } }
@@ -294,7 +322,7 @@ function getNextToolCall(
 
   if (state.phase === 'inspect') {
     state.phase = 'act'
-    return buildRequiredInspectionCalls(context, plannedCalls)[0] ?? null
+    return buildRequiredInspectionCalls(context, state.plan, plannedCalls)[0] ?? null
   }
 
   if (state.phase === 'act') {
@@ -341,6 +369,7 @@ function getNextUnseenToolCall(
       candidates: [call],
     })
     if (!actorSelectedCall) return null
+    if (!isToolCallAllowedByPolicy(state.plan, actorSelectedCall)) continue
     const key = getCallKey(call)
     if (state.seen.has(key)) continue
     state.seen.add(key)

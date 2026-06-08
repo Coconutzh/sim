@@ -786,10 +786,46 @@ function hasContextWriteObservation(observations: LocalAgentObservation[]): bool
   )
 }
 
+function inferConsultTheme(message: string): string {
+  const cleaned = message
+    .replace(/^(你好|您好|请|帮我|我想|想)\s*/g, '')
+    .replace(/(?:先|先帮我)?(?:告诉我|说说|讲讲|讨论一下|和我讨论一下|聊聊)/g, '')
+    .replace(/[，,。；;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || message.trim() || '这个内容生产工作流'
+}
+
+function buildConsultDesignAnswer(context: LocalAgentContext): string {
+  const theme = inferConsultTheme(context.message)
+  const isShortVideo = /短视频|视频|video/i.test(theme)
+  const isXiaohongshu = /小红书|xiaohongshu|rednote/i.test(theme)
+  const platform = isXiaohongshu ? '小红书' : isShortVideo ? '短视频平台' : '当前平台'
+  return [
+    `可以，我们先不改画布，先把“${theme}”的工作流设计清楚。`,
+    '',
+    '我建议先按 4 个生产环节拆：',
+    `1. 脚本/种草文案：明确受众、开场钩子、核心卖点和行动引导，适配${platform}的短句节奏。`,
+    '2. 主视觉：把脚本里的主体、场景、情绪和画幅固化成可复用的图片提示词。',
+    '3. 视频：用主视觉或脚本继续扩展镜头运动、时长、节奏和结尾字幕空间。',
+    '4. 配乐：根据视频氛围选择节奏、情绪和段落推进，避免和口播抢信息。',
+    '',
+    '在真正创建节点前，我想先确认 3 点：',
+    '- 你希望它偏种草、剧情、治愈，还是偏教程说明？',
+    '- 视频大概做 5 秒、10 秒，还是更长？',
+    '- 需要口播文案，还是只做画面和音乐氛围？',
+  ].join('\n')
+}
+
 export function buildDeterministicLocalAgentAnswer(params: {
   context: LocalAgentContext
+  plan?: LocalAgentPlan
   observations: LocalAgentObservation[]
 }): string {
+  if (params.plan?.userIntent === 'consult_design') {
+    return buildConsultDesignAnswer(params.context)
+  }
+
   const generateObservations = params.observations.filter(
     (observation) => observation.toolName === 'canvas.generate_node_output'
   )
@@ -877,6 +913,7 @@ export async function buildLocalAgentAnswer(params: {
   observations: LocalAgentObservation[]
 }): Promise<string> {
   const fallback = buildDeterministicLocalAgentAnswer(params)
+  if (params.plan.userIntent === 'consult_design' && fallback.trim()) return fallback
   const isDeterministicCompletion =
     params.observations.every((observation) => observation.success) &&
     params.observations.some(
