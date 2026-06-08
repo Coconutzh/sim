@@ -138,4 +138,25 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('Do not set file')
     expect(prompt).toContain('canvas.generate_node_output')
   })
+
+  it('frames patch examples as adaptable recipes instead of fixed templates', () => {
+    const prompt = buildLocalAgentDecisionPrompt({
+      context: buildContext({
+        message: '把选中的视频节点提示词改成慢镜头推进。',
+        selectedNodeIds: ['video-1'],
+      }),
+      observations: [],
+      policy: {
+        userIntent: 'mutate_canvas',
+        mutationPolicy: 'allow_mutation',
+        canvasReadPolicy: 'required',
+      },
+    })
+
+    expect(prompt).toContain('Patch examples are recipes, not fixed templates')
+    expect(prompt).toContain('For selected-node edits')
+    expect(prompt).toContain('update only the exact selected nodeId')
+    expect(prompt).toContain('For media description')
+    expect(prompt).toContain('Do not force text->image->video->audio')
+  })
 })

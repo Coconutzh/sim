@@ -167,12 +167,16 @@ function buildPatchProtocolContext(): string {
     '- layout_nodes uses direction horizontal, vertical, or grid.',
     '- Do not create raw workflow operations. Do not write block ids unless updating an existing node.',
     '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
+    '- Patch examples are recipes, not fixed templates. Adapt node count, kinds, fields, and edges to the user request and current canvas.',
+    '- For selected-node edits: call canvas.read_selected_nodes first, then update only the exact selected nodeId and editable fields.',
+    '- For media description: read the selected node first, then call media.analyze_node_media; if no file exists, answer from prompt/metadata only.',
+    '- For content chains: choose the structure from the request. Do not force text->image->video->audio unless that matches the requested workflow.',
     'Writable content fields:',
     '- text: contentHtml, aiPrompt, aiModel, blockStyle, backgroundColor, fontSize, width, height.',
     '- image: aiPrompt, aiModel, aiAspectRatio. Do not set file.',
     '- video: videoPrompt, videoModelFamily, videoMedia, videoParameters, videoFrameAspectRatioPreset. Do not set file.',
     '- audio: audioPrompt, audioModel, audioParameters. Do not set file.',
-    'Example short-video content chain patch:',
+    'Optional short-video content chain example for a script + main visual + video + music request:',
     JSON.stringify({
       patch: {
         operations: [

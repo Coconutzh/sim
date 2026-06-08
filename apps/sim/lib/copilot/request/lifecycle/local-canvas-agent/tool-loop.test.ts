@@ -301,6 +301,125 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已记录当前进展。')
   })
 
+  it.each([
+    {
+      kind: 'text',
+      nodeId: 'text-1',
+      message: '把选中的文本节点改成更年轻、更轻快一点的语气。',
+      fields: { contentHtml: '<p>开场更短、更轻快，像在和同学直接聊天。</p>' },
+    },
+    {
+      kind: 'image',
+      nodeId: 'image-1',
+      message: '把选中的图片节点提示词改成清晨教室的励志风格。',
+      fields: { aiPrompt: '清晨教室、倒计时牌、明亮励志的主视觉。' },
+    },
+    {
+      kind: 'video',
+      nodeId: 'video-1',
+      message: '把选中的视频节点提示词改成慢镜头推进，时长改成 8 秒。',
+      fields: {
+        videoPrompt: '慢镜头从课桌推进到黑板倒计时，情绪逐渐振奋。',
+        videoParameters: { duration: 8, resolution: '720P' },
+      },
+    },
+    {
+      kind: 'audio',
+      nodeId: 'audio-1',
+      message: '把选中的音频节点音乐方向改成轻快电子乐。',
+      fields: { audioPrompt: '轻快电子乐，明亮、鼓点稳定、适合高考冲刺短视频。' },
+    },
+  ])('updates a selected $kind node from a model-authored patch', async (caseData) => {
+    const patch = {
+      operations: [
+        {
+          type: 'update_node' as const,
+          nodeId: caseData.nodeId,
+          fields: caseData.fields,
+        },
+      ],
+      reason: `Update selected ${caseData.kind} node fields from the user's instruction.`,
+    }
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.read_selected_nodes',
+        toolInput: {},
+        userVisibleReason: '我先读取当前选中节点。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch },
+        userVisibleReason: '我会只更新选中节点的可编辑字段。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已更新选中节点。',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已更新并验证选中节点。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.read_selected_nodes',
+        success: true,
+        output: {
+          nodes: [
+            {
+              id: caseData.nodeId,
+              kind: caseData.kind,
+              fields: {},
+            },
+          ],
+        },
+        summary: `Read selected ${caseData.kind} node`,
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied selected node patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified selected node patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: [caseData.nodeId],
+        message: caseData.message,
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.read_selected_nodes',
+      input: {},
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(3, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'canvas.generate_node_output' })
+    )
+    expect(JSON.stringify(patch)).not.toContain(caseData.message)
+    expect(result.answer).toBe('已更新并验证选中节点。')
+  })
+
   it('blocks model mutation calls when intent policy is read-only', async () => {
     mockRequestLocalAgentDecision
       .mockResolvedValueOnce({
