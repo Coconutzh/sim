@@ -38,6 +38,45 @@ const CONTEXT_BUDGET = {
   userRequest: 1200,
 } as const
 
+type LocalContextBudget = typeof CONTEXT_BUDGET
+
+const DEFAULT_CONTEXT_CHAR_BUDGET = Object.values(CONTEXT_BUDGET).reduce(
+  (total, value) => total + value,
+  0
+)
+
+function asPositiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
+function inferModelContextWindowTokens(model: string): number {
+  const normalized = model.toLowerCase()
+  if (/gemini|claude|gpt-5|gpt-4\.1|o3|o4/.test(normalized)) return 64_000
+  if (/mini|flash|lite/.test(normalized)) return 32_000
+  return 16_000
+}
+
+function resolveContextBudget(context: LocalAgentContext): LocalContextBudget {
+  const requestedTokens =
+    asPositiveNumber(context.requestPayload.localCanvasContextWindowTokens) ??
+    asPositiveNumber(context.requestPayload.contextWindowTokens) ??
+    inferModelContextWindowTokens(context.model.model)
+  const targetChars = Math.min(48_000, Math.max(10_000, Math.floor(requestedTokens * 1.6)))
+  const scale = Math.min(2.25, Math.max(0.5, targetChars / DEFAULT_CONTEXT_CHAR_BUDGET))
+  return {
+    profile: Math.max(900, Math.floor(CONTEXT_BUDGET.profile * scale)),
+    permissions: CONTEXT_BUDGET.permissions,
+    skills: Math.max(1000, Math.floor(CONTEXT_BUDGET.skills * scale)),
+    canvasSummary: Math.max(1400, Math.floor(CONTEXT_BUDGET.canvasSummary * scale)),
+    selectedDetails: Math.max(2500, Math.floor(CONTEXT_BUDGET.selectedDetails * scale)),
+    relevantDetails: Math.max(1200, Math.floor(CONTEXT_BUDGET.relevantDetails * scale)),
+    attachments: Math.max(700, Math.floor(CONTEXT_BUDGET.attachments * scale)),
+    conversation: Math.max(900, Math.floor(CONTEXT_BUDGET.conversation * scale)),
+    memory: Math.max(900, Math.floor(CONTEXT_BUDGET.memory * scale)),
+    userRequest: Math.max(1200, Math.floor(CONTEXT_BUDGET.userRequest * scale)),
+  }
+}
+
 function clip(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value
   return `${value.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`
@@ -293,11 +332,18 @@ function collectRelevantNodeIds(context: LocalAgentContext, snapshot: CanvasSnap
   return [...relevant].slice(0, 8)
 }
 
-function buildConversationContext(history: LocalAgentMessage[]): string {
-  const recent = history.slice(-12)
+function buildConversationContext(history: LocalAgentMessage[], budget: number): string {
+  const maxMessages = budget < 1400 ? 4 : budget < 2200 ? 8 : 12
+  const perMessageBudget = budget < 1400 ? 280 : budget < 2200 ? 360 : 500
+  const recent = history.slice(-maxMessages)
   const olderCount = Math.max(0, history.length - recent.length)
-  const lines = recent.map((message) => `${message.role}: ${clip(message.content, 500)}`)
-  return [olderCount ? `Earlier messages compressed: ${olderCount} message(s).` : '', ...lines]
+  const lines = recent.map(
+    (message) => `${message.role}: ${clip(message.content, perMessageBudget)}`
+  )
+  return [
+    olderCount ? `Earlier messages compressed into memory: ${olderCount} message(s).` : '',
+    ...lines,
+  ]
     .filter(Boolean)
     .join('\n')
 }
@@ -354,7 +400,10 @@ function buildAttachmentContext(attachments: LocalAgentAttachment[] | undefined)
     .join('\n')
 }
 
-function buildAttachedContextsContext(contexts: LocalAgentAttachedContext[] | undefined): string {
+function buildAttachedContextsContext(
+  contexts: LocalAgentAttachedContext[] | undefined,
+  budget: number
+): string {
   if (!contexts?.length) return ''
   return contexts
     .slice(0, 8)
@@ -363,7 +412,7 @@ function buildAttachedContextsContext(contexts: LocalAgentAttachedContext[] | un
         context.type === 'file' ? redactAgentVisibleFileContext(context.content) : context.content
       return [
         `### ${context.type} ${context.tag}`,
-        clip(content, Math.max(500, Math.floor(CONTEXT_BUDGET.attachments / 2))),
+        clip(content, Math.max(500, Math.floor(budget / 2))),
       ].join('\n')
     })
     .join('\n\n')
@@ -384,6 +433,7 @@ export function buildTokenAwareLocalAgentContext(params: {
   snapshot: CanvasSnapshot
 }): string {
   const { context, snapshot } = params
+  const budget = resolveContextBudget(context)
   const canvasSummary = summarizeCanvas(snapshot, context.selectedNodeIds)
   const selectedDetails = context.selectedNodeIds
     .map((nodeId) => readCanvasNodeDetail(snapshot, nodeId, context.selectedNodeIds))
@@ -393,7 +443,7 @@ export function buildTokenAwareLocalAgentContext(params: {
     .filter(Boolean)
 
   return [
-    layer('Agent Profile', clip(buildAgentProfileContext(context), CONTEXT_BUDGET.profile)),
+    layer('Agent Profile', clip(buildAgentProfileContext(context), budget.profile)),
     layer(
       'Permissions',
       clip(
@@ -407,7 +457,7 @@ export function buildTokenAwareLocalAgentContext(params: {
         ]
           .filter(Boolean)
           .join('\n'),
-        CONTEXT_BUDGET.permissions
+        budget.permissions
       )
     ),
     layer(
@@ -419,7 +469,7 @@ export function buildTokenAwareLocalAgentContext(params: {
               `- ${skill.name} [${skill.source}]: ${skill.description}\n${clip(skill.content, 700)}`
           )
           .join('\n\n'),
-        CONTEXT_BUDGET.skills
+        budget.skills
       )
     ),
     layer(
@@ -432,35 +482,38 @@ export function buildTokenAwareLocalAgentContext(params: {
           nodes: canvasSummary,
           edges: snapshot.edges,
         },
-        CONTEXT_BUDGET.canvasSummary
+        budget.canvasSummary
       )
     ),
     layer(
       'Selected Node Details',
-      stringifyCompact(selectedDetails, CONTEXT_BUDGET.selectedDetails)
+      stringifyCompact(selectedDetails, budget.selectedDetails)
     ),
     layer(
       'Relevant Node Details',
-      stringifyCompact(relevantDetails, CONTEXT_BUDGET.relevantDetails)
+      stringifyCompact(relevantDetails, budget.relevantDetails)
     ),
     layer(
       'Attached Contexts',
       clip(
         [
           buildAttachmentContext(context.attachments),
-          buildAttachedContextsContext(context.attachedContexts),
+          buildAttachedContextsContext(context.attachedContexts, budget.attachments),
         ]
           .filter(Boolean)
           .join('\n\n'),
-        CONTEXT_BUDGET.attachments
+        budget.attachments
       )
     ),
     layer(
       'Recent Conversation',
-      clip(buildConversationContext(context.conversationHistory), CONTEXT_BUDGET.conversation)
+      clip(
+        buildConversationContext(context.conversationHistory, budget.conversation),
+        budget.conversation
+      )
     ),
-    layer('Long-Term Memory', clip(buildMemoryContext(context), CONTEXT_BUDGET.memory)),
-    layer('User Request', clip(context.message, CONTEXT_BUDGET.userRequest)),
+    layer('Long-Term Memory', clip(buildMemoryContext(context), budget.memory)),
+    layer('User Request', clip(context.message, budget.userRequest)),
   ].join('\n\n')
 }
 

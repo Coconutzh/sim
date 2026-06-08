@@ -231,7 +231,7 @@ describe('local canvas runtime manual confirmation', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: ContentBlockType.thinking,
-          content: '正在读取当前画布内容。',
+          content: '正在理解你的需求。',
         }),
       ])
     )
