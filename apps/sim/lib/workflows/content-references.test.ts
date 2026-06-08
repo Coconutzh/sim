@@ -1,18 +1,36 @@
 import { describe, expect, it } from 'vitest'
+import { CONTENT_REFERENCE_EDGE_KIND } from '@/lib/workflows/content-reference-edges'
 import {
   buildContentReferencePromptContext,
   buildStructuredContentReferenceContext,
+  type ContentReferenceRecord,
+  canContentNodeVariantReferenceSource,
   findMatchingContentReferenceEdgeIds,
   getAllowedReferenceSourceVariants,
+  getAllowedReferencingContentNodeVariants,
   getContentReferenceCapability,
+  getDefaultReferenceRole,
   getModelDisabledReason,
   inferContentReferencesFromCanvas,
   normalizeContentReferences,
-  type ContentReferenceRecord,
 } from '@/lib/workflows/content-references'
-import { CONTENT_REFERENCE_EDGE_KIND } from '@/lib/workflows/content-reference-edges'
 
 describe('content reference capabilities', () => {
+  it('centralizes allowed target node variants for each referenced source variant', () => {
+    expect(getAllowedReferencingContentNodeVariants('text')).toEqual([
+      'text',
+      'image',
+      'video',
+      'audio',
+    ])
+    expect(getAllowedReferencingContentNodeVariants('image')).toEqual(['text', 'image', 'video'])
+    expect(getAllowedReferencingContentNodeVariants('video')).toEqual(['text'])
+    expect(getAllowedReferencingContentNodeVariants('audio')).toEqual(['video'])
+
+    expect(canContentNodeVariantReferenceSource('audio', 'image')).toBe(false)
+    expect(canContentNodeVariantReferenceSource('video', 'audio')).toBe(true)
+  })
+
   it('allows Gemini image models to reference both text and image nodes', () => {
     expect(getAllowedReferenceSourceVariants('image', 'gemini-3.1-flash-image-preview')).toEqual([
       'text',
@@ -33,9 +51,9 @@ describe('content reference capabilities', () => {
       },
     ]
 
-    expect(
-      getContentReferenceCapability('text', 'gemini-2.5-flash').supportedRoles
-    ).toContain('image_reference')
+    expect(getContentReferenceCapability('text', 'gemini-2.5-flash').supportedRoles).toContain(
+      'image_reference'
+    )
 
     expect(
       getModelDisabledReason({
@@ -47,7 +65,52 @@ describe('content reference capabilities', () => {
   })
 
   it('prevents GLM text models from selecting image nodes as references', () => {
-    expect(getAllowedReferenceSourceVariants('text', 'glm-4.7')).toEqual(['text', 'video', 'audio'])
+    expect(getAllowedReferenceSourceVariants('text', 'glm-4.7')).toEqual(['text', 'video'])
+  })
+
+  it('resolves default reference roles from the centralized model capability matrix', () => {
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'text',
+        model: 'gemini-2.5-flash',
+        sourceVariant: 'image',
+      })
+    ).toBe('image_reference')
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'text',
+        model: 'glm-4.7',
+        sourceVariant: 'image',
+      })
+    ).toBeNull()
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'video',
+        model: 'wan2.6-t2v',
+        sourceVariant: 'text',
+      })
+    ).toBe('text_context')
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'video',
+        model: 'wan2.6-i2v-flash',
+        sourceVariant: 'image',
+      })
+    ).toBe('video_first_frame')
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'video',
+        model: 'wan2.7-i2v',
+        sourceVariant: 'audio',
+      })
+    ).toBe('audio_reference')
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'audio',
+        model: 'suno-v5-beta',
+        sourceVariant: 'image',
+      })
+    ).toBeNull()
   })
 
   it('returns slot-based video capabilities for the supported Wan models', () => {
@@ -92,6 +155,36 @@ describe('content reference capabilities', () => {
         targetVariant: 'image',
         model: 'gemini-3.1-flash-image-preview',
         references,
+      })
+    ).toBeNull()
+  })
+
+  it('keeps text models from using audio references while allowing compatible video references', () => {
+    expect(
+      getModelDisabledReason({
+        targetVariant: 'text',
+        model: 'gemini-2.5-flash',
+        references: [
+          {
+            sourceBlockId: 'audio-1',
+            sourceVariant: 'audio',
+            role: 'audio_reference',
+          },
+        ],
+      })
+    ).toContain('audio')
+
+    expect(
+      getModelDisabledReason({
+        targetVariant: 'video',
+        model: 'wan2.6-i2v-flash',
+        references: [
+          {
+            sourceBlockId: 'audio-1',
+            sourceVariant: 'audio',
+            role: 'audio_reference',
+          },
+        ],
       })
     ).toBeNull()
   })

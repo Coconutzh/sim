@@ -133,20 +133,23 @@ function applyIntentPolicy(
   plan: LocalAgentPlan,
   decision: LocalCanvasIntentDecision
 ): LocalAgentPlan {
+  const userIntent = plan.userIntent ?? decision.userIntent
+  const mutationPolicy = plan.mutationPolicy ?? decision.mutationPolicy
+  const canvasReadPolicy = plan.canvasReadPolicy ?? decision.canvasReadPolicy
   const basePlan: LocalAgentPlan = {
     ...plan,
-    userIntent: plan.userIntent ?? decision.userIntent,
-    mutationPolicy: plan.mutationPolicy ?? decision.mutationPolicy,
-    canvasReadPolicy: plan.canvasReadPolicy ?? decision.canvasReadPolicy,
+    userIntent,
+    mutationPolicy,
+    canvasReadPolicy,
   }
 
-  if (basePlan.mutationPolicy === 'allow_mutation') return basePlan
+  if (mutationPolicy === 'allow_mutation') return basePlan
 
   const policyDecision: LocalCanvasIntentDecision = {
     ...decision,
-    userIntent: basePlan.userIntent,
-    mutationPolicy: basePlan.mutationPolicy,
-    canvasReadPolicy: basePlan.canvasReadPolicy,
+    userIntent,
+    mutationPolicy,
+    canvasReadPolicy,
   }
   const steps = basePlan.steps
     .map((step) => ({
@@ -155,7 +158,7 @@ function applyIntentPolicy(
     }))
     .filter((step) => step.toolHints.length > 0 || step.intent === 'answer')
 
-  if (basePlan.mutationPolicy === 'read_only') {
+  if (mutationPolicy === 'read_only') {
     return {
       ...basePlan,
       patch: undefined,

@@ -4,44 +4,48 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = process.env
+const CONTENT_CANVAS_ENV_KEYS = [
+  'CONTENT_TEXT_GEMINI_BASE_URL',
+  'CONTENT_TEXT_GEMINI_API_KEY',
+  'CONTENT_TEXT_GEMINI_ENABLED_MODELS',
+  'CONTENT_TEXT_GEMINI_DEFAULT_MODEL',
+  'CONTENT_TEXT_GLM_BASE_URL',
+  'CONTENT_TEXT_GLM_API_KEY',
+  'CONTENT_TEXT_GLM_ENABLED_MODELS',
+  'CONTENT_TEXT_GLM_DEFAULT_MODEL',
+  'CONTENT_IMAGE_GEMINI_BASE_URL',
+  'CONTENT_IMAGE_GEMINI_API_KEY',
+  'CONTENT_IMAGE_GEMINI_ENABLED_MODELS',
+  'CONTENT_IMAGE_GEMINI_DEFAULT_MODEL',
+  'CONTENT_IMAGE_ARK_BASE_URL',
+  'CONTENT_IMAGE_ARK_API_KEY',
+  'CONTENT_IMAGE_ARK_ENABLED_MODELS',
+  'CONTENT_IMAGE_ARK_DEFAULT_MODEL',
+  'CONTENT_AUDIO_BASE_URL',
+  'CONTENT_AUDIO_API_KEY',
+  'CONTENT_AUDIO_ENABLED_MODELS',
+  'CONTENT_AUDIO_DEFAULT_MODEL',
+  'CONTENT_VIDEO_BASE_URL',
+  'CONTENT_VIDEO_API_KEY',
+  'CONTENT_VIDEO_ENABLED_MODELS',
+  'CONTENT_VIDEO_DEFAULT_MODEL',
+  'GEMINI_API_KEY',
+  'GEMINI_API_KEY_1',
+  'ZHIPU_API_KEY',
+  'ARK_API_KEY',
+  'ARK_BASE_URL',
+  'EVOLINK_API_KEY',
+  'EVOLINK_BASE_URL',
+  'DASHSCOPE_API_KEY',
+  'DASHSCOPE_BASE_URL',
+] as const
 
 function resetContentCanvasEnv() {
   process.env = { ...ORIGINAL_ENV }
 
-  delete process.env.CONTENT_TEXT_GEMINI_BASE_URL
-  delete process.env.CONTENT_TEXT_GEMINI_API_KEY
-  delete process.env.CONTENT_TEXT_GEMINI_ENABLED_MODELS
-  delete process.env.CONTENT_TEXT_GEMINI_DEFAULT_MODEL
-  delete process.env.CONTENT_TEXT_GLM_BASE_URL
-  delete process.env.CONTENT_TEXT_GLM_API_KEY
-  delete process.env.CONTENT_TEXT_GLM_ENABLED_MODELS
-  delete process.env.CONTENT_TEXT_GLM_DEFAULT_MODEL
-  delete process.env.CONTENT_IMAGE_GEMINI_BASE_URL
-  delete process.env.CONTENT_IMAGE_GEMINI_API_KEY
-  delete process.env.CONTENT_IMAGE_GEMINI_ENABLED_MODELS
-  delete process.env.CONTENT_IMAGE_GEMINI_DEFAULT_MODEL
-  delete process.env.CONTENT_IMAGE_ARK_BASE_URL
-  delete process.env.CONTENT_IMAGE_ARK_API_KEY
-  delete process.env.CONTENT_IMAGE_ARK_ENABLED_MODELS
-  delete process.env.CONTENT_IMAGE_ARK_DEFAULT_MODEL
-  delete process.env.CONTENT_AUDIO_BASE_URL
-  delete process.env.CONTENT_AUDIO_API_KEY
-  delete process.env.CONTENT_AUDIO_ENABLED_MODELS
-  delete process.env.CONTENT_AUDIO_DEFAULT_MODEL
-  delete process.env.CONTENT_VIDEO_BASE_URL
-  delete process.env.CONTENT_VIDEO_API_KEY
-  delete process.env.CONTENT_VIDEO_ENABLED_MODELS
-  delete process.env.CONTENT_VIDEO_DEFAULT_MODEL
-
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_API_KEY_1
-  delete process.env.ZHIPU_API_KEY
-  delete process.env.ARK_API_KEY
-  delete process.env.ARK_BASE_URL
-  delete process.env.EVOLINK_API_KEY
-  delete process.env.EVOLINK_BASE_URL
-  delete process.env.DASHSCOPE_API_KEY
-  delete process.env.DASHSCOPE_BASE_URL
+  for (const key of CONTENT_CANVAS_ENV_KEYS) {
+    process.env[key] = undefined
+  }
 }
 
 describe('content-canvas service config', () => {
@@ -94,7 +98,7 @@ describe('content-canvas service config', () => {
       })
     ).toMatchObject({
       targetVariant: 'text',
-      allowedSourceVariants: ['text', 'video', 'audio'],
+      allowedSourceVariants: ['text', 'video'],
     })
   })
 
@@ -132,14 +136,12 @@ describe('content-canvas service config', () => {
 
     const { resolveContentService } = await import('@/lib/content-canvas/service-config')
 
-    expect(resolveContentService({ capability: 'text', modelId: 'gemini-2.5-pro' })).toMatchObject(
-      {
-        kind: 'openai-compatible',
-        baseUrl: 'https://gateway.example.com/v1',
-        apiKey: 'gateway-key',
-        modelId: 'gemini-2.5-pro',
-      }
-    )
+    expect(resolveContentService({ capability: 'text', modelId: 'gemini-2.5-pro' })).toMatchObject({
+      kind: 'openai-compatible',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'gateway-key',
+      modelId: 'gemini-2.5-pro',
+    })
   })
 
   it('falls back to legacy native Gemini env when new content-canvas text env is absent', async () => {

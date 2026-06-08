@@ -38,7 +38,8 @@ const CONTEXT_BUDGET = {
   userRequest: 1200,
 } as const
 
-type LocalContextBudget = typeof CONTEXT_BUDGET
+type ContextBudgetKey = keyof typeof CONTEXT_BUDGET
+type LocalContextBudget = Record<ContextBudgetKey, number>
 
 const DEFAULT_CONTEXT_CHAR_BUDGET = Object.values(CONTEXT_BUDGET).reduce(
   (total, value) => total + value,

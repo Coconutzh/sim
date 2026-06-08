@@ -42,6 +42,7 @@ interface VideoContentAiComposerProps {
     id: VideoModelFamily
     label: string
     description: string
+    disabledReason?: string | null
   }>
   aspectRatioOptions: ReadonlyArray<{
     id: VideoFrameAspectRatioPreset
@@ -357,9 +358,7 @@ export function VideoContentAiComposer({
 
           {isSelectingFrame ? (
             <div className='rounded-full border border-[#5F4720] bg-[#2D2418] px-2.5 py-1 text-[11px] text-[#F4C86A]'>
-              {selectedFrameSlot === 'last'
-                ? '选择尾帧中'
-                : '选择首帧中'}
+              {selectedFrameSlot === 'last' ? '选择尾帧中' : '选择首帧中'}
             </div>
           ) : null}
         </div>
@@ -408,7 +407,10 @@ export function VideoContentAiComposer({
                   options={
                     isWan26
                       ? [
-                          { id: hasFirstFrame ? 'i2v' : 't2v', label: hasFirstFrame ? '首帧参考' : '纯文本' },
+                          {
+                            id: hasFirstFrame ? 'i2v' : 't2v',
+                            label: hasFirstFrame ? '首帧参考' : '纯文本',
+                          },
                           { id: 'auto', label: '自动' },
                           { id: 'locked', label: '已锁定' },
                         ]
@@ -426,7 +428,9 @@ export function VideoContentAiComposer({
                   options={aspectRatioOptions}
                   value={aspectRatioPreset}
                   disabled={!canEdit || isGenerating}
-                  onChange={(value) => onChangeAspectRatioPreset(value as VideoFrameAspectRatioPreset)}
+                  onChange={(value) =>
+                    onChangeAspectRatioPreset(value as VideoFrameAspectRatioPreset)
+                  }
                 />
 
                 <SegmentedControl
@@ -464,9 +468,7 @@ export function VideoContentAiComposer({
                   label='生成音频'
                   enabled={isWan26}
                   description={
-                    isWan26
-                      ? 'Wan 2.6 当前默认生成音频。'
-                      : 'Wan 2.7 首尾帧模式暂不支持音频。'
+                    isWan26 ? 'Wan 2.6 当前默认生成音频。' : 'Wan 2.7 首尾帧模式暂不支持音频。'
                   }
                 />
 
@@ -499,8 +501,13 @@ export function VideoContentAiComposer({
                 className='max-w-[120px] truncate bg-transparent outline-none'
               >
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    disabled={Boolean(option.disabledReason)}
+                  >
                     {option.label}
+                    {option.disabledReason ? ' (Unavailable)' : ''}
                   </option>
                 ))}
               </select>
