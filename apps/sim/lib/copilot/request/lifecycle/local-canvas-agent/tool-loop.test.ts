@@ -10,11 +10,13 @@ import type {
 const {
   mockBuildLocalAgentPlan,
   mockBuildLocalAgentAnswer,
+  mockRequestLocalAgentDecision,
   mockExecuteLocalAgentTool,
   mockSelectLocalAgentNextToolCall,
 } = vi.hoisted(() => ({
   mockBuildLocalAgentPlan: vi.fn(),
   mockBuildLocalAgentAnswer: vi.fn(async () => 'done'),
+  mockRequestLocalAgentDecision: vi.fn(),
   mockExecuteLocalAgentTool: vi.fn(),
   mockSelectLocalAgentNextToolCall: vi.fn(({ candidates }) => candidates[0] ?? null),
 }))
@@ -26,6 +28,10 @@ vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/planner', () => ({
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor', () => ({
   buildLocalAgentAnswer: mockBuildLocalAgentAnswer,
   selectLocalAgentNextToolCall: mockSelectLocalAgentNextToolCall,
+}))
+
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/decision', () => ({
+  requestLocalAgentDecision: mockRequestLocalAgentDecision,
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge', () => ({
@@ -65,13 +71,143 @@ function buildContext(overrides: Partial<LocalAgentContext> = {}): LocalAgentCon
 
 describe('local canvas tool loop', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    mockBuildLocalAgentPlan.mockReset()
+    mockBuildLocalAgentAnswer.mockReset()
+    mockRequestLocalAgentDecision.mockReset()
+    mockExecuteLocalAgentTool.mockReset()
+    mockSelectLocalAgentNextToolCall.mockReset()
+    mockBuildLocalAgentAnswer.mockResolvedValue('done')
+    mockSelectLocalAgentNextToolCall.mockImplementation(({ candidates }) => candidates[0] ?? null)
+    mockRequestLocalAgentDecision.mockRejectedValue(new Error('model decision unavailable'))
     mockExecuteLocalAgentTool.mockResolvedValue({
       name: 'canvas.read_node',
       success: false,
       error: 'Node "node-does-not-exist" was not found',
       summary: 'Node "node-does-not-exist" was not found',
     })
+  })
+
+  it('runs model decision tool calls when model_tool_loop mode is requested', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.read_summary',
+        toolInput: {},
+        userVisibleReason: '我先读取当前画布。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '当前画布是空的。',
+      })
+    mockExecuteLocalAgentTool.mockResolvedValueOnce({
+      name: 'canvas.read_summary',
+      success: true,
+      output: { nodes: [], edges: [] },
+      summary: 'Read canvas summary with 0 nodes and 0 connections',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '当前画布有什么？',
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
+    expect(result.answer).toBe('当前画布是空的。')
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'canvas.read_summary',
+          success: true,
+        }),
+      ])
+    )
+  })
+
+  it('auto-verifies successful model-driven apply_patch before final answer', async () => {
+    const patch = { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] }
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch },
+        userVisibleReason: '我会应用布局修改。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已更新布局。',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已更新并验证布局。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '请直接修改当前画布布局为横向。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(result.answer).toBe('已更新并验证布局。')
+  })
+
+  it('blocks model mutation calls when intent policy is read-only', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
+        userVisibleReason: '我会修改画布。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '我先只给方案，不会改画布。',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '先和我讨论当前画布怎么设计。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('read-only'),
+        }),
+      ])
+    )
+    expect(result.answer).toBe('我先只给方案，不会改画布。')
   })
 
   it('executes explicit read_node calls from plan readNodeIds', async () => {

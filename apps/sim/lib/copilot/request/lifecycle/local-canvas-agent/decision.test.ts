@@ -1,0 +1,92 @@
+/**
+ * @vitest-environment node
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  buildLocalAgentDecisionPrompt,
+  parseLocalAgentDecision,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/decision'
+import type {
+  LocalAgentContext,
+  LocalAgentObservation,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+
+function buildContext(overrides: Partial<LocalAgentContext> = {}): LocalAgentContext {
+  return {
+    userId: 'user-1',
+    workspaceId: 'workspace-1',
+    workflowId: 'workflow-1',
+    message: '描述当前画布',
+    sessionScope: 'personal',
+    agent: { code: 'chief_director', name: 'Canvas Agent', description: '', systemPrompt: '' },
+    discipline: { id: '', code: 'chief_director', name: '总导演' },
+    workgroup: { id: '', name: 'Workspace', organizationId: '', teamWorkspaceId: null },
+    permissions: { canRead: true, canWrite: true, canPublish: false },
+    selectedNodeIds: [],
+    conversationHistory: [],
+    skills: [],
+    model: { model: 'test-model', mode: 'structured' },
+    confirmationMode: 'auto',
+    thinkingLevel: 'standard',
+    requestPayload: {},
+    execContext: {
+      userId: 'user-1',
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+    },
+    streamContext: {} as LocalAgentContext['streamContext'],
+    options: {},
+    ...overrides,
+  }
+}
+
+describe('local canvas agent decision', () => {
+  it('parses tool call decisions from wrapped model JSON', () => {
+    const decision = parseLocalAgentDecision(`
+      Here is the JSON:
+      {"type":"tool_call","toolName":"canvas.read_summary","toolInput":{},"userVisibleReason":"我先读取画布。","risk":"low"}
+    `)
+
+    expect(decision).toEqual({
+      type: 'tool_call',
+      toolName: 'canvas.read_summary',
+      toolInput: {},
+      userVisibleReason: '我先读取画布。',
+      risk: 'low',
+    })
+  })
+
+  it('rejects unknown tools instead of letting the model invent capabilities', () => {
+    expect(() =>
+      parseLocalAgentDecision(
+        '{"type":"tool_call","toolName":"canvas.delete_everything","toolInput":{},"userVisibleReason":"x","risk":"high"}'
+      )
+    ).toThrow('Invalid AgentDecision')
+  })
+
+  it('budgets large tool outputs in the prompt with a stable output ref', () => {
+    const observations: LocalAgentObservation[] = [
+      {
+        toolName: 'canvas.read_summary',
+        summary: 'Read canvas summary',
+        success: true,
+        timestamp: '2026-06-08T00:00:00.000Z',
+        output: { text: 'A'.repeat(4000) },
+      },
+    ]
+
+    const prompt = buildLocalAgentDecisionPrompt({
+      context: buildContext(),
+      observations,
+      policy: {
+        userIntent: 'inspect_canvas',
+        mutationPolicy: 'read_only',
+        canvasReadPolicy: 'required',
+      },
+    })
+
+    expect(prompt).toContain('outputRef: tool_result_0_canvas_read_summary')
+    expect(prompt).toContain('...[truncated]')
+    expect(prompt.length).toBeLessThan(12000)
+  })
+})
