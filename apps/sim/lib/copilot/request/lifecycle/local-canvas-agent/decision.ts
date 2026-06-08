@@ -145,6 +145,72 @@ function buildIntentPolicyContext(policy: {
   ].join('\n')
 }
 
+function buildPatchProtocolContext(): string {
+  return [
+    'Patch protocol for canvas.propose_patch and canvas.apply_patch:',
+    '- Use input shape {"patch":{"operations":[...]}}.',
+    '- Supported operation types: create_node, update_node, connect, layout_nodes.',
+    '- create_node requires kind and title; use clientNodeId for nodes created in the same patch.',
+    '- update_node requires an existing nodeId and fields.',
+    '- connect can reference clientNodeId values from create_node operations.',
+    '- layout_nodes uses direction horizontal, vertical, or grid.',
+    '- Do not create raw workflow operations. Do not write block ids unless updating an existing node.',
+    '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
+    'Writable content fields:',
+    '- text: contentHtml, aiPrompt, aiModel, blockStyle, backgroundColor, fontSize, width, height.',
+    '- image: aiPrompt, aiModel, aiAspectRatio. Do not set file.',
+    '- video: videoPrompt, videoModelFamily, videoMedia, videoParameters, videoFrameAspectRatioPreset. Do not set file.',
+    '- audio: audioPrompt, audioModel, audioParameters. Do not set file.',
+    'Example short-video content chain patch:',
+    JSON.stringify({
+      patch: {
+        operations: [
+          {
+            type: 'create_node',
+            clientNodeId: 'script',
+            kind: 'text',
+            title: 'Script',
+            fields: { contentHtml: '<p>Write a concise draft script here.</p>' },
+          },
+          {
+            type: 'create_node',
+            clientNodeId: 'visual',
+            kind: 'image',
+            title: 'Main Visual',
+            fields: { aiPrompt: 'Describe the main visual without copying the raw user command.' },
+          },
+          {
+            type: 'create_node',
+            clientNodeId: 'video',
+            kind: 'video',
+            title: 'Video',
+            fields: {
+              videoPrompt: 'Describe camera movement, subject, style, and scene.',
+              videoParameters: { duration: 5, resolution: '720P' },
+            },
+          },
+          {
+            type: 'create_node',
+            clientNodeId: 'audio',
+            kind: 'audio',
+            title: 'Music',
+            fields: { audioPrompt: 'Describe mood, rhythm, instruments, and duration.' },
+          },
+          { type: 'connect', sourceNodeId: 'script', targetNodeId: 'visual' },
+          { type: 'connect', sourceNodeId: 'visual', targetNodeId: 'video' },
+          { type: 'connect', sourceNodeId: 'video', targetNodeId: 'audio' },
+          {
+            type: 'layout_nodes',
+            nodeIds: ['script', 'visual', 'video', 'audio'],
+            direction: 'horizontal',
+          },
+        ],
+        reason: 'Create a verified short-video content chain.',
+      },
+    }),
+  ].join('\n')
+}
+
 export function parseLocalAgentDecision(content: string): LocalAgentDecision {
   const parsed = localAgentDecisionSchema.safeParse(parseJsonObject(content))
   if (!parsed.success) {
@@ -173,6 +239,7 @@ export function buildLocalAgentDecisionPrompt(params: {
     `Enabled skill context:\n${buildSkillContext(params.context)}`,
     `Tool observations:\n${buildBudgetedObservationPrompt(params.observations)}`,
     `Tool descriptors:\n${buildToolDescriptorContext(params.context)}`,
+    buildPatchProtocolContext(),
     [
       'Return only AgentDecision JSON.',
       'Do not include chain-of-thought, markdown, or prose outside JSON.',

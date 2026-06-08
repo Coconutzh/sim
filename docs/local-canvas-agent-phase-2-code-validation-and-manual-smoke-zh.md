@@ -69,7 +69,7 @@
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：17 files / 155 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：17 files / 156 tests passed
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed

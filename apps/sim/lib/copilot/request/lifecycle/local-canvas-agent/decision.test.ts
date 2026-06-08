@@ -89,4 +89,26 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('...[truncated]')
     expect(prompt.length).toBeLessThan(12000)
   })
+
+  it('includes the high-level canvas patch protocol for model-driven mutations', () => {
+    const prompt = buildLocalAgentDecisionPrompt({
+      context: buildContext({ message: '以高考为主题创建短视频内容链。' }),
+      observations: [],
+      policy: {
+        userIntent: 'mutate_canvas',
+        mutationPolicy: 'allow_mutation',
+        canvasReadPolicy: 'required',
+      },
+    })
+
+    expect(prompt).toContain('Patch protocol for canvas.propose_patch and canvas.apply_patch')
+    expect(prompt).toContain('create_node')
+    expect(prompt).toContain('clientNodeId')
+    expect(prompt).toContain('text')
+    expect(prompt).toContain('image')
+    expect(prompt).toContain('video')
+    expect(prompt).toContain('audio')
+    expect(prompt).toContain('Do not set file')
+    expect(prompt).toContain('canvas.generate_node_output')
+  })
 })
