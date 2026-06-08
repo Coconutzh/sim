@@ -104,4 +104,35 @@ describe('local canvas tool executor bridge', () => {
       })
     )
   })
+
+  it('validates canvas read tool outputs through descriptor schemas', async () => {
+    mockExecuteCanvasTool.mockResolvedValue({
+      name: 'canvas.read_summary',
+      success: true,
+      output: {
+        nodes: [],
+        edges: [],
+        summaryText: 'missing ids',
+      },
+      summary: 'Invalid canvas summary output',
+    })
+
+    const result = await executeLocalAgentTool(buildContext(), {
+      name: 'canvas.read_summary',
+      input: {},
+    })
+
+    expect(result).toMatchObject({
+      name: 'canvas.read_summary',
+      success: false,
+      summary: expect.stringContaining('output was invalid'),
+    })
+    expect(mockEmitLocalAgentToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: 'tool-call-1',
+        success: false,
+        summary: expect.stringContaining('output was invalid'),
+      })
+    )
+  })
 })

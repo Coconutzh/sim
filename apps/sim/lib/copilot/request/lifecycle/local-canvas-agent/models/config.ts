@@ -1,4 +1,7 @@
-import { getContentCanvasModelAvailability } from '@/lib/content-canvas/service-config'
+import {
+  getContentCanvasModelAvailability,
+  resolveContentService,
+} from '@/lib/content-canvas/service-config'
 import { executeContentCanvasTextRequest } from '@/lib/content-canvas/text-executor'
 import type {
   LocalAgentModelConfig,
@@ -27,6 +30,14 @@ function hasExplicitContentCanvasTextConfig(): boolean {
   return Boolean(
     getEnv('CONTENT_TEXT_GEMINI_API_KEY')?.trim() || getEnv('CONTENT_TEXT_GLM_API_KEY')?.trim()
   )
+}
+
+function resolveContentCanvasTextApiKey(model: string): string | undefined {
+  try {
+    return resolveContentService({ capability: 'text', modelId: model }).apiKey
+  } catch {
+    return undefined
+  }
 }
 
 export function resolveLocalCanvasAgentModelConfig(): LocalAgentModelConfig {
@@ -77,7 +88,7 @@ export async function executeLocalAgentModelRequest(
   config: LocalAgentModelConfig,
   request: LocalAgentModelRequest
 ): Promise<ProviderResponse> {
-  if (config.useContentCanvasTextResolver) {
+  if (config.useContentCanvasTextResolver && !request.messages?.length) {
     return executeContentCanvasTextRequest({
       workspaceId: request.workspaceId,
       model: config.model,
@@ -90,19 +101,27 @@ export async function executeLocalAgentModelRequest(
     })
   }
 
-  if (!config.provider) {
+  const provider =
+    config.provider ?? normalizeProvider(getProviderFromModel(config.model) ?? undefined)
+  if (!provider) {
     throw new Error('Local canvas agent model provider is not configured')
   }
 
-  return executeStructuredActorRequest(config.provider, {
+  return executeStructuredActorRequest(provider, {
     workspaceId: request.workspaceId,
     model: config.model,
-    apiKey: config.apiKey,
+    apiKey:
+      config.apiKey ??
+      (config.useContentCanvasTextResolver
+        ? resolveContentCanvasTextApiKey(config.model)
+        : undefined),
     systemPrompt: request.systemPrompt,
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     responseFormat: request.responseFormat,
     abortSignal: request.abortSignal,
-    messages: [{ role: 'user', content: request.prompt }],
+    messages: request.messages?.length
+      ? request.messages
+      : [{ role: 'user', content: request.prompt }],
   })
 }

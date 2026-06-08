@@ -3,12 +3,19 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
+  applyCanvasSummaryCacheSelection,
+  buildCanvasSnapshotHash,
+  buildLocalCanvasSummaryCacheKey,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
+import {
   buildEditWorkflowOperationsFromPatch,
   validateLocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-patch'
 import { buildTokenAwareLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import {
+  appendLocalAgentToolResultRefs,
   buildLocalAgentMemoryKey,
+  buildLocalAgentToolResultStorageKey,
   canPersistLocalAgentThreadMemory,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
 import { getCanvasNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters'
@@ -130,6 +137,124 @@ describe('local canvas agent foundation', () => {
   it('does not persist thread memory when a chat id is not available', () => {
     expect(canPersistLocalAgentThreadMemory(buildMemoryContext({ chatId: 'chat-1' }))).toBe(true)
     expect(canPersistLocalAgentThreadMemory(buildMemoryContext({}))).toBe(false)
+  })
+
+  it('scopes persistent tool result refs to the current user, workflow, agent, and chat', () => {
+    const context = buildMemoryContext({ chatId: 'chat-1' })
+
+    expect(buildLocalAgentToolResultStorageKey({ context, refId: 'tool_result_1' })).toBe(
+      'local-canvas-agent:v2:tool-result:user-1:workspace-1:workflow-1:chief_director:chat-1:tool_result_1'
+    )
+    expect(
+      buildLocalAgentToolResultStorageKey({
+        context: buildMemoryContext({ chatId: 'chat-2' }),
+        refId: 'tool_result_1',
+      })
+    ).not.toBe(buildLocalAgentToolResultStorageKey({ context, refId: 'tool_result_1' }))
+  })
+
+  it('keeps only bounded persistent tool result refs in thread memory', () => {
+    const memory = appendLocalAgentToolResultRefs(
+      {
+        version: 2,
+        scope: 'thread',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        agentCode: 'chief_director',
+        chatId: 'chat-1',
+        conversationSummary: '',
+        taskState: { completedSteps: [], openQuestions: [] },
+        canvasSummary: '',
+        recentObservations: [],
+        toolResultRefs: [],
+        updatedAt: '2026-06-09T00:00:00.000Z',
+      },
+      Array.from({ length: 30 }, (_, index) => ({
+        id: `tool_result_${index}`,
+        toolName: 'canvas.read_summary',
+        summary: `summary ${index}`,
+        storageKey: `storage-${index}`,
+        createdAt: '2026-06-09T00:00:00.000Z',
+      }))
+    )
+
+    expect(memory.toolResultRefs).toHaveLength(24)
+    expect(memory.toolResultRefs?.[0]?.id).toBe('tool_result_6')
+    expect(memory.toolResultRefs?.at(-1)?.id).toBe('tool_result_29')
+  })
+
+  it('keys canvas summary cache by workflow hash instead of chat memory', () => {
+    const snapshot = {
+      ...emptySnapshot,
+      nodes: [
+        {
+          id: 'text-1',
+          name: '脚本',
+          blockType: 'content',
+          kind: 'text' as const,
+          position: { x: 0, y: 0 },
+          values: { contentHtml: '<p>版本一</p>' },
+          raw: {},
+        },
+      ],
+    }
+    const changed = {
+      ...snapshot,
+      nodes: [
+        {
+          ...snapshot.nodes[0],
+          values: { contentHtml: '<p>版本二</p>' },
+        },
+      ],
+    }
+
+    const hash = buildCanvasSnapshotHash(snapshot)
+
+    expect(hash).not.toBe(buildCanvasSnapshotHash(changed))
+    expect(
+      buildLocalCanvasSummaryCacheKey({
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        workflowHash: hash,
+      })
+    ).toBe(`local-canvas-agent:v2:canvas-summary:workspace-1:workflow-1:${hash}`)
+  })
+
+  it('applies current selection on top of cached canvas summary nodes', () => {
+    const nodes = applyCanvasSummaryCacheSelection(
+      {
+        version: 1,
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        workflowHash: 'hash',
+        nodeCount: 1,
+        edgeCount: 0,
+        nodes: [
+          {
+            id: 'text-1',
+            name: '脚本',
+            blockType: 'content',
+            kind: 'text',
+            position: { x: 0, y: 0 },
+            selected: false,
+            summary: '脚本摘要',
+            capabilities: {
+              canRead: true,
+              canWrite: true,
+              canGenerate: true,
+              canReferenceFile: false,
+            },
+          },
+        ],
+        edges: [],
+        summaryText: '',
+        updatedAt: '2026-06-09T00:00:00.000Z',
+      },
+      ['text-1']
+    )
+
+    expect(nodes[0]?.selected).toBe(true)
   })
 
   it('keeps reserved node types readable but not writable', () => {

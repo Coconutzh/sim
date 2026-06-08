@@ -115,4 +115,45 @@ describe('local canvas agent model config', () => {
       })
     )
   })
+
+  it('routes multimodal role requests through the provider executor', async () => {
+    process.env.CONTENT_TEXT_GEMINI_API_KEY = 'gemini-key'
+    process.env.CONTENT_TEXT_GEMINI_ENABLED_MODELS = 'gemini-2.5-flash'
+    process.env.CONTENT_TEXT_GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash'
+    const { executeLocalAgentModelRequest, resolveLocalCanvasAgentModelConfig } = await import(
+      '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
+    )
+    const config = resolveLocalCanvasAgentModelConfig()
+
+    await executeLocalAgentModelRequest(config, {
+      role: 'decision',
+      workspaceId: 'workspace-1',
+      systemPrompt: 'system',
+      prompt: 'describe image',
+      messages: [
+        {
+          role: 'user',
+          content: null,
+          parts: [
+            { type: 'text', text: 'describe image' },
+            { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' },
+          ],
+        },
+      ],
+    })
+
+    expect(mockExecuteContentCanvasTextRequest).not.toHaveBeenCalled()
+    expect(mockExecuteStructuredActorRequest).toHaveBeenCalledWith(
+      'google',
+      expect.objectContaining({
+        apiKey: 'gemini-key',
+        model: 'gemini-2.5-flash',
+        messages: [
+          expect.objectContaining({
+            parts: expect.arrayContaining([expect.objectContaining({ type: 'image' })]),
+          }),
+        ],
+      })
+    )
+  })
 })

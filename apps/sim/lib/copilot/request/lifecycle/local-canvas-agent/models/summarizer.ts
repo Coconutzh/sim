@@ -28,6 +28,7 @@ function compactObservation(observation: LocalAgentObservation): LocalAgentObser
     summary: sanitizeMemoryText(observation.summary),
     success: observation.success,
     timestamp: observation.timestamp,
+    ...(observation.outputRef ? { outputRef: observation.outputRef } : {}),
   }
 }
 
@@ -229,6 +230,7 @@ function buildDeterministicSummary(params: {
       ...params.memory.recentObservations.map(compactObservation),
       ...params.observations.map(compactObservation),
     ].slice(-20),
+    toolResultRefs: params.memory.toolResultRefs,
     updatedAt: new Date().toISOString(),
   }
 }

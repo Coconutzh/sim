@@ -41,7 +41,8 @@ export function compactLocalAgentObservationForPrompt(
   maxOutputChars = DEFAULT_MAX_OUTPUT_CHARS
 ): string {
   const outputText = stringifyForPrompt(observation.output)
-  const ref = buildLocalAgentToolResultRef({ toolName: observation.toolName, index })
+  const ref =
+    observation.outputRef ?? buildLocalAgentToolResultRef({ toolName: observation.toolName, index })
   const clipped =
     outputText.length > maxOutputChars
       ? `${outputText.slice(0, Math.max(0, maxOutputChars - PREVIEW_SUFFIX.length))}${PREVIEW_SUFFIX}`

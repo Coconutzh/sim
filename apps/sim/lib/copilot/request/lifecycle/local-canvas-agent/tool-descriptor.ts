@@ -35,6 +35,54 @@ const patchInputSchema = z
     patch: z.unknown(),
   })
   .passthrough()
+const canvasPositionOutputSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+})
+const canvasCapabilitiesOutputSchema = z.object({
+  canRead: z.boolean(),
+  canWrite: z.boolean(),
+  canGenerate: z.boolean(),
+  canReferenceFile: z.boolean(),
+})
+const canvasEdgeOutputSchema = z
+  .object({
+    source: z.string().min(1),
+    target: z.string().min(1),
+    sourceHandle: z.string().optional(),
+    targetHandle: z.string().optional(),
+  })
+  .passthrough()
+const canvasNodeSummaryOutputSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    blockType: z.string(),
+    kind: z.string(),
+    position: canvasPositionOutputSchema,
+    selected: z.boolean(),
+    summary: z.string(),
+    capabilities: canvasCapabilitiesOutputSchema,
+  })
+  .passthrough()
+const canvasNodeDetailOutputSchema = canvasNodeSummaryOutputSchema
+  .extend({
+    fields: z.record(z.string(), z.unknown()),
+    textContent: z.string().optional(),
+    file: z.record(z.string(), z.unknown()).nullable().optional(),
+  })
+  .passthrough()
+const canvasReadSummaryOutputSchema = z
+  .object({
+    workflowId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    nodes: z.array(canvasNodeSummaryOutputSchema),
+    edges: z.array(canvasEdgeOutputSchema),
+    summaryText: z.string(),
+  })
+  .passthrough()
+const canvasSelectedNodesOutputSchema = z.array(canvasNodeDetailOutputSchema)
+const canvasSearchNodesOutputSchema = z.array(canvasNodeSummaryOutputSchema)
 const nodeInputSchema = z
   .object({
     nodeId: requiredString('nodeId'),
@@ -51,8 +99,13 @@ const mediaAnalyzeInputSchema = z
   .passthrough()
 const mediaContentAccessOutputSchema = z.object({
   hasFile: z.boolean(),
-  binaryFetched: z.literal(false),
-  contentEvidence: z.enum(['prompt_only', 'file_metadata_only', 'stored_media_context']),
+  binaryFetched: z.boolean(),
+  contentEvidence: z.enum([
+    'prompt_only',
+    'file_metadata_only',
+    'stored_media_context',
+    'binary_image_analysis',
+  ]),
   canDescribeActualMedia: z.boolean(),
   safeDescriptionScope: z.string().min(1),
 })
@@ -61,7 +114,12 @@ const mediaAnalyzeOutputSchema = z
     nodeId: z.string().min(1),
     kind: z.enum(['image', 'video', 'audio']),
     title: z.string(),
-    analysisMode: z.enum(['prompt_only', 'file_metadata', 'stored_media_context']),
+    analysisMode: z.enum([
+      'prompt_only',
+      'file_metadata',
+      'stored_media_context',
+      'binary_image_analysis',
+    ]),
     analysisGoal: z.enum(['describe', 'quality_check', 'extract_prompt', 'compare_with_prompt']),
     hasFile: z.boolean(),
     mediaContentAccess: mediaContentAccessOutputSchema,
@@ -82,6 +140,31 @@ const searchInputSchema = z
 const schemaInputSchema = z
   .object({
     kind: z.string().optional(),
+  })
+  .passthrough()
+const canvasInspectSchemaOutputSchema = z
+  .object({
+    kind: z.string().min(1),
+    blockType: z.string(),
+    capabilities: canvasCapabilitiesOutputSchema,
+    readableFields: z.array(z.string()),
+    writableFields: z.array(z.string()),
+    editableFields: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          type: z.enum(['string', 'number', 'boolean', 'object', 'array', 'file']),
+          required: z.boolean().optional(),
+        })
+        .passthrough()
+    ),
+    generation: z
+      .object({
+        supported: z.boolean(),
+        inputFields: z.array(z.string()),
+        outputField: z.string().nullable(),
+      })
+      .passthrough(),
   })
   .passthrough()
 const generationVerifyInputSchema = z
@@ -155,6 +238,7 @@ const DESCRIPTORS = [
     title: '读取画布',
     description: 'Read the current canvas node summaries and edges.',
     inputSchema: emptyInputSchema,
+    outputSchema: canvasReadSummaryOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),
@@ -163,6 +247,7 @@ const DESCRIPTORS = [
     title: '读取节点',
     description: 'Read one canvas node detail by nodeId.',
     inputSchema: nodeInputSchema,
+    outputSchema: canvasNodeDetailOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),
@@ -171,6 +256,7 @@ const DESCRIPTORS = [
     title: '读取选中节点',
     description: 'Read details for nodes currently selected by the user.',
     inputSchema: emptyInputSchema,
+    outputSchema: canvasSelectedNodesOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),
@@ -179,6 +265,7 @@ const DESCRIPTORS = [
     title: '搜索画布节点',
     description: 'Search canvas nodes by text, type, title, or field summary.',
     inputSchema: searchInputSchema,
+    outputSchema: canvasSearchNodesOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),
@@ -187,6 +274,7 @@ const DESCRIPTORS = [
     title: '检查节点结构',
     description: 'Inspect editable fields and constraints for content node kinds.',
     inputSchema: schemaInputSchema,
+    outputSchema: canvasInspectSchemaOutputSchema,
     readOnly: true,
     concurrencySafe: true,
   }),

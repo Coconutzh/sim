@@ -55,6 +55,7 @@ export interface LocalAgentModelRequest {
   role: LocalAgentRole
   systemPrompt: string
   prompt: string
+  messages?: ProviderRequest['messages']
   workspaceId: string
   temperature?: number
   maxTokens?: number
@@ -153,6 +154,7 @@ export interface LocalAgentMemoryData {
   }
   canvasSummary: string
   recentObservations: LocalAgentObservation[]
+  toolResultRefs?: LocalAgentToolResultRef[]
   updatedAt: string
 }
 
@@ -161,7 +163,18 @@ export interface LocalAgentObservation {
   summary: string
   success: boolean
   timestamp: string
+  outputRef?: string
   output?: unknown
+}
+
+export interface LocalAgentToolResultRef {
+  id: string
+  toolName: LocalAgentToolName
+  summary: string
+  storageKey: string
+  outputPreview?: string
+  outputSizeChars?: number
+  createdAt: string
 }
 
 export interface CanvasNodeRecord {

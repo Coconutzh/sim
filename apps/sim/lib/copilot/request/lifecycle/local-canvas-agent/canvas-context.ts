@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto'
+import { db } from '@sim/db'
+import { memory } from '@sim/db/schema'
+import { generateId } from '@sim/utils/id'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getCanvasNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters'
 import { getValue } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/shared'
 import type {
@@ -10,6 +15,19 @@ import type {
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 
+export interface CanvasSummaryCache {
+  version: 1
+  workspaceId: string
+  workflowId: string
+  workflowHash: string
+  nodeCount: number
+  edgeCount: number
+  nodes: CanvasNodeSummary[]
+  edges: CanvasSnapshot['edges']
+  summaryText: string
+  updatedAt: string
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
@@ -17,6 +35,16 @@ function asRecord(value: unknown): Record<string, unknown> {
 function asNumber(value: unknown, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (!value || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+    .join(',')}}`
 }
 
 function inferContentKind(values: Record<string, unknown>): LocalCanvasNodeKind {
@@ -102,6 +130,41 @@ export function summarizeCanvas(
   )
 }
 
+export function buildCanvasSnapshotHash(snapshot: CanvasSnapshot): string {
+  return createHash('sha256')
+    .update(
+      stableStringify({
+        workflowId: snapshot.workflowId,
+        workspaceId: snapshot.workspaceId,
+        nodes: snapshot.nodes.map((node) => ({
+          id: node.id,
+          name: node.name,
+          blockType: node.blockType,
+          kind: node.kind,
+          position: node.position,
+          values: node.values,
+        })),
+        edges: snapshot.edges,
+      })
+    )
+    .digest('hex')
+}
+
+export function buildLocalCanvasSummaryCacheKey(params: {
+  workspaceId: string
+  workflowId: string
+  workflowHash: string
+}): string {
+  return [
+    'local-canvas-agent',
+    'v2',
+    'canvas-summary',
+    params.workspaceId,
+    params.workflowId,
+    params.workflowHash,
+  ].join(':')
+}
+
 export function readCanvasNodeDetail(
   snapshot: CanvasSnapshot,
   nodeId: string,
@@ -165,16 +228,135 @@ export function buildCanvasSummaryText(
   selectedNodeIds: string[]
 ): string {
   const nodes = summarizeCanvas(snapshot, selectedNodeIds)
-  const nodeLines = nodes.map(
+  return buildCanvasSummaryTextFromParts({
+    workflowId: snapshot.workflowId,
+    nodes,
+    edges: snapshot.edges,
+  })
+}
+
+export function buildCanvasSummaryTextFromParts(params: {
+  workflowId: string
+  nodes: CanvasNodeSummary[]
+  edges: CanvasSnapshot['edges']
+}): string {
+  const nodeLines = params.nodes.map(
     (node) =>
       `- ${node.id} "${node.name}" kind=${node.kind} selected=${node.selected} summary=${node.summary.slice(0, 200)}`
   )
-  const edgeLines = snapshot.edges.map((edge) => `- ${edge.source} -> ${edge.target}`)
+  const edgeLines = params.edges.map((edge) => `- ${edge.source} -> ${edge.target}`)
   return [
-    `Workflow ${snapshot.workflowId} has ${nodes.length} nodes and ${snapshot.edges.length} edges.`,
+    `Workflow ${params.workflowId} has ${params.nodes.length} nodes and ${params.edges.length} edges.`,
     'Nodes:',
     ...(nodeLines.length ? nodeLines : ['- none']),
     'Edges:',
     ...(edgeLines.length ? edgeLines : ['- none']),
   ].join('\n')
+}
+
+function buildCanvasSummaryCache(snapshot: CanvasSnapshot): CanvasSummaryCache {
+  const nodes = summarizeCanvas(snapshot, [])
+  const workflowHash = buildCanvasSnapshotHash(snapshot)
+  return {
+    version: 1,
+    workspaceId: snapshot.workspaceId,
+    workflowId: snapshot.workflowId,
+    workflowHash,
+    nodeCount: nodes.length,
+    edgeCount: snapshot.edges.length,
+    nodes,
+    edges: snapshot.edges,
+    summaryText: buildCanvasSummaryTextFromParts({
+      workflowId: snapshot.workflowId,
+      nodes,
+      edges: snapshot.edges,
+    }),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function parseCanvasSummaryCache(value: unknown): CanvasSummaryCache | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Partial<CanvasSummaryCache>
+  if (
+    record.version !== 1 ||
+    typeof record.workspaceId !== 'string' ||
+    typeof record.workflowId !== 'string' ||
+    typeof record.workflowHash !== 'string' ||
+    !Array.isArray(record.nodes) ||
+    !Array.isArray(record.edges) ||
+    typeof record.summaryText !== 'string' ||
+    typeof record.updatedAt !== 'string'
+  ) {
+    return null
+  }
+  return {
+    version: 1,
+    workspaceId: record.workspaceId,
+    workflowId: record.workflowId,
+    workflowHash: record.workflowHash,
+    nodeCount: typeof record.nodeCount === 'number' ? record.nodeCount : record.nodes.length,
+    edgeCount: typeof record.edgeCount === 'number' ? record.edgeCount : record.edges.length,
+    nodes: record.nodes,
+    edges: record.edges,
+    summaryText: record.summaryText,
+    updatedAt: record.updatedAt,
+  }
+}
+
+export function applyCanvasSummaryCacheSelection(
+  cache: CanvasSummaryCache,
+  selectedNodeIds: string[]
+): CanvasNodeSummary[] {
+  const selected = new Set(selectedNodeIds)
+  return cache.nodes.map((node) => ({ ...node, selected: selected.has(node.id) }))
+}
+
+export async function loadOrCreateCanvasSummaryCache(
+  snapshot: CanvasSnapshot
+): Promise<CanvasSummaryCache> {
+  const workflowHash = buildCanvasSnapshotHash(snapshot)
+  const summary = buildCanvasSummaryCache(snapshot)
+  const key = buildLocalCanvasSummaryCacheKey({
+    workspaceId: snapshot.workspaceId,
+    workflowId: snapshot.workflowId,
+    workflowHash,
+  })
+  try {
+    const [row] = await db
+      .select({ data: memory.data })
+      .from(memory)
+      .where(
+        and(
+          eq(memory.workspaceId, snapshot.workspaceId),
+          eq(memory.key, key),
+          isNull(memory.deletedAt)
+        )
+      )
+      .limit(1)
+    const cached = parseCanvasSummaryCache(row?.data)
+    if (cached?.workflowHash === workflowHash) return cached
+    const now = new Date()
+    await db
+      .insert(memory)
+      .values({
+        id: generateId(),
+        workspaceId: snapshot.workspaceId,
+        key,
+        data: summary,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [memory.workspaceId, memory.key],
+        set: {
+          data: sql`${JSON.stringify(summary)}::jsonb`,
+          updatedAt: now,
+          deletedAt: null,
+        },
+      })
+  } catch {
+    return summary
+  }
+  return summary
 }

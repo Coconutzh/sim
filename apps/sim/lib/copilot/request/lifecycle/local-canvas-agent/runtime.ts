@@ -3,7 +3,9 @@ import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { resolveLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import {
+  appendLocalAgentToolResultRefs,
   loadLocalAgentMemory,
+  persistLocalAgentToolResultRefs,
   saveLocalAgentMemory,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
 import { buildLocalAgentAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
@@ -139,13 +141,20 @@ async function persistMemoryBestEffort(params: {
   observations: Awaited<ReturnType<typeof executeConfirmedPlan>>
 }): Promise<void> {
   try {
+    const toolResultRefs = await persistLocalAgentToolResultRefs({
+      context: params.context,
+      observations: params.observations,
+    })
     const summary = await summarizeLocalAgentRun({
       context: params.context,
       memory: params.memory,
       plan: params.plan,
       observations: params.observations,
     })
-    await saveLocalAgentMemory(params.context, summary)
+    await saveLocalAgentMemory(
+      params.context,
+      appendLocalAgentToolResultRefs(summary, toolResultRefs)
+    )
   } catch (error) {
     logger.warn('Failed to persist local canvas agent memory', {
       chatId: params.context.chatId,
@@ -181,6 +190,7 @@ async function loadMemoryBestEffort(context: LocalAgentContext): Promise<LocalAg
       },
       canvasSummary: '',
       recentObservations: [],
+      toolResultRefs: [],
       updatedAt: new Date().toISOString(),
     }
   }

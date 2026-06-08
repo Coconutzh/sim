@@ -8,7 +8,16 @@ import type {
   LocalAgentContext,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
-const { mockLoadCanvasSnapshot, mockReadCanvasNodeDetail } = vi.hoisted(() => ({
+const {
+  mockDownloadFileFromStorage,
+  mockDownloadFileFromUrl,
+  mockExecuteLocalAgentModelRequest,
+  mockLoadCanvasSnapshot,
+  mockReadCanvasNodeDetail,
+} = vi.hoisted(() => ({
+  mockDownloadFileFromStorage: vi.fn(),
+  mockDownloadFileFromUrl: vi.fn(),
+  mockExecuteLocalAgentModelRequest: vi.fn(),
   mockLoadCanvasSnapshot: vi.fn(),
   mockReadCanvasNodeDetail: vi.fn(),
 }))
@@ -16,6 +25,19 @@ const { mockLoadCanvasSnapshot, mockReadCanvasNodeDetail } = vi.hoisted(() => ({
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context', () => ({
   loadCanvasSnapshot: mockLoadCanvasSnapshot,
   readCanvasNodeDetail: mockReadCanvasNodeDetail,
+}))
+
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/config', () => ({
+  executeLocalAgentModelRequest: mockExecuteLocalAgentModelRequest,
+}))
+
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts', () => ({
+  buildLocalAgentRoleSystemPrompt: vi.fn(() => 'media system prompt'),
+}))
+
+vi.mock('@/lib/uploads/utils/file-utils.server', () => ({
+  downloadFileFromStorage: mockDownloadFileFromStorage,
+  downloadFileFromUrl: mockDownloadFileFromUrl,
 }))
 
 import { executeMediaTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/media-tools'
@@ -91,12 +113,50 @@ function buildVideoDetail(overrides: Partial<CanvasNodeDetail> = {}): CanvasNode
   }
 }
 
+function buildImageDetail(overrides: Partial<CanvasNodeDetail> = {}): CanvasNodeDetail {
+  const file = {
+    name: 'hero.png',
+    type: 'image/png',
+    size: 1024,
+    key: 'workspace/generated/hero.png',
+  }
+  return {
+    id: 'image-1',
+    name: 'Hero Image',
+    blockType: 'content',
+    kind: 'image',
+    position: { x: 0, y: 0 },
+    selected: true,
+    summary: '发布会主视觉',
+    capabilities: {
+      canRead: true,
+      canWrite: true,
+      canGenerate: true,
+      canReferenceFile: true,
+    },
+    fields: {
+      file,
+      aiPrompt: '明亮舞台灯光，品牌主视觉。',
+    },
+    file,
+    ...overrides,
+  }
+}
+
 describe('local canvas media tools', () => {
   beforeEach(() => {
     mockLoadCanvasSnapshot.mockReset()
     mockReadCanvasNodeDetail.mockReset()
+    mockDownloadFileFromStorage.mockReset()
+    mockDownloadFileFromUrl.mockReset()
+    mockExecuteLocalAgentModelRequest.mockReset()
     mockLoadCanvasSnapshot.mockResolvedValue(emptySnapshot)
     mockReadCanvasNodeDetail.mockReturnValue(buildVideoDetail())
+    mockDownloadFileFromStorage.mockResolvedValue(Buffer.from('fake-image'))
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('fake-image'))
+    mockExecuteLocalAgentModelRequest.mockResolvedValue({
+      content: '画面中是明亮舞台主视觉，中央有发光屏幕和蓝白色灯光。',
+    })
   })
 
   it('analyzes a media node from stored context without exposing private file paths', async () => {
@@ -151,6 +211,77 @@ describe('local canvas media tools', () => {
 
     expect(result.success).toBe(true)
     expect(descriptor?.outputSchema?.safeParse(result.output).success).toBe(true)
+  })
+
+  it('fetches image bytes and uses the model response as binary image evidence', async () => {
+    mockReadCanvasNodeDetail.mockReturnValue(buildImageDetail())
+
+    const result = await executeMediaTool(
+      buildContext({
+        message: '描述这张图片',
+        selectedNodeIds: ['image-1'],
+        model: { provider: 'google', model: 'gemini-2.5-flash', mode: 'structured' },
+      }),
+      {
+        name: 'media.analyze_node_media',
+        input: { nodeId: 'image-1', analysisGoal: 'describe' },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockDownloadFileFromStorage).toHaveBeenCalled()
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gemini-2.5-flash', provider: 'google' }),
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            parts: expect.arrayContaining([expect.objectContaining({ type: 'image' })]),
+          }),
+        ],
+      })
+    )
+    expect(result.output).toMatchObject({
+      analysisMode: 'binary_image_analysis',
+      mediaContentAccess: {
+        hasFile: true,
+        binaryFetched: true,
+        contentEvidence: 'binary_image_analysis',
+        canDescribeActualMedia: true,
+      },
+      limitations:
+        'Analysis uses fetched image bytes and a vision model response; storage paths remain hidden.',
+    })
+    expect(JSON.stringify(result.output)).toContain('中央有发光屏幕')
+    expect(JSON.stringify(result.output)).not.toContain('workspace/generated/hero.png')
+  })
+
+  it('does not fetch image bytes when the model provider has no image message support', async () => {
+    mockReadCanvasNodeDetail.mockReturnValue(buildImageDetail())
+
+    const result = await executeMediaTool(
+      buildContext({
+        message: '描述这张图片',
+        selectedNodeIds: ['image-1'],
+        model: { provider: 'deepseek', model: 'deepseek-chat', mode: 'structured' },
+      }),
+      {
+        name: 'media.analyze_node_media',
+        input: { nodeId: 'image-1', analysisGoal: 'describe' },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockDownloadFileFromStorage).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentModelRequest).not.toHaveBeenCalled()
+    expect(result.output).toMatchObject({
+      analysisMode: 'file_metadata',
+      mediaContentAccess: {
+        hasFile: true,
+        binaryFetched: false,
+        contentEvidence: 'file_metadata_only',
+        canDescribeActualMedia: false,
+      },
+    })
   })
 
   it('limits file-only media analysis to metadata and prompt claims', async () => {

@@ -143,6 +143,50 @@ describe('local canvas agent decision', () => {
     expect(prompt.length).toBeLessThan(12000)
   })
 
+  it('includes persisted tool result refs from thread memory without exposing storage keys', () => {
+    const prompt = buildLocalAgentDecisionPrompt({
+      context: buildContext({
+        memory: {
+          version: 2,
+          scope: 'thread',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          workflowId: 'workflow-1',
+          agentCode: 'chief_director',
+          chatId: 'chat-1',
+          conversationSummary: '',
+          taskState: { completedSteps: [], openQuestions: [] },
+          canvasSummary: '',
+          recentObservations: [],
+          toolResultRefs: [
+            {
+              id: 'tool_result_prev',
+              toolName: 'canvas.read_summary',
+              summary: 'Read canvas summary',
+              storageKey:
+                'local-canvas-agent:v2:tool-result:user-1:workspace-1:workflow-1:chief_director:chat-1:tool_result_prev',
+              outputPreview: '{"nodes":[{"name":"脚本"}]}',
+              outputSizeChars: 2048,
+              createdAt: '2026-06-09T00:00:00.000Z',
+            },
+          ],
+          updatedAt: '2026-06-09T00:00:00.000Z',
+        },
+      }),
+      observations: [],
+      policy: {
+        userIntent: 'inspect_canvas',
+        mutationPolicy: 'read_only',
+        canvasReadPolicy: 'required',
+      },
+    })
+
+    expect(prompt).toContain('persistentToolResultRefs')
+    expect(prompt).toContain('tool_result_prev')
+    expect(prompt).toContain('Read canvas summary')
+    expect(prompt).not.toContain('local-canvas-agent:v2:tool-result')
+  })
+
   it('includes the high-level canvas patch protocol for model-driven mutations', () => {
     const prompt = buildLocalAgentDecisionPrompt({
       context: buildContext({ message: '以高考为主题创建短视频内容链。' }),

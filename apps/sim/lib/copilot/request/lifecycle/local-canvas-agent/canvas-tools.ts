@@ -1,11 +1,12 @@
 import { toError } from '@sim/utils/errors'
 import { generateContentCanvasText } from '@/lib/content-canvas/text-executor'
 import {
-  buildCanvasSummaryText,
+  applyCanvasSummaryCacheSelection,
+  buildCanvasSummaryTextFromParts,
   loadCanvasSnapshot,
+  loadOrCreateCanvasSummaryCache,
   readCanvasNodeDetail,
   searchCanvasNodes,
-  summarizeCanvas,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import {
   buildEditWorkflowOperationsFromPatch,
@@ -774,12 +775,18 @@ async function executeCanvasToolUnchecked(
   })
 
   if (call.name === 'canvas.read_summary') {
+    const summaryCache = await loadOrCreateCanvasSummaryCache(snapshot)
+    const nodes = applyCanvasSummaryCacheSelection(summaryCache, context.selectedNodeIds)
     return {
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
-      nodes: summarizeCanvas(snapshot, context.selectedNodeIds),
-      edges: snapshot.edges,
-      summaryText: buildCanvasSummaryText(snapshot, context.selectedNodeIds),
+      nodes,
+      edges: summaryCache.edges,
+      summaryText: buildCanvasSummaryTextFromParts({
+        workflowId: context.workflowId,
+        nodes,
+        edges: summaryCache.edges,
+      }),
     }
   }
 

@@ -1,12 +1,17 @@
 import { db } from '@sim/db'
 import { memory } from '@sim/db/schema'
-import { generateId } from '@sim/utils/id'
+import { generateId, generateShortId } from '@sim/utils/id'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type {
   LocalAgentContext,
   LocalAgentMemoryData,
   LocalAgentObservation,
+  LocalAgentToolName,
+  LocalAgentToolResultRef,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+
+const MAX_TOOL_RESULT_REFS = 24
+const TOOL_RESULT_PREVIEW_CHARS = 1200
 
 export function buildLocalAgentMemoryKey(
   context: Pick<LocalAgentContext, 'userId' | 'workspaceId' | 'workflowId' | 'chatId' | 'agent'>
@@ -21,6 +26,24 @@ export function buildLocalAgentMemoryKey(
     context.workflowId,
     context.agent.code,
     chatId,
+  ].join(':')
+}
+
+export function buildLocalAgentToolResultStorageKey(params: {
+  context: Pick<LocalAgentContext, 'userId' | 'workspaceId' | 'workflowId' | 'chatId' | 'agent'>
+  refId: string
+}): string {
+  const chatId = params.context.chatId?.trim() || 'no-chat'
+  return [
+    'local-canvas-agent',
+    'v2',
+    'tool-result',
+    params.context.userId,
+    params.context.workspaceId,
+    params.context.workflowId,
+    params.context.agent.code,
+    chatId,
+    params.refId,
   ].join(':')
 }
 
@@ -61,8 +84,68 @@ function createEmptyMemory(context: LocalAgentContext): LocalAgentMemoryData {
     },
     canvasSummary: '',
     recentObservations: [],
+    toolResultRefs: [],
     updatedAt: new Date().toISOString(),
   }
+}
+
+function stringifyForPreview(value: unknown): string {
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function clip(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, Math.max(0, maxLength - 16))}\n...[truncated]`
+}
+
+function isRuntimeToolName(
+  toolName: LocalAgentObservation['toolName']
+): toolName is LocalAgentToolName {
+  return (
+    toolName !== 'planner' &&
+    toolName !== 'verifier' &&
+    toolName !== 'memory' &&
+    toolName !== 'decision'
+  )
+}
+
+function normalizeToolResultRefs(value: unknown): LocalAgentToolResultRef[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const record = item as Partial<LocalAgentToolResultRef>
+      if (
+        typeof record.id !== 'string' ||
+        typeof record.toolName !== 'string' ||
+        typeof record.summary !== 'string' ||
+        typeof record.storageKey !== 'string' ||
+        typeof record.createdAt !== 'string'
+      ) {
+        return null
+      }
+      return {
+        id: record.id,
+        toolName: record.toolName as LocalAgentToolName,
+        summary: record.summary,
+        storageKey: record.storageKey,
+        ...(typeof record.outputPreview === 'string'
+          ? { outputPreview: record.outputPreview }
+          : {}),
+        ...(typeof record.outputSizeChars === 'number'
+          ? { outputSizeChars: record.outputSizeChars }
+          : {}),
+        createdAt: record.createdAt,
+      } satisfies LocalAgentToolResultRef
+    })
+    .filter((item): item is LocalAgentToolResultRef => Boolean(item))
+    .slice(-MAX_TOOL_RESULT_REFS)
 }
 
 function parseMemoryData(value: unknown, context: LocalAgentContext): LocalAgentMemoryData {
@@ -91,8 +174,12 @@ function parseMemoryData(value: unknown, context: LocalAgentContext): LocalAgent
           summary: observation.summary,
           success: observation.success,
           timestamp: observation.timestamp,
+          ...(typeof observation.outputRef === 'string'
+            ? { outputRef: observation.outputRef }
+            : {}),
         }))
       : [],
+    toolResultRefs: normalizeToolResultRefs(data.toolResultRefs),
   }
 }
 
@@ -175,6 +262,7 @@ export function appendLocalAgentObservations(
         summary: observation.summary,
         success: observation.success,
         timestamp: observation.timestamp,
+        ...(observation.outputRef ? { outputRef: observation.outputRef } : {}),
       })),
     ].slice(-20),
     taskState: {
@@ -182,4 +270,81 @@ export function appendLocalAgentObservations(
       lastObservation: observations.at(-1)?.summary ?? memoryData.taskState.lastObservation,
     },
   }
+}
+
+export function appendLocalAgentToolResultRefs(
+  memoryData: LocalAgentMemoryData,
+  refs: LocalAgentToolResultRef[]
+): LocalAgentMemoryData {
+  if (!refs.length) return memoryData
+  return {
+    ...memoryData,
+    toolResultRefs: [...(memoryData.toolResultRefs ?? []), ...refs].slice(-MAX_TOOL_RESULT_REFS),
+  }
+}
+
+export async function persistLocalAgentToolResultRefs(params: {
+  context: LocalAgentContext
+  observations: LocalAgentObservation[]
+}): Promise<LocalAgentToolResultRef[]> {
+  if (!canPersistLocalAgentThreadMemory(params.context)) return []
+  const persisted: LocalAgentToolResultRef[] = []
+  for (const observation of params.observations) {
+    if (!observation.success || observation.output === undefined) continue
+    if (!isRuntimeToolName(observation.toolName)) continue
+    const outputText = stringifyForPreview(observation.output)
+    const refId = `tool_result_${generateShortId(10)}`
+    const storageKey = buildLocalAgentToolResultStorageKey({
+      context: params.context,
+      refId,
+    })
+    const createdAt = new Date()
+    const ref = {
+      id: refId,
+      toolName: observation.toolName,
+      summary: observation.summary,
+      storageKey,
+      outputPreview: clip(outputText, TOOL_RESULT_PREVIEW_CHARS),
+      outputSizeChars: outputText.length,
+      createdAt: createdAt.toISOString(),
+    } satisfies LocalAgentToolResultRef
+    await db.insert(memory).values({
+      id: generateId(),
+      workspaceId: params.context.workspaceId,
+      key: storageKey,
+      data: {
+        version: 1,
+        ref,
+        output: observation.output,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    })
+    persisted.push(ref)
+  }
+  return persisted
+}
+
+export async function loadLocalAgentToolResultRefOutput(params: {
+  context: LocalAgentContext
+  refId: string
+}): Promise<unknown> {
+  if (!canPersistLocalAgentThreadMemory(params.context)) return undefined
+  const storageKey = buildLocalAgentToolResultStorageKey({
+    context: params.context,
+    refId: params.refId,
+  })
+  const [row] = await db
+    .select({ data: memory.data })
+    .from(memory)
+    .where(
+      and(
+        eq(memory.workspaceId, params.context.workspaceId),
+        eq(memory.key, storageKey),
+        isNull(memory.deletedAt)
+      )
+    )
+    .limit(1)
+  const data = row?.data
+  return data && typeof data === 'object' ? (data as { output?: unknown }).output : undefined
 }

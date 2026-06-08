@@ -121,6 +121,18 @@ function clip(value: string, maxLength: number): string {
 function buildMemoryContext(context: LocalAgentContext): string {
   const memory = context.memory
   if (!memory) return 'No thread memory is loaded.'
+  const toolResultRefs = (memory.toolResultRefs ?? [])
+    .slice(-6)
+    .map((ref) =>
+      [
+        `- ${ref.id}: ${ref.toolName}; ${ref.summary}`,
+        typeof ref.outputSizeChars === 'number' ? `outputSizeChars=${ref.outputSizeChars}` : '',
+        ref.outputPreview ? `preview=${clip(ref.outputPreview, 500)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    )
+    .join('\n')
   return [
     `Thread memory scope: ${memory.scope} v${memory.version}`,
     memory.chatId ? `chatId: ${memory.chatId}` : 'chatId: transient',
@@ -130,6 +142,7 @@ function buildMemoryContext(context: LocalAgentContext): string {
     memory.taskState.openQuestions.length
       ? `openQuestions: ${memory.taskState.openQuestions.join('; ')}`
       : '',
+    toolResultRefs ? `persistentToolResultRefs:\n${toolResultRefs}` : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -185,7 +198,7 @@ function buildPatchProtocolContext(): string {
     '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
     '- Patch examples are recipes, not fixed templates. Adapt node count, kinds, fields, and edges to the user request and current canvas.',
     '- For selected-node edits: call canvas.read_selected_nodes first, then update only the exact selected nodeId and editable fields.',
-    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media.',
+    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media. If contentEvidence is binary_image_analysis, you may describe the fetched image evidence returned by the tool.',
     '- For content chains: choose the structure from the request. Do not force text->image->video->audio unless that matches the requested workflow.',
     'Writable content fields:',
     '- text: contentHtml, aiPrompt, aiModel, blockStyle, backgroundColor, fontSize, width, height.',
