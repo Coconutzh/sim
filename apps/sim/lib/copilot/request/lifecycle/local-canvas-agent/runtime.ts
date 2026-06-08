@@ -10,7 +10,6 @@ import { buildLocalAgentAnswer } from '@/lib/copilot/request/lifecycle/local-can
 import { summarizeLocalAgentRun } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/summarizer'
 import { verifyLocalAgentFinalAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/verifier'
 import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
-import { buildLocalAgentPlan } from '@/lib/copilot/request/lifecycle/local-canvas-agent/planner'
 import { classifyLocalCanvasAgentRouting } from '@/lib/copilot/request/lifecycle/local-canvas-agent/routing'
 import { persistLocalAgentSessionMetadata } from '@/lib/copilot/request/lifecycle/local-canvas-agent/session'
 import {
@@ -324,16 +323,33 @@ export async function runLocalCanvasAgent(params: {
   const contextWithMemory = { ...localContext, memory }
 
   if (localContext.confirmationMode === 'manual') {
-    const plan = await buildLocalAgentPlan(contextWithMemory)
-    if (plan.requiresClarification) {
+    const manualLoopContext = {
+      ...contextWithMemory,
+      requestPayload: {
+        ...contextWithMemory.requestPayload,
+        localAgentMode: 'model_tool_loop',
+      },
+    }
+    const manualLoopResult = await runLocalAgentToolLoop(manualLoopContext).catch(async (error) => {
+      const err = toError(error)
+      logger.error('Local canvas agent manual proposal loop failed', {
+        chatId: localContext.chatId,
+        workspaceId: localContext.workspaceId,
+        workflowId: localContext.workflowId,
+        error: err.message,
+      })
+      params.context.errors = params.context.errors ?? []
+      params.context.errors.push(err.message)
       await emitLocalAgentText(
         params.context,
         params.options,
-        plan.clarificationQuestion ?? '我需要更多信息才能安全修改画布。'
+        `我没有完成这次画布确认方案：${err.message}`
       )
       params.context.streamComplete = true
-      return
-    }
+      return null
+    })
+    if (!manualLoopResult) return
+    const { plan, observations, answer } = manualLoopResult
 
     if (hasManualMutation(plan)) {
       deleteExpiredPendingPlans()
@@ -356,6 +372,35 @@ export async function runLocalCanvasAgent(params: {
       params.context.streamComplete = true
       return
     }
+
+    if (plan.requiresClarification) {
+      await emitLocalAgentText(
+        params.context,
+        params.options,
+        plan.clarificationQuestion ?? '我需要更多信息才能安全修改画布。'
+      )
+      params.context.streamComplete = true
+      return
+    }
+
+    await emitLocalAgentText(
+      params.context,
+      params.options,
+      await verifyLocalAgentFinalAnswer({
+        context: manualLoopContext,
+        plan,
+        observations,
+        answer,
+      })
+    )
+    await persistMemoryBestEffort({
+      context: manualLoopContext,
+      memory,
+      plan,
+      observations,
+    })
+    params.context.streamComplete = true
+    return
   }
 
   const loopResult = await runLocalAgentToolLoop(contextWithMemory).catch(async (error) => {

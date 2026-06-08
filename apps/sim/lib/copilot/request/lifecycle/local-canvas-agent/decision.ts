@@ -264,6 +264,7 @@ export function buildLocalAgentDecisionPrompt(params: {
   return [
     `User request:\n${params.context.message}`,
     `Selected node ids: ${params.context.selectedNodeIds.join(', ') || 'none'}`,
+    `Confirmation mode: ${params.context.confirmationMode}`,
     `Available tools: ${summarizeAvailableToolNames(availableTools)}`,
     `Runtime intent policy:\n${buildIntentPolicyContext(params.policy)}`,
     `Thread memory:\n${buildMemoryContext(params.context)}`,
@@ -276,6 +277,7 @@ export function buildLocalAgentDecisionPrompt(params: {
       'Do not include chain-of-thought, markdown, or prose outside JSON.',
       'Use tools to read canvas state instead of guessing from memory.',
       'If a user asks to discuss, plan, or wait for confirmation, do not call mutation tools.',
+      'If confirmation mode is manual and a canvas write is needed, return ask_confirmation with pendingToolCall instead of applying the patch.',
       'If a user asks for a destructive action, ask for confirmation first.',
       'Use type=tool_calls only for independent read-only concurrency-safe tools; never include mutation, generation, verification, or destructive tools in tool_calls.',
       'Never invent generated file outputs. Use canvas.generate_node_output for real generation.',

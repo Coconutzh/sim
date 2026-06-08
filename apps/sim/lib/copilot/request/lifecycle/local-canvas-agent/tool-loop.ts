@@ -72,15 +72,17 @@ function buildInitialDecisionPlan(
   context: LocalAgentContext,
   policy: ReturnType<typeof classifyLocalCanvasUserIntent>
 ): LocalAgentPlan {
+  const manualMutation =
+    context.confirmationMode === 'manual' && policy.mutationPolicy === 'allow_mutation'
   return {
     goal: context.message,
-    risk: policy.requiresUserConfirmation ? 'medium' : 'low',
+    risk: policy.requiresUserConfirmation || manualMutation ? 'medium' : 'low',
     userIntent: policy.userIntent,
-    mutationPolicy: policy.mutationPolicy,
+    mutationPolicy: manualMutation ? 'propose_only' : policy.mutationPolicy,
     canvasReadPolicy: policy.canvasReadPolicy,
     intentConfidence: policy.confidence,
     intentEvidence: policy.evidence,
-    requiresUserConfirmation: policy.requiresUserConfirmation,
+    requiresUserConfirmation: policy.requiresUserConfirmation || manualMutation,
     requiresClarification: false,
     steps: [],
     successCriteria: ['The model decision loop reaches a verified final answer or safe stop.'],

@@ -69,12 +69,13 @@
 - tool observation prompt 现在限制最近 observation 数量、单个 output preview 和整体 prompt 长度；较早结果只保留 omitted 说明，较大输出通过稳定 `outputRef` + preview 暴露。
 - `media.analyze_node_media` 支持 `analysisGoal=describe|quality_check|extract_prompt|compare_with_prompt`，model loop 覆盖“读取选中视频 -> 媒体分析 -> 最终回答”且不触发画布写入。
 - `AgentDecision` 支持 `tool_calls` 批量只读调用；runtime 只允许 read-only 且 concurrency-safe 的工具并行执行，写入/生成/验证工具仍被阻止并保持串行。
+- manual Confirm / Revise 的首轮方案也改为强制 `model_tool_loop` 生成待确认 plan；不再直接调用旧 planner 产出待确认 patch。
 
 ## 2. 当前已跑验证命令
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 174 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 177 tests passed
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed

@@ -185,5 +185,7 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('For media description')
     expect(prompt).toContain('Do not force text->image->video->audio')
     expect(prompt).toContain('Use type=tool_calls only for independent read-only')
+    expect(prompt).toContain('Confirmation mode: auto')
+    expect(prompt).toContain('If confirmation mode is manual')
   })
 })

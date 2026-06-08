@@ -624,6 +624,45 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('我先只给方案，不会改画布。')
   })
 
+  it('treats manual confirmation mode as propose-only in the model loop', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
+        userVisibleReason: '我会修改画布。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '需要先确认，我不会直接修改画布。',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        confirmationMode: 'manual',
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '重新整理当前画布。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      mutationPolicy: 'propose_only',
+      requiresUserConfirmation: true,
+    })
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('proposal or confirmation first'),
+        }),
+      ])
+    )
+    expect(result.answer).toBe('需要先确认，我不会直接修改画布。')
+  })
+
   it('keeps model confirmation patch available for runtime Confirm execution', async () => {
     const patch = {
       operations: [{ type: 'layout_nodes' as const, direction: 'horizontal' as const }],
