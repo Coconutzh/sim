@@ -263,10 +263,7 @@ function stripCanvasCommandLanguage(message: string): string {
   return message
     .replace(/^(请|帮我|麻烦)?\s*/g, '')
     .replace(/(?:根据|基于)?当前主题[，,:：]*/g, '')
-    .replace(
-      /(?:创建|新建|新增|生成|做|搭建|建立|设计)\s*(?:一条|一个|一组|用于)?/g,
-      ''
-    )
+    .replace(/(?:创建|新建|新增|生成|做|搭建|建立|设计)\s*(?:一条|一个|一组|用于)?/g, '')
     .replace(/(?:内容链|工作流|节点|并按生产顺序连接|从左到右排好|连接|排好)/g, '')
     .replace(/[：:，,。；;]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -347,8 +344,7 @@ function hasRewriteInstructionLeak(value: string): boolean {
     /\b(?:do not|don't|return only|just plain text|no markdown|no json|line breaks|system prompt|user request|current selected text)\b/.test(
       normalized
     ) ||
-    (/\b(?:markdown|json|formatting|format)\b/.test(normalized) &&
-      /[`*_#{}\[\]]/.test(normalized))
+    (/\b(?:markdown|json|formatting|format)\b/.test(normalized) && /[`*_#{}[\]]/.test(normalized))
   )
 }
 

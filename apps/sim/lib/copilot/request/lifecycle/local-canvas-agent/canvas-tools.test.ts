@@ -767,7 +767,10 @@ describe('local canvas tools', () => {
               fields: { aiPrompt: '主视觉提示词' },
             },
           ],
-          edges: [{ source: 'start-1', target: 'node_script' }, { from: 'node_script', to: 'node_visual' }],
+          edges: [
+            { source: 'start-1', target: 'node_script' },
+            { from: 'node_script', to: 'node_visual' },
+          ],
         },
       }
     )

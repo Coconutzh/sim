@@ -153,7 +153,8 @@ describe('local canvas planner', () => {
     const plan = await buildLocalAgentPlan(
       buildContext({
         selectedNodeIds: [],
-        message: '你好，我想做一个小红书的小猫ai视频生成工作流，先告诉我工作流如何设计，和我讨论一下',
+        message:
+          '你好，我想做一个小红书的小猫ai视频生成工作流，先告诉我工作流如何设计，和我讨论一下',
       })
     )
 

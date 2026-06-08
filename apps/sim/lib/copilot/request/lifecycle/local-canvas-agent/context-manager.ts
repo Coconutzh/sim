@@ -485,14 +485,8 @@ export function buildTokenAwareLocalAgentContext(params: {
         budget.canvasSummary
       )
     ),
-    layer(
-      'Selected Node Details',
-      stringifyCompact(selectedDetails, budget.selectedDetails)
-    ),
-    layer(
-      'Relevant Node Details',
-      stringifyCompact(relevantDetails, budget.relevantDetails)
-    ),
+    layer('Selected Node Details', stringifyCompact(selectedDetails, budget.selectedDetails)),
+    layer('Relevant Node Details', stringifyCompact(relevantDetails, budget.relevantDetails)),
     layer(
       'Attached Contexts',
       clip(
