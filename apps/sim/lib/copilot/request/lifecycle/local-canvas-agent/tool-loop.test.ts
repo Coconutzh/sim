@@ -210,6 +210,35 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('我先只给方案，不会改画布。')
   })
 
+  it('keeps model confirmation patch available for runtime Confirm execution', async () => {
+    const patch = {
+      operations: [{ type: 'layout_nodes' as const, direction: 'horizontal' as const }],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'ask_confirmation',
+      question: '这个操作会重新布局画布，确认执行吗？',
+      pendingToolCall: {
+        name: 'canvas.apply_patch',
+        input: { patch },
+      },
+      risk: 'medium',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '先给我确认后再重新布局画布。',
+      })
+    )
+
+    expect(result.plan).toMatchObject({
+      requiresClarification: true,
+      requiresUserConfirmation: true,
+      patch,
+    })
+    expect(result.answer).toBe('这个操作会重新布局画布，确认执行吗？')
+  })
+
   it('executes explicit read_node calls from plan readNodeIds', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Read missing node',

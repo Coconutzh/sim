@@ -287,6 +287,55 @@ describe('local canvas runtime manual confirmation', () => {
     )
   })
 
+  it('turns model-loop confirmation plans into Confirm and Revise options', async () => {
+    const streamContext = buildStreamContext()
+    const confirmPlan: LocalAgentPlan = {
+      ...patchPlan,
+      requiresClarification: true,
+      requiresUserConfirmation: true,
+      clarificationQuestion: '这个操作会重新布局画布，确认执行吗？',
+    }
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'auto',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: confirmPlan,
+      observations: [],
+      answer: '这个操作会重新布局画布，确认执行吗？',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(streamContext.streamComplete).toBe(true)
+    expect(streamContext.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentBlockType.options,
+          options: expect.arrayContaining([
+            expect.objectContaining({ label: 'Confirm' }),
+            expect.objectContaining({ label: 'Revise' }),
+          ]),
+        }),
+      ])
+    )
+    expect(streamContext.accumulatedContent).toContain('这个操作会重新布局画布，确认执行吗？')
+    expect(streamContext.accumulatedContent).toContain('__local_canvas_confirm__')
+  })
+
   it('answers clearly non-canvas requests without planning or reading the canvas', async () => {
     const streamContext = buildStreamContext()
     mockClassifyLocalCanvasAgentRouting.mockReturnValueOnce({

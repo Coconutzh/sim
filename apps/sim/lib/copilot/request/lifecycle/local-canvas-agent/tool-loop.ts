@@ -16,6 +16,7 @@ import type {
   LocalAgentToolCall,
   LocalAgentToolLoopResult,
   LocalCanvasMutationPolicy,
+  LocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const MAX_STEPS = 10
@@ -475,6 +476,43 @@ function buildVerificationInputFromToolResult(
   return nodeId && field ? { generation: { nodeId, field } } : null
 }
 
+function getPatchFromToolCall(call: LocalAgentToolCall): LocalCanvasPatch | undefined {
+  if (call.name !== 'canvas.apply_patch' && call.name !== 'canvas.propose_patch') return undefined
+  const patch = call.input.patch
+  if (!patch || typeof patch !== 'object') return undefined
+  const operations = (patch as { operations?: unknown }).operations
+  return Array.isArray(operations) ? (patch as LocalCanvasPatch) : undefined
+}
+
+function applyPendingPatchToPlan(
+  plan: LocalAgentPlan,
+  patch: LocalCanvasPatch | undefined
+): LocalAgentPlan {
+  if (!patch) return plan
+  return {
+    ...plan,
+    patch,
+    steps: plan.steps.length
+      ? plan.steps
+      : [
+          {
+            id: 'confirm_apply_patch',
+            title: '确认后执行这次画布修改',
+            intent: 'update',
+            toolHints: ['canvas.apply_patch'],
+            expectedObservation: 'Canvas patch is applied after user confirmation',
+          },
+          {
+            id: 'confirm_verify_patch',
+            title: '确认后验证画布修改',
+            intent: 'verify',
+            toolHints: ['canvas.verify_patch'],
+            expectedObservation: 'Canvas patch is verified after user confirmation',
+          },
+        ],
+  }
+}
+
 async function executeDecisionToolCall(params: {
   context: LocalAgentContext
   decision: Extract<LocalAgentDecision, { type: 'tool_call' }>
@@ -516,8 +554,9 @@ async function executeDecisionToolCall(params: {
   }
 
   if (descriptor.isDestructive?.(parsedInput.data)) {
+    const pendingPatch = getPatchFromToolCall(call)
     params.state.plan = {
-      ...params.state.plan,
+      ...applyPendingPatchToPlan(params.state.plan, pendingPatch),
       requiresClarification: true,
       clarificationQuestion: '这个操作会删除或清空画布内容。请先明确确认后我再执行。',
       requiresUserConfirmation: true,
@@ -614,8 +653,14 @@ async function runModelDrivenLocalAgentToolLoop(
     }
 
     if (decision.type === 'ask_confirmation') {
+      const pendingPatch = decision.pendingToolCall
+        ? getPatchFromToolCall({
+            name: decision.pendingToolCall.name,
+            input: decision.pendingToolCall.input,
+          })
+        : undefined
       state.plan = {
-        ...state.plan,
+        ...applyPendingPatchToPlan(state.plan, pendingPatch),
         requiresClarification: true,
         clarificationQuestion: decision.question,
         requiresUserConfirmation: true,

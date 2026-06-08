@@ -262,8 +262,15 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
 }
 
 function buildPlanPreview(plan: LocalAgentPlan): string {
-  const steps = plan.steps.map((step, index) => `${index + 1}. ${step.title}`).join('\n')
-  return [`我准备按下面步骤操作当前画布：`, steps, `风险等级：${plan.risk}`]
+  const steps =
+    plan.steps.length > 0
+      ? plan.steps.map((step, index) => `${index + 1}. ${step.title}`).join('\n')
+      : '1. 执行这次待确认的画布修改\n2. 重新读取并验证修改结果'
+  return [
+    plan.clarificationQuestion ?? '我准备按下面步骤操作当前画布：',
+    steps,
+    `风险等级：${plan.risk}`,
+  ]
     .filter(Boolean)
     .join('\n')
 }
@@ -371,6 +378,28 @@ export async function runLocalCanvasAgent(params: {
   })
   if (!loopResult) return
   const { plan, observations, answer } = loopResult
+
+  if (plan.requiresUserConfirmation && hasManualMutation(plan)) {
+    deleteExpiredPendingPlans()
+    const id = generateId()
+    pendingPlans.set(getPendingKey(localContext), {
+      id,
+      context: contextWithMemory,
+      plan,
+      createdAt: Date.now(),
+    })
+    await emitLocalAgentOptions({
+      context: params.context,
+      options: params.options,
+      text: buildPlanPreview(plan),
+      optionItems: [
+        { id: `${CONFIRM_PREFIX}${id}`, label: 'Confirm', value: `${CONFIRM_PREFIX}${id}` },
+        { id: `${REVISE_PREFIX}${id}`, label: 'Revise', value: `${REVISE_PREFIX}${id}` },
+      ],
+    })
+    params.context.streamComplete = true
+    return
+  }
 
   if (plan.requiresClarification) {
     await emitLocalAgentText(
