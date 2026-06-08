@@ -64,6 +64,7 @@
 - `canvas.apply_patch` / `canvas.generate_node_output` 成功后如果模型直接 final answer，runtime 会自动补 `canvas.verify_patch`，避免未验证写入被汇报为完成。
 - 新增 `tool-result-budget.ts`，decision prompt 只放带 `outputRef` 的预算化 observation preview，不把大 tool output 全量塞回上下文。
 - 新增 `media.analyze_node_media` 只读工具：可读取 image/video/audio 节点的 prompt、safe file metadata、已存媒体 context；无 file 时明确降级为 prompt-only，不假装看过真实媒体。
+- `media.analyze_node_media` 输出 `mediaContentAccess` 结构化能力边界：`canDescribeActualMedia=false` 时模型只能描述 prompt/metadata，不能声称看过或听过真实媒体内容。
 - `final_answer.memoryUpdate` 收窄为结构化 thread memory update；model loop 会把该更新记录成 `memory` observation，再由 summarizer 合并进当前 chat 的 deterministic memory。
 - decision prompt 明确 patch 示例只是 recipe，不是固定模板；选中节点修改必须先读选中节点，再只更新对应 `nodeId` 的可编辑字段；媒体描述必须区分 prompt/metadata 与真实 file。
 - tool observation prompt 现在限制最近 observation 数量、单个 output preview 和整体 prompt 长度；较早结果只保留 omitted 说明，较大输出通过稳定 `outputRef` + preview 暴露。
@@ -76,7 +77,7 @@
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 179 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：18 files / 180 tests passed
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed

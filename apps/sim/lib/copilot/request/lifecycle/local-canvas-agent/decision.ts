@@ -185,7 +185,7 @@ function buildPatchProtocolContext(): string {
     '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
     '- Patch examples are recipes, not fixed templates. Adapt node count, kinds, fields, and edges to the user request and current canvas.',
     '- For selected-node edits: call canvas.read_selected_nodes first, then update only the exact selected nodeId and editable fields.',
-    '- For media description: read the selected node first, then call media.analyze_node_media; if no file exists, answer from prompt/metadata only.',
+    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media.',
     '- For content chains: choose the structure from the request. Do not force text->image->video->audio unless that matches the requested workflow.',
     'Writable content fields:',
     '- text: contentHtml, aiPrompt, aiModel, blockStyle, backgroundColor, fontSize, width, height.',

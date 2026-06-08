@@ -868,6 +868,12 @@ interface AnalyzeNodeMediaInput {
 - 只能说“节点提示词描述的是...”
 - 不能说“视频画面里有...”
 
+如果节点有 `file` 但本地工具只拿到 file metadata、没有二进制分析结果或已存媒体上下文：
+
+- 只能说“节点已有媒体文件，文件信息是...”
+- 不能说“我看到/听到媒体内容是...”
+- 工具输出必须包含结构化能力边界，例如 `mediaContentAccess.canDescribeActualMedia=false`。
+
 如果有真实 `file` 并分析成功：
 
 - 可以说“我分析到视频内容是...”

@@ -14,6 +14,7 @@ import type {
 type LocalMediaToolCall = LocalAgentToolCall & { name: LocalMediaToolName }
 type MediaAnalysisMode = 'prompt_only' | 'file_metadata' | 'stored_media_context'
 type MediaAnalysisGoal = 'describe' | 'quality_check' | 'extract_prompt' | 'compare_with_prompt'
+type MediaContentEvidence = 'prompt_only' | 'file_metadata_only' | 'stored_media_context'
 
 const MEDIA_KINDS = new Set(['image', 'video', 'audio'])
 const MEDIA_ANALYSIS_GOALS = new Set<MediaAnalysisGoal>([
@@ -82,6 +83,43 @@ function resolveAnalysisGoal(input: Record<string, unknown>): MediaAnalysisGoal 
     : 'describe'
 }
 
+function buildMediaContentAccess(params: { mode: MediaAnalysisMode; hasFile: boolean }): {
+  hasFile: boolean
+  binaryFetched: false
+  contentEvidence: MediaContentEvidence
+  canDescribeActualMedia: boolean
+  safeDescriptionScope: string
+} {
+  if (params.mode === 'stored_media_context') {
+    return {
+      hasFile: params.hasFile,
+      binaryFetched: false,
+      contentEvidence: 'stored_media_context',
+      canDescribeActualMedia: true,
+      safeDescriptionScope:
+        'May describe media only from stored media context and safe metadata; binary bytes were not fetched.',
+    }
+  }
+  if (params.mode === 'file_metadata') {
+    return {
+      hasFile: params.hasFile,
+      binaryFetched: false,
+      contentEvidence: 'file_metadata_only',
+      canDescribeActualMedia: false,
+      safeDescriptionScope:
+        'May describe file metadata and prompts only; do not claim to have seen or heard the media content.',
+    }
+  }
+  return {
+    hasFile: false,
+    binaryFetched: false,
+    contentEvidence: 'prompt_only',
+    canDescribeActualMedia: false,
+    safeDescriptionScope:
+      'May describe the generation prompt only; do not claim to have seen or heard generated media.',
+  }
+}
+
 function buildAnalysisLines(params: {
   detail: CanvasNodeDetail
   file: Record<string, unknown> | null
@@ -133,6 +171,10 @@ async function analyzeNodeMedia(
   const promptField = getPromptField(detail)
   const mode = resolveAnalysisMode({ file: fileRecord, storedContext })
   const analysisGoal = resolveAnalysisGoal(input)
+  const mediaContentAccess = buildMediaContentAccess({
+    mode,
+    hasFile: Boolean(fileRecord),
+  })
 
   return {
     nodeId: detail.id,
@@ -141,6 +183,7 @@ async function analyzeNodeMedia(
     analysisMode: mode,
     analysisGoal,
     hasFile: Boolean(fileRecord),
+    mediaContentAccess,
     file: summarizeFile(fileRecord),
     prompt: {
       field: promptField.field,

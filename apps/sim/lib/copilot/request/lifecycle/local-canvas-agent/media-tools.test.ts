@@ -118,6 +118,12 @@ describe('local canvas media tools', () => {
       analysisMode: 'stored_media_context',
       analysisGoal: 'compare_with_prompt',
       hasFile: true,
+      mediaContentAccess: {
+        hasFile: true,
+        binaryFetched: false,
+        contentEvidence: 'stored_media_context',
+        canDescribeActualMedia: true,
+      },
       file: {
         name: 'launch.mp4',
         type: 'video/mp4',
@@ -133,6 +139,47 @@ describe('local canvas media tools', () => {
     expect(JSON.stringify(result.output)).not.toContain('https://private.example.test')
     expect(JSON.stringify(result.output)).toContain('镜头从观众席推向主屏')
     expect(JSON.stringify(result.output)).toContain('分析目标：compare_with_prompt')
+  })
+
+  it('limits file-only media analysis to metadata and prompt claims', async () => {
+    mockReadCanvasNodeDetail.mockReturnValue(
+      buildVideoDetail({
+        fields: {
+          file: {
+            name: 'launch.mp4',
+            type: 'video/mp4',
+            size: 1024,
+          },
+          videoPrompt: '明亮舞台发布会开场，镜头推进。',
+        },
+        file: {
+          name: 'launch.mp4',
+          type: 'video/mp4',
+          size: 1024,
+        },
+      })
+    )
+
+    const result = await executeMediaTool(buildContext(), {
+      name: 'media.analyze_node_media',
+      input: { nodeId: 'video-1', analysisGoal: 'describe' },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatchObject({
+      analysisMode: 'file_metadata',
+      hasFile: true,
+      mediaContentAccess: {
+        hasFile: true,
+        binaryFetched: false,
+        contentEvidence: 'file_metadata_only',
+        canDescribeActualMedia: false,
+        safeDescriptionScope:
+          'May describe file metadata and prompts only; do not claim to have seen or heard the media content.',
+      },
+      limitations:
+        'Analysis uses file metadata only; binary media bytes were not fetched in this local tool.',
+    })
   })
 
   it('falls back to prompt-only analysis when no media file exists', async () => {
@@ -155,6 +202,12 @@ describe('local canvas media tools', () => {
     expect(result.output).toMatchObject({
       analysisMode: 'prompt_only',
       hasFile: false,
+      mediaContentAccess: {
+        hasFile: false,
+        binaryFetched: false,
+        contentEvidence: 'prompt_only',
+        canDescribeActualMedia: false,
+      },
       prompt: {
         field: 'videoPrompt',
         value: '夜晚城市航拍，霓虹灯，快节奏。',
