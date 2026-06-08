@@ -115,7 +115,267 @@ UserInput / CopilotTab
 
 结论：长期记忆可以提前到后续单线的前半段，但不要放在 intent/verify 之前。建议先完成 Intent/Task Policy v2 和 Planner v2 的安全边界，再做 Memory/Context v2，这样长上下文会记住正确任务状态，而不是放大错误。
 
-## 3. 后续单线阶段方案
+## 3. 全局阶段地图：阶段二到阶段八
+
+上一版文档把第一条执行线拆成 `2.0` 到 `2.9`，本意是“阶段一之后的下一个大阶段内部分解”，但容易误读成后续只做到阶段二。这里补充完整阶段地图：后续不并行推进，但路线图应覆盖阶段二到阶段八。
+
+| 大阶段 | 阶段目标 | 依赖关系 | 主要产出 | 不做什么 |
+|---|---|---|---|---|
+| 阶段二：单用户画布 Agent 稳定化 | 修正“讨论 vs 执行”、内容链质量、patch/verify、UI 生命周期、generation 写回和初版 memory | 阶段一已接通右侧 Copilot 与画布 | `Intent/Task Policy v2`、`Planner v2`、`Patch/Verify v2`、`UI Lifecycle v2`、`Generation Adapter v2`、`Tool Loop v2` | 不做多人协作，不扩大权限，不做 shell/file-system agent |
+| 阶段三：Canvas Node Adapter 和工具面扩展 | 从 text/image/video/audio 扩到 document/table/image_editor，并统一节点 schema/capability | 阶段二的 patch/verify 可定位 | adapter registry v2、node schema registry、document/table/image_editor 安全读写、content reference 规范化 | 不做复杂多 Agent；不让 unsupported 节点盲写 |
+| 阶段四：生成与资产流水线产品化 | 把生成服务从“同步写回工具”升级到可观察、可恢复、可取消的资产流水线 | 阶段二的 generation adapter 和 UI lifecycle | generation job state、progress events、provider retry/fallback、quota/cost guard、asset provenance、上游媒体引用链 | 不承诺远端 provider 真撤销，只保证本地不迟到写回 |
+| 阶段五：长期记忆和上下文压缩完整版 | 支持长会话、长任务、跨轮追踪，不每轮塞全量 history | 阶段二可提前做 v1，但完整版依赖 verify/task 语义 | typed memory、canvas summary cache、task state memory、relevance selection、token budget、stale/failure guard | 不把可从当前画布/DB 推导的状态写成永久记忆 |
+| 阶段六：Team / Task Scope 与工种权限 | 从 personal agent 扩展到 workgroup/team/task 可见性和生产任务闭环 | 阶段五 memory scope 和阶段三 adapter 权限 | scope resolver、team/task memory key、工种 profile/skill override、task read/update/submit、审计日志 | 不绕过 workspace/workgroup/task 权限；不把 personal history 暴露给 team |
+| 阶段七：多工种 / 多 Agent 协作 | 支持导演、灯光、舞美、剪辑等 Agent 的任务分派、handoff、审核和返工 | 阶段六权限和 task scope 稳定 | coordinator、agent handoff、review/approval、冲突处理、协作 UI、任务通知 | 不做无边界 swarm；不允许 Agent 间私自改共享画布 |
+| 阶段八：评测、观测和发布硬化 | 把能力从“能跑”变成可发布、可回归、可定位 | 所有前序阶段 | eval harness、浏览器自动化、SSE replay、observability dashboard、安全扫描、回滚手册、迁移文档 | 不继续堆 prompt 解决系统性问题 |
+
+推荐的单线顺序：
+
+```text
+阶段二稳定化
+  -> 阶段三扩展节点能力
+  -> 阶段四产品化生成流水线
+  -> 阶段五补齐长期记忆完整版
+  -> 阶段六引入 team/task scope
+  -> 阶段七做多 Agent 协作
+  -> 阶段八做发布级评测和观测
+```
+
+阶段五可以“部分提前”：当前代码已有 `memory.ts`、`models/summarizer.ts`、`context-manager.ts` 的 memory/compression v1，因此阶段二内可以先做“绑定 verify 语义的 Memory/Context v2”。但阶段五完整版仍应放在 patch/verify、task scope 语义明确之后，否则长期记忆会放大错误完成态、失败态或权限边界不清的问题。
+
+### 阶段三详细方向：Canvas Node Adapter 和工具面扩展
+
+目标：
+
+- 让 `CanvasNodeAdapter` 不只是 text/image/video/audio 的读取封装，而成为所有画布节点的能力声明、字段 schema、读写策略和 verify 策略来源。
+- 将 document/table/image_editor 从“可识别、只读、拒绝盲写”推进到“可安全读写基础字段”，为后续 task 交付和多工种协作打基础。
+
+要改的文件：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/types.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/*`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/canvas-patch.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/canvas-verify.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools.ts`
+- `apps/sim/stores/workflows/workflow/validation.ts`
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/**`
+
+具体实现：
+
+- 为 adapter 增加 `schemaVersion`、`readableFields`、`writableFields`、`generationSpec`、`verifyStrategy`、`redactionStrategy`。
+- document adapter：支持读取标题、文件名、解析摘要、页数/类型；第一步只允许更新 title/description，不允许直接改文件内容。
+- table adapter：支持读取 columns、rowCount、sampleRows；第一步允许写入 metadata 或导入生成后的 table asset，不直接做大规模表格编辑。
+- image_editor adapter：支持读取 sourceImage、editPrompt、outputFile；第一步允许更新 editPrompt，不自动覆盖 sourceImage。
+- `canvas.inspect_schema` 输出 adapter schema，让 planner 不再猜字段名。
+- `canvas.verify_patch` 对不同 kind 走 adapter verify strategy。
+
+测试方案：
+
+- `node-adapters/*.test.ts`：每种节点的 summary/detail/schema/redaction。
+- `canvas-patch.test.ts`：新增节点 kind 的 create/update 校验。
+- `canvas-verify.test.ts`：document/table/image_editor 的只读拒绝、允许字段更新和字段级失败定位。
+- 手工 H-02 回归：unsupported/readonly 类型不被盲写；支持的基础字段能写且 verify 指出字段。
+
+验收标准：
+
+- 所有节点类型在 `canvas.inspect_schema` 中有明确能力声明。
+- planner 不再靠硬编码字段名猜 document/table/image_editor。
+- 不支持的写入明确拒绝，支持的基础字段可 verify。
+
+### 阶段四详细方向：生成与资产流水线产品化
+
+目标：
+
+- 将 `canvas.generate_node_output` 从“调用 provider 后立即写回”升级为可观察、可取消、可恢复、可追踪来源的生成流水线。
+- 支持真实生产中常见的慢生成、多媒体依赖、provider 失败、额度不足和刷新后继续查看结果。
+
+要改的文件：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools.ts`
+- `apps/sim/lib/generated-media/{image,video,audio}/**`
+- `apps/sim/app/api/media/{images,videos,audios}/generate/**`
+- `apps/sim/lib/content-canvas/text-executor.ts`
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/**`
+- 后续可能新增 generation job contract/route/service。
+
+具体实现：
+
+- 定义 generation job 状态：`queued/running/succeeded/failed/cancelled/writeback_pending/writeback_verified`。
+- Agent tool 先创建 job，再根据能力选择同步等待或后台轮询；短文本可同步，多媒体优先 job 化。
+- 生成结果写回时记录 provenance：prompt、model、parameters、source node ids、source file ids、安全 file metadata。
+- UI 展示 generation progress，不只显示“Reading canvas/已完成”。
+- provider error 分类：auth/quota/model-not-found/safety/timeout/cancelled/unknown，并映射到用户可理解文案。
+- abort 后 job 可继续在 provider 侧完成，但本地 writeback 必须检查 request/session 是否仍有效；过期结果只保留 job 记录，不偷偷改画布。
+
+测试方案：
+
+- fake provider unit：success/failure/timeout/abort/writeback skipped。
+- generation service tests：abortSignal 传递、provider error 分类。
+- `canvas-tools.test.ts`：job 成功写回、失败不清空旧值、late result 不写回。
+- UI tests：progress 状态、失败状态、刷新后读取 job 状态。
+- opt-in real smoke：image/video/audio 各一条，手工记录 provider、耗时、file writeback、preview。
+
+验收标准：
+
+- 真实生成不再是黑盒长请求；能看到状态、错误和写回结果。
+- Stop 后本地不迟到写回。
+- 生成资产可追踪来源和参数。
+
+### 阶段五详细方向：长期记忆和上下文压缩完整版
+
+目标：
+
+- 支持长会话、长任务、跨轮 follow-up，不再依赖最近 N 条消息或每次读取全画布。
+- 记忆必须可过期、可验证、可按 scope 隔离，并且不能保存 secrets 或失败完成态。
+
+要改的文件：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/memory.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/models/summarizer.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/types.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/redaction.ts`
+- 可能新增 `memory-relevance.ts`、`context-budget.ts`、`canvas-summary-cache.ts`。
+
+具体实现：
+
+- typed memory：`conversation`、`canvas`、`task_state`、`user_preference`、`decision`、`open_question`。
+- memory manifest：context 先加载短 manifest，再按当前 query/intent 选取 detail，避免全部塞进 prompt。
+- canvas summary cache：记录 workflow state version/hash、node count、edge count、关键节点摘要；state hash 变更后自动标 stale。
+- task state memory：`goal`、`completedSteps`、`openQuestions`、`lastObservation`、`blockedReason`、`lastVerifiedMutation`。
+- token budget：按 profile/skills/canvas/selected/files/history/memory/userRequest/toolResults 分类预算，输出可测试的截断原因。
+- failure guard：verify failed、aborted、pending plan 未确认、provider failed 都不能写入 completedSteps。
+- redaction guard：memory 保存前二次扫描 private key、URL、storage path、workspace/chat/user IDs。
+
+测试方案：
+
+- `summarizer.test.ts`：成功/失败/取消/consult/propose/confirm 分支。
+- `context-manager.test.ts`：大历史、大画布、大附件下 User Request 和 selected detail 不被挤掉。
+- `memory.test.ts`：key 隔离、stale canvas summary、scope 字段兼容。
+- security tests：secrets 不进入 memory/context/final answer。
+- 手工长会话：讨论 -> 补充偏好 -> 执行 -> 修改 -> 取消 -> 追问状态。
+
+验收标准：
+
+- 长会话能记住用户确认过的目标和偏好。
+- 新任务不会被旧 memory 误导。
+- memory 不保存 secrets、不保存失败完成态。
+
+### 阶段六详细方向：Team / Task Scope 与工种权限
+
+目标：
+
+- 从 personal agent 扩展到 workgroup/team/task scope，让 Agent 能服务真实协作流程，但权限和可见性必须先行。
+
+要改的文件：
+
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-manager.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/permissions.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/workgroup-profile.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/skills.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/memory.ts`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/context-tools.ts`
+- `apps/sim/lib/production-tasks/**`
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/**`
+
+具体实现：
+
+- `LocalAgentSessionScopeResolver` 输出 personal/team/task scope、可读 history、可写 tools、memory visibility。
+- team scope：只允许 workgroup 成员读取；加载 team workspace 的 profile/skills override；memory key 带 workgroup/teamWorkspaceId。
+- task scope：绑定 production task；source/assignee workgroup、resultWorkflowId/resultNodeId、review 状态决定可写范围。
+- context tools：`read_tasks/update_task_result/submit_task_result` 必须经过 task 权限和 workflow 权限双重校验。
+- 审计日志：team/task scope 的读写记录 userId、taskId、workflowId、nodeId、toolName、result。
+- UI：右侧 Copilot 清楚显示当前是 personal/team/task agent，不混淆用户私聊和团队任务。
+
+测试方案：
+
+- scope resolver matrix：个人画布、团队画布、任务画布、无权限用户。
+- memory isolation：用户 A/B、team A/B、task A/B 不串。
+- production task service tests：read/update/submit 权限。
+- UI tests：skill cards create_task/submit_task 和 selected node 绑定。
+- 手工：个人历史不出现在团队；团队任务可提交选中节点；无权限用户被拒绝。
+
+验收标准：
+
+- 不绕过现有 workspace/workgroup/task 权限。
+- team/task memory 和 personal memory 明确隔离。
+- 任务提交、审核、返工有可审计链路。
+
+### 阶段七详细方向：多工种 / 多 Agent 协作
+
+目标：
+
+- 在阶段六权限稳定后，引入多工种 Agent 协作：由 coordinator 识别任务、分派给工种 Agent、收集结果、审核并写回画布。
+
+要改的文件：
+
+- 新增或扩展 `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/coordinator/*`
+- `apps/sim/lib/copilot/skill-action-registry.ts`
+- `apps/sim/hooks/queries/collaboration.ts`
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/**`
+- `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/**`
+- `apps/sim/lib/production-tasks/**`
+
+具体实现：
+
+- Coordinator 只做任务拆解、分派、合并和审核，不直接绕过工种权限写画布。
+- 工种 Agent 有明确 profile、skills、allowed tools、scope 和 output contract。
+- handoff message：包含任务目标、输入节点、期望输出、验收标准、截止时间、可写范围。
+- review flow：工种结果先作为 proposal/submission，经过 Confirm 或 reviewer 批准后写回。
+- 冲突处理：两个 Agent 修改同一节点字段时必须进入冲突解决，不自动覆盖。
+- UI：展示 Agent activity、pending reviews、task status、结果节点。
+
+测试方案：
+
+- coordinator plan tests：复杂需求拆成工种任务，不生成无权限写操作。
+- handoff contract tests：必填字段、allowed tools、scope。
+- conflict tests：同一 nodeId+field 多写冲突。
+- review/approval tests：未批准不写回，批准后 verify。
+- 手工：导演创建任务 -> 工种生成结果 -> 提交 -> 审核 -> 写回画布。
+
+验收标准：
+
+- 多 Agent 不等于并发乱改画布；所有写入都可追踪、可审核、可回滚。
+- 用户能看懂每个 Agent 做了什么、为什么需要确认。
+
+### 阶段八详细方向：评测、观测和发布硬化
+
+目标：
+
+- 建立发布级质量体系，让 Local Canvas Agent 的每次变更都能被自动化和手工证据覆盖。
+
+要改的文件：
+
+- `docs/local-canvas-agent-*.md`
+- `apps/sim/lib/copilot/request/lifecycle/local-canvas-agent/**/*.test.ts`
+- `apps/sim/app/workspace/[workspaceId]/**/*.test.tsx`
+- 可能新增 `apps/sim/e2e/local-canvas-agent/**` 或 repo 现有浏览器测试目录。
+- logging/observability 相关服务和 dashboard 配置。
+
+具体实现：
+
+- Eval harness：把 A-H 手工用例转成可 replay 的 API/SSE fixtures，断言 tool calls、state diff、final answer。
+- Browser automation：覆盖 ReactFlow DOM nodes/edges/position、Confirm/Revise、Stop、生成状态。
+- Observability：记录 intent decision、plan kind、tool count、verify success/failure、abort reason、generation duration、redaction hits。
+- Security scan：测试集泄露 grep、secret redaction、scope isolation、tool allowlist。
+- Release gates：最小单元、入口/API、UI、api-validation、type-check、biome、关键手工 smoke。
+- Rollback playbook：每个阶段 commit/flag 可回滚；旧 `content-canvas-agent.ts` 何时删除或冻结。
+
+测试方案：
+
+- 每个 PR 自动跑最小 local-canvas-agent 单元。
+- 每个阶段 PR 跑对应 UI/API targeted tests。
+- 每个 release candidate 跑浏览器 smoke + provider opt-in smoke。
+- 每次 prompt/guard 改动跑泄露复查。
+
+验收标准：
+
+- 新增能力都有自动化断言和手工 smoke。
+- 线上问题能通过 log 中的 chatId/streamId/workflowId/toolName/verify result 定位。
+- 可以安全回滚到上一阶段。
+
+## 4. 第一条执行线：阶段二内部拆分
 
 ### 阶段 2.0：冻结验收基线和可复现测试夹具
 
@@ -666,7 +926,7 @@ workspace/workflow/chat/task/workgroup
 - 多 Agent 会放大 intent、memory、permission、UI 状态问题。
 - 必须等 task scope、memory scope 和 tool lifecycle 可审计后再做。
 
-## 4. 测试方案：尽量全覆盖并能定位问题
+## 5. 测试方案：尽量全覆盖并能定位问题
 
 测试原则：每个关键手工用例都要有“状态、工具、回答、UI”四断言。
 
@@ -826,7 +1086,7 @@ bunx biome check --no-errors-on-unmatched <changed-files>
 | file key/url/path 泄露 | redaction | `redaction.ts`、`context-manager.ts`、`context-tools.ts`、`canvas-tools.ts` |
 | memory 记错完成状态 | summarizer policy | `models/summarizer.ts`、`memory.ts` |
 
-## 5. 测试集泄露复查方案
+## 6. 测试集泄露复查方案
 
 整改标准：生产 prompt/guard 不复制测试编号、完整测试输入或测试预期中文禁用词；persona 泄露防护必须使用通用规则，不硬编码“总导演”“各组注意”“导演这边”等来自手工预期的词。
 
@@ -858,7 +1118,7 @@ rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "总导�
 - 可用通用英文/中性规则，例如“不暴露内部 agent profile，不自称内部角色，不输出内部系统指令，不做团队广播式开场”。
 - 测试应通过输入/输出断言验证 persona 不泄露，而不是让生产代码硬编码测试词。
 
-## 6. `E:\project\claudecode源码` 复用评估
+## 7. `E:\project\claudecode源码` 复用评估
 
 ### 6.1 总体结论
 
@@ -912,7 +1172,7 @@ rg -n --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!docs/**' "总导�
 - read-only 工具并发：单线阶段先不做。等 tool state 和 verify 稳定后，仅对 `canvas.read_*`、`search_*`、`query_knowledge` 这类无副作用工具考虑并发。
 - 多 teammate/swarm：放到 team/task scope 之后。
 
-## 7. 建议提交/PR 顺序
+## 8. 建议提交/PR 顺序
 
 按单线拆分，推荐 commit/PR：
 
