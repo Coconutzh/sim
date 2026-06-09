@@ -8,7 +8,10 @@ import {
   persistLocalAgentToolResultRefs,
   saveLocalAgentMemory,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
-import { buildLocalAgentAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
+import {
+  buildLocalAgentAnswer,
+  hasInternalFieldLeak,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
 import { summarizeLocalAgentRun } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/summarizer'
 import { verifyLocalAgentFinalAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/verifier'
 import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
@@ -138,7 +141,7 @@ async function persistMemoryBestEffort(params: {
   context: LocalAgentContext
   memory: LocalAgentMemoryData
   plan: LocalAgentPlan
-  observations: Awaited<ReturnType<typeof executeConfirmedPlan>>
+  observations: LocalAgentObservation[]
 }): Promise<void> {
   try {
     const toolResultRefs = await persistLocalAgentToolResultRefs({
@@ -163,6 +166,73 @@ async function persistMemoryBestEffort(params: {
       error: toError(error).message,
     })
   }
+}
+
+function scheduleMemoryPersistBestEffort(params: {
+  context: LocalAgentContext
+  memory: LocalAgentMemoryData
+  plan: LocalAgentPlan
+  observations: LocalAgentObservation[]
+}): void {
+  setTimeout(() => {
+    void persistMemoryBestEffort(params)
+  }, 0)
+}
+
+function hasSuccessfulVerifiedMutation(observations: LocalAgentObservation[]): boolean {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  const hasVerification = observations.some(
+    (observation) => observation.success && observation.toolName === 'canvas.verify_patch'
+  )
+  return hasMutation && hasVerification
+}
+
+function canUseAnswerWithoutVerifier(params: {
+  observations: LocalAgentObservation[]
+  answer: string
+}): boolean {
+  const answer = params.answer.trim()
+  return (
+    Boolean(answer) &&
+    !hasInternalFieldLeak(answer) &&
+    params.observations.every((observation) => observation.success) &&
+    hasSuccessfulVerifiedMutation(params.observations)
+  )
+}
+
+async function finalizeLocalAgentRun(params: {
+  context: LocalAgentContext
+  streamContext: StreamingContext
+  options: Pick<OrchestratorOptions, 'abortSignal' | 'onEvent'>
+  memory: LocalAgentMemoryData
+  plan: LocalAgentPlan
+  observations: LocalAgentObservation[]
+  answer: string
+}): Promise<void> {
+  const answer = canUseAnswerWithoutVerifier({
+    observations: params.observations,
+    answer: params.answer,
+  })
+    ? params.answer
+    : await verifyLocalAgentFinalAnswer({
+        context: params.context,
+        plan: params.plan,
+        observations: params.observations,
+        answer: params.answer,
+      })
+  await emitLocalAgentText(params.streamContext, params.options, answer)
+  params.streamContext.streamComplete = true
+  scheduleMemoryPersistBestEffort({
+    context: params.context,
+    memory: params.memory,
+    plan: params.plan,
+    observations: params.observations,
+  })
 }
 
 async function loadMemoryBestEffort(context: LocalAgentContext): Promise<LocalAgentMemoryData> {
@@ -250,23 +320,15 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
     plan: pending.plan,
     observations,
   })
-  await emitLocalAgentText(
-    context.streamContext,
-    context.options,
-    await verifyLocalAgentFinalAnswer({
-      context: contextWithMemory,
-      plan: pending.plan,
-      observations,
-      answer,
-    })
-  )
-  await persistMemoryBestEffort({
+  await finalizeLocalAgentRun({
     context: contextWithMemory,
+    streamContext: context.streamContext,
+    options: context.options,
     memory,
     plan: pending.plan,
     observations,
+    answer,
   })
-  context.streamContext.streamComplete = true
   return true
 }
 
@@ -393,23 +455,15 @@ export async function runLocalCanvasAgent(params: {
       return
     }
 
-    await emitLocalAgentText(
-      params.context,
-      params.options,
-      await verifyLocalAgentFinalAnswer({
-        context: manualLoopContext,
-        plan,
-        observations,
-        answer,
-      })
-    )
-    await persistMemoryBestEffort({
+    await finalizeLocalAgentRun({
       context: manualLoopContext,
+      streamContext: params.context,
+      options: params.options,
       memory,
       plan,
       observations,
+      answer,
     })
-    params.context.streamComplete = true
     return
   }
 
@@ -466,16 +520,13 @@ export async function runLocalCanvasAgent(params: {
     return
   }
 
-  await emitLocalAgentText(
-    params.context,
-    params.options,
-    await verifyLocalAgentFinalAnswer({ context: contextWithMemory, plan, observations, answer })
-  )
-  await persistMemoryBestEffort({
+  await finalizeLocalAgentRun({
     context: contextWithMemory,
+    streamContext: params.context,
+    options: params.options,
     memory,
     plan,
     observations,
+    answer,
   })
-  params.context.streamComplete = true
 }

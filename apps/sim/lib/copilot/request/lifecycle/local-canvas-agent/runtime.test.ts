@@ -50,6 +50,7 @@ vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/memory', () => ({
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor', () => ({
   buildLocalAgentAnswer: mockBuildLocalAgentAnswer,
+  hasInternalFieldLeak: vi.fn(() => false),
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/planner', () => ({
@@ -553,6 +554,19 @@ describe('local canvas runtime manual confirmation', () => {
     })
 
     const confirmStream = buildStreamContext()
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {},
+        summary: 'Patch applied',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: {},
+        summary: 'Patch verified',
+      })
     mockResolveLocalAgentContext.mockResolvedValueOnce(
       buildLocalContext({
         chatId: 'chat-1',
@@ -580,6 +594,7 @@ describe('local canvas runtime manual confirmation', () => {
       name: 'canvas.verify_patch',
       input: { patch: patchPlan.patch },
     })
+    expect(mockVerifyLocalAgentFinalAnswer).not.toHaveBeenCalled()
     expect(confirmStream.accumulatedContent).toBe('已完成画布修改，并完成验证。')
   })
 

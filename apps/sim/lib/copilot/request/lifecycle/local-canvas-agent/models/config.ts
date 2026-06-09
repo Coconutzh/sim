@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import {
   getContentCanvasModelAvailability,
   resolveContentService,
@@ -11,6 +12,8 @@ import { getEnv } from '@/lib/core/config/env'
 import { executeStructuredActorRequest } from '@/providers'
 import type { ProviderId, ProviderResponse } from '@/providers/types'
 import { getProviderFromModel } from '@/providers/utils'
+
+const logger = createLogger('LocalCanvasAgentModelConfig')
 
 function normalizeProvider(value: string | undefined): ProviderId | null {
   if (!value) return null
@@ -88,40 +91,79 @@ export async function executeLocalAgentModelRequest(
   config: LocalAgentModelConfig,
   request: LocalAgentModelRequest
 ): Promise<ProviderResponse> {
-  if (config.useContentCanvasTextResolver && !request.messages?.length) {
-    return executeContentCanvasTextRequest({
+  const startedAt = Date.now()
+  try {
+    if (config.useContentCanvasTextResolver && !request.messages?.length) {
+      const response = await executeContentCanvasTextRequest({
+        workspaceId: request.workspaceId,
+        model: config.model,
+        systemPrompt: request.systemPrompt,
+        prompt: request.prompt,
+        temperature: request.temperature,
+        maxTokens: request.maxTokens,
+        responseFormat: request.responseFormat,
+        abortSignal: request.abortSignal,
+      })
+      logger.info('Local canvas agent model request completed', {
+        workspaceId: request.workspaceId,
+        role: request.role,
+        model: config.model,
+        provider: 'content-canvas-text',
+        useContentCanvasTextResolver: true,
+        elapsedMs: Date.now() - startedAt,
+        finishReason: response.finishReason,
+        tokens: response.tokens,
+        responseChars: response.content?.length ?? 0,
+      })
+      return response
+    }
+
+    const provider =
+      config.provider ?? normalizeProvider(getProviderFromModel(config.model) ?? undefined)
+    if (!provider) {
+      throw new Error('Local canvas agent model provider is not configured')
+    }
+
+    const response = await executeStructuredActorRequest(provider, {
       workspaceId: request.workspaceId,
       model: config.model,
+      apiKey:
+        config.apiKey ??
+        (config.useContentCanvasTextResolver
+          ? resolveContentCanvasTextApiKey(config.model)
+          : undefined),
       systemPrompt: request.systemPrompt,
-      prompt: request.prompt,
       temperature: request.temperature,
       maxTokens: request.maxTokens,
       responseFormat: request.responseFormat,
       abortSignal: request.abortSignal,
+      messages: request.messages?.length
+        ? request.messages
+        : [{ role: 'user', content: request.prompt }],
     })
+    logger.info('Local canvas agent model request completed', {
+      workspaceId: request.workspaceId,
+      role: request.role,
+      model: config.model,
+      provider,
+      useContentCanvasTextResolver: config.useContentCanvasTextResolver === true,
+      elapsedMs: Date.now() - startedAt,
+      finishReason: response.finishReason,
+      tokens: response.tokens,
+      responseChars: response.content?.length ?? 0,
+    })
+    return response
+  } catch (error) {
+    logger.warn('Local canvas agent model request failed', {
+      workspaceId: request.workspaceId,
+      role: request.role,
+      model: config.model,
+      provider:
+        config.provider ?? normalizeProvider(getProviderFromModel(config.model) ?? undefined),
+      useContentCanvasTextResolver: config.useContentCanvasTextResolver === true,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
-
-  const provider =
-    config.provider ?? normalizeProvider(getProviderFromModel(config.model) ?? undefined)
-  if (!provider) {
-    throw new Error('Local canvas agent model provider is not configured')
-  }
-
-  return executeStructuredActorRequest(provider, {
-    workspaceId: request.workspaceId,
-    model: config.model,
-    apiKey:
-      config.apiKey ??
-      (config.useContentCanvasTextResolver
-        ? resolveContentCanvasTextApiKey(config.model)
-        : undefined),
-    systemPrompt: request.systemPrompt,
-    temperature: request.temperature,
-    maxTokens: request.maxTokens,
-    responseFormat: request.responseFormat,
-    abortSignal: request.abortSignal,
-    messages: request.messages?.length
-      ? request.messages
-      : [{ role: 'user', content: request.prompt }],
-  })
 }

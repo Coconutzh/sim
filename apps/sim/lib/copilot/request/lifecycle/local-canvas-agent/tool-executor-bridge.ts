@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import { executeCanvasTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-tools'
 import { executeContextTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-tools'
 import { executeMediaTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/media-tools'
@@ -16,6 +17,8 @@ import type {
   LocalCanvasToolName,
   LocalMediaToolName,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+
+const logger = createLogger('LocalCanvasAgentToolExecutor')
 
 function isCanvasToolName(toolName: LocalAgentToolCall['name']): toolName is LocalCanvasToolName {
   return toolName.startsWith('canvas.')
@@ -51,6 +54,7 @@ export async function executeLocalAgentTool(
   context: LocalAgentContext,
   call: LocalAgentToolCall
 ): Promise<LocalAgentToolResult> {
+  const startedAt = Date.now()
   const toolCallId = await emitLocalAgentToolCall({
     context: context.streamContext,
     options: context.options,
@@ -67,6 +71,13 @@ export async function executeLocalAgentTool(
       error: `Tool ${call.name} is not available for this request`,
       summary: `Tool ${call.name} is not available`,
     } satisfies LocalAgentToolResult
+    logger.warn('Local canvas agent tool unavailable', {
+      chatId: context.chatId,
+      workspaceId: context.workspaceId,
+      workflowId: context.workflowId,
+      toolName: call.name,
+      elapsedMs: Date.now() - startedAt,
+    })
     await emitLocalAgentToolResult({
       context: context.streamContext,
       options: context.options,
@@ -87,6 +98,14 @@ export async function executeLocalAgentTool(
       error,
       summary: `Tool ${call.name} input was invalid: ${error}`,
     } satisfies LocalAgentToolResult
+    logger.warn('Local canvas agent tool input invalid', {
+      chatId: context.chatId,
+      workspaceId: context.workspaceId,
+      workflowId: context.workflowId,
+      toolName: call.name,
+      elapsedMs: Date.now() - startedAt,
+      error,
+    })
     await emitLocalAgentToolResult({
       context: context.streamContext,
       options: context.options,
@@ -104,6 +123,15 @@ export async function executeLocalAgentTool(
       ? await executeMediaTool(context, { name: call.name, input: parsedInput.data })
       : await executeContextTool(context, { name: call.name, input: parsedInput.data })
   const result = validateToolOutput(call, rawResult)
+  logger.info('Local canvas agent tool executed', {
+    chatId: context.chatId,
+    workspaceId: context.workspaceId,
+    workflowId: context.workflowId,
+    toolName: call.name,
+    success: result.success,
+    elapsedMs: Date.now() - startedAt,
+    summary: result.summary,
+  })
   await emitLocalAgentToolResult({
     context: context.streamContext,
     options: context.options,

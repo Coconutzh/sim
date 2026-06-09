@@ -683,7 +683,11 @@ async function executeDecisionToolCall(params: {
     }
     const verificationInput = buildVerificationInputFromToolResult(call, result.output)
     if (verificationInput) {
-      params.state.pendingVerification = { input: verificationInput }
+      await executeImmediateVerification({
+        context: params.context,
+        state: params.state,
+        input: verificationInput,
+      })
     }
   }
 }
@@ -769,6 +773,20 @@ async function executePendingVerification(params: {
   params.state.pendingVerification = null
 }
 
+async function executeImmediateVerification(params: {
+  context: LocalAgentContext
+  state: ModelDrivenLoopState
+  input: Record<string, unknown>
+}): Promise<void> {
+  params.state.pendingVerification = null
+  const result = await executeLocalAgentTool(params.context, {
+    name: 'canvas.verify_patch',
+    input: params.input,
+  })
+  params.state.toolCallsExecuted += 1
+  params.state.observations.push(observationFromToolResult(result))
+}
+
 async function runModelDrivenLocalAgentToolLoop(
   context: LocalAgentContext,
   options: { allowInitialFallback: boolean }
@@ -846,6 +864,13 @@ async function runModelDrivenLocalAgentToolLoop(
     if (decision.type === 'final_answer') {
       if (state.pendingVerification) {
         await executePendingVerification({ context, state })
+        if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+          return {
+            plan: state.plan,
+            observations: state.observations,
+            answer: '已完成画布修改，并完成验证。',
+          }
+        }
         continue
       }
       if (decision.memoryUpdate) {
@@ -865,6 +890,13 @@ async function runModelDrivenLocalAgentToolLoop(
         plan: state.plan,
         observations: state.observations,
         answer: state.plan.clarificationQuestion ?? '',
+      }
+    }
+    if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+      return {
+        plan: state.plan,
+        observations: state.observations,
+        answer: '已完成画布修改，并完成验证。',
       }
     }
   }

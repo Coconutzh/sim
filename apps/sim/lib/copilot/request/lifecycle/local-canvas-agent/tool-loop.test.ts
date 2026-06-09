@@ -389,7 +389,8 @@ describe('local canvas tool loop', () => {
       name: 'canvas.verify_patch',
       input: { patch },
     })
-    expect(result.answer).toBe('已更新并验证布局。')
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(1)
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
   it('uses the pending verified patch when the model sends a malformed verify patch after apply', async () => {
@@ -438,7 +439,8 @@ describe('local canvas tool loop', () => {
       name: 'canvas.verify_patch',
       input: { patch },
     })
-    expect(result.answer).toBe('已更新并验证布局。')
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(1)
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
   it('returns a verified mutation completion when only the final model decision is unavailable', async () => {
@@ -571,7 +573,8 @@ describe('local canvas tool loop', () => {
       input: { patch },
     })
     expect(JSON.stringify(patch)).not.toContain('以高考为主题创建短视频内容链')
-    expect(result.answer).toBe('已创建并验证内容链。')
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(1)
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
   it('records model final-answer thread memory updates for persistence', async () => {
@@ -725,7 +728,8 @@ describe('local canvas tool loop', () => {
       expect.objectContaining({ name: 'canvas.generate_node_output' })
     )
     expect(JSON.stringify(patch)).not.toContain(caseData.message)
-    expect(result.answer).toBe('已更新并验证选中节点。')
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(2)
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
   it('analyzes selected media through the model tool loop without mutating canvas', async () => {
