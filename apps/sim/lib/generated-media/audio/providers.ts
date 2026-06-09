@@ -7,6 +7,7 @@ import type {
 
 const logger = createLogger('GeneratedAudioProviders')
 const EVOLINK_POLL_INTERVAL_MS = 1500
+const SIMPLE_MODE_PROMPT_MAX_CHARS = 420
 
 interface GenerateAudioWithProviderInput {
   model: AudioGenerationModelId
@@ -127,18 +128,45 @@ function getAudioResultUrls(payload: EvolinkTaskPayload) {
   })
 }
 
+function buildPromptWithReferenceContext({
+  prompt,
+  parameters,
+  referenceContext,
+}: Pick<GenerateAudioWithProviderInput, 'prompt' | 'parameters' | 'referenceContext'>): string {
+  const contextSections = (referenceContext?.text ?? [])
+    .map((section) => section.trim())
+    .filter((section) => section.length > 0)
+
+  if (parameters.customMode || contextSections.length === 0) {
+    return [prompt, ...contextSections].filter(Boolean).join('\n\n')
+  }
+
+  const basePrompt = prompt.trim()
+  if (basePrompt.length >= SIMPLE_MODE_PROMPT_MAX_CHARS) return prompt
+
+  let promptWithContext = basePrompt
+  for (const section of contextSections) {
+    const remaining = SIMPLE_MODE_PROMPT_MAX_CHARS - promptWithContext.length
+    if (remaining <= 2) break
+    const separator = promptWithContext ? '\n\n' : ''
+    const maxSectionLength = remaining - separator.length
+    if (maxSectionLength <= 0) break
+    promptWithContext += `${separator}${section.slice(0, maxSectionLength)}`
+  }
+  return promptWithContext
+}
+
 function buildEvolinkPayload({
   model,
   prompt,
   parameters,
   referenceContext,
 }: GenerateAudioWithProviderInput) {
-  const promptWithContext = [
+  const promptWithContext = buildPromptWithReferenceContext({
     prompt,
-    ...(referenceContext?.text ?? []).filter((section) => section.trim().length > 0),
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+    parameters,
+    referenceContext,
+  })
 
   const payload: Record<string, unknown> = {
     model,

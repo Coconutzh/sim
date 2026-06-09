@@ -173,6 +173,19 @@ function getBlockingFailures(observations: LocalAgentObservation[]): LocalAgentO
   })
 }
 
+function isReportedGenerationFailure(params: {
+  answer: string
+  failures: LocalAgentObservation[]
+}): boolean {
+  return params.failures.every((failure) => {
+    const summary = failure.summary.trim()
+    return (
+      (summary.length > 0 && params.answer.includes(summary)) ||
+      /(?:失败|未完成|部分|failed|failure|error|partial)/i.test(params.answer)
+    )
+  })
+}
+
 export async function verifyLocalAgentFinalAnswer(params: {
   context: LocalAgentContext
   plan: LocalAgentPlan
@@ -188,6 +201,18 @@ export async function verifyLocalAgentFinalAnswer(params: {
       hasSuccessfulVerifiedCanvasMutation(params.observations) &&
       answer &&
       !hasInternalFieldLeak(answer)
+    ) {
+      return answer
+    }
+    const onlyGenerationFailures = failed.every(
+      (observation) => observation.toolName === 'canvas.generate_node_output'
+    )
+    if (
+      onlyGenerationFailures &&
+      hasSuccessfulVerifiedCanvasMutation(params.observations) &&
+      answer &&
+      !hasInternalFieldLeak(answer) &&
+      isReportedGenerationFailure({ answer, failures: failed })
     ) {
       return answer
     }

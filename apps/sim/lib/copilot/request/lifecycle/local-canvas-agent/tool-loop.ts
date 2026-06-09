@@ -652,7 +652,7 @@ function buildMediaAnalysisFallbackAnswer(observations: LocalAgentObservation[])
 
   if (analysis.length || limitations) {
     return [
-      '我已读取媒体节点，但当前只能基于提示词、文件元数据或已存媒体上下文回答，不能声称看过真实媒体内容。',
+      '我已读取媒体节点，但当前只能基于提示词、文件元数据或已有媒体上下文回答，不能声称看过真实媒体内容。',
       ...analysis.map((line) => `- ${line}`),
       limitations ? `限制：${limitations}` : '',
     ]
@@ -668,10 +668,16 @@ function hasExplicitGenerationRequest(context: LocalAgentContext, plan: LocalAge
   if (plan.userIntent === 'generate_output') return true
   const message = context.message
   return (
-    /(?:生成|生图|出图|出视频|出音频|写出|产出|渲染).{0,12}(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|image|video|audio|text)/i.test(
+    /(?:generate|render|produce).{0,24}(?:output|content|node|image|picture|video|audio|text|media)/i.test(
       message
     ) ||
-    /(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|image|video|audio|text).{0,12}(?:生成|产出|渲染)/i.test(
+    /(?:output|content|node|image|picture|video|audio|text|media).{0,24}(?:generate|render|produce)/i.test(
+      message
+    ) ||
+    /(?:生成|生图|出图|出视频|出音频|写出|产出|渲染).{0,12}(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|节点|image|video|audio|text|output)/i.test(
+      message
+    ) ||
+    /(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|节点|image|video|audio|text|output).{0,12}(?:生成|产出|渲染)/i.test(
       message
     ) ||
     /(?:直接|自动|顺便|并|同时).{0,8}(?:生成|产出|渲染)/i.test(message)
@@ -752,15 +758,17 @@ function orderGenerationCandidatesByReferences(
 }
 
 function buildVerifiedCompletionAnswer(observations: LocalAgentObservation[]): string {
+  const generatedCount = observations.filter(
+    (observation) => observation.success && observation.toolName === 'canvas.generate_node_output'
+  ).length
   const generationFailure = observations.find(
     (observation) => observation.toolName === 'canvas.generate_node_output' && !observation.success
   )
   if (generationFailure) {
-    return `画布修改已写入并完成验证，但自动生成节点内容时失败：${generationFailure.summary}`
+    return generatedCount > 0
+      ? `已完成画布修改，并成功生成 ${generatedCount} 个节点内容；但自动生成部分节点时失败：${generationFailure.summary}`
+      : `画布修改已写入并完成验证，但自动生成节点内容时失败：${generationFailure.summary}`
   }
-  const generatedCount = observations.filter(
-    (observation) => observation.success && observation.toolName === 'canvas.generate_node_output'
-  ).length
   if (generatedCount > 0) {
     return `已完成画布修改、生成 ${generatedCount} 个节点内容，并完成验证。`
   }
@@ -790,7 +798,7 @@ async function executeAutoGenerationCandidates(params: {
     })
     params.state.toolCallsExecuted += 1
     params.state.observations.push(observationFromToolResult(result))
-    if (!result.success) break
+    if (!result.success) continue
 
     const verificationInput = buildVerificationInputFromToolResult(
       { name: 'canvas.generate_node_output', input: { nodeId } },

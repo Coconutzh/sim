@@ -121,6 +121,58 @@ describe('local canvas verifier', () => {
     expect(answer).not.toContain('已生成内容并写回')
   })
 
+  it('keeps partial-generation answers when provider failure is reported', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Create and generate a content chain',
+      risk: 'medium',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['Patch is applied and generated outputs are reported'],
+    }
+
+    const answer = await verifyLocalAgentFinalAnswer({
+      context: buildContext(),
+      plan,
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Applied canvas patch',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:01.000Z',
+          summary: 'Verified canvas patch',
+        },
+        {
+          toolName: 'canvas.generate_node_output',
+          success: true,
+          timestamp: '2026-06-06T00:00:02.000Z',
+          summary: 'Generated output for image node',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:03.000Z',
+          summary: 'Verified generated file writeback',
+        },
+        {
+          toolName: 'canvas.generate_node_output',
+          success: false,
+          timestamp: '2026-06-06T00:00:04.000Z',
+          summary: 'Video provider quota exhausted',
+        },
+      ],
+      answer:
+        '已完成画布修改，并成功生成 1 个节点内容；但自动生成部分节点时失败：Video provider quota exhausted',
+    })
+
+    expect(answer).toContain('成功生成 1 个节点内容')
+    expect(answer).toContain('Video provider quota exhausted')
+    expect(answer).not.toContain('安全边界')
+  })
   it('keeps verified mutation answers when a later decision JSON parse failed', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Update selected text node',

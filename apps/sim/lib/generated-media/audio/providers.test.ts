@@ -106,6 +106,47 @@ describe('generateAudioWithProvider', () => {
     expect(result.buffer.equals(Buffer.from('audio-binary'))).toBe(true)
   })
 
+  it('bounds appended reference context for simple Suno prompts', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-audio-context',
+          status: 'SUCCEEDED',
+          results: ['https://example.com/song-context.mp3'],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'audio/mpeg' }),
+        arrayBuffer: async () => Buffer.from('audio-binary'),
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateAudioWithProvider } = await import('@/lib/generated-media/audio/providers')
+    await generateAudioWithProvider({
+      model: 'suno-v5-beta',
+      prompt: 'Relaxing acoustic guitar and soft piano.',
+      parameters: {
+        customMode: false,
+        instrumental: false,
+        style: '',
+        title: '',
+        negativeTags: '',
+        vocalGender: '',
+      },
+      referenceContext: {
+        text: ['Reference script: '.concat('forest afternoon tea '.repeat(80))],
+      },
+    })
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(String(payload.prompt).length).toBeLessThanOrEqual(500)
+    expect(payload.prompt).toContain('Relaxing acoustic guitar and soft piano.')
+  })
+
   it('maps custom mode fields and fails when polling returns FAILED', async () => {
     const fetchMock = vi
       .fn()

@@ -627,6 +627,114 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已完成画布修改、生成 3 个节点内容，并完成验证。')
   })
 
+  it('auto-generates when an English request asks to generate every node output', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'script',
+          kind: 'text' as const,
+          title: 'Script',
+          fields: { contentHtml: '<p>Forest afternoon tea script.</p>' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'visual',
+          kind: 'image' as const,
+          title: 'Main Visual',
+          fields: { aiPrompt: 'Forest afternoon tea main visual.' },
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'visual',
+          sourceNodeId: 'script',
+          role: 'text_context' as const,
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: { patch },
+      userVisibleReason: 'I will create the content nodes and generate their outputs.',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          verification: { success: true },
+          machineSummary: {
+            createdNodeMap: {
+              script: 'real-script-id',
+              visual: 'real-image-id',
+            },
+            generationCandidates: [
+              { nodeId: 'real-image-id', clientNodeId: 'visual', kind: 'image' },
+              { nodeId: 'real-script-id', clientNodeId: 'script', kind: 'text' },
+            ],
+            referenceChanges: [
+              {
+                type: 'add_content_reference',
+                consumerNodeId: 'visual',
+                sourceNodeId: 'script',
+                role: 'text_context',
+              },
+            ],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-script-id', kind: 'text', verifiedField: 'contentHtml' },
+        summary: 'Generated text',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated text',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-image-id', kind: 'image', verifiedField: 'file' },
+        summary: 'Generated image',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated image',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message:
+          'Create and generate a short-video content chain about forest afternoon tea. Generate every node output and write each result back to the canvas.',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(3, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-script-id' },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(5, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-image-id' },
+    })
+    expect(result.answer).toContain('2')
+  })
   it('does not auto-generate when the user explicitly forbids generation in an edit request', async () => {
     const patch = {
       operations: [
