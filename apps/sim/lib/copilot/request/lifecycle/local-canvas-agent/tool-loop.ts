@@ -554,6 +554,63 @@ function hasSuccessfulCanvasMutationAndVerify(observations: LocalAgentObservatio
   return hasMutation && hasVerification
 }
 
+function buildMediaAnalysisFallbackAnswer(observations: LocalAgentObservation[]): string | null {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  if (hasMutation) return null
+  const mediaObservation = [...observations]
+    .reverse()
+    .find(
+      (observation) => observation.success && observation.toolName === 'media.analyze_node_media'
+    )
+  if (!mediaObservation) return null
+
+  const output = asRecord(mediaObservation.output)
+  const access = asRecord(output.mediaContentAccess)
+  const diagnostics = asRecord(output.binaryAnalysisDiagnostics)
+  const analysis = Array.isArray(output.analysis)
+    ? output.analysis.map(asString).filter(Boolean).slice(0, 6)
+    : []
+  const file = asRecord(output.file)
+  const fileName = asString(file.name)
+  const limitations = asString(output.limitations)
+
+  if (diagnostics.truncated === true) {
+    const tokens = asRecord(diagnostics.tokens)
+    const finishReason = asString(diagnostics.finishReason)
+    const reasoning = typeof tokens.reasoning === 'number' ? tokens.reasoning : undefined
+    return [
+      '我已读取到选中的媒体节点，但视觉模型输出被截断，本次不能可靠描述真实图片内容。',
+      fileName ? `文件：${fileName}` : '',
+      finishReason ? `停止原因：${finishReason}` : '',
+      typeof reasoning === 'number' ? `隐藏推理 token：${reasoning}` : '',
+      '建议重试、提高视觉分析 token 预算，或切换到更稳定的图片理解模型。',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  if (access.canDescribeActualMedia === true && analysis.length) {
+    return ['我已完成媒体分析，结果如下：', ...analysis.map((line) => `- ${line}`)].join('\n')
+  }
+
+  if (analysis.length || limitations) {
+    return [
+      '我已读取媒体节点，但当前只能基于提示词、文件元数据或已存媒体上下文回答，不能声称看过真实媒体内容。',
+      ...analysis.map((line) => `- ${line}`),
+      limitations ? `限制：${limitations}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  return '我已读取媒体节点，但没有获得可用于描述真实媒体内容的分析结果。'
+}
+
 async function executeDecisionToolCall(params: {
   context: LocalAgentContext
   decision: Extract<LocalAgentDecision, { type: 'tool_call' }>
@@ -820,6 +877,14 @@ async function runModelDrivenLocalAgentToolLoop(
       plan: state.plan,
       observations: state.observations,
       answer: '已完成画布修改，并完成验证。',
+    }
+  }
+  const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)
+  if (mediaFallbackAnswer) {
+    return {
+      plan: state.plan,
+      observations: state.observations,
+      answer: mediaFallbackAnswer,
     }
   }
   state.observations.push(

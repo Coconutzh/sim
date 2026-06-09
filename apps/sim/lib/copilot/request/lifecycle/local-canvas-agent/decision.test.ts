@@ -269,6 +269,7 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('For selected-node edits')
     expect(prompt).toContain('update only the exact selected nodeId')
     expect(prompt).toContain('For media description')
+    expect(prompt).toContain('binaryAnalysisDiagnostics.truncated')
     expect(prompt).toContain('canDescribeActualMedia is false')
     expect(prompt).toContain('Do not force text->image->video->audio')
     expect(prompt).toContain('operations must be JSON objects, not JSON-encoded strings')

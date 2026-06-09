@@ -40,6 +40,22 @@ const MEDIA_ANALYSIS_GOALS = new Set<MediaAnalysisGoal>([
 ])
 const MAX_CONTEXT_CHARS = 3000
 const MAX_IMAGE_ANALYSIS_BYTES = 8 * 1024 * 1024
+const IMAGE_ANALYSIS_INITIAL_MAX_TOKENS = 4000
+const IMAGE_ANALYSIS_RETRY_MAX_TOKENS = 8000
+const MIN_RELIABLE_IMAGE_ANALYSIS_CHARS = 120
+
+interface ImageBinaryAnalysisResult {
+  content: string
+  truncated: boolean
+  attempts: number
+  finishReason?: string
+  tokens?: {
+    input?: number
+    output?: number
+    total?: number
+    reasoning?: number
+  }
+}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -136,6 +152,21 @@ function resolveAnalysisGoal(input: Record<string, unknown>): MediaAnalysisGoal 
     : 'describe'
 }
 
+function isLengthFinishReason(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase()
+  return (
+    normalized === 'length' || normalized === 'max_tokens' || normalized === 'max_output_tokens'
+  )
+}
+
+function isImageAnalysisTruncated(result: ImageBinaryAnalysisResult): boolean {
+  if (isLengthFinishReason(result.finishReason)) return true
+  if (!result.content) return false
+  const trimmed = result.content.trim()
+  const hasTerminalPunctuation = /[。.!！?？）)"'”’]$/.test(trimmed)
+  return trimmed.length < MIN_RELIABLE_IMAGE_ANALYSIS_CHARS && !hasTerminalPunctuation
+}
+
 function buildMediaContentAccess(params: { mode: MediaAnalysisMode; hasFile: boolean }): {
   hasFile: boolean
   binaryFetched: boolean
@@ -187,7 +218,7 @@ function buildAnalysisLines(params: {
   detail: CanvasNodeDetail
   file: Record<string, unknown> | null
   storedContext: string
-  binaryAnalysis: string
+  binaryAnalysis: ImageBinaryAnalysisResult
   promptField: { field: string; value: string }
   analysisGoal: MediaAnalysisGoal
   question: string
@@ -209,8 +240,22 @@ function buildAnalysisLines(params: {
   if (params.storedContext) {
     lines.push(`可用的已存媒体上下文：${params.storedContext}`)
   }
-  if (params.binaryAnalysis) {
-    lines.push(`基于真实图片二进制内容的模型分析：${params.binaryAnalysis}`)
+  if (params.binaryAnalysis.content && !params.binaryAnalysis.truncated) {
+    lines.push(`基于真实图片二进制内容的模型分析：${params.binaryAnalysis.content}`)
+  } else if (params.binaryAnalysis.truncated) {
+    lines.push(
+      [
+        '已尝试读取真实图片二进制内容，但视觉模型输出疑似被截断，不能作为可靠画面描述。',
+        params.binaryAnalysis.finishReason
+          ? `finishReason=${params.binaryAnalysis.finishReason}`
+          : '',
+        typeof params.binaryAnalysis.tokens?.reasoning === 'number'
+          ? `reasoningTokens=${params.binaryAnalysis.tokens.reasoning}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('；')
+    )
   }
   if (params.question) lines.push(`用户关注点：${params.question}`)
   return lines
@@ -237,57 +282,85 @@ async function analyzeImageBinary(params: {
   promptField: { field: string; value: string }
   analysisGoal: MediaAnalysisGoal
   question: string
-}): Promise<string> {
-  if (params.detail.kind !== 'image' || !params.file) return ''
-  if (!supportsImageMessageParts(params.context)) return ''
+}): Promise<ImageBinaryAnalysisResult> {
+  const emptyResult: ImageBinaryAnalysisResult = { content: '', truncated: false, attempts: 0 }
+  if (params.detail.kind !== 'image' || !params.file) return emptyResult
+  if (!supportsImageMessageParts(params.context)) return emptyResult
   const mimeType = getMimeType(params.file)
-  if (!mimeType.startsWith('image/')) return ''
+  if (!mimeType.startsWith('image/')) return emptyResult
   try {
     const buffer = await fetchMediaBuffer({
       detail: params.detail,
       file: params.file,
     })
-    if (!buffer) return ''
-    if (buffer.length > MAX_IMAGE_ANALYSIS_BYTES) return ''
-    const response = await executeLocalAgentModelRequest(params.context.model, {
-      role: 'decision',
-      workspaceId: params.context.workspaceId,
-      systemPrompt: buildLocalAgentRoleSystemPrompt({
-        context: params.context,
+    if (!buffer) return emptyResult
+    if (buffer.length > MAX_IMAGE_ANALYSIS_BYTES) return emptyResult
+
+    const requestAnalysis = async (
+      maxTokens: number,
+      attempt: number
+    ): Promise<ImageBinaryAnalysisResult> => {
+      const response = await executeLocalAgentModelRequest(params.context.model, {
         role: 'decision',
-        roleInstruction:
-          'Analyze the provided image for a local canvas media tool. Return concise factual observations only. Do not mention hidden storage paths or internal identifiers.',
-      }),
-      prompt: params.question,
-      temperature: 0,
-      maxTokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: null,
-          parts: [
-            {
-              type: 'text',
-              text: [
-                `Analysis goal: ${params.analysisGoal}`,
-                `User question: ${params.question}`,
-                params.promptField.value
-                  ? `Generation prompt: ${params.promptField.value}`
-                  : 'No generation prompt is available.',
-                'Describe only what can be inferred from the image and prompt.',
-              ].join('\n'),
-            },
-            {
-              type: 'image',
-              mimeType,
-              data: buffer.toString('base64'),
-            },
-          ],
-        },
-      ],
-      abortSignal: params.context.options.abortSignal,
-    })
-    return clip(response.content?.trim() ?? '', MAX_CONTEXT_CHARS)
+        workspaceId: params.context.workspaceId,
+        systemPrompt: buildLocalAgentRoleSystemPrompt({
+          context: params.context,
+          role: 'decision',
+          roleInstruction:
+            'Analyze the provided image for a local canvas media tool. Return concise factual observations only. Do not mention hidden storage paths or internal identifiers.',
+        }),
+        prompt: params.question,
+        temperature: 0,
+        maxTokens,
+        messages: [
+          {
+            role: 'user',
+            content: null,
+            parts: [
+              {
+                type: 'text',
+                text: [
+                  `Analysis goal: ${params.analysisGoal}`,
+                  `User question: ${params.question}`,
+                  params.promptField.value
+                    ? `Generation prompt: ${params.promptField.value}`
+                    : 'No generation prompt is available.',
+                  'Describe only what can be inferred from the image and prompt.',
+                  'Return 3-6 concise factual bullet points in Chinese.',
+                ].join('\n'),
+              },
+              {
+                type: 'image',
+                mimeType,
+                data: buffer.toString('base64'),
+              },
+            ],
+          },
+        ],
+        abortSignal: params.context.options.abortSignal,
+      })
+      const result: ImageBinaryAnalysisResult = {
+        content: clip(response.content?.trim() ?? '', MAX_CONTEXT_CHARS),
+        truncated: false,
+        attempts: attempt,
+        finishReason: response.finishReason,
+        tokens: response.tokens
+          ? {
+              input: response.tokens.input,
+              output: response.tokens.output,
+              total: response.tokens.total,
+              reasoning: response.tokens.reasoning,
+            }
+          : undefined,
+      }
+      return { ...result, truncated: isImageAnalysisTruncated(result) }
+    }
+
+    const first = await requestAnalysis(IMAGE_ANALYSIS_INITIAL_MAX_TOKENS, 1)
+    if (!isImageAnalysisTruncated(first)) return first
+    const second = await requestAnalysis(IMAGE_ANALYSIS_RETRY_MAX_TOKENS, 2)
+    if (!isImageAnalysisTruncated(second)) return second
+    return second
   } catch (error) {
     logger.warn('Failed to analyze image binary for local canvas media node', {
       workspaceId: params.context.workspaceId,
@@ -295,7 +368,7 @@ async function analyzeImageBinary(params: {
       nodeId: params.detail.id,
       error: toError(error).message,
     })
-    return ''
+    return emptyResult
   }
 }
 
@@ -328,7 +401,13 @@ async function analyzeNodeMedia(
     analysisGoal,
     question,
   })
-  const mode = resolveAnalysisMode({ file: fileRecord, storedContext, binaryAnalysis })
+  const reliableBinaryAnalysis =
+    binaryAnalysis.content && !binaryAnalysis.truncated ? binaryAnalysis.content : ''
+  const mode = resolveAnalysisMode({
+    file: fileRecord,
+    storedContext,
+    binaryAnalysis: reliableBinaryAnalysis,
+  })
   const mediaContentAccess = buildMediaContentAccess({
     mode,
     hasFile: Boolean(fileRecord),
@@ -356,8 +435,21 @@ async function analyzeNodeMedia(
       analysisGoal,
       question,
     }),
-    limitations:
-      mode === 'stored_media_context'
+    ...(binaryAnalysis.attempts > 0
+      ? {
+          binaryAnalysisDiagnostics: {
+            attempted: true,
+            attempts: binaryAnalysis.attempts,
+            truncated: binaryAnalysis.truncated,
+            finishReason: binaryAnalysis.finishReason,
+            tokens: binaryAnalysis.tokens,
+            contentLength: binaryAnalysis.content.length,
+          },
+        }
+      : {}),
+    limitations: binaryAnalysis.truncated
+      ? 'Image binary analysis was attempted but the vision model output was truncated; analysis is downgraded to safe file metadata and prompt only.'
+      : mode === 'stored_media_context'
         ? 'Analysis uses stored media context and metadata available in the workflow.'
         : mode === 'binary_image_analysis'
           ? 'Analysis uses fetched image bytes and a vision model response; storage paths remain hidden.'

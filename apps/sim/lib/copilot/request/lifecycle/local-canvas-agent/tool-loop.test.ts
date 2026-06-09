@@ -794,6 +794,86 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toContain('高考冲刺主题')
   })
 
+  it('falls back to media analysis output when final decision JSON fails after read-only media analysis', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.read_selected_nodes',
+        toolInput: {},
+        userVisibleReason: '我先读取当前选中的媒体节点。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'media.analyze_node_media',
+        toolInput: { nodeId: 'image-1', analysisGoal: 'describe' },
+        userVisibleReason: '我会分析这个图片节点。',
+        risk: 'low',
+      })
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 700'))
+      .mockRejectedValueOnce(
+        new Error('Invalid AgentDecision: Invalid input: expected object, received null')
+      )
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.read_selected_nodes',
+        success: true,
+        output: {
+          nodes: [{ id: 'image-1', kind: 'image', file: { name: 'screen.png' } }],
+        },
+        summary: 'Read selected image node with file',
+      })
+      .mockResolvedValueOnce({
+        name: 'media.analyze_node_media',
+        success: true,
+        output: {
+          nodeId: 'image-1',
+          kind: 'image',
+          title: 'Screen',
+          analysisMode: 'file_metadata',
+          analysisGoal: 'describe',
+          hasFile: true,
+          mediaContentAccess: {
+            hasFile: true,
+            binaryFetched: false,
+            contentEvidence: 'file_metadata_only',
+            canDescribeActualMedia: false,
+            safeDescriptionScope:
+              'May describe file metadata and prompts only; do not claim to have seen or heard the media content.',
+          },
+          file: { name: 'screen.png', type: 'image/png' },
+          analysis: [
+            '已尝试读取真实图片二进制内容，但视觉模型输出疑似被截断，不能作为可靠画面描述。',
+          ],
+          limitations:
+            'Image binary analysis was attempted but the vision model output was truncated; analysis is downgraded to safe file metadata and prompt only.',
+          binaryAnalysisDiagnostics: {
+            attempted: true,
+            attempts: 2,
+            truncated: true,
+            finishReason: 'length',
+            tokens: { reasoning: 7950 },
+            contentLength: 54,
+          },
+        },
+        summary: 'Analyzed image node "Screen" (file_metadata, with file)',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['image-1'],
+        message: '描述这张图片。',
+      })
+    )
+
+    expect(result.answer).toContain('视觉模型输出被截断')
+    expect(result.answer).toContain('停止原因：length')
+    expect(result.answer).toContain('隐藏推理 token：7950')
+    expect(result.answer).not.toContain('Unterminated string')
+    expect(mockBuildLocalAgentAnswer).not.toHaveBeenCalled()
+  })
+
   it('blocks model mutation calls when intent policy is read-only', async () => {
     mockRequestLocalAgentDecision
       .mockResolvedValueOnce({

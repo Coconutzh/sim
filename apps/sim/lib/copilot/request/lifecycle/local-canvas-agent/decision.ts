@@ -329,7 +329,7 @@ function buildPatchProtocolContext(): string {
     '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
     '- Patch examples are recipes, not fixed templates. Adapt node count, kinds, fields, and edges to the user request and current canvas.',
     '- For selected-node edits: call canvas.read_selected_nodes first, then update only the exact selected nodeId and editable fields.',
-    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media. If contentEvidence is binary_image_analysis, you may describe the fetched image evidence returned by the tool.',
+    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If output.binaryAnalysisDiagnostics.truncated is true, say the vision model output was truncated and do not describe actual media content. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media. If contentEvidence is binary_image_analysis, you may describe the fetched image evidence returned by the tool.',
     '- For content chains: choose the structure from the request. Do not force text->image->video->audio unless that matches the requested workflow.',
     'Writable content fields:',
     '- text: contentHtml, aiPrompt, aiModel, blockStyle, backgroundColor, fontSize, width, height.',

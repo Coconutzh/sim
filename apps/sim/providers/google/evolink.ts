@@ -108,12 +108,7 @@ function parseEvolinkAssistantContent(content: unknown): string {
         return part
       }
 
-      if (
-        part &&
-        typeof part === 'object' &&
-        'text' in part &&
-        typeof part.text === 'string'
-      ) {
+      if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
         return part.text
       }
 
@@ -210,19 +205,27 @@ export async function executeEvolinkGeminiFallback(
   }
 
   const content = parseEvolinkAssistantContent(responsePayload?.choices?.[0]?.message?.content)
+  const finishReason = responsePayload?.choices?.[0]?.finish_reason
+  const reasoningTokens =
+    responsePayload?.usage?.completion_tokens_details?.reasoning_tokens ??
+    responsePayload?.usage?.completion_tokens_details?.reasoningTokens
   if (!content) {
     logger.warn('Evolink Gemini fallback returned no assistant text', {
       model: request.model,
+      finishReason,
+      usage: responsePayload?.usage,
     })
   }
 
   return {
     content,
     model: request.model,
+    finishReason: typeof finishReason === 'string' ? finishReason : undefined,
     tokens: {
       input: responsePayload?.usage?.prompt_tokens,
       output: responsePayload?.usage?.completion_tokens,
       total: responsePayload?.usage?.total_tokens,
+      ...(typeof reasoningTokens === 'number' ? { reasoning: reasoningTokens } : {}),
     },
   }
 }

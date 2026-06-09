@@ -255,6 +255,110 @@ describe('local canvas media tools', () => {
     expect(JSON.stringify(result.output)).not.toContain('workspace/generated/hero.png')
   })
 
+  it('retries truncated image analysis with a higher token budget', async () => {
+    mockReadCanvasNodeDetail.mockReturnValue(buildImageDetail())
+    mockExecuteLocalAgentModelRequest
+      .mockResolvedValueOnce({
+        content: '这是一张软件界面截图，展示了',
+        finishReason: 'length',
+        tokens: { input: 1000, output: 20, total: 5000, reasoning: 3950 },
+      })
+      .mockResolvedValueOnce({
+        content:
+          '画面中是一个网页应用界面截图，左侧是导航栏，右侧是分屏画布工作台。界面顶部有 Split view canvas workbench 标题，中间有 Personal draft 和 Team canvas 两个面板，整体是浅色后台管理界面。',
+        finishReason: 'stop',
+        tokens: { input: 1000, output: 180, total: 5200, reasoning: 3200 },
+      })
+
+    const result = await executeMediaTool(
+      buildContext({
+        message: '描述这张图片',
+        selectedNodeIds: ['image-1'],
+        model: { provider: 'google', model: 'gemini-2.5-flash', mode: 'structured' },
+      }),
+      {
+        name: 'media.analyze_node_media',
+        input: { nodeId: 'image-1', analysisGoal: 'describe' },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ maxTokens: 4000 })
+    )
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ maxTokens: 8000 })
+    )
+    expect(result.output).toMatchObject({
+      analysisMode: 'binary_image_analysis',
+      mediaContentAccess: {
+        binaryFetched: true,
+        contentEvidence: 'binary_image_analysis',
+        canDescribeActualMedia: true,
+      },
+      binaryAnalysisDiagnostics: {
+        attempted: true,
+        attempts: 2,
+        truncated: false,
+        finishReason: 'stop',
+        tokens: { reasoning: 3200 },
+      },
+    })
+    expect(JSON.stringify(result.output)).toContain('分屏画布工作台')
+  })
+
+  it('downgrades truncated image analysis instead of marking it as reliable binary evidence', async () => {
+    mockReadCanvasNodeDetail.mockReturnValue(buildImageDetail())
+    mockExecuteLocalAgentModelRequest
+      .mockResolvedValueOnce({
+        content: '这是一张软件界面截图，展示了',
+        finishReason: 'length',
+        tokens: { input: 1000, output: 20, total: 5000, reasoning: 3950 },
+      })
+      .mockResolvedValueOnce({
+        content: '这是一张软件界面截图，展示了一个名为 Split view',
+        finishReason: 'length',
+        tokens: { input: 1000, output: 40, total: 9000, reasoning: 7950 },
+      })
+
+    const result = await executeMediaTool(
+      buildContext({
+        message: '描述这张图片',
+        selectedNodeIds: ['image-1'],
+        model: { provider: 'google', model: 'gemini-2.5-flash', mode: 'structured' },
+      }),
+      {
+        name: 'media.analyze_node_media',
+        input: { nodeId: 'image-1', analysisGoal: 'describe' },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenCalledTimes(2)
+    expect(result.output).toMatchObject({
+      analysisMode: 'file_metadata',
+      mediaContentAccess: {
+        binaryFetched: false,
+        contentEvidence: 'file_metadata_only',
+        canDescribeActualMedia: false,
+      },
+      binaryAnalysisDiagnostics: {
+        attempted: true,
+        attempts: 2,
+        truncated: true,
+        finishReason: 'length',
+        tokens: { reasoning: 7950 },
+      },
+      limitations:
+        'Image binary analysis was attempted but the vision model output was truncated; analysis is downgraded to safe file metadata and prompt only.',
+    })
+    expect(JSON.stringify(result.output)).toContain('视觉模型输出疑似被截断')
+  })
+
   it('does not fetch image bytes when the model provider has no image message support', async () => {
     mockReadCanvasNodeDetail.mockReturnValue(buildImageDetail())
 
