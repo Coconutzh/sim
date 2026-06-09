@@ -113,6 +113,136 @@ function parseJsonObject(content: string): unknown {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function readFirst(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key]
+  }
+  return undefined
+}
+
+function readString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  const value = readFirst(record, keys)
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeDecisionType(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (['tool_call', 'call_tool', 'use_tool', 'tool'].includes(normalized)) return 'tool_call'
+  if (['tool_calls', 'parallel_tool_calls', 'call_tools', 'use_tools'].includes(normalized)) {
+    return 'tool_calls'
+  }
+  if (['ask_confirmation', 'confirm', 'confirmation'].includes(normalized)) {
+    return 'ask_confirmation'
+  }
+  if (['ask_clarification', 'clarify', 'clarification'].includes(normalized)) {
+    return 'ask_clarification'
+  }
+  if (['final_answer', 'answer', 'final'].includes(normalized)) return 'final_answer'
+  return undefined
+}
+
+function normalizeToolCallRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {}
+  return {
+    ...value,
+    toolName: readFirst(value, ['toolName', 'tool_name', 'name', 'tool']),
+    toolInput: readFirst(value, ['toolInput', 'tool_input', 'input', 'arguments', 'args']) ?? {},
+    userVisibleReason:
+      readString(value, ['userVisibleReason', 'user_visible_reason', 'reason']) ??
+      '调用工具读取或处理当前请求。',
+  }
+}
+
+function normalizePendingToolCall(value: unknown): unknown {
+  if (!isRecord(value)) return value
+  return {
+    ...value,
+    name: readFirst(value, ['name', 'toolName', 'tool_name', 'tool']),
+    input: readFirst(value, ['input', 'toolInput', 'tool_input', 'arguments', 'args']) ?? {},
+  }
+}
+
+function normalizeAgentDecisionInput(value: unknown): unknown {
+  const wrapped = isRecord(value)
+    ? (readFirst(value, ['decision', 'agentDecision', 'agent_decision']) ?? value)
+    : value
+  if (!isRecord(wrapped)) return wrapped
+
+  const type =
+    normalizeDecisionType(readString(wrapped, ['type', 'kind', 'action'])) ??
+    (readFirst(wrapped, ['toolCalls', 'tool_calls']) ? 'tool_calls' : undefined) ??
+    (readFirst(wrapped, ['toolName', 'tool_name', 'tool']) ? 'tool_call' : undefined) ??
+    (readFirst(wrapped, ['pendingToolCall', 'pending_tool_call'])
+      ? 'ask_confirmation'
+      : undefined) ??
+    (readString(wrapped, ['answer', 'finalAnswer', 'final_answer']) ? 'final_answer' : undefined) ??
+    (readString(wrapped, ['question']) ? 'ask_clarification' : undefined)
+
+  if (type === 'tool_call') {
+    return {
+      ...normalizeToolCallRecord(wrapped),
+      type,
+      risk: readFirst(wrapped, ['risk']) ?? 'low',
+    }
+  }
+
+  if (type === 'tool_calls') {
+    const rawToolCalls = readFirst(wrapped, ['toolCalls', 'tool_calls'])
+    return {
+      ...wrapped,
+      type,
+      toolCalls: Array.isArray(rawToolCalls) ? rawToolCalls.map(normalizeToolCallRecord) : [],
+      userVisibleReason:
+        readString(wrapped, ['userVisibleReason', 'user_visible_reason', 'reason']) ??
+        '并行读取当前请求所需的画布信息。',
+      risk: readFirst(wrapped, ['risk']) ?? 'low',
+    }
+  }
+
+  if (type === 'ask_confirmation') {
+    return {
+      ...wrapped,
+      type,
+      question:
+        readString(wrapped, ['question', 'confirmationQuestion', 'confirmation_question']) ??
+        '是否确认执行这次画布修改？',
+      pendingToolCall: normalizePendingToolCall(
+        readFirst(wrapped, ['pendingToolCall', 'pending_tool_call', 'pending'])
+      ),
+      risk: readFirst(wrapped, ['risk']) ?? 'medium',
+    }
+  }
+
+  if (type === 'ask_clarification') {
+    return {
+      ...wrapped,
+      type,
+      question:
+        readString(wrapped, ['question', 'clarificationQuestion', 'clarification_question']) ??
+        '请补充你希望我如何处理当前画布。',
+    }
+  }
+
+  if (type === 'final_answer') {
+    return {
+      ...wrapped,
+      type,
+      answer: readString(wrapped, ['answer', 'finalAnswer', 'final_answer', 'message']),
+      memoryUpdate: readFirst(wrapped, ['memoryUpdate', 'memory_update']),
+    }
+  }
+
+  return wrapped
+}
+
 function clip(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value
   return `${value.slice(0, Math.max(0, maxLength - 16))}\n...[truncated]`
@@ -256,7 +386,9 @@ function buildPatchProtocolContext(): string {
 }
 
 export function parseLocalAgentDecision(content: string): LocalAgentDecision {
-  const parsed = localAgentDecisionSchema.safeParse(parseJsonObject(content))
+  const parsed = localAgentDecisionSchema.safeParse(
+    normalizeAgentDecisionInput(parseJsonObject(content))
+  )
   if (!parsed.success) {
     const message = parsed.error.issues.map((issue) => issue.message).join('; ')
     throw new Error(`Invalid AgentDecision: ${message}`)

@@ -155,6 +155,9 @@ function verifyLayout(params: {
   references: Map<string, string>
   errors: string[]
 }): { success: boolean; actual: unknown; error?: string } {
+  const usesPatchCreatedNodes = params.operation.nodeIds?.length
+    ? params.operation.nodeIds.some((nodeId) => params.references.has(nodeId))
+    : params.references.size > 0
   const nodeIds = params.operation.nodeIds?.length
     ? params.operation.nodeIds.map((nodeId) => resolvePatchNodeId(nodeId, params.references))
     : params.snapshot.nodes.map((node) => node.id)
@@ -182,6 +185,50 @@ function verifyLayout(params: {
     return {
       success: true,
       actual: nodes.map((node) => ({ nodeId: node.id, position: node.position })),
+    }
+  }
+  if (usesPatchCreatedNodes) {
+    const failures: string[] = []
+    const seenGridPositions = new Set<string>()
+    const positions = nodes.map((node, index) => {
+      const finitePosition = Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
+      let success = finitePosition
+      if (index > 0 && finitePosition) {
+        const previous = nodes[index - 1]
+        if (params.operation.direction === 'vertical') {
+          success = node.position.y > previous.position.y
+        } else if (params.operation.direction === 'horizontal') {
+          success = node.position.x > previous.position.x
+        }
+      }
+      if (params.operation.direction === 'grid' && finitePosition) {
+        const gridPositionKey = `${node.position.x}:${node.position.y}`
+        success = !seenGridPositions.has(gridPositionKey)
+        seenGridPositions.add(gridPositionKey)
+      }
+      const error = !finitePosition
+        ? `Layout position for node "${node.id}" was not written after patch`
+        : !success
+          ? `Layout order for node "${node.id}" did not match ${params.operation.direction} layout after patch`
+          : undefined
+      if (error) failures.push(error)
+      return {
+        nodeId: node.id,
+        expected: {
+          direction: params.operation.direction,
+          orderIndex: index,
+          mode: 'directional_order',
+        },
+        actual: node.position,
+        success,
+        ...(error ? { error } : {}),
+      }
+    })
+    params.errors.push(...failures)
+    return {
+      success: failures.length === 0,
+      actual: positions,
+      ...(failures.length ? { error: failures.join('; ') } : {}),
     }
   }
   const startX = Math.min(...nodes.map((node) => node.position.x), 0)

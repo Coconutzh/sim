@@ -325,7 +325,10 @@ function normalizeCanvasPatchLike(value: unknown, depth = 0): LocalCanvasPatch |
   if (!value || typeof value !== 'object') return null
   const patchRecord = asRecord(value)
   if (Array.isArray((value as LocalCanvasPatch | undefined)?.operations)) {
-    return value as LocalCanvasPatch
+    return {
+      ...(value as LocalCanvasPatch),
+      operations: normalizePatchOperations((value as LocalCanvasPatch).operations),
+    }
   }
   const normalized =
     normalizeLegacyCanvasPatch(patchRecord) ??
@@ -339,6 +342,23 @@ function normalizeCanvasPatchLike(value: unknown, depth = 0): LocalCanvasPatch |
     }
   }
   return null
+}
+
+function normalizePatchOperations(operations: unknown[]): LocalCanvasPatchOperation[] {
+  return operations
+    .map((operation) => {
+      if (typeof operation === 'string') {
+        try {
+          return JSON.parse(operation) as unknown
+        } catch {
+          return null
+        }
+      }
+      return operation
+    })
+    .filter((operation): operation is LocalCanvasPatchOperation =>
+      Boolean(operation && typeof operation === 'object' && 'type' in operation)
+    )
 }
 
 function requirePatch(input: Record<string, unknown>): LocalCanvasPatch {

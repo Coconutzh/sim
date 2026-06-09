@@ -478,6 +478,85 @@ describe('local canvas patch verification', () => {
     )
   })
 
+  it('accepts autolayout-shifted positions for nodes created and laid out in the same patch', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'real-script-id',
+          name: '脚本',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 40, y: 80 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'real-visual-id',
+          name: '主视觉',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 520, y: 120 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'real-video-id',
+          name: '视频',
+          blockType: 'content',
+          kind: 'video',
+          position: { x: 980, y: 100 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const result = await verifyLocalCanvasPatch({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      selectedNodeIds: [],
+      patch: {
+        operations: [
+          { type: 'create_node', clientNodeId: 'script', kind: 'text', title: '脚本' },
+          { type: 'create_node', clientNodeId: 'visual', kind: 'image', title: '主视觉' },
+          { type: 'create_node', clientNodeId: 'video', kind: 'video', title: '视频' },
+          {
+            type: 'layout_nodes',
+            operationId: 'layout-created-chain',
+            direction: 'horizontal',
+            nodeIds: ['script', 'visual', 'video'],
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(result.operationResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: 'layout-created-chain',
+          operationType: 'layout_nodes',
+          success: true,
+          actual: expect.arrayContaining([
+            expect.objectContaining({
+              nodeId: 'real-visual-id',
+              expected: expect.objectContaining({
+                direction: 'horizontal',
+                mode: 'directional_order',
+              }),
+              actual: { x: 520, y: 120 },
+              success: true,
+            }),
+          ]),
+        }),
+      ])
+    )
+  })
+
   it('fails layout verification when positions do not match the requested direction', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',

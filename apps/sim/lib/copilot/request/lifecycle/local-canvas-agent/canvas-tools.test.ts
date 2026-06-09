@@ -819,6 +819,55 @@ describe('local canvas tools', () => {
     )
   })
 
+  it('normalizes stringified patch operations from model tool input', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.propose_patch',
+        input: {
+          patch: {
+            operations: [
+              JSON.stringify({
+                type: 'create_node',
+                clientNodeId: 'script',
+                kind: 'text',
+                title: '脚本',
+                fields: { contentHtml: '<p>火星露营脚本</p>' },
+              }),
+              JSON.stringify({
+                type: 'create_node',
+                clientNodeId: 'visual',
+                kind: 'image',
+                title: '主视觉',
+                fields: { aiPrompt: '火星露营主视觉' },
+              }),
+              JSON.stringify({
+                type: 'connect',
+                sourceNodeId: 'script',
+                targetNodeId: 'visual',
+              }),
+            ],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatchObject({
+      operationCount: 3,
+      validation: { valid: true },
+      patch: {
+        operations: [
+          expect.objectContaining({ type: 'create_node', clientNodeId: 'script' }),
+          expect.objectContaining({ type: 'create_node', clientNodeId: 'visual' }),
+          expect.objectContaining({ type: 'connect', sourceNodeId: 'script' }),
+        ],
+      },
+    })
+  })
+
   it('uses Chinese tool titles for user-visible canvas actions', () => {
     expect(CANVAS_TOOL_TITLES['canvas.read_summary']).toBe('读取画布')
     expect(CANVAS_TOOL_TITLES['canvas.apply_patch']).toBe('更新画布')

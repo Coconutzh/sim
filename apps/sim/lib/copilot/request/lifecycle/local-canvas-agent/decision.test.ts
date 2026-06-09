@@ -117,6 +117,48 @@ describe('local canvas agent decision', () => {
     })
   })
 
+  it('normalizes common model decision variants without changing tool policy', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        type: 'action',
+        tool_name: 'canvas.read_summary',
+        tool_input: {},
+        user_visible_reason: '先读取画布摘要。',
+      })
+    )
+
+    expect(decision).toEqual({
+      type: 'tool_call',
+      toolName: 'canvas.read_summary',
+      toolInput: {},
+      userVisibleReason: '先读取画布摘要。',
+      risk: 'low',
+    })
+  })
+
+  it('normalizes pending confirmation tool calls from model variants', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        kind: 'confirmation',
+        question: '确认创建这个内容链吗？',
+        pending_tool_call: {
+          tool_name: 'canvas.apply_patch',
+          tool_input: { patch: { operations: [] } },
+        },
+      })
+    )
+
+    expect(decision).toMatchObject({
+      type: 'ask_confirmation',
+      question: '确认创建这个内容链吗？',
+      pendingToolCall: {
+        name: 'canvas.apply_patch',
+        input: { patch: { operations: [] } },
+      },
+      risk: 'medium',
+    })
+  })
+
   it('budgets large tool outputs in the prompt with a stable output ref', () => {
     const observations: LocalAgentObservation[] = [
       {

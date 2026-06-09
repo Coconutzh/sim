@@ -1,6 +1,6 @@
 # Local Canvas Agent 阶段二代码验证与手工 Smoke 记录
 
-日期：2026-06-08
+日期：2026-06-08，2026-06-09 追加当前默认 `model_tool_loop` 回归证据
 
 工作区：`E:\project\sim`
 
@@ -80,7 +80,7 @@
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：19 files / 191 tests passed
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：19 files / 195 tests passed（2026-06-09 当前工作树）
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed
@@ -278,6 +278,51 @@
 - video file 仍是空 file-upload 占位（`value:null`），没有迟到写回。
 
 结论：S-06 的 abort/stop API 触发和 provider 长请求无迟到写回通过。浏览器 Stop 按钮本身已有 UI 单元测试覆盖，本 smoke 验证了真实 provider 链路的服务端行为。
+
+### 3.9 当前默认 `model_tool_loop` 回归 smoke
+
+日期：2026-06-09
+
+本轮针对模型输出容错和同 patch 新建节点 layout verify 做了修复后，重新跑了最小 API/SSE + Browser 回归。
+
+#### API/SSE
+
+- 命令：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tmp-local-canvas-agent-phase2-smoke.ps1`
+- 端口：`3018`
+- 复用 workflow：`a73bb44b-84c9-4ba1-90d6-d95782c13f41`
+- 新建 disposable workflow：`f6dba9e7-5aeb-48aa-91e3-1e22620efaf7`
+- 证据文件：
+  - `tmp-local-canvas-agent-phase2-smoke-3018.results.json`
+  - `tmp-local-canvas-agent-phase2-smoke-3018-responses/non_canvas_gaokao.sse`
+  - `tmp-local-canvas-agent-phase2-smoke-3018-responses/consult_xiaohongshu_cat.sse`
+  - `tmp-local-canvas-agent-phase2-smoke-3018-responses/mutation_mars_content_chain.sse`
+
+结果：
+
+- non-canvas：HTTP 200；无 `canvas.apply_patch` / `canvas.generate_node_output` / `canvas.verify_patch`；state hash 前后相同 `jkR54G6ACij8eLcQ1MpdjW7Gv9zlAlVXxvzg8/VH4fU=`。
+- consult：HTTP 200；无 `canvas.apply_patch` / `canvas.generate_node_output`；state hash 前后相同 `jkR54G6ACij8eLcQ1MpdjW7Gv9zlAlVXxvzg8/VH4fU=`。
+- mutation：HTTP 200；SSE tool events 包含 `canvas.apply_patch` 和 `canvas.verify_patch`；两者均 `status=success`；assistant 最终回复“已为您创建完成”。
+- mutation 后 state hash 从 `QBFtYLh4aFtzWaAwh8NIr6Dm03iVAtYudUoEqEwQ8XE=` 变为 `sxKFu24QwivflNLIT2/FzZUXUCyFCT1JX1ywE+ZIzEA=`。
+- mutation 后 workflow 为 5 blocks / 3 edges；SSE patch 创建 `text`、`image`、`video`、`audio` 四类 content 节点，连接顺序为 script -> visual -> video -> audio。
+- 本轮重点回归：模型把 `operations` 作为 stringified JSON array 传入时，`canvas.apply_patch` 能 normalize 并成功 verify；同 patch create + layout 不再因 targeted autolayout 改写位置而误报 `Layout position ... was not written`。
+
+注意：旧 smoke 脚本仍按旧 SSE parser 读取 `payload.channel`，因此 `eventCount/assistantText/toolNames` 摘要字段会显示空；本轮结论以 `.sse` 文件内的 `data: {"v":1,"type":...}` 事件为准。
+
+#### Browser
+
+- 命令：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tmp-local-canvas-agent-phase2-playwright-current.ps1`
+- 端口：`3034`
+- workflow：`f6dba9e7-5aeb-48aa-91e3-1e22620efaf7`
+- 证据文件：
+  - `tmp-local-canvas-agent-phase2-playwright-current-3034.results.json`
+  - `tmp-local-canvas-agent-phase2-playwright-current-3034.png`
+
+结果：
+
+- Playwright：`1 passed (1.6m)`。
+- ReactFlow DOM：`.react-flow` 1 个、`.react-flow__node` 5 个、`.react-flow__edge` 3 个。
+- DOM 文本包含 `火星露营`、脚本正文“逃离地球的喧嚣 / 星际之旅”，并显示 image/video/audio 三类 placeholder。
+- 浏览器控制台仍有 personal canvas shared-permissions 的 403，这是既有受控路径；不影响 ReactFlow DOM 同步。
 
 ## 4. 浏览器/真实 provider smoke 覆盖矩阵
 
