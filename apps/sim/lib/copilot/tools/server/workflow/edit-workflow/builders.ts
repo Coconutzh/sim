@@ -5,6 +5,7 @@ import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import {
   CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
   CONTENT_REFERENCE_TARGET_HANDLE_PREFIX,
+  type ContentReferenceAutoLinkType,
   createContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
@@ -452,7 +453,8 @@ export function createValidatedEdge(
   targetHandle: string,
   operationType: string,
   logger: ReturnType<typeof createLogger>,
-  skippedItems?: SkippedItem[]
+  skippedItems?: SkippedItem[],
+  autoLinkType?: ContentReferenceAutoLinkType
 ): boolean {
   if (!modifiedState.blocks[targetBlockId]) {
     logger.warn(`Target block "${targetBlockId}" not found. Edge skipped.`, {
@@ -540,6 +542,18 @@ export function createValidatedEdge(
 
   // Use normalized handle if available (e.g., 'if' -> 'condition-{uuid}')
   const finalSourceHandle = sourceValidation.normalizedHandle || sourceHandle
+  const edgeAlreadyExists = modifiedState.edges.some((edge: any) => {
+    const edgeAutoLinkType =
+      edge?.data && typeof edge.data === 'object' ? edge.data.autoLinkType : undefined
+    return (
+      edge.source === sourceBlockId &&
+      edge.target === targetBlockId &&
+      edge.sourceHandle === finalSourceHandle &&
+      edge.targetHandle === targetHandle &&
+      edgeAutoLinkType === autoLinkType
+    )
+  })
+  if (edgeAlreadyExists) return true
 
   modifiedState.edges.push(
     isContentReferenceHandlePair(finalSourceHandle, targetHandle)
@@ -549,6 +563,7 @@ export function createValidatedEdge(
           target: targetBlockId,
           sourceHandle: finalSourceHandle,
           targetHandle,
+          autoLinkType,
         })
       : {
           id: generateId(),
@@ -566,7 +581,7 @@ export function createValidatedEdge(
  * Adds connections as edges for a block.
  * Supports multiple target formats:
  * - String: "target-block-id"
- * - Object: { block: "target-block-id", handle?: "custom-target-handle" }
+ * - Object: { block: "target-block-id", handle?: "custom-target-handle", autoLinkType?: "video_first_frame" | "video_last_frame" }
  * - Array of strings or objects
  */
 export function addConnectionsAsEdges(
@@ -586,7 +601,11 @@ export function addConnectionsAsEdges(
 
     const sourceHandle = normalizeHandle(rawHandle)
 
-    const addEdgeForTarget = (targetBlock: string, targetHandle?: string) => {
+    const addEdgeForTarget = (
+      targetBlock: string,
+      targetHandle?: string,
+      autoLinkType?: ContentReferenceAutoLinkType
+    ) => {
       createValidatedEdge(
         modifiedState,
         blockId,
@@ -595,7 +614,8 @@ export function addConnectionsAsEdges(
         targetHandle || 'target',
         'add_edge',
         logger,
-        skippedItems
+        skippedItems,
+        autoLinkType
       )
     }
 
@@ -606,11 +626,11 @@ export function addConnectionsAsEdges(
         if (typeof target === 'string') {
           addEdgeForTarget(target)
         } else if (target?.block) {
-          addEdgeForTarget(target.block, target.handle)
+          addEdgeForTarget(target.block, target.handle, target.autoLinkType)
         }
       })
     } else if (typeof targets === 'object' && targets?.block) {
-      addEdgeForTarget(targets.block, targets.handle)
+      addEdgeForTarget(targets.block, targets.handle, targets.autoLinkType)
     }
   })
 }

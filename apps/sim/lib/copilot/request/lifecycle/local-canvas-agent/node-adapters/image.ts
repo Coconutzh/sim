@@ -53,6 +53,7 @@ export const imageNodeAdapter: CanvasNodeAdapter = {
         aiPrompt: getValue(node.values, 'aiPrompt', ''),
         aiModel: getValue(node.values, 'aiModel', 'jimeng-4.5'),
         aiAspectRatio: getValue(node.values, 'aiAspectRatio', 'auto'),
+        contentReferences: getValue(node.values, 'contentReferences', []),
       },
       file,
     })
@@ -63,6 +64,7 @@ export const imageNodeAdapter: CanvasNodeAdapter = {
       { id: 'aiPrompt', type: 'string' },
       { id: 'aiModel', type: 'string' },
       { id: 'aiAspectRatio', type: 'string' },
+      { id: 'contentReferences', type: 'array' },
     ]
   },
   buildCreateOperation(input) {

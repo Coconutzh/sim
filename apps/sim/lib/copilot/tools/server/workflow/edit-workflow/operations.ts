@@ -50,6 +50,17 @@ function normalizePosition(value: unknown): { x: number; y: number } | null {
   return { x, y }
 }
 
+function buildUniqueBlockName(blocks: Record<string, any>, requestedName: string, blockId: string) {
+  const baseName = requestedName.trim() || 'Block'
+  let candidate = baseName
+  let suffix = 2
+  while (findBlockWithDuplicateNormalizedName(blocks, candidate, blockId)) {
+    candidate = `${baseName} ${suffix}`
+    suffix += 1
+  }
+  return candidate
+}
+
 /**
  * Applies loop/parallel container config from `inputs` onto a block state (data.loopType, etc.).
  */
@@ -782,18 +793,22 @@ export function handleAddOperation(op: EditWorkflowOperation, ctx: OperationCont
   )
 
   if (conflictingBlock) {
-    logSkippedItem(skippedItems, {
-      type: 'duplicate_block_name',
-      operationType: 'add',
-      blockId: block_id,
-      reason: `Block name "${params.name}" conflicts with existing block "${conflictingBlock[1].name}"`,
-      details: {
-        requestedName: params.name,
-        conflictingBlockId: conflictingBlock[0],
-        conflictingBlockName: conflictingBlock[1].name,
-      },
-    })
-    return
+    if (params.dedupeName === true) {
+      params.name = buildUniqueBlockName(modifiedState.blocks, params.name, block_id)
+    } else {
+      logSkippedItem(skippedItems, {
+        type: 'duplicate_block_name',
+        operationType: 'add',
+        blockId: block_id,
+        reason: `Block name "${params.name}" conflicts with existing block "${conflictingBlock[1].name}"`,
+        details: {
+          requestedName: params.name,
+          conflictingBlockId: conflictingBlock[0],
+          conflictingBlockName: conflictingBlock[1].name,
+        },
+      })
+      return
+    }
   }
 
   // Special container types (loop, parallel) are not in the block registry but are valid

@@ -58,6 +58,7 @@ export const audioNodeAdapter: CanvasNodeAdapter = {
         audioPrompt: getValue(node.values, 'audioPrompt', ''),
         audioModel: getValue(node.values, 'audioModel', DEFAULT_AUDIO_MODEL),
         audioParameters: getObjectValue(node.values, 'audioParameters', DEFAULT_AUDIO_PARAMETERS),
+        contentReferences: getValue(node.values, 'contentReferences', []),
       },
       file,
     })
@@ -68,6 +69,7 @@ export const audioNodeAdapter: CanvasNodeAdapter = {
       { id: 'audioPrompt', type: 'string' },
       { id: 'audioModel', type: 'string' },
       { id: 'audioParameters', type: 'object' },
+      { id: 'contentReferences', type: 'array' },
     ]
   },
   buildCreateOperation(input) {

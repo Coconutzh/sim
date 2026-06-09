@@ -61,6 +61,7 @@ export const videoNodeAdapter: CanvasNodeAdapter = {
           duration: 5,
         }),
         videoFrameAspectRatioPreset: getValue(node.values, 'videoFrameAspectRatioPreset', '16:9'),
+        contentReferences: getValue(node.values, 'contentReferences', []),
       },
       file,
     })
@@ -73,6 +74,7 @@ export const videoNodeAdapter: CanvasNodeAdapter = {
       { id: 'videoMedia', type: 'array' },
       { id: 'videoParameters', type: 'object' },
       { id: 'videoFrameAspectRatioPreset', type: 'string' },
+      { id: 'contentReferences', type: 'array' },
     ]
   },
   buildCreateOperation(input) {

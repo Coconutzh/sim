@@ -13,6 +13,12 @@ import type {
   LocalCanvasNodeKind,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { getContentNodePresetForBlockType } from '@/lib/product/content-node-presets'
+import {
+  CONTENT_REFERENCE_EDGE_KIND,
+  CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
+  CONTENT_REFERENCE_TARGET_HANDLE_PREFIX,
+} from '@/lib/workflows/content-reference-edges'
+import { normalizeContentReferences } from '@/lib/workflows/content-references'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 
 export interface CanvasSummaryCache {
@@ -64,6 +70,18 @@ function inferNodeKind(blockType: string, values: Record<string, unknown>): Loca
   return preset?.id ?? 'generic_workflow_block'
 }
 
+function isContentReferenceHandlePair(edge: {
+  sourceHandle?: string
+  targetHandle?: string
+}): boolean {
+  return (
+    typeof edge.sourceHandle === 'string' &&
+    edge.sourceHandle.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX) &&
+    typeof edge.targetHandle === 'string' &&
+    edge.targetHandle.startsWith(CONTENT_REFERENCE_TARGET_HANDLE_PREFIX)
+  )
+}
+
 function normalizeBlock(id: string, rawBlock: unknown): CanvasNodeRecord | null {
   const block = asRecord(rawBlock)
   const type = typeof block.type === 'string' ? block.type : ''
@@ -76,6 +94,11 @@ function normalizeBlock(id: string, rawBlock: unknown): CanvasNodeRecord | null 
       return [key, 'value' in subBlock ? subBlock.value : value]
     })
   )
+  if ('contentReferences' in extractedValues) {
+    extractedValues.contentReferences = normalizeContentReferences(
+      extractedValues.contentReferences
+    )
+  }
   return {
     id,
     name: typeof block.name === 'string' ? block.name : id,
@@ -108,12 +131,26 @@ export async function loadCanvasSnapshot(params: {
       const source = typeof record.source === 'string' ? record.source : ''
       const target = typeof record.target === 'string' ? record.target : ''
       if (!source || !target) return []
+      const normalizedEdge = {
+        source,
+        target,
+        ...(typeof record.sourceHandle === 'string' ? { sourceHandle: record.sourceHandle } : {}),
+        ...(typeof record.targetHandle === 'string' ? { targetHandle: record.targetHandle } : {}),
+      }
+      const data = asRecord(record.data)
       return [
         {
-          source,
-          target,
-          ...(typeof record.sourceHandle === 'string' ? { sourceHandle: record.sourceHandle } : {}),
-          ...(typeof record.targetHandle === 'string' ? { targetHandle: record.targetHandle } : {}),
+          ...normalizedEdge,
+          ...(isContentReferenceHandlePair(normalizedEdge)
+            ? {
+                data: {
+                  ...data,
+                  kind: CONTENT_REFERENCE_EDGE_KIND,
+                },
+              }
+            : Object.keys(data).length
+              ? { data }
+              : {}),
         },
       ]
     }),

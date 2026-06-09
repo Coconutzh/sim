@@ -121,6 +121,7 @@ export function buildContentCreateOperation(
     params: {
       type: preset?.blockType ?? 'content',
       name: input.title,
+      dedupeName: true,
       position: input.position ?? { x: 0, y: 0 },
       inputs: {
         ...normalizeStructuredContentFields(defaults),

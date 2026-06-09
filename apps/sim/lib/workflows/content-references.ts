@@ -279,9 +279,21 @@ export function getModelReferenceCompatibility(params: {
 }
 
 export function normalizeContentReferences(value: unknown): ContentReferenceRecord[] {
-  if (!Array.isArray(value)) return []
+  const rawReferences =
+    typeof value === 'string' && value.trim()
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value) as unknown
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })()
+      : value
 
-  const normalized = value.flatMap((item) => {
+  if (!Array.isArray(rawReferences)) return []
+
+  const normalized = rawReferences.flatMap((item) => {
     if (!item || typeof item !== 'object') return []
     const candidate = item as Record<string, unknown>
     if (

@@ -214,6 +214,26 @@ describe('content reference prompt context', () => {
     ])
   })
 
+  it('normalizes references from JSON string values persisted in hidden subblocks', () => {
+    expect(
+      normalizeContentReferences(
+        JSON.stringify([
+          {
+            sourceBlockId: 'text-1',
+            sourceVariant: 'text',
+            role: 'text_context',
+          },
+        ])
+      )
+    ).toEqual([
+      {
+        sourceBlockId: 'text-1',
+        sourceVariant: 'text',
+        role: 'text_context',
+      },
+    ])
+  })
+
   it('builds structured prompt context from mixed references', () => {
     const context = buildContentReferencePromptContext({
       references: [

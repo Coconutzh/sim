@@ -77,6 +77,17 @@ const plannerResponseSchema = z.object({
   successCriteria: z.array(z.string()).catch([]),
   patch: z.unknown().optional(),
   generateNodeIds: z.array(z.string()).optional(),
+  generationTargets: z
+    .array(
+      z.object({
+        nodeId: z.string().optional(),
+        clientNodeId: z.string().optional(),
+        afterOperationId: z.string().optional(),
+        kind: z.string().optional(),
+        reason: z.string().optional(),
+      })
+    )
+    .optional(),
   readNodeIds: z.array(z.string()).optional(),
 })
 
@@ -509,9 +520,30 @@ function buildContentChainPlan(context: LocalAgentContext): LocalCanvasPatch {
         position: { x: 1080, y: 0 },
         fields: fields.audio,
       },
-      { type: 'connect', sourceNodeId: 'new_script', targetNodeId: 'new_image' },
-      { type: 'connect', sourceNodeId: 'new_image', targetNodeId: 'new_video' },
-      { type: 'connect', sourceNodeId: 'new_video', targetNodeId: 'new_audio' },
+      {
+        type: 'add_content_reference',
+        consumerNodeId: 'new_image',
+        sourceNodeId: 'new_script',
+        role: 'text_context',
+      },
+      {
+        type: 'add_content_reference',
+        consumerNodeId: 'new_video',
+        sourceNodeId: 'new_image',
+        role: 'video_first_frame',
+      },
+      {
+        type: 'add_content_reference',
+        consumerNodeId: 'new_video',
+        sourceNodeId: 'new_script',
+        role: 'text_context',
+      },
+      {
+        type: 'add_content_reference',
+        consumerNodeId: 'new_audio',
+        sourceNodeId: 'new_script',
+        role: 'text_context',
+      },
     ],
   }
 }
@@ -1458,6 +1490,8 @@ function buildPlannerPrompt(
     'Return JSON for a multi-step local canvas agent plan. Use high-level patch operations only. Do not output raw EditWorkflowOperation.',
     'You may make the plan more restrictive for safety, but you must not escalate read or mutation permissions beyond the immutable intent policy.',
     'When the user asks to inspect or summarize, prefer read tools and an answer step. When the user asks to modify, plan inspect -> apply_patch -> verify_patch.',
+    'When the user asks to create a node and generate real media, put create_node/update_node in patch and add generationTargets with the created clientNodeId; runtime will resolve it after verification.',
+    'Use add_content_reference/remove_content_reference for generation context/material dependencies. Use connect only for plain structural links.',
     'Use read_file for attached file context, query_knowledge for attached knowledge context, search_docs for documentation context, search_workspace for workspace inventory, and read_tasks for production task status.',
     'Use materialize_file only when the user explicitly asks to save/import an uploaded file. Use update_task_result or submit_task_result only with an explicit task id or bound task context.',
   ].join('\n\n')

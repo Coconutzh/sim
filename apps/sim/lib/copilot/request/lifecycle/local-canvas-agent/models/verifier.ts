@@ -89,6 +89,90 @@ function hasSuccessfulCanvasRead(observations: LocalAgentObservation[]): boolean
   )
 }
 
+function hasSuccessfulVerifiedCanvasMutation(observations: LocalAgentObservation[]): boolean {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  const hasVerification = observations.some(
+    (observation) => observation.success && observation.toolName === 'canvas.verify_patch'
+  )
+  return hasMutation && hasVerification
+}
+
+function getSupersededFailureCutoff(observations: LocalAgentObservation[]): number {
+  let lastSuccessfulMutationIndex = -1
+  let lastSuccessfulVerificationAfterMutationIndex = -1
+  observations.forEach((observation, index) => {
+    if (
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+    ) {
+      lastSuccessfulMutationIndex = index
+    }
+    if (
+      observation.success &&
+      observation.toolName === 'canvas.verify_patch' &&
+      lastSuccessfulMutationIndex !== -1
+    ) {
+      lastSuccessfulVerificationAfterMutationIndex = index
+    }
+  })
+  return lastSuccessfulVerificationAfterMutationIndex
+}
+
+function hasLaterSuccessfulObservation(params: {
+  observations: LocalAgentObservation[]
+  index: number
+  toolName: LocalAgentObservation['toolName']
+  beforeOrAtIndex: number
+}): boolean {
+  return params.observations.some(
+    (observation, index) =>
+      index > params.index &&
+      index <= params.beforeOrAtIndex &&
+      observation.success &&
+      observation.toolName === params.toolName
+  )
+}
+
+function canSupersedeFailure(params: {
+  observations: LocalAgentObservation[]
+  observation: LocalAgentObservation
+  index: number
+  cutoff: number
+}): boolean {
+  if (params.observation.toolName === 'decision') return true
+  if (
+    params.observation.toolName === 'canvas.apply_patch' ||
+    params.observation.toolName === 'canvas.verify_patch' ||
+    params.observation.toolName === 'canvas.generate_node_output'
+  ) {
+    return hasLaterSuccessfulObservation({
+      observations: params.observations,
+      index: params.index,
+      toolName: params.observation.toolName,
+      beforeOrAtIndex: params.cutoff,
+    })
+  }
+  return false
+}
+
+function getBlockingFailures(observations: LocalAgentObservation[]): LocalAgentObservation[] {
+  const cutoff = getSupersededFailureCutoff(observations)
+  return observations.filter((observation, index) => {
+    if (observation.success) return false
+    return !(
+      cutoff !== -1 &&
+      index < cutoff &&
+      canSupersedeFailure({ observations, observation, index, cutoff })
+    )
+  })
+}
+
 export async function verifyLocalAgentFinalAnswer(params: {
   context: LocalAgentContext
   plan: LocalAgentPlan
@@ -96,8 +180,17 @@ export async function verifyLocalAgentFinalAnswer(params: {
   answer: string
 }): Promise<string> {
   const answer = params.answer.trim()
-  const failed = params.observations.filter((observation) => !observation.success)
+  const failed = getBlockingFailures(params.observations)
   if (failed.length) {
+    const onlyDecisionFailures = failed.every((observation) => observation.toolName === 'decision')
+    if (
+      onlyDecisionFailures &&
+      hasSuccessfulVerifiedCanvasMutation(params.observations) &&
+      answer &&
+      !hasInternalFieldLeak(answer)
+    ) {
+      return answer
+    }
     const onlyOptionalReadFailures = failed.every((observation) =>
       isReadOnlyContextTool(observation.toolName)
     )

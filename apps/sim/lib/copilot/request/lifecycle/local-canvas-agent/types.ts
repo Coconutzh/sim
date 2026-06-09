@@ -5,6 +5,7 @@ import type {
 } from '@/lib/copilot/request/types'
 import type { EditWorkflowOperation } from '@/lib/copilot/tools/server/workflow/edit-workflow/types'
 import type { ContentNodePresetId } from '@/lib/product/content-node-presets'
+import type { ContentReferenceRole } from '@/lib/workflows/content-references'
 import type { ProviderId, ProviderRequest } from '@/providers/types'
 
 export type LocalAgentSessionScope = 'personal' | 'team' | 'task'
@@ -238,6 +239,8 @@ export type LocalCanvasPatchOperation =
   | LocalCanvasCreateNodeOperation
   | LocalCanvasUpdateNodeOperation
   | LocalCanvasConnectOperation
+  | LocalCanvasAddContentReferenceOperation
+  | LocalCanvasRemoveContentReferenceOperation
   | LocalCanvasLayoutOperation
 
 export interface LocalCanvasPatch {
@@ -270,6 +273,22 @@ export interface LocalCanvasConnectOperation {
   targetNodeId: string
 }
 
+export interface LocalCanvasAddContentReferenceOperation {
+  type: 'add_content_reference'
+  operationId?: string
+  consumerNodeId: string
+  sourceNodeId: string
+  role: ContentReferenceRole
+}
+
+export interface LocalCanvasRemoveContentReferenceOperation {
+  type: 'remove_content_reference'
+  operationId?: string
+  consumerNodeId: string
+  sourceNodeId: string
+  role?: ContentReferenceRole
+}
+
 export interface LocalCanvasLayoutOperation {
   type: 'layout_nodes'
   operationId?: string
@@ -277,13 +296,24 @@ export interface LocalCanvasLayoutOperation {
   direction: 'horizontal' | 'vertical' | 'grid'
 }
 
+export interface LocalCanvasGenerationTarget {
+  nodeId?: string
+  clientNodeId?: string
+  afterOperationId?: string
+  kind?: LocalCanvasNodeKind
+  reason?: string
+}
+
 export interface LocalCanvasVerifyOperationResult {
   operationId: string
   operationType: LocalCanvasPatchOperation['type'] | 'generation'
   nodeId?: string
+  clientNodeId?: string
   field?: string
   sourceNodeId?: string
   targetNodeId?: string
+  consumerNodeId?: string
+  role?: ContentReferenceRole
   expected?: unknown
   actual?: unknown
   success: boolean
@@ -299,6 +329,10 @@ export interface CanvasSnapshot {
     target: string
     sourceHandle?: string
     targetHandle?: string
+    data?: {
+      kind?: unknown
+      autoLinkType?: unknown
+    }
   }>
 }
 
@@ -325,6 +359,7 @@ export interface LocalAgentPlan {
   successCriteria: string[]
   patch?: LocalCanvasPatch
   generateNodeIds?: string[]
+  generationTargets?: LocalCanvasGenerationTarget[]
   readNodeIds?: string[]
 }
 

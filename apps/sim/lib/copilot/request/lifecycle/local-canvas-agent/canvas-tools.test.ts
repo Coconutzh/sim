@@ -769,6 +769,217 @@ describe('local canvas tools', () => {
     )
   })
 
+  it('applies explicit layout in a second write after node creation so autolayout cannot override it', async () => {
+    const nodes: CanvasSnapshot['nodes'] = []
+    mockLoadCanvasSnapshot.mockImplementation(async () => ({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes,
+      edges: [],
+    }))
+    mockEditWorkflowExecute.mockImplementation(
+      async (input: { operations: Array<Record<string, unknown>> }) => {
+        for (const operation of input.operations) {
+          const params =
+            operation.params && typeof operation.params === 'object'
+              ? (operation.params as Record<string, unknown>)
+              : {}
+          if (operation.operation_type === 'add') {
+            const inputs =
+              params.inputs && typeof params.inputs === 'object'
+                ? (params.inputs as Record<string, unknown>)
+                : {}
+            const position =
+              params.position && typeof params.position === 'object'
+                ? (params.position as { x: number; y: number })
+                : { x: 0, y: 0 }
+            nodes.push({
+              id: String(operation.block_id),
+              name: String(params.name),
+              blockType: String(params.type),
+              kind: String(inputs.contentVariant) as CanvasSnapshot['nodes'][number]['kind'],
+              position,
+              values: inputs,
+              raw: {},
+            })
+          }
+          if (operation.operation_type === 'edit' && params.position) {
+            const node = nodes.find((item) => item.id === operation.block_id)
+            if (node) node.position = params.position as { x: number; y: number }
+          }
+        }
+        return { success: true }
+      }
+    )
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.apply_patch',
+        input: {
+          patch: {
+            operations: [
+              { type: 'create_node', clientNodeId: 'script', kind: 'text', title: '脚本' },
+              { type: 'create_node', clientNodeId: 'visual', kind: 'image', title: '主视觉' },
+              { type: 'layout_nodes', nodeIds: ['script', 'visual'], direction: 'horizontal' },
+            ],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
+    expect(mockEditWorkflowExecute.mock.calls[0][0].operations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ operation_type: 'add' })])
+    )
+    expect(mockEditWorkflowExecute.mock.calls[1][0].operations).toEqual([
+      expect.objectContaining({ operation_type: 'edit', params: { position: { x: 0, y: 0 } } }),
+      expect.objectContaining({ operation_type: 'edit', params: { position: { x: 360, y: 0 } } }),
+    ])
+  })
+
+  it('materializes created node ids before verification when duplicate titles already exist', async () => {
+    const state: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'old-script',
+          name: 'Script',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: { contentVariant: 'text', contentHtml: '<p>old</p>', contentReferences: [] },
+          raw: {},
+        },
+        {
+          id: 'old-visual',
+          name: 'Visual',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 360, y: 0 },
+          values: { contentVariant: 'image', aiPrompt: 'old', contentReferences: [] },
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+    mockLoadCanvasSnapshot.mockImplementation(async () => JSON.parse(JSON.stringify(state)))
+    mockEditWorkflowExecute.mockImplementation(
+      async (input: { operations: Array<Record<string, unknown>> }) => {
+        for (const operation of input.operations) {
+          const params =
+            operation.params && typeof operation.params === 'object'
+              ? (operation.params as Record<string, unknown>)
+              : {}
+          if (operation.operation_type === 'add') {
+            const inputs =
+              params.inputs && typeof params.inputs === 'object'
+                ? (params.inputs as Record<string, unknown>)
+                : {}
+            const position =
+              params.position && typeof params.position === 'object'
+                ? (params.position as { x: number; y: number })
+                : { x: 0, y: 0 }
+            state.nodes.push({
+              id: String(operation.block_id),
+              name: String(params.name),
+              blockType: String(params.type),
+              kind: String(inputs.contentVariant) as CanvasSnapshot['nodes'][number]['kind'],
+              position,
+              values: inputs,
+              raw: {},
+            })
+          }
+          if (operation.operation_type === 'edit') {
+            const node = state.nodes.find((item) => item.id === operation.block_id)
+            const inputs =
+              params.inputs && typeof params.inputs === 'object'
+                ? (params.inputs as Record<string, unknown>)
+                : null
+            if (node && inputs) node.values = { ...node.values, ...inputs }
+            if (params.connections && typeof params.connections === 'object') {
+              state.edges = state.edges.filter((edge) => edge.source !== operation.block_id)
+              for (const [sourceHandle, targets] of Object.entries(
+                params.connections as Record<string, unknown>
+              )) {
+                const targetList = Array.isArray(targets) ? targets : [targets]
+                for (const target of targetList) {
+                  if (!target || typeof target !== 'object') continue
+                  const record = target as Record<string, unknown>
+                  state.edges.push({
+                    source: String(operation.block_id),
+                    target: String(record.block),
+                    sourceHandle,
+                    targetHandle: typeof record.handle === 'string' ? record.handle : 'target',
+                    data: { kind: 'content_reference' },
+                  })
+                }
+              }
+            }
+          }
+        }
+        return { success: true }
+      }
+    )
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.apply_patch',
+        input: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                clientNodeId: 'script',
+                kind: 'text',
+                title: 'Script',
+                fields: { contentHtml: '<p>new</p>' },
+              },
+              {
+                type: 'create_node',
+                clientNodeId: 'visual',
+                kind: 'image',
+                title: 'Visual',
+                fields: { aiPrompt: 'new image' },
+              },
+              {
+                type: 'add_content_reference',
+                consumerNodeId: 'visual',
+                sourceNodeId: 'script',
+                role: 'text_context',
+              },
+            ],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    const output = result.output as {
+      patch: { operations: Array<Record<string, unknown>> }
+      createdNodeMap: Record<string, string>
+    }
+    expect(output.createdNodeMap.script).toBeTruthy()
+    expect(output.createdNodeMap.visual).toBeTruthy()
+    expect(output.patch.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'create_node', clientNodeId: 'script', title: 'Script 2' }),
+        expect.objectContaining({ type: 'create_node', clientNodeId: 'visual', title: 'Visual 2' }),
+      ])
+    )
+    expect(state.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: output.createdNodeMap.visual,
+          target: output.createdNodeMap.script,
+        }),
+      ])
+    )
+  })
+
   it('normalizes direct nodes/edges patch proposals', async () => {
     mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
 

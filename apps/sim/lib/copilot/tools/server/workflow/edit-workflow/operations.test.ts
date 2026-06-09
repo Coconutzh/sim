@@ -2,11 +2,11 @@
  * @vitest-environment node
  */
 import { describe, expect, it, vi } from 'vitest'
-import { applyOperationsToWorkflowState } from './engine'
 import {
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
 } from '@/lib/workflows/content-reference-edges'
+import { applyOperationsToWorkflowState } from './engine'
 
 vi.mock('@/blocks/registry', () => ({
   getAllBlocks: () => [
@@ -31,6 +31,15 @@ vi.mock('@/blocks/registry', () => ({
         { id: 'language', type: 'dropdown' },
       ],
     },
+    {
+      type: 'content',
+      name: 'Content',
+      subBlocks: [
+        { id: 'contentVariant', type: 'short-input' },
+        { id: 'contentReferences', type: 'short-input' },
+        { id: 'videoMedia', type: 'short-input' },
+      ],
+    },
   ],
   getBlock: (type: string) => {
     const blocks: Record<string, any> = {
@@ -53,6 +62,15 @@ vi.mock('@/blocks/registry', () => ({
         subBlocks: [
           { id: 'code', type: 'code' },
           { id: 'language', type: 'dropdown' },
+        ],
+      },
+      content: {
+        type: 'content',
+        name: 'Content',
+        subBlocks: [
+          { id: 'contentVariant', type: 'short-input' },
+          { id: 'contentReferences', type: 'short-input' },
+          { id: 'videoMedia', type: 'short-input' },
         ],
       },
     }
@@ -528,5 +546,114 @@ describe('content reference edges', () => {
         },
       }),
     ])
+  })
+
+  it('preserves video frame auto link type on content reference edges', () => {
+    const workflow = {
+      blocks: {
+        'image-1': {
+          id: 'image-1',
+          type: 'content',
+          name: 'Image 1',
+          position: { x: 0, y: 0 },
+          enabled: true,
+          subBlocks: {
+            contentVariant: { id: 'contentVariant', type: 'short-input', value: 'image' },
+          },
+          outputs: {},
+          data: {},
+        },
+        'video-1': {
+          id: 'video-1',
+          type: 'content',
+          name: 'Video 1',
+          position: { x: 360, y: 0 },
+          enabled: true,
+          subBlocks: {
+            contentVariant: { id: 'contentVariant', type: 'short-input', value: 'video' },
+          },
+          outputs: {},
+          data: {},
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+
+    const { state, skippedItems } = applyOperationsToWorkflowState(workflow, [
+      {
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          connections: {
+            [getContentReferenceSourceHandleId('right')]: {
+              block: 'video-1',
+              handle: getContentReferenceTargetHandleId('left'),
+              autoLinkType: 'video_first_frame',
+            },
+          },
+        },
+      },
+    ])
+
+    expect(skippedItems).toHaveLength(0)
+    expect(state.edges).toEqual([
+      expect.objectContaining({
+        source: 'image-1',
+        target: 'video-1',
+        sourceHandle: getContentReferenceSourceHandleId('right'),
+        targetHandle: getContentReferenceTargetHandleId('left'),
+        type: 'workflowEdge',
+        data: {
+          kind: 'content_reference',
+          autoLinkType: 'video_first_frame',
+        },
+      }),
+    ])
+  })
+
+  it('preserves structured content reference fields instead of coercing them to strings', () => {
+    const workflow = {
+      blocks: {
+        'image-1': {
+          id: 'image-1',
+          type: 'content',
+          name: 'Image 1',
+          position: { x: 0, y: 0 },
+          enabled: true,
+          subBlocks: {
+            contentVariant: { id: 'contentVariant', type: 'short-input', value: 'image' },
+            contentReferences: { id: 'contentReferences', type: 'short-input', value: [] },
+          },
+          outputs: {},
+          data: {},
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+    const references = [
+      {
+        sourceBlockId: 'text-1',
+        sourceVariant: 'text',
+        role: 'text_context',
+      },
+    ]
+
+    const { state, skippedItems } = applyOperationsToWorkflowState(workflow, [
+      {
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          inputs: { contentReferences: references },
+        },
+      },
+    ])
+
+    expect(skippedItems).toHaveLength(0)
+    expect(state.blocks['image-1'].subBlocks.contentReferences.value).toEqual(references)
+    expect(state.blocks['image-1'].subBlocks.contentReferences.value).not.toBe('[object Object]')
   })
 })

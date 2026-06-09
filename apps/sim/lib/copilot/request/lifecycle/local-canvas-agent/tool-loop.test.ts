@@ -393,6 +393,129 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
+  it('auto-generates created media nodes after a verified patch when the user requested generation', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'hero_image',
+          kind: 'image' as const,
+          title: '主视觉',
+          fields: { aiPrompt: '一只橘猫在阳光厨房里跳起来。' },
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: { patch },
+      userVisibleReason: '我会创建图片节点并生成内容。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          verification: { success: true },
+          machineSummary: {
+            generationCandidates: [
+              { nodeId: 'real-image-id', clientNodeId: 'hero_image', kind: 'image' },
+            ],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-image-id', kind: 'image', verifiedField: 'file' },
+        summary: 'Generated image',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated image',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '新增图片节点并生成图片：一只橘猫在阳光厨房里跳起来。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(3, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-image-id' },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(4, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { generation: { nodeId: 'real-image-id', field: 'file' } },
+    })
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(1)
+    expect(result.answer).toBe('已完成画布修改、生成 1 个节点内容，并完成验证。')
+  })
+
+  it('does not auto-generate when the user only asked to write edited text back', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'update_node' as const,
+          nodeId: 'text-1',
+          fields: { contentHtml: '<p>更有冲击力的小红书文案</p>' },
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: { patch },
+      userVisibleReason: '我会把改写后的文案写回选中节点。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          verification: { success: true },
+          machineSummary: {
+            generationCandidates: [{ nodeId: 'text-1', kind: 'text' }],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['text-1'],
+        message: '把选中的小红书文案改得更有冲击力，写回这个节点。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledTimes(2)
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'canvas.generate_node_output' })
+    )
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
+  })
+
   it('uses the pending verified patch when the model sends a malformed verify patch after apply', async () => {
     const patch = { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] }
     mockRequestLocalAgentDecision
@@ -795,7 +918,8 @@ describe('local canvas tool loop', () => {
       expect.anything(),
       expect.objectContaining({ name: 'canvas.apply_patch' })
     )
-    expect(result.answer).toContain('高考冲刺主题')
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(2)
+    expect(result.answer).toContain('视频画面从课桌推进到倒计时牌')
   })
 
   it('falls back to media analysis output when final decision JSON fails after read-only media analysis', async () => {

@@ -4,13 +4,21 @@ import { redactAgentVisibleFileContext } from '@/lib/copilot/request/lifecycle/l
 import type {
   CanvasNodeRecord,
   CanvasSnapshot,
+  LocalCanvasAddContentReferenceOperation,
   LocalCanvasCreateNodeOperation,
   LocalCanvasLayoutOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
+  LocalCanvasRemoveContentReferenceOperation,
   LocalCanvasUpdateNodeOperation,
   LocalCanvasVerifyOperationResult,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+import { CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX } from '@/lib/workflows/content-reference-edges'
+import {
+  type ContentNodeVariant,
+  type ContentReferenceRole,
+  normalizeContentReferences,
+} from '@/lib/workflows/content-references'
 
 const NODE_GAP_X = 360
 const NODE_GAP_Y = 220
@@ -89,6 +97,51 @@ function fieldMatches(actual: unknown, expected: unknown, field?: string): boole
     } catch {}
   }
   return stableStringify(actual) === stableStringify(expected)
+}
+
+function isContentVariant(kind: string): kind is ContentNodeVariant {
+  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+}
+
+function videoMediaTypeForRole(role: ContentReferenceRole): 'first_frame' | 'last_frame' | null {
+  if (role === 'video_first_frame') return 'first_frame'
+  if (role === 'video_last_frame') return 'last_frame'
+  return null
+}
+
+function autoLinkTypeForRole(
+  role?: ContentReferenceRole
+): 'video_first_frame' | 'video_last_frame' | null {
+  if (role === 'video_first_frame' || role === 'video_last_frame') return role
+  return null
+}
+
+function readArrayValue(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return Array.isArray(parsed) ? parsed : []
+    } catch {}
+  }
+  return []
+}
+
+function getFileKey(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const key = (value as Record<string, unknown>).key
+  return typeof key === 'string' && key.trim() ? key : null
+}
+
+function buildContentReferenceEdgeEndpoints(params: {
+  consumerNodeId: string
+  sourceNodeId: string
+  role?: ContentReferenceRole
+}): { edgeSourceId: string; edgeTargetId: string } {
+  const isVideoFrame = params.role === 'video_first_frame' || params.role === 'video_last_frame'
+  return isVideoFrame
+    ? { edgeSourceId: params.sourceNodeId, edgeTargetId: params.consumerNodeId }
+    : { edgeSourceId: params.consumerNodeId, edgeTargetId: params.sourceNodeId }
 }
 
 function getOperationId(operation: LocalCanvasPatchOperation, index: number): string {
@@ -269,6 +322,122 @@ function verifyLayout(params: {
   }
 }
 
+function verifyContentReferenceOperation(params: {
+  snapshot: CanvasSnapshot
+  operation: LocalCanvasAddContentReferenceOperation | LocalCanvasRemoveContentReferenceOperation
+  operationId: string
+  references: Map<string, string>
+  errors: string[]
+  operationResults: LocalCanvasVerifyOperationResult[]
+}): void {
+  const consumerNodeId = resolvePatchNodeId(params.operation.consumerNodeId, params.references)
+  const sourceNodeId = resolvePatchNodeId(params.operation.sourceNodeId, params.references)
+  const consumer = params.snapshot.nodes.find((node) => node.id === consumerNodeId)
+  const source = params.snapshot.nodes.find((node) => node.id === sourceNodeId)
+  const sourceVariant = source && isContentVariant(source.kind) ? source.kind : undefined
+  const references = normalizeContentReferences(
+    consumer ? getValue(consumer.values, 'contentReferences', []) : []
+  )
+  const role =
+    params.operation.type === 'add_content_reference'
+      ? params.operation.role
+      : params.operation.role
+  const referenceMatches = references.filter(
+    (reference) =>
+      reference.sourceBlockId === sourceNodeId &&
+      (!role || reference.role === role) &&
+      (!sourceVariant || reference.sourceVariant === sourceVariant)
+  )
+  const shouldExist = params.operation.type === 'add_content_reference'
+  const referenceSuccess = shouldExist ? referenceMatches.length > 0 : referenceMatches.length === 0
+  const referenceError = referenceSuccess
+    ? undefined
+    : shouldExist
+      ? `Content reference ${consumerNodeId} -> ${sourceNodeId} (${role}) was not written`
+      : `Content reference ${consumerNodeId} -> ${sourceNodeId} (${role ?? 'any role'}) still exists`
+  if (referenceError) params.errors.push(referenceError)
+  params.operationResults.push({
+    operationId: params.operationId,
+    operationType: params.operation.type,
+    consumerNodeId,
+    sourceNodeId,
+    role,
+    field: 'contentReferences',
+    expected: shouldExist ? 'present' : 'absent',
+    actual: sanitizeVerificationValue(referenceMatches),
+    success: referenceSuccess,
+    ...(referenceError ? { error: referenceError } : {}),
+  })
+
+  const { edgeSourceId, edgeTargetId } = buildContentReferenceEdgeEndpoints({
+    consumerNodeId,
+    sourceNodeId,
+    role,
+  })
+  const matchingEdges = params.snapshot.edges.filter(
+    (edge) =>
+      edge.source === edgeSourceId &&
+      edge.target === edgeTargetId &&
+      typeof edge.sourceHandle === 'string' &&
+      edge.sourceHandle.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX) &&
+      (!autoLinkTypeForRole(role) || edge.data?.autoLinkType === autoLinkTypeForRole(role))
+  )
+  const edgeSuccess = shouldExist ? matchingEdges.length > 0 : matchingEdges.length === 0
+  const edgeError = edgeSuccess
+    ? undefined
+    : shouldExist
+      ? `Content reference edge ${edgeSourceId} -> ${edgeTargetId} was not found`
+      : `Content reference edge ${edgeSourceId} -> ${edgeTargetId} still exists`
+  if (edgeError) params.errors.push(edgeError)
+  params.operationResults.push({
+    operationId: `${params.operationId}:edge`,
+    operationType: params.operation.type,
+    consumerNodeId,
+    sourceNodeId,
+    targetNodeId: edgeTargetId,
+    role,
+    expected: {
+      state: shouldExist ? 'edge-present' : 'edge-absent',
+      edgeSourceId,
+      edgeTargetId,
+      ...(autoLinkTypeForRole(role) ? { autoLinkType: autoLinkTypeForRole(role) } : {}),
+    },
+    actual: sanitizeVerificationValue(matchingEdges),
+    success: edgeSuccess,
+    ...(edgeError ? { error: edgeError } : {}),
+  })
+
+  if (!role) return
+  const videoMediaType = videoMediaTypeForRole(role)
+  const sourceFileKey = source ? getFileKey(getValue(source.values, 'file', null)) : null
+  if (!videoMediaType || !sourceFileKey || !consumer) return
+  const media = readArrayValue(getValue(consumer.values, 'videoMedia', []))
+  const mediaMatches = media.filter((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+    const record = item as Record<string, unknown>
+    return record.type === videoMediaType && getFileKey(record.file) === sourceFileKey
+  })
+  const mediaSuccess = shouldExist ? mediaMatches.length > 0 : mediaMatches.length === 0
+  const mediaError = mediaSuccess
+    ? undefined
+    : shouldExist
+      ? `Video media ${videoMediaType} was not written for "${consumerNodeId}"`
+      : `Video media ${videoMediaType} still exists for "${consumerNodeId}"`
+  if (mediaError) params.errors.push(mediaError)
+  params.operationResults.push({
+    operationId: `${params.operationId}:videoMedia`,
+    operationType: params.operation.type,
+    consumerNodeId,
+    sourceNodeId,
+    role,
+    field: 'videoMedia',
+    expected: shouldExist ? 'matching-file-present' : 'matching-file-absent',
+    actual: sanitizeVerificationValue(mediaMatches),
+    success: mediaSuccess,
+    ...(mediaError ? { error: mediaError } : {}),
+  })
+}
+
 export async function verifyLocalCanvasPatch(params: {
   workflowId: string
   workspaceId: string
@@ -445,6 +614,19 @@ export async function verifyLocalCanvasPatch(params: {
           success: true,
         })
       }
+    }
+    if (
+      operation.type === 'add_content_reference' ||
+      operation.type === 'remove_content_reference'
+    ) {
+      verifyContentReferenceOperation({
+        snapshot,
+        operation,
+        operationId,
+        references: patchReferences,
+        errors,
+        operationResults,
+      })
     }
     if (operation.type === 'layout_nodes') {
       const result = verifyLayout({

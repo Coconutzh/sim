@@ -410,6 +410,91 @@ describe('local canvas patch verification', () => {
     expect(result.errors).toEqual([])
   })
 
+  it('verifies content reference fields, auto-link edges, and video media slots', async () => {
+    const file = { key: 'private/image.png', name: 'image.png', type: 'image/png', size: 100 }
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 0, y: 0 },
+          values: { file },
+          raw: {},
+        },
+        {
+          id: 'video-1',
+          name: 'Video 1',
+          blockType: 'content',
+          kind: 'video',
+          position: { x: 360, y: 0 },
+          values: {
+            contentReferences: [
+              {
+                sourceBlockId: 'image-1',
+                sourceVariant: 'image',
+                role: 'video_first_frame',
+              },
+            ],
+            videoMedia: [{ type: 'first_frame', file }],
+          },
+          raw: {},
+        },
+      ],
+      edges: [
+        {
+          source: 'image-1',
+          target: 'video-1',
+          sourceHandle: 'content-reference-source-right',
+          targetHandle: 'content-reference-target-left',
+          data: { kind: 'content_reference', autoLinkType: 'video_first_frame' },
+        },
+      ],
+    } satisfies CanvasSnapshot)
+
+    const result = await verifyLocalCanvasPatch({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      selectedNodeIds: [],
+      patch: {
+        operations: [
+          {
+            type: 'add_content_reference',
+            operationId: 'add-first-frame',
+            consumerNodeId: 'video-1',
+            sourceNodeId: 'image-1',
+            role: 'video_first_frame',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(result.operationResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: 'add-first-frame',
+          field: 'contentReferences',
+          success: true,
+        }),
+        expect.objectContaining({
+          operationId: 'add-first-frame:edge',
+          expected: expect.objectContaining({ autoLinkType: 'video_first_frame' }),
+          success: true,
+        }),
+        expect.objectContaining({
+          operationId: 'add-first-frame:videoMedia',
+          field: 'videoMedia',
+          success: true,
+        }),
+      ])
+    )
+  })
+
   it('verifies horizontal layout node positions after patch', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',

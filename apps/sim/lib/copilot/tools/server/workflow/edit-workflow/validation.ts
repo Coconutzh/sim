@@ -1,16 +1,16 @@
 import { createLogger } from '@sim/logger'
 import { validateSelectorIds } from '@/lib/copilot/validation/selector-validator'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
+import {
+  getContentReferenceSourceHandleId,
+  getContentReferenceTargetHandleId,
+} from '@/lib/workflows/content-reference-edges'
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
 import { getModelOptions } from '@/blocks/utils'
 import { EDGE, normalizeName } from '@/executor/constants'
 import { isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
-import {
-  getContentReferenceSourceHandleId,
-  getContentReferenceTargetHandleId,
-} from '@/lib/workflows/content-reference-edges'
 import type {
   EdgeHandleValidationResult,
   EditWorkflowOperation,
@@ -29,6 +29,7 @@ const CONTENT_REFERENCE_TARGET_HANDLES = new Set([
   getContentReferenceTargetHandleId('left'),
   getContentReferenceTargetHandleId('right'),
 ])
+const STRUCTURED_CONTENT_SHORT_INPUT_FIELDS = new Set(['contentReferences', 'videoMedia'])
 
 /**
  * Finds an existing block with the same normalized name.
@@ -366,6 +367,10 @@ export function validateValueForSubBlockType(
     case 'combobox': {
       const usesProviderCatalog =
         fieldName === 'model' && subBlockConfig.options === getModelOptions
+
+      if (STRUCTURED_CONTENT_SHORT_INPUT_FIELDS.has(fieldName) && typeof value === 'object') {
+        return { valid: true, value }
+      }
 
       if (usesProviderCatalog) {
         const stringValue = typeof value === 'string' ? value : String(value)

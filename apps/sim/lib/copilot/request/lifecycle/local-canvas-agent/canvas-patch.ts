@@ -3,27 +3,166 @@ import { getCanvasNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canv
 import type {
   CanvasNodeRecord,
   CanvasSnapshot,
+  LocalCanvasAddContentReferenceOperation,
   LocalCanvasConnectOperation,
   LocalCanvasLayoutOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
+  LocalCanvasRemoveContentReferenceOperation,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import type { EditWorkflowOperation } from '@/lib/copilot/tools/server/workflow/edit-workflow/types'
+import type {
+  VideoMediaFileSlot,
+  VideoMediaType,
+} from '@/lib/generated-media/video/video-generation-utils'
 import {
+  removeVideoMediaFileForType,
+  upsertVideoMediaFile,
+} from '@/lib/generated-media/video/video-generation-utils'
+import {
+  CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
+  type ContentReferenceAutoLinkType,
   getContentReferenceAnchorForTarget,
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
 } from '@/lib/workflows/content-reference-edges'
+import {
+  type ContentNodeVariant,
+  type ContentReferenceRecord,
+  type ContentReferenceRole,
+  getModelDisabledReason,
+  normalizeContentReferences,
+  removeContentReference,
+  upsertContentReference,
+} from '@/lib/workflows/content-references'
 
 const NODE_GAP_X = 360
 const NODE_GAP_Y = 220
 
 type CanvasEdge = CanvasSnapshot['edges'][number]
-type ConnectionTarget = { block: string; handle: string }
+type ConnectionTarget = {
+  block: string
+  handle: string
+  autoLinkType?: ContentReferenceAutoLinkType
+}
 type ConnectionMap = Record<string, ConnectionTarget | ConnectionTarget[]>
+type ResolvedReferenceOperation =
+  | {
+      mode: 'add'
+      consumer: CanvasNodeRecord
+      source: CanvasNodeRecord
+      consumerId: string
+      sourceId: string
+      sourceVariant: ContentNodeVariant
+      role: ContentReferenceRole
+    }
+  | {
+      mode: 'remove'
+      consumer: CanvasNodeRecord
+      source: CanvasNodeRecord
+      consumerId: string
+      sourceId: string
+      sourceVariant: ContentNodeVariant
+      role?: ContentReferenceRole
+    }
 
 function resolveNodeId(rawId: string, idMap: Map<string, string>): string {
   return idMap.get(rawId) ?? rawId
+}
+
+function isContentVariant(kind: string): kind is ContentNodeVariant {
+  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+}
+
+function isContentReferenceRole(value: unknown): value is ContentReferenceRole {
+  return (
+    value === 'text_context' ||
+    value === 'image_reference' ||
+    value === 'video_first_frame' ||
+    value === 'video_last_frame' ||
+    value === 'audio_reference'
+  )
+}
+
+function readContentReferences(node: CanvasNodeRecord): ContentReferenceRecord[] {
+  return normalizeContentReferences(node.values.contentReferences)
+}
+
+function readVideoMediaValue(value: unknown): Array<VideoMediaFileSlot<Record<string, unknown>>> {
+  const rawItems = Array.isArray(value) ? value : []
+  const parsedItems =
+    typeof value === 'string' && value.trim()
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value) as unknown
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })()
+      : rawItems
+  return parsedItems.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const record = item as Record<string, unknown>
+    const type = record.type
+    const file = record.file
+    if (type !== 'first_frame' && type !== 'last_frame') return []
+    if (!file || typeof file !== 'object' || Array.isArray(file)) return []
+    return [{ type, file: file as Record<string, unknown> }]
+  })
+}
+
+function readFileValue(node: CanvasNodeRecord): Record<string, unknown> | null {
+  const raw = node.values.file
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  return raw as Record<string, unknown>
+}
+
+function resolveReferenceModel(node: CanvasNodeRecord): string {
+  if (node.kind === 'image') {
+    return typeof node.values.aiModel === 'string' && node.values.aiModel.trim()
+      ? node.values.aiModel
+      : 'jimeng-4.5'
+  }
+  if (node.kind === 'audio') {
+    return typeof node.values.audioModel === 'string' && node.values.audioModel.trim()
+      ? node.values.audioModel
+      : 'suno-v5-beta'
+  }
+  if (node.kind === 'video') {
+    return node.values.videoModelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+  }
+  return typeof node.values.aiModel === 'string' && node.values.aiModel.trim()
+    ? node.values.aiModel
+    : 'gemini-3.1-flash-lite-preview'
+}
+
+function videoMediaTypeForRole(role: ContentReferenceRole): VideoMediaType | null {
+  if (role === 'video_first_frame') return 'first_frame'
+  if (role === 'video_last_frame') return 'last_frame'
+  return null
+}
+
+function autoLinkTypeForRole(
+  role?: ContentReferenceRole
+): ContentReferenceAutoLinkType | undefined {
+  if (role === 'video_first_frame' || role === 'video_last_frame') return role
+  return undefined
+}
+
+function readAutoLinkType(value: unknown): ContentReferenceAutoLinkType | undefined {
+  return value === 'video_first_frame' || value === 'video_last_frame' ? value : undefined
+}
+
+function buildContentReferenceEdgeEndpoints(params: {
+  consumerId: string
+  sourceId: string
+  role?: ContentReferenceRole
+}): { edgeSourceId: string; edgeTargetId: string } {
+  const isVideoFrame = params.role === 'video_first_frame' || params.role === 'video_last_frame'
+  return isVideoFrame
+    ? { edgeSourceId: params.sourceId, edgeTargetId: params.consumerId }
+    : { edgeSourceId: params.consumerId, edgeTargetId: params.sourceId }
 }
 
 function appendConnectionTarget(
@@ -33,7 +172,16 @@ function appendConnectionTarget(
 ): void {
   const current = connections[sourceHandle]
   const values = Array.isArray(current) ? current : current ? [current] : []
-  if (values.some((item) => item.block === target.block && item.handle === target.handle)) return
+  if (
+    values.some(
+      (item) =>
+        item.block === target.block &&
+        item.handle === target.handle &&
+        item.autoLinkType === target.autoLinkType
+    )
+  ) {
+    return
+  }
   connections[sourceHandle] = values.length ? [...values, target] : target
 }
 
@@ -41,9 +189,11 @@ function buildExistingConnections(sourceId: string, edges: CanvasEdge[]): Connec
   const connections: ConnectionMap = {}
   for (const edge of edges) {
     if (edge.source !== sourceId) continue
+    const autoLinkType = readAutoLinkType(edge.data?.autoLinkType)
     appendConnectionTarget(connections, edge.sourceHandle ?? 'source', {
       block: edge.target,
       handle: edge.targetHandle ?? 'target',
+      ...(autoLinkType ? { autoLinkType } : {}),
     })
   }
   return connections
@@ -121,6 +271,177 @@ function buildVirtualEdge(
   return { source: sourceId, target: targetId, sourceHandle: 'source', targetHandle: 'target' }
 }
 
+function resolveAddContentReferenceOperation(
+  operation: LocalCanvasAddContentReferenceOperation,
+  nodes: Map<string, CanvasNodeRecord>,
+  idMap: Map<string, string>
+): ResolvedReferenceOperation | null {
+  const consumerId = resolveNodeId(operation.consumerNodeId, idMap)
+  const sourceId = resolveNodeId(operation.sourceNodeId, idMap)
+  const consumer = nodes.get(consumerId)
+  const source = nodes.get(sourceId)
+  if (!consumer || !source || !isContentVariant(consumer.kind) || !isContentVariant(source.kind)) {
+    return null
+  }
+  return {
+    mode: 'add',
+    consumer,
+    source,
+    consumerId,
+    sourceId,
+    sourceVariant: source.kind,
+    role: operation.role,
+  }
+}
+
+function resolveRemoveContentReferenceOperation(
+  operation: LocalCanvasRemoveContentReferenceOperation,
+  nodes: Map<string, CanvasNodeRecord>,
+  idMap: Map<string, string>
+): ResolvedReferenceOperation | null {
+  const consumerId = resolveNodeId(operation.consumerNodeId, idMap)
+  const sourceId = resolveNodeId(operation.sourceNodeId, idMap)
+  const consumer = nodes.get(consumerId)
+  const source = nodes.get(sourceId)
+  if (!consumer || !source || !isContentVariant(consumer.kind) || !isContentVariant(source.kind)) {
+    return null
+  }
+  return {
+    mode: 'remove',
+    consumer,
+    source,
+    consumerId,
+    sourceId,
+    sourceVariant: source.kind,
+    role: operation.role,
+  }
+}
+
+function buildContentReferenceInputFields(
+  resolved: ResolvedReferenceOperation
+): Record<string, unknown> {
+  const currentReferences = readContentReferences(resolved.consumer)
+  if (resolved.mode === 'add') {
+    const nextReferences = upsertContentReference(currentReferences, {
+      sourceBlockId: resolved.sourceId,
+      sourceVariant: resolved.sourceVariant,
+      role: resolved.role,
+    })
+    const fields: Record<string, unknown> = { contentReferences: nextReferences }
+    const mediaType = videoMediaTypeForRole(resolved.role)
+    const sourceFile = readFileValue(resolved.source)
+    if (mediaType && sourceFile) {
+      fields.videoMedia = upsertVideoMediaFile(
+        readVideoMediaValue(resolved.consumer.values.videoMedia),
+        mediaType,
+        sourceFile
+      )
+    }
+    return fields
+  }
+
+  const roles = resolved.role
+    ? [resolved.role]
+    : currentReferences
+        .filter((reference) => reference.sourceBlockId === resolved.sourceId)
+        .map((reference) => reference.role)
+  let nextReferences = currentReferences
+  for (const role of roles) {
+    nextReferences = removeContentReference(nextReferences, {
+      sourceBlockId: resolved.sourceId,
+      sourceVariant: resolved.sourceVariant,
+      role,
+    })
+  }
+  const fields: Record<string, unknown> = { contentReferences: nextReferences }
+  for (const role of roles) {
+    const mediaType = videoMediaTypeForRole(role)
+    if (mediaType) {
+      fields.videoMedia = removeVideoMediaFileForType(
+        readVideoMediaValue(fields.videoMedia ?? resolved.consumer.values.videoMedia),
+        mediaType
+      )
+    }
+  }
+  return fields
+}
+
+function buildContentReferenceInputsOperation(
+  resolved: ResolvedReferenceOperation
+): EditWorkflowOperation {
+  return getCanvasNodeAdapter(resolved.consumer.kind).buildUpdateOperation({
+    type: 'update_node',
+    nodeId: resolved.consumerId,
+    fields: buildContentReferenceInputFields(resolved),
+  })
+}
+
+function buildContentReferenceEdgeOperation(
+  resolved: ResolvedReferenceOperation,
+  snapshot: CanvasSnapshot
+): EditWorkflowOperation | null {
+  const { edgeSourceId, edgeTargetId } = buildContentReferenceEdgeEndpoints(resolved)
+  const edgeSource = snapshot.nodes.find((node) => node.id === edgeSourceId)
+  const edgeTarget = snapshot.nodes.find((node) => node.id === edgeTargetId)
+  if (!edgeSource || !edgeTarget) return null
+
+  if (resolved.mode === 'remove') {
+    const matchingEdges = snapshot.edges.filter(
+      (edge) =>
+        edge.source === edgeSourceId &&
+        edge.target === edgeTargetId &&
+        typeof edge.sourceHandle === 'string' &&
+        edge.sourceHandle.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX)
+    )
+    if (!matchingEdges.length) return null
+    return {
+      operation_type: 'edit',
+      block_id: edgeSourceId,
+      params: {
+        removeEdges: matchingEdges.map((edge) => ({
+          targetBlockId: edge.target,
+          sourceHandle: edge.sourceHandle,
+        })),
+      },
+    }
+  }
+
+  const connections = buildExistingConnections(edgeSourceId, snapshot.edges)
+  const connection = buildContentConnection(edgeSource, edgeTarget)
+  appendConnectionTarget(connections, connection.sourceHandle, {
+    ...connection.target,
+    ...(autoLinkTypeForRole(resolved.role)
+      ? { autoLinkType: autoLinkTypeForRole(resolved.role) }
+      : {}),
+  })
+  return {
+    operation_type: 'edit',
+    block_id: edgeSourceId,
+    params: { connections },
+  }
+}
+
+function buildVirtualContentReferenceEdge(resolved: ResolvedReferenceOperation): CanvasEdge {
+  const { edgeSourceId, edgeTargetId } = buildContentReferenceEdgeEndpoints(resolved)
+  const source = resolved.mode === 'add' ? resolved.source : resolved.source
+  const target = resolved.consumer
+  const edgeSource = edgeSourceId === resolved.sourceId ? source : target
+  const edgeTarget = edgeTargetId === resolved.sourceId ? source : target
+  const connection = buildContentConnection(edgeSource, edgeTarget)
+  return {
+    source: edgeSourceId,
+    target: edgeTargetId,
+    sourceHandle: connection.sourceHandle,
+    targetHandle: connection.target.handle,
+    data: {
+      kind: 'content_reference',
+      ...(autoLinkTypeForRole(resolved.role)
+        ? { autoLinkType: autoLinkTypeForRole(resolved.role) }
+        : {}),
+    },
+  }
+}
+
 function buildLayoutOperations(
   operation: LocalCanvasLayoutOperation,
   snapshot: CanvasSnapshot,
@@ -153,6 +474,49 @@ function buildLayoutOperations(
       params: { position },
     }
   })
+}
+
+function validateContentReferenceOperation(
+  operation: LocalCanvasAddContentReferenceOperation | LocalCanvasRemoveContentReferenceOperation,
+  knownNodes: Map<string, CanvasNodeRecord>,
+  idMap: Map<string, string>,
+  errors: string[]
+): void {
+  const consumerId = resolveNodeId(operation.consumerNodeId, idMap)
+  const sourceId = resolveNodeId(operation.sourceNodeId, idMap)
+  const consumer = knownNodes.get(consumerId)
+  const source = knownNodes.get(sourceId)
+  if (!consumer) errors.push(`Consumer node "${operation.consumerNodeId}" was not found`)
+  if (!source) errors.push(`Source node "${operation.sourceNodeId}" was not found`)
+  if (!consumer || !source) return
+  if (consumerId === sourceId) {
+    errors.push('Content reference source and consumer must be different nodes')
+  }
+  if (!isContentVariant(consumer.kind)) {
+    errors.push(`Consumer node "${operation.consumerNodeId}" is not a content node`)
+  }
+  if (!isContentVariant(source.kind)) {
+    errors.push(`Source node "${operation.sourceNodeId}" is not a content node`)
+  }
+  if (operation.type === 'add_content_reference' && isContentVariant(consumer.kind)) {
+    if (!isContentReferenceRole(operation.role)) {
+      errors.push(`Invalid content reference role "${String(operation.role)}"`)
+      return
+    }
+    const disabledReason = getModelDisabledReason({
+      targetVariant: consumer.kind,
+      model: resolveReferenceModel(consumer),
+      references: [
+        ...readContentReferences(consumer),
+        {
+          sourceBlockId: sourceId,
+          sourceVariant: isContentVariant(source.kind) ? source.kind : 'text',
+          role: operation.role,
+        },
+      ],
+    })
+    if (disabledReason) errors.push(disabledReason)
+  }
 }
 
 export function validateLocalCanvasPatch(
@@ -209,6 +573,13 @@ export function validateLocalCanvasPatch(
       if (!knownNodes.has(targetNodeId)) {
         errors.push(`Target node "${operation.targetNodeId}" was not found`)
       }
+    }
+    if (
+      (operation.type === 'add_content_reference' ||
+        operation.type === 'remove_content_reference') &&
+      snapshot
+    ) {
+      validateContentReferenceOperation(operation, knownNodes, idMap, errors)
     }
     if (operation.type === 'layout_nodes' && snapshot && operation.nodeIds?.length) {
       for (const nodeId of operation.nodeIds) {
@@ -289,6 +660,60 @@ export function buildEditWorkflowOperationsFromPatch(params: {
         )
       ) {
         virtualEdges.push(virtualEdge)
+      }
+      continue
+    }
+
+    if (
+      patchOperation.type === 'add_content_reference' ||
+      patchOperation.type === 'remove_content_reference'
+    ) {
+      const resolved =
+        patchOperation.type === 'add_content_reference'
+          ? resolveAddContentReferenceOperation(patchOperation, knownNodes, idMap)
+          : resolveRemoveContentReferenceOperation(patchOperation, knownNodes, idMap)
+      if (!resolved) continue
+      const snapshot = {
+        ...params.snapshot,
+        nodes: [...knownNodes.values()],
+        edges: virtualEdges,
+      }
+      operations.push(buildContentReferenceInputsOperation(resolved))
+      const edgeOperation = buildContentReferenceEdgeOperation(resolved, snapshot)
+      if (edgeOperation) operations.push(edgeOperation)
+      knownNodes.set(resolved.consumerId, {
+        ...resolved.consumer,
+        values: {
+          ...resolved.consumer.values,
+          ...buildContentReferenceInputFields(resolved),
+        },
+      })
+      const virtualEdge = buildVirtualContentReferenceEdge(resolved)
+      if (resolved.mode === 'add') {
+        if (
+          !virtualEdges.some(
+            (edge) =>
+              edge.source === virtualEdge.source &&
+              edge.target === virtualEdge.target &&
+              edge.sourceHandle === virtualEdge.sourceHandle &&
+              edge.targetHandle === virtualEdge.targetHandle
+          )
+        ) {
+          virtualEdges.push(virtualEdge)
+        }
+      } else {
+        virtualEdges.splice(
+          0,
+          virtualEdges.length,
+          ...virtualEdges.filter(
+            (edge) =>
+              !(
+                edge.source === virtualEdge.source &&
+                edge.target === virtualEdge.target &&
+                edge.sourceHandle?.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX)
+              )
+          )
+        )
       }
       continue
     }

@@ -121,6 +121,96 @@ describe('local canvas verifier', () => {
     expect(answer).not.toContain('已生成内容并写回')
   })
 
+  it('keeps verified mutation answers when a later decision JSON parse failed', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Update selected text node',
+      risk: 'low',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['Patch is applied and verified'],
+    }
+
+    const answer = await verifyLocalAgentFinalAnswer({
+      context: buildContext(),
+      plan,
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Applied canvas patch',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Verified canvas patch',
+        },
+        {
+          toolName: 'decision',
+          success: false,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Invalid AgentDecision: Invalid input: expected object, received null',
+        },
+      ],
+      answer: '已完成画布修改，并完成验证。',
+    })
+
+    expect(answer).toBe('已完成画布修改，并完成验证。')
+    expect(answer).not.toContain('Invalid AgentDecision')
+  })
+
+  it('ignores stale mutation failures after a later apply and verify succeeds', async () => {
+    const plan: LocalAgentPlan = {
+      goal: 'Create and generate an image node',
+      risk: 'medium',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['Patch is applied, output is generated, and writeback is verified'],
+    }
+
+    const answer = await verifyLocalAgentFinalAnswer({
+      context: buildContext(),
+      plan,
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: false,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Field aiPrompt was not written on node "old-image"',
+        },
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:01.000Z',
+          summary: 'Applied canvas patch',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:02.000Z',
+          summary: 'Verified canvas patch',
+        },
+        {
+          toolName: 'canvas.generate_node_output',
+          success: true,
+          timestamp: '2026-06-06T00:00:03.000Z',
+          summary: 'Generated output for image node',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:04.000Z',
+          summary: 'Verified generated file writeback',
+        },
+      ],
+      answer: 'done',
+    })
+
+    expect(answer).toBe('done')
+    expect(answer).not.toContain('Field aiPrompt')
+  })
+
   it('keeps selected-node read answers when optional file context lookup fails', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Inspect selected image node',

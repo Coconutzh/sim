@@ -1,4 +1,5 @@
 import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { generateContentCanvasText } from '@/lib/content-canvas/text-executor'
 import {
   applyCanvasSummaryCacheSelection,
@@ -18,6 +19,7 @@ import {
   getFileValue,
   getObjectValue,
   getValue,
+  stripHtml,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/shared'
 import type {
   CanvasNodeDetail,
@@ -30,6 +32,7 @@ import type {
   LocalCanvasToolName,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
+import type { UserFileLike } from '@/lib/core/utils/user-file'
 import { generateWorkspaceAudioFromPrompt } from '@/lib/generated-media/audio/audio-generation-service'
 import {
   DEFAULT_AUDIO_MODEL,
@@ -46,8 +49,16 @@ import {
   DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
   DEFAULT_VIDEO_MODEL_FAMILY,
   DEFAULT_VIDEO_RESOLUTION,
+  getVideoMediaFileForType,
   resolveVideoGenerationModelId,
 } from '@/lib/generated-media/video/video-generation-utils'
+import {
+  buildContentReferencePromptContext,
+  buildStructuredContentReferenceContext,
+  type ContentNodeVariant,
+  normalizeContentReferences,
+  type PromptContextReferencedNode,
+} from '@/lib/workflows/content-references'
 import { convertGeneratedTextToContentHtml } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 
 interface LocalCanvasToolCall {
@@ -371,6 +382,78 @@ function requirePatch(input: Record<string, unknown>): LocalCanvasPatch {
   return normalized
 }
 
+function normalizeNodeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function getUniqueCreateNodeTitle(title: string, usedTitles: Set<string>): string {
+  const baseTitle = title.trim() || '内容节点'
+  let candidate = baseTitle
+  let suffix = 2
+  while (usedTitles.has(normalizeNodeTitle(candidate))) {
+    candidate = `${baseTitle} ${suffix}`
+    suffix += 1
+  }
+  usedTitles.add(normalizeNodeTitle(candidate))
+  return candidate
+}
+
+function materializeCreateNodeOperations(
+  patch: LocalCanvasPatch,
+  snapshot: { nodes: CanvasNodeRecord[] }
+): LocalCanvasPatch {
+  const usedTitles = new Set(snapshot.nodes.map((node) => normalizeNodeTitle(node.name)))
+  return {
+    ...patch,
+    operations: patch.operations.map((operation) => {
+      if (operation.type !== 'create_node') return operation
+      return {
+        ...operation,
+        nodeId: operation.nodeId ?? generateId(),
+        title: getUniqueCreateNodeTitle(operation.title, usedTitles),
+      }
+    }),
+  }
+}
+
+function splitDeferredLayoutPatch(patch: LocalCanvasPatch): {
+  mutationPatch: LocalCanvasPatch
+  layoutPatch: LocalCanvasPatch | null
+} {
+  const layoutOperations = patch.operations.filter((operation) => operation.type === 'layout_nodes')
+  if (layoutOperations.length === 0 || layoutOperations.length === patch.operations.length) {
+    return { mutationPatch: patch, layoutPatch: null }
+  }
+  return {
+    mutationPatch: {
+      ...patch,
+      operations: patch.operations.filter((operation) => operation.type !== 'layout_nodes'),
+    },
+    layoutPatch: {
+      ...patch,
+      operations: layoutOperations,
+    },
+  }
+}
+
+function resolveDeferredLayoutPatch(
+  patch: LocalCanvasPatch | null,
+  idMap: Map<string, string>
+): LocalCanvasPatch | null {
+  if (!patch) return null
+  return {
+    ...patch,
+    operations: patch.operations.map((operation) =>
+      operation.type === 'layout_nodes' && operation.nodeIds?.length
+        ? {
+            ...operation,
+            nodeIds: operation.nodeIds.map((nodeId) => idMap.get(nodeId) ?? nodeId),
+          }
+        : operation
+    ),
+  }
+}
+
 function throwIfAborted(context: LocalAgentContext): void {
   if (context.options.abortSignal?.aborted) {
     throw new Error('Request was cancelled')
@@ -429,7 +512,9 @@ function summarizeOutput(toolName: LocalCanvasToolName, value: unknown): string 
     return `Read node ${typeof record.name === 'string' ? record.name : 'detail'}`
   }
   if (toolName === 'canvas.apply_patch') {
-    const verification = asRecord(asRecord(value).verification)
+    const record = asRecord(value)
+    if (typeof record.userSummary === 'string') return record.userSummary
+    const verification = asRecord(record.verification)
     return typeof verification.summary === 'string'
       ? `Applied canvas patch. ${verification.summary}`
       : 'Applied canvas patch'
@@ -478,6 +563,133 @@ function getVerificationFailureSummary(
     }
   }
   return null
+}
+
+function getPatchOperationId(operation: LocalCanvasPatchOperation, index: number): string {
+  return operation.operationId ?? `${operation.type}:${index + 1}`
+}
+
+function isGenerationCandidateKind(kind: unknown): kind is LocalCanvasNodeKind {
+  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+}
+
+function isGenerationInputField(kind: LocalCanvasNodeKind, field: string): boolean {
+  if (kind === 'text') return field === 'aiPrompt' || field === 'aiModel'
+  if (kind === 'image')
+    return field === 'aiPrompt' || field === 'aiModel' || field === 'aiAspectRatio'
+  if (kind === 'video') {
+    return (
+      field === 'videoPrompt' ||
+      field === 'videoModelFamily' ||
+      field === 'videoMedia' ||
+      field === 'videoParameters' ||
+      field === 'videoFrameAspectRatioPreset'
+    )
+  }
+  if (kind === 'audio') {
+    return field === 'audioPrompt' || field === 'audioModel' || field === 'audioParameters'
+  }
+  return false
+}
+
+function buildPatchMachineSummary(params: {
+  patch: LocalCanvasPatch
+  snapshot: { nodes: CanvasNodeRecord[] }
+  verification: {
+    operationResults?: unknown
+    success?: unknown
+  }
+}): {
+  userSummary: string
+  machineSummary: Record<string, unknown>
+  writeBackFields: Array<Record<string, unknown>>
+  createdNodeMap: Record<string, string>
+  requiresFollowup: boolean
+} {
+  const operationResults = Array.isArray(params.verification.operationResults)
+    ? params.verification.operationResults.map(asRecord)
+    : []
+  const createdNodeMap: Record<string, string> = {}
+  const writeBackFields: Array<Record<string, unknown>> = []
+  const referenceChanges: Array<Record<string, unknown>> = []
+  params.patch.operations.forEach((operation, index) => {
+    const operationId = getPatchOperationId(operation, index)
+    const result = operationResults.find((item) => item.operationId === operationId)
+    if (operation.type === 'create_node' && operation.clientNodeId) {
+      const nodeId = typeof result?.nodeId === 'string' ? result.nodeId : operation.nodeId
+      if (nodeId) createdNodeMap[operation.clientNodeId] = nodeId
+    }
+    if (operation.type === 'create_node' || operation.type === 'update_node') {
+      for (const field of Object.keys(operation.fields ?? {})) {
+        writeBackFields.push({
+          operationId,
+          nodeId:
+            operation.type === 'update_node'
+              ? operation.nodeId
+              : typeof result?.nodeId === 'string'
+                ? result.nodeId
+                : operation.nodeId,
+          field,
+          status: operationResults.some(
+            (item) => item.operationId === operationId && item.field === field && item.success
+          )
+            ? 'verified'
+            : 'pending_or_failed',
+        })
+      }
+    }
+    if (
+      operation.type === 'add_content_reference' ||
+      operation.type === 'remove_content_reference'
+    ) {
+      referenceChanges.push({
+        operationId,
+        type: operation.type,
+        consumerNodeId: operation.consumerNodeId,
+        sourceNodeId: operation.sourceNodeId,
+        role: operation.type === 'add_content_reference' ? operation.role : operation.role,
+      })
+    }
+  })
+  const generatedCandidates = params.patch.operations.flatMap((operation) => {
+    if (operation.type === 'create_node') {
+      const nodeId = operation.clientNodeId
+        ? createdNodeMap[operation.clientNodeId]
+        : (operation.nodeId ?? '')
+      return nodeId && isGenerationCandidateKind(operation.kind)
+        ? [{ nodeId, kind: operation.kind, clientNodeId: operation.clientNodeId }]
+        : []
+    }
+    if (operation.type !== 'update_node') return []
+    const node = params.snapshot.nodes.find((item) => item.id === operation.nodeId)
+    if (!node || !isGenerationCandidateKind(node.kind)) return []
+    const fields = Object.keys(operation.fields ?? {})
+    const updatesGenerationInput = fields.some((field) => isGenerationInputField(node.kind, field))
+    return updatesGenerationInput ? [{ nodeId: operation.nodeId, kind: node.kind }] : []
+  })
+  const fieldChecks = operationResults.flatMap((item) => {
+    const nodeId = typeof item.nodeId === 'string' ? item.nodeId : undefined
+    const field = typeof item.field === 'string' ? item.field : undefined
+    if (!nodeId || !field) return []
+    return [`node.${nodeId}.${field} ${item.success ? 'verified' : 'failed'}`]
+  })
+  const machineSummary = {
+    action: 'canvas_patch',
+    success: params.verification.success === true,
+    createdNodeMap,
+    writeBackFields,
+    referenceChanges,
+    generationCandidates: generatedCandidates,
+    fieldChecks,
+    requiresFollowup: false,
+  }
+  return {
+    userSummary: '画布修改已写入并完成字段级验证。',
+    machineSummary,
+    writeBackFields,
+    createdNodeMap,
+    requiresFollowup: false,
+  }
 }
 
 function getReadableFieldsForKind(kind: Parameters<typeof getCanvasNodeAdapter>[0]): string[] {
@@ -536,25 +748,123 @@ function getIncomingImageFile(
   block: CanvasNodeRecord,
   snapshotEdges: Array<{ source: string; target: string }>,
   nodes: CanvasNodeRecord[]
-) {
+): UserFileLike | null {
   const incoming = snapshotEdges.find((edge) => edge.target === block.id)
   if (!incoming) return null
   const source = nodes.find((node) => node.id === incoming.source && node.kind === 'image')
   if (!source) return null
-  const file = getFileValue(source.values)
-  if (!file) return null
+  return toUserFileLike(getFileValue(source.values), `${source.name}.png`)
+}
+
+function toUserFileLike(value: unknown, fallbackName: string): UserFileLike | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const file = value as Record<string, unknown>
   const key = typeof file.key === 'string' ? file.key : ''
+  if (!key) return null
   const url =
     typeof file.path === 'string' ? file.path : typeof file.url === 'string' ? file.url : ''
-  if (!key || !url) return null
   return {
     id: typeof file.id === 'string' ? file.id : key,
-    name: typeof file.name === 'string' ? file.name : `${source.name}.png`,
+    name: typeof file.name === 'string' ? file.name : fallbackName,
     url,
     key,
     size: typeof file.size === 'number' ? file.size : 0,
     type: typeof file.type === 'string' ? file.type : 'image/png',
     context: typeof file.context === 'string' ? file.context : undefined,
+  }
+}
+
+function isContentVariant(kind: string): kind is ContentNodeVariant {
+  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+}
+
+function toPromptContextFile(node: CanvasNodeRecord): PromptContextReferencedNode['file'] {
+  return toUserFileLike(getFileValue(node.values), node.name)
+}
+
+function buildReferenceContextForNode(
+  node: CanvasNodeRecord,
+  snapshot: {
+    nodes: CanvasNodeRecord[]
+  }
+) {
+  const references = normalizeContentReferences(getValue(node.values, 'contentReferences', []))
+  const referencedNodes: Record<string, PromptContextReferencedNode> = {}
+  for (const reference of references) {
+    const referencedNode = snapshot.nodes.find((item) => item.id === reference.sourceBlockId)
+    if (!referencedNode || !isContentVariant(referencedNode.kind)) continue
+    referencedNodes[reference.sourceBlockId] = {
+      name: referencedNode.name,
+      variant: referencedNode.kind,
+      textContent:
+        referencedNode.kind === 'text'
+          ? stripHtml(getValue<string>(referencedNode.values, 'contentHtml', ''))
+          : null,
+      file: toPromptContextFile(referencedNode),
+    }
+  }
+  return {
+    references,
+    referencedNodes,
+    promptText: buildContentReferencePromptContext({ references, referencedNodes }),
+    structured: buildStructuredContentReferenceContext({ references, referencedNodes }),
+  }
+}
+
+function buildGenerationReferenceContext(
+  node: CanvasNodeRecord,
+  snapshot: { nodes: CanvasNodeRecord[] }
+): { text: string[]; images: UserFileLike[] } {
+  const structured = buildReferenceContextForNode(node, snapshot).structured
+  return {
+    text: structured.text,
+    images: structured.images.flatMap((image) => {
+      const file = toUserFileLike(image, image.name)
+      return file ? [file] : []
+    }),
+  }
+}
+
+function buildReferencedVideoMedia(
+  node: CanvasNodeRecord,
+  snapshot: { nodes: CanvasNodeRecord[]; edges: Array<{ source: string; target: string }> }
+) {
+  const referenceContext = buildReferenceContextForNode(node, snapshot)
+  const fromVideoMedia = getValue<Array<{ type: 'first_frame' | 'last_frame'; file: unknown }>>(
+    node.values,
+    'videoMedia',
+    []
+  )
+  const media = Array.isArray(fromVideoMedia)
+    ? fromVideoMedia.flatMap((item) => {
+        if (item.type !== 'first_frame' && item.type !== 'last_frame') return []
+        const file = toUserFileLike(item.file, node.name)
+        if (!file) return []
+        return [{ type: item.type, file }]
+      })
+    : []
+  for (const reference of referenceContext.references) {
+    if (reference.role !== 'video_first_frame' && reference.role !== 'video_last_frame') continue
+    const mediaType = reference.role === 'video_first_frame' ? 'first_frame' : 'last_frame'
+    if (media.some((item) => item.type === mediaType)) {
+      continue
+    }
+    const source = snapshot.nodes.find(
+      (item) => item.id === reference.sourceBlockId && item.kind === 'image'
+    )
+    if (!source) continue
+    const file = toPromptContextFile(source)
+    if (!file) continue
+    media.push({ type: mediaType, file })
+  }
+  const firstFrame = getVideoMediaFileForType(media, 'first_frame')
+  if (!firstFrame) {
+    const incoming = getIncomingImageFile(node, snapshot.edges, snapshot.nodes)
+    if (incoming) media.push({ type: 'first_frame', file: incoming })
+  }
+  return {
+    media,
+    promptText: referenceContext.promptText,
   }
 }
 
@@ -641,10 +951,12 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
   if (node.kind === 'text') {
     const prompt = getValue<string>(node.values, 'aiPrompt', '') || `Write content for ${node.name}`
     const model = getValue<string>(node.values, 'aiModel', 'gemini-3.1-flash-lite-preview')
+    const referenceContext = buildReferenceContextForNode(node, snapshot)
     const generatedText = await generateContentCanvasText({
       workspaceId: context.workspaceId,
       model,
       prompt,
+      referenceContextText: referenceContext.promptText,
       systemPrompt: buildTextGenerationSystemPrompt(),
       abortSignal: context.options.abortSignal,
     })
@@ -670,6 +982,7 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
       model,
       prompt,
       aspectRatio,
+      referenceContext: buildGenerationReferenceContext(node, snapshot),
       abortSignal: context.options.abortSignal,
     })
     throwIfAborted(context)
@@ -686,9 +999,11 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
   }
 
   if (node.kind === 'video') {
-    const prompt =
+    const referenceMedia = buildReferencedVideoMedia(node, snapshot)
+    const basePrompt =
       getValue<string>(node.values, 'videoPrompt', '') || `Create a video for ${node.name}`
-    const firstFrame = getIncomingImageFile(node, snapshot.edges, snapshot.nodes)
+    const prompt = [basePrompt, referenceMedia.promptText].filter(Boolean).join('\n\n')
+    const firstFrame = getVideoMediaFileForType(referenceMedia.media, 'first_frame')
     const modelFamily = getValue<'wan2.7' | 'wan2.6'>(
       node.values,
       'videoModelFamily',
@@ -704,7 +1019,7 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
       userId: context.userId,
       model,
       prompt,
-      media: firstFrame ? [{ type: 'first_frame', file: firstFrame }] : [],
+      media: referenceMedia.media,
       parameters: {
         aspectRatioPreset: getValue(
           node.values,
@@ -731,6 +1046,7 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
     }
   }
 
+  const referenceContext = buildReferenceContextForNode(node, snapshot)
   const prompt = getValue<string>(node.values, 'audioPrompt', '') || `Create audio for ${node.name}`
   const result = await generateWorkspaceAudioFromPrompt({
     workspaceId: context.workspaceId,
@@ -738,6 +1054,7 @@ async function generateNodeOutput(context: LocalAgentContext, nodeId: string) {
     model: getValue(node.values, 'audioModel', DEFAULT_AUDIO_MODEL),
     prompt,
     parameters: getObjectValue(node.values, 'audioParameters', DEFAULT_AUDIO_PARAMETERS),
+    referenceContext: { text: referenceContext.structured.text },
     abortSignal: context.options.abortSignal,
   })
   throwIfAborted(context)
@@ -851,7 +1168,7 @@ async function executeCanvasToolUnchecked(
   }
 
   if (call.name === 'canvas.propose_patch') {
-    const patch = requirePatch(call.input)
+    const patch = materializeCreateNodeOperations(requirePatch(call.input), snapshot)
     const validation = validateLocalCanvasPatch(patch, snapshot)
     const { operations } = validation.valid
       ? buildEditWorkflowOperationsFromPatch({ patch, snapshot })
@@ -870,11 +1187,16 @@ async function executeCanvasToolUnchecked(
     if (!context.permissions.canWrite) {
       throw new Error(context.permissions.readonlyReason ?? 'Canvas is read-only')
     }
-    const patch = requirePatch(call.input)
+    const patch = materializeCreateNodeOperations(requirePatch(call.input), snapshot)
     const validation = validateLocalCanvasPatch(patch, snapshot)
     if (!validation.valid) throw new Error(validation.errors.join('; '))
-    const { operations } = buildEditWorkflowOperationsFromPatch({ patch, snapshot })
+    const { mutationPatch, layoutPatch } = splitDeferredLayoutPatch(patch)
+    const { operations, idMap } = buildEditWorkflowOperationsFromPatch({
+      patch: mutationPatch,
+      snapshot,
+    })
     if (operations.length === 0) throw new Error('Patch did not produce executable operations')
+    const editOutputs: unknown[] = []
     const output = await editWorkflowServerTool.execute(
       {
         workflowId: context.workflowId,
@@ -887,13 +1209,47 @@ async function executeCanvasToolUnchecked(
         abortSignal: context.options.abortSignal,
       }
     )
+    editOutputs.push(output)
+    const resolvedLayoutPatch = resolveDeferredLayoutPatch(layoutPatch, idMap)
+    if (resolvedLayoutPatch) {
+      const layoutSnapshot = await loadCanvasSnapshot({
+        workflowId: context.workflowId,
+        workspaceId: context.workspaceId,
+      })
+      const { operations: layoutOperations } = buildEditWorkflowOperationsFromPatch({
+        patch: resolvedLayoutPatch,
+        snapshot: layoutSnapshot,
+      })
+      if (layoutOperations.length > 0) {
+        editOutputs.push(
+          await editWorkflowServerTool.execute(
+            {
+              workflowId: context.workflowId,
+              operations: layoutOperations,
+            },
+            {
+              userId: context.userId,
+              workspaceId: context.workspaceId,
+              chatId: context.chatId,
+              abortSignal: context.options.abortSignal,
+            }
+          )
+        )
+      }
+    }
     const verification = await verifyLocalCanvasPatch({
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
       patch,
       selectedNodeIds: context.selectedNodeIds,
     })
-    return { edit: output, verification }
+    const structuredResult = buildPatchMachineSummary({ patch, snapshot, verification })
+    return {
+      edit: editOutputs.length === 1 ? output : { steps: editOutputs },
+      patch,
+      verification,
+      ...structuredResult,
+    }
   }
 
   if (call.name === 'canvas.verify_patch') {

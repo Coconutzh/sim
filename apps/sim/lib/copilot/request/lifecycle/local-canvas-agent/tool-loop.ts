@@ -45,6 +45,7 @@ interface ModelDrivenLoopState {
   observations: LocalAgentObservation[]
   pendingVerification: PendingVerification | null
   toolCallsExecuted: number
+  autoGenerationAttempted: boolean
 }
 
 function asString(value: unknown): string {
@@ -147,7 +148,8 @@ function buildToolCall(
     return nodeId ? { name: toolName, input: { nodeId } } : null
   }
   if (toolName === 'canvas.generate_node_output') {
-    const nodeId = plan.generateNodeIds?.[0]
+    const nodeId =
+      plan.generateNodeIds?.[0] ?? plan.generationTargets?.find((target) => target.nodeId)?.nodeId
     return nodeId ? { name: toolName, input: { nodeId } } : null
   }
   if (toolName === 'read_file') {
@@ -303,6 +305,52 @@ function getNextPlannedStepCall(
   return null
 }
 
+function readCreatedNodeMapFromObservations(
+  observations: LocalAgentObservation[]
+): Record<string, string> {
+  const createdNodeMap: Record<string, string> = {}
+  for (const observation of observations) {
+    const output = asRecord(observation.output)
+    const direct = asRecord(output.createdNodeMap)
+    const machine = asRecord(output.machineSummary)
+    const nested = asRecord(machine.createdNodeMap)
+    for (const [key, value] of Object.entries({ ...direct, ...nested })) {
+      if (typeof value === 'string' && value.trim()) createdNodeMap[key] = value
+    }
+  }
+  return createdNodeMap
+}
+
+function resolveGenerationNodeIds(
+  plan: LocalAgentPlan,
+  observations: LocalAgentObservation[]
+): string[] {
+  const createdNodeMap = readCreatedNodeMapFromObservations(observations)
+  const ids = [...(plan.generateNodeIds ?? [])]
+  for (const target of plan.generationTargets ?? []) {
+    if (target.nodeId) {
+      ids.push(target.nodeId)
+      continue
+    }
+    if (target.clientNodeId && createdNodeMap[target.clientNodeId]) {
+      ids.push(createdNodeMap[target.clientNodeId])
+    }
+  }
+  return ids.filter((nodeId, index, items) => nodeId && items.indexOf(nodeId) === index)
+}
+
+function resolveCreatedNodeRefsInToolCall(
+  call: LocalAgentToolCall,
+  observations: LocalAgentObservation[]
+): LocalAgentToolCall {
+  if (call.name !== 'canvas.generate_node_output' && call.name !== 'canvas.read_node') return call
+  const nodeId = typeof call.input.nodeId === 'string' ? call.input.nodeId : ''
+  if (!nodeId) return call
+  const createdNodeMap = readCreatedNodeMapFromObservations(observations)
+  const resolvedNodeId = createdNodeMap[nodeId]
+  return resolvedNodeId ? { ...call, input: { ...call.input, nodeId: resolvedNodeId } } : call
+}
+
 function getNextImplicitCall(
   state: LocalAgentLoopState,
   plannedCalls: LocalAgentToolCall[]
@@ -347,7 +395,7 @@ function getNextImplicitCall(
     return { name: 'canvas.verify_patch', input: { generation } }
   }
 
-  const generateNodeIds = state.plan.generateNodeIds ?? []
+  const generateNodeIds = resolveGenerationNodeIds(state.plan, state.observations)
   if (canMutate && state.generatedNodeIndex < generateNodeIds.length) {
     const nodeId = generateNodeIds[state.generatedNodeIndex]
     state.generatedNodeIndex += 1
@@ -496,7 +544,11 @@ function buildVerificationInputFromToolResult(
   call: LocalAgentToolCall,
   output: unknown
 ): Record<string, unknown> | null {
-  if (call.name === 'canvas.apply_patch') return { patch: call.input.patch }
+  if (call.name === 'canvas.apply_patch') {
+    const outputPatch = asRecord(output).patch
+    const operations = asRecord(outputPatch).operations
+    return { patch: Array.isArray(operations) ? outputPatch : call.input.patch }
+  }
   if (call.name !== 'canvas.generate_node_output') return null
   const record = asRecord(output)
   const nodeId = typeof record.nodeId === 'string' ? record.nodeId : ''
@@ -611,6 +663,87 @@ function buildMediaAnalysisFallbackAnswer(observations: LocalAgentObservation[])
   return '我已读取媒体节点，但没有获得可用于描述真实媒体内容的分析结果。'
 }
 
+function hasExplicitGenerationRequest(context: LocalAgentContext, plan: LocalAgentPlan): boolean {
+  if (plan.userIntent === 'generate_output') return true
+  const message = context.message
+  return (
+    /(?:生成|生图|出图|出视频|出音频|写出|产出|渲染).{0,12}(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|image|video|audio|text)/i.test(
+      message
+    ) ||
+    /(?:正文|文案|脚本|图片|图像|视频|音频|配乐|内容|image|video|audio|text).{0,12}(?:生成|产出|渲染)/i.test(
+      message
+    ) ||
+    /(?:直接|自动|顺便|并|同时).{0,8}(?:生成|产出|渲染)/i.test(message)
+  )
+}
+
+function readGenerationCandidatesFromOutput(output: unknown): string[] {
+  const record = asRecord(output)
+  const machineSummary = asRecord(record.machineSummary)
+  const rawCandidates = Array.isArray(machineSummary.generationCandidates)
+    ? machineSummary.generationCandidates
+    : []
+  return rawCandidates
+    .map((candidate) => asRecord(candidate).nodeId)
+    .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.trim().length > 0)
+    .filter((nodeId, index, nodeIds) => nodeIds.indexOf(nodeId) === index)
+}
+
+function buildVerifiedCompletionAnswer(observations: LocalAgentObservation[]): string {
+  const generationFailure = observations.find(
+    (observation) => observation.toolName === 'canvas.generate_node_output' && !observation.success
+  )
+  if (generationFailure) {
+    return `画布修改已写入并完成验证，但自动生成节点内容时失败：${generationFailure.summary}`
+  }
+  const generatedCount = observations.filter(
+    (observation) => observation.success && observation.toolName === 'canvas.generate_node_output'
+  ).length
+  if (generatedCount > 0) {
+    return `已完成画布修改、生成 ${generatedCount} 个节点内容，并完成验证。`
+  }
+  return '已完成画布修改，并完成验证。'
+}
+
+async function executeAutoGenerationCandidates(params: {
+  context: LocalAgentContext
+  state: ModelDrivenLoopState
+  nodeIds: string[]
+}): Promise<void> {
+  const maxAutoGenerations = 4
+  const nodeIds = params.nodeIds.slice(0, maxAutoGenerations)
+  if (params.nodeIds.length > maxAutoGenerations) {
+    params.state.observations.push(
+      buildDecisionObservation(
+        `Only generating the first ${maxAutoGenerations} created/updated nodes automatically to keep the request bounded.`,
+        true
+      )
+    )
+  }
+
+  for (const nodeId of nodeIds) {
+    const result = await executeLocalAgentTool(params.context, {
+      name: 'canvas.generate_node_output',
+      input: { nodeId },
+    })
+    params.state.toolCallsExecuted += 1
+    params.state.observations.push(observationFromToolResult(result))
+    if (!result.success) break
+
+    const verificationInput = buildVerificationInputFromToolResult(
+      { name: 'canvas.generate_node_output', input: { nodeId } },
+      result.output
+    )
+    if (verificationInput) {
+      await executeImmediateVerification({
+        context: params.context,
+        state: params.state,
+        input: verificationInput,
+      })
+    }
+  }
+}
+
 async function executeDecisionToolCall(params: {
   context: LocalAgentContext
   decision: Extract<LocalAgentDecision, { type: 'tool_call' }>
@@ -644,6 +777,7 @@ async function executeDecisionToolCall(params: {
   if (call.name === 'canvas.verify_patch' && params.state.pendingVerification) {
     call = { name: 'canvas.verify_patch', input: params.state.pendingVerification.input }
   }
+  call = resolveCreatedNodeRefsInToolCall(call, params.state.observations)
   const policyViolation = getPolicyViolationSummary({
     mutationPolicy: params.state.plan.mutationPolicy,
     call,
@@ -688,6 +822,21 @@ async function executeDecisionToolCall(params: {
         state: params.state,
         input: verificationInput,
       })
+    }
+    if (
+      call.name === 'canvas.apply_patch' &&
+      !params.state.autoGenerationAttempted &&
+      hasExplicitGenerationRequest(params.context, params.state.plan)
+    ) {
+      const nodeIds = readGenerationCandidatesFromOutput(result.output)
+      if (nodeIds.length > 0) {
+        params.state.autoGenerationAttempted = true
+        await executeAutoGenerationCandidates({
+          context: params.context,
+          state: params.state,
+          nodeIds,
+        })
+      }
     }
   }
 }
@@ -804,6 +953,7 @@ async function runModelDrivenLocalAgentToolLoop(
     ],
     pendingVerification: null,
     toolCallsExecuted: 0,
+    autoGenerationAttempted: false,
   }
   let stopSummary: string | null = null
 
@@ -823,6 +973,21 @@ async function runModelDrivenLocalAgentToolLoop(
       })
     } catch (error) {
       if (options.allowInitialFallback && state.toolCallsExecuted === 0) return null
+      if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+        return {
+          plan: state.plan,
+          observations: state.observations,
+          answer: buildVerifiedCompletionAnswer(state.observations),
+        }
+      }
+      const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)
+      if (mediaFallbackAnswer) {
+        return {
+          plan: state.plan,
+          observations: state.observations,
+          answer: mediaFallbackAnswer,
+        }
+      }
       const summary = error instanceof Error ? error.message : 'Failed to get AgentDecision'
       const previousDecisionFailures = state.observations.filter(
         (observation) => observation.toolName === 'decision' && !observation.success
@@ -868,7 +1033,7 @@ async function runModelDrivenLocalAgentToolLoop(
           return {
             plan: state.plan,
             observations: state.observations,
-            answer: '已完成画布修改，并完成验证。',
+            answer: buildVerifiedCompletionAnswer(state.observations),
           }
         }
         continue
@@ -881,6 +1046,14 @@ async function runModelDrivenLocalAgentToolLoop(
 
     if (decision.type === 'tool_calls') {
       await executeParallelDecisionToolCalls({ context, decision, state })
+      const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)
+      if (mediaFallbackAnswer) {
+        return {
+          plan: state.plan,
+          observations: state.observations,
+          answer: mediaFallbackAnswer,
+        }
+      }
       continue
     }
 
@@ -892,11 +1065,19 @@ async function runModelDrivenLocalAgentToolLoop(
         answer: state.plan.clarificationQuestion ?? '',
       }
     }
+    const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)
+    if (mediaFallbackAnswer) {
+      return {
+        plan: state.plan,
+        observations: state.observations,
+        answer: mediaFallbackAnswer,
+      }
+    }
     if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
       return {
         plan: state.plan,
         observations: state.observations,
-        answer: '已完成画布修改，并完成验证。',
+        answer: buildVerifiedCompletionAnswer(state.observations),
       }
     }
   }
@@ -908,7 +1089,7 @@ async function runModelDrivenLocalAgentToolLoop(
     return {
       plan: state.plan,
       observations: state.observations,
-      answer: '已完成画布修改，并完成验证。',
+      answer: buildVerifiedCompletionAnswer(state.observations),
     }
   }
   const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)

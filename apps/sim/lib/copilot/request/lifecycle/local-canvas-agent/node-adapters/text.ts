@@ -58,6 +58,7 @@ export const textNodeAdapter: CanvasNodeAdapter = {
         height: getValue(node.values, 'height', 160),
         aiPrompt: getValue(node.values, 'aiPrompt', ''),
         aiModel: getValue(node.values, 'aiModel', 'gemini-3.1-flash-lite-preview'),
+        contentReferences: getValue(node.values, 'contentReferences', []),
       },
     })
   },

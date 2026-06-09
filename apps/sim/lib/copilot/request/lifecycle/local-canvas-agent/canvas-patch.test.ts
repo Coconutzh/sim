@@ -107,4 +107,149 @@ describe('local canvas patch validation', () => {
       },
     })
   })
+
+  it('compiles add_content_reference into contentReferences and a semantic reference edge', () => {
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 0, y: 0 },
+          values: { contentReferences: [] },
+          raw: {},
+        },
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 360, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+
+    const { operations } = buildEditWorkflowOperationsFromPatch({
+      snapshot,
+      patch: {
+        operations: [
+          {
+            type: 'add_content_reference',
+            consumerNodeId: 'image-1',
+            sourceNodeId: 'text-1',
+            role: 'text_context',
+          },
+        ],
+      },
+    })
+
+    expect(operations).toEqual([
+      expect.objectContaining({
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          inputs: {
+            contentReferences: [
+              {
+                sourceBlockId: 'text-1',
+                sourceVariant: 'text',
+                role: 'text_context',
+              },
+            ],
+          },
+        },
+      }),
+      expect.objectContaining({
+        operation_type: 'edit',
+        block_id: 'image-1',
+        params: {
+          connections: {
+            'content-reference-source-right': {
+              block: 'text-1',
+              handle: 'content-reference-target-left',
+            },
+          },
+        },
+      }),
+    ])
+  })
+
+  it('syncs video first-frame references to contentReferences, videoMedia, and auto-link edges', () => {
+    const file = { key: 'private/image.png', name: 'image.png', type: 'image/png', size: 100 }
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 0, y: 0 },
+          values: { file },
+          raw: {},
+        },
+        {
+          id: 'video-1',
+          name: 'Video 1',
+          blockType: 'content',
+          kind: 'video',
+          position: { x: 360, y: 0 },
+          values: { contentReferences: [], videoMedia: [] },
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+
+    const { operations } = buildEditWorkflowOperationsFromPatch({
+      snapshot,
+      patch: {
+        operations: [
+          {
+            type: 'add_content_reference',
+            consumerNodeId: 'video-1',
+            sourceNodeId: 'image-1',
+            role: 'video_first_frame',
+          },
+        ],
+      },
+    })
+
+    expect(operations[0]).toMatchObject({
+      operation_type: 'edit',
+      block_id: 'video-1',
+      params: {
+        inputs: {
+          contentReferences: [
+            {
+              sourceBlockId: 'image-1',
+              sourceVariant: 'image',
+              role: 'video_first_frame',
+            },
+          ],
+          videoMedia: [{ type: 'first_frame', file }],
+        },
+      },
+    })
+    expect(operations[1]).toMatchObject({
+      operation_type: 'edit',
+      block_id: 'image-1',
+      params: {
+        connections: {
+          'content-reference-source-right': {
+            block: 'video-1',
+            handle: 'content-reference-target-left',
+            autoLinkType: 'video_first_frame',
+          },
+        },
+      },
+    })
+  })
 })
