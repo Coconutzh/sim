@@ -13,7 +13,9 @@ import {
 } from 'react'
 import { generateId } from '@sim/utils/id'
 import {
+  Box as BoxIcon,
   Copy as CopyIcon,
+  Crop as CropIcon,
   ImageIcon,
   List,
   Music4,
@@ -24,7 +26,7 @@ import {
   Video,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Handle, type NodeProps, Position } from 'reactflow'
+import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import { getContentCanvasModelsByFamily } from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
@@ -73,6 +75,7 @@ import {
   buildContentReferencePromptContext,
   buildStructuredContentReferenceContext,
   type ContentReferenceRecord,
+  type ContentReferenceRole,
   canContentNodeVariantReferenceSource,
   findMatchingContentReferenceEdgeIds,
   getAllowedReferenceSourceVariants,
@@ -97,6 +100,8 @@ import {
   type VideoParametersValue,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
+import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
+import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
@@ -111,6 +116,7 @@ import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useContentCanvasModelAvailability } from '@/hooks/queries/content-canvas'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
+import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
@@ -1133,8 +1139,14 @@ function MediaContentCard({
   videoFrameAspectRatioPreset,
   contentReferences,
   referencedNodes,
+  isImageCropMode,
+  isImageCropProcessing,
   onAddReference,
   onRemoveReference,
+  onStartImageCrop,
+  onCancelImageCrop,
+  onConfirmImageCrop,
+  onCreateImagePerspectiveVariant,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
@@ -1169,8 +1181,17 @@ function MediaContentCard({
   videoFrameAspectRatioPreset: VideoFrameAspectRatioPreset
   contentReferences: ContentReferenceRecord[]
   referencedNodes: Record<string, PromptContextReferencedNode>
+  isImageCropMode: boolean
+  isImageCropProcessing: boolean
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
+  onStartImageCrop: () => void
+  onCancelImageCrop: () => void
+  onConfirmImageCrop: (file: File) => Promise<void>
+  onCreateImagePerspectiveVariant: (params: {
+    file: UploadedFileValue
+    model: ImageGenerationModelId
+  }) => Promise<void> | void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
@@ -1185,10 +1206,13 @@ function MediaContentCard({
   onChangeVideoFrameAspectRatioPreset: (value: VideoFrameAspectRatioPreset) => void
 }) {
   const params = useParams<{ workspaceId: string }>()
+  const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
   const uploadFileMutation = useUploadWorkspaceFile()
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
+  const [isPerspectiveMenuOpen, setIsPerspectiveMenuOpen] = useState(false)
   const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
   const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
@@ -1474,12 +1498,25 @@ function MediaContentCard({
   )
 
   const hasMedia = Boolean(mediaPath) && !isBroken
+  const showUploadAction = selected && canUpload && (variant !== 'image' || !hasMedia)
+  const showImageCropAction =
+    selected && canUpload && variant === 'image' && hasMedia && !isImageCropMode
+  const showImageToolbar =
+    selected && canUpload && variant === 'image' && hasMedia && !isImageCropMode
+
+  useEffect(() => {
+    if (!showImageToolbar) {
+      setIsPerspectiveMenuOpen(false)
+    }
+  }, [showImageToolbar])
 
   return (
-    <div className='relative'>
-      {selected && canUpload && (
+    <div ref={rootRef} className='relative'>
+      {showUploadAction && (
         <button
           type='button'
+          aria-label={uploadActionLabel}
+          title={uploadActionLabel}
           onPointerDown={(event) => {
             event.stopPropagation()
           }}
@@ -1492,6 +1529,47 @@ function MediaContentCard({
           <Upload className='h-3.5 w-3.5' />
           <span>{uploadActionLabel}</span>
         </button>
+      )}
+
+      {showImageToolbar && (
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5'>
+          {showImageCropAction && (
+            <button
+              type='button'
+              aria-label='Crop image'
+              title='Crop image'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                setIsPerspectiveMenuOpen(false)
+                onStartImageCrop()
+              }}
+              className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+            >
+              <CropIcon className='h-3.5 w-3.5' />
+            </button>
+          )}
+          <button
+            type='button'
+            aria-label='多角度'
+            title='多角度'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsPerspectiveMenuOpen((current) => !current)
+            }}
+            className={cn(
+              'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]',
+              isPerspectiveMenuOpen && 'bg-[var(--surface-3)]'
+            )}
+          >
+            <BoxIcon className='h-3.5 w-3.5' />
+          </button>
+        </div>
       )}
 
       <div
@@ -1516,6 +1594,7 @@ function MediaContentCard({
               )}
             >
               <img
+                ref={imageRef}
                 src={mediaPath}
                 alt={file?.name || 'Uploaded content'}
                 className='max-h-full max-w-full rounded-xl object-contain'
@@ -1597,6 +1676,28 @@ function MediaContentCard({
           </div>
         )}
       </div>
+
+      {variant === 'image' && hasMedia && isImageCropMode ? (
+        <ImageCropOverlay
+          rootRef={rootRef}
+          imageRef={imageRef}
+          imageName={file?.name}
+          imageType={file?.type}
+          isProcessing={isImageCropProcessing}
+          onCancel={onCancelImageCrop}
+          onConfirm={onConfirmImageCrop}
+        />
+      ) : null}
+
+      {variant === 'image' && hasMedia && isPerspectiveMenuOpen && file ? (
+        <ImagePerspectiveMenu
+          workspaceId={params.workspaceId}
+          sourceFile={file}
+          availability={modelAvailability}
+          onCreateVariant={onCreateImagePerspectiveVariant}
+          onClose={() => setIsPerspectiveMenuOpen(false)}
+        />
+      ) : null}
 
       {variant === 'image' && !isPreview && !isEmbedded && (
         <MediaContentAiComposer
@@ -1733,6 +1834,11 @@ export const ContentBlock = memo(function ContentBlock({
   selected,
 }: NodeProps<ContentBlockNodeData>) {
   const params = useParams<{ workspaceId: string }>()
+  const reactFlowInstance = useReactFlow()
+  const { fitViewToBounds } = useCanvasViewport(reactFlowInstance, {
+    embedded: Boolean(data.isEmbedded),
+  })
+  const uploadWorkspaceFileMutation = useUploadWorkspaceFile()
   const variant = data.contentVariant as ContentVariant | undefined
 
   const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual({
@@ -1815,6 +1921,7 @@ export const ContentBlock = memo(function ContentBlock({
   } = useCollaborativeWorkflow()
   const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
+  const [isImageCropMode, setIsImageCropMode] = useState(false)
   const [referenceDragState, setReferenceDragState] = useState<ContentReferenceDragState | null>(
     null
   )
@@ -2136,6 +2243,241 @@ export const ContentBlock = memo(function ContentBlock({
       workflowBlocks,
     ]
   )
+
+  const startImageCropMode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    setIsImageCropMode(true)
+    requestAnimationFrame(() => {
+      const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
+      if (!node) return
+      fitViewToBounds({
+        nodes: [node],
+        padding: 0.08,
+        maxZoom: 2.4,
+        duration: 300,
+      })
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    fitViewToBounds,
+    id,
+    reactFlowInstance,
+    resolvedFile,
+    resolvedVariant,
+  ])
+
+  const cancelImageCropMode = useCallback(() => {
+    setIsImageCropMode(false)
+  }, [])
+
+  const confirmImageCrop = useCallback(
+    async (croppedFile: File) => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+        throw new Error('Cropping is not available for this workflow.')
+      }
+      if (!params.workspaceId) {
+        throw new Error('Missing workspace context for upload.')
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        throw new Error('Source image node no longer exists.')
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        throw new Error('Unable to create an image content node.')
+      }
+
+      const uploadResult = await uploadWorkspaceFileMutation.mutateAsync({
+        workspaceId: params.workspaceId,
+        file: croppedFile,
+        skipToast: true,
+      })
+
+      const targetBlockId = generateId()
+      const parentId = sourceBlock.data?.parentId
+      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+      const targetPosition = {
+        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+      const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+      const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+      const referenceRole =
+        getDefaultReferenceRole({
+          targetVariant: 'image',
+          model: effectiveImageModel,
+          sourceVariant: 'image',
+        }) ?? ('image_reference' satisfies ContentReferenceRole)
+      const uploadedFile: UploadedFileValue = {
+        id: uploadResult.file.id,
+        name: uploadResult.file.name,
+        path: uploadResult.file.url,
+        key: uploadResult.file.key,
+        size: uploadResult.file.size,
+        type: uploadResult.file.type,
+        context: uploadResult.file.context,
+      }
+      const newBlock = prepareBlockState({
+        id: targetBlockId,
+        type: 'content',
+        name: getUniqueBlockName('Image', workflowBlocks),
+        position: targetPosition,
+        data: {
+          contentVariant: 'image',
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: 'image',
+        role: referenceRole,
+      }
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: id,
+        target: targetBlockId,
+        sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+      })
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          contentVariant: 'image',
+          aiPrompt: '',
+          aiModel: effectiveImageModel || resolvedAiModel || DEFAULT_IMAGE_AI_MODEL,
+          aiAspectRatio: 'auto',
+          file: uploadedFile,
+          contentReferences: [reference],
+        },
+      }
+
+      setPendingSelection([targetBlockId])
+      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      setIsImageCropMode(false)
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      effectiveImageModel,
+      id,
+      params.workspaceId,
+      resolvedAiModel,
+      setPendingSelection,
+      uploadWorkspaceFileMutation,
+      workflowBlocks,
+    ]
+  )
+
+  const createImagePerspectiveVariantNode = useCallback(
+    async ({ file, model }: { file: UploadedFileValue; model: ImageGenerationModelId }) => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+        throw new Error('Multi-angle image creation is not available for this workflow.')
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        throw new Error('Source image node no longer exists.')
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        throw new Error('Unable to create an image content node.')
+      }
+
+      const targetBlockId = generateId()
+      const parentId = sourceBlock.data?.parentId
+      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+      const targetPosition = {
+        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+      const referenceRole =
+        getDefaultReferenceRole({
+          targetVariant: 'image',
+          model,
+          sourceVariant: 'image',
+        }) ?? ('image_reference' satisfies ContentReferenceRole)
+      const newBlock = prepareBlockState({
+        id: targetBlockId,
+        type: 'content',
+        name: getUniqueBlockName('Image', workflowBlocks),
+        position: targetPosition,
+        data: {
+          contentVariant: 'image',
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: 'image',
+        role: referenceRole,
+      }
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: id,
+        target: targetBlockId,
+        sourceHandle: getContentReferenceSourceHandleId('right'),
+        targetHandle: getContentReferenceTargetHandleId('left'),
+      })
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          contentVariant: 'image',
+          aiPrompt: '',
+          aiModel: model,
+          aiAspectRatio: 'auto',
+          file,
+          contentReferences: [reference],
+        },
+      }
+
+      setPendingSelection([targetBlockId])
+      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      id,
+      setPendingSelection,
+      workflowBlocks,
+    ]
+  )
+
+  useEffect(() => {
+    if (
+      isImageCropMode &&
+      (!selected ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'image' ||
+        !resolvedFile)
+    ) {
+      setIsImageCropMode(false)
+    }
+  }, [data.isEmbedded, data.isPreview, isImageCropMode, resolvedFile, resolvedVariant, selected])
 
   const resolveBlockSourceValues = useCallback(
     (blockId: string): StoredValueRecord => {
@@ -2829,7 +3171,7 @@ export const ContentBlock = memo(function ContentBlock({
           }
         }}
       >
-        {!data.isPreview && !data.isEmbedded && (
+        {!data.isPreview && !data.isEmbedded && !(resolvedVariant === 'image' && resolvedFile) && (
           <div className='nodrag nopan'>
             <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
           </div>
@@ -2860,8 +3202,14 @@ export const ContentBlock = memo(function ContentBlock({
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
+            isImageCropMode={isImageCropMode}
+            isImageCropProcessing={uploadWorkspaceFileMutation.isPending}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
+            onStartImageCrop={startImageCropMode}
+            onCancelImageCrop={cancelImageCropMode}
+            onConfirmImageCrop={confirmImageCrop}
+            onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}

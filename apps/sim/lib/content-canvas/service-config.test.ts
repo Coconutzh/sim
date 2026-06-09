@@ -161,4 +161,22 @@ describe('content-canvas service config', () => {
       modelId: 'gemini-3.1-flash-lite-preview',
     })
   })
+
+  it('routes image Gemini through Evolink when the image-specific key is configured', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'evolink-image-key'
+
+    const { resolveContentService } = await import('@/lib/content-canvas/service-config')
+
+    expect(
+      resolveContentService({
+        capability: 'image',
+        modelId: 'gemini-3.1-flash-image-preview',
+      })
+    ).toMatchObject({
+      kind: 'openai-compatible',
+      baseUrl: 'https://api.evolink.ai/v1',
+      apiKey: 'evolink-image-key',
+      modelId: 'gemini-3.1-flash-image-preview',
+    })
+  })
 })

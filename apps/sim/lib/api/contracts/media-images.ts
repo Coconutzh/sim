@@ -6,6 +6,7 @@ export const imageGenerationModelSchema = z.enum([
   'jimeng-4.0',
   'jimeng-4.5',
   'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
 ])
 export const imageGenerationAspectRatioSchema = z.enum([
   'auto',

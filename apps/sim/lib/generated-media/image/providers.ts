@@ -9,6 +9,8 @@ import {
 } from '@/lib/generated-media/image/image-generation-utils'
 
 const logger = createLogger('GeneratedImageProviders')
+const EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS = 1000
+const EVOLINK_IMAGE_TASK_MAX_ATTEMPTS = 90
 
 const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>> = {
   'jimeng-4.0': 'doubao-seedream-4-0-250828',
@@ -160,6 +162,125 @@ function parseCompatibleImagePayload(payload: any): {
   return null
 }
 
+function getProviderErrorMessage(payload: Record<string, unknown>, fallback: string): string {
+  return (
+    (payload.error as { message?: string } | undefined)?.message ||
+    (typeof payload.message === 'string' ? payload.message : undefined) ||
+    fallback
+  )
+}
+
+function extractTaskId(payload: Record<string, unknown>): string | null {
+  const data = payload.data
+  if (typeof payload.task_id === 'string') return payload.task_id
+  if (typeof payload.taskId === 'string') return payload.taskId
+  if (typeof payload.id === 'string') return payload.id
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>
+    if (typeof record.task_id === 'string') return record.task_id
+    if (typeof record.taskId === 'string') return record.taskId
+    if (typeof record.id === 'string') return record.id
+  }
+  return null
+}
+
+function getTaskStatus(payload: Record<string, unknown>): string | null {
+  const status = payload.status
+  if (typeof status === 'string') return status.toLowerCase()
+  const data = payload.data
+  if (data && typeof data === 'object') {
+    const dataStatus = (data as Record<string, unknown>).status
+    if (typeof dataStatus === 'string') return dataStatus.toLowerCase()
+  }
+  return null
+}
+
+function collectImageUrls(value: unknown, urls: string[] = []): string[] {
+  if (!value) return urls
+  if (typeof value === 'string') {
+    if (/^https?:\/\//i.test(value) || value.startsWith('data:image/')) {
+      urls.push(value)
+    }
+    return urls
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectImageUrls(item, urls)
+    }
+    return urls
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    for (const key of ['url', 'image_url', 'imageUrl', 'origin_image_url']) {
+      collectImageUrls(record[key], urls)
+    }
+    for (const key of [
+      'images',
+      'image_urls',
+      'imageUrls',
+      'output',
+      'result',
+      'results',
+      'data',
+    ]) {
+      collectImageUrls(record[key], urls)
+    }
+  }
+  return urls
+}
+
+function extractGeneratedImageUrl(payload: Record<string, unknown>): string | null {
+  const resultFields = [
+    payload.output,
+    payload.result,
+    payload.results,
+    payload.images,
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>).output
+      : undefined,
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>).result
+      : undefined,
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>).results
+      : undefined,
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>).images
+      : undefined,
+  ]
+
+  for (const field of resultFields) {
+    const [url] = collectImageUrls(field)
+    if (url) return url
+  }
+
+  return collectImageUrls(payload)[0] ?? null
+}
+
+function isSuccessfulTaskStatus(status: string | null): boolean {
+  return (
+    status === 'succeeded' || status === 'success' || status === 'completed' || status === 'done'
+  )
+}
+
+function isFailedTaskStatus(status: string | null): boolean {
+  return status === 'failed' || status === 'failure' || status === 'error' || status === 'cancelled'
+}
+
+async function delay(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, ms)
+    abortSignal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout)
+        reject(new Error('Request was cancelled'))
+      },
+      { once: true }
+    )
+  })
+}
+
 async function generateImageWithGeminiNative({
   model,
   prompt,
@@ -232,21 +353,11 @@ async function generateImageWithGeminiCompatible({
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
 
-  const content = [
-    {
-      type: 'text',
-      text: buildImagePrompt({ prompt, aspectRatio, referenceContext }),
-    },
-    ...(referenceContext?.images ?? [])
-      .map((image) => toCompatibleImageUrl(image))
-      .filter((value): value is string => Boolean(value))
-      .map((url) => ({
-        type: 'image_url',
-        image_url: { url },
-      })),
-  ]
-
-  const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const baseUrl = service.baseUrl.replace(/\/$/, '')
+  const imageUrls = (referenceContext?.images ?? [])
+    .map((image) => toCompatibleImageUrl(image))
+    .filter((value): value is string => Boolean(value))
+  const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
     signal: abortSignal,
     headers: {
@@ -255,37 +366,91 @@ async function generateImageWithGeminiCompatible({
     },
     body: JSON.stringify({
       model,
-      modalities: ['text', 'image'],
-      size: mapImageAspectRatioToProviderSize(aspectRatio),
-      messages: [
-        {
-          role: 'user',
-          content,
-        },
-      ],
+      prompt: buildImagePrompt({ prompt, aspectRatio, referenceContext }),
+      size: aspectRatio,
+      ...(imageUrls.length > 0 ? { image_urls: imageUrls } : {}),
     }),
   })
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
   if (!response.ok) {
     throw new Error(
-      (payload.error as { message?: string } | undefined)?.message ||
-        (typeof payload.message === 'string' ? payload.message : undefined) ||
+      getProviderErrorMessage(
+        payload,
         `Gemini compatible image request failed (${response.status})`
+      )
     )
   }
 
-  const result = parseCompatibleImagePayload(payload)
-  if (!result) {
-    throw new Error('Gemini compatible image request returned no image data')
+  const immediateResult = parseCompatibleImagePayload(payload)
+  if (immediateResult) {
+    return {
+      buffer: immediateResult.buffer,
+      mimeType: immediateResult.mimeType,
+      provider: 'gemini-compatible',
+      providerModel: model,
+      revisedPrompt: immediateResult.revisedPrompt,
+    }
+  }
+
+  const taskId = extractTaskId(payload)
+  if (!taskId) {
+    throw new Error('Gemini compatible image request returned no task id')
+  }
+
+  let imageUrl: string | null = null
+  let taskPayload: Record<string, unknown> = payload
+  for (let attempt = 0; attempt < EVOLINK_IMAGE_TASK_MAX_ATTEMPTS; attempt++) {
+    throwIfAborted(abortSignal)
+    if (attempt > 0) {
+      await delay(EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS, abortSignal)
+    }
+
+    const taskResponse = await fetch(`${baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'GET',
+      signal: abortSignal,
+      headers: {
+        Authorization: `Bearer ${service.apiKey}`,
+      },
+    })
+    taskPayload = (await taskResponse.json().catch(() => ({}))) as Record<string, unknown>
+    if (!taskResponse.ok) {
+      throw new Error(
+        getProviderErrorMessage(
+          taskPayload,
+          `Gemini compatible image task request failed (${taskResponse.status})`
+        )
+      )
+    }
+
+    const status = getTaskStatus(taskPayload)
+    const generatedImageUrl = extractGeneratedImageUrl(taskPayload)
+    if (generatedImageUrl && (isSuccessfulTaskStatus(status) || !status)) {
+      imageUrl = generatedImageUrl
+      break
+    }
+    if (isFailedTaskStatus(status)) {
+      throw new Error(getProviderErrorMessage(taskPayload, 'Gemini compatible image task failed'))
+    }
+  }
+
+  if (!imageUrl) {
+    throw new Error('Gemini compatible image task did not complete in time')
+  }
+
+  throwIfAborted(abortSignal)
+  const imageResponse = await fetch(imageUrl, { signal: abortSignal })
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to download generated image (${imageResponse.status})`)
   }
 
   return {
-    buffer: result.buffer,
-    mimeType: result.mimeType,
+    buffer: Buffer.from(await imageResponse.arrayBuffer()),
+    mimeType: imageResponse.headers.get('content-type') || inferMimeTypeFromUrl(imageUrl),
     provider: 'gemini-compatible',
     providerModel: model,
-    revisedPrompt: result.revisedPrompt,
+    revisedPrompt:
+      typeof taskPayload.revised_prompt === 'string' ? taskPayload.revised_prompt : undefined,
   }
 }
 
@@ -396,7 +561,10 @@ export async function generateImageWithProvider(
 ): Promise<GeneratedImageProviderResult> {
   const service = resolveContentService({ capability: 'image', modelId: params.model })
 
-  if (params.model === 'gemini-3.1-flash-image-preview') {
+  if (
+    params.model === 'gemini-3.1-flash-image-preview' ||
+    params.model === 'gemini-3-pro-image-preview'
+  ) {
     if (service.kind === 'openai-compatible') {
       return generateImageWithGeminiCompatible(params)
     }

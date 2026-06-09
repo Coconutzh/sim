@@ -1,12 +1,12 @@
-import { getEnv } from '@/lib/core/config/env'
 import {
-  getContentCanvasModel,
-  getContentCanvasModelsByCapability,
-  getContentCanvasModelsByFamily,
   type ContentCapability,
   type ContentModelFamily,
   type ContentServiceKind,
+  getContentCanvasModel,
+  getContentCanvasModelsByCapability,
+  getContentCanvasModelsByFamily,
 } from '@/lib/content-canvas/model-catalog'
+import { getEnv } from '@/lib/core/config/env'
 
 export interface ContentServiceConfig {
   kind: ContentServiceKind
@@ -71,7 +71,8 @@ function resolveLegacyApiKey(capability: ContentCapability, family: ContentModel
   }
   if (family === 'glm') return getEnv('ZHIPU_API_KEY')?.trim() || undefined
   if (capability === 'image' && family === 'ark') return getEnv('ARK_API_KEY')?.trim() || undefined
-  if (capability === 'audio' && family === 'suno') return getEnv('EVOLINK_API_KEY')?.trim() || undefined
+  if (capability === 'audio' && family === 'suno')
+    return getEnv('EVOLINK_API_KEY')?.trim() || undefined
   if (capability === 'video' && (family === 'wan2.6' || family === 'wan2.7')) {
     return getEnv('DASHSCOPE_API_KEY')?.trim() || undefined
   }
@@ -171,18 +172,24 @@ export function getContentServiceConfig(params: {
     throw new Error(`No content-canvas models registered for ${params.capability}/${params.family}`)
   }
 
-  const configuredBaseUrl = mapping.newEnvBaseUrl ? getEnv(mapping.newEnvBaseUrl)?.trim() : undefined
+  const configuredBaseUrl = mapping.newEnvBaseUrl
+    ? getEnv(mapping.newEnvBaseUrl)?.trim()
+    : undefined
+  const configuredApiKey = mapping.newEnvApiKey ? getEnv(mapping.newEnvApiKey)?.trim() : undefined
+  const evolinkImageGeminiBaseUrl =
+    params.capability === 'image' && params.family === 'gemini' && configuredApiKey
+      ? EVOLINK_BASE_URL
+      : undefined
   const legacyBaseUrl =
     params.capability === 'image' && params.family === 'ark'
       ? getEnv('ARK_BASE_URL')?.trim()
       : params.capability === 'audio' && params.family === 'suno'
         ? getEnv('EVOLINK_BASE_URL')?.trim()
-        : params.capability === 'video' && (params.family === 'wan2.6' || params.family === 'wan2.7')
+        : params.capability === 'video' &&
+            (params.family === 'wan2.6' || params.family === 'wan2.7')
           ? getEnv('DASHSCOPE_BASE_URL')?.trim()
           : undefined
-  const apiKey =
-    (mapping.newEnvApiKey ? getEnv(mapping.newEnvApiKey)?.trim() : undefined) ||
-    resolveLegacyApiKey(params.capability, params.family)
+  const apiKey = configuredApiKey || resolveLegacyApiKey(params.capability, params.family)
   const enabledModelIds = parseEnabledModelIds(
     mapping.newEnvEnabledModels ? getEnv(mapping.newEnvEnabledModels) : undefined,
     familyModels
@@ -197,9 +204,10 @@ export function getContentServiceConfig(params: {
       capability: params.capability,
       family: params.family,
       mapping,
-      configuredBaseUrl,
+      configuredBaseUrl: configuredBaseUrl || evolinkImageGeminiBaseUrl,
     }),
-    baseUrl: configuredBaseUrl || legacyBaseUrl || mapping.officialBaseUrl,
+    baseUrl:
+      configuredBaseUrl || legacyBaseUrl || evolinkImageGeminiBaseUrl || mapping.officialBaseUrl,
     apiKey,
     enabledModelIds,
     defaultModelId:

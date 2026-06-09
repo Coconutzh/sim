@@ -212,6 +212,15 @@ export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition
     referenceCapability: IMAGE_TEXT_AND_IMAGE_CAPABILITY,
   },
   {
+    id: 'gemini-3-pro-image-preview',
+    capability: 'image',
+    family: 'gemini',
+    serviceKind: 'google-native',
+    label: 'Gemini 3 Pro Image',
+    description: 'Nano Banana Pro image editing with reference images',
+    referenceCapability: IMAGE_TEXT_AND_IMAGE_CAPABILITY,
+  },
+  {
     id: 'suno-v5-beta',
     capability: 'audio',
     family: 'suno',
