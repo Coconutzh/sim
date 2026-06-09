@@ -5,12 +5,16 @@ import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
   type ImageAspectRatioValue,
   type ImageGenerationModelId,
+  type ImageResolutionValue,
   mapImageAspectRatioToProviderSize,
 } from '@/lib/generated-media/image/image-generation-utils'
 
 const logger = createLogger('GeneratedImageProviders')
 const EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS = 1000
 const EVOLINK_IMAGE_TASK_MAX_ATTEMPTS = 90
+const EVOLINK_FILE_UPLOAD_BASE_URL = 'https://files-api.evolink.ai/api/v1'
+const GEMINI_PRO_IMAGE_MODEL = 'gemini-3-pro-image' as const
+const GEMINI_PRO_IMAGE_PREVIEW_MODEL = 'gemini-3-pro-image-preview' as const
 
 const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>> = {
   'jimeng-4.0': 'doubao-seedream-4-0-250828',
@@ -21,6 +25,7 @@ interface GenerateImageWithProviderInput {
   model: ImageGenerationModelId
   prompt: string
   aspectRatio: ImageAspectRatioValue
+  resolution?: ImageResolutionValue
   referenceContext?: {
     text: string[]
     images: UserFileLike[]
@@ -62,27 +67,23 @@ function inferMimeTypeFromUrl(url: string | undefined): string {
 function buildImagePrompt({
   prompt,
   aspectRatio,
+  resolution,
   referenceContext,
-}: Pick<GenerateImageWithProviderInput, 'prompt' | 'aspectRatio' | 'referenceContext'>) {
+}: Pick<
+  GenerateImageWithProviderInput,
+  'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext'
+>) {
   const textSections = [...(referenceContext?.text ?? [])].filter(
     (section) => section.trim().length > 0
   )
   return [
     prompt,
     ...textSections.map((section, index) => `Reference context ${index + 1}:\n${section}`),
+    resolution ? `Use ${resolution} output resolution.` : null,
     `Use a ${aspectRatio} aspect ratio.`,
   ]
     .filter(Boolean)
     .join('\n\n')
-}
-
-function toCompatibleImageUrl(image: UserFileLike) {
-  if (image.base64 && image.type) {
-    return `data:${image.type};base64,${image.base64}`
-  }
-
-  const url = image.url?.trim()
-  return url && url.length > 0 ? url : null
 }
 
 function decodeDataUrlImage(url: string) {
@@ -168,6 +169,121 @@ function getProviderErrorMessage(payload: Record<string, unknown>, fallback: str
     (typeof payload.message === 'string' ? payload.message : undefined) ||
     fallback
   )
+}
+
+function getEvolinkFileUploadErrorMessage(
+  payload: Record<string, unknown>,
+  fallback: string
+): string {
+  return (
+    getProviderErrorMessage(payload, '') ||
+    (typeof payload.msg === 'string' ? payload.msg : undefined) ||
+    fallback
+  )
+}
+
+function isEvolinkCompatibleBaseUrl(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith('evolink.ai')
+  } catch {
+    return false
+  }
+}
+
+function getCompatibleImageDataUrl(image: UserFileLike): string | null {
+  if (image.base64 && image.type) {
+    return `data:${image.type};base64,${image.base64}`
+  }
+
+  const url = image.url?.trim()
+  if (url?.startsWith('data:image/')) {
+    return url
+  }
+
+  return null
+}
+
+function getCompatibleImageFileName(image: UserFileLike): string | undefined {
+  const name = image.name?.trim()
+  if (name) return name
+
+  const keyFileName = image.key?.split('/').pop()?.trim()
+  if (keyFileName) return keyFileName
+
+  if (image.type?.includes('jpeg') || image.type?.includes('jpg')) return 'reference.jpg'
+  if (image.type?.includes('webp')) return 'reference.webp'
+  if (image.type?.includes('gif')) return 'reference.gif'
+  return 'reference.png'
+}
+
+function getUploadedEvolinkFileUrl(payload: Record<string, unknown>): string | null {
+  const data = payload.data
+  if (!data || typeof data !== 'object') return null
+  const fileUrl = (data as Record<string, unknown>).file_url
+  return typeof fileUrl === 'string' && fileUrl.trim().length > 0 ? fileUrl : null
+}
+
+async function uploadEvolinkBase64Image({
+  apiKey,
+  image,
+  dataUrl,
+  abortSignal,
+}: {
+  apiKey: string
+  image: UserFileLike
+  dataUrl: string
+  abortSignal?: AbortSignal
+}): Promise<string> {
+  const response = await fetch(`${EVOLINK_FILE_UPLOAD_BASE_URL}/files/upload/base64`, {
+    method: 'POST',
+    signal: abortSignal,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      base64_data: dataUrl,
+      file_name: getCompatibleImageFileName(image),
+      upload_path: 'sim-content-canvas',
+    }),
+  })
+
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
+  if (!response.ok) {
+    throw new Error(
+      getEvolinkFileUploadErrorMessage(payload, `Evolink image upload failed (${response.status})`)
+    )
+  }
+
+  const fileUrl = getUploadedEvolinkFileUrl(payload)
+  if (!fileUrl) {
+    throw new Error('Evolink image upload returned no file URL')
+  }
+
+  return fileUrl
+}
+
+async function toCompatibleImageUrl({
+  image,
+  baseUrl,
+  apiKey,
+  abortSignal,
+}: {
+  image: UserFileLike
+  baseUrl: string
+  apiKey: string
+  abortSignal?: AbortSignal
+}): Promise<string | null> {
+  const dataUrl = getCompatibleImageDataUrl(image)
+  if (dataUrl) {
+    if (isEvolinkCompatibleBaseUrl(baseUrl)) {
+      return uploadEvolinkBase64Image({ apiKey, image, dataUrl, abortSignal })
+    }
+    return dataUrl
+  }
+
+  const url = image.url?.trim()
+  return url && url.length > 0 ? url : null
 }
 
 function extractTaskId(payload: Record<string, unknown>): string | null {
@@ -267,6 +383,54 @@ function isFailedTaskStatus(status: string | null): boolean {
   return status === 'failed' || status === 'failure' || status === 'error' || status === 'cancelled'
 }
 
+function isModelFallbackError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('not found') ||
+    message.includes('unsupported') ||
+    message.includes('invalid model') ||
+    message.includes('unknown model') ||
+    message.includes('no available service for model')
+  )
+}
+
+function isGeminiProImageModel(model: ImageGenerationModelId): boolean {
+  return model === GEMINI_PRO_IMAGE_MODEL || model === GEMINI_PRO_IMAGE_PREVIEW_MODEL
+}
+
+function buildGeminiCompatibleImageRequestBody({
+  model,
+  prompt,
+  aspectRatio,
+  resolution,
+  referenceContext,
+  imageUrls,
+}: Pick<
+  GenerateImageWithProviderInput,
+  'model' | 'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext'
+> & {
+  imageUrls: string[]
+}): Record<string, unknown> {
+  const requestBody: Record<string, unknown> = {
+    model,
+    prompt: buildImagePrompt({ prompt, aspectRatio, resolution, referenceContext }),
+  }
+
+  if (isGeminiProImageModel(model) && resolution) {
+    requestBody.size = aspectRatio
+    requestBody.quality = resolution
+  } else {
+    requestBody.size = resolution ?? aspectRatio
+  }
+
+  if (imageUrls.length > 0) {
+    requestBody.image_urls = imageUrls
+  }
+
+  return requestBody
+}
+
 async function delay(ms: number, abortSignal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(resolve, ms)
@@ -285,6 +449,7 @@ async function generateImageWithGeminiNative({
   model,
   prompt,
   aspectRatio,
+  resolution,
   referenceContext,
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
@@ -308,15 +473,21 @@ async function generateImageWithGeminiNative({
   }
 
   parts.push({
-    text: buildImagePrompt({ prompt, aspectRatio, referenceContext }),
+    text: buildImagePrompt({ prompt, aspectRatio, resolution, referenceContext }),
   })
+
+  const config: {
+    responseModalities: string[]
+    imageConfig?: { imageSize: ImageResolutionValue }
+  } = {
+    responseModalities: ['IMAGE', 'TEXT'],
+    ...(resolution ? { imageConfig: { imageSize: resolution } } : {}),
+  }
 
   const response = await ai.models.generateContent({
     model,
     contents: [{ role: 'user', parts }],
-    config: {
-      responseModalities: ['IMAGE', 'TEXT'],
-    },
+    config,
   })
   throwIfAborted(abortSignal)
 
@@ -344,6 +515,7 @@ async function generateImageWithGeminiCompatible({
   model,
   prompt,
   aspectRatio,
+  resolution,
   referenceContext,
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
@@ -352,24 +524,38 @@ async function generateImageWithGeminiCompatible({
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
+  const apiKey = service.apiKey
 
   const baseUrl = service.baseUrl.replace(/\/$/, '')
-  const imageUrls = (referenceContext?.images ?? [])
-    .map((image) => toCompatibleImageUrl(image))
-    .filter((value): value is string => Boolean(value))
+  const imageUrls = (
+    await Promise.all(
+      (referenceContext?.images ?? []).map((image) =>
+        toCompatibleImageUrl({
+          image,
+          baseUrl,
+          apiKey,
+          abortSignal,
+        })
+      )
+    )
+  ).filter((value): value is string => Boolean(value))
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
     signal: abortSignal,
     headers: {
-      Authorization: `Bearer ${service.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model,
-      prompt: buildImagePrompt({ prompt, aspectRatio, referenceContext }),
-      size: aspectRatio,
-      ...(imageUrls.length > 0 ? { image_urls: imageUrls } : {}),
-    }),
+    body: JSON.stringify(
+      buildGeminiCompatibleImageRequestBody({
+        model,
+        prompt,
+        aspectRatio,
+        resolution,
+        referenceContext,
+        imageUrls,
+      })
+    ),
   })
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
@@ -563,12 +749,31 @@ export async function generateImageWithProvider(
 
   if (
     params.model === 'gemini-3.1-flash-image-preview' ||
-    params.model === 'gemini-3-pro-image-preview'
+    params.model === GEMINI_PRO_IMAGE_MODEL ||
+    params.model === GEMINI_PRO_IMAGE_PREVIEW_MODEL
   ) {
-    if (service.kind === 'openai-compatible') {
-      return generateImageWithGeminiCompatible(params)
+    try {
+      if (service.kind === 'openai-compatible') {
+        return await generateImageWithGeminiCompatible(params)
+      }
+      return await generateImageWithGeminiNative(params)
+    } catch (error) {
+      if (params.model !== GEMINI_PRO_IMAGE_MODEL || !isModelFallbackError(error)) {
+        throw error
+      }
+      logger.warn('Falling back to Gemini 3 Pro Image preview model', {
+        model: params.model,
+        fallbackModel: GEMINI_PRO_IMAGE_PREVIEW_MODEL,
+      })
+      const fallbackParams: GenerateImageWithProviderInput = {
+        ...params,
+        model: GEMINI_PRO_IMAGE_PREVIEW_MODEL,
+      }
+      if (service.kind === 'openai-compatible') {
+        return generateImageWithGeminiCompatible(fallbackParams)
+      }
+      return generateImageWithGeminiNative(fallbackParams)
     }
-    return generateImageWithGeminiNative(params)
   }
 
   return generateImageWithArk(params)

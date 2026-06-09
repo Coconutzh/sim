@@ -6,8 +6,10 @@ export const imageGenerationModelSchema = z.enum([
   'jimeng-4.0',
   'jimeng-4.5',
   'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image',
   'gemini-3-pro-image-preview',
 ])
+export const imageGenerationResolutionSchema = z.enum(['1K', '2K', '4K'])
 export const imageGenerationAspectRatioSchema = z.enum([
   'auto',
   '1:1',
@@ -31,6 +33,15 @@ export const generateWorkspaceImageBodySchema = z.object({
   prompt: z.string().min(1, 'prompt is required'),
   aspectRatio: imageGenerationAspectRatioSchema.default('auto'),
   referenceContext: imageReferenceContextSchema.optional(),
+})
+
+export const repaintWorkspaceImageBodySchema = z.object({
+  workspaceId: z.string().min(1, 'workspaceId is required'),
+  prompt: z.string().min(1, 'prompt is required'),
+  resolution: imageGenerationResolutionSchema.default('2K'),
+  sourceImage: userFileSchema,
+  maskImage: userFileSchema,
+  referenceImages: z.array(userFileSchema).default([]),
 })
 
 const generatedWorkspaceFileSchema = z.object({
@@ -63,4 +74,20 @@ export const generateWorkspaceImageContract = defineRouteContract({
   },
 })
 
+export const repaintWorkspaceImageContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/images/repaint',
+  body: repaintWorkspaceImageBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceFileSchema,
+      metadata: generatedImageMetadataSchema,
+    }),
+  },
+})
+
 export type GenerateWorkspaceImageBody = z.input<typeof generateWorkspaceImageBodySchema>
+export type RepaintWorkspaceImageBody = z.input<typeof repaintWorkspaceImageBodySchema>
+export type ImageGenerationResolution = z.output<typeof imageGenerationResolutionSchema>

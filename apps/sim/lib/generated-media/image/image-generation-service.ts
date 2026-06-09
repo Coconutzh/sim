@@ -2,7 +2,9 @@ import type { UserFileLike } from '@/lib/core/utils/user-file'
 import type {
   ImageAspectRatioValue,
   ImageGenerationModelId,
+  ImageResolutionValue,
 } from '@/lib/generated-media/image/image-generation-utils'
+import { DEFAULT_IMAGE_REPAINT_MODEL } from '@/lib/generated-media/image/image-generation-utils'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
 import {
   fetchWorkspaceFileBuffer,
@@ -24,6 +26,17 @@ interface GenerateWorkspaceImageFromPromptInput {
   abortSignal?: AbortSignal
 }
 
+interface RepaintWorkspaceImageInput {
+  workspaceId: string
+  userId: string
+  prompt: string
+  resolution: ImageResolutionValue
+  sourceImage: UserFileLike
+  maskImage: UserFileLike
+  referenceImages: UserFileLike[]
+  abortSignal?: AbortSignal
+}
+
 interface GenerateWorkspaceImageFromPromptResult {
   file: UserFile
   metadata: {
@@ -32,6 +45,8 @@ interface GenerateWorkspaceImageFromPromptResult {
     revisedPrompt?: string
   }
 }
+
+type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 
 function getGeneratedFileName(mimeType: string): string {
   if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'generated-image.jpg'
@@ -107,6 +122,66 @@ export async function generateWorkspaceImageFromPrompt({
     prompt,
     aspectRatio,
     referenceContext: hydratedReferenceContext,
+    abortSignal,
+  })
+
+  const file = await uploadWorkspaceFile(
+    workspaceId,
+    userId,
+    generatedImage.buffer,
+    getGeneratedFileName(generatedImage.mimeType),
+    generatedImage.mimeType
+  )
+
+  return {
+    file,
+    metadata: {
+      provider: generatedImage.provider,
+      providerModel: generatedImage.providerModel,
+      revisedPrompt: generatedImage.revisedPrompt,
+    },
+  }
+}
+
+export function buildWorkspaceImageRepaintPrompt({
+  prompt,
+  resolution,
+}: {
+  prompt: string
+  resolution: ImageResolutionValue
+}): string {
+  return [
+    'Edit the provided source image using the mask image.',
+    'The mask image marks the areas to repaint: white/visible painted areas are editable, black/transparent areas must remain unchanged.',
+    'Preserve the original image outside the mask exactly as much as possible.',
+    `User request: ${prompt}.`,
+    'Use the additional reference images only for visual guidance.',
+    `Output at ${resolution} resolution.`,
+    'Do not add watermark, UI, text, border, or unrelated objects.',
+  ].join(' ')
+}
+
+export async function repaintWorkspaceImage({
+  workspaceId,
+  userId,
+  prompt,
+  resolution,
+  sourceImage,
+  maskImage,
+  referenceImages,
+  abortSignal,
+}: RepaintWorkspaceImageInput): Promise<RepaintWorkspaceImageResult> {
+  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [sourceImage, maskImage, ...referenceImages],
+  })
+
+  const generatedImage = await generateImageWithProvider({
+    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    prompt: buildWorkspaceImageRepaintPrompt({ prompt, resolution }),
+    aspectRatio: 'auto',
+    resolution,
+    referenceContext,
     abortSignal,
   })
 

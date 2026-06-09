@@ -25,7 +25,10 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
   uploadWorkspaceFile: (...args: unknown[]) => mockUploadWorkspaceFile(...args),
 }))
 
-import { generateWorkspaceImageFromPrompt } from '@/lib/generated-media/image/image-generation-service'
+import {
+  generateWorkspaceImageFromPrompt,
+  repaintWorkspaceImage,
+} from '@/lib/generated-media/image/image-generation-service'
 
 describe('generateWorkspaceImageFromPrompt', () => {
   beforeEach(() => {
@@ -151,6 +154,103 @@ describe('generateWorkspaceImageFromPrompt', () => {
           ],
         },
       })
+    )
+  })
+
+  it('repaints with fixed Nano Banana Pro model, resolution, mask, and references', async () => {
+    mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
+      id: fileId,
+      name: `${fileId}.png`,
+      key: `workspace/${fileId}.png`,
+      url: '',
+      size: 99,
+      type: 'image/png',
+      context: 'workspace',
+    }))
+    mockFetchWorkspaceFileBuffer.mockImplementation(async (fileRecord: { id: string }) =>
+      Buffer.from(`${fileRecord.id}-binary`)
+    )
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('repainted-image'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_repaint',
+      name: 'generated-image.png',
+      size: 16,
+      type: 'image/png',
+      key: 'workspace/ws-1/repaint.png',
+      url: '/api/files/serve/workspace/ws-1/repaint.png?context=workspace',
+      context: 'workspace',
+    })
+
+    await repaintWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      prompt: 'replace the logo with a blue mark',
+      resolution: '4K',
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+      maskImage: {
+        id: '',
+        name: 'mask.png',
+        url: '',
+        key: 'mask.png',
+        size: 50,
+        type: 'image/png',
+        base64: Buffer.from('mask-binary').toString('base64'),
+      },
+      referenceImages: [
+        {
+          id: 'ref-1',
+          name: 'ref.png',
+          url: '',
+          key: 'workspace/ref.png',
+          size: 80,
+          type: 'image/png',
+        },
+      ],
+    })
+
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        aspectRatio: 'auto',
+        resolution: '4K',
+        prompt: expect.stringContaining('User request: replace the logo with a blue mark.'),
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'source-1',
+              base64: Buffer.from('source-1-binary').toString('base64'),
+            }),
+            expect.objectContaining({
+              key: 'mask.png',
+              base64: Buffer.from('mask-binary').toString('base64'),
+            }),
+            expect.objectContaining({
+              id: 'ref-1',
+              base64: Buffer.from('ref-1-binary').toString('base64'),
+            }),
+          ],
+        },
+      })
+    )
+    expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
+      'ws-1',
+      'user-1',
+      expect.any(Buffer),
+      'generated-image.png',
+      'image/png'
     )
   })
 })

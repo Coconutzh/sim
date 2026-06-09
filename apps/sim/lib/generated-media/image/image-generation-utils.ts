@@ -2,7 +2,9 @@ import { getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog
 
 export const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5' as const
 export const DEFAULT_IMAGE_PERSPECTIVE_MODEL = 'gemini-3-pro-image-preview' as const
+export const DEFAULT_IMAGE_REPAINT_MODEL = 'gemini-3-pro-image' as const
 export const DEFAULT_IMAGE_ASPECT_RATIO = 'auto' as const
+export const DEFAULT_IMAGE_REPAINT_RESOLUTION = '2K' as const
 
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { id: 'auto', label: '自适应(4K)' },
@@ -20,8 +22,10 @@ export type ImageGenerationModelId =
   | 'jimeng-4.5'
   | 'jimeng-4.0'
   | 'gemini-3.1-flash-image-preview'
+  | 'gemini-3-pro-image'
   | 'gemini-3-pro-image-preview'
 export type ImageAspectRatioValue = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]['id']
+export type ImageResolutionValue = '1K' | '2K' | '4K'
 
 const IMAGE_ASPECT_RATIO_TO_NUMERIC: Record<Exclude<ImageAspectRatioValue, 'auto'>, number> = {
   '1:1': 1,

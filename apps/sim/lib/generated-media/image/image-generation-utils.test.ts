@@ -3,6 +3,8 @@ import {
   DEFAULT_IMAGE_AI_MODEL,
   DEFAULT_IMAGE_ASPECT_RATIO,
   DEFAULT_IMAGE_PERSPECTIVE_MODEL,
+  DEFAULT_IMAGE_REPAINT_MODEL,
+  DEFAULT_IMAGE_REPAINT_RESOLUTION,
   getImageAspectRatioOptions,
   getImageGenerationModelOptions,
   getNearestSupportedImageAspectRatio,
@@ -14,11 +16,14 @@ describe('image-generation-utils', () => {
   it('exposes the catalog-backed image model list and defaults to Jimeng 4.5', () => {
     expect(DEFAULT_IMAGE_AI_MODEL).toBe('jimeng-4.5')
     expect(DEFAULT_IMAGE_PERSPECTIVE_MODEL).toBe('gemini-3-pro-image-preview')
+    expect(DEFAULT_IMAGE_REPAINT_MODEL).toBe('gemini-3-pro-image')
+    expect(DEFAULT_IMAGE_REPAINT_RESOLUTION).toBe('2K')
     expect(getImageGenerationModelOptions()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'jimeng-4.5' }),
         expect.objectContaining({ id: 'jimeng-4.0' }),
         expect.objectContaining({ id: 'gemini-3.1-flash-image-preview' }),
+        expect.objectContaining({ id: 'gemini-3-pro-image' }),
         expect.objectContaining({ id: 'gemini-3-pro-image-preview' }),
       ])
     )
