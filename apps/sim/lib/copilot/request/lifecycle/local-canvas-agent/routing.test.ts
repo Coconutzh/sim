@@ -54,6 +54,25 @@ describe('local canvas agent routing', () => {
     expect(shouldRunLocalCanvasAgent(context)).toBe(false)
   })
 
+  it('does not turn non-canvas questions into canvas tasks just because a node is selected', () => {
+    const context = buildContext({
+      message: '高考可能会考什么内容？',
+      selectedNodeIds: ['text-1'],
+    })
+
+    expect(classifyLocalCanvasAgentRouting(context)).toMatchObject({
+      kind: 'non_canvas',
+    })
+  })
+
+  it('keeps generic programming update requests outside canvas routing', () => {
+    const context = buildContext({ message: '帮我更新这段 TypeScript 代码的类型错误。' })
+
+    expect(classifyLocalCanvasAgentRouting(context)).toMatchObject({
+      kind: 'non_canvas',
+    })
+  })
+
   it('keeps canvas requests even when the subject mentions exams', () => {
     const context = buildContext({ message: '根据高考主题创建一个短视频内容链。' })
 
@@ -67,6 +86,17 @@ describe('local canvas agent routing', () => {
     const context = buildContext({
       message: '这个节点适合接什么视频节点？',
       selectedNodeIds: ['image-1'],
+    })
+
+    expect(classifyLocalCanvasAgentRouting(context)).toMatchObject({
+      kind: 'canvas',
+    })
+  })
+
+  it('keeps selected-node mutation shorthand in the canvas runtime', () => {
+    const context = buildContext({
+      message: '改成更年轻一点的语气。',
+      selectedNodeIds: ['text-1'],
     })
 
     expect(classifyLocalCanvasAgentRouting(context)).toMatchObject({

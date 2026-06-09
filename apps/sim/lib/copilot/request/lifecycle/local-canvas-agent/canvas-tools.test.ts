@@ -8,7 +8,9 @@ import type {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const {
+  mockApplyCanvasSummaryCacheSelection,
   mockBuildCanvasSummaryText,
+  mockBuildCanvasSummaryTextFromParts,
   mockConvertGeneratedTextToContentHtml,
   mockEditWorkflowExecute,
   mockGenerateContentCanvasText,
@@ -16,11 +18,14 @@ const {
   mockGenerateWorkspaceImageFromPrompt,
   mockGenerateWorkspaceVideoFromPrompt,
   mockLoadCanvasSnapshot,
+  mockLoadOrCreateCanvasSummaryCache,
   mockReadCanvasNodeDetail,
   mockSearchCanvasNodes,
   mockSummarizeCanvas,
 } = vi.hoisted(() => ({
+  mockApplyCanvasSummaryCacheSelection: vi.fn(),
   mockBuildCanvasSummaryText: vi.fn(),
+  mockBuildCanvasSummaryTextFromParts: vi.fn(),
   mockConvertGeneratedTextToContentHtml: vi.fn(),
   mockEditWorkflowExecute: vi.fn(),
   mockGenerateContentCanvasText: vi.fn(),
@@ -28,13 +33,17 @@ const {
   mockGenerateWorkspaceImageFromPrompt: vi.fn(),
   mockGenerateWorkspaceVideoFromPrompt: vi.fn(),
   mockLoadCanvasSnapshot: vi.fn(),
+  mockLoadOrCreateCanvasSummaryCache: vi.fn(),
   mockReadCanvasNodeDetail: vi.fn(),
   mockSearchCanvasNodes: vi.fn(),
   mockSummarizeCanvas: vi.fn(),
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context', () => ({
+  applyCanvasSummaryCacheSelection: mockApplyCanvasSummaryCacheSelection,
   buildCanvasSummaryText: mockBuildCanvasSummaryText,
+  buildCanvasSummaryTextFromParts: mockBuildCanvasSummaryTextFromParts,
+  loadOrCreateCanvasSummaryCache: mockLoadOrCreateCanvasSummaryCache,
   loadCanvasSnapshot: mockLoadCanvasSnapshot,
   readCanvasNodeDetail: mockReadCanvasNodeDetail,
   searchCanvasNodes: mockSearchCanvasNodes,
@@ -322,6 +331,23 @@ describe('local canvas tools', () => {
     vi.clearAllMocks()
     mockConvertGeneratedTextToContentHtml.mockReturnValue('<p>generated copy</p>')
     mockEditWorkflowExecute.mockResolvedValue({ success: true })
+    mockLoadOrCreateCanvasSummaryCache.mockImplementation((snapshot: CanvasSnapshot) => ({
+      version: 1,
+      workspaceId: snapshot.workspaceId,
+      workflowId: snapshot.workflowId,
+      workflowHash: 'hash',
+      nodeCount: snapshot.nodes.length,
+      edgeCount: snapshot.edges.length,
+      nodes: mockSummarizeCanvas(snapshot, []),
+      edges: snapshot.edges,
+      summaryText: 'cached summary',
+      updatedAt: '2026-06-09T00:00:00.000Z',
+    }))
+    mockApplyCanvasSummaryCacheSelection.mockImplementation(
+      (cache: { nodes: Array<{ id: string }> }, selectedNodeIds: string[]) =>
+        cache.nodes.map((node) => ({ ...node, selected: selectedNodeIds.includes(node.id) }))
+    )
+    mockBuildCanvasSummaryTextFromParts.mockReturnValue('cached selected summary')
   })
 
   it('verifies text generation was written back to contentHtml', async () => {
@@ -791,6 +817,75 @@ describe('local canvas tools', () => {
         }),
       })
     )
+  })
+
+  it('normalizes stringified patch operations from model tool input', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.propose_patch',
+        input: {
+          patch: {
+            operations: [
+              JSON.stringify({
+                type: 'create_node',
+                clientNodeId: 'script',
+                kind: 'text',
+                title: '脚本',
+                fields: { contentHtml: '<p>火星露营脚本</p>' },
+              }),
+              JSON.stringify({
+                type: 'create_node',
+                clientNodeId: 'visual',
+                kind: 'image',
+                title: '主视觉',
+                fields: { aiPrompt: '火星露营主视觉' },
+              }),
+              JSON.stringify({
+                type: 'connect',
+                sourceNodeId: 'script',
+                targetNodeId: 'visual',
+              }),
+            ],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatchObject({
+      operationCount: 3,
+      validation: { valid: true },
+      patch: {
+        operations: [
+          expect.objectContaining({ type: 'create_node', clientNodeId: 'script' }),
+          expect.objectContaining({ type: 'create_node', clientNodeId: 'visual' }),
+          expect.objectContaining({ type: 'connect', sourceNodeId: 'script' }),
+        ],
+      },
+    })
+  })
+
+  it('rejects empty verify patch operations without throwing a null operation error', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.verify_patch',
+        input: {
+          patch: {
+            operations: [null],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Patch must include at least one operation')
+    expect(result.error).not.toContain('Cannot read properties of null')
   })
 
   it('uses Chinese tool titles for user-visible canvas actions', () => {

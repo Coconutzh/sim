@@ -2,12 +2,12 @@
  * @vitest-environment node
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProviderRequest } from '@/providers/types'
 import {
   buildEvolinkChatMessages,
   executeEvolinkGeminiFallback,
   shouldPreferEvolinkGeminiTransport,
 } from '@/providers/google/evolink'
+import type { ProviderRequest } from '@/providers/types'
 
 describe('Evolink Gemini fallback', () => {
   beforeEach(() => {
@@ -73,6 +73,7 @@ describe('Evolink Gemini fallback', () => {
       json: async () => ({
         choices: [
           {
+            finish_reason: 'length',
             message: {
               content: 'Evolink Gemini response',
             },
@@ -81,6 +82,9 @@ describe('Evolink Gemini fallback', () => {
         usage: {
           prompt_tokens: 12,
           completion_tokens: 8,
+          completion_tokens_details: {
+            reasoning_tokens: 3,
+          },
           total_tokens: 20,
         },
       }),
@@ -106,10 +110,12 @@ describe('Evolink Gemini fallback', () => {
     expect(result).toMatchObject({
       content: 'Evolink Gemini response',
       model: 'gemini-2.5-flash',
+      finishReason: 'length',
       tokens: {
         input: 12,
         output: 8,
         total: 20,
+        reasoning: 3,
       },
     })
   })

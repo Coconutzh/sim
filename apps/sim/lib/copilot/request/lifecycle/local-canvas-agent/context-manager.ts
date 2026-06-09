@@ -358,6 +358,18 @@ function buildMemoryContext(context: LocalAgentContext): string {
         `- ${observation.toolName}: success=${observation.success}; ${observation.summary}`
     )
     .join('\n')
+  const toolResultRefs = (context.memory.toolResultRefs ?? [])
+    .slice(-6)
+    .map((ref) =>
+      [
+        `- ${ref.id}: ${ref.toolName}; ${ref.summary}`,
+        typeof ref.outputSizeChars === 'number' ? `outputSizeChars=${ref.outputSizeChars}` : '',
+        ref.outputPreview ? `preview=${clip(ref.outputPreview, 400)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    )
+    .join('\n')
   return [
     context.memory.conversationSummary
       ? `Conversation summary:\n${context.memory.conversationSummary}`
@@ -380,6 +392,7 @@ function buildMemoryContext(context: LocalAgentContext): string {
       : '',
     context.memory.canvasSummary ? `Canvas memory:\n${context.memory.canvasSummary}` : '',
     recentObservations ? `Recent observations:\n${recentObservations}` : '',
+    toolResultRefs ? `Persistent tool result refs:\n${toolResultRefs}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')

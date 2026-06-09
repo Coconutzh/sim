@@ -50,6 +50,7 @@ vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/memory', () => ({
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor', () => ({
   buildLocalAgentAnswer: mockBuildLocalAgentAnswer,
+  hasInternalFieldLeak: vi.fn(() => false),
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/planner', () => ({
@@ -208,7 +209,13 @@ describe('local canvas runtime manual confirmation', () => {
     })
 
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
-    expect(mockRunLocalAgentToolLoop).not.toHaveBeenCalled()
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestPayload: expect.objectContaining({ localAgentMode: 'model_tool_loop' }),
+        memory: expect.any(Object),
+      })
+    )
     expect(mockPersistLocalAgentSessionMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionScope: 'personal',
@@ -254,6 +261,100 @@ describe('local canvas runtime manual confirmation', () => {
     ).toBe(true)
   })
 
+  it('uses the model loop answer directly in manual mode when no mutation is proposed', async () => {
+    const streamContext = buildStreamContext()
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'manual',
+        message: '总结当前画布。',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: {
+        ...patchPlan,
+        patch: undefined,
+        requiresClarification: false,
+        requiresUserConfirmation: false,
+      },
+      observations: [
+        {
+          toolName: 'canvas.read_summary',
+          success: true,
+          summary: 'Read canvas summary',
+          timestamp: '2026-06-08T00:00:00.000Z',
+        },
+      ],
+      answer: '当前画布有 4 个内容节点。',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(streamContext.contentBlocks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentBlockType.options })])
+    )
+    expect(streamContext.accumulatedContent).toBe('当前画布有 4 个内容节点。')
+    expect(streamContext.streamComplete).toBe(true)
+  })
+
+  it('turns manual model-loop confirmation plans into Confirm and Revise options', async () => {
+    const streamContext = buildStreamContext()
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'manual',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: {
+        ...patchPlan,
+        requiresClarification: true,
+        requiresUserConfirmation: true,
+        clarificationQuestion: '确认后我再应用这个画布修改。',
+      },
+      observations: [],
+      answer: '确认后我再应用这个画布修改。',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(streamContext.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentBlockType.options,
+          options: expect.arrayContaining([
+            expect.objectContaining({ label: 'Confirm' }),
+            expect.objectContaining({ label: 'Revise' }),
+          ]),
+        }),
+      ])
+    )
+    expect(streamContext.accumulatedContent).toContain('确认后我再应用这个画布修改')
+  })
+
   it('passes loaded memory into the tool loop context', async () => {
     const streamContext = buildStreamContext()
     const memory = buildMemory()
@@ -285,6 +386,55 @@ describe('local canvas runtime manual confirmation', () => {
         }),
       })
     )
+  })
+
+  it('turns model-loop confirmation plans into Confirm and Revise options', async () => {
+    const streamContext = buildStreamContext()
+    const confirmPlan: LocalAgentPlan = {
+      ...patchPlan,
+      requiresClarification: true,
+      requiresUserConfirmation: true,
+      clarificationQuestion: '这个操作会重新布局画布，确认执行吗？',
+    }
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'auto',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: confirmPlan,
+      observations: [],
+      answer: '这个操作会重新布局画布，确认执行吗？',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(streamContext.streamComplete).toBe(true)
+    expect(streamContext.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentBlockType.options,
+          options: expect.arrayContaining([
+            expect.objectContaining({ label: 'Confirm' }),
+            expect.objectContaining({ label: 'Revise' }),
+          ]),
+        }),
+      ])
+    )
+    expect(streamContext.accumulatedContent).toContain('这个操作会重新布局画布，确认执行吗？')
+    expect(streamContext.accumulatedContent).toContain('__local_canvas_confirm__')
   })
 
   it('answers clearly non-canvas requests without planning or reading the canvas', async () => {
@@ -404,6 +554,19 @@ describe('local canvas runtime manual confirmation', () => {
     })
 
     const confirmStream = buildStreamContext()
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {},
+        summary: 'Patch applied',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: {},
+        summary: 'Patch verified',
+      })
     mockResolveLocalAgentContext.mockResolvedValueOnce(
       buildLocalContext({
         chatId: 'chat-1',
@@ -431,6 +594,7 @@ describe('local canvas runtime manual confirmation', () => {
       name: 'canvas.verify_patch',
       input: { patch: patchPlan.patch },
     })
+    expect(mockVerifyLocalAgentFinalAnswer).not.toHaveBeenCalled()
     expect(confirmStream.accumulatedContent).toBe('已完成画布修改，并完成验证。')
   })
 

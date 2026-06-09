@@ -6,6 +6,7 @@ import type {
   LocalAgentMemoryData,
   LocalAgentObservation,
   LocalAgentPlan,
+  LocalAgentThreadMemoryUpdate,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const summarizerResponseSchema = z.object({
@@ -27,6 +28,7 @@ function compactObservation(observation: LocalAgentObservation): LocalAgentObser
     summary: sanitizeMemoryText(observation.summary),
     success: observation.success,
     timestamp: observation.timestamp,
+    ...(observation.outputRef ? { outputRef: observation.outputRef } : {}),
   }
 }
 
@@ -76,6 +78,46 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+function getStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined
+}
+
+function extractDecisionMemoryUpdate(
+  observations: LocalAgentObservation[]
+): LocalAgentThreadMemoryUpdate | null {
+  let output: unknown
+  for (let index = observations.length - 1; index >= 0; index -= 1) {
+    const observation = observations[index]
+    if (observation.toolName === 'memory' && observation.success) {
+      output = observation.output
+      break
+    }
+  }
+  const record = asRecord(output)
+  if (Object.keys(record).length === 0) return null
+  const taskState = asRecord(record.taskState)
+  const openQuestions = getStringArray(taskState.openQuestions)
+  return {
+    ...(typeof record.conversationSummary === 'string'
+      ? { conversationSummary: record.conversationSummary }
+      : {}),
+    ...(typeof record.canvasSummary === 'string' ? { canvasSummary: record.canvasSummary } : {}),
+    ...(Object.keys(taskState).length > 0
+      ? {
+          taskState: {
+            ...(typeof taskState.goal === 'string' ? { goal: taskState.goal } : {}),
+            ...(openQuestions ? { openQuestions } : {}),
+            ...(typeof taskState.lastObservation === 'string'
+              ? { lastObservation: taskState.lastObservation }
+              : {}),
+          },
+        }
+      : {}),
+  }
+}
+
 function extractCanvasSummary(observations: LocalAgentObservation[]): string | undefined {
   const readSummary = observations.find(
     (observation) => observation.toolName === 'canvas.read_summary' && observation.success
@@ -88,15 +130,36 @@ function extractCanvasSummary(observations: LocalAgentObservation[]): string | u
   return readSummary.summary
 }
 
-function isCompletedStepObservation(observation: LocalAgentObservation): boolean {
-  return (
-    observation.success &&
-    (observation.toolName === 'canvas.apply_patch' ||
-      observation.toolName === 'canvas.generate_node_output' ||
-      observation.toolName === 'materialize_file' ||
-      observation.toolName === 'update_task_result' ||
-      observation.toolName === 'submit_task_result')
+function hasSuccessfulVerification(observations: LocalAgentObservation[]): boolean {
+  return observations.some(
+    (observation) => observation.toolName === 'canvas.verify_patch' && observation.success
   )
+}
+
+function hasEmbeddedApplyVerification(observation: LocalAgentObservation): boolean {
+  const output = asRecord(observation.output)
+  const verification = asRecord(output.verification)
+  return verification.success === true
+}
+
+function getTrustedCompletedStepSummaries(observations: LocalAgentObservation[]): string[] {
+  const verifiedCanvasTurn = hasSuccessfulVerification(observations)
+  return observations
+    .filter((observation) => {
+      if (!observation.success) return false
+      if (observation.toolName === 'canvas.apply_patch') {
+        return verifiedCanvasTurn || hasEmbeddedApplyVerification(observation)
+      }
+      if (observation.toolName === 'canvas.generate_node_output') {
+        return verifiedCanvasTurn
+      }
+      return (
+        observation.toolName === 'materialize_file' ||
+        observation.toolName === 'update_task_result' ||
+        observation.toolName === 'submit_task_result'
+      )
+    })
+    .map((observation) => observation.summary)
 }
 
 function inferOpenQuestions(params: {
@@ -120,37 +183,54 @@ function buildDeterministicSummary(params: {
   plan: LocalAgentPlan
   observations: LocalAgentObservation[]
 }): LocalAgentMemoryData {
-  const completedSteps = params.observations
-    .filter(isCompletedStepObservation)
-    .map((observation) => observation.summary)
-    .slice(-8)
+  const completedSteps = getTrustedCompletedStepSummaries(params.observations).slice(-8)
   const lastObservation = params.observations.at(-1)?.summary
+  const decisionMemoryUpdate = extractDecisionMemoryUpdate(params.observations)
   return {
     ...params.memory,
     conversationSummary: [
       params.memory.conversationSummary,
       sanitizeMemoryText(params.context.message),
+      decisionMemoryUpdate?.conversationSummary
+        ? sanitizeMemoryText(decisionMemoryUpdate.conversationSummary)
+        : '',
     ]
       .filter(Boolean)
       .join('\n')
       .slice(-4000),
     taskState: {
-      goal: sanitizeMemoryText(params.plan.goal || params.memory.taskState.goal || ''),
+      goal: sanitizeMemoryText(
+        decisionMemoryUpdate?.taskState?.goal ||
+          params.plan.goal ||
+          params.memory.taskState.goal ||
+          ''
+      ),
       completedSteps: sanitizeList(
         [...params.memory.taskState.completedSteps, ...completedSteps],
         20,
         240
       ),
-      openQuestions: sanitizeList(inferOpenQuestions(params), 8, 240),
-      lastObservation: lastObservation ? sanitizeMemoryText(lastObservation) : undefined,
+      openQuestions: sanitizeList(
+        decisionMemoryUpdate?.taskState?.openQuestions ?? inferOpenQuestions(params),
+        8,
+        240
+      ),
+      lastObservation: decisionMemoryUpdate?.taskState?.lastObservation
+        ? sanitizeMemoryText(decisionMemoryUpdate.taskState.lastObservation)
+        : lastObservation
+          ? sanitizeMemoryText(lastObservation)
+          : undefined,
     },
     canvasSummary: sanitizeMemoryText(
-      extractCanvasSummary(params.observations) ?? params.memory.canvasSummary
+      decisionMemoryUpdate?.canvasSummary ??
+        extractCanvasSummary(params.observations) ??
+        params.memory.canvasSummary
     ),
     recentObservations: [
       ...params.memory.recentObservations.map(compactObservation),
       ...params.observations.map(compactObservation),
     ].slice(-20),
+    toolResultRefs: params.memory.toolResultRefs,
     updatedAt: new Date().toISOString(),
   }
 }
@@ -204,13 +284,7 @@ function mergeModelSummary(
       goal: data.taskState?.goal
         ? clip(sanitizeMemoryText(data.taskState.goal), 240)
         : fallback.taskState.goal,
-      completedSteps: sanitizeList(
-        data.taskState?.completedSteps?.length
-          ? data.taskState.completedSteps
-          : fallback.taskState.completedSteps,
-        20,
-        240
-      ),
+      completedSteps: fallback.taskState.completedSteps,
       openQuestions: sanitizeList(
         data.taskState?.openQuestions?.length
           ? data.taskState.openQuestions

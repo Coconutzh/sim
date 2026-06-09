@@ -237,13 +237,19 @@ export async function executeContentCanvasTextRequest(
   }
 
   const content = extractCompatibleContent(payload)
+  const finishReason = payload?.choices?.[0]?.finish_reason
+  const reasoningTokens =
+    payload?.usage?.completion_tokens_details?.reasoning_tokens ??
+    payload?.usage?.completion_tokens_details?.reasoningTokens
   return {
     content,
     model: params.model,
+    finishReason: typeof finishReason === 'string' ? finishReason : undefined,
     tokens: {
       input: getUsageTokenCount(payload, 'prompt_tokens'),
       output: getUsageTokenCount(payload, 'completion_tokens'),
       total: getUsageTokenCount(payload, 'total_tokens'),
+      ...(typeof reasoningTokens === 'number' ? { reasoning: reasoningTokens } : {}),
     },
   }
 }

@@ -162,7 +162,15 @@ export function validateLocalCanvasPatch(
   const errors: string[] = []
   const knownNodes = new Map(snapshot?.nodes.map((node) => [node.id, node]) ?? [])
   const idMap = new Map<string, string>()
+  if (!Array.isArray(patch.operations) || patch.operations.length === 0) {
+    errors.push('Patch must include at least one operation')
+    return { valid: false, errors }
+  }
   for (const operation of patch.operations) {
+    if (!operation || typeof operation !== 'object' || !('type' in operation)) {
+      errors.push('Patch operation must be an object with a type')
+      continue
+    }
     if (operation.type === 'create_node') {
       const adapter = getCanvasNodeAdapter(operation.kind)
       const result = adapter.validatePatch(operation as LocalCanvasPatchOperation)
@@ -291,8 +299,19 @@ export function buildEditWorkflowOperationsFromPatch(params: {
         { ...params.snapshot, nodes: [...knownNodes.values()] },
         idMap
       )
-      operations.push(...layoutOperations)
       for (const operation of layoutOperations) {
+        const addOperation = operations.find(
+          (candidate) =>
+            candidate.operation_type === 'add' && candidate.block_id === operation.block_id
+        )
+        if (addOperation) {
+          addOperation.params = {
+            ...addOperation.params,
+            position: operation.params?.position,
+          }
+        } else {
+          operations.push(operation)
+        }
         const node = knownNodes.get(operation.block_id)
         const position = operation.params?.position
         if (node && position && typeof position === 'object') {

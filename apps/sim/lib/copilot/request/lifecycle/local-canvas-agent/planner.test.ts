@@ -142,6 +142,65 @@ describe('local canvas planner', () => {
     }
   })
 
+  it('creates selected-node text drafts without writing the raw user command as content', async () => {
+    const message = '在选中的图片后面加一个口播文案，接到这个图片节点。'
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: '火星露营主视觉',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 100, y: 80 },
+          values: { aiPrompt: '火星露营主视觉，红色星球背景。' },
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+    const detail: CanvasNodeDetail = {
+      id: 'image-1',
+      name: '火星露营主视觉',
+      blockType: 'content',
+      kind: 'image',
+      position: { x: 100, y: 80 },
+      selected: true,
+      summary: '火星露营主视觉，红色星球背景。',
+      capabilities: {
+        canRead: true,
+        canWrite: true,
+        canGenerate: true,
+        canReferenceFile: true,
+      },
+      fields: { aiPrompt: '火星露营主视觉，红色星球背景。' },
+      textContent: '',
+      file: null,
+    }
+    mockLoadCanvasSnapshot.mockResolvedValue(snapshot)
+    mockReadCanvasNodeDetail.mockReturnValue(detail)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: ['image-1'],
+        message,
+      })
+    )
+
+    const createText = plan.patch?.operations.find(
+      (operation) => operation.type === 'create_node' && operation.kind === 'text'
+    )
+    expect(createText?.type).toBe('create_node')
+    if (createText?.type !== 'create_node') throw new Error('expected create text operation')
+    const serializedFields = JSON.stringify(createText.fields)
+    expect(serializedFields).not.toContain(message)
+    expect(serializedFields).not.toContain('在选中的图片后面加一个口播文案')
+    expect(String(createText.fields.contentHtml)).toContain('火星露营主视觉')
+    expect(String(createText.fields.contentHtml)).not.toContain('加一个')
+    expect(String(createText.fields.contentHtml)).not.toContain('接到这个图片节点')
+  })
+
   it('classifies workflow design discussion as read-only consult intent', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',
@@ -734,11 +793,62 @@ describe('local canvas planner', () => {
     if (textNode?.type === 'create_node') {
       expect(String(textNode.fields.contentHtml)).toContain('小红书')
       expect(String(textNode.fields.contentHtml)).toContain('短视频')
+      expect(String(textNode.fields.contentHtml)).not.toContain('包含')
+      expect(String(textNode.fields.contentHtml)).not.toContain('从左到右')
     }
     if (imageNode?.type === 'create_node') {
       expect(String(imageNode.fields.aiPrompt)).toContain('小红书')
       expect(String(imageNode.fields.aiPrompt)).toContain('主视觉')
+      expect(String(imageNode.fields.aiPrompt)).not.toContain('创建')
+      expect(String(imageNode.fields.aiPrompt)).not.toContain('从左到右')
     }
+  })
+
+  it('does not allow model output to escalate a read-only inspect policy', async () => {
+    mockExecuteLocalAgentModelRequest.mockResolvedValue({
+      content: JSON.stringify({
+        goal: 'bad mutation plan',
+        risk: 'low',
+        userIntent: 'mutate_canvas',
+        mutationPolicy: 'allow_mutation',
+        canvasReadPolicy: 'required',
+        requiresClarification: false,
+        steps: [
+          {
+            id: 'bad_apply',
+            title: 'Apply patch despite consult policy',
+            intent: 'update',
+            toolHints: ['canvas.read_summary', 'canvas.apply_patch', 'canvas.verify_patch'],
+            expectedObservation: 'Should be filtered',
+          },
+        ],
+        successCriteria: ['No mutation should run'],
+        patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] },
+      }),
+    })
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: [],
+        message: '总结当前画布。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenCalled()
+    expect(plan.userIntent).toBe('inspect_canvas')
+    expect(plan.mutationPolicy).toBe('read_only')
+    expect(plan.canvasReadPolicy).toBe('required')
+    expect(plan.patch).toBeUndefined()
+    expect(plan.steps.flatMap((step) => step.toolHints)).toContain('canvas.read_summary')
+    expect(plan.steps.flatMap((step) => step.toolHints)).not.toContain('canvas.apply_patch')
+    expect(plan.steps.flatMap((step) => step.toolHints)).not.toContain('canvas.verify_patch')
+    expect(plan.intentEvidence).toEqual(expect.arrayContaining(['inspection_signal']))
   })
 
   it('uses deterministic create-chain patch when the model omits mutation steps', async () => {
@@ -784,6 +894,42 @@ describe('local canvas planner', () => {
     expect(plan.steps.flatMap((step) => step.toolHints)).toEqual(
       expect.arrayContaining(['canvas.apply_patch', 'canvas.verify_patch'])
     )
+  })
+
+  it('extracts arbitrary creative subjects without relying on a fixed sample-topic list', async () => {
+    mockExecuteLocalAgentModelRequest.mockResolvedValue({
+      content: JSON.stringify({
+        goal: 'inspect schema before creating a chain',
+        risk: 'low',
+        requiresClarification: false,
+        steps: [],
+        successCriteria: ['Plan a chain'],
+      }),
+    })
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const plan = await buildLocalAgentPlan(
+      buildContext({
+        selectedNodeIds: [],
+        message: '以火星露营为主题创建一个短视频内容链。',
+      })
+    )
+
+    const createOperations =
+      plan.patch?.operations.filter((operation) => operation.type === 'create_node') ?? []
+    const serializedFields = JSON.stringify(
+      createOperations.map((operation) =>
+        operation.type === 'create_node' ? operation.fields : undefined
+      )
+    )
+    expect(serializedFields).toContain('火星露营')
+    expect(serializedFields).not.toContain('以火星露营为主题')
+    expect(serializedFields).not.toContain('创建一个短视频内容链')
   })
 
   it('plans proposal-only canvas changes when user asks to wait for confirmation', async () => {

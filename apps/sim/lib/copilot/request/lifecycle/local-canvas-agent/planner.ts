@@ -11,6 +11,7 @@ import {
 import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
 import type {
+  CanvasNodeDetail,
   CanvasSnapshot,
   LocalAgentContext,
   LocalAgentPlan,
@@ -37,6 +38,9 @@ const plannerResponseSchema = z.object({
   userIntent: localCanvasUserIntentSchema.optional(),
   mutationPolicy: localCanvasMutationPolicySchema.optional(),
   canvasReadPolicy: localCanvasReadPolicySchema.optional(),
+  intentConfidence: z.number().min(0).max(1).optional(),
+  intentEvidence: z.array(z.string()).optional(),
+  requiresUserConfirmation: z.boolean().optional(),
   requiresClarification: z.boolean().catch(false),
   clarificationQuestion: z.string().optional(),
   steps: z
@@ -112,7 +116,7 @@ function filterToolHintsByPolicy(
     if (decision.mutationPolicy === 'read_only' && toolName === 'canvas.propose_patch') {
       return false
     }
-    if (decision.mutationPolicy === 'propose_only' && toolName === 'canvas.verify_patch') {
+    if (decision.mutationPolicy !== 'allow_mutation' && toolName === 'canvas.verify_patch') {
       return false
     }
     if (
@@ -129,25 +133,66 @@ function filterToolHintsByPolicy(
   })
 }
 
+function getMutationPolicyRank(policy: LocalCanvasIntentDecision['mutationPolicy']): number {
+  if (policy === 'read_only') return 0
+  if (policy === 'propose_only') return 1
+  return 2
+}
+
+function getReadPolicyRank(policy: LocalCanvasIntentDecision['canvasReadPolicy']): number {
+  if (policy === 'none') return 0
+  if (policy === 'optional') return 1
+  return 2
+}
+
+function chooseStricterMutationPolicy(
+  planPolicy: LocalCanvasIntentDecision['mutationPolicy'] | undefined,
+  decisionPolicy: LocalCanvasIntentDecision['mutationPolicy']
+): LocalCanvasIntentDecision['mutationPolicy'] {
+  if (!planPolicy) return decisionPolicy
+  return getMutationPolicyRank(planPolicy) < getMutationPolicyRank(decisionPolicy)
+    ? planPolicy
+    : decisionPolicy
+}
+
+function chooseStricterReadPolicy(
+  planPolicy: LocalCanvasIntentDecision['canvasReadPolicy'] | undefined,
+  decisionPolicy: LocalCanvasIntentDecision['canvasReadPolicy']
+): LocalCanvasIntentDecision['canvasReadPolicy'] {
+  if (!planPolicy) return decisionPolicy
+  return getReadPolicyRank(planPolicy) < getReadPolicyRank(decisionPolicy)
+    ? planPolicy
+    : decisionPolicy
+}
+
 function applyIntentPolicy(
   plan: LocalAgentPlan,
   decision: LocalCanvasIntentDecision
 ): LocalAgentPlan {
-  const userIntent = plan.userIntent ?? decision.userIntent
-  const mutationPolicy = plan.mutationPolicy ?? decision.mutationPolicy
-  const canvasReadPolicy = plan.canvasReadPolicy ?? decision.canvasReadPolicy
+  const mutationPolicy = chooseStricterMutationPolicy(plan.mutationPolicy, decision.mutationPolicy)
+  const canvasReadPolicy = chooseStricterReadPolicy(
+    plan.canvasReadPolicy,
+    decision.canvasReadPolicy
+  )
+  const requiresUserConfirmation =
+    decision.requiresUserConfirmation ||
+    plan.requiresUserConfirmation ||
+    mutationPolicy === 'propose_only'
   const basePlan: LocalAgentPlan = {
     ...plan,
-    userIntent,
+    userIntent: decision.userIntent,
     mutationPolicy,
     canvasReadPolicy,
+    intentConfidence: decision.confidence,
+    intentEvidence: [...new Set([...(decision.evidence ?? []), ...(plan.intentEvidence ?? [])])],
+    requiresUserConfirmation,
   }
 
   if (mutationPolicy === 'allow_mutation') return basePlan
 
   const policyDecision: LocalCanvasIntentDecision = {
     ...decision,
-    userIntent,
+    userIntent: decision.userIntent,
     mutationPolicy,
     canvasReadPolicy,
   }
@@ -267,35 +312,129 @@ function stripCanvasCommandLanguage(message: string): string {
     .replace(/^(请|帮我|麻烦)?\s*/g, '')
     .replace(/(?:根据|基于)?当前主题[，,:：]*/g, '')
     .replace(/(?:创建|新建|新增|生成|做|搭建|建立|设计)\s*(?:一条|一个|一组|用于)?/g, '')
-    .replace(/(?:内容链|工作流|节点|并按生产顺序连接|从左到右排好|连接|排好)/g, '')
+    .replace(/用于/g, '')
+    .replace(
+      /(?:内容链|工作流|节点|并按生产顺序连接|按生产顺序|从左到右排好|连接|排好|包含|包括|四个|三个|两个|一组)/g,
+      ''
+    )
+    .replace(/(?:脚本|文案|主视觉|产品主图|配乐|音频)(?:、|，|和|及|与)?/g, ' ')
     .replace(/[：:，,。；;]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-function inferContentChainTheme(context: LocalAgentContext): {
+interface CreativeBrief {
   platform: string
   subject: string
   theme: string
-} {
+  audience: string
+  style: string
+}
+
+function cleanCreativeSubject(value: string): string {
+  return stripCanvasCommandLanguage(value)
+    .replace(/^(?:以|把|将|用|围绕|关于|根据|基于)\s*/g, '')
+    .replace(/(?:为主题|为主线|为核心|主题|主线|核心)$/g, '')
+    .replace(/(?:小红书|xiaohongshu|rednote|抖音|douyin|tiktok)\s*(?:的|上|平台)?/gi, '')
+    .replace(/(?:短视频|视频|内容|素材|创意|策划|方案)$/g, '')
+    .replace(/[“”"'‘’]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractCreativeSubject(source: string): string | null {
+  const patterns = [
+    /(?:以|把|将)\s*(.{1,50}?)(?:为主题|为主线|为核心)/,
+    /(?:根据|基于)\s*(.{1,50}?)(?:主题|主线|核心)/,
+    /(?:围绕|关于)\s*(.{1,50}?)(?:做|创作|策划|生成|创建|设计|$)/,
+    /(?:主题|主线|核心)\s*(?:是|为|：|:)?\s*(.{1,50})/,
+  ] as const
+
+  for (const pattern of patterns) {
+    const candidate = cleanCreativeSubject(source.match(pattern)?.[1] ?? '')
+    if (candidate.length >= 2) return candidate.slice(0, 40)
+  }
+
+  const fallback = cleanCreativeSubject(source)
+  return fallback.length >= 2 ? fallback.slice(0, 40) : null
+}
+
+function inferContentChainTheme(context: LocalAgentContext): CreativeBrief {
   const message = context.message
   const memoryGoal = context.memory?.taskState.goal?.trim() ?? ''
   const memorySummary = context.memory?.conversationSummary?.trim() ?? ''
   const cleaned = stripCanvasCommandLanguage(message)
-  const source = [cleaned, memoryGoal, memorySummary].find((item) => item.length > 0) ?? '当前主题'
+  const source =
+    [cleaned, memoryGoal, memorySummary]
+      .map((item) => stripCanvasCommandLanguage(item))
+      .find((item) => item.length > 0) ?? '当前主题'
   const platform = /小红书|xiaohongshu|rednote/i.test(source)
     ? '小红书'
     : /抖音|douyin|tiktok/i.test(source)
       ? '短视频平台'
       : '短视频'
-  const subjectMatch = source.match(
-    /(小猫|猫咪|猫|产品|新品|口红|护肤|咖啡|旅行|露营|家居|美食|发布会|高考|学习|AI\s*视频|ai\s*视频)/i
-  )
-  const subject = subjectMatch?.[1] ?? source.slice(0, 40)
+  const subject = extractCreativeSubject(source) ?? '当前主题'
+  const theme = subject === '当前主题' ? source : subject
   return {
     platform,
     subject,
-    theme: source,
+    theme,
+    audience: /年轻|学生|宝妈|职场|新手|亲子/i.test(source)
+      ? (source.match(/年轻|学生|宝妈|职场|新手|亲子/i)?.[0] ?? '目标用户')
+      : platform === '小红书'
+        ? '小红书用户'
+        : '目标用户',
+    style: /治愈|种草|剧情|教程|高级|可爱|科技|轻快/i.test(source)
+      ? (source.match(/治愈|种草|剧情|教程|高级|可爱|科技|轻快/i)?.[0] ?? '清晰')
+      : /小猫|猫咪|猫/i.test(source)
+        ? '治愈可爱'
+        : '清晰有记忆点',
+  }
+}
+
+function sanitizePromptField(value: string): string {
+  return value
+    .replace(/(?:创建|新建|新增|生成|做|搭建|建立|设计).{0,8}(?:内容链|工作流|节点)/g, '')
+    .replace(/(?:从左到右|按生产顺序).{0,8}(?:排好|连接|排列)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function sanitizeContentChainFields(fields: {
+  text: Record<string, unknown>
+  image: Record<string, unknown>
+  video: Record<string, unknown>
+  audio: Record<string, unknown>
+}): typeof fields {
+  return {
+    text: {
+      ...fields.text,
+      aiPrompt:
+        typeof fields.text.aiPrompt === 'string'
+          ? sanitizePromptField(fields.text.aiPrompt)
+          : fields.text.aiPrompt,
+    },
+    image: {
+      ...fields.image,
+      aiPrompt:
+        typeof fields.image.aiPrompt === 'string'
+          ? sanitizePromptField(fields.image.aiPrompt)
+          : fields.image.aiPrompt,
+    },
+    video: {
+      ...fields.video,
+      videoPrompt:
+        typeof fields.video.videoPrompt === 'string'
+          ? sanitizePromptField(fields.video.videoPrompt)
+          : fields.video.videoPrompt,
+    },
+    audio: {
+      ...fields.audio,
+      audioPrompt:
+        typeof fields.audio.audioPrompt === 'string'
+          ? sanitizePromptField(fields.audio.audioPrompt)
+          : fields.audio.audioPrompt,
+    },
   }
 }
 
@@ -305,31 +444,75 @@ function buildContentChainFields(context: LocalAgentContext): {
   video: Record<string, unknown>
   audio: Record<string, unknown>
 } {
-  const { platform, subject, theme } = inferContentChainTheme(context)
+  const { platform, subject, theme, audience, style } = inferContentChainTheme(context)
   const scriptText = [
-    `开场：用一个有画面感的问题切入 ${subject}，先抓住 ${platform} 用户注意力。`,
-    `中段：展开 ${theme} 的核心卖点或故事冲突，保持口语化和短句节奏。`,
+    `开场：用一个有画面感的问题切入 ${subject}，先抓住 ${audience} 的注意力。`,
+    `中段：围绕 ${theme} 展开核心卖点或故事冲突，保持 ${style} 的短句节奏。`,
     '收尾：给出明确行动或情绪落点，方便继续生成主视觉、视频和配乐。',
   ].join('\n')
-  return {
+  return sanitizeContentChainFields({
     text: {
-      aiPrompt: `为${platform}短视频策划一段围绕“${theme}”的脚本，要求口语化、有镜头感、适合继续生成图片、视频和配乐。`,
+      aiPrompt: `为${platform}短视频策划一段围绕“${theme}”的脚本，面向${audience}，风格${style}，要求口语化、有镜头感、适合继续生成图片、视频和配乐。`,
       contentHtml: textToContentHtml(scriptText),
     },
     image: {
-      aiPrompt: `${platform}短视频主视觉，主题“${theme}”，主体突出${subject}，明亮干净，强情绪钩子，竖屏构图，适合作为视频第一帧。`,
+      aiPrompt: `${platform}短视频主视觉，主题“${theme}”，主体突出${subject}，风格${style}，明亮干净，强情绪钩子，竖屏构图，适合作为视频第一帧。`,
       aiAspectRatio: '9:16',
     },
     video: {
-      videoPrompt: `${platform}短视频镜头，围绕“${theme}”做 5 秒动态展示：开场快速吸引注意，中段展示主体细节，结尾留出标题或行动引导空间。`,
+      videoPrompt: `${platform}短视频镜头，围绕“${theme}”做 5 秒动态展示：开场快速吸引注意，中段展示${subject}的关键细节，结尾留出标题或行动引导空间。`,
       videoParameters: {
         duration: 5,
         resolution: '720P',
       },
     },
     audio: {
-      audioPrompt: `${platform}短视频配乐，围绕“${theme}”营造轻快、有记忆点的节奏，适合种草、治愈或产品展示氛围。`,
+      audioPrompt: `${platform}短视频配乐，围绕“${theme}”营造${style}且有记忆点的节奏，适合种草、治愈或产品展示氛围。`,
     },
+  })
+}
+
+function buildContentChainPlan(context: LocalAgentContext): LocalCanvasPatch {
+  const fields = buildContentChainFields(context)
+  return {
+    reason: 'Create a complete content chain from the current canvas request',
+    operations: [
+      {
+        type: 'create_node',
+        clientNodeId: 'new_script',
+        kind: 'text',
+        title: '短视频脚本',
+        position: { x: 0, y: 0 },
+        fields: fields.text,
+      },
+      {
+        type: 'create_node',
+        clientNodeId: 'new_image',
+        kind: 'image',
+        title: '视觉画面',
+        position: { x: 360, y: 0 },
+        fields: fields.image,
+      },
+      {
+        type: 'create_node',
+        clientNodeId: 'new_video',
+        kind: 'video',
+        title: '视频节点',
+        position: { x: 720, y: 0 },
+        fields: fields.video,
+      },
+      {
+        type: 'create_node',
+        clientNodeId: 'new_audio',
+        kind: 'audio',
+        title: '音频节点',
+        position: { x: 1080, y: 0 },
+        fields: fields.audio,
+      },
+      { type: 'connect', sourceNodeId: 'new_script', targetNodeId: 'new_image' },
+      { type: 'connect', sourceNodeId: 'new_image', targetNodeId: 'new_video' },
+      { type: 'connect', sourceNodeId: 'new_video', targetNodeId: 'new_audio' },
+    ],
   }
 }
 
@@ -413,6 +596,44 @@ function mergePromptInstruction(existingPrompt: string, instruction: string): st
   if (!normalizedInstruction || existingPrompt.includes(normalizedInstruction))
     return existingPrompt
   return [existingPrompt.trim(), normalizedInstruction].join('\n')
+}
+
+function summarizeDetailSubject(detail: CanvasNodeDetail | null): string {
+  const source =
+    detail?.summary?.trim() || detail?.textContent?.trim() || detail?.name?.trim() || '选中节点'
+  return source.replace(/\s+/g, ' ').slice(0, 80)
+}
+
+function extractSelectedTextDraftFocus(message: string): string {
+  const focus = stripCanvasCommandLanguage(extractFieldInstruction(message))
+    .replace(
+      /(?:选中(?:的)?|当前|这个|节点|图片|图像|视频|音频|音乐|配乐|后面|前面|接到|连接|加一个|加上|写一段|补(?:一段)?|文案|口播|文本|copy|caption)/gi,
+      ' '
+    )
+    .replace(/[，,。.\s]+/g, ' ')
+    .replace(/^(?:在|的|和|并|到|把|将|一段)\s*/g, '')
+    .replace(/\s*(?:在|的|和|并|到|把|将|一段)$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const meaningful = focus.replace(/[的在和并到把将一段\s]/g, '')
+  return meaningful.length >= 2 ? focus : '短视频口播'
+}
+
+function buildSelectedTextNodeFields(params: {
+  message: string
+  detail: CanvasNodeDetail | null
+}): Record<string, unknown> {
+  const subject = summarizeDetailSubject(params.detail)
+  const focus = extractSelectedTextDraftFocus(params.message)
+  const draft = [
+    `开场：承接“${subject}”，先给出一个容易理解的钩子。`,
+    `中段：围绕${focus}展开 2-3 个具体表达，语气自然、有画面感。`,
+    '收尾：给出明确行动或情绪落点，方便继续连接下游视觉、视频或配乐节点。',
+  ].join('\n')
+  return {
+    aiPrompt: `基于选中${params.detail?.kind ?? 'content'}节点“${subject}”补充一段${focus}，适合写入文本节点。`,
+    contentHtml: textToContentHtml(draft),
+  }
 }
 
 function getNodePosition(snapshot: CanvasSnapshot, nodeId: string): { x: number; y: number } {
@@ -844,47 +1065,7 @@ async function buildFallbackPatch(
   const message = context.message
   const wantsChain = includesAny(message, ['完整短视频', '内容链', '一组', 'chain', 'storyboard'])
   if (wantsChain) {
-    const fields = buildContentChainFields(context)
-    return {
-      reason: 'Create a complete content chain from the current canvas request',
-      operations: [
-        {
-          type: 'create_node',
-          clientNodeId: 'new_script',
-          kind: 'text',
-          title: '短视频脚本',
-          position: { x: 0, y: 0 },
-          fields: fields.text,
-        },
-        {
-          type: 'create_node',
-          clientNodeId: 'new_image',
-          kind: 'image',
-          title: '视觉画面',
-          position: { x: 360, y: 0 },
-          fields: fields.image,
-        },
-        {
-          type: 'create_node',
-          clientNodeId: 'new_video',
-          kind: 'video',
-          title: '视频节点',
-          position: { x: 720, y: 0 },
-          fields: fields.video,
-        },
-        {
-          type: 'create_node',
-          clientNodeId: 'new_audio',
-          kind: 'audio',
-          title: '音频节点',
-          position: { x: 1080, y: 0 },
-          fields: fields.audio,
-        },
-        { type: 'connect', sourceNodeId: 'new_script', targetNodeId: 'new_image' },
-        { type: 'connect', sourceNodeId: 'new_image', targetNodeId: 'new_video' },
-        { type: 'connect', sourceNodeId: 'new_video', targetNodeId: 'new_audio' },
-      ],
-    }
+    return buildContentChainPlan(context)
   }
 
   const selected = resolveTargetSelectedNode({
@@ -905,6 +1086,7 @@ async function buildFallbackPatch(
   if (textCreateTarget && isSelectionScopedCreateTextRequest(message)) {
     const selected = textCreateTarget
     const selectedPosition = getNodePosition(snapshot, selected)
+    const detail = readCanvasNodeDetail(snapshot, selected, context.selectedNodeIds)
     const before = wantsBeforeSelectedNode(message)
     const clientNodeId = before ? 'new_text_before_selection' : 'new_text_after_selection'
     return {
@@ -919,10 +1101,7 @@ async function buildFallbackPatch(
             x: selectedPosition.x + (before ? -360 : 360),
             y: selectedPosition.y,
           },
-          fields: {
-            aiPrompt: message,
-            contentHtml: `<p>${message}</p>`,
-          },
+          fields: buildSelectedTextNodeFields({ message, detail }),
         },
         before
           ? { type: 'connect', sourceNodeId: clientNodeId, targetNodeId: selected }
@@ -1260,10 +1439,24 @@ function ensureReadOnlyInspectionCoverage(
   return withToolHints(plan, [...new Set(requiredToolHints)])
 }
 
-function buildPlannerPrompt(context: LocalAgentContext, tokenAwareContext: string): string {
+function buildPlannerPrompt(
+  context: LocalAgentContext,
+  tokenAwareContext: string,
+  decision: LocalCanvasIntentDecision
+): string {
   return [
     `Token-aware context:\n${tokenAwareContext}`,
+    [
+      'Immutable intent policy:',
+      `- userIntent=${decision.userIntent}`,
+      `- mutationPolicy=${decision.mutationPolicy}`,
+      `- canvasReadPolicy=${decision.canvasReadPolicy}`,
+      `- confidence=${decision.confidence}`,
+      `- requiresUserConfirmation=${decision.requiresUserConfirmation}`,
+      `- evidence=${decision.evidence.join(', ') || 'none'}`,
+    ].join('\n'),
     'Return JSON for a multi-step local canvas agent plan. Use high-level patch operations only. Do not output raw EditWorkflowOperation.',
+    'You may make the plan more restrictive for safety, but you must not escalate read or mutation permissions beyond the immutable intent policy.',
     'When the user asks to inspect or summarize, prefer read tools and an answer step. When the user asks to modify, plan inspect -> apply_patch -> verify_patch.',
     'Use read_file for attached file context, query_knowledge for attached knowledge context, search_docs for documentation context, search_workspace for workspace inventory, and read_tasks for production task status.',
     'Use materialize_file only when the user explicitly asks to save/import an uploaded file. Use update_task_result or submit_task_result only with an explicit task id or bound task context.',
@@ -1382,7 +1575,7 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
         roleInstruction:
           'You are planning for a local TapNow-style canvas agent. Plans may inspect, patch, generate, verify, or answer. Use JSON only.',
       }),
-      prompt: buildPlannerPrompt(context, tokenAwareContext),
+      prompt: buildPlannerPrompt(context, tokenAwareContext, intentDecision),
       temperature: context.thinkingLevel === 'extra' ? 0.15 : 0.05,
       maxTokens: context.thinkingLevel === 'extra' ? 3000 : 1800,
       responseFormat: {
@@ -1400,6 +1593,9 @@ export async function buildLocalAgentPlan(context: LocalAgentContext): Promise<L
         userIntent: parsed.data.userIntent ?? intentDecision.userIntent,
         mutationPolicy: parsed.data.mutationPolicy ?? intentDecision.mutationPolicy,
         canvasReadPolicy: parsed.data.canvasReadPolicy ?? intentDecision.canvasReadPolicy,
+        intentConfidence: parsed.data.intentConfidence,
+        intentEvidence: parsed.data.intentEvidence,
+        requiresUserConfirmation: parsed.data.requiresUserConfirmation,
         requiresClarification: parsed.data.requiresClarification,
         clarificationQuestion: parsed.data.clarificationQuestion,
         steps: parsed.data.steps,

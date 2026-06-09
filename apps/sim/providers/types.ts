@@ -78,7 +78,10 @@ export interface ProviderResponse {
     input?: number
     output?: number
     total?: number
+    reasoning?: number
+    cacheRead?: number
   }
+  finishReason?: string
   toolCalls?: FunctionCallResponse[]
   toolResults?: Record<string, unknown>[]
   timing?: {

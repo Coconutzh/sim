@@ -834,9 +834,11 @@ export function buildDeterministicLocalAgentAnswer(params: {
     params.observations.every((observation) => observation.success)
   ) {
     const verified = params.observations.some(
-      (observation) => observation.toolName === 'canvas.verify_patch'
+      (observation) => observation.toolName === 'canvas.verify_patch' && observation.success
     )
-    return verified ? '已生成内容并写回选中节点，验证也已完成。' : '已生成内容并写回选中节点。'
+    return verified
+      ? '已生成内容并写回选中节点，验证也已完成。'
+      : '已生成内容并写回选中节点，但还没有完成二次验证。'
   }
 
   const patchObservations = params.observations.filter(
@@ -847,9 +849,9 @@ export function buildDeterministicLocalAgentAnswer(params: {
     params.observations.every((observation) => observation.success)
   ) {
     const verified = params.observations.some(
-      (observation) => observation.toolName === 'canvas.verify_patch'
+      (observation) => observation.toolName === 'canvas.verify_patch' && observation.success
     )
-    return verified ? '已完成画布修改，并完成验证。' : '已完成画布修改。'
+    return verified ? '已完成画布修改，并完成验证。' : '已应用画布修改，但还没有完成二次验证。'
   }
 
   const proposalObservations = params.observations.filter(

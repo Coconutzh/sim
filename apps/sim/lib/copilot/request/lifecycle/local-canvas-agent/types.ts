@@ -8,7 +8,7 @@ import type { ContentNodePresetId } from '@/lib/product/content-node-presets'
 import type { ProviderId, ProviderRequest } from '@/providers/types'
 
 export type LocalAgentSessionScope = 'personal' | 'team' | 'task'
-export type LocalAgentRole = 'planner' | 'actor' | 'verifier' | 'summarizer'
+export type LocalAgentRole = 'planner' | 'actor' | 'verifier' | 'summarizer' | 'decision'
 export type LocalAgentRisk = 'low' | 'medium' | 'high'
 export type LocalCanvasUserIntent =
   | 'consult_design'
@@ -30,8 +30,10 @@ export type LocalCanvasToolName =
   | 'canvas.apply_patch'
   | 'canvas.verify_patch'
   | 'canvas.generate_node_output'
+export type LocalMediaToolName = 'media.analyze_node_media'
 export type LocalAgentToolName =
   | LocalCanvasToolName
+  | LocalMediaToolName
   | 'read_file'
   | 'search_workspace'
   | 'materialize_file'
@@ -53,6 +55,7 @@ export interface LocalAgentModelRequest {
   role: LocalAgentRole
   systemPrompt: string
   prompt: string
+  messages?: ProviderRequest['messages']
   workspaceId: string
   temperature?: number
   maxTokens?: number
@@ -135,8 +138,8 @@ export interface LocalAgentMessage {
 }
 
 export interface LocalAgentMemoryData {
-  version: 1
-  scope: 'personal'
+  version: 1 | 2
+  scope: 'personal' | 'thread'
   userId: string
   workspaceId: string
   workflowId: string
@@ -151,15 +154,27 @@ export interface LocalAgentMemoryData {
   }
   canvasSummary: string
   recentObservations: LocalAgentObservation[]
+  toolResultRefs?: LocalAgentToolResultRef[]
   updatedAt: string
 }
 
 export interface LocalAgentObservation {
-  toolName: LocalAgentToolName | 'planner' | 'verifier' | 'memory'
+  toolName: LocalAgentToolName | 'planner' | 'verifier' | 'memory' | 'decision'
   summary: string
   success: boolean
   timestamp: string
+  outputRef?: string
   output?: unknown
+}
+
+export interface LocalAgentToolResultRef {
+  id: string
+  toolName: LocalAgentToolName
+  summary: string
+  storageKey: string
+  outputPreview?: string
+  outputSizeChars?: number
+  createdAt: string
 }
 
 export interface CanvasNodeRecord {
@@ -232,6 +247,7 @@ export interface LocalCanvasPatch {
 
 export interface LocalCanvasCreateNodeOperation {
   type: 'create_node'
+  operationId?: string
   clientNodeId?: string
   nodeId?: string
   kind: LocalCanvasNodeKind
@@ -242,20 +258,36 @@ export interface LocalCanvasCreateNodeOperation {
 
 export interface LocalCanvasUpdateNodeOperation {
   type: 'update_node'
+  operationId?: string
   nodeId: string
   fields: Record<string, unknown>
 }
 
 export interface LocalCanvasConnectOperation {
   type: 'connect'
+  operationId?: string
   sourceNodeId: string
   targetNodeId: string
 }
 
 export interface LocalCanvasLayoutOperation {
   type: 'layout_nodes'
+  operationId?: string
   nodeIds?: string[]
   direction: 'horizontal' | 'vertical' | 'grid'
+}
+
+export interface LocalCanvasVerifyOperationResult {
+  operationId: string
+  operationType: LocalCanvasPatchOperation['type'] | 'generation'
+  nodeId?: string
+  field?: string
+  sourceNodeId?: string
+  targetNodeId?: string
+  expected?: unknown
+  actual?: unknown
+  success: boolean
+  error?: string
 }
 
 export interface CanvasSnapshot {
@@ -284,6 +316,9 @@ export interface LocalAgentPlan {
   userIntent?: LocalCanvasUserIntent
   mutationPolicy?: LocalCanvasMutationPolicy
   canvasReadPolicy?: LocalCanvasReadPolicy
+  intentConfidence?: number
+  intentEvidence?: string[]
+  requiresUserConfirmation?: boolean
   requiresClarification: boolean
   clarificationQuestion?: string
   steps: LocalAgentPlanStep[]
@@ -296,6 +331,60 @@ export interface LocalAgentPlan {
 export interface LocalAgentToolCall {
   name: LocalAgentToolName
   input: Record<string, unknown>
+}
+
+export type LocalAgentDecision =
+  | LocalAgentToolCallDecision
+  | LocalAgentParallelToolCallsDecision
+  | LocalAgentAskConfirmationDecision
+  | LocalAgentAskClarificationDecision
+  | LocalAgentFinalAnswerDecision
+
+export interface LocalAgentToolCallDecision {
+  type: 'tool_call'
+  toolName: LocalAgentToolName
+  toolInput: Record<string, unknown>
+  userVisibleReason: string
+  risk: LocalAgentRisk
+}
+
+export interface LocalAgentParallelToolCallsDecision {
+  type: 'tool_calls'
+  toolCalls: Array<{
+    toolName: LocalAgentToolName
+    toolInput: Record<string, unknown>
+    userVisibleReason?: string
+  }>
+  userVisibleReason: string
+  risk: LocalAgentRisk
+}
+
+export interface LocalAgentAskConfirmationDecision {
+  type: 'ask_confirmation'
+  question: string
+  pendingToolCall?: LocalAgentToolCall
+  risk: Extract<LocalAgentRisk, 'medium' | 'high'>
+}
+
+export interface LocalAgentAskClarificationDecision {
+  type: 'ask_clarification'
+  question: string
+}
+
+export interface LocalAgentFinalAnswerDecision {
+  type: 'final_answer'
+  answer: string
+  memoryUpdate?: LocalAgentThreadMemoryUpdate
+}
+
+export interface LocalAgentThreadMemoryUpdate {
+  conversationSummary?: string
+  canvasSummary?: string
+  taskState?: {
+    goal?: string
+    openQuestions?: string[]
+    lastObservation?: string
+  }
 }
 
 export interface LocalAgentToolResult {

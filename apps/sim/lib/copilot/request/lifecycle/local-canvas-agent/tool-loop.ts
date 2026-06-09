@@ -1,21 +1,33 @@
+import { requestLocalAgentDecision } from '@/lib/copilot/request/lifecycle/local-canvas-agent/decision'
+import { classifyLocalCanvasUserIntent } from '@/lib/copilot/request/lifecycle/local-canvas-agent/intent'
 import {
   buildLocalAgentAnswer,
   selectLocalAgentNextToolCall,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
 import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
 import { buildLocalAgentPlan } from '@/lib/copilot/request/lifecycle/local-canvas-agent/planner'
+import { getLocalAgentToolDescriptor } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
 import type {
   LocalAgentContext,
+  LocalAgentDecision,
   LocalAgentObservation,
   LocalAgentPlan,
+  LocalAgentThreadMemoryUpdate,
   LocalAgentToolCall,
   LocalAgentToolLoopResult,
+  LocalCanvasMutationPolicy,
+  LocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const MAX_STEPS = 10
 
 type LocalAgentLoopPhase = 'understand' | 'inspect' | 'act' | 'verify' | 'finish'
+type LocalCanvasAgentRuntimeMode = 'legacy' | 'hybrid' | 'model_tool_loop'
+
+interface PendingVerification {
+  input: Record<string, unknown>
+}
 
 interface LocalAgentLoopState {
   phase: LocalAgentLoopPhase
@@ -28,12 +40,53 @@ interface LocalAgentLoopState {
   seen: Set<string>
 }
 
+interface ModelDrivenLoopState {
+  plan: LocalAgentPlan
+  observations: LocalAgentObservation[]
+  pendingVerification: PendingVerification | null
+  toolCallsExecuted: number
+}
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function isRuntimeMode(value: string): value is LocalCanvasAgentRuntimeMode {
+  return value === 'legacy' || value === 'hybrid' || value === 'model_tool_loop'
+}
+
+function resolveLocalCanvasAgentRuntimeMode(
+  context: LocalAgentContext
+): LocalCanvasAgentRuntimeMode {
+  const payloadMode = asString(context.requestPayload.localAgentMode)
+  if (isRuntimeMode(payloadMode)) return payloadMode
+  const envMode = process.env.LOCAL_CANVAS_AGENT_MODE?.trim()
+  return envMode && isRuntimeMode(envMode) ? envMode : 'model_tool_loop'
+}
+
+function buildInitialDecisionPlan(
+  context: LocalAgentContext,
+  policy: ReturnType<typeof classifyLocalCanvasUserIntent>
+): LocalAgentPlan {
+  const manualMutation =
+    context.confirmationMode === 'manual' && policy.mutationPolicy === 'allow_mutation'
+  return {
+    goal: context.message,
+    risk: policy.requiresUserConfirmation || manualMutation ? 'medium' : 'low',
+    userIntent: policy.userIntent,
+    mutationPolicy: manualMutation ? 'propose_only' : policy.mutationPolicy,
+    canvasReadPolicy: policy.canvasReadPolicy,
+    intentConfidence: policy.confidence,
+    intentEvidence: policy.evidence,
+    requiresUserConfirmation: policy.requiresUserConfirmation || manualMutation,
+    requiresClarification: false,
+    steps: [],
+    successCriteria: ['The model decision loop reaches a verified final answer or safe stop.'],
+  }
 }
 
 function extractTaskId(context: LocalAgentContext): string {
@@ -233,7 +286,7 @@ function isToolCallAllowedByPolicy(plan: LocalAgentPlan, call: LocalAgentToolCal
     return false
   }
   if (policy === 'read_only' && call.name === 'canvas.propose_patch') return false
-  if (policy === 'propose_only' && call.name === 'canvas.verify_patch') return false
+  if (call.name === 'canvas.verify_patch') return false
   return true
 }
 
@@ -378,7 +431,509 @@ function getNextUnseenToolCall(
   return null
 }
 
-export async function runLocalAgentToolLoop(
+function isMutationToolCallName(toolName: LocalAgentToolCall['name']): boolean {
+  return (
+    toolName === 'canvas.apply_patch' ||
+    toolName === 'canvas.generate_node_output' ||
+    toolName === 'materialize_file' ||
+    toolName === 'update_task_result' ||
+    toolName === 'submit_task_result'
+  )
+}
+
+function getPolicyViolationSummary(params: {
+  mutationPolicy?: LocalCanvasMutationPolicy
+  call: LocalAgentToolCall
+  readOnly: boolean
+}): string | null {
+  if (
+    params.mutationPolicy === 'read_only' &&
+    (!params.readOnly || params.call.name === 'canvas.propose_patch')
+  ) {
+    return `Blocked ${params.call.name} because this request is read-only.`
+  }
+  if (params.mutationPolicy === 'propose_only' && isMutationToolCallName(params.call.name)) {
+    return `Blocked ${params.call.name} because this request requires proposal or confirmation first.`
+  }
+  return null
+}
+
+function buildDecisionObservation(summary: string, success: boolean): LocalAgentObservation {
+  return {
+    toolName: 'decision',
+    summary,
+    success,
+    timestamp: new Date().toISOString(),
+  }
+}
+
+function summarizeDecisionMemoryUpdate(update: LocalAgentThreadMemoryUpdate): string {
+  return [
+    update.conversationSummary ? 'conversationSummary' : '',
+    update.canvasSummary ? 'canvasSummary' : '',
+    update.taskState?.goal ? 'taskState.goal' : '',
+    update.taskState?.openQuestions?.length ? 'taskState.openQuestions' : '',
+    update.taskState?.lastObservation ? 'taskState.lastObservation' : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+function buildMemoryUpdateObservation(update: LocalAgentThreadMemoryUpdate): LocalAgentObservation {
+  const changedFields = summarizeDecisionMemoryUpdate(update)
+  return {
+    toolName: 'memory',
+    summary: changedFields
+      ? `Model requested thread memory update: ${changedFields}`
+      : 'Model requested thread memory update.',
+    success: true,
+    timestamp: new Date().toISOString(),
+    output: update,
+  }
+}
+
+function buildVerificationInputFromToolResult(
+  call: LocalAgentToolCall,
+  output: unknown
+): Record<string, unknown> | null {
+  if (call.name === 'canvas.apply_patch') return { patch: call.input.patch }
+  if (call.name !== 'canvas.generate_node_output') return null
+  const record = asRecord(output)
+  const nodeId = typeof record.nodeId === 'string' ? record.nodeId : ''
+  const field = typeof record.verifiedField === 'string' ? record.verifiedField : ''
+  return nodeId && field ? { generation: { nodeId, field } } : null
+}
+
+function getPatchFromToolCall(call: LocalAgentToolCall): LocalCanvasPatch | undefined {
+  if (call.name !== 'canvas.apply_patch' && call.name !== 'canvas.propose_patch') return undefined
+  const patch = call.input.patch
+  if (!patch || typeof patch !== 'object') return undefined
+  const operations = (patch as { operations?: unknown }).operations
+  return Array.isArray(operations) ? (patch as LocalCanvasPatch) : undefined
+}
+
+function applyPendingPatchToPlan(
+  plan: LocalAgentPlan,
+  patch: LocalCanvasPatch | undefined
+): LocalAgentPlan {
+  if (!patch) return plan
+  return {
+    ...plan,
+    patch,
+    steps: plan.steps.length
+      ? plan.steps
+      : [
+          {
+            id: 'confirm_apply_patch',
+            title: '确认后执行这次画布修改',
+            intent: 'update',
+            toolHints: ['canvas.apply_patch'],
+            expectedObservation: 'Canvas patch is applied after user confirmation',
+          },
+          {
+            id: 'confirm_verify_patch',
+            title: '确认后验证画布修改',
+            intent: 'verify',
+            toolHints: ['canvas.verify_patch'],
+            expectedObservation: 'Canvas patch is verified after user confirmation',
+          },
+        ],
+  }
+}
+
+function hasSuccessfulCanvasMutationAndVerify(observations: LocalAgentObservation[]): boolean {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  const hasVerification = observations.some(
+    (observation) => observation.success && observation.toolName === 'canvas.verify_patch'
+  )
+  return hasMutation && hasVerification
+}
+
+function buildMediaAnalysisFallbackAnswer(observations: LocalAgentObservation[]): string | null {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  if (hasMutation) return null
+  const mediaObservation = [...observations]
+    .reverse()
+    .find(
+      (observation) => observation.success && observation.toolName === 'media.analyze_node_media'
+    )
+  if (!mediaObservation) return null
+
+  const output = asRecord(mediaObservation.output)
+  const access = asRecord(output.mediaContentAccess)
+  const diagnostics = asRecord(output.binaryAnalysisDiagnostics)
+  const analysis = Array.isArray(output.analysis)
+    ? output.analysis.map(asString).filter(Boolean).slice(0, 6)
+    : []
+  const file = asRecord(output.file)
+  const fileName = asString(file.name)
+  const limitations = asString(output.limitations)
+
+  if (diagnostics.truncated === true) {
+    const tokens = asRecord(diagnostics.tokens)
+    const finishReason = asString(diagnostics.finishReason)
+    const reasoning = typeof tokens.reasoning === 'number' ? tokens.reasoning : undefined
+    return [
+      '我已读取到选中的媒体节点，但视觉模型输出被截断，本次不能可靠描述真实图片内容。',
+      fileName ? `文件：${fileName}` : '',
+      finishReason ? `停止原因：${finishReason}` : '',
+      typeof reasoning === 'number' ? `隐藏推理 token：${reasoning}` : '',
+      '建议重试、提高视觉分析 token 预算，或切换到更稳定的图片理解模型。',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  if (access.canDescribeActualMedia === true && analysis.length) {
+    return ['我已完成媒体分析，结果如下：', ...analysis.map((line) => `- ${line}`)].join('\n')
+  }
+
+  if (analysis.length || limitations) {
+    return [
+      '我已读取媒体节点，但当前只能基于提示词、文件元数据或已存媒体上下文回答，不能声称看过真实媒体内容。',
+      ...analysis.map((line) => `- ${line}`),
+      limitations ? `限制：${limitations}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  return '我已读取媒体节点，但没有获得可用于描述真实媒体内容的分析结果。'
+}
+
+async function executeDecisionToolCall(params: {
+  context: LocalAgentContext
+  decision: Extract<LocalAgentDecision, { type: 'tool_call' }>
+  state: ModelDrivenLoopState
+}): Promise<void> {
+  const descriptor = getLocalAgentToolDescriptor(params.decision.toolName)
+  if (!descriptor?.isEnabled(params.context)) {
+    params.state.observations.push(
+      buildDecisionObservation(`Tool ${params.decision.toolName} is not available.`, false)
+    )
+    return
+  }
+
+  const parsedInput = descriptor.inputSchema.safeParse(params.decision.toolInput)
+  if (!parsedInput.success) {
+    params.state.observations.push(
+      buildDecisionObservation(
+        `Tool ${params.decision.toolName} input was invalid: ${parsedInput.error.issues
+          .map((issue) => issue.message)
+          .join('; ')}`,
+        false
+      )
+    )
+    return
+  }
+
+  let call: LocalAgentToolCall = {
+    name: params.decision.toolName,
+    input: parsedInput.data,
+  }
+  if (call.name === 'canvas.verify_patch' && params.state.pendingVerification) {
+    call = { name: 'canvas.verify_patch', input: params.state.pendingVerification.input }
+  }
+  const policyViolation = getPolicyViolationSummary({
+    mutationPolicy: params.state.plan.mutationPolicy,
+    call,
+    readOnly: descriptor.isReadOnly(parsedInput.data),
+  })
+  if (policyViolation) {
+    params.state.observations.push(buildDecisionObservation(policyViolation, false))
+    return
+  }
+
+  if (descriptor.isDestructive?.(parsedInput.data)) {
+    const pendingPatch = getPatchFromToolCall(call)
+    params.state.plan = {
+      ...applyPendingPatchToPlan(params.state.plan, pendingPatch),
+      requiresClarification: true,
+      clarificationQuestion: '这个操作会删除或清空画布内容。请先明确确认后我再执行。',
+      requiresUserConfirmation: true,
+      risk: 'high',
+    }
+    params.state.observations.push(
+      buildDecisionObservation(
+        `Blocked destructive tool call ${call.name} until confirmation.`,
+        false
+      )
+    )
+    return
+  }
+
+  params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
+  const result = await executeLocalAgentTool(params.context, call)
+  params.state.toolCallsExecuted += 1
+  params.state.observations.push(observationFromToolResult(result))
+  if (result.success) {
+    if (call.name === 'canvas.verify_patch') {
+      params.state.pendingVerification = null
+      return
+    }
+    const verificationInput = buildVerificationInputFromToolResult(call, result.output)
+    if (verificationInput) {
+      await executeImmediateVerification({
+        context: params.context,
+        state: params.state,
+        input: verificationInput,
+      })
+    }
+  }
+}
+
+async function executeParallelDecisionToolCalls(params: {
+  context: LocalAgentContext
+  decision: Extract<LocalAgentDecision, { type: 'tool_calls' }>
+  state: ModelDrivenLoopState
+}): Promise<void> {
+  const calls: LocalAgentToolCall[] = []
+  params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
+
+  for (const requestedCall of params.decision.toolCalls) {
+    const descriptor = getLocalAgentToolDescriptor(requestedCall.toolName)
+    if (!descriptor?.isEnabled(params.context)) {
+      params.state.observations.push(
+        buildDecisionObservation(`Tool ${requestedCall.toolName} is not available.`, false)
+      )
+      continue
+    }
+
+    const parsedInput = descriptor.inputSchema.safeParse(requestedCall.toolInput)
+    if (!parsedInput.success) {
+      params.state.observations.push(
+        buildDecisionObservation(
+          `Tool ${requestedCall.toolName} input was invalid: ${parsedInput.error.issues
+            .map((issue) => issue.message)
+            .join('; ')}`,
+          false
+        )
+      )
+      continue
+    }
+
+    const call = {
+      name: requestedCall.toolName,
+      input: parsedInput.data,
+    } satisfies LocalAgentToolCall
+    const policyViolation = getPolicyViolationSummary({
+      mutationPolicy: params.state.plan.mutationPolicy,
+      call,
+      readOnly: descriptor.isReadOnly(parsedInput.data),
+    })
+    if (policyViolation) {
+      params.state.observations.push(buildDecisionObservation(policyViolation, false))
+      continue
+    }
+
+    if (
+      !descriptor.isReadOnly(parsedInput.data) ||
+      !descriptor.isConcurrencySafe(parsedInput.data)
+    ) {
+      params.state.observations.push(
+        buildDecisionObservation(
+          `Blocked ${call.name} from parallel execution because it is not read-only and concurrency-safe.`,
+          false
+        )
+      )
+      continue
+    }
+
+    calls.push(call)
+  }
+
+  const results = await Promise.all(
+    calls.map((call) => executeLocalAgentTool(params.context, call))
+  )
+  params.state.toolCallsExecuted += results.length
+  params.state.observations.push(...results.map(observationFromToolResult))
+}
+
+async function executePendingVerification(params: {
+  context: LocalAgentContext
+  state: ModelDrivenLoopState
+}): Promise<void> {
+  if (!params.state.pendingVerification) return
+  const result = await executeLocalAgentTool(params.context, {
+    name: 'canvas.verify_patch',
+    input: params.state.pendingVerification.input,
+  })
+  params.state.toolCallsExecuted += 1
+  params.state.observations.push(observationFromToolResult(result))
+  params.state.pendingVerification = null
+}
+
+async function executeImmediateVerification(params: {
+  context: LocalAgentContext
+  state: ModelDrivenLoopState
+  input: Record<string, unknown>
+}): Promise<void> {
+  params.state.pendingVerification = null
+  const result = await executeLocalAgentTool(params.context, {
+    name: 'canvas.verify_patch',
+    input: params.input,
+  })
+  params.state.toolCallsExecuted += 1
+  params.state.observations.push(observationFromToolResult(result))
+}
+
+async function runModelDrivenLocalAgentToolLoop(
+  context: LocalAgentContext,
+  options: { allowInitialFallback: boolean }
+): Promise<LocalAgentToolLoopResult | null> {
+  const policy = classifyLocalCanvasUserIntent(context)
+  const state: ModelDrivenLoopState = {
+    plan: buildInitialDecisionPlan(context, policy),
+    observations: [
+      {
+        toolName: 'decision',
+        summary: 'Started model-driven local canvas agent decision loop.',
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    ],
+    pendingVerification: null,
+    toolCallsExecuted: 0,
+  }
+  let stopSummary: string | null = null
+
+  for (let step = 0; step < MAX_STEPS; step += 1) {
+    if (context.options.abortSignal?.aborted) {
+      context.streamContext.wasAborted = true
+      stopSummary = 'Stopped because the request was cancelled.'
+      break
+    }
+
+    let decision: LocalAgentDecision
+    try {
+      decision = await requestLocalAgentDecision({
+        context,
+        observations: state.observations,
+        policy,
+      })
+    } catch (error) {
+      if (options.allowInitialFallback && state.toolCallsExecuted === 0) return null
+      const summary = error instanceof Error ? error.message : 'Failed to get AgentDecision'
+      const previousDecisionFailures = state.observations.filter(
+        (observation) => observation.toolName === 'decision' && !observation.success
+      ).length
+      state.observations.push(buildDecisionObservation(summary, false))
+      if (previousDecisionFailures === 0 && step < MAX_STEPS - 1) {
+        continue
+      }
+      stopSummary = 'Stopped because the model decision could not be produced.'
+      break
+    }
+
+    if (decision.type === 'ask_clarification') {
+      state.plan = {
+        ...state.plan,
+        requiresClarification: true,
+        clarificationQuestion: decision.question,
+      }
+      return { plan: state.plan, observations: state.observations, answer: decision.question }
+    }
+
+    if (decision.type === 'ask_confirmation') {
+      const pendingPatch = decision.pendingToolCall
+        ? getPatchFromToolCall({
+            name: decision.pendingToolCall.name,
+            input: decision.pendingToolCall.input,
+          })
+        : undefined
+      state.plan = {
+        ...applyPendingPatchToPlan(state.plan, pendingPatch),
+        requiresClarification: true,
+        clarificationQuestion: decision.question,
+        requiresUserConfirmation: true,
+        risk: decision.risk,
+      }
+      return { plan: state.plan, observations: state.observations, answer: decision.question }
+    }
+
+    if (decision.type === 'final_answer') {
+      if (state.pendingVerification) {
+        await executePendingVerification({ context, state })
+        if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+          return {
+            plan: state.plan,
+            observations: state.observations,
+            answer: '已完成画布修改，并完成验证。',
+          }
+        }
+        continue
+      }
+      if (decision.memoryUpdate) {
+        state.observations.push(buildMemoryUpdateObservation(decision.memoryUpdate))
+      }
+      return { plan: state.plan, observations: state.observations, answer: decision.answer }
+    }
+
+    if (decision.type === 'tool_calls') {
+      await executeParallelDecisionToolCalls({ context, decision, state })
+      continue
+    }
+
+    await executeDecisionToolCall({ context, decision, state })
+    if (state.plan.requiresClarification) {
+      return {
+        plan: state.plan,
+        observations: state.observations,
+        answer: state.plan.clarificationQuestion ?? '',
+      }
+    }
+    if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+      return {
+        plan: state.plan,
+        observations: state.observations,
+        answer: '已完成画布修改，并完成验证。',
+      }
+    }
+  }
+
+  if (state.pendingVerification) {
+    await executePendingVerification({ context, state })
+  }
+  if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+    return {
+      plan: state.plan,
+      observations: state.observations,
+      answer: '已完成画布修改，并完成验证。',
+    }
+  }
+  const mediaFallbackAnswer = buildMediaAnalysisFallbackAnswer(state.observations)
+  if (mediaFallbackAnswer) {
+    return {
+      plan: state.plan,
+      observations: state.observations,
+      answer: mediaFallbackAnswer,
+    }
+  }
+  state.observations.push(
+    buildDecisionObservation(
+      stopSummary ?? `Stopped after reaching the local canvas agent max step limit (${MAX_STEPS}).`,
+      false
+    )
+  )
+  const answer = await buildLocalAgentAnswer({
+    context,
+    plan: state.plan,
+    observations: state.observations,
+  })
+  return { plan: state.plan, observations: state.observations, answer }
+}
+
+async function runPlanDrivenLocalAgentToolLoop(
   context: LocalAgentContext
 ): Promise<LocalAgentToolLoopResult> {
   const plan = await buildLocalAgentPlan(context)
@@ -456,4 +1011,15 @@ export async function runLocalAgentToolLoop(
   const answer = await buildLocalAgentAnswer({ context, plan, observations })
 
   return { plan, observations, answer }
+}
+
+export async function runLocalAgentToolLoop(
+  context: LocalAgentContext
+): Promise<LocalAgentToolLoopResult> {
+  const mode = resolveLocalCanvasAgentRuntimeMode(context)
+  if (mode === 'legacy') return runPlanDrivenLocalAgentToolLoop(context)
+  const modelDrivenResult = await runModelDrivenLocalAgentToolLoop(context, {
+    allowInitialFallback: mode === 'hybrid',
+  })
+  return modelDrivenResult ?? runPlanDrivenLocalAgentToolLoop(context)
 }

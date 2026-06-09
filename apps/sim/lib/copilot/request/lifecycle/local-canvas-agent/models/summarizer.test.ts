@@ -138,7 +138,50 @@ describe('local canvas summarizer', () => {
     )
   })
 
-  it('merges structured model memory updates for conversation, canvas, and task state', async () => {
+  it('merges model final-answer memory observations into deterministic thread memory', async () => {
+    mockExecuteLocalAgentModelRequest.mockRejectedValue(new Error('model unavailable'))
+    const plan: LocalAgentPlan = {
+      goal: '总结高考内容链',
+      risk: 'low',
+      userIntent: 'inspect_canvas',
+      mutationPolicy: 'read_only',
+      canvasReadPolicy: 'required',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['记录后续问题'],
+    }
+
+    const summary = await summarizeLocalAgentRun({
+      context: buildContext(),
+      memory: buildMemory(),
+      plan,
+      observations: [
+        {
+          toolName: 'memory',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Model requested thread memory update: conversationSummary, canvasSummary',
+          output: {
+            conversationSummary: '用户正在推进高考主题短视频内容链。',
+            canvasSummary: '画布已有脚本、主视觉、视频和配乐。',
+            taskState: {
+              goal: '继续优化高考主题内容链',
+              openQuestions: ['是否继续生成各节点输出？'],
+              lastObservation: '内容链已经验证。',
+            },
+          },
+        },
+      ],
+    })
+
+    expect(summary.conversationSummary).toContain('高考主题短视频内容链')
+    expect(summary.canvasSummary).toContain('脚本、主视觉、视频和配乐')
+    expect(summary.taskState.goal).toBe('继续优化高考主题内容链')
+    expect(summary.taskState.openQuestions).toContain('是否继续生成各节点输出？')
+    expect(summary.taskState.lastObservation).toBe('内容链已经验证。')
+  })
+
+  it('merges structured model memory updates without trusting unverified completed steps', async () => {
     mockExecuteLocalAgentModelRequest.mockResolvedValue({
       content: JSON.stringify({
         conversationSummary: '用户要持续推进小红书小猫视频工作流。',
@@ -173,6 +216,13 @@ describe('local canvas summarizer', () => {
           success: true,
           timestamp: '2026-06-06T00:00:00.000Z',
           summary: 'Applied canvas patch',
+          output: { verification: { success: true } },
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:01.000Z',
+          summary: 'Verified canvas patch',
         },
       ],
     })
@@ -180,8 +230,61 @@ describe('local canvas summarizer', () => {
     expect(summary.conversationSummary).toContain('小红书小猫')
     expect(summary.canvasSummary).toContain('脚本 -> 主视觉')
     expect(summary.taskState.goal).toBe('完善小猫视频内容链')
-    expect(summary.taskState.completedSteps).toContain('已创建四节点内容链并验证连接')
+    expect(summary.taskState.completedSteps).toContain('Applied canvas patch')
+    expect(summary.taskState.completedSteps).not.toContain('已创建四节点内容链并验证连接')
     expect(summary.taskState.openQuestions).toContain('是否继续生成各节点输出？')
     expect(mockExecuteLocalAgentModelRequest.mock.calls[0]?.[1]?.responseFormat).toBeDefined()
+  })
+
+  it('does not mark failed, aborted, or unverified canvas writes as completed steps', async () => {
+    mockExecuteLocalAgentModelRequest.mockResolvedValue({
+      content: JSON.stringify({
+        conversationSummary: '模型误以为已经完成。',
+        taskState: {
+          completedSteps: ['模型声称已完成画布修改'],
+          lastObservation: '实际验证失败',
+        },
+      }),
+    })
+    const plan: LocalAgentPlan = {
+      goal: '创建内容链',
+      risk: 'medium',
+      userIntent: 'mutate_canvas',
+      mutationPolicy: 'allow_mutation',
+      canvasReadPolicy: 'required',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['完成内容链'],
+      patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] },
+    }
+
+    const summary = await summarizeLocalAgentRun({
+      context: buildContext(),
+      memory: buildMemory(),
+      plan,
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Applied canvas patch',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: false,
+          timestamp: '2026-06-06T00:00:01.000Z',
+          summary: 'Field "contentHtml" was not written',
+        },
+        {
+          toolName: 'planner',
+          success: false,
+          timestamp: '2026-06-06T00:00:02.000Z',
+          summary: 'Stopped because the request was cancelled.',
+        },
+      ],
+    })
+
+    expect(summary.taskState.completedSteps).toEqual([])
+    expect(summary.taskState.lastObservation).toContain('实际验证失败')
   })
 })

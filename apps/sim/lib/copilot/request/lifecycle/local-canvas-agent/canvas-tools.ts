@@ -1,11 +1,12 @@
 import { toError } from '@sim/utils/errors'
 import { generateContentCanvasText } from '@/lib/content-canvas/text-executor'
 import {
-  buildCanvasSummaryText,
+  applyCanvasSummaryCacheSelection,
+  buildCanvasSummaryTextFromParts,
   loadCanvasSnapshot,
+  loadOrCreateCanvasSummaryCache,
   readCanvasNodeDetail,
   searchCanvasNodes,
-  summarizeCanvas,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import {
   buildEditWorkflowOperationsFromPatch,
@@ -324,7 +325,10 @@ function normalizeCanvasPatchLike(value: unknown, depth = 0): LocalCanvasPatch |
   if (!value || typeof value !== 'object') return null
   const patchRecord = asRecord(value)
   if (Array.isArray((value as LocalCanvasPatch | undefined)?.operations)) {
-    return value as LocalCanvasPatch
+    return {
+      ...(value as LocalCanvasPatch),
+      operations: normalizePatchOperations((value as LocalCanvasPatch).operations),
+    }
   }
   const normalized =
     normalizeLegacyCanvasPatch(patchRecord) ??
@@ -338,6 +342,23 @@ function normalizeCanvasPatchLike(value: unknown, depth = 0): LocalCanvasPatch |
     }
   }
   return null
+}
+
+function normalizePatchOperations(operations: unknown[]): LocalCanvasPatchOperation[] {
+  return operations
+    .map((operation) => {
+      if (typeof operation === 'string') {
+        try {
+          return JSON.parse(operation) as unknown
+        } catch {
+          return null
+        }
+      }
+      return operation
+    })
+    .filter((operation): operation is LocalCanvasPatchOperation =>
+      Boolean(operation && typeof operation === 'object' && 'type' in operation)
+    )
 }
 
 function requirePatch(input: Record<string, unknown>): LocalCanvasPatch {
@@ -774,12 +795,18 @@ async function executeCanvasToolUnchecked(
   })
 
   if (call.name === 'canvas.read_summary') {
+    const summaryCache = await loadOrCreateCanvasSummaryCache(snapshot)
+    const nodes = applyCanvasSummaryCacheSelection(summaryCache, context.selectedNodeIds)
     return {
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
-      nodes: summarizeCanvas(snapshot, context.selectedNodeIds),
-      edges: snapshot.edges,
-      summaryText: buildCanvasSummaryText(snapshot, context.selectedNodeIds),
+      nodes,
+      edges: summaryCache.edges,
+      summaryText: buildCanvasSummaryTextFromParts({
+        workflowId: context.workflowId,
+        nodes,
+        edges: summaryCache.edges,
+      }),
     }
   }
 
@@ -870,10 +897,15 @@ async function executeCanvasToolUnchecked(
   }
 
   if (call.name === 'canvas.verify_patch') {
+    const patch = call.input.patch === undefined ? undefined : requirePatch(call.input)
+    if (patch) {
+      const validation = validateLocalCanvasPatch(patch, snapshot)
+      if (!validation.valid) throw new Error(validation.errors.join('; '))
+    }
     return verifyLocalCanvasPatch({
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
-      patch: call.input.patch as LocalCanvasPatch | undefined,
+      patch,
       generation: call.input.generation as { nodeId: string; field: string } | undefined,
       selectedNodeIds: context.selectedNodeIds,
     })

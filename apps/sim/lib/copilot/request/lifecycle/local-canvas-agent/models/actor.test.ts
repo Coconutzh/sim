@@ -759,6 +759,23 @@ describe('local canvas actor', () => {
     expect(hasInternalFieldLeak(answer)).toBe(false)
   })
 
+  it('does not claim verified completion when a patch has not been verified', () => {
+    const answer = buildDeterministicLocalAgentAnswer({
+      context: buildContext('根据当前画布做一个完整短视频内容链。'),
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          timestamp: '2026-06-06T00:00:00.000Z',
+          summary: 'Patch applied',
+        },
+      ] satisfies LocalAgentObservation[],
+    })
+
+    expect(answer).toContain('还没有完成二次验证')
+    expect(answer).not.toContain('已完成画布修改')
+  })
+
   it('answers local context tool reads without pretending to read canvas nodes', () => {
     const answer = buildDeterministicLocalAgentAnswer({
       context: buildContext('读取我附加的 brief 文件和任务状态。'),

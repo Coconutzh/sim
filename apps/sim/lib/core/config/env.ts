@@ -145,6 +145,7 @@ export const env = createEnv({
     CONTENT_CANVAS_ACTOR_PROVIDER:         z.string().optional(),                  // Provider override for content canvas actor (e.g., openai, deepseek)
     CONTENT_CANVAS_ACTOR_MODEL:            z.string().optional(),                  // Model override for content canvas actor
     CONTENT_CANVAS_ACTOR_MODE:             z.enum(['structured', 'tool-call']).optional(), // Execution mode for content canvas actor
+    LOCAL_CANVAS_AGENT_MODE:               z.enum(['legacy', 'hybrid', 'model_tool_loop']).optional(), // Local canvas agent runtime mode
     CONTENT_TEXT_GEMINI_BASE_URL:          z.string().url().optional(),            // Content canvas Gemini text gateway override
     CONTENT_TEXT_GEMINI_API_KEY:           z.string().min(1).optional(),           // Content canvas Gemini text key
     CONTENT_TEXT_GEMINI_ENABLED_MODELS:    z.string().optional(),                  // Content canvas Gemini text model allowlist
