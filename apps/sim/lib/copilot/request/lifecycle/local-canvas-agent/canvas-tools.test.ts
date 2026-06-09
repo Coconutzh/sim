@@ -868,6 +868,26 @@ describe('local canvas tools', () => {
     })
   })
 
+  it('rejects empty verify patch operations without throwing a null operation error', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(legacyCreateChainSnapshot())
+
+    const result = await executeCanvasTool(
+      { ...buildContext(), selectedNodeIds: [] },
+      {
+        name: 'canvas.verify_patch',
+        input: {
+          patch: {
+            operations: [null],
+          },
+        },
+      }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Patch must include at least one operation')
+    expect(result.error).not.toContain('Cannot read properties of null')
+  })
+
   it('uses Chinese tool titles for user-visible canvas actions', () => {
     expect(CANVAS_TOOL_TITLES['canvas.read_summary']).toBe('读取画布')
     expect(CANVAS_TOOL_TITLES['canvas.apply_patch']).toBe('更新画布')

@@ -75,12 +75,15 @@
 - `AgentDecision` 支持 `tool_calls` 批量只读调用；runtime 只允许 read-only 且 concurrency-safe 的工具并行执行，写入/生成/验证工具仍被阻止并保持串行。
 - manual Confirm / Revise 的首轮方案也改为强制 `model_tool_loop` 生成待确认 plan；不再直接调用旧 planner 产出待确认 patch。
 - 单元测试覆盖默认模式：未显式传 `localAgentMode` 且无 `LOCAL_CANVAS_AGENT_MODE` 时走 `model_tool_loop`，不会在 decision 不可用时静默回退 planner；显式 `hybrid` 仍保留首轮 fallback 能力。
+- decision prompt 明确 `patch.operations` 必须是 operation object array，不能把 operation JSON 放进字符串；manual `ask_confirmation.pendingToolCall` 也遵守同一规则。
+- model decision 解析/请求首次失败时，tool loop 会把失败 observation 回灌给模型重试一次；如果 mutation + verify 已经成功，而后续 final decision 不可用，会返回 deterministic 完成回复，避免实际成功后误报停止。
+- `canvas.verify_patch` 会先复用/校验 pending verification patch；如果模型在 apply 成功后传入 malformed verify input，runtime 优先用已知正确的 pending patch，且 `[null]` 这类非法 verify patch 会被安全拒绝。
 
 ## 2. 当前已跑验证命令
 
 以下命令均在当前工作树上通过：
 
-- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：19 files / 195 tests passed（2026-06-09 当前工作树）
+- `cd apps/sim; bun run test lib/copilot/request/lifecycle/local-canvas-agent`：19 files / 199 tests passed（2026-06-09 当前工作树）
 - `cd apps/sim; bunx vitest run "lib/copilot/request/lifecycle/run.test.ts" "lib/copilot/request/lifecycle/start.test.ts" "app/api/copilot/chat/abort/route.test.ts" "app/api/copilot/chat/stop/route.test.ts" "lib/copilot/request/session/abort.test.ts"`：5 files / 19 tests passed
 - `cd apps/sim; bunx vitest run "app/workspace/[workspaceId]/home/hooks/use-chat.test.ts" "app/workspace/[workspaceId]/home/components/user-input/user-input.integration.test.tsx" "app/workspace/[workspaceId]/home/components/user-input/components/send-button.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/options/options.test.tsx" "app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.test.tsx" "app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/copilot-tab.test.tsx"`：6 files / 25 tests passed
 - `bunx biome check --no-errors-on-unmatched <changed TS files>`：passed
@@ -139,8 +142,8 @@
 ### 3.3 manual Confirm / Revise API smoke
 
 - 端口：`3020`
-- Revise workflow：`e53d2026-d8cc-4f59-adcb-c965612091d9`
-- Confirm workflow：`b7b75f00-e3b2-4d26-ad2e-42df5d0c1154`
+- Revise workflow：`cf4631a2-50f3-43ef-a1c5-722af07ee4ad`
+- Confirm workflow：`3e6e29e2-e0b2-46e1-9b09-61ee93b69ebb`
 - 证据文件：
   - `tmp-local-canvas-agent-phase2-manual-3020.results.json`
   - `tmp-local-canvas-agent-phase2-manual-3020-responses/manual_plan_revise.sse`
@@ -178,14 +181,14 @@
 
 ### 3.5 选中节点字段更新 + browser smoke
 
-- 端口：`3025`（API/SSE）与 `3026`（browser）
+- 端口：`3025`（API/SSE）与 `3035`（browser current rerun）
 - workflow：`c0cdbda4-b652-4e83-a000-697e58cee16a`
 - 选中 text node：`38926e22-8e2d-4830-a80e-e60cbb1b08b6`
 - 证据文件：
   - `tmp-local-canvas-agent-phase2-field-3025.results.json`
   - `tmp-local-canvas-agent-phase2-field-3025-responses/selected_text_update.sse`
-  - `tmp-local-canvas-agent-phase2-field-browser-3026.results.json`
-  - `tmp-local-canvas-agent-phase2-field-browser-3026.png`
+  - `tmp-local-canvas-agent-phase2-field-browser-current-3035.results.json`
+  - `tmp-local-canvas-agent-phase2-field-browser-current-3035.png`
 
 输入：
 
@@ -197,9 +200,9 @@
 
 - SSE HTTP 200；tool events 包含 `canvas.read_selected_nodes`、`canvas.apply_patch`、`canvas.verify_patch`。
 - SSE 中包含目标 `nodeId` 和字段 `contentHtml`。
-- 后端 state hash 从 `rinergQCCggTpQLPXvztqgbYgfItAv7on/tpICFXU88=` 变为 `Qx3fKcqKFugWwCbuNSs1d+BIrfvFTvleDGxz0hu8EmA=`。
-- `contentHtml` 从原脚本改为更年轻、更轻快的表达，例如“抛个超有画面的脑洞问题”“句子要短平快，节奏丝滑又上头”。
-- Browser Playwright：`1 passed (1.7m)`；ReactFlow DOM 仍为 5 nodes / 3 edges，body 文本包含更新后的脚本文案和媒体 placeholder。
+- 后端 state hash 从 `LkRvjSZi1Dr/0PaYwbaXX+jORcnLEzvvwrznBJgAg1E=` 变为 `flIuQpMoTOu+SF/O5n71zzoUso/Q/LJkUirobp4ccxY=`。
+- `contentHtml` 从原脚本改为更年轻、更轻快的表达，例如“哈喽宝子们”“冲鸭”。
+- Browser Playwright：`1 passed (1.7m)`；ReactFlow DOM 仍为 5 nodes / 3 edges，body 文本包含“哈喽宝子们”和“冲鸭”。
 
 结论：S-03 的选中 text 节点字段更新、字段级 verify、后端 state 与浏览器 DOM 同步通过。image/video/audio 字段更新仍主要由单元测试覆盖，真实 file 写回见 S-05。
 
@@ -217,11 +220,13 @@
 
 | 节点类型 | 选中节点 | 输入 | 写回字段 | 结果 |
 |---|---|---|---|---|
-| image | `d550b218-fab9-4966-b69d-3721ca8a6065` | `把选中的图片节点提示词改成赛博朋克霓虹风格。` | `aiPrompt` | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段追加 `赛博朋克霓虹风格` |
-| video | `3b77bb8e-8ca1-4e20-9b77-c61ad4352f1a` | `把选中的视频节点提示词改成慢镜头推进，时长改成 8 秒。` | `videoPrompt` | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段追加 `慢镜头推进，8 秒` |
-| audio | `30a5be21-4fa9-4f20-ad23-d9e34fb405ee` | `把选中的音频节点音乐方向改成轻快电子乐。` | `audioPrompt` | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段追加 `轻快电子乐` |
+| image | `d550b218-fab9-4966-b69d-3721ca8a6065` | `把选中的图片节点提示词改成赛博朋克霓虹风格。` | `aiPrompt` | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段包含 `赛博朋克霓虹风格` |
+| video | `3b77bb8e-8ca1-4e20-9b77-c61ad4352f1a` | `把选中的视频节点提示词改成慢镜头推进，时长改成 8 秒。` | `videoPrompt` / duration 参数 | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段包含 `慢镜头推进`，并写入 8 秒参数 |
+| audio | `30a5be21-4fa9-4f20-ad23-d9e34fb405ee` | `把选中的音频节点音乐方向改成轻快电子乐。` | `audioPrompt` | HTTP 200；`canvas.apply_patch` + `canvas.verify_patch`；无 `canvas.generate_node_output`；字段包含 `轻快电子乐` |
 
-结论：S-03 的 text/image/video/audio 选中节点字段更新、字段级 writeback、verify 和“更新不误触发生成”均已通过 API/SSE；text 更新后的 DOM 同步已由 3.5 的 browser smoke 覆盖。
+注意：`3032` 本轮复用了已经多次修改过的 disposable workflow，所以 image/video/audio 的 `fieldChanged` 可能为 false；本轮以 tool events、verify success、目标字段 `afterContainsExpected=true` 和“不误触发生成”为结论依据。若需要再次证明字段 diff，可新建 fresh workflow 重跑。
+
+结论：S-03 的 text/image/video/audio 选中节点字段更新、字段级 verify 和“更新不误触发生成”均已通过 API/SSE；text 更新后的 DOM 同步已由 3.5 的 browser smoke 覆盖。
 
 ### 3.7 真实 provider 生成写回 smoke
 
@@ -255,8 +260,8 @@
 ### 3.8 Stop / Abort provider smoke
 
 - 端口：`3030`
-- workflow：`c2a9cd88-dfc5-43d7-a5c0-ddc0d236d0e6`
-- video node：`12fb2341-6020-407b-83ce-33197ce7c8e0`
+- workflow：`263db904-5fd2-4e19-a563-6801bff32316`
+- video node：`243ec3e1-17a6-42b6-b316-e49959325d3e`
 - 证据文件：
   - `tmp-local-canvas-agent-phase2-abort-3030.results.json`
   - `tmp-local-canvas-agent-phase2-abort-3030.normalized.json`
@@ -274,7 +279,7 @@
 - 已看到 `canvas.generate_node_output` call event。
 - `/api/mothership/chat/abort` 返回 HTTP 200，payload 为 `{ aborted: true, settled: true }`。
 - `/api/mothership/chat/stop` 返回 HTTP 200，payload 为 `{ success: true }`。
-- 35 秒后 workflow state hash 前后相同：`l5WWksmCJ2C+5CAPfsZCdBgu8mEpGOYvM7zwjR/XkVg=`。
+- 35 秒后 workflow state hash 前后相同：`bzYwego/HTTSmsMujq5bbMq3cQFIf/dOM87wFpcKXXg=`。
 - video file 仍是空 file-upload 占位（`value:null`），没有迟到写回。
 
 结论：S-06 的 abort/stop API 触发和 provider 长请求无迟到写回通过。浏览器 Stop 按钮本身已有 UI 单元测试覆盖，本 smoke 验证了真实 provider 链路的服务端行为。

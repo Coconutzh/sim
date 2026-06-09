@@ -319,6 +319,7 @@ function buildPatchProtocolContext(): string {
   return [
     'Patch protocol for canvas.propose_patch and canvas.apply_patch:',
     '- Use input shape {"patch":{"operations":[...]}}.',
+    '- operations must be JSON objects, not JSON-encoded strings. Never put an operation object inside quotes.',
     '- Supported operation types: create_node, update_node, connect, layout_nodes.',
     '- create_node requires kind and title; use clientNodeId for nodes created in the same patch.',
     '- update_node requires an existing nodeId and fields.',
@@ -423,6 +424,7 @@ export function buildLocalAgentDecisionPrompt(params: {
       'Use tools to read canvas state instead of guessing from memory.',
       'If a user asks to discuss, plan, or wait for confirmation, do not call mutation tools.',
       'If confirmation mode is manual and a canvas write is needed, return ask_confirmation with pendingToolCall instead of applying the patch.',
+      'For ask_confirmation pendingToolCall, pendingToolCall.input.patch.operations must be an array of operation objects, not strings.',
       'If a user asks for a destructive action, ask for confirmation first.',
       'Use type=tool_calls only for independent read-only concurrency-safe tools; never include mutation, generation, verification, or destructive tools in tool_calls.',
       'Never invent generated file outputs. Use canvas.generate_node_output for real generation.',

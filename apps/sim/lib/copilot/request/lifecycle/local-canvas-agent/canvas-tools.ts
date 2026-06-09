@@ -897,10 +897,15 @@ async function executeCanvasToolUnchecked(
   }
 
   if (call.name === 'canvas.verify_patch') {
+    const patch = call.input.patch === undefined ? undefined : requirePatch(call.input)
+    if (patch) {
+      const validation = validateLocalCanvasPatch(patch, snapshot)
+      if (!validation.valid) throw new Error(validation.errors.join('; '))
+    }
     return verifyLocalCanvasPatch({
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
-      patch: call.input.patch as LocalCanvasPatch | undefined,
+      patch,
       generation: call.input.generation as { nodeId: string; field: string } | undefined,
       selectedNodeIds: context.selectedNodeIds,
     })

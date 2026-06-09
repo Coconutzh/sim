@@ -179,6 +179,35 @@ describe('local canvas tool loop', () => {
     }
   })
 
+  it('retries one malformed model decision before stopping the model loop', async () => {
+    mockRequestLocalAgentDecision
+      .mockRejectedValueOnce(new Error('Unterminated string in JSON at position 566'))
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '我已修正决策格式并继续处理。',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '先给我一个内容链方案。',
+      })
+    )
+
+    expect(mockBuildLocalAgentPlan).not.toHaveBeenCalled()
+    expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(2)
+    expect(result.answer).toBe('我已修正决策格式并继续处理。')
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: 'Unterminated string in JSON at position 566',
+        }),
+      ])
+    )
+  })
+
   it('uses the legacy planner fallback when hybrid mode is explicitly requested', async () => {
     const plan: LocalAgentPlan = {
       goal: 'Read the current canvas with legacy fallback',
@@ -361,6 +390,98 @@ describe('local canvas tool loop', () => {
       input: { patch },
     })
     expect(result.answer).toBe('已更新并验证布局。')
+  })
+
+  it('uses the pending verified patch when the model sends a malformed verify patch after apply', async () => {
+    const patch = { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] }
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch },
+        userVisibleReason: '我会应用布局修改。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.verify_patch',
+        toolInput: { patch: { operations: [null] } },
+        userVisibleReason: '我会验证刚才的修改。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '已更新并验证布局。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '请直接修改当前画布布局为横向。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(result.answer).toBe('已更新并验证布局。')
+  })
+
+  it('returns a verified mutation completion when only the final model decision is unavailable', async () => {
+    const patch = { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] }
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch },
+        userVisibleReason: '我会应用布局修改。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.verify_patch',
+        toolInput: {},
+        userVisibleReason: '我会验证刚才的修改。',
+        risk: 'low',
+      })
+      .mockRejectedValue(new Error('Invalid AgentDecision: expected object, received null'))
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '请直接修改当前画布布局为横向。',
+      })
+    )
+
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
+    expect(mockBuildLocalAgentAnswer).not.toHaveBeenCalled()
   })
 
   it('runs a model-authored short-video content-chain patch without planner fallback', async () => {

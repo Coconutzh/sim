@@ -541,6 +541,19 @@ function applyPendingPatchToPlan(
   }
 }
 
+function hasSuccessfulCanvasMutationAndVerify(observations: LocalAgentObservation[]): boolean {
+  const hasMutation = observations.some(
+    (observation) =>
+      observation.success &&
+      (observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.generate_node_output')
+  )
+  const hasVerification = observations.some(
+    (observation) => observation.success && observation.toolName === 'canvas.verify_patch'
+  )
+  return hasMutation && hasVerification
+}
+
 async function executeDecisionToolCall(params: {
   context: LocalAgentContext
   decision: Extract<LocalAgentDecision, { type: 'tool_call' }>
@@ -567,10 +580,13 @@ async function executeDecisionToolCall(params: {
     return
   }
 
-  const call = {
+  let call: LocalAgentToolCall = {
     name: params.decision.toolName,
     input: parsedInput.data,
-  } satisfies LocalAgentToolCall
+  }
+  if (call.name === 'canvas.verify_patch' && params.state.pendingVerification) {
+    call = { name: 'canvas.verify_patch', input: params.state.pendingVerification.input }
+  }
   const policyViolation = getPolicyViolationSummary({
     mutationPolicy: params.state.plan.mutationPolicy,
     call,
@@ -733,7 +749,13 @@ async function runModelDrivenLocalAgentToolLoop(
     } catch (error) {
       if (options.allowInitialFallback && state.toolCallsExecuted === 0) return null
       const summary = error instanceof Error ? error.message : 'Failed to get AgentDecision'
+      const previousDecisionFailures = state.observations.filter(
+        (observation) => observation.toolName === 'decision' && !observation.success
+      ).length
       state.observations.push(buildDecisionObservation(summary, false))
+      if (previousDecisionFailures === 0 && step < MAX_STEPS - 1) {
+        continue
+      }
       stopSummary = 'Stopped because the model decision could not be produced.'
       break
     }
@@ -792,6 +814,13 @@ async function runModelDrivenLocalAgentToolLoop(
 
   if (state.pendingVerification) {
     await executePendingVerification({ context, state })
+  }
+  if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
+    return {
+      plan: state.plan,
+      observations: state.observations,
+      answer: '已完成画布修改，并完成验证。',
+    }
   }
   state.observations.push(
     buildDecisionObservation(
