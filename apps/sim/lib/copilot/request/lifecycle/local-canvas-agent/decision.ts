@@ -4,7 +4,7 @@ import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle
 import { LOCAL_AGENT_TOOL_DESCRIPTORS } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { selectAvailableLocalAgentTools } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-registry'
 import {
-  buildBudgetedObservationPrompt,
+  buildBudgetedObservationPromptWithOptions,
   summarizeAvailableToolNames,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-result-budget'
 import type {
@@ -297,7 +297,7 @@ function buildToolDescriptorContext(context: LocalAgentContext): string {
       const schema = JSON.stringify(z.toJSONSchema(descriptor.inputSchema))
       return [
         `- ${descriptor.name}: ${descriptor.description}`,
-        `  inputSchema: ${clip(schema, 800)}`,
+        `  inputSchema: ${clip(schema, 650)}`,
       ].join('\n')
     })
     .join('\n')
@@ -331,8 +331,10 @@ function buildPatchProtocolContext(): string {
     '- Do not create raw workflow operations. Do not write block ids unless updating an existing node.',
     '- Never fabricate file outputs; file is written only by canvas.generate_node_output.',
     '- Patch examples are recipes, not fixed templates. Adapt node count, kinds, fields, and edges to the user request and current canvas.',
-    '- For selected-node edits: call canvas.read_selected_nodes first, then update only the exact selected nodeId and editable fields.',
-    '- For media description: read the selected node first, then call media.analyze_node_media; obey output.mediaContentAccess. If output.binaryAnalysisDiagnostics.truncated is true, say the vision model output was truncated and do not describe actual media content. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media. If contentEvidence is binary_image_analysis, you may describe the fetched image evidence returned by the tool.',
+    '- For selected-node edits: if exactly one selected node id is present and the user clearly names the target kind/field (for example image prompt, video prompt, audio prompt, or text content), your first tool call should be canvas.apply_patch with that selected nodeId. Read first only when the target node or field is ambiguous.',
+    '- Direct selected edit field map: image prompt -> aiPrompt; video prompt -> videoPrompt; audio prompt -> audioPrompt; text content -> contentHtml.',
+    '- Direct selected edit example: selected id "node-1" plus "把选中视频节点提示词改成慢镜头推进" should update node-1.videoPrompt with canvas.apply_patch, not read_node first.',
+    '- For media description: if exactly one selected node id is present, call media.analyze_node_media directly because it reads the node and media. Use canvas.read_node first only when no selected node id is available or the user asks for non-media node fields. Obey output.mediaContentAccess. If output.binaryAnalysisDiagnostics.truncated is true, say the vision model output was truncated and do not describe actual media content. If canDescribeActualMedia is false, answer from prompt/metadata only and do not claim you saw/heard the media. If contentEvidence is binary_image_analysis, you may describe the fetched image evidence returned by the tool.',
     '- For content chains: choose the structure from the request. Do not force text->image->video->audio unless that matches the requested workflow.',
     '- If the user asks to create and generate a new media node, first call canvas.apply_patch to create/update prompts, then use the createdNodeMap from the tool result and call canvas.generate_node_output on the real node id.',
     'Writable content fields:',
@@ -399,6 +401,13 @@ function buildPatchProtocolContext(): string {
   ].join('\n')
 }
 
+function isLengthFinishReason(finishReason: string | undefined): boolean {
+  const normalized = finishReason?.trim().toLowerCase()
+  return (
+    normalized === 'length' || normalized === 'max_tokens' || normalized === 'max_output_tokens'
+  )
+}
+
 export function parseLocalAgentDecision(content: string): LocalAgentDecision {
   const parsed = localAgentDecisionSchema.safeParse(
     normalizeAgentDecisionInput(parseJsonObject(content))
@@ -428,7 +437,10 @@ export function buildLocalAgentDecisionPrompt(params: {
     `Runtime intent policy:\n${buildIntentPolicyContext(params.policy)}`,
     `Thread memory:\n${buildMemoryContext(params.context)}`,
     `Enabled skill context:\n${buildSkillContext(params.context)}`,
-    `Tool observations:\n${buildBudgetedObservationPrompt(params.observations)}`,
+    `Tool observations:\n${buildBudgetedObservationPromptWithOptions(params.observations, {
+      maxOutputChars: 1000,
+      maxPromptChars: 6000,
+    })}`,
     `Tool descriptors:\n${buildToolDescriptorContext(params.context)}`,
     buildPatchProtocolContext(),
     [
@@ -455,7 +467,7 @@ export async function requestLocalAgentDecision(params: {
     canvasReadPolicy?: LocalCanvasReadPolicy
   }
 }): Promise<LocalAgentDecision> {
-  const response = await executeLocalAgentModelRequest(params.context.model, {
+  const request = {
     role: 'decision',
     workspaceId: params.context.workspaceId,
     systemPrompt: buildLocalAgentRoleSystemPrompt({
@@ -473,6 +485,23 @@ export async function requestLocalAgentDecision(params: {
       strict: true,
     },
     abortSignal: params.context.options.abortSignal,
-  })
-  return parseLocalAgentDecision(response.content ?? '')
+  } as const
+  const response = await executeLocalAgentModelRequest(params.context.model, request)
+  try {
+    return parseLocalAgentDecision(response.content ?? '')
+  } catch (error) {
+    if (!isLengthFinishReason(response.finishReason)) throw error
+    const retryResponse = await executeLocalAgentModelRequest(params.context.model, {
+      ...request,
+      maxTokens: params.context.thinkingLevel === 'extra' ? 6000 : 4200,
+    })
+    try {
+      return parseLocalAgentDecision(retryResponse.content ?? '')
+    } catch (retryError) {
+      if (isLengthFinishReason(retryResponse.finishReason)) {
+        throw new Error('AgentDecision JSON was truncated by the model output limit.')
+      }
+      throw retryError
+    }
+  }
 }

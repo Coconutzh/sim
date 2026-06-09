@@ -140,6 +140,24 @@ describe('local canvas tool loop', () => {
     )
   })
 
+  it('falls back to a non-mutating discussion answer when consult-design decision JSON fails', async () => {
+    mockRequestLocalAgentDecision.mockRejectedValueOnce(
+      new Error('AgentDecision JSON was truncated by the model output limit.')
+    )
+    mockBuildLocalAgentAnswer.mockResolvedValueOnce('可以，我们先讨论方案，不改画布。')
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '以高考为主题创建短视频内容链，先讨论方案，不要改画布。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(mockBuildLocalAgentAnswer).toHaveBeenCalled()
+    expect(result.answer).toBe('可以，我们先讨论方案，不改画布。')
+  })
+
   it('defaults to model_tool_loop without silently falling back to planner', async () => {
     vi.stubEnv('LOCAL_CANVAS_AGENT_MODE', '')
 
@@ -462,6 +480,58 @@ describe('local canvas tool loop', () => {
     })
     expect(mockRequestLocalAgentDecision).toHaveBeenCalledTimes(1)
     expect(result.answer).toBe('已完成画布修改、生成 1 个节点内容，并完成验证。')
+  })
+
+  it('does not auto-generate when the user explicitly forbids generation in an edit request', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'update_node' as const,
+          nodeId: 'image-1',
+          fields: { aiPrompt: '更明亮、更治愈的夏日午后风格。' },
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: { patch },
+      userVisibleReason: '我会修改选中图片节点的提示词，但不生成图片。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          verification: { success: true },
+          machineSummary: {
+            generationCandidates: [{ nodeId: 'image-1', kind: 'image' }],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['image-1'],
+        message: '把选中图片节点的提示词改成更明亮、更治愈的夏日午后风格，但不要生成图片。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledTimes(2)
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'canvas.generate_node_output' })
+    )
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
   it('does not auto-generate when the user only asked to write edited text back', async () => {

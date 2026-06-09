@@ -267,8 +267,10 @@ describe('local canvas agent decision', () => {
 
     expect(prompt).toContain('Patch examples are recipes, not fixed templates')
     expect(prompt).toContain('For selected-node edits')
-    expect(prompt).toContain('update only the exact selected nodeId')
+    expect(prompt).toContain('your first tool call should be canvas.apply_patch')
+    expect(prompt).toContain('Direct selected edit field map')
     expect(prompt).toContain('For media description')
+    expect(prompt).toContain('call media.analyze_node_media directly')
     expect(prompt).toContain('binaryAnalysisDiagnostics.truncated')
     expect(prompt).toContain('canDescribeActualMedia is false')
     expect(prompt).toContain('Do not force text->image->video->audio')

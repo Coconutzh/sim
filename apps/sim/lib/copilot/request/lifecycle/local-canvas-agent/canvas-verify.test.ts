@@ -495,6 +495,79 @@ describe('local canvas patch verification', () => {
     )
   })
 
+  it('accepts persisted video reference edges when edge metadata loses autoLinkType', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 0, y: 0 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'video-1',
+          name: 'Video 1',
+          blockType: 'content',
+          kind: 'video',
+          position: { x: 360, y: 0 },
+          values: {
+            contentReferences: [
+              {
+                sourceBlockId: 'image-1',
+                sourceVariant: 'image',
+                role: 'video_first_frame',
+              },
+            ],
+          },
+          raw: {},
+        },
+      ],
+      edges: [
+        {
+          source: 'image-1',
+          target: 'video-1',
+          sourceHandle: 'content-reference-source-right',
+          targetHandle: 'content-reference-target-left',
+          data: { kind: 'content_reference' },
+        },
+      ],
+    } satisfies CanvasSnapshot)
+
+    const result = await verifyLocalCanvasPatch({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      selectedNodeIds: [],
+      patch: {
+        operations: [
+          {
+            type: 'add_content_reference',
+            operationId: 'add-first-frame',
+            consumerNodeId: 'video-1',
+            sourceNodeId: 'image-1',
+            role: 'video_first_frame',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(result.operationResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: 'add-first-frame:edge',
+          expected: expect.objectContaining({ autoLinkType: 'video_first_frame' }),
+          success: true,
+        }),
+      ])
+    )
+  })
+
   it('verifies horizontal layout node positions after patch', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',

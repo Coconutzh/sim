@@ -95,6 +95,38 @@ describe('local canvas intent policy', () => {
     )
   })
 
+  it('allows selected node prompt edits when the user only forbids generation', () => {
+    const decision = classifyLocalCanvasUserIntent(
+      buildContext({
+        message: '把选中图片节点的提示词改成更明亮、更治愈的夏日午后风格，但不要生成图片。',
+        selectedNodeIds: ['image-1'],
+      })
+    )
+
+    expect(decision).toMatchObject({
+      userIntent: 'mutate_canvas',
+      mutationPolicy: 'allow_mutation',
+      canvasReadPolicy: 'required',
+      requiresUserConfirmation: false,
+    })
+  })
+
+  it('allows content-chain creation when the user only asks not to generate outputs yet', () => {
+    const decision = classifyLocalCanvasUserIntent(
+      buildContext({
+        message:
+          '创建一个以松林午茶8109为主题的短视频内容链，创建文本、图片、视频、音频节点，建立引用关系并从左到右排好布局，但先不要生成内容。',
+      })
+    )
+
+    expect(decision).toMatchObject({
+      userIntent: 'mutate_canvas',
+      mutationPolicy: 'allow_mutation',
+      canvasReadPolicy: 'required',
+      requiresUserConfirmation: false,
+    })
+  })
+
   it('classifies plain exam questions as non-canvas read-only requests', () => {
     const decision = classifyLocalCanvasUserIntent(
       buildContext({ message: '高考可能会考什么内容？' })

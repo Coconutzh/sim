@@ -13,7 +13,10 @@ import type {
   LocalCanvasUpdateNodeOperation,
   LocalCanvasVerifyOperationResult,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
-import { CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX } from '@/lib/workflows/content-reference-edges'
+import {
+  CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
+  CONTENT_REFERENCE_TARGET_HANDLE_PREFIX,
+} from '@/lib/workflows/content-reference-edges'
 import {
   type ContentNodeVariant,
   type ContentReferenceRole,
@@ -114,6 +117,17 @@ function autoLinkTypeForRole(
 ): 'video_first_frame' | 'video_last_frame' | null {
   if (role === 'video_first_frame' || role === 'video_last_frame') return role
   return null
+}
+
+function edgeMatchesAutoLinkType(params: {
+  edge: CanvasSnapshot['edges'][number]
+  role?: ContentReferenceRole
+  shouldExist: boolean
+}): boolean {
+  const expectedAutoLinkType = autoLinkTypeForRole(params.role)
+  if (!expectedAutoLinkType) return true
+  if (params.edge.data?.autoLinkType === expectedAutoLinkType) return true
+  return params.shouldExist && params.edge.data?.autoLinkType == null
 }
 
 function readArrayValue(value: unknown): unknown[] {
@@ -380,7 +394,9 @@ function verifyContentReferenceOperation(params: {
       edge.target === edgeTargetId &&
       typeof edge.sourceHandle === 'string' &&
       edge.sourceHandle.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX) &&
-      (!autoLinkTypeForRole(role) || edge.data?.autoLinkType === autoLinkTypeForRole(role))
+      typeof edge.targetHandle === 'string' &&
+      edge.targetHandle.startsWith(CONTENT_REFERENCE_TARGET_HANDLE_PREFIX) &&
+      edgeMatchesAutoLinkType({ edge, role, shouldExist })
   )
   const edgeSuccess = shouldExist ? matchingEdges.length > 0 : matchingEdges.length === 0
   const edgeError = edgeSuccess

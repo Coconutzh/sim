@@ -664,6 +664,7 @@ function buildMediaAnalysisFallbackAnswer(observations: LocalAgentObservation[])
 }
 
 function hasExplicitGenerationRequest(context: LocalAgentContext, plan: LocalAgentPlan): boolean {
+  if (hasNegatedGenerationRequest(context.message)) return false
   if (plan.userIntent === 'generate_output') return true
   const message = context.message
   return (
@@ -674,6 +675,15 @@ function hasExplicitGenerationRequest(context: LocalAgentContext, plan: LocalAge
       message
     ) ||
     /(?:直接|自动|顺便|并|同时).{0,8}(?:生成|产出|渲染)/i.test(message)
+  )
+}
+
+function hasNegatedGenerationRequest(message: string): boolean {
+  return (
+    /(?:不要|先别|暂时别|不需要|不用).{0,12}(?:生成|生图|出图|出视频|出音频|产出|渲染)/.test(
+      message
+    ) ||
+    /(?:do not|don't|dont|without|no need to|skip).{0,16}(?:generat|render|produce)/i.test(message)
   )
 }
 
@@ -973,6 +983,17 @@ async function runModelDrivenLocalAgentToolLoop(
       })
     } catch (error) {
       if (options.allowInitialFallback && state.toolCallsExecuted === 0) return null
+      if (state.toolCallsExecuted === 0 && state.plan.userIntent === 'consult_design') {
+        return {
+          plan: state.plan,
+          observations: state.observations,
+          answer: await buildLocalAgentAnswer({
+            context,
+            plan: state.plan,
+            observations: state.observations,
+          }),
+        }
+      }
       if (hasSuccessfulCanvasMutationAndVerify(state.observations)) {
         return {
           plan: state.plan,

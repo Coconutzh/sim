@@ -34,7 +34,7 @@ const CONSULT_PATTERNS = [
 const PROPOSE_ONLY_PATTERNS = [
   /(?:先|只).{0,8}(?:给|出|写).{0,8}(?:计划|方案|步骤|patch|修改方案)/i,
   /(?:等我|让我).{0,8}(?:确认|批准|同意).{0,8}(?:再|后).{0,8}(?:执行|修改|创建|生成)/,
-  /(?:不要|先别|暂时别).{0,8}(?:执行|应用|修改|创建|写回|生成)/,
+  /(?:不要|先别|暂时别).{0,8}(?:执行|应用|修改|创建|写回)/,
 ] as const
 
 const MUTATION_TERMS = [
@@ -235,6 +235,8 @@ function hasContextWriteSignal(message: string): boolean {
 }
 
 function hasGenerationSignal(message: string): boolean {
+  if (/(?:不要|先别|暂时别|不需要|不用).{0,8}生成/.test(message)) return false
+  if (/(?:do not|don't|without).{0,12}generat/i.test(message)) return false
   return includesAny(message, GENERATION_TERMS)
 }
 
