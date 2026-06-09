@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { outpaintWorkspaceImageBodySchema } from '@/lib/api/contracts/media-images'
+import {
+  eraseWorkspaceImageBodySchema,
+  outpaintWorkspaceImageBodySchema,
+} from '@/lib/api/contracts/media-images'
 
 const sourceImage = {
   id: 'source-1',
@@ -14,6 +17,54 @@ const sourceImage = {
 }
 
 describe('media image contracts', () => {
+  it('validates erase source image, mask image, and resolution', () => {
+    const parsed = eraseWorkspaceImageBodySchema.parse({
+      workspaceId: 'ws-1',
+      sourceImage,
+      maskImage: {
+        id: '',
+        name: 'erase-mask.png',
+        url: '',
+        key: 'erase-mask.png',
+        size: 32,
+        type: 'image/png',
+        base64: Buffer.from('mask').toString('base64'),
+      },
+      resolution: '4K',
+    })
+
+    expect(parsed).toMatchObject({
+      workspaceId: 'ws-1',
+      resolution: '4K',
+      sourceImage: {
+        id: 'source-1',
+      },
+      maskImage: {
+        name: 'erase-mask.png',
+      },
+    })
+  })
+
+  it('rejects erase requests with unsupported resolution', () => {
+    const result = eraseWorkspaceImageBodySchema.safeParse({
+      workspaceId: 'ws-1',
+      sourceImage,
+      maskImage: {
+        id: '',
+        name: 'erase-mask.png',
+        url: '',
+        key: 'erase-mask.png',
+        size: 32,
+        type: 'image/png',
+        base64: Buffer.from('mask').toString('base64'),
+      },
+      resolution: '8K',
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['resolution'])
+  })
+
   it('validates outpaint placement, resolution, and custom aspect ratio', () => {
     const parsed = outpaintWorkspaceImageBodySchema.parse({
       workspaceId: 'ws-1',

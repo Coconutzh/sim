@@ -26,6 +26,7 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
 }))
 
 import {
+  eraseWorkspaceImage,
   generateWorkspaceImageFromPrompt,
   outpaintWorkspaceImage,
   repaintWorkspaceImage,
@@ -253,6 +254,89 @@ describe('generateWorkspaceImageFromPrompt', () => {
       'generated-image.png',
       'image/png'
     )
+  })
+
+  it('erases with fixed Nano Banana Pro model, resolution, source image, and mask', async () => {
+    mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
+      id: fileId,
+      name: `${fileId}.png`,
+      key: `workspace/${fileId}.png`,
+      url: '',
+      size: 99,
+      type: 'image/png',
+      context: 'workspace',
+    }))
+    mockFetchWorkspaceFileBuffer.mockImplementation(async (fileRecord: { id: string }) =>
+      Buffer.from(`${fileRecord.id}-binary`)
+    )
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('erased-image'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_erase',
+      name: 'generated-image.png',
+      size: 16,
+      type: 'image/png',
+      key: 'workspace/ws-1/erase.png',
+      url: '/api/files/serve/workspace/ws-1/erase.png?context=workspace',
+      context: 'workspace',
+    })
+
+    const result = await eraseWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      resolution: '2K',
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+      maskImage: {
+        id: '',
+        name: 'mask.png',
+        url: '',
+        key: 'mask.png',
+        size: 50,
+        type: 'image/png',
+        base64: Buffer.from('mask-binary').toString('base64'),
+      },
+    })
+
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        aspectRatio: 'auto',
+        resolution: '2K',
+        prompt: expect.stringContaining('white/visible painted areas should be removed'),
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'source-1',
+              base64: Buffer.from('source-1-binary').toString('base64'),
+            }),
+            expect.objectContaining({
+              key: 'mask.png',
+              base64: Buffer.from('mask-binary').toString('base64'),
+            }),
+          ],
+        },
+      })
+    )
+    expect(result).toMatchObject({
+      file: {
+        id: 'wf_erase',
+      },
+      metadata: {
+        providerModel: 'gemini-3-pro-image',
+      },
+    })
   })
 
   it('outpaints with fixed Nano Banana Pro model, generated layout guides, and resolution', async () => {

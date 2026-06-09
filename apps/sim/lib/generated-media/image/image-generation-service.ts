@@ -38,6 +38,15 @@ interface RepaintWorkspaceImageInput {
   abortSignal?: AbortSignal
 }
 
+interface EraseWorkspaceImageInput {
+  workspaceId: string
+  userId: string
+  resolution: ImageResolutionValue
+  sourceImage: UserFileLike
+  maskImage: UserFileLike
+  abortSignal?: AbortSignal
+}
+
 interface OutpaintWorkspaceImageInput {
   workspaceId: string
   userId: string
@@ -70,6 +79,7 @@ interface GenerateWorkspaceImageFromPromptResult {
 }
 
 type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
+type EraseWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 
 const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, number> = {
@@ -307,6 +317,20 @@ export function buildWorkspaceImageOutpaintPrompt({
     .join(' ')
 }
 
+export function buildWorkspaceImageErasePrompt({
+  resolution,
+}: {
+  resolution: ImageResolutionValue
+}): string {
+  return [
+    'Edit the provided source image using the mask image.',
+    'The mask marks the exact areas to erase: white/visible painted areas should be removed and naturally filled in; black/transparent areas must remain unchanged as much as possible.',
+    'Reconstruct the erased region using surrounding background, texture, lighting, perspective, and style.',
+    'Do not add watermark, UI, text, border, frame, or unrelated objects.',
+    `Output at ${resolution} resolution.`,
+  ].join(' ')
+}
+
 export async function repaintWorkspaceImage({
   workspaceId,
   userId,
@@ -325,6 +349,46 @@ export async function repaintWorkspaceImage({
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
     prompt: buildWorkspaceImageRepaintPrompt({ prompt, resolution }),
+    aspectRatio: 'auto',
+    resolution,
+    referenceContext,
+    abortSignal,
+  })
+
+  const file = await uploadWorkspaceFile(
+    workspaceId,
+    userId,
+    generatedImage.buffer,
+    getGeneratedFileName(generatedImage.mimeType),
+    generatedImage.mimeType
+  )
+
+  return {
+    file,
+    metadata: {
+      provider: generatedImage.provider,
+      providerModel: generatedImage.providerModel,
+      revisedPrompt: generatedImage.revisedPrompt,
+    },
+  }
+}
+
+export async function eraseWorkspaceImage({
+  workspaceId,
+  userId,
+  resolution,
+  sourceImage,
+  maskImage,
+  abortSignal,
+}: EraseWorkspaceImageInput): Promise<EraseWorkspaceImageResult> {
+  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [sourceImage, maskImage],
+  })
+
+  const generatedImage = await generateImageWithProvider({
+    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    prompt: buildWorkspaceImageErasePrompt({ resolution }),
     aspectRatio: 'auto',
     resolution,
     referenceContext,

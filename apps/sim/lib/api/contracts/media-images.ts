@@ -54,6 +54,13 @@ export const repaintWorkspaceImageBodySchema = z.object({
   referenceImages: z.array(userFileSchema).default([]),
 })
 
+export const eraseWorkspaceImageBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  sourceImage: userFileSchema,
+  maskImage: userFileSchema,
+  resolution: imageGenerationResolutionSchema.default('2K'),
+})
+
 export const imageOutpaintPlacementSchema = z
   .object({
     x: z.number().nonnegative('placement.x must be greater than or equal to 0'),
@@ -163,6 +170,20 @@ export const repaintWorkspaceImageContract = defineRouteContract({
   },
 })
 
+export const eraseWorkspaceImageContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/images/erase',
+  body: eraseWorkspaceImageBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceFileSchema,
+      metadata: generatedImageMetadataSchema,
+    }),
+  },
+})
+
 export const outpaintWorkspaceImageContract = defineRouteContract({
   method: 'POST',
   path: '/api/media/images/outpaint',
@@ -179,6 +200,7 @@ export const outpaintWorkspaceImageContract = defineRouteContract({
 
 export type GenerateWorkspaceImageBody = z.input<typeof generateWorkspaceImageBodySchema>
 export type RepaintWorkspaceImageBody = z.input<typeof repaintWorkspaceImageBodySchema>
+export type EraseWorkspaceImageBody = z.input<typeof eraseWorkspaceImageBodySchema>
 export type OutpaintWorkspaceImageBody = z.input<typeof outpaintWorkspaceImageBodySchema>
 export type ImageGenerationResolution = z.output<typeof imageGenerationResolutionSchema>
 export type ImageOutpaintAspectRatio = z.output<typeof imageOutpaintAspectRatioSchema>

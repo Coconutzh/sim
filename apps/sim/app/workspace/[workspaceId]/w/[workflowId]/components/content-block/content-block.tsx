@@ -17,6 +17,7 @@ import {
   Brush,
   Copy as CopyIcon,
   Crop as CropIcon,
+  Eraser,
   Expand,
   ImageIcon,
   List,
@@ -105,6 +106,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
+import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { ImageRepaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-repaint-overlay'
@@ -1154,19 +1156,23 @@ function MediaContentCard({
   referencedNodes,
   isImageCropMode,
   isImageRepaintMode,
+  isImageEraseMode,
   isImageOutpaintMode,
   isImageCropProcessing,
   onAddReference,
   onRemoveReference,
   onStartImageCrop,
   onStartImageRepaint,
+  onStartImageErase,
   onStartImageOutpaint,
   onCancelImageCrop,
   onCancelImageRepaint,
+  onCancelImageErase,
   onCancelImageOutpaint,
   onConfirmImageCrop,
   onCreateImagePerspectiveVariant,
   onCreateImageRepaintVariant,
+  onCreateImageEraseVariant,
   onCreateImageOutpaintVariant,
   onChangeFile,
   onChangeAiPrompt,
@@ -1204,15 +1210,18 @@ function MediaContentCard({
   referencedNodes: Record<string, PromptContextReferencedNode>
   isImageCropMode: boolean
   isImageRepaintMode: boolean
+  isImageEraseMode: boolean
   isImageOutpaintMode: boolean
   isImageCropProcessing: boolean
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
   onStartImageCrop: () => void
   onStartImageRepaint: () => void
+  onStartImageErase: () => void
   onStartImageOutpaint: () => void
   onCancelImageCrop: () => void
   onCancelImageRepaint: () => void
+  onCancelImageErase: () => void
   onCancelImageOutpaint: () => void
   onConfirmImageCrop: (file: File) => Promise<void>
   onCreateImagePerspectiveVariant: (params: {
@@ -1220,6 +1229,7 @@ function MediaContentCard({
     model: ImageGenerationModelId
   }) => Promise<void> | void
   onCreateImageRepaintVariant: (file: UploadedFileValue) => Promise<void> | void
+  onCreateImageEraseVariant: (file: UploadedFileValue) => Promise<void> | void
   onCreateImageOutpaintVariant: (
     file: UploadedFileValue,
     targetAspectRatio: ImageOutpaintAspectRatio
@@ -1538,6 +1548,7 @@ function MediaContentCard({
     hasMedia &&
     !isImageCropMode &&
     !isImageRepaintMode &&
+    !isImageEraseMode &&
     !isImageOutpaintMode
   const showImageToolbar =
     selected &&
@@ -1546,6 +1557,7 @@ function MediaContentCard({
     hasMedia &&
     !isImageCropMode &&
     !isImageRepaintMode &&
+    !isImageEraseMode &&
     !isImageOutpaintMode
 
   useEffect(() => {
@@ -1628,6 +1640,22 @@ function MediaContentCard({
             className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
           >
             <Brush className='h-3.5 w-3.5' />
+          </button>
+          <button
+            type='button'
+            aria-label='擦除'
+            title='擦除'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsPerspectiveMenuOpen(false)
+              onStartImageErase()
+            }}
+            className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            <Eraser className='h-3.5 w-3.5' />
           </button>
           <button
             type='button'
@@ -1774,6 +1802,18 @@ function MediaContentCard({
           isProcessingNode={false}
           onCancel={onCancelImageRepaint}
           onCreateVariant={onCreateImageRepaintVariant}
+        />
+      ) : null}
+
+      {variant === 'image' && hasMedia && isImageEraseMode && file ? (
+        <ImageEraseOverlay
+          workspaceId={params.workspaceId}
+          rootRef={rootRef}
+          imageRef={imageRef}
+          sourceFile={file}
+          isProcessingNode={false}
+          onCancel={onCancelImageErase}
+          onCreateVariant={onCreateImageEraseVariant}
         />
       ) : null}
 
@@ -2023,6 +2063,7 @@ export const ContentBlock = memo(function ContentBlock({
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
   const [isImageCropMode, setIsImageCropMode] = useState(false)
   const [isImageRepaintMode, setIsImageRepaintMode] = useState(false)
+  const [isImageEraseMode, setIsImageEraseMode] = useState(false)
   const [isImageOutpaintMode, setIsImageOutpaintMode] = useState(false)
   const [referenceDragState, setReferenceDragState] = useState<ContentReferenceDragState | null>(
     null
@@ -2359,6 +2400,7 @@ export const ContentBlock = memo(function ContentBlock({
 
     setIsImageCropMode(true)
     setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
     setIsImageOutpaintMode(false)
     requestAnimationFrame(() => {
       const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
@@ -2398,6 +2440,7 @@ export const ContentBlock = memo(function ContentBlock({
 
     setIsImageCropMode(false)
     setIsImageOutpaintMode(false)
+    setIsImageEraseMode(false)
     setIsImageRepaintMode(true)
     requestAnimationFrame(() => {
       const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
@@ -2424,6 +2467,46 @@ export const ContentBlock = memo(function ContentBlock({
     setIsImageRepaintMode(false)
   }, [])
 
+  const startImageEraseMode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    setIsImageCropMode(false)
+    setIsImageRepaintMode(false)
+    setIsImageOutpaintMode(false)
+    setIsImageEraseMode(true)
+    requestAnimationFrame(() => {
+      const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
+      if (!node) return
+      fitViewToBounds({
+        nodes: [node],
+        padding: 0.03,
+        maxZoom: 2.8,
+        duration: 300,
+      })
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    fitViewToBounds,
+    id,
+    reactFlowInstance,
+    resolvedFile,
+    resolvedVariant,
+  ])
+
+  const cancelImageEraseMode = useCallback(() => {
+    setIsImageEraseMode(false)
+  }, [])
+
   const startImageOutpaintMode = useCallback(() => {
     if (
       !canEditWorkflow ||
@@ -2437,6 +2520,7 @@ export const ContentBlock = memo(function ContentBlock({
 
     setIsImageCropMode(false)
     setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
     setIsImageOutpaintMode(true)
     requestAnimationFrame(() => {
       const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
@@ -2729,6 +2813,87 @@ export const ContentBlock = memo(function ContentBlock({
     ]
   )
 
+  const createImageEraseVariantNode = useCallback(
+    async (file: UploadedFileValue) => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+        throw new Error('Image erase is not available for this workflow.')
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        throw new Error('Source image node no longer exists.')
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        throw new Error('Unable to create an image content node.')
+      }
+
+      const targetBlockId = generateId()
+      const parentId = sourceBlock.data?.parentId
+      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+      const targetPosition = {
+        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+      const referenceRole =
+        getDefaultReferenceRole({
+          targetVariant: 'image',
+          model: DEFAULT_IMAGE_REPAINT_MODEL,
+          sourceVariant: 'image',
+        }) ?? ('image_reference' satisfies ContentReferenceRole)
+      const newBlock = prepareBlockState({
+        id: targetBlockId,
+        type: 'content',
+        name: getUniqueBlockName('Image', workflowBlocks),
+        position: targetPosition,
+        data: {
+          contentVariant: 'image',
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: 'image',
+        role: referenceRole,
+      }
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: id,
+        target: targetBlockId,
+        sourceHandle: getContentReferenceSourceHandleId('right'),
+        targetHandle: getContentReferenceTargetHandleId('left'),
+      })
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          contentVariant: 'image',
+          aiPrompt: '',
+          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
+          aiAspectRatio: 'auto',
+          file,
+          contentReferences: [reference],
+        },
+      }
+
+      setPendingSelection([targetBlockId])
+      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      setIsImageEraseMode(false)
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      id,
+      setPendingSelection,
+      workflowBlocks,
+    ]
+  )
+
   const createImageOutpaintVariantNode = useCallback(
     async (file: UploadedFileValue, targetAspectRatio: ImageOutpaintAspectRatio) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
@@ -2835,6 +3000,19 @@ export const ContentBlock = memo(function ContentBlock({
       setIsImageRepaintMode(false)
     }
   }, [data.isEmbedded, data.isPreview, isImageRepaintMode, resolvedFile, resolvedVariant, selected])
+
+  useEffect(() => {
+    if (
+      isImageEraseMode &&
+      (!selected ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'image' ||
+        !resolvedFile)
+    ) {
+      setIsImageEraseMode(false)
+    }
+  }, [data.isEmbedded, data.isPreview, isImageEraseMode, resolvedFile, resolvedVariant, selected])
 
   useEffect(() => {
     if (
@@ -3582,19 +3760,23 @@ export const ContentBlock = memo(function ContentBlock({
             referencedNodes={referencedNodes}
             isImageCropMode={isImageCropMode}
             isImageRepaintMode={isImageRepaintMode}
+            isImageEraseMode={isImageEraseMode}
             isImageOutpaintMode={isImageOutpaintMode}
             isImageCropProcessing={uploadWorkspaceFileMutation.isPending}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onStartImageCrop={startImageCropMode}
             onStartImageRepaint={startImageRepaintMode}
+            onStartImageErase={startImageEraseMode}
             onStartImageOutpaint={startImageOutpaintMode}
             onCancelImageCrop={cancelImageCropMode}
             onCancelImageRepaint={cancelImageRepaintMode}
+            onCancelImageErase={cancelImageEraseMode}
             onCancelImageOutpaint={cancelImageOutpaintMode}
             onConfirmImageCrop={confirmImageCrop}
             onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
+            onCreateImageEraseVariant={createImageEraseVariantNode}
             onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
