@@ -1,7 +1,17 @@
 ﻿'use client'
 
 import type { ChangeEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
-import { createElement, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createElement,
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { generateId } from '@sim/utils/id'
 import {
   Copy as CopyIcon,
   ImageIcon,
@@ -15,6 +25,8 @@ import {
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position } from 'reactflow'
+import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
+import { getContentCanvasModelsByFamily } from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
 import type {
@@ -47,22 +59,31 @@ import {
   type VideoMediaFileSlot,
   type VideoModelFamily,
 } from '@/lib/generated-media/video/video-generation-utils'
+import { getContentNodePreset } from '@/lib/product/content-node-presets'
 import {
   CONTENT_REFERENCE_EDGE_KIND,
+  createContentReferenceEdge,
+  getContentReferenceAnchorForTarget,
+  getContentReferenceAutoLinkType,
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
+  isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
   buildContentReferencePromptContext,
   buildStructuredContentReferenceContext,
+  type ContentReferenceRecord,
+  canContentNodeVariantReferenceSource,
   findMatchingContentReferenceEdgeIds,
   getAllowedReferenceSourceVariants,
+  getAllowedReferencingContentNodeVariants,
+  getDefaultReferenceRole,
   getModelDisabledReason,
   inferContentReferencesFromCanvas,
   normalizeContentReferences,
-  removeContentReference,
-  type ContentReferenceRecord,
   type PromptContextReferencedNode,
+  removeContentReference,
+  upsertContentReference,
 } from '@/lib/workflows/content-references'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
@@ -87,19 +108,17 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
+import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useContentCanvasModelAvailability } from '@/hooks/queries/content-canvas'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
+import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useContentReferenceSelectionStore } from '@/stores/content/content-reference-selection/store'
 import { useVideoFrameSelectionStore } from '@/stores/content/video-frame-selection/store'
 import { usePanelEditorStore } from '@/stores/panel'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import {
-  EMPTY_SUBBLOCK_VALUES,
-  useSubBlockStore,
-} from '@/stores/workflows/subblock/store'
+import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -116,9 +135,20 @@ interface UploadedFileValue {
   context?: string
 }
 
+interface ContentReferenceDragState {
+  anchor: 'left' | 'right'
+  start: { x: number; y: number }
+  current: { x: number; y: number }
+  isDragging: boolean
+  targetBlockId: string | null
+  canConnect: boolean
+}
+
 function getEffectiveContentModelId(params: {
   requestedModelId: string
-  availability: ContentCanvasModelAvailabilitySnapshot[keyof ContentCanvasModelAvailabilitySnapshot] | null
+  availability:
+    | ContentCanvasModelAvailabilitySnapshot[keyof ContentCanvasModelAvailabilitySnapshot]
+    | null
   fallbackModelId: string
 }) {
   if (!params.availability) {
@@ -154,7 +184,9 @@ function getEffectiveVideoModelFamily(params: {
   }
 
   if (params.availability.defaultModelId) {
-    return getVideoModelFamilyFromModelId(params.availability.defaultModelId as VideoGenerationModelId)
+    return getVideoModelFamilyFromModelId(
+      params.availability.defaultModelId as VideoGenerationModelId
+    )
   }
 
   return enabledFamilies.values().next().value ?? params.requestedFamily
@@ -179,8 +211,120 @@ const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
 const AUDIO_CARD_HEIGHT = 132
+const CONTENT_REFERENCE_CREATE_GAP = 80
+const CONTENT_REFERENCE_DRAG_THRESHOLD = 6
 const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const
 const BACKGROUND_COLORS = ['#FFF8C5', '#FEE2E2', '#DBEAFE', '#DCFCE7', '#F3E8FF'] as const
+
+const CONTENT_NODE_MENU_ITEMS: ReadonlyArray<{
+  variant: ContentVariant
+  label: string
+  icon: typeof Type
+}> = [
+  { variant: 'text', label: 'Text', icon: Type },
+  { variant: 'image', label: 'Image', icon: ImageIcon },
+  { variant: 'video', label: 'Video', icon: Video },
+  { variant: 'audio', label: 'Audio', icon: Music4 },
+] as const
+
+function getContentCardWidth(variant: ContentVariant): number {
+  if (variant === 'video') return VIDEO_CARD_WIDTH
+  if (variant === 'audio') return AUDIO_CARD_WIDTH
+  if (variant === 'image') return IMAGE_CARD_WIDTH
+  return DEFAULT_TEXT_WIDTH
+}
+
+function getDefaultReferenceModelForVariant(variant: ContentVariant): string {
+  if (variant === 'image') return DEFAULT_IMAGE_AI_MODEL
+  if (variant === 'audio') return DEFAULT_AUDIO_MODEL
+  if (variant === 'video') return 'wan2.6-i2v-flash'
+  return DEFAULT_TEXT_AI_MODEL
+}
+
+function getVideoModelFamilyForInitialReference(sourceVariant: ContentVariant): VideoModelFamily {
+  return sourceVariant === 'image' ? 'wan2.6' : DEFAULT_VIDEO_MODEL_FAMILY
+}
+
+function getCompatibleModelOptions<TOption extends { id: string }>(params: {
+  targetVariant: ContentVariant
+  currentModel: string
+  references: ContentReferenceRecord[]
+  options: ReadonlyArray<TOption>
+}): Array<TOption & { disabledReason?: string | null }> {
+  const optionsWithReasons = params.options.map((option) => ({
+    ...option,
+    disabledReason: getModelDisabledReason({
+      targetVariant: params.targetVariant,
+      model: option.id,
+      references: params.references,
+    }),
+  }))
+  const compatibleOptions = optionsWithReasons.filter((option) => !option.disabledReason)
+  const currentOption = optionsWithReasons.find(
+    (option) => option.id === params.currentModel && option.disabledReason
+  )
+
+  if (!currentOption) return compatibleOptions
+
+  return [currentOption, ...compatibleOptions.filter((option) => option.id !== params.currentModel)]
+}
+
+function getVideoFamilyDisabledReason(params: {
+  family: VideoModelFamily
+  references: ContentReferenceRecord[]
+}): string | null {
+  const models = getContentCanvasModelsByFamily('video', params.family)
+  if (
+    models.some(
+      (model) =>
+        !getModelDisabledReason({
+          targetVariant: 'video',
+          model: model.id,
+          references: params.references,
+        })
+    )
+  ) {
+    return null
+  }
+
+  return (
+    models
+      .map((model) =>
+        getModelDisabledReason({
+          targetVariant: 'video',
+          model: model.id,
+          references: params.references,
+        })
+      )
+      .find((reason): reason is string => Boolean(reason)) ??
+    'This model does not support the current references.'
+  )
+}
+
+function getCompatibleVideoFamilyOptions<TOption extends { id: VideoModelFamily }>(params: {
+  currentFamily: VideoModelFamily
+  references: ContentReferenceRecord[]
+  options: ReadonlyArray<TOption>
+}): Array<TOption & { disabledReason?: string | null }> {
+  const optionsWithReasons = params.options.map((option) => ({
+    ...option,
+    disabledReason: getVideoFamilyDisabledReason({
+      family: option.id,
+      references: params.references,
+    }),
+  }))
+  const compatibleOptions = optionsWithReasons.filter((option) => !option.disabledReason)
+  const currentOption = optionsWithReasons.find(
+    (option) => option.id === params.currentFamily && option.disabledReason
+  )
+
+  if (!currentOption) return compatibleOptions
+
+  return [
+    currentOption,
+    ...compatibleOptions.filter((option) => option.id !== params.currentFamily),
+  ]
+}
 
 function extractStoredValue<T>(source: StoredValueRecord, key: string, fallback: T): T {
   const rawValue = source?.[key]
@@ -671,17 +815,24 @@ function TextContentCard({
     referenceImages: structuredReferenceContext.images,
     onChangeHtml,
   })
+  const currentModelDisabledReason = useMemo(
+    () =>
+      getModelDisabledReason({
+        targetVariant: 'text',
+        model: aiModel,
+        references: contentReferences,
+      }),
+    [aiModel, contentReferences]
+  )
   const modelOptionsWithDisabledReason = useMemo(
     () =>
-      modelOptions.map((option) => ({
-        ...option,
-        disabledReason: getModelDisabledReason({
-          targetVariant: 'text',
-          model: option.id,
-          references: contentReferences,
-        }),
-      })),
-    [contentReferences, modelOptions]
+      getCompatibleModelOptions({
+        targetVariant: 'text',
+        currentModel: aiModel,
+        references: contentReferences,
+        options: modelOptions,
+      }),
+    [aiModel, contentReferences, modelOptions]
   )
 
   useEffect(() => {
@@ -777,6 +928,10 @@ function TextContentCard({
     if (!canEdit || isPreview) return
     setIsEditing(true)
   }, [canEdit, isPreview])
+  const handleSubmitPrompt = useCallback(() => {
+    if (currentModelDisabledReason) return
+    submitPrompt()
+  }, [currentModelDisabledReason, submitPrompt])
 
   const editingContentClassName =
     'nodrag nopan px-4 py-3 text-[var(--text-primary)] outline-none [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
@@ -934,7 +1089,7 @@ function TextContentCard({
           model={aiModel}
           modelOptions={modelOptionsWithDisabledReason}
           isGenerating={isGenerating}
-          error={error}
+          error={error ?? currentModelDisabledReason}
           hasPendingResult={pendingActionChoice && Boolean(pendingGeneratedText)}
           header={
             <ReferenceComposerHeader
@@ -947,7 +1102,7 @@ function TextContentCard({
           }
           onChangePrompt={onChangeAiPrompt}
           onChangeModel={onChangeAiModel}
-          onSubmit={submitPrompt}
+          onSubmit={handleSubmitPrompt}
           onReplace={() => applyPendingGeneratedText('replace')}
           onAppend={() => applyPendingGeneratedText('append')}
         />
@@ -1139,6 +1294,7 @@ function MediaContentCard({
       }),
     [contentReferences, referencedNodes]
   )
+  const resolvedImageModel = (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId
   const {
     modelOptions,
     aspectRatioOptions,
@@ -1149,7 +1305,7 @@ function MediaContentCard({
     blockId,
     workspaceId: params.workspaceId,
     prompt: aiPrompt,
-    model: (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId,
+    model: resolvedImageModel,
     availability: modelAvailability,
     aspectRatio: resolvedAspectRatio,
     referenceContext: structuredReferenceContext,
@@ -1191,30 +1347,73 @@ function MediaContentCard({
     referenceContext: { text: structuredReferenceContext.text },
     onChangeFile,
   })
+  const currentImageModelDisabledReason = useMemo(
+    () =>
+      getModelDisabledReason({
+        targetVariant: 'image',
+        model: resolvedImageModel,
+        references: contentReferences,
+      }),
+    [contentReferences, resolvedImageModel]
+  )
   const imageModelOptionsWithDisabledReason = useMemo(
     () =>
-      modelOptions.map((option) => ({
-        ...option,
-        disabledReason: getModelDisabledReason({
-          targetVariant: 'image',
-          model: option.id,
-          references: contentReferences,
-        }),
-      })),
-    [contentReferences, modelOptions]
+      getCompatibleModelOptions({
+        targetVariant: 'image',
+        currentModel: resolvedImageModel,
+        references: contentReferences,
+        options: modelOptions,
+      }),
+    [contentReferences, modelOptions, resolvedImageModel]
+  )
+  const currentVideoModelFamilyDisabledReason = useMemo(
+    () =>
+      getVideoFamilyDisabledReason({
+        family: videoModelFamily,
+        references: contentReferences,
+      }),
+    [contentReferences, videoModelFamily]
+  )
+  const videoModelOptionsWithDisabledReason = useMemo(
+    () =>
+      getCompatibleVideoFamilyOptions({
+        currentFamily: videoModelFamily,
+        references: contentReferences,
+        options: videoModelOptions,
+      }),
+    [contentReferences, videoModelFamily, videoModelOptions]
+  )
+  const currentAudioModelDisabledReason = useMemo(
+    () =>
+      getModelDisabledReason({
+        targetVariant: 'audio',
+        model: audioModel,
+        references: contentReferences,
+      }),
+    [audioModel, contentReferences]
   )
   const audioModelOptionsWithDisabledReason = useMemo(
     () =>
-      audioModelOptions.map((option) => ({
-        ...option,
-        disabledReason: getModelDisabledReason({
-          targetVariant: 'audio',
-          model: option.id,
-          references: contentReferences,
-        }),
-      })),
-    [audioModelOptions, contentReferences]
+      getCompatibleModelOptions({
+        targetVariant: 'audio',
+        currentModel: audioModel,
+        references: contentReferences,
+        options: audioModelOptions,
+      }),
+    [audioModel, audioModelOptions, contentReferences]
   )
+  const handleSubmitImagePrompt = useCallback(() => {
+    if (currentImageModelDisabledReason) return
+    submitPrompt()
+  }, [currentImageModelDisabledReason, submitPrompt])
+  const handleSubmitVideoPrompt = useCallback(() => {
+    if (currentVideoModelFamilyDisabledReason) return
+    submitVideoPrompt()
+  }, [currentVideoModelFamilyDisabledReason, submitVideoPrompt])
+  const handleSubmitAudioPrompt = useCallback(() => {
+    if (currentAudioModelDisabledReason) return
+    submitAudioPrompt()
+  }, [currentAudioModelDisabledReason, submitAudioPrompt])
 
   const openFileDialog = useCallback(() => {
     if (!canUpload) return
@@ -1404,10 +1603,10 @@ function MediaContentCard({
           canEdit={canEdit}
           selected={selected}
           prompt={aiPrompt}
-          model={(aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId}
+          model={resolvedImageModel}
           aspectRatio={resolvedAspectRatio}
           isGenerating={isGenerating}
-          error={generationError}
+          error={generationError ?? currentImageModelDisabledReason}
           header={
             <ReferenceComposerHeader
               canEdit={canEdit}
@@ -1422,7 +1621,7 @@ function MediaContentCard({
           onChangePrompt={onChangeAiPrompt}
           onChangeModel={onChangeAiModel}
           onChangeAspectRatio={onChangeAiAspectRatio}
-          onSubmit={submitPrompt}
+          onSubmit={handleSubmitImagePrompt}
         />
       )}
 
@@ -1446,10 +1645,12 @@ function MediaContentCard({
             firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
             lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
             isGenerating={isVideoGenerating}
-            error={videoGenerationError}
+            error={videoGenerationError ?? currentVideoModelFamilyDisabledReason}
             isSelectingFrame={frameSelection?.targetBlockId === blockId}
-            selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
-            modelOptions={videoModelOptions}
+            selectedFrameSlot={
+              frameSelection?.targetBlockId === blockId ? frameSelection.slot : null
+            }
+            modelOptions={videoModelOptionsWithDisabledReason}
             aspectRatioOptions={videoAspectRatioOptions}
             resolutionOptions={videoResolutionOptions}
             durationOptions={videoDurationOptions}
@@ -1492,7 +1693,7 @@ function MediaContentCard({
                 })
               )
             }}
-            onSubmit={submitVideoPrompt}
+            onSubmit={handleSubmitVideoPrompt}
           />
         </div>
       )}
@@ -1505,7 +1706,7 @@ function MediaContentCard({
           model={audioModel}
           parameters={audioParameters}
           isGenerating={isAudioGenerating}
-          error={audioGenerationError}
+          error={audioGenerationError ?? currentAudioModelDisabledReason}
           header={
             <ReferenceComposerHeader
               canEdit={canEdit}
@@ -1519,7 +1720,7 @@ function MediaContentCard({
           onChangePrompt={onChangeAudioPrompt}
           onChangeModel={onChangeAudioModel}
           onChangeParameters={onChangeAudioParameters}
-          onSubmit={submitAudioPrompt}
+          onSubmit={handleSubmitAudioPrompt}
         />
       )}
     </div>
@@ -1595,16 +1796,28 @@ export const ContentBlock = memo(function ContentBlock({
     (state) => state.beginSelection
   )
   const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
-  const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
   const workflowBlocks = useWorkflowStore((state) => state.blocks)
   const workflowEdges = useWorkflowStore((state) => state.edges)
   const workflowValues = useSubBlockStore(
     useCallback(
-      (state) => (activeWorkflowId ? state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES : EMPTY_SUBBLOCK_VALUES),
+      (state) =>
+        activeWorkflowId
+          ? (state.workflowValues[activeWorkflowId] ?? EMPTY_SUBBLOCK_VALUES)
+          : EMPTY_SUBBLOCK_VALUES,
       [activeWorkflowId]
     )
   )
-  const { collaborativeBatchRemoveEdges, collaborativeBatchAddEdges } = useCollaborativeWorkflow()
+  const {
+    collaborativeBatchAddBlocks,
+    collaborativeBatchRemoveEdges,
+    collaborativeBatchAddEdges,
+    collaborativeSetSubblockValue,
+  } = useCollaborativeWorkflow()
+  const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
+  const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
+  const [referenceDragState, setReferenceDragState] = useState<ContentReferenceDragState | null>(
+    null
+  )
 
   const resolvedVariant = resolveContentVariant(
     variant,
@@ -1796,9 +2009,132 @@ export const ContentBlock = memo(function ContentBlock({
         : resolvedVariant === 'audio'
           ? effectiveAudioModel
           : videoReferenceModelId
-  const allowedReferenceSourceVariants = getAllowedReferenceSourceVariants(
-    resolvedVariant,
-    selectionModel
+  const createMenuItems = useMemo(
+    () =>
+      CONTENT_NODE_MENU_ITEMS.filter((item) =>
+        getAllowedReferencingContentNodeVariants(resolvedVariant).includes(item.variant)
+      ),
+    [resolvedVariant]
+  )
+
+  const createReferencedContentNode = useCallback(
+    (targetVariant: ContentVariant, anchor: 'left' | 'right') => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
+      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return
+
+      const preset = getContentNodePreset(targetVariant)
+      if (!preset?.available || !preset.blockType || !preset.contentVariant) return
+
+      const blockConfig = getBlockConfigFromCatalog(preset.blockType)
+      if (!blockConfig) return
+
+      const targetModel = getDefaultReferenceModelForVariant(targetVariant)
+      const referenceRole = getDefaultReferenceRole({
+        targetVariant,
+        model: targetModel,
+        sourceVariant: resolvedVariant,
+      })
+      if (!referenceRole) return
+
+      const sourceBlock = workflowBlocks[id]
+      const sourcePosition = sourceBlock?.position ?? { x: 0, y: 0 }
+      const sourceWidth = getContentCardWidth(resolvedVariant)
+      const targetWidth = getContentCardWidth(targetVariant)
+      const targetPosition = {
+        x:
+          anchor === 'right'
+            ? sourcePosition.x + sourceWidth + CONTENT_REFERENCE_CREATE_GAP
+            : sourcePosition.x - targetWidth - CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+
+      const targetBlockId = generateId()
+      const targetName = getUniqueBlockName(preset.label, workflowBlocks)
+      const parentId = sourceBlock?.data?.parentId
+      const block = prepareBlockState({
+        id: targetBlockId,
+        type: preset.blockType,
+        name: targetName,
+        position: targetPosition,
+        data: {
+          contentVariant: preset.contentVariant,
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: resolvedVariant,
+        role: referenceRole,
+      }
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          ...(preset.presetSubBlockValues ?? {}),
+          contentVariant: targetVariant,
+          contentReferences: [reference],
+        },
+      }
+
+      if (targetVariant === 'video') {
+        subBlockValues[targetBlockId].videoModelFamily =
+          getVideoModelFamilyForInitialReference(resolvedVariant)
+      }
+
+      if (
+        targetVariant === 'video' &&
+        resolvedVariant === 'image' &&
+        referenceRole === 'video_first_frame' &&
+        resolvedFile?.key
+      ) {
+        subBlockValues[targetBlockId].videoMedia = [
+          {
+            type: 'first_frame',
+            file: resolvedFile,
+          },
+        ]
+      }
+
+      const isVideoFrameReference =
+        referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+      const edgeSourceId = isVideoFrameReference ? id : targetBlockId
+      const edgeTargetId = isVideoFrameReference ? targetBlockId : id
+      const edgeSourcePosition = edgeSourceId === id ? sourcePosition : targetPosition
+      const edgeTargetPosition = edgeTargetId === id ? sourcePosition : targetPosition
+      const targetAnchor = getContentReferenceAnchorForTarget({
+        sourceX: edgeSourcePosition.x,
+        targetX: edgeTargetPosition.x,
+      })
+
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: edgeSourceId,
+        target: edgeTargetId,
+        sourceHandle: getContentReferenceSourceHandleId(
+          edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
+        ),
+        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        autoLinkType: isVideoFrameReference ? referenceRole : undefined,
+      })
+
+      setPendingSelection([targetBlockId])
+      collaborativeBatchAddBlocks([block], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      setCreateMenuAnchor(null)
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      id,
+      resolvedFile,
+      resolvedVariant,
+      setPendingSelection,
+      workflowBlocks,
+    ]
   )
 
   const resolveBlockSourceValues = useCallback(
@@ -1829,6 +2165,203 @@ export const ContentBlock = memo(function ContentBlock({
     },
     [resolveBlockSourceValues]
   )
+  const resolveBlockReferenceModel = useCallback(
+    (blockId: string, blockVariant: ContentVariant): string => {
+      const source = resolveBlockSourceValues(blockId)
+
+      if (blockVariant === 'image') {
+        return extractStoredValue<string>(source, 'aiModel', DEFAULT_IMAGE_AI_MODEL)
+      }
+
+      if (blockVariant === 'audio') {
+        return extractStoredValue<string>(source, 'audioModel', DEFAULT_AUDIO_MODEL)
+      }
+
+      if (blockVariant === 'video') {
+        const family = normalizeVideoModelFamily(
+          extractStoredValue<unknown>(source, 'videoModelFamily', DEFAULT_VIDEO_MODEL_FAMILY),
+          extractStoredValue<unknown>(source, 'videoModel', DEFAULT_VIDEO_MODEL)
+        )
+        return family === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+      }
+
+      return extractStoredValue<string>(source, 'aiModel', DEFAULT_TEXT_AI_MODEL)
+    },
+    [resolveBlockSourceValues]
+  )
+  const getCurrentContentReferencesForBlock = useCallback(
+    (blockId: string): ContentReferenceRecord[] =>
+      normalizeContentReferences(
+        extractStoredValue<unknown>(resolveBlockSourceValues(blockId), 'contentReferences', [])
+      ),
+    [resolveBlockSourceValues]
+  )
+  const getContentNodeIdAtPoint = useCallback(
+    (clientX: number, clientY: number): string | null => {
+      const elements = document.elementsFromPoint(clientX, clientY)
+      for (const element of elements) {
+        const nodeElement = element.closest('.react-flow__node') as HTMLElement | null
+        const nodeId = nodeElement?.getAttribute('data-id')
+        if (!nodeId || nodeId === id) continue
+        if (workflowBlocks[nodeId]?.type === 'content') return nodeId
+      }
+      return null
+    },
+    [id, workflowBlocks]
+  )
+  const canCreateExistingContentReference = useCallback(
+    (targetBlockId: string): boolean => {
+      const targetVariant = resolveBlockVariant(targetBlockId)
+      if (!targetVariant) return false
+      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
+
+      const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
+      const referenceRole = getDefaultReferenceRole({
+        targetVariant,
+        model: targetModel,
+        sourceVariant: resolvedVariant,
+      })
+      if (!referenceRole) return false
+
+      const nextReferences = upsertContentReference(
+        getCurrentContentReferencesForBlock(targetBlockId),
+        {
+          sourceBlockId: id,
+          sourceVariant: resolvedVariant,
+          role: referenceRole,
+        }
+      )
+
+      return !getModelDisabledReason({
+        targetVariant,
+        model: targetModel,
+        references: nextReferences,
+      })
+    },
+    [
+      getCurrentContentReferencesForBlock,
+      id,
+      resolvedVariant,
+      resolveBlockReferenceModel,
+      resolveBlockVariant,
+    ]
+  )
+  const createExistingContentReference = useCallback(
+    (targetBlockId: string, sourceAnchor: 'left' | 'right'): boolean => {
+      const targetVariant = resolveBlockVariant(targetBlockId)
+      if (!targetVariant) return false
+      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
+
+      const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
+      const referenceRole = getDefaultReferenceRole({
+        targetVariant,
+        model: targetModel,
+        sourceVariant: resolvedVariant,
+      })
+      if (!referenceRole) return false
+
+      const nextReferences = upsertContentReference(
+        getCurrentContentReferencesForBlock(targetBlockId),
+        {
+          sourceBlockId: id,
+          sourceVariant: resolvedVariant,
+          role: referenceRole,
+        }
+      )
+      const disabledReason = getModelDisabledReason({
+        targetVariant,
+        model: targetModel,
+        references: nextReferences,
+      })
+      if (disabledReason) return false
+
+      const isVideoFrameReference =
+        referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+      const edgeSourceId = isVideoFrameReference ? id : targetBlockId
+      const edgeTargetId = isVideoFrameReference ? targetBlockId : id
+      const edgeSourcePosition = workflowBlocks[edgeSourceId]?.position ?? { x: 0, y: 0 }
+      const edgeTargetPosition = workflowBlocks[edgeTargetId]?.position ?? { x: 0, y: 0 }
+      const derivedSourceAnchor = edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
+      const derivedTargetAnchor = getContentReferenceAnchorForTarget({
+        sourceX: edgeSourcePosition.x,
+        targetX: edgeTargetPosition.x,
+      })
+
+      collaborativeSetSubblockValue(targetBlockId, 'contentReferences', nextReferences)
+
+      if (isVideoFrameReference) {
+        const previousAutoEdgeIds = workflowEdges
+          .filter(
+            (edge) =>
+              isContentReferenceEdge(edge) &&
+              getContentReferenceAutoLinkType(edge) === referenceRole &&
+              edge.target === targetBlockId
+          )
+          .map((edge) => edge.id)
+        if (previousAutoEdgeIds.length > 0) {
+          collaborativeBatchRemoveEdges(previousAutoEdgeIds, { skipUndoRedo: true })
+        }
+
+        if (resolvedVariant === 'image' && resolvedFile?.key) {
+          const mediaType = referenceRole === 'video_first_frame' ? 'first_frame' : 'last_frame'
+          const currentVideoMedia = normalizeVideoMedia(
+            extractStoredValue<unknown>(resolveBlockSourceValues(targetBlockId), 'videoMedia', [])
+          )
+          const nextVideoMedia = [
+            ...currentVideoMedia.filter((item) => item.type !== mediaType),
+            {
+              type: mediaType,
+              file: resolvedFile,
+            },
+          ]
+          collaborativeSetSubblockValue(targetBlockId, 'videoMedia', nextVideoMedia)
+        }
+      }
+
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: edgeSourceId,
+        target: edgeTargetId,
+        sourceHandle: getContentReferenceSourceHandleId(
+          isVideoFrameReference ? sourceAnchor : derivedSourceAnchor
+        ),
+        targetHandle: getContentReferenceTargetHandleId(
+          isVideoFrameReference ? derivedTargetAnchor : sourceAnchor
+        ),
+        autoLinkType: isVideoFrameReference ? referenceRole : undefined,
+      })
+
+      const alreadyLinked =
+        !isVideoFrameReference &&
+        workflowEdges.some(
+          (candidate) =>
+            isContentReferenceEdge(candidate) &&
+            !getContentReferenceAutoLinkType(candidate) &&
+            candidate.source === edgeSourceId &&
+            candidate.target === edgeTargetId
+        )
+
+      if (!alreadyLinked) {
+        collaborativeBatchAddEdges([edge])
+      }
+
+      return true
+    },
+    [
+      collaborativeBatchAddEdges,
+      collaborativeBatchRemoveEdges,
+      collaborativeSetSubblockValue,
+      getCurrentContentReferencesForBlock,
+      id,
+      resolvedFile,
+      resolvedVariant,
+      resolveBlockReferenceModel,
+      resolveBlockSourceValues,
+      resolveBlockVariant,
+      workflowBlocks,
+      workflowEdges,
+    ]
+  )
   const referencedNodes = useMemo(() => {
     const nodes: Record<string, PromptContextReferencedNode> = {}
     for (const reference of resolvedContentReferences) {
@@ -1842,7 +2375,9 @@ export const ContentBlock = memo(function ContentBlock({
         variant,
         textContent:
           variant === 'text'
-            ? getPlainTextFromHtml(extractStoredValue<string>(source, 'contentHtml', DEFAULT_TEXT_HTML))
+            ? getPlainTextFromHtml(
+                extractStoredValue<string>(source, 'contentHtml', DEFAULT_TEXT_HTML)
+              )
             : null,
         file:
           variant === 'text'
@@ -1884,45 +2419,111 @@ export const ContentBlock = memo(function ContentBlock({
         ? '点击设置首帧'
         : '点击设置尾帧'
       : null
-  const startReferenceSelection = useCallback(
+  const startExistingReferenceSelection = useCallback(
     (anchor: 'left' | 'right' = 'left') => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
-
-      if (resolvedVariant === 'video') {
-        const hasFirstFrame = Boolean(getVideoMediaFileForType(resolvedVideoMedia, 'first_frame')?.key)
-        const slot =
-          resolvedVideoModelFamily === 'wan2.7' && hasFirstFrame ? 'last' : 'first'
-        beginFrameSelection({
-          targetBlockId: id,
-          slot,
-          modelFamily: resolvedVideoModelFamily,
-          requiredAspectRatioPreset: resolvedVideoFrameAspectRatioPreset,
-        })
-        return
-      }
 
       beginContentReferenceSelection({
         sourceBlockId: id,
         sourceVariant: resolvedVariant,
         sourceModel: selectionModel,
-        allowedSourceVariants: allowedReferenceSourceVariants,
+        allowedSourceVariants: getAllowedReferenceSourceVariants(resolvedVariant, selectionModel),
         sourceAnchor: anchor,
-        mode: CONTENT_REFERENCE_EDGE_KIND,
+        mode: 'content_reference',
       })
     },
     [
-      allowedReferenceSourceVariants,
       beginContentReferenceSelection,
-      beginFrameSelection,
       canEditWorkflow,
       data.isEmbedded,
       data.isPreview,
       id,
       resolvedVariant,
-      resolvedVideoFrameAspectRatioPreset,
-      resolvedVideoMedia,
-      resolvedVideoModelFamily,
       selectionModel,
+    ]
+  )
+  const startCreateMenuPointerSession = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, anchor: 'left' | 'right') => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const buttonRect = event.currentTarget.getBoundingClientRect()
+      const start = {
+        x: buttonRect.left + buttonRect.width / 2,
+        y: buttonRect.top + buttonRect.height / 2,
+      }
+      const pointerStart = { x: event.clientX, y: event.clientY }
+      let isDragging = false
+      let latestTargetBlockId: string | null = null
+      let latestCanConnect = false
+
+      const updateDragState = (clientX: number, clientY: number) => {
+        const targetBlockId = getContentNodeIdAtPoint(clientX, clientY)
+        const canConnect = targetBlockId ? canCreateExistingContentReference(targetBlockId) : false
+        latestTargetBlockId = targetBlockId
+        latestCanConnect = canConnect
+        setReferenceDragState({
+          anchor,
+          start,
+          current: { x: clientX, y: clientY },
+          isDragging,
+          targetBlockId,
+          canConnect,
+        })
+      }
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const deltaX = moveEvent.clientX - pointerStart.x
+        const deltaY = moveEvent.clientY - pointerStart.y
+        if (!isDragging && Math.hypot(deltaX, deltaY) < CONTENT_REFERENCE_DRAG_THRESHOLD) {
+          return
+        }
+
+        if (!isDragging) {
+          isDragging = true
+          setCreateMenuAnchor(null)
+        }
+
+        updateDragState(moveEvent.clientX, moveEvent.clientY)
+      }
+
+      const handlePointerUp = () => {
+        window.removeEventListener('pointermove', handlePointerMove, true)
+        window.removeEventListener('pointerup', handlePointerUp, true)
+        window.removeEventListener('pointercancel', handlePointerCancel, true)
+
+        if (isDragging) {
+          if (latestTargetBlockId && latestCanConnect) {
+            createExistingContentReference(latestTargetBlockId, anchor)
+          }
+          setReferenceDragState(null)
+          return
+        }
+
+        setReferenceDragState(null)
+        setCreateMenuAnchor((current) => (current === anchor ? null : anchor))
+      }
+
+      const handlePointerCancel = () => {
+        window.removeEventListener('pointermove', handlePointerMove, true)
+        window.removeEventListener('pointerup', handlePointerUp, true)
+        window.removeEventListener('pointercancel', handlePointerCancel, true)
+        setReferenceDragState(null)
+      }
+
+      window.addEventListener('pointermove', handlePointerMove, true)
+      window.addEventListener('pointerup', handlePointerUp, true)
+      window.addEventListener('pointercancel', handlePointerCancel, true)
+    },
+    [
+      canCreateExistingContentReference,
+      canEditWorkflow,
+      createExistingContentReference,
+      data.isEmbedded,
+      data.isPreview,
+      getContentNodeIdAtPoint,
     ]
   )
   const removeReferenceAndEdges = useCallback(
@@ -2105,68 +2706,119 @@ export const ContentBlock = memo(function ContentBlock({
     <div className='group relative'>
       {!data.isPreview &&
         !data.isEmbedded &&
-        (['left', 'right'] as const).flatMap((anchor) => [
-          <Handle
-            key={`source-${anchor}`}
-            id={getContentReferenceSourceHandleId(anchor)}
-            type='source'
-            position={anchor === 'left' ? Position.Left : Position.Right}
-            isConnectable={false}
-            className={HIDDEN_CONTENT_HANDLE_CLASSNAME}
-          />,
+        (['left', 'right'] as const).map((anchor) => (
           <Handle
             key={`target-${anchor}`}
             id={getContentReferenceTargetHandleId(anchor)}
             type='target'
             position={anchor === 'left' ? Position.Left : Position.Right}
-            isConnectable={false}
+            isConnectable={canEditWorkflow}
             className={HIDDEN_CONTENT_HANDLE_CLASSNAME}
-          />,
-        ])}
+          />
+        ))}
 
       {showContentReferenceHandles && (
         <>
           {(['left', 'right'] as const).map((anchor) => (
-            <button
-              key={anchor}
-              type='button'
-              aria-label={
-                anchor === 'left' ? 'Start content link from left' : 'Start content link from right'
-              }
-              onPointerDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                startReferenceSelection(anchor)
-              }}
-              className={cn(
-                'nodrag nopan -translate-y-1/2 absolute top-1/2 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] shadow-sm transition-all hover-hover:bg-[var(--surface-3)]',
-                anchor === 'left' ? 'left-[-18px]' : 'right-[-18px]',
-                selected || isContentReferenceSource
-                  ? 'opacity-100'
-                  : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
-                isContentReferenceSource &&
-                  'border-[var(--brand-secondary)] text-[var(--brand-secondary)]'
-              )}
-            >
-              <Plus className='h-3.5 w-3.5' />
-            </button>
+            <Fragment key={anchor}>
+              <Handle
+                id={getContentReferenceSourceHandleId(anchor)}
+                type='source'
+                position={anchor === 'left' ? Position.Left : Position.Right}
+                isConnectable={false}
+                className={HIDDEN_CONTENT_HANDLE_CLASSNAME}
+              />
+              <button
+                type='button'
+                aria-label={
+                  anchor === 'left'
+                    ? 'Add or link content from left'
+                    : 'Add or link content from right'
+                }
+                onPointerDown={(event) => startCreateMenuPointerSession(event, anchor)}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                className={cn(
+                  'nodrag nopan -translate-y-1/2 absolute top-1/2 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] shadow-sm transition-all hover-hover:bg-[var(--surface-3)]',
+                  anchor === 'left' ? 'left-[-18px]' : 'right-[-18px]',
+                  selected || isContentReferenceSource
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100',
+                  isContentReferenceSource &&
+                    'border-[var(--brand-secondary)] text-[var(--brand-secondary)]'
+                )}
+              >
+                <Plus className='h-3.5 w-3.5' />
+              </button>
+            </Fragment>
           ))}
+
+          {createMenuAnchor && createMenuItems.length > 0 ? (
+            <div
+              className={cn(
+                'nodrag nopan absolute top-1/2 z-[70] min-w-[150px] -translate-y-1/2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-1 shadow-xl',
+                createMenuAnchor === 'left' ? 'right-[calc(100%+28px)]' : 'left-[calc(100%+28px)]'
+              )}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {createMenuItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.variant}
+                    type='button'
+                    className='flex w-full items-center gap-2 rounded-[6px] px-2.5 py-2 text-left text-[var(--text-primary)] text-xs transition-colors hover-hover:bg-[var(--surface-3)]'
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      createReferencedContentNode(item.variant, createMenuAnchor)
+                    }}
+                  >
+                    <Icon className='h-3.5 w-3.5 text-[var(--text-secondary)]' />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
+          {referenceDragState?.isDragging ? (
+            <div className='pointer-events-none fixed inset-0 z-[1200]'>
+              <svg className='h-full w-full'>
+                <line
+                  x1={referenceDragState.start.x}
+                  y1={referenceDragState.start.y}
+                  x2={referenceDragState.current.x}
+                  y2={referenceDragState.current.y}
+                  stroke={
+                    referenceDragState.targetBlockId
+                      ? referenceDragState.canConnect
+                        ? 'var(--brand-secondary)'
+                        : 'var(--text-error)'
+                      : 'var(--text-tertiary)'
+                  }
+                  strokeWidth='2'
+                  strokeDasharray='6 6'
+                  strokeLinecap='round'
+                />
+              </svg>
+            </div>
+          ) : null}
         </>
       )}
 
-        <div
-          ref={cardRef}
-          role='button'
-          tabIndex={0}
-          className={cn(
-            'relative z-[20] cursor-grab select-none content-drag-handle transition-opacity [&:active]:cursor-grabbing',
-            (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
-          )}
-          onClick={handleClick}
+      <div
+        ref={cardRef}
+        role='button'
+        tabIndex={0}
+        className={cn(
+          'relative z-[20] cursor-grab select-none content-drag-handle transition-opacity [&:active]:cursor-grabbing',
+          (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
+        )}
+        onClick={handleClick}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) {
             return
@@ -2208,7 +2860,7 @@ export const ContentBlock = memo(function ContentBlock({
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
-            onAddReference={() => startReferenceSelection()}
+            onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
@@ -2265,7 +2917,7 @@ export const ContentBlock = memo(function ContentBlock({
             modelAvailability={modelAvailability}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
-            onAddReference={() => startReferenceSelection()}
+            onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onChangeHtml={(value) => {
               if (!data.isPreview) setContentHtmlValue(value)

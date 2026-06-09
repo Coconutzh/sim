@@ -188,7 +188,7 @@ function applyIntentPolicy(
     requiresUserConfirmation,
   }
 
-  if (basePlan.mutationPolicy === 'allow_mutation') return basePlan
+  if (mutationPolicy === 'allow_mutation') return basePlan
 
   const policyDecision: LocalCanvasIntentDecision = {
     ...decision,
@@ -203,7 +203,7 @@ function applyIntentPolicy(
     }))
     .filter((step) => step.toolHints.length > 0 || step.intent === 'answer')
 
-  if (basePlan.mutationPolicy === 'read_only') {
+  if (mutationPolicy === 'read_only') {
     return {
       ...basePlan,
       patch: undefined,

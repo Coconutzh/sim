@@ -1,6 +1,7 @@
 import { uniq } from 'es-toolkit/array'
 import { getContentReferenceCapability as getCatalogContentReferenceCapability } from '@/lib/content-canvas/model-catalog'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
+
 export type {
   ContentNodeVariant,
   ContentReferenceCapability,
@@ -8,11 +9,24 @@ export type {
   ContentReferenceSelectionMode,
   ContentReferenceSlotCapability,
 } from '@/lib/workflows/content-reference-types'
+
 import type {
   ContentNodeVariant,
   ContentReferenceCapability,
   ContentReferenceRole,
 } from '@/lib/workflows/content-reference-types'
+
+const CONTENT_NODE_VARIANTS = ['text', 'image', 'video', 'audio'] as const
+
+const REFERENCE_TARGET_VARIANTS_BY_SOURCE: Record<
+  ContentNodeVariant,
+  readonly ContentNodeVariant[]
+> = {
+  text: ['text', 'image', 'video', 'audio'],
+  image: ['text', 'image', 'video'],
+  video: ['text'],
+  audio: ['video'],
+} as const
 
 export interface ContentReferenceRecord {
   sourceBlockId: string
@@ -48,7 +62,7 @@ const TEXT_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'text',
   selectionMode: 'multi',
-  allowedSourceVariants: ['text', 'video', 'audio'],
+  allowedSourceVariants: ['text', 'video'],
   supportedRoles: ['text_context'],
   slots: [],
 }
@@ -57,7 +71,7 @@ const TEXT_MULTIMODAL_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'text',
   selectionMode: 'multi',
-  allowedSourceVariants: ['text', 'image', 'video', 'audio'],
+  allowedSourceVariants: ['text', 'image', 'video'],
   supportedRoles: ['text_context', 'image_reference'],
   slots: [],
 }
@@ -93,8 +107,8 @@ const VIDEO_TEXT_ONLY_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: [],
-  supportedRoles: [],
+  allowedSourceVariants: ['text', 'audio'],
+  supportedRoles: ['text_context', 'audio_reference'],
   slots: [],
 }
 
@@ -102,8 +116,8 @@ const VIDEO_FIRST_FRAME_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = 
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: ['image'],
-  supportedRoles: ['video_first_frame'],
+  allowedSourceVariants: ['text', 'image', 'audio'],
+  supportedRoles: ['text_context', 'video_first_frame', 'audio_reference'],
   slots: [{ role: 'video_first_frame', sourceVariants: ['image'], maxCount: 1 }],
 }
 
@@ -111,8 +125,8 @@ const VIDEO_FIRST_AND_LAST_CAPABILITY: Omit<ContentReferenceCapability, 'model'>
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: ['image'],
-  supportedRoles: ['video_first_frame', 'video_last_frame'],
+  allowedSourceVariants: ['text', 'image', 'audio'],
+  supportedRoles: ['text_context', 'video_first_frame', 'video_last_frame', 'audio_reference'],
   slots: [
     { role: 'video_first_frame', sourceVariants: ['image'], maxCount: 1 },
     { role: 'video_last_frame', sourceVariants: ['image'], maxCount: 1 },
@@ -124,7 +138,7 @@ function capabilityKey(targetVariant: ContentNodeVariant, model: string): string
 }
 
 function isContentNodeVariant(value: unknown): value is ContentNodeVariant {
-  return value === 'text' || value === 'image' || value === 'video' || value === 'audio'
+  return CONTENT_NODE_VARIANTS.some((variant) => variant === value)
 }
 
 function isContentReferenceRole(value: unknown): value is ContentReferenceRole {
@@ -167,17 +181,24 @@ function getAllowedRolesForSourceVariant(
   capability: ContentReferenceCapability,
   sourceVariant: ContentNodeVariant
 ): ContentReferenceRole[] {
+  if (!canContentNodeVariantReferenceSource(capability.targetVariant, sourceVariant)) {
+    return []
+  }
+
   if (!capability.allowedSourceVariants.includes(sourceVariant)) {
     return []
   }
 
   if (capability.selectionMode === 'slot') {
-    return capability.slots
+    const slotRoles = capability.slots
       .filter((slot) => slot.sourceVariants.includes(sourceVariant))
       .map((slot) => slot.role)
+    if (slotRoles.length > 0) return slotRoles
   }
 
-  if (sourceVariant === 'text') return capability.supportedRoles.filter((role) => role === 'text_context')
+  if (sourceVariant === 'text') {
+    return capability.supportedRoles.filter((role) => role === 'text_context')
+  }
   if (sourceVariant === 'image') {
     const roles = capability.supportedRoles.filter(
       (role) => role === 'image_reference' || role === 'text_context'
@@ -222,7 +243,39 @@ export function getAllowedReferenceSourceVariants(
   targetVariant: ContentNodeVariant,
   model: string
 ): ContentNodeVariant[] {
-  return getContentReferenceCapability(targetVariant, model).allowedSourceVariants
+  return getContentReferenceCapability(targetVariant, model).allowedSourceVariants.filter(
+    (sourceVariant) => canContentNodeVariantReferenceSource(targetVariant, sourceVariant)
+  )
+}
+
+export function canContentNodeVariantReferenceSource(
+  targetVariant: ContentNodeVariant,
+  sourceVariant: ContentNodeVariant
+): boolean {
+  return REFERENCE_TARGET_VARIANTS_BY_SOURCE[sourceVariant].includes(targetVariant)
+}
+
+export function getAllowedReferencingContentNodeVariants(
+  sourceVariant: ContentNodeVariant
+): ContentNodeVariant[] {
+  return CONTENT_NODE_VARIANTS.filter((targetVariant) =>
+    canContentNodeVariantReferenceSource(targetVariant, sourceVariant)
+  )
+}
+
+export function getModelReferenceCompatibility(params: {
+  targetVariant: ContentNodeVariant
+  model: string
+  references: ContentReferenceRecord[]
+}): {
+  compatible: boolean
+  disabledReason: string | null
+} {
+  const disabledReason = getModelDisabledReason(params)
+  return {
+    compatible: !disabledReason,
+    disabledReason,
+  }
 }
 
 export function normalizeContentReferences(value: unknown): ContentReferenceRecord[] {
@@ -373,8 +426,7 @@ export function buildStructuredContentReferenceContext(params: {
   return {
     text: uniq(text),
     images: images.filter(
-      (image, index, items) =>
-        items.findIndex((candidate) => candidate.key === image.key) === index
+      (image, index, items) => items.findIndex((candidate) => candidate.key === image.key) === index
     ),
   }
 }
@@ -509,7 +561,10 @@ export function findMatchingContentReferenceEdgeIds(params: {
   return params.edges.flatMap((edge) => {
     if (!edge.id || !isContentReferenceEdgeLike(edge)) return []
 
-    if (params.reference.role === 'video_first_frame' || params.reference.role === 'video_last_frame') {
+    if (
+      params.reference.role === 'video_first_frame' ||
+      params.reference.role === 'video_last_frame'
+    ) {
       const expectedAutoLinkType =
         params.reference.role === 'video_first_frame' ? 'video_first_frame' : 'video_last_frame'
 

@@ -42,6 +42,7 @@ import {
   isPureCanvasBlockType,
 } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import {
+  CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX,
   type ContentReferenceAutoLinkType,
   createContentReferenceEdge,
   findAutoVideoContentReferenceEdge,
@@ -53,8 +54,10 @@ import {
   isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
+  type ContentNodeVariant,
   type ContentReferenceRecord,
   getDefaultReferenceRole,
+  getModelDisabledReason,
   normalizeContentReferences,
   upsertContentReference,
 } from '@/lib/workflows/content-references'
@@ -416,6 +419,85 @@ interface ContentReferenceEdgeMenuState {
   edgeId: string
   x: number
   y: number
+}
+
+interface ConnectionStartParams {
+  nodeId?: string | null
+  handleId?: string | null
+}
+
+interface CanvasConnection {
+  source?: string | null
+  target?: string | null
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
+function isContentNodeVariantValue(value: unknown): value is ContentNodeVariant {
+  return value === 'text' || value === 'image' || value === 'video' || value === 'audio'
+}
+
+function isContentReferenceSourceHandle(handleId: string | null | undefined): boolean {
+  return typeof handleId === 'string' && handleId.startsWith(CONTENT_REFERENCE_SOURCE_HANDLE_PREFIX)
+}
+
+function getContentReferenceSourceAnchorFromHandle(
+  handleId: string | null | undefined
+): 'left' | 'right' {
+  return typeof handleId === 'string' && handleId.endsWith('-left') ? 'left' : 'right'
+}
+
+function getLiveContentSubblockValue(params: {
+  block: BlockState | undefined
+  values: Record<string, unknown> | undefined
+  key: string
+}): unknown {
+  if (params.values && params.key in params.values) {
+    return params.values[params.key]
+  }
+  return getStoredSubBlockValue(
+    params.block?.subBlocks as Record<string, unknown> | undefined,
+    params.key
+  )
+}
+
+function resolveContentBlockVariant(params: {
+  block: BlockState | undefined
+  values: Record<string, unknown> | undefined
+}): ContentNodeVariant | null {
+  if (!isContentBlockState(params.block)) return null
+  const value = getLiveContentSubblockValue({
+    block: params.block,
+    values: params.values,
+    key: 'contentVariant',
+  })
+  return isContentNodeVariantValue(value) ? value : 'text'
+}
+
+function resolveContentBlockReferenceModel(params: {
+  block: BlockState | undefined
+  values: Record<string, unknown> | undefined
+  variant: ContentNodeVariant
+}): string {
+  if (params.variant === 'image') {
+    const model = getLiveContentSubblockValue({ ...params, key: 'aiModel' })
+    return typeof model === 'string' && model.trim().length > 0 ? model : 'jimeng-4.5'
+  }
+
+  if (params.variant === 'audio') {
+    const model = getLiveContentSubblockValue({ ...params, key: 'audioModel' })
+    return typeof model === 'string' && model.trim().length > 0 ? model : 'suno-v5-beta'
+  }
+
+  if (params.variant === 'video') {
+    const modelFamily = getLiveContentSubblockValue({ ...params, key: 'videoModelFamily' })
+    return modelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+  }
+
+  const model = getLiveContentSubblockValue({ ...params, key: 'aiModel' })
+  return typeof model === 'string' && model.trim().length > 0
+    ? model
+    : 'gemini-3.1-flash-lite-preview'
 }
 
 /**
@@ -893,7 +975,7 @@ const WorkflowContent = React.memo(
       )
 
     /** Stores source node/handle info when a connection drag starts for drop-on-block detection. */
-    const connectionSourceRef = useRef<{ nodeId: string; handleId: string } | null>(null)
+    const connectionSourceRef = useRef<ConnectionStartParams | null>(null)
 
     /** Tracks whether onConnect successfully handled the connection (ReactFlow pattern). */
     const connectionCompletedRef = useRef(false)
@@ -2877,7 +2959,13 @@ const WorkflowContent = React.memo(
           logger.error('Error in onDragOver', { err })
         }
       },
-      [screenToFlowPosition, isPointInLoopNode, getNodes, highlightContainerNode, resetDragHighlights]
+      [
+        screenToFlowPosition,
+        isPointInLoopNode,
+        getNodes,
+        highlightContainerNode,
+        resetDragHighlights,
+      ]
     )
 
     const loadingWorkflowRef = useRef<string | null>(null)
@@ -3688,32 +3776,199 @@ const WorkflowContent = React.memo(
       [getNodes]
     )
 
+    const createContentReferenceFromHandleDrag = useCallback(
+      (sourceBlockId: string, targetBlockId: string, sourceAnchor: 'left' | 'right') => {
+        if (sourceBlockId === targetBlockId) return false
+
+        const sourceBlock = blocks[sourceBlockId]
+        const targetBlock = blocks[targetBlockId]
+        if (!isContentBlockState(sourceBlock) || !isContentBlockState(targetBlock)) {
+          return false
+        }
+
+        const workflowValues = activeWorkflowId
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]
+          : undefined
+        const sourceValues = workflowValues?.[sourceBlockId] as Record<string, unknown> | undefined
+        const targetValues = workflowValues?.[targetBlockId] as Record<string, unknown> | undefined
+        const sourceVariant = resolveContentBlockVariant({
+          block: sourceBlock,
+          values: sourceValues,
+        })
+        const targetVariant = resolveContentBlockVariant({
+          block: targetBlock,
+          values: targetValues,
+        })
+
+        if (!sourceVariant || !targetVariant) return false
+
+        const targetModel = resolveContentBlockReferenceModel({
+          block: targetBlock,
+          values: targetValues,
+          variant: targetVariant,
+        })
+        const referenceRole = getDefaultReferenceRole({
+          targetVariant,
+          model: targetModel,
+          sourceVariant,
+        })
+        if (!referenceRole) return false
+
+        const currentReferences = normalizeContentReferences(
+          getLiveContentSubblockValue({
+            block: targetBlock,
+            values: targetValues,
+            key: 'contentReferences',
+          })
+        )
+        const nextReferences = upsertContentReference(currentReferences, {
+          sourceBlockId,
+          sourceVariant,
+          role: referenceRole,
+        })
+        const disabledReason = getModelDisabledReason({
+          targetVariant,
+          model: targetModel,
+          references: nextReferences,
+        })
+        if (disabledReason) return false
+
+        const isVideoFrameReference =
+          referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+        const edgeSourceId = isVideoFrameReference ? sourceBlockId : targetBlockId
+        const edgeTargetId = isVideoFrameReference ? targetBlockId : sourceBlockId
+        const edgeSourcePosition = blocks[edgeSourceId]?.position ?? { x: 0, y: 0 }
+        const edgeTargetPosition = blocks[edgeTargetId]?.position ?? { x: 0, y: 0 }
+        const derivedSourceAnchor = edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
+        const derivedTargetAnchor = getContentReferenceAnchorForTarget({
+          sourceX: edgeSourcePosition.x,
+          targetX: edgeTargetPosition.x,
+        })
+
+        setContentReferenceEdgeMenu(null)
+        collaborativeSetSubblockValue(targetBlockId, 'contentReferences', nextReferences)
+
+        if (isVideoFrameReference) {
+          const previousEdge = findAutoVideoContentReferenceEdge(
+            edges,
+            targetBlockId,
+            referenceRole
+          )
+          if (previousEdge?.id) {
+            collaborativeBatchRemoveEdges([previousEdge.id], { skipUndoRedo: true })
+          }
+
+          const sourceFile = getLiveContentSubblockValue({
+            block: sourceBlock,
+            values: sourceValues,
+            key: 'file',
+          })
+          if (hasUploadedFileSnapshot(sourceFile)) {
+            const currentVideoMedia = normalizeVideoMediaSnapshots(
+              getLiveContentSubblockValue({
+                block: targetBlock,
+                values: targetValues,
+                key: 'videoMedia',
+              })
+            )
+            collaborativeSetSubblockValue(
+              targetBlockId,
+              'videoMedia',
+              upsertVideoMediaFile(
+                currentVideoMedia,
+                referenceRole === 'video_first_frame' ? 'first_frame' : 'last_frame',
+                sourceFile
+              )
+            )
+          }
+        }
+
+        const autoLinkType =
+          referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+            ? referenceRole
+            : undefined
+        const edge = createContentReferenceEdge({
+          id: generateId(),
+          source: edgeSourceId,
+          target: edgeTargetId,
+          sourceHandle: getContentReferenceSourceHandleId(
+            isVideoFrameReference ? sourceAnchor : derivedSourceAnchor
+          ),
+          targetHandle: getContentReferenceTargetHandleId(
+            isVideoFrameReference ? derivedTargetAnchor : sourceAnchor
+          ),
+          autoLinkType,
+        })
+
+        const alreadyLinked =
+          !isVideoFrameReference &&
+          edges.some(
+            (candidate) =>
+              isContentReferenceEdge(candidate) &&
+              !getContentReferenceAutoLinkType(candidate) &&
+              candidate.source === edgeSourceId &&
+              candidate.target === edgeTargetId
+          )
+
+        if (!alreadyLinked) {
+          collaborativeBatchAddEdges([edge])
+        }
+        return true
+      },
+      [
+        activeWorkflowId,
+        blocks,
+        collaborativeBatchAddEdges,
+        collaborativeBatchRemoveEdges,
+        collaborativeSetSubblockValue,
+        edges,
+      ]
+    )
+
     /**
      * Captures the source handle when a connection drag starts.
      * Resets connectionCompletedRef to track if onConnect handles this connection.
      */
-    const onConnectStart = useCallback((_event: any, params: any) => {
-      const handleId: string | undefined = params?.handleId
+    const onConnectStart = useCallback((_event: unknown, params: ConnectionStartParams) => {
+      const handleId = params.handleId
       setIsErrorConnectionDrag(handleId === 'error')
       connectionSourceRef.current = {
-        nodeId: params?.nodeId,
-        handleId: params?.handleId,
+        nodeId: params.nodeId ?? undefined,
+        handleId: params.handleId ?? undefined,
       }
       connectionCompletedRef.current = false
     }, [])
 
     /** Handles new edge connections with container boundary validation. */
     const onConnect = useCallback(
-      (connection: any) => {
-        if (connection.source && connection.target) {
+      (connection: CanvasConnection) => {
+        const sourceId = connection.source
+        const targetId = connection.target
+        if (sourceId && targetId) {
+          const validConnection = {
+            source: sourceId,
+            target: targetId,
+            sourceHandle: connection.sourceHandle,
+            targetHandle: connection.targetHandle,
+          }
+
           // Check if connecting nodes across container boundaries
-          const sourceNode = getNodes().find((n) => n.id === connection.source)
-          const targetNode = getNodes().find((n) => n.id === connection.target)
+          const sourceNode = getNodes().find((n) => n.id === sourceId)
+          const targetNode = getNodes().find((n) => n.id === targetId)
 
           if (!sourceNode || !targetNode) return
 
+          if (isContentReferenceSourceHandle(connection.sourceHandle)) {
+            connectionCompletedRef.current = createContentReferenceFromHandleDrag(
+              sourceNode.id,
+              targetNode.id,
+              getContentReferenceSourceAnchorFromHandle(connection.sourceHandle)
+            )
+            return
+          }
+
           // Prevent connections to protected blocks (outbound from locked blocks is allowed)
-          if (isEdgeProtected(connection, blocks)) {
+          if (isEdgeProtected(validConnection, blocks)) {
             addNotification({
               level: 'info',
               message: 'Cannot connect to locked blocks or blocks inside locked containers',
@@ -3727,7 +3982,7 @@ const WorkflowContent = React.memo(
             blocks[sourceNode.id]?.data?.parentId ||
             (connection.sourceHandle === 'loop-start-source' ||
             connection.sourceHandle === 'parallel-start-source'
-              ? connection.source
+              ? sourceId
               : undefined)
           const targetParentId = blocks[targetNode.id]?.data?.parentId
 
@@ -3743,7 +3998,7 @@ const WorkflowContent = React.memo(
             // This is a connection from container start to a node inside the container - always allow
 
             addEdge({
-              ...connection,
+              ...validConnection,
               id: edgeId,
               type: 'workflowEdge',
               // Add metadata about the container context
@@ -3771,7 +4026,7 @@ const WorkflowContent = React.memo(
 
           // Add appropriate metadata for container context
           addEdge({
-            ...connection,
+            ...validConnection,
             id: edgeId,
             type: 'workflowEdge',
             data: isInsideContainer
@@ -3784,7 +4039,14 @@ const WorkflowContent = React.memo(
           connectionCompletedRef.current = true
         }
       },
-      [addEdge, getNodes, blocks, addNotification, activeWorkflowId]
+      [
+        addEdge,
+        getNodes,
+        blocks,
+        addNotification,
+        activeWorkflowId,
+        createContentReferenceFromHandleDrag,
+      ]
     )
 
     /**
@@ -3816,6 +4078,16 @@ const WorkflowContent = React.memo(
 
         // Create connection if valid target found (handle-to-body case)
         if (targetNode && targetNode.id !== source.nodeId) {
+          if (isContentReferenceSourceHandle(source.handleId)) {
+            createContentReferenceFromHandleDrag(
+              source.nodeId,
+              targetNode.id,
+              getContentReferenceSourceAnchorFromHandle(source.handleId)
+            )
+            connectionSourceRef.current = null
+            return
+          }
+
           onConnect({
             source: source.nodeId,
             sourceHandle: source.handleId,
@@ -3826,7 +4098,7 @@ const WorkflowContent = React.memo(
 
         connectionSourceRef.current = null
       },
-      [findNodeAtScreenPosition, onConnect]
+      [createContentReferenceFromHandleDrag, findNodeAtScreenPosition, onConnect]
     )
 
     /** Handles node drag to detect container intersections and update highlighting. */
@@ -3979,7 +4251,7 @@ const WorkflowContent = React.memo(
         })
 
         // Capture all selected nodes' positions for multi-node undo/redo.
-        // Also include the dragged node itself — during shift+click+drag, ReactFlow
+        // Also include the dragged node itself - during shift+click+drag, ReactFlow
         // may have toggled (deselected) the node before drag starts, so it might not
         // appear in the selected set yet.
         const allNodes = getNodes()
@@ -4005,7 +4277,7 @@ const WorkflowContent = React.memo(
 
         // When shift+clicking an already-selected node, ReactFlow toggles (deselects)
         // it via onNodesChange before drag starts. Re-select the dragged node so all
-        // previously selected nodes move together as a group — but only if the
+        // previously selected nodes move together as a group - but only if the
         // deselection wasn't from a parent-child conflict (e.g. dragging a child
         // when its parent subflow is selected).
         const draggedNodeInSelected = allNodes.find((n) => n.id === node.id)
@@ -4396,7 +4668,9 @@ const WorkflowContent = React.memo(
             intersectingContainers,
             '__selection__',
             (_ancestorId, containerId) =>
-              nodes.some((draggedNode) => geometrySnapshot.isDescendantOf(draggedNode.id, containerId))
+              nodes.some((draggedNode) =>
+                geometrySnapshot.isDescendantOf(draggedNode.id, containerId)
+              )
           )
 
           if (bestMatch && bestMatch.container.id !== potentialParentId) {
@@ -4539,7 +4813,11 @@ const WorkflowContent = React.memo(
 
     const setContentReferencesForBlock = useCallback(
       (blockId: string, references: ContentReferenceRecord[]) => {
-        collaborativeSetSubblockValue(blockId, 'contentReferences', normalizeContentReferences(references))
+        collaborativeSetSubblockValue(
+          blockId,
+          'contentReferences',
+          normalizeContentReferences(references)
+        )
       },
       [collaborativeSetSubblockValue]
     )
@@ -4782,14 +5060,14 @@ const WorkflowContent = React.memo(
       }
 
       if (contentReferenceSelection) {
-        toast({ message: '请选择另一个内容节点完成连线，按 Esc 取消。', duration: 2200 })
+        clearContentReferenceSelection()
         return
       }
 
       setSelectedEdges(new Map())
       setContentReferenceEdgeMenu(null)
       usePanelEditorStore.getState().clearCurrentBlock()
-    }, [contentReferenceSelection, frameSelection])
+    }, [clearContentReferenceSelection, contentReferenceSelection, frameSelection])
 
     /**
      * Handles node click to select the node in ReactFlow.
@@ -4811,12 +5089,12 @@ const WorkflowContent = React.memo(
 
           const targetBlock = blocks[node.id]
           if (!isContentBlockState(targetBlock)) {
-            toast({ message: '只能连接到文本、图片、视频或音频内容节点。', duration: 2200 })
+            toast({ message: 'Only content nodes can be referenced.', duration: 2200 })
             return
           }
 
           if (node.id === contentReferenceSelection.sourceBlockId) {
-            toast({ message: '不能连接到自己，请选择另一个内容节点。', duration: 2200 })
+            toast({ message: 'Choose a different content node to reference.', duration: 2200 })
             return
           }
 
@@ -4859,19 +5137,20 @@ const WorkflowContent = React.memo(
 
           if (!alreadyLinked) {
             collaborativeBatchAddEdges([
-            createContentReferenceEdge({
-              id: generateId(),
-              source: contentReferenceSelection.sourceBlockId,
-              target: node.id,
-              ...buildContentReferenceHandles({
-                sourceX: blocks[contentReferenceSelection.sourceBlockId]?.position.x ?? 0,
-                targetX: blocks[node.id]?.position.x ?? 0,
-                sourceAnchor: contentReferenceSelection.sourceAnchor,
+              createContentReferenceEdge({
+                id: generateId(),
+                source: contentReferenceSelection.sourceBlockId,
+                target: node.id,
+                ...buildContentReferenceHandles({
+                  sourceX: blocks[contentReferenceSelection.sourceBlockId]?.position.x ?? 0,
+                  targetX: blocks[node.id]?.position.x ?? 0,
+                  sourceAnchor: contentReferenceSelection.sourceAnchor,
+                }),
               }),
-            }),
             ])
           }
-          toast.success('内容引用线已创建。', { duration: 1800 })
+
+          clearContentReferenceSelection()
           return
         }
 
@@ -4906,6 +5185,7 @@ const WorkflowContent = React.memo(
         applyVideoFrameSelection,
         blocks,
         buildContentReferenceHandles,
+        clearContentReferenceSelection,
         collaborativeBatchAddEdges,
         contentReferenceSelection,
         edges,
@@ -5010,12 +5290,12 @@ const WorkflowContent = React.memo(
     // always sit above edges and other blocks.
     //
     // Z-index layers (regular blocks):
-    //   21 — default
-    //   22 — last interacted (dragged/selected, now deselected) so it stays on
+    //   21 - default
+    //   22 - last interacted (dragged/selected, now deselected) so it stays on
     //        top of siblings until another block is touched
-    //   31 — currently selected (above connected edges at z-22 and handles at z-30)
+    //   31 - currently selected (above connected edges at z-22 and handles at z-30)
     //
-    // Subflow container nodes are skipped — they use depth-based zIndex for
+    // Subflow container nodes are skipped - they use depth-based zIndex for
     // correct parent/child layering and must not be bumped.
     // Child blocks inside containers already carry zIndex 1000 and are bumped by
     // +10 when selected so they stay above their sibling child blocks.

@@ -40,7 +40,7 @@ const TEXT_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'text',
   selectionMode: 'multi',
-  allowedSourceVariants: ['text', 'video', 'audio'],
+  allowedSourceVariants: ['text', 'video'],
   supportedRoles: ['text_context'],
   slots: [],
 }
@@ -49,7 +49,7 @@ const TEXT_MULTIMODAL_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'text',
   selectionMode: 'multi',
-  allowedSourceVariants: ['text', 'image', 'video', 'audio'],
+  allowedSourceVariants: ['text', 'image', 'video'],
   supportedRoles: ['text_context', 'image_reference'],
   slots: [],
 }
@@ -85,8 +85,8 @@ const VIDEO_TEXT_ONLY_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: [],
-  supportedRoles: [],
+  allowedSourceVariants: ['text', 'audio'],
+  supportedRoles: ['text_context', 'audio_reference'],
   slots: [],
 }
 
@@ -94,8 +94,8 @@ const VIDEO_FIRST_FRAME_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = 
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: ['image'],
-  supportedRoles: ['video_first_frame'],
+  allowedSourceVariants: ['text', 'image', 'audio'],
+  supportedRoles: ['text_context', 'video_first_frame', 'audio_reference'],
   slots: [{ role: 'video_first_frame', sourceVariants: ['image'], maxCount: 1 }],
 }
 
@@ -103,8 +103,8 @@ const VIDEO_FIRST_AND_LAST_CAPABILITY: Omit<ContentReferenceCapability, 'model'>
   authMode: 'api_key_only',
   targetVariant: 'video',
   selectionMode: 'slot',
-  allowedSourceVariants: ['image'],
-  supportedRoles: ['video_first_frame', 'video_last_frame'],
+  allowedSourceVariants: ['text', 'image', 'audio'],
+  supportedRoles: ['text_context', 'video_first_frame', 'video_last_frame', 'audio_reference'],
   slots: [
     { role: 'video_first_frame', sourceVariants: ['image'], maxCount: 1 },
     { role: 'video_last_frame', sourceVariants: ['image'], maxCount: 1 },
