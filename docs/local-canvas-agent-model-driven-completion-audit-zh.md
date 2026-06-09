@@ -32,7 +32,7 @@ Local Canvas Agent 已经从旧的规则 planner 主路径，推进到模型驱�
 - Canvas summary cache 已落到 workflow hash 派生缓存，不放进 chat memory；画布变化后 hash 变更自然失效。
 - 旧 planner 仍在代码中作为显式 legacy/hybrid 路径存在，不再是默认主路径；是否逐步下线属于后续清理，不阻塞本阶段完成。
 
-## 2. 阶段 1-9 完成度
+## 2. 阶段 1-10 完成度
 
 | 阶段 | 方案目标 | 当前状态 | 证据 | 缺口 |
 | --- | --- | --- | --- | --- |
@@ -45,6 +45,7 @@ Local Canvas Agent 已经从旧的规则 planner 主路径，推进到模型驱�
 | 7. Tool Result Budget | 大结果不撑爆上下文；摘要和 ref | 基础版完成 | `tool-result-budget.ts` 限制 recent observations、单个 output preview、整体 prompt 长度；`memory.ts` 持久化 `ToolResultRef` storageKey 并提供按 ref 回读 helper；`decision.test.ts` 覆盖下一轮 prompt 注入 ref 摘要且不暴露 storageKey | 当前没有新增模型工具让模型主动按 ref 拉取完整输出；需要时可再加只读 `read_tool_result_ref` |
 | 8. 媒体分析工具 | 选中视频/图片/音频可分析；无 file 不假装分析真实媒体 | image binary 基础版完成 | `media-tools.ts` 支持 image/video/audio、`analysisGoal`、prompt/file metadata/stored context；image 节点在 provider 支持图片 message parts 时可下载 storage/url 图片 bytes 并通过多模态模型产出 `binary_image_analysis`；输出 `mediaContentAccess`；`media-tools.test.ts` 覆盖 stored context、binary image、provider 不支持时降级、file metadata only、prompt only、非媒体拒绝；`tool-loop.test.ts` 覆盖读取选中视频后调用媒体分析且不写画布 | video/audio 仍没有抽帧/转写，只能基于 stored context、prompt 和 metadata |
 | 9. 灰度和回归 | 新旧路径可切换；完成自动和手工 smoke | 完成 | env/payload 支持 `legacy|hybrid|model_tool_loop`；默认已切 `model_tool_loop`；`docs/local-canvas-agent-phase-2-code-validation-and-manual-smoke-zh.md` 记录 API/SSE、browser、provider、abort evidence；本轮自动测试已覆盖 19 files / 199 tests；2026-06-09 当前工作树重跑 non-canvas / consult / content-chain / manual / selected / provider / abort / browser smoke | image/video/audio 字段 smoke 复用旧 workflow 时 diff 可能幂等，若要证明 diff 可新建 fresh workflow 重跑 |
+| 10. 内容引用和生成编排 | 创建节点后按需求自动真实生成；内容链引用关系可被 agent 一等操作；不生成时不误触发 provider | 代码侧完成并已做真实 smoke | `canvas-patch.ts` / `canvas-verify.ts` 支持 `add_content_reference`、`remove_content_reference`、引用字段、content reference edge、video first/last frame media slot；`canvas-tools.ts` 工具结果输出 `machineSummary.createdNodeMap`、`writeBackFields`、`generationCandidates`、`referenceChanges`；`tool-loop.ts` 在明确生成请求下自动执行 `apply_patch -> verify_patch -> generate_node_output -> verify_patch`，并按引用依赖排序候选；2026-06-10 smoke 覆盖修改选中图片不生成、创建内容链不生成、图片分析、创建并生成图片 | 后续可把 full text/image/video/audio 内容链真实生成做成稳定 CI smoke；video/audio provider 耗时仍取决于外部服务 |
 
 ## 3. 当前关键行为链路
 

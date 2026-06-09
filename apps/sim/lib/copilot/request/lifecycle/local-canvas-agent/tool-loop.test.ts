@@ -482,6 +482,151 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已完成画布修改、生成 1 个节点内容，并完成验证。')
   })
 
+  it('auto-generates referenced content-chain nodes in dependency order', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'video',
+          kind: 'video' as const,
+          title: '成片',
+          fields: { videoPrompt: '基于主视觉做慢镜头推进。' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'visual',
+          kind: 'image' as const,
+          title: '主视觉',
+          fields: { aiPrompt: '松林午茶主视觉。' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'script',
+          kind: 'text' as const,
+          title: '脚本',
+          fields: { contentHtml: '<p>松林午茶短视频脚本。</p>' },
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'visual',
+          sourceNodeId: 'script',
+          role: 'text_context' as const,
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'video',
+          sourceNodeId: 'visual',
+          role: 'video_first_frame' as const,
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: { patch },
+      userVisibleReason: '我会创建内容链并生成节点内容。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          verification: { success: true },
+          machineSummary: {
+            createdNodeMap: {
+              video: 'real-video-id',
+              visual: 'real-image-id',
+              script: 'real-script-id',
+            },
+            generationCandidates: [
+              { nodeId: 'real-video-id', clientNodeId: 'video', kind: 'video' },
+              { nodeId: 'real-image-id', clientNodeId: 'visual', kind: 'image' },
+              { nodeId: 'real-script-id', clientNodeId: 'script', kind: 'text' },
+            ],
+            referenceChanges: [
+              {
+                type: 'add_content_reference',
+                consumerNodeId: 'visual',
+                sourceNodeId: 'script',
+                role: 'text_context',
+              },
+              {
+                type: 'add_content_reference',
+                consumerNodeId: 'video',
+                sourceNodeId: 'visual',
+                role: 'video_first_frame',
+              },
+            ],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-script-id', kind: 'text', verifiedField: 'contentHtml' },
+        summary: 'Generated text',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated text',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-image-id', kind: 'image', verifiedField: 'file' },
+        summary: 'Generated image',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated image',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: { nodeId: 'real-video-id', kind: 'video', verifiedField: 'file' },
+        summary: 'Generated video',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified generated video',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '创建并生成一个松林午茶短视频内容链。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(3, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-script-id' },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(5, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-image-id' },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(7, expect.anything(), {
+      name: 'canvas.generate_node_output',
+      input: { nodeId: 'real-video-id' },
+    })
+    expect(result.answer).toBe('已完成画布修改、生成 3 个节点内容，并完成验证。')
+  })
+
   it('does not auto-generate when the user explicitly forbids generation in an edit request', async () => {
     const patch = {
       operations: [

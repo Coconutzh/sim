@@ -1278,6 +1278,25 @@ LOCAL_CANVAS_AGENT_MODE=legacy | model_tool_loop | hybrid
 - 回归测试矩阵。
 - 手工测试文档更新。
 
+### 阶段 10：内容引用和生成编排
+
+目标：
+
+- agent 能把“创建节点”和“真实生成节点输出”串成一个可靠链路。
+- 内容链里的 text / image / video / audio 节点能通过一等 content reference 表达生成依赖。
+- 生成顺序按引用依赖执行，避免 video 在 image 首帧生成前先跑。
+- 明确“不生成”时只改字段，不误触发 provider。
+- 媒体分析有直接收尾路径，工具已有真实分析结果时不再强制多跑一轮总结模型。
+
+交付：
+
+- `add_content_reference` / `remove_content_reference` patch operation。
+- `canvas.apply_patch -> canvas.verify_patch -> canvas.generate_node_output -> canvas.verify_patch` 自动编排。
+- `generationCandidates` 按 `referenceChanges` 拓扑排序。
+- `canvas.verify_patch` 字段级、引用边、video media slot 验证。
+- `media.analyze_node_media` 直接格式化真实分析结果。
+- 性能 smoke 表：普通问答、只讨论、修改选中节点、创建内容链、分析图片、生成图片。
+
 ## 19. 验收测试矩阵
 
 ### 19.1 隔离

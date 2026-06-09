@@ -690,13 +690,65 @@ function hasNegatedGenerationRequest(message: string): boolean {
 function readGenerationCandidatesFromOutput(output: unknown): string[] {
   const record = asRecord(output)
   const machineSummary = asRecord(record.machineSummary)
+  const createdNodeMap = asRecord(machineSummary.createdNodeMap)
   const rawCandidates = Array.isArray(machineSummary.generationCandidates)
     ? machineSummary.generationCandidates
     : []
-  return rawCandidates
+  const candidates = rawCandidates
     .map((candidate) => asRecord(candidate).nodeId)
     .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.trim().length > 0)
     .filter((nodeId, index, nodeIds) => nodeIds.indexOf(nodeId) === index)
+  const referenceChanges = Array.isArray(machineSummary.referenceChanges)
+    ? machineSummary.referenceChanges
+    : []
+  return orderGenerationCandidatesByReferences(candidates, referenceChanges, createdNodeMap)
+}
+
+function resolveGeneratedNodeRef(value: unknown, createdNodeMap: Record<string, unknown>): string {
+  if (typeof value !== 'string' || !value.trim()) return ''
+  const resolved = createdNodeMap[value]
+  return typeof resolved === 'string' && resolved.trim() ? resolved : value
+}
+
+function orderGenerationCandidatesByReferences(
+  candidates: string[],
+  referenceChanges: unknown[],
+  createdNodeMap: Record<string, unknown>
+): string[] {
+  const candidateSet = new Set(candidates)
+  const dependencies = new Map(candidates.map((nodeId) => [nodeId, new Set<string>()]))
+  for (const change of referenceChanges) {
+    const record = asRecord(change)
+    if (record.type && record.type !== 'add_content_reference') continue
+    const consumerNodeId = resolveGeneratedNodeRef(record.consumerNodeId, createdNodeMap)
+    const sourceNodeId = resolveGeneratedNodeRef(record.sourceNodeId, createdNodeMap)
+    if (
+      !consumerNodeId ||
+      !sourceNodeId ||
+      consumerNodeId === sourceNodeId ||
+      !candidateSet.has(consumerNodeId) ||
+      !candidateSet.has(sourceNodeId)
+    ) {
+      continue
+    }
+    dependencies.get(consumerNodeId)?.add(sourceNodeId)
+  }
+
+  const ordered: string[] = []
+  const remaining = new Set(candidates)
+  while (remaining.size > 0) {
+    const next = candidates.find((nodeId) => {
+      if (!remaining.has(nodeId)) return false
+      const nodeDependencies = dependencies.get(nodeId)
+      return (
+        !nodeDependencies || [...nodeDependencies].every((dependency) => !remaining.has(dependency))
+      )
+    })
+    if (!next) return [...ordered, ...candidates.filter((nodeId) => remaining.has(nodeId))]
+    ordered.push(next)
+    remaining.delete(next)
+  }
+  return ordered
 }
 
 function buildVerifiedCompletionAnswer(observations: LocalAgentObservation[]): string {
