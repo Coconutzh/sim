@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import type {
   ImageAspectRatioValue,
@@ -37,6 +38,28 @@ interface RepaintWorkspaceImageInput {
   abortSignal?: AbortSignal
 }
 
+interface OutpaintWorkspaceImageInput {
+  workspaceId: string
+  userId: string
+  resolution: ImageResolutionValue
+  sourceImage: UserFileLike
+  targetAspectRatio: 'original' | '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'custom'
+  customAspectRatio?: {
+    width: number
+    height: number
+  }
+  placement: {
+    x: number
+    y: number
+    width: number
+    height: number
+    canvasWidth: number
+    canvasHeight: number
+  }
+  prompt?: string
+  abortSignal?: AbortSignal
+}
+
 interface GenerateWorkspaceImageFromPromptResult {
   file: UserFile
   metadata: {
@@ -47,6 +70,13 @@ interface GenerateWorkspaceImageFromPromptResult {
 }
 
 type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
+type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
+
+const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, number> = {
+  '1K': 1024,
+  '2K': 2048,
+  '4K': 4096,
+}
 
 function getGeneratedFileName(mimeType: string): string {
   if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'generated-image.jpg'
@@ -106,6 +136,100 @@ async function hydrateImageReferenceContext(
   }
 }
 
+function getHydratedImageBuffer(image: UserFileLike): Buffer | null {
+  if (!image.base64) return null
+  return Buffer.from(image.base64, 'base64')
+}
+
+function getOutpaintGuideSize({
+  canvasWidth,
+  canvasHeight,
+  resolution,
+}: {
+  canvasWidth: number
+  canvasHeight: number
+  resolution: ImageResolutionValue
+}): { width: number; height: number; scale: number } {
+  const longestEdge = OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION[resolution]
+  const scale = longestEdge / Math.max(canvasWidth, canvasHeight)
+  return {
+    width: Math.max(1, Math.round(canvasWidth * scale)),
+    height: Math.max(1, Math.round(canvasHeight * scale)),
+    scale,
+  }
+}
+
+async function buildOutpaintGuideImages({
+  sourceImage,
+  placement,
+  resolution,
+}: Pick<OutpaintWorkspaceImageInput, 'placement' | 'resolution'> & {
+  sourceImage: UserFileLike
+}): Promise<{ layoutGuide: UserFileLike; maskGuide: UserFileLike }> {
+  const sourceBuffer = getHydratedImageBuffer(sourceImage)
+  if (!sourceBuffer) {
+    throw new Error('Source image could not be loaded for outpainting.')
+  }
+
+  const guideSize = getOutpaintGuideSize({
+    canvasWidth: placement.canvasWidth,
+    canvasHeight: placement.canvasHeight,
+    resolution,
+  })
+  const sourceRegion = {
+    left: Math.round(placement.x * guideSize.scale),
+    top: Math.round(placement.y * guideSize.scale),
+    width: Math.max(1, Math.round(placement.width * guideSize.scale)),
+    height: Math.max(1, Math.round(placement.height * guideSize.scale)),
+  }
+  const resizedSource = await sharp(sourceBuffer)
+    .resize(sourceRegion.width, sourceRegion.height, { fit: 'fill' })
+    .png()
+    .toBuffer()
+  const layoutBuffer = await sharp({
+    create: {
+      width: guideSize.width,
+      height: guideSize.height,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 0 },
+    },
+  })
+    .composite([
+      {
+        input: resizedSource,
+        left: sourceRegion.left,
+        top: sourceRegion.top,
+      },
+    ])
+    .png()
+    .toBuffer()
+  const maskSvg = Buffer.from(
+    `<svg width="${guideSize.width}" height="${guideSize.height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="${sourceRegion.left}" y="${sourceRegion.top}" width="${sourceRegion.width}" height="${sourceRegion.height}" fill="black"/></svg>`
+  )
+  const maskBuffer = await sharp(maskSvg).png().toBuffer()
+
+  return {
+    layoutGuide: {
+      id: '',
+      name: 'outpaint-layout-guide.png',
+      url: '',
+      key: 'outpaint-layout-guide.png',
+      size: layoutBuffer.byteLength,
+      type: 'image/png',
+      base64: layoutBuffer.toString('base64'),
+    },
+    maskGuide: {
+      id: '',
+      name: 'outpaint-mask-guide.png',
+      url: '',
+      key: 'outpaint-mask-guide.png',
+      size: maskBuffer.byteLength,
+      type: 'image/png',
+      base64: maskBuffer.toString('base64'),
+    },
+  }
+}
+
 export async function generateWorkspaceImageFromPrompt({
   workspaceId,
   userId,
@@ -161,6 +285,28 @@ export function buildWorkspaceImageRepaintPrompt({
   ].join(' ')
 }
 
+export function buildWorkspaceImageOutpaintPrompt({
+  prompt,
+  resolution,
+}: {
+  prompt?: string
+  resolution: ImageResolutionValue
+}): string {
+  const userPrompt = prompt?.trim()
+  return [
+    'Outpaint the provided source image into the target canvas shown by the layout guide.',
+    'The layout guide contains the original image region and transparent surrounding expansion area.',
+    'The mask guide marks the original image region in black and the surrounding expanded areas in white.',
+    'The original image region must remain unchanged as much as possible.',
+    'Fill only the surrounding expanded areas so the result looks like a natural continuation of the same scene, style, lighting, perspective, colors, and texture.',
+    userPrompt ? `User request: ${userPrompt}.` : null,
+    'Do not add watermark, UI, text, borders, frames, or unrelated objects.',
+    `Output at ${resolution} resolution.`,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 export async function repaintWorkspaceImage({
   workspaceId,
   userId,
@@ -182,6 +328,60 @@ export async function repaintWorkspaceImage({
     aspectRatio: 'auto',
     resolution,
     referenceContext,
+    abortSignal,
+  })
+
+  const file = await uploadWorkspaceFile(
+    workspaceId,
+    userId,
+    generatedImage.buffer,
+    getGeneratedFileName(generatedImage.mimeType),
+    generatedImage.mimeType
+  )
+
+  return {
+    file,
+    metadata: {
+      provider: generatedImage.provider,
+      providerModel: generatedImage.providerModel,
+      revisedPrompt: generatedImage.revisedPrompt,
+    },
+  }
+}
+
+export async function outpaintWorkspaceImage({
+  workspaceId,
+  userId,
+  resolution,
+  sourceImage,
+  placement,
+  prompt,
+  abortSignal,
+}: OutpaintWorkspaceImageInput): Promise<OutpaintWorkspaceImageResult> {
+  const sourceContext = await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [sourceImage],
+  })
+  const hydratedSourceImage = sourceContext?.images[0]
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for outpainting.')
+  }
+
+  const { layoutGuide, maskGuide } = await buildOutpaintGuideImages({
+    sourceImage: hydratedSourceImage,
+    placement,
+    resolution,
+  })
+
+  const generatedImage = await generateImageWithProvider({
+    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution }),
+    aspectRatio: 'auto',
+    resolution,
+    referenceContext: {
+      text: [],
+      images: [hydratedSourceImage, layoutGuide, maskGuide],
+    },
     abortSignal,
   })
 

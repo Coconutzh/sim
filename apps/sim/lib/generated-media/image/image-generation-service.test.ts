@@ -27,6 +27,7 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
 
 import {
   generateWorkspaceImageFromPrompt,
+  outpaintWorkspaceImage,
   repaintWorkspaceImage,
 } from '@/lib/generated-media/image/image-generation-service'
 
@@ -245,6 +246,101 @@ describe('generateWorkspaceImageFromPrompt', () => {
         },
       })
     )
+    expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
+      'ws-1',
+      'user-1',
+      expect.any(Buffer),
+      'generated-image.png',
+      'image/png'
+    )
+  })
+
+  it('outpaints with fixed Nano Banana Pro model, generated layout guides, and resolution', async () => {
+    const sourcePngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from(sourcePngBase64, 'base64'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('outpainted-image'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_outpaint',
+      name: 'generated-image.png',
+      size: 16,
+      type: 'image/png',
+      key: 'workspace/ws-1/outpaint.png',
+      url: '/api/files/serve/workspace/ws-1/outpaint.png?context=workspace',
+      context: 'workspace',
+    })
+
+    const result = await outpaintWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      resolution: '2K',
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+      targetAspectRatio: 'custom',
+      customAspectRatio: { width: 2, height: 1 },
+      placement: {
+        x: 120,
+        y: 80,
+        width: 320,
+        height: 180,
+        canvasWidth: 640,
+        canvasHeight: 360,
+      },
+      prompt: 'extend the city skyline',
+    })
+
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        aspectRatio: 'auto',
+        resolution: '2K',
+        prompt: expect.stringContaining('User request: extend the city skyline.'),
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'source-1',
+              base64: sourcePngBase64,
+            }),
+            expect.objectContaining({
+              name: 'outpaint-layout-guide.png',
+              type: 'image/png',
+              base64: expect.any(String),
+            }),
+            expect.objectContaining({
+              name: 'outpaint-mask-guide.png',
+              type: 'image/png',
+              base64: expect.any(String),
+            }),
+          ],
+        },
+      })
+    )
+    expect(result.file).toMatchObject({
+      id: 'wf_outpaint',
+      name: 'generated-image.png',
+      key: 'workspace/ws-1/outpaint.png',
+    })
     expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
       'ws-1',
       'user-1',
