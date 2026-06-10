@@ -134,10 +134,15 @@ export interface StreamingContext {
 
 export interface FileAttachment {
   id: string
+  workspaceFileId?: string
   key: string
-  name: string
-  mimeType: string
+  name?: string
+  filename?: string
+  mimeType?: string
+  media_type?: string
   size: number
+  path?: string
+  storageContext?: 'workspace' | 'mothership'
 }
 
 export interface OrchestratorRequest {

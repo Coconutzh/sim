@@ -4,10 +4,12 @@
 import { featureFlagsMock, workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription } = vi.hoisted(() => ({
-  mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
-  mockGetHighestPrioritySubscription: vi.fn(),
-}))
+const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription, mockTrackChatUpload } =
+  vi.hoisted(() => ({
+    mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
+    mockGetHighestPrioritySubscription: vi.fn(),
+    mockTrackChatUpload: vi.fn(),
+  }))
 
 vi.mock('@/lib/billing/core/subscription', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
@@ -26,6 +28,10 @@ vi.mock('@/lib/mcp/utils', () => ({
 }))
 
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
+
+vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
+  trackChatUpload: mockTrackChatUpload,
+}))
 
 vi.mock('@/tools/registry', () => ({
   tools: {
@@ -48,6 +54,26 @@ vi.mock('@/tools/registry', () => ({
   },
 }))
 
+vi.mock('@/tools/catalog', () => ({
+  toolCatalog: {
+    gmail_send: {
+      id: 'gmail_send',
+      name: 'Gmail Send',
+      description: 'Send emails using Gmail',
+    },
+    brandfetch_search: {
+      id: 'brandfetch_search',
+      name: 'Brandfetch Search',
+      description: 'Search for brands by company name',
+    },
+    run_workflow: {
+      id: 'run_workflow',
+      name: 'Run Workflow',
+      description: 'Run a workflow from the client',
+    },
+  },
+}))
+
 vi.mock('@/tools/utils', () => ({
   getLatestVersionTools: vi.fn((input) => input),
   stripVersionSuffix: vi.fn((toolId: string) => toolId),
@@ -57,7 +83,7 @@ vi.mock('@/tools/params', () => ({
   createUserToolSchema: mockCreateUserToolSchema,
 }))
 
-import { buildIntegrationToolSchemas } from './payload'
+import { buildCopilotRequestPayload, buildIntegrationToolSchemas } from './payload'
 
 describe('buildIntegrationToolSchemas', () => {
   beforeEach(() => {
@@ -121,5 +147,53 @@ describe('buildIntegrationToolSchemas', () => {
       expect.objectContaining({ id: 'brandfetch_search' }),
       { surface: 'copilot' }
     )
+  })
+})
+
+describe('buildCopilotRequestPayload file attachments', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('keeps workspace file attachments and adds readable file context without chat-scoping them', async () => {
+    const payload = await buildCopilotRequestPayload(
+      {
+        message: 'Summarize this',
+        workspaceId: 'ws-1',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'chat',
+        model: 'model-1',
+        chatId: 'chat-1',
+        fileAttachments: [
+          {
+            id: 'attachment-1',
+            workspaceFileId: 'wf_123',
+            key: 'workspace/ws-1/brief.pdf',
+            filename: 'brief.pdf',
+            media_type: 'application/pdf',
+            size: 1234,
+            path: '/api/files/serve/workspace%2Fws-1%2Fbrief.pdf?context=workspace',
+            storageContext: 'workspace',
+          },
+        ],
+      },
+      { selectedModel: 'model-1' }
+    )
+
+    expect(mockTrackChatUpload).not.toHaveBeenCalled()
+    expect(payload.fileAttachments).toEqual([
+      expect.objectContaining({
+        workspaceFileId: 'wf_123',
+        key: 'workspace/ws-1/brief.pdf',
+        filename: 'brief.pdf',
+      }),
+    ])
+    expect(payload.context).toEqual([
+      expect.objectContaining({
+        type: 'workspace_file_attachment',
+        content: expect.stringContaining('read("files/by-id/wf_123")'),
+      }),
+    ])
   })
 })

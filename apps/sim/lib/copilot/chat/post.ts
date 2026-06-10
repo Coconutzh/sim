@@ -55,11 +55,13 @@ const DEFAULT_MODEL = 'claude-opus-4-6'
 
 const FileAttachmentSchema = z.object({
   id: z.string(),
+  workspaceFileId: z.string().optional(),
   key: z.string(),
   filename: z.string(),
   media_type: z.string(),
   size: z.number(),
   path: z.string().optional(),
+  storageContext: z.enum(['workspace', 'mothership']).optional(),
 })
 
 const ResourceAttachmentSchema = z.object({
@@ -568,15 +570,15 @@ async function resolveBranch(params: {
             commands: payloadParams.commands,
             chatId: payloadParams.chatId,
             prefetch: payloadParams.prefetch,
-             implicitFeedback: payloadParams.implicitFeedback,
-             conversationHistory: payloadParams.conversationHistory,
-             workflowCopilotMode: payloadParams.workflowCopilotMode,
-             confirmationMode: payloadParams.confirmationMode,
-             thinkingLevel: payloadParams.thinkingLevel,
-             autoSelectionContexts: payloadParams.autoSelectionContexts,
-             userPermission: payloadParams.userPermission,
-             userTimezone: payloadParams.userTimezone,
-           },
+            implicitFeedback: payloadParams.implicitFeedback,
+            conversationHistory: payloadParams.conversationHistory,
+            workflowCopilotMode: payloadParams.workflowCopilotMode,
+            confirmationMode: payloadParams.confirmationMode,
+            thinkingLevel: payloadParams.thinkingLevel,
+            autoSelectionContexts: payloadParams.autoSelectionContexts,
+            userPermission: payloadParams.userPermission,
+            userTimezone: payloadParams.userTimezone,
+          },
           { selectedModel }
         ),
       buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
@@ -623,15 +625,15 @@ async function resolveBranch(params: {
           contexts: payloadParams.contexts,
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
-           workspaceContext: payloadParams.workspaceContext,
-           conversationHistory: payloadParams.conversationHistory,
-           workflowCopilotMode: payloadParams.workflowCopilotMode,
-           confirmationMode: payloadParams.confirmationMode,
-           thinkingLevel: payloadParams.thinkingLevel,
-           autoSelectionContexts: payloadParams.autoSelectionContexts,
-           userPermission: payloadParams.userPermission,
-           userTimezone: payloadParams.userTimezone,
-         },
+          workspaceContext: payloadParams.workspaceContext,
+          conversationHistory: payloadParams.conversationHistory,
+          workflowCopilotMode: payloadParams.workflowCopilotMode,
+          confirmationMode: payloadParams.confirmationMode,
+          thinkingLevel: payloadParams.thinkingLevel,
+          autoSelectionContexts: payloadParams.autoSelectionContexts,
+          userPermission: payloadParams.userPermission,
+          userTimezone: payloadParams.userTimezone,
+        },
         { selectedModel: '' }
       ),
     buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>

@@ -78,6 +78,7 @@
     ]
   },
   "trustedDependencies": [
+    "@napi-rs/canvas",
     "sharp"
   ]
 }

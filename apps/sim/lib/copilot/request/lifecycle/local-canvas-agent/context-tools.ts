@@ -1,5 +1,6 @@
 import type { ProductionTaskStatus } from '@/lib/api/contracts/production-tasks'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
+import { analyzeAttachmentVision } from '@/lib/copilot/request/lifecycle/local-canvas-agent/attachment-vision'
 import { redactAgentVisibleFileContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/redaction'
 import type {
   LocalAgentAttachedContext,
@@ -10,6 +11,7 @@ import type {
   LocalAgentToolResult,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { executeMaterializeFile } from '@/lib/copilot/tools/handlers/materialize-file'
+import { getOrMaterializeVFS } from '@/lib/copilot/vfs'
 import {
   listProductionTasks,
   submitProductionTask,
@@ -93,6 +95,23 @@ function summarizeAttachments(attachments: LocalAgentAttachment[] | undefined): 
     .join('\n')
 }
 
+async function readWorkspaceAttachmentContext(
+  context: LocalAgentContext,
+  attachment: LocalAgentAttachment
+): Promise<LocalAgentAttachedContext | null> {
+  if (!attachment.id || attachment.storageContext !== 'workspace') return null
+  const vfs = await getOrMaterializeVFS(context.workspaceId, context.userId)
+  const result = await vfs.readFileContent(`files/by-id/${attachment.id}`)
+  if (!result) {
+    throw new Error(`Unable to read attached workspace file "${attachment.name}"`)
+  }
+  return {
+    type: 'file',
+    tag: `@${attachment.name}`,
+    content: result.content,
+  }
+}
+
 async function materializeFileContext(context: LocalAgentContext, input: Record<string, unknown>) {
   const fileNames = asStringArray(input.fileNames)
   const fileName = asString(input.fileName)
@@ -124,7 +143,7 @@ async function materializeFileContext(context: LocalAgentContext, input: Record<
   }
 }
 
-function readFileContext(context: LocalAgentContext, input: Record<string, unknown>) {
+async function readFileContext(context: LocalAgentContext, input: Record<string, unknown>) {
   const query = asString(input.fileName) || asString(input.tag) || asString(input.query)
   const fileContexts = (context.attachedContexts ?? []).filter(
     (item) => item.type === 'file' && contextMatches(item, query)
@@ -132,19 +151,51 @@ function readFileContext(context: LocalAgentContext, input: Record<string, unkno
   const attachments = (context.attachments ?? []).filter((attachment) =>
     attachmentMatches(attachment, query)
   )
+  const workspaceReadErrors: string[] = []
+  const workspaceContexts =
+    fileContexts.length > 0
+      ? []
+      : (
+          await Promise.all(
+            attachments.map(async (attachment) => {
+              try {
+                return await readWorkspaceAttachmentContext(context, attachment)
+              } catch (error) {
+                workspaceReadErrors.push(error instanceof Error ? error.message : String(error))
+                return null
+              }
+            })
+          )
+        ).filter((item): item is LocalAgentAttachedContext => Boolean(item))
   if (!fileContexts.length && !attachments.length) {
     throw new Error('No matching attached file context was found')
   }
+  const visionBundle = await analyzeAttachmentVision({
+    context,
+    question: asString(input.question) || context.message,
+    fileName: query,
+  })
+  const contexts = [...fileContexts, ...workspaceContexts, ...visionBundle.contexts]
+  if (!contexts.length && workspaceReadErrors.length > 0) {
+    throw new Error(workspaceReadErrors[0])
+  }
+  const hasVisualAnalysis = visionBundle.analyzedFileCount > 0
+  const hasVisionLimitations = visionBundle.limitations.length > 0
   return {
     query,
     files: attachments.map(sanitizeAttachmentForAgent),
-    contexts: fileContexts.map((item) => ({
+    contexts: contexts.map((item) => ({
       type: item.type,
       tag: item.tag,
       content: clip(redactAgentVisibleFileContext(item.content)),
     })),
-    summary: fileContexts.length
-      ? `Read ${fileContexts.length} attached file context(s)`
+    ...(hasVisionLimitations ? { limitations: visionBundle.limitations } : {}),
+    summary: contexts.length
+      ? hasVisualAnalysis
+        ? `Read ${contexts.length} attached file context(s), including visual analysis`
+        : hasVisionLimitations
+          ? `Read ${contexts.length} attached file context(s), with visual analysis limitations`
+          : `Read ${contexts.length} attached file context(s)`
       : `Found ${attachments.length} attached file metadata record(s)`,
   }
 }
@@ -275,7 +326,7 @@ export async function executeContextTool(
   try {
     const output =
       call.name === 'read_file'
-        ? readFileContext(context, call.input)
+        ? await readFileContext(context, call.input)
         : call.name === 'search_workspace'
           ? await searchWorkspaceContext(context)
           : call.name === 'materialize_file'

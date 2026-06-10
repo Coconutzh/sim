@@ -92,11 +92,13 @@ const nextConfig: NextConfig = {
     'fluent-ffmpeg',
     'ws',
     'isolated-vm',
+    '@napi-rs/canvas',
   ],
   outputFileTracingIncludes: {
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',
+      './node_modules/@napi-rs/**/*',
       './lib/execution/sandbox/bundles/*.cjs',
     ],
   },

@@ -55,10 +55,13 @@ export interface PersistedContentBlock {
 
 export interface PersistedFileAttachment {
   id: string
+  workspaceFileId?: string
   key: string
   filename: string
   media_type: string
   size: number
+  path?: string
+  storageContext?: 'workspace' | 'mothership'
 }
 
 export interface PersistedMessageContext {

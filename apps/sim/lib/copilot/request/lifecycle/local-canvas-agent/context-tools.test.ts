@@ -6,14 +6,20 @@ import type { LocalAgentContext } from '@/lib/copilot/request/lifecycle/local-ca
 
 const {
   mockExecuteMaterializeFile,
+  mockAnalyzeAttachmentVision,
   mockGenerateWorkspaceContext,
+  mockGetOrMaterializeVFS,
   mockListProductionTasks,
+  mockReadFileContent,
   mockSubmitProductionTask,
   mockUpdateProductionTask,
 } = vi.hoisted(() => ({
   mockExecuteMaterializeFile: vi.fn(),
+  mockAnalyzeAttachmentVision: vi.fn(),
   mockGenerateWorkspaceContext: vi.fn(),
+  mockGetOrMaterializeVFS: vi.fn(),
   mockListProductionTasks: vi.fn(),
+  mockReadFileContent: vi.fn(),
   mockSubmitProductionTask: vi.fn(),
   mockUpdateProductionTask: vi.fn(),
 }))
@@ -22,8 +28,16 @@ vi.mock('@/lib/copilot/chat/workspace-context', () => ({
   generateWorkspaceContext: mockGenerateWorkspaceContext,
 }))
 
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/attachment-vision', () => ({
+  analyzeAttachmentVision: mockAnalyzeAttachmentVision,
+}))
+
 vi.mock('@/lib/copilot/tools/handlers/materialize-file', () => ({
   executeMaterializeFile: mockExecuteMaterializeFile,
+}))
+
+vi.mock('@/lib/copilot/vfs', () => ({
+  getOrMaterializeVFS: mockGetOrMaterializeVFS,
 }))
 
 vi.mock('@/lib/production-tasks/service', () => ({
@@ -117,6 +131,17 @@ describe('local canvas context tools', () => {
       output: { succeeded: ['brief.pdf'], failed: [] },
       resources: [{ type: 'file', id: 'file-1', title: 'brief.pdf' }],
     })
+    mockAnalyzeAttachmentVision.mockResolvedValue({
+      contexts: [],
+      limitations: [],
+      analyzedFileCount: 0,
+      analyzedImageCount: 0,
+    })
+    mockReadFileContent.mockResolvedValue({
+      content: 'Parsed workspace file content from the PDF.',
+      totalLines: 1,
+    })
+    mockGetOrMaterializeVFS.mockResolvedValue({ readFileContent: mockReadFileContent })
     mockUpdateProductionTask.mockResolvedValue({
       id: 'task-1',
       title: '补齐视频节点',
@@ -175,6 +200,91 @@ describe('local canvas context tools', () => {
     expect(JSON.stringify(result.output)).not.toContain('uploads/brief.pdf')
     expect(JSON.stringify(result.output)).not.toContain('/files/brief.pdf')
     expect(JSON.stringify(result.output)).not.toContain('BEGIN PRIVATE KEY')
+  })
+
+  it('falls back to VFS parsing for workspace file attachments without preloaded context', async () => {
+    const context = buildContext()
+    context.attachedContexts = []
+    context.attachments = [
+      {
+        id: 'workspace-file-1',
+        key: 'workspace/workspace-1/brief.pdf',
+        name: 'brief.pdf',
+        type: 'application/pdf',
+        storageContext: 'workspace',
+      },
+    ]
+
+    const result = await executeContextTool(context, {
+      name: 'read_file',
+      input: { fileName: 'brief.pdf' },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary).toBe('Read 1 attached file context(s)')
+    expect(mockGetOrMaterializeVFS).toHaveBeenCalledWith('workspace-1', 'user-1')
+    expect(mockReadFileContent).toHaveBeenCalledWith('files/by-id/workspace-file-1')
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        contexts: [
+          expect.objectContaining({
+            tag: '@brief.pdf',
+            content: expect.stringContaining('Parsed workspace file content'),
+          }),
+        ],
+      })
+    )
+  })
+
+  it('adds visual analysis context when read_file matches a visual workspace attachment', async () => {
+    const context = buildContext()
+    context.attachedContexts = []
+    context.attachments = [
+      {
+        id: 'workspace-file-1',
+        key: 'workspace/workspace-1/hero.png',
+        name: 'hero.png',
+        type: 'image/png',
+        storageContext: 'workspace',
+      },
+    ]
+    mockAnalyzeAttachmentVision.mockResolvedValue({
+      contexts: [
+        {
+          type: 'file_vision',
+          tag: '@hero.png',
+          content: '画面中有蓝色主视觉和标题文字。',
+        },
+      ],
+      limitations: [],
+      analyzedFileCount: 1,
+      analyzedImageCount: 1,
+    })
+
+    const result = await executeContextTool(context, {
+      name: 'read_file',
+      input: { fileName: 'hero.png' },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary).toBe('Read 2 attached file context(s), including visual analysis')
+    expect(mockAnalyzeAttachmentVision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({ workspaceId: 'workspace-1' }),
+        fileName: 'hero.png',
+      })
+    )
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        contexts: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'file_vision',
+            tag: '@hero.png',
+            content: expect.stringContaining('蓝色主视觉'),
+          }),
+        ]),
+      })
+    )
   })
 
   it('queries attached knowledge and docs context', async () => {
