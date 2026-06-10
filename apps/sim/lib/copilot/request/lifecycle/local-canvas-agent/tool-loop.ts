@@ -18,12 +18,25 @@ import type {
   LocalAgentToolLoopResult,
   LocalCanvasMutationPolicy,
   LocalCanvasPatch,
+  LocalCanvasUserIntent,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 const MAX_STEPS = 10
+const READ_CONFIDENCE_THRESHOLD = 0.45
+const ORDINARY_MUTATION_CONFIDENCE_THRESHOLD = 0.68
+const STRUCTURAL_MUTATION_CONFIDENCE_THRESHOLD = 0.72
+const GENERATION_CONFIDENCE_THRESHOLD = 0.72
+const COMPLEX_CHAIN_CONFIDENCE_THRESHOLD = 0.76
 
 type LocalAgentLoopPhase = 'understand' | 'inspect' | 'act' | 'verify' | 'finish'
 type LocalCanvasAgentRuntimeMode = 'legacy' | 'hybrid' | 'model_tool_loop'
+type DecisionActionRisk =
+  | 'read'
+  | 'ordinary_mutation'
+  | 'structural_mutation'
+  | 'generation'
+  | 'complex_chain_generation'
+  | 'destructive'
 
 interface PendingVerification {
   input: Record<string, unknown>
@@ -489,8 +502,57 @@ function isMutationToolCallName(toolName: LocalAgentToolCall['name']): boolean {
   )
 }
 
+function shouldHardBlockMutationFromIntent(plan: LocalAgentPlan): boolean {
+  if (plan.mutationPolicy !== 'read_only') return false
+  const evidence = new Set(plan.intentEvidence ?? [])
+  if (plan.userIntent === 'non_canvas' || plan.userIntent === 'propose_plan') return true
+  if (plan.userIntent === 'consult_design' && evidence.has('model_intent:consult_design')) {
+    return true
+  }
+  if (plan.userIntent === 'inspect_canvas' && evidence.has('model_intent:inspect_canvas')) {
+    return true
+  }
+  return (
+    evidence.has('consult_signal') ||
+    evidence.has('discussion_follow_up_signal') ||
+    evidence.has('inspection_signal') ||
+    evidence.has('non_canvas_signal') ||
+    evidence.has('propose_only_signal') ||
+    evidence.has('empty_message')
+  )
+}
+
+function isLocalCanvasUserIntent(value: unknown): value is LocalCanvasUserIntent {
+  return (
+    value === 'consult_design' ||
+    value === 'inspect_canvas' ||
+    value === 'propose_plan' ||
+    value === 'mutate_canvas' ||
+    value === 'generate_output' ||
+    value === 'non_canvas'
+  )
+}
+
+function applyDecisionSemanticsToPlan(
+  plan: LocalAgentPlan,
+  decision: LocalAgentDecision
+): LocalAgentPlan {
+  const evidence = [
+    ...(plan.intentEvidence ?? []),
+    decision.intent ? `model_intent:${decision.intent}` : '',
+    decision.intentReason ? 'model_intent_reason' : '',
+  ].filter(Boolean)
+  return {
+    ...plan,
+    ...(isLocalCanvasUserIntent(decision.intent) ? { userIntent: decision.intent } : {}),
+    ...(decision.confidence !== undefined ? { intentConfidence: decision.confidence } : {}),
+    intentEvidence: [...new Set(evidence)],
+  }
+}
+
 function getPolicyViolationSummary(params: {
   mutationPolicy?: LocalCanvasMutationPolicy
+  plan: LocalAgentPlan
   call: LocalAgentToolCall
   readOnly: boolean
 }): string | null {
@@ -498,12 +560,105 @@ function getPolicyViolationSummary(params: {
     params.mutationPolicy === 'read_only' &&
     (!params.readOnly || params.call.name === 'canvas.propose_patch')
   ) {
+    if (!shouldHardBlockMutationFromIntent(params.plan)) return null
     return `Blocked ${params.call.name} because this request is read-only.`
   }
   if (params.mutationPolicy === 'propose_only' && isMutationToolCallName(params.call.name)) {
     return `Blocked ${params.call.name} because this request requires proposal or confirmation first.`
   }
   return null
+}
+
+function isStructuralPatchOperation(operation: LocalCanvasPatch['operations'][number]): boolean {
+  if (
+    operation.type === 'create_node' ||
+    operation.type === 'connect' ||
+    operation.type === 'add_content_reference' ||
+    operation.type === 'remove_content_reference'
+  ) {
+    return true
+  }
+  if (operation.type !== 'update_node') return false
+  return Object.keys(operation.fields).some(
+    (field) => field === 'contentReferences' || field === 'videoMedia'
+  )
+}
+
+function patchLooksLikeComplexChain(patch: LocalCanvasPatch): boolean {
+  const hasCreate = patch.operations.some((operation) => operation.type === 'create_node')
+  const hasReference = patch.operations.some(
+    (operation) =>
+      operation.type === 'add_content_reference' ||
+      operation.type === 'connect' ||
+      operation.type === 'remove_content_reference'
+  )
+  return hasCreate && hasReference && patch.operations.length >= 3
+}
+
+function classifyDecisionActionRisk(params: {
+  context: LocalAgentContext
+  plan: LocalAgentPlan
+  call: LocalAgentToolCall
+  readOnly: boolean
+  destructive: boolean
+}): DecisionActionRisk {
+  if (params.destructive) return 'destructive'
+  if (params.readOnly) return 'read'
+  if (params.call.name === 'canvas.generate_node_output') return 'generation'
+  if (params.call.name !== 'canvas.apply_patch') return 'ordinary_mutation'
+  const patch = getPatchFromToolCall(params.call)
+  if (!patch) return 'ordinary_mutation'
+  if (
+    hasExplicitGenerationRequest(params.context, params.plan) &&
+    patchLooksLikeComplexChain(patch)
+  ) {
+    return 'complex_chain_generation'
+  }
+  return patch.operations.some(isStructuralPatchOperation)
+    ? 'structural_mutation'
+    : 'ordinary_mutation'
+}
+
+function getConfidenceThreshold(risk: DecisionActionRisk): number {
+  if (risk === 'read') return READ_CONFIDENCE_THRESHOLD
+  if (risk === 'ordinary_mutation') return ORDINARY_MUTATION_CONFIDENCE_THRESHOLD
+  if (risk === 'structural_mutation') return STRUCTURAL_MUTATION_CONFIDENCE_THRESHOLD
+  if (risk === 'generation') return GENERATION_CONFIDENCE_THRESHOLD
+  if (risk === 'complex_chain_generation') return COMPLEX_CHAIN_CONFIDENCE_THRESHOLD
+  return 1
+}
+
+function getConfidenceViolationSummary(params: {
+  decision: LocalAgentDecision
+  risk: DecisionActionRisk
+}): string | null {
+  if (params.risk === 'read' || params.risk === 'destructive') return null
+  const confidence = params.decision.confidence ?? 0
+  const threshold = getConfidenceThreshold(params.risk)
+  if (confidence >= threshold) return null
+  return `Blocked ${params.risk} because model confidence ${confidence.toFixed(
+    2
+  )} is below required threshold ${threshold.toFixed(2)}.`
+}
+
+function markPlanForAllowedToolCall(params: {
+  plan: LocalAgentPlan
+  decision: LocalAgentDecision
+  call: LocalAgentToolCall
+  risk: DecisionActionRisk
+}): LocalAgentPlan {
+  const plan = applyDecisionSemanticsToPlan(params.plan, params.decision)
+  if (params.risk === 'read') return plan
+  return {
+    ...plan,
+    userIntent:
+      params.risk === 'generation' || params.risk === 'complex_chain_generation'
+        ? 'generate_output'
+        : 'mutate_canvas',
+    mutationPolicy: 'allow_mutation',
+    canvasReadPolicy: 'required',
+    intentEvidence: [...new Set([...(plan.intentEvidence ?? []), 'model_confident_tool_call'])],
+  }
 }
 
 function buildDecisionObservation(summary: string, success: boolean): LocalAgentObservation {
@@ -848,17 +1003,27 @@ async function executeDecisionToolCall(params: {
     call = { name: 'canvas.verify_patch', input: params.state.pendingVerification.input }
   }
   call = resolveCreatedNodeRefsInToolCall(call, params.state.observations)
+  params.state.plan = applyDecisionSemanticsToPlan(params.state.plan, params.decision)
+  const callReadOnly = descriptor.isReadOnly(parsedInput.data)
   const policyViolation = getPolicyViolationSummary({
     mutationPolicy: params.state.plan.mutationPolicy,
+    plan: params.state.plan,
     call,
-    readOnly: descriptor.isReadOnly(parsedInput.data),
+    readOnly: callReadOnly,
   })
   if (policyViolation) {
     params.state.observations.push(buildDecisionObservation(policyViolation, false))
     return
   }
-
-  if (descriptor.isDestructive?.(parsedInput.data)) {
+  const destructive = Boolean(descriptor.isDestructive?.(parsedInput.data))
+  const actionRisk = classifyDecisionActionRisk({
+    context: params.context,
+    plan: params.state.plan,
+    call,
+    readOnly: callReadOnly,
+    destructive,
+  })
+  if (destructive) {
     const pendingPatch = getPatchFromToolCall(call)
     params.state.plan = {
       ...applyPendingPatchToPlan(params.state.plan, pendingPatch),
@@ -875,6 +1040,21 @@ async function executeDecisionToolCall(params: {
     )
     return
   }
+
+  const confidenceViolation = getConfidenceViolationSummary({
+    decision: params.decision,
+    risk: actionRisk,
+  })
+  if (confidenceViolation) {
+    params.state.observations.push(buildDecisionObservation(confidenceViolation, false))
+    return
+  }
+  params.state.plan = markPlanForAllowedToolCall({
+    plan: params.state.plan,
+    decision: params.decision,
+    call,
+    risk: actionRisk,
+  })
 
   params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
   const result = await executeLocalAgentTool(params.context, call)
@@ -945,8 +1125,10 @@ async function executeParallelDecisionToolCalls(params: {
       name: requestedCall.toolName,
       input: parsedInput.data,
     } satisfies LocalAgentToolCall
+    params.state.plan = applyDecisionSemanticsToPlan(params.state.plan, params.decision)
     const policyViolation = getPolicyViolationSummary({
       mutationPolicy: params.state.plan.mutationPolicy,
+      plan: params.state.plan,
       call,
       readOnly: descriptor.isReadOnly(parsedInput.data),
     })
