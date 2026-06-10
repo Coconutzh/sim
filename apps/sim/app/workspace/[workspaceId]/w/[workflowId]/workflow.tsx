@@ -60,7 +60,6 @@ import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/compone
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
-import { ProductionTaskTimeline } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/production-tasks/production-task-timeline'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
 import {
   useAutoLayout,
@@ -284,22 +283,6 @@ const LazyPanel = lazy(async () => {
   return { default: mod.Panel as React.ComponentType<LazyPanelProps> }
 })
 
-const LazyTerminal = lazy(() =>
-  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/terminal').then(
-    (mod) => ({
-      default: mod.Terminal,
-    })
-  )
-)
-
-const LazyWorkflowTrackBar = lazy(() =>
-  import(
-    '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-track-bar/workflow-track-bar'
-  ).then((mod) => ({
-    default: mod.WorkflowTrackBar,
-  }))
-)
-
 const LazyWorkflowControls = lazy(() =>
   import(
     '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-controls/workflow-controls'
@@ -490,17 +473,6 @@ const WorkflowContent = React.memo(
     const workflowIdParam = propWorkflowId || (params.workflowId as string)
 
     const addNotification = useNotificationStore((state) => state.addNotification)
-    const notifyTrackAction = useCallback(
-      (message: string, level: 'info' | 'error' = 'info') => {
-        addNotification({
-          level,
-          message,
-          workflowId: workflowIdParam || undefined,
-        })
-      },
-      [addNotification, workflowIdParam]
-    )
-
     useEffect(() => {
       if (!embedded || !workflowIdParam) return
       joinWorkflow(workflowIdParam)
@@ -5105,24 +5077,6 @@ const WorkflowContent = React.memo(
 
             {isWorkflowReady && (
               <>
-                {!embedded && workflowMetadata && shouldRenderAuxiliaryEditorChrome && (
-                  <Suspense fallback={null}>
-                    <LazyWorkflowTrackBar
-                      workspaceId={workspaceId}
-                      workflowId={workflowIdParam}
-                      workflow={workflowMetadata}
-                      canPublish={canPublishToMainline}
-                      organizationId={workspaceSettingsData?.settings.workspace.organizationId}
-                      activeWorkgroupId={activeWorkgroupId}
-                      onNotify={notifyTrackAction}
-                    />
-                  </Suspense>
-                )}
-
-                {!embedded && !sandbox && shouldRenderAuxiliaryEditorChrome && (
-                  <ProductionTaskTimeline workspaceId={workspaceId} workflowId={workflowIdParam} />
-                )}
-
                 <ReactFlow
                   nodes={nodesForRender}
                   edges={edgesWithSelection}
@@ -5371,11 +5325,6 @@ const WorkflowContent = React.memo(
             )}
           </div>
 
-          {shouldRenderAuxiliaryEditorChrome && (
-            <Suspense fallback={null}>
-              <LazyTerminal />
-            </Suspense>
-          )}
         </div>
 
         {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (

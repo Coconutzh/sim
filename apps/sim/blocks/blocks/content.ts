@@ -9,6 +9,8 @@ import {
   DEFAULT_VIDEO_MODEL_FAMILY,
 } from '@/lib/generated-media/video/video-generation-utils'
 
+const CONTENT_AUDIO_PARAMETERS_DEFAULT: Record<string, unknown> = { ...DEFAULT_AUDIO_PARAMETERS }
+
 export const ContentBlock: BlockConfig = {
   type: 'content',
   name: 'Content',
@@ -113,7 +115,7 @@ export const ContentBlock: BlockConfig = {
       id: 'audioParameters',
       title: 'Audio Parameters',
       type: 'short-input',
-      defaultValue: DEFAULT_AUDIO_PARAMETERS as unknown as Record<string, unknown>,
+      defaultValue: CONTENT_AUDIO_PARAMETERS_DEFAULT,
       hidden: true,
       paramVisibility: 'hidden',
     },

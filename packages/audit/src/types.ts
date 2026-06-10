@@ -127,6 +127,8 @@ export const AuditAction = {
   PRODUCTION_TASK_CHANGES_REQUESTED: 'production_task.changes_requested',
   PRODUCTION_TASK_MESSAGE_CREATED: 'production_task.message_created',
   PRODUCTION_TASK_DDL_REMINDER: 'production_task.ddl_reminder',
+  PRODUCTION_SHOWCASE_ITEM_CREATED: 'production_showcase_item.created',
+  PRODUCTION_SHOWCASE_ITEM_WITHDRAWN: 'production_showcase_item.withdrawn',
 
   // OAuth / Credentials
   OAUTH_DISCONNECTED: 'oauth.disconnected',
@@ -242,6 +244,7 @@ export const AuditResourceType = {
   PASSWORD: 'password',
   PERMISSION_GROUP: 'permission_group',
   PRODUCTION_TASK: 'production_task',
+  PRODUCTION_SHOWCASE_ITEM: 'production_showcase_item',
   PUBLICATION: 'publication',
   SCHEDULE: 'schedule',
   SKILL: 'skill',

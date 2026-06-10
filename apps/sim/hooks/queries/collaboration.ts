@@ -14,6 +14,7 @@ import {
   createOrganizationWorkgroupContract,
   createPersonalWorkspaceContract,
   createTeamWorkspaceContract,
+  createWorkgroupJoinRequestContract,
   type DeliverPublicationNotificationsBody,
   deliverOrganizationPublicationNotificationsContract,
   getCopilotAgentProfileContract,
@@ -35,6 +36,7 @@ import {
   listShowcasePublicationsContract,
   listWorkgroupActivityContract,
   listWorkgroupAgentSkillsContract,
+  listWorkgroupJoinRequestsContract,
   type MarkProjectNotificationCenterReadBody,
   type MarkPublicationNotificationInboxReadBody,
   markOrganizationProjectNotificationCenterReadContract,
@@ -47,6 +49,7 @@ import {
   type RecordProjectAdminFailureBody,
   recordProjectAdminFailureContract,
   removeWorkgroupMemberContract,
+  reviewWorkgroupJoinRequestContract,
   setActiveWorkgroupContract,
   type UpdateOrganizationAgentSkillPolicyBody,
   type UpdateOrganizationAgentTemplateBody,
@@ -125,6 +128,8 @@ export const collaborationKeys = {
     [...collaborationKeys.workgroup(workgroupId), 'members'] as const,
   activity: (workgroupId?: string) =>
     [...collaborationKeys.workgroup(workgroupId), 'activity'] as const,
+  joinRequests: (workgroupId?: string) =>
+    [...collaborationKeys.workgroup(workgroupId), 'join-requests'] as const,
   organizationActivity: (organizationId?: string, filters?: OrganizationWorkgroupActivityFilters) =>
     [
       ...collaborationKeys.organizationWorkgroups(organizationId),
@@ -399,6 +404,75 @@ export function useWorkgroupActivity(workgroupId?: string, limit = 10) {
   })
 }
 
+export function useWorkgroupJoinRequests(workgroupId?: string) {
+  return useQuery({
+    queryKey: collaborationKeys.joinRequests(workgroupId),
+    queryFn: ({ signal }) =>
+      requestJson(listWorkgroupJoinRequestsContract, {
+        params: { workgroupId: workgroupId as string },
+        signal,
+      }),
+    enabled: Boolean(workgroupId),
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+  })
+}
+
+export function useCreateWorkgroupJoinRequest() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { workgroupId: string; organizationId?: string; message?: string }) =>
+      requestJson(createWorkgroupJoinRequestContract, {
+        params: { workgroupId: variables.workgroupId },
+        body: { message: variables.message },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.joinRequests(variables.workgroupId),
+      })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+      }
+    },
+  })
+}
+
+export function useReviewWorkgroupJoinRequest() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: {
+      workgroupId: string
+      organizationId?: string
+      requestId: string
+      action: 'approve' | 'reject'
+      role?: 'admin' | 'member'
+      reviewNote?: string
+    }) =>
+      requestJson(reviewWorkgroupJoinRequestContract, {
+        params: { workgroupId: variables.workgroupId, requestId: variables.requestId },
+        body: {
+          action: variables.action,
+          role: variables.role,
+          reviewNote: variables.reviewNote,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: collaborationKeys.joinRequests(variables.workgroupId),
+      })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+      }
+    },
+  })
+}
+
 export function fetchOrganizationWorkgroupActivity(
   organizationId: string,
   filters: OrganizationWorkgroupActivityFilters = {},
@@ -508,7 +582,7 @@ export function useUpdateWorkgroupMember() {
 export function useRemoveWorkgroupMember() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (variables: { workgroupId: string; userId: string }) =>
+    mutationFn: (variables: { organizationId?: string; workgroupId: string; userId: string }) =>
       requestJson(removeWorkgroupMemberContract, {
         params: { workgroupId: variables.workgroupId, userId: variables.userId },
       }),
@@ -516,6 +590,14 @@ export function useRemoveWorkgroupMember() {
       queryClient.invalidateQueries({ queryKey: collaborationKeys.members(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.activity(variables.workgroupId) })
       queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      if (variables.organizationId) {
+        queryClient.invalidateQueries({
+          queryKey: collaborationKeys.organizationWorkgroups(variables.organizationId),
+        })
+        queryClient.invalidateQueries({
+          queryKey: organizationKeys.roster(variables.organizationId),
+        })
+      }
     },
   })
 }

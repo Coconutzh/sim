@@ -4,6 +4,7 @@ import {
   workflowIdSchema,
   workspaceIdSchema,
 } from '@/lib/api/contracts/primitives'
+import { productionProjectPhaseSchema } from '@/lib/api/contracts/production-projects'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { workflowStateSchema } from '@/lib/api/contracts/workflows'
 
@@ -62,6 +63,10 @@ export const workgroupMemberParamsSchema = z.object({
   workgroupId: nonEmptyIdSchema,
   userId: nonEmptyIdSchema,
 })
+export const workgroupJoinRequestParamsSchema = z.object({
+  workgroupId: nonEmptyIdSchema,
+  requestId: nonEmptyIdSchema,
+})
 export const publicationParamsSchema = z.object({ publicationVersionId: nonEmptyIdSchema })
 
 export const disciplineSchema = z.object({
@@ -101,6 +106,20 @@ export const workgroupSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   organizationId: z.string(),
+  organization: z.object({
+    id: z.string(),
+    name: z.string(),
+    logo: z.string().nullable(),
+    projectStatus: z.enum(['active', 'completed']),
+    estimatedDueAt: z.string().nullable(),
+    phases: z.array(productionProjectPhaseSchema),
+    canManageProject: z.boolean(),
+    taskStats: z.object({
+      total: z.number().int().min(0),
+      completed: z.number().int().min(0),
+      unfinished: z.number().int().min(0),
+    }),
+  }),
   discipline: z.object({
     id: z.string(),
     code: z.string(),
@@ -121,7 +140,7 @@ export const workgroupAdminSummarySchema = z.object({
   agentCode: agentCodeSchema,
   teamWorkspaceId: z.string(),
   memberCount: z.number(),
-  currentUserRole: z.enum(['admin', 'member', 'org_admin']).nullable(),
+  currentUserRole: z.enum(['admin', 'member', 'org_admin', 'project_admin']).nullable(),
 })
 export type WorkgroupAdminSummary = z.output<typeof workgroupAdminSummarySchema>
 
@@ -146,10 +165,41 @@ export const workgroupMemberSchema = z.object({
   name: z.string(),
   email: z.string(),
   avatarUrl: z.string().nullable(),
+  accountRole: z.string().nullable(),
   role: workgroupRoleSchema,
   joinedAt: z.string(),
 })
 export type WorkgroupMember = z.output<typeof workgroupMemberSchema>
+
+export const workgroupJoinRequestStatusSchema = z.enum([
+  'pending',
+  'approved',
+  'rejected',
+  'cancelled',
+])
+export type WorkgroupJoinRequestStatus = z.output<typeof workgroupJoinRequestStatusSchema>
+
+export const workgroupJoinRequestSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  workgroupId: z.string(),
+  requesterUserId: z.string(),
+  requester: z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    avatarUrl: z.string().nullable(),
+  }),
+  role: workgroupRoleSchema,
+  message: z.string().nullable(),
+  status: workgroupJoinRequestStatusSchema,
+  reviewedBy: z.string().nullable(),
+  reviewedAt: z.string().nullable(),
+  reviewNote: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+export type WorkgroupJoinRequest = z.output<typeof workgroupJoinRequestSchema>
 
 export const createWorkgroupBodySchema = z.object({
   name: z.string().trim().min(1, 'Team name is required').max(120),
@@ -204,6 +254,26 @@ export type BatchAddWorkgroupMembersBody = z.input<typeof batchAddWorkgroupMembe
 
 export const updateWorkgroupMemberBodySchema = z.object({ role: workgroupRoleSchema })
 export type UpdateWorkgroupMemberBody = z.input<typeof updateWorkgroupMemberBodySchema>
+
+export const createWorkgroupJoinRequestBodySchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .max(1000, 'Request message must be 1000 characters or fewer')
+    .optional(),
+})
+export type CreateWorkgroupJoinRequestBody = z.input<typeof createWorkgroupJoinRequestBodySchema>
+
+export const reviewWorkgroupJoinRequestBodySchema = z.object({
+  action: z.enum(['approve', 'reject']),
+  role: workgroupRoleSchema.optional().default('member'),
+  reviewNote: z
+    .string()
+    .trim()
+    .max(1000, 'Review note must be 1000 characters or fewer')
+    .optional(),
+})
+export type ReviewWorkgroupJoinRequestBody = z.input<typeof reviewWorkgroupJoinRequestBodySchema>
 
 export const updateOrganizationAgentTemplateBodySchema = z.object({
   agentCode: agentCodeSchema,
@@ -913,6 +983,29 @@ export const removeWorkgroupMemberContract = defineRouteContract({
   path: '/api/workgroups/[workgroupId]/members/[userId]',
   params: workgroupMemberParamsSchema,
   response: { mode: 'json', schema: z.object({ success: z.literal(true) }) },
+})
+
+export const listWorkgroupJoinRequestsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workgroups/[workgroupId]/join-requests',
+  params: workgroupParamsSchema,
+  response: { mode: 'json', schema: z.object({ requests: z.array(workgroupJoinRequestSchema) }) },
+})
+
+export const createWorkgroupJoinRequestContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/join-requests',
+  params: workgroupParamsSchema,
+  body: createWorkgroupJoinRequestBodySchema,
+  response: { mode: 'json', schema: z.object({ request: workgroupJoinRequestSchema }) },
+})
+
+export const reviewWorkgroupJoinRequestContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workgroups/[workgroupId]/join-requests/[requestId]/review',
+  params: workgroupJoinRequestParamsSchema,
+  body: reviewWorkgroupJoinRequestBodySchema,
+  response: { mode: 'json', schema: z.object({ request: workgroupJoinRequestSchema }) },
 })
 
 export const getPersonalWorkspaceContract = defineRouteContract({

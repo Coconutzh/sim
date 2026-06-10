@@ -1,8 +1,17 @@
 import type { Metadata } from 'next'
-import { PublishedWorkflows } from '@/app/workspace/[workspaceId]/published/published-workflows'
+import { ProjectOverview } from '@/app/workspace/[workspaceId]/showcase/project-overview'
 
 export const metadata: Metadata = {
-  title: 'Showcase Canvas',
+  title: '项目总览',
 }
 
-export default PublishedWorkflows
+interface ProjectOverviewPageProps {
+  params: Promise<{
+    workspaceId: string
+  }>
+}
+
+export default async function ProjectOverviewPage({ params }: ProjectOverviewPageProps) {
+  const { workspaceId } = await params
+  return <ProjectOverview workspaceId={workspaceId} />
+}

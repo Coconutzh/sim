@@ -1548,7 +1548,8 @@ export function ProjectAdminCenter() {
   const { data: comparisonPublicationDetailData, isLoading: isLoadingComparisonPublicationDetail } =
     usePublication(comparisonPublicationId)
   const isProjectAdmin = organizationWorkgroups.some(
-    (workgroup) => workgroup.currentUserRole === 'org_admin'
+    (workgroup) =>
+      workgroup.currentUserRole === 'org_admin' || workgroup.currentUserRole === 'project_admin'
   )
   const projectNotificationCenterQuery = useMemo(
     () => ({

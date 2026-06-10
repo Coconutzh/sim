@@ -185,6 +185,27 @@ export const productionTaskAttachmentSchema = z.object({
 })
 export type ProductionTaskAttachment = z.output<typeof productionTaskAttachmentSchema>
 
+export const productionTaskSubmissionSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  versionNumber: z.number().int().min(1),
+  workflowId: z.string().nullable(),
+  nodeId: z.string().nullable(),
+  note: z.string().nullable(),
+  status: productionTaskStatusSchema,
+  submittedBy: productionTaskUserSchema.nullable(),
+  submittedAt: z.string(),
+  reviewedBy: productionTaskUserSchema.nullable(),
+  reviewedAt: z.string().nullable(),
+  reviewNote: z.string().nullable(),
+  adoptedBy: productionTaskUserSchema.nullable(),
+  adoptedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  attachments: z.array(productionTaskAttachmentSchema),
+})
+export type ProductionTaskSubmission = z.output<typeof productionTaskSubmissionSchema>
+
 export const productionTaskSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
@@ -214,6 +235,8 @@ export const productionTaskSchema = z.object({
   blockedBy: z.array(productionTaskDependencySchema),
   attachments: z.array(productionTaskAttachmentSchema),
   submissionAttachments: z.array(productionTaskAttachmentSchema),
+  submissions: z.array(productionTaskSubmissionSchema),
+  latestSubmission: productionTaskSubmissionSchema.nullable(),
   permissions: z.object({
     canEdit: z.boolean(),
     canSubmit: z.boolean(),

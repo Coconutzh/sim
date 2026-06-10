@@ -58,14 +58,14 @@ export function CreateWorkspaceModal({
           inputRef.current?.focus()
         }}
       >
-        <ModalHeader>New Personal Draft Canvas</ModalHeader>
+        <ModalHeader>新建个人画布</ModalHeader>
         <ModalBody>
           <Input
             ref={inputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder='Canvas name'
+            placeholder='画布名称'
             maxLength={100}
             autoComplete='off'
             autoCorrect='off'
@@ -76,14 +76,14 @@ export function CreateWorkspaceModal({
         </ModalBody>
         <ModalFooter>
           <Button variant='default' onClick={() => onOpenChange(false)} disabled={isCreating}>
-            Cancel
+            取消
           </Button>
           <Button
             variant='primary'
             onClick={() => void handleSubmit()}
             disabled={!name.trim() || isCreating}
           >
-            {isCreating ? 'Creating...' : 'Create canvas'}
+            {isCreating ? '创建中...' : '创建画布'}
           </Button>
         </ModalFooter>
       </ModalContent>

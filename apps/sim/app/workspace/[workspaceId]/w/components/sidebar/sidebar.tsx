@@ -65,7 +65,6 @@ import {
   START_NAV_TOUR_EVENT,
   START_WORKFLOW_TOUR_EVENT,
 } from '@/app/workspace/[workspaceId]/components/product-tour/tour-events'
-import { PublicationNotificationBell } from '@/app/workspace/[workspaceId]/components/publication-notification-bell'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -526,7 +525,8 @@ export const Sidebar = memo(function Sidebar() {
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
   const isProjectAdmin =
     organizationWorkgroupsData?.workgroups.some(
-      (workgroup) => workgroup.currentUserRole === 'org_admin'
+      (workgroup) =>
+        workgroup.currentUserRole === 'org_admin' || workgroup.currentUserRole === 'project_admin'
     ) ?? false
 
   const personalDraftWorkspaces = useMemo(() => {
@@ -868,7 +868,7 @@ export const Sidebar = memo(function Sidebar() {
       },
       {
         id: 'showcase-canvas',
-        label: 'Showcase canvas',
+        label: '项目总览',
         icon: Compass,
         href: `/workspace/${teamCanvasWorkspaceId ?? workspaceId}/showcase`,
       },
@@ -1567,13 +1567,6 @@ export const Sidebar = memo(function Sidebar() {
                     </Link>
                   </SidebarTooltip>
                 </div>
-              </div>
-              <div className='sidebar-collapse-hide ml-auto'>
-                <PublicationNotificationBell
-                  organizationId={activeWorkgroup?.organizationId}
-                  workspaceId={teamCanvasWorkspaceId ?? workspaceId}
-                  enabled={isProjectAdmin}
-                />
               </div>
               <SidebarTooltip label='Collapse sidebar' enabled={!isCollapsed} side='bottom'>
                 <button
