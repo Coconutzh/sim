@@ -42,11 +42,13 @@ export type ChatContextKind = ChatContext['kind']
 
 export interface FileAttachmentForApi {
   id: string
+  workspaceFileId?: string
   key: string
   filename: string
   media_type: string
   size: number
   path?: string
+  storageContext?: 'workspace' | 'mothership'
 }
 
 export interface QueuedMessage {

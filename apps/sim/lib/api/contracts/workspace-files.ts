@@ -26,6 +26,16 @@ export const updateWorkspaceFileContentBodySchema = z.object({
   encoding: z.enum(['base64', 'utf-8']).optional(),
 })
 
+export const saveMessageAsDocxBodySchema = z.object({
+  content: z.string().min(1, 'content is required').max(500_000, 'content is too large'),
+  fileName: z.string().min(1, 'fileName is required').max(160, 'fileName is too long').optional(),
+  chatId: z.string().min(1, 'chatId is required').optional(),
+  messageId: z.string().min(1, 'messageId is required').optional(),
+  workflowId: z.string().min(1, 'workflowId is required').optional(),
+})
+
+export type SaveMessageAsDocxBody = z.input<typeof saveMessageAsDocxBodySchema>
+
 export const workspaceFileRecordSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -139,6 +149,23 @@ export const updateWorkspaceFileContentContract = defineRouteContract({
     schema: workspaceFileSuccessSchema.extend({
       file: workspaceFileRecordSchema,
     }),
+  },
+})
+
+const saveMessageAsDocxResponseSchema = workspaceFileSuccessSchema.extend({
+  file: workspaceFileRecordSchema,
+})
+
+export type SaveMessageAsDocxResponse = z.output<typeof saveMessageAsDocxResponseSchema>
+
+export const saveMessageAsDocxContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workspaces/[id]/files/docx',
+  params: workspaceFilesParamsSchema,
+  body: saveMessageAsDocxBodySchema,
+  response: {
+    mode: 'json',
+    schema: saveMessageAsDocxResponseSchema,
   },
 })
 

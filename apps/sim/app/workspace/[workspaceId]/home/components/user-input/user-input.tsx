@@ -316,6 +316,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       if (draft.fileAttachments?.length) {
         restoredFiles = draft.fileAttachments.map((a) => ({
           id: a.id,
+          workspaceFileId: a.workspaceFileId,
           name: a.filename,
           size: a.size,
           type: a.media_type,
@@ -355,11 +356,13 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       .filter((f) => !f.uploading && f.key)
       .map((f) => ({
         id: f.id,
+        workspaceFileId: f.workspaceFileId,
         key: f.key!,
         filename: f.name,
         media_type: f.type,
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
+        ...(f.storageContext ? { storageContext: f.storageContext } : {}),
       }))
     useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
       text: value,
@@ -520,6 +523,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         setValue(msg.content)
         const restored: AttachedFile[] = (msg.fileAttachments ?? []).map((a) => ({
           id: a.id,
+          workspaceFileId: a.workspaceFileId,
           name: a.filename,
           size: a.size,
           type: a.media_type,
@@ -759,11 +763,13 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       .filter((f) => !f.uploading && f.key)
       .map((f) => ({
         id: f.id,
+        workspaceFileId: f.workspaceFileId,
         key: f.key!,
         filename: f.name,
         media_type: f.type,
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
+        ...(f.storageContext ? { storageContext: f.storageContext } : {}),
       }))
 
     const autoSelectionContexts = buildAutoSelectionContexts(

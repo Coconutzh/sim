@@ -336,7 +336,11 @@ function isFileAttachmentForApi(value: unknown): value is FileAttachmentForApi {
     typeof value.media_type === 'string' &&
     typeof value.size === 'number' &&
     Number.isFinite(value.size) &&
-    (value.path === undefined || typeof value.path === 'string')
+    (value.path === undefined || typeof value.path === 'string') &&
+    (value.workspaceFileId === undefined || typeof value.workspaceFileId === 'string') &&
+    (value.storageContext === undefined ||
+      value.storageContext === 'workspace' ||
+      value.storageContext === 'mothership')
   )
 }
 
