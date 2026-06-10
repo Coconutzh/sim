@@ -736,19 +736,28 @@ describe('local canvas planner', () => {
         expect.objectContaining({ type: 'create_node', clientNodeId: 'new_video', kind: 'video' }),
         expect.objectContaining({ type: 'create_node', clientNodeId: 'new_audio', kind: 'audio' }),
         expect.objectContaining({
-          type: 'connect',
+          type: 'add_content_reference',
           sourceNodeId: 'new_script',
-          targetNodeId: 'new_image',
+          consumerNodeId: 'new_image',
+          role: 'text_context',
         }),
         expect.objectContaining({
-          type: 'connect',
+          type: 'add_content_reference',
           sourceNodeId: 'new_image',
-          targetNodeId: 'new_video',
+          consumerNodeId: 'new_video',
+          role: 'video_first_frame',
         }),
         expect.objectContaining({
-          type: 'connect',
-          sourceNodeId: 'new_video',
-          targetNodeId: 'new_audio',
+          type: 'add_content_reference',
+          sourceNodeId: 'new_script',
+          consumerNodeId: 'new_video',
+          role: 'text_context',
+        }),
+        expect.objectContaining({
+          type: 'add_content_reference',
+          sourceNodeId: 'new_script',
+          consumerNodeId: 'new_audio',
+          role: 'text_context',
         }),
       ])
     )
