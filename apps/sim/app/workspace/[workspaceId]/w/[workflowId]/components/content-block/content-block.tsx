@@ -21,9 +21,11 @@ import {
   Expand,
   ImageIcon,
   List,
+  Loader2,
   Music4,
   Pilcrow,
   Plus,
+  Scissors,
   Type,
   Upload,
   Video,
@@ -46,6 +48,7 @@ import {
 import {
   DEFAULT_IMAGE_AI_MODEL,
   DEFAULT_IMAGE_ASPECT_RATIO,
+  DEFAULT_IMAGE_CUTOUT_MODEL,
   DEFAULT_IMAGE_REPAINT_MODEL,
   getNearestSupportedImageAspectRatio,
   getResolvedImageAspectRatio,
@@ -114,6 +117,7 @@ import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflo
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
+import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-cutout-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
 import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
@@ -135,6 +139,8 @@ import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
+type ImageGenerationStatus = 'pending' | 'complete' | 'error'
+type ImageGenerationKind = 'cutout'
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
 
 interface ContentBlockNodeData extends WorkflowBlockProps {}
@@ -372,6 +378,14 @@ function normalizeVariant(value: unknown): ContentVariant | null {
   return value === 'image' || value === 'text' || value === 'video' || value === 'audio'
     ? value
     : null
+}
+
+function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus | null {
+  return value === 'pending' || value === 'complete' || value === 'error' ? value : null
+}
+
+function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
+  return value === 'cutout' ? value : null
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -1154,6 +1168,9 @@ function MediaContentCard({
   videoFrameAspectRatioPreset,
   contentReferences,
   referencedNodes,
+  generationStatus,
+  generationKind,
+  generationErrorMessage,
   isImageCropMode,
   isImageRepaintMode,
   isImageEraseMode,
@@ -1165,6 +1182,7 @@ function MediaContentCard({
   onStartImageRepaint,
   onStartImageErase,
   onStartImageOutpaint,
+  onStartImageCutout,
   onCancelImageCrop,
   onCancelImageRepaint,
   onCancelImageErase,
@@ -1174,6 +1192,7 @@ function MediaContentCard({
   onCreateImageRepaintVariant,
   onCreateImageEraseVariant,
   onCreateImageOutpaintVariant,
+  onRetryImageCutout,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
@@ -1208,6 +1227,9 @@ function MediaContentCard({
   videoFrameAspectRatioPreset: VideoFrameAspectRatioPreset
   contentReferences: ContentReferenceRecord[]
   referencedNodes: Record<string, PromptContextReferencedNode>
+  generationStatus: ImageGenerationStatus | null
+  generationKind: ImageGenerationKind | null
+  generationErrorMessage: string | null
   isImageCropMode: boolean
   isImageRepaintMode: boolean
   isImageEraseMode: boolean
@@ -1219,6 +1241,7 @@ function MediaContentCard({
   onStartImageRepaint: () => void
   onStartImageErase: () => void
   onStartImageOutpaint: () => void
+  onStartImageCutout: () => void
   onCancelImageCrop: () => void
   onCancelImageRepaint: () => void
   onCancelImageErase: () => void
@@ -1234,6 +1257,7 @@ function MediaContentCard({
     file: UploadedFileValue,
     targetAspectRatio: ImageOutpaintAspectRatio
   ) => Promise<void> | void
+  onRetryImageCutout: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
@@ -1540,7 +1564,15 @@ function MediaContentCard({
   )
 
   const hasMedia = Boolean(mediaPath) && !isBroken
-  const showUploadAction = selected && canUpload && (variant !== 'image' || !hasMedia)
+  const isImageCutoutNode = variant === 'image' && generationKind === 'cutout'
+  const isImageCutoutPending = isImageCutoutNode && generationStatus === 'pending' && !file
+  const isImageCutoutError = isImageCutoutNode && generationStatus === 'error' && !file
+  const showUploadAction =
+    selected &&
+    canUpload &&
+    (variant !== 'image' || !hasMedia) &&
+    !isImageCutoutPending &&
+    !isImageCutoutError
   const showImageCropAction =
     selected &&
     canUpload &&
@@ -1550,6 +1582,8 @@ function MediaContentCard({
     !isImageRepaintMode &&
     !isImageEraseMode &&
     !isImageOutpaintMode
+  const showImageComposer =
+    variant === 'image' && !hasMedia && !isImageCutoutPending && !isImageCutoutError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -1659,6 +1693,22 @@ function MediaContentCard({
           </button>
           <button
             type='button'
+            aria-label='抠图'
+            title='抠图'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsPerspectiveMenuOpen(false)
+              onStartImageCutout()
+            }}
+            className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            <Scissors className='h-3.5 w-3.5' />
+          </button>
+          <button
+            type='button'
             aria-label='扩图'
             title='扩图'
             onPointerDown={(event) => {
@@ -1751,6 +1801,33 @@ function MediaContentCard({
               />
             </div>
           )
+        ) : isImageCutoutPending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>抠图中...</div>
+          </div>
+        ) : isImageCutoutError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '抠图失败，请重试。'}
+            </div>
+            <button
+              type='button'
+              aria-label='重试抠图'
+              title='重试抠图'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryImageCutout()
+              }}
+            >
+              <Scissors className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
+          </div>
         ) : (
           <div
             className={cn(
@@ -1839,7 +1916,7 @@ function MediaContentCard({
         />
       ) : null}
 
-      {variant === 'image' && !hasMedia && !isPreview && !isEmbedded && (
+      {showImageComposer && !isPreview && !isEmbedded && (
         <MediaContentAiComposer
           canEdit={canEdit}
           selected={selected}
@@ -2034,6 +2111,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
     ContentReferenceRecord[]
   >(id, 'contentReferences')
+  const [generationStatusValue] = useSubBlockValue<string>(id, 'generationStatus')
+  const [generationKindValue] = useSubBlockValue<string>(id, 'generationKind')
+  const [generationErrorValue] = useSubBlockValue<string | null>(id, 'generationError')
 
   const userPermissions = useUserPermissionsContext()
   const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
@@ -2228,6 +2308,25 @@ export const ContentBlock = memo(function ContentBlock({
       'contentReferences',
       []
     )
+  )
+  const resolvedGenerationStatus = extractStoredValue<string | null>(
+    data.isPreview
+      ? sourceValues
+      : ({ generationStatus: generationStatusValue } as StoredValueRecord),
+    'generationStatus',
+    null
+  )
+  const resolvedGenerationKind = extractStoredValue<string | null>(
+    data.isPreview ? sourceValues : ({ generationKind: generationKindValue } as StoredValueRecord),
+    'generationKind',
+    null
+  )
+  const resolvedGenerationError = extractStoredValue<string | null>(
+    data.isPreview
+      ? sourceValues
+      : ({ generationError: generationErrorValue } as StoredValueRecord),
+    'generationError',
+    null
   )
   const modelAvailability = useContentCanvasModelAvailability(params.workspaceId)
   const effectiveTextModel = getEffectiveContentModelId({
@@ -2546,6 +2645,140 @@ export const ContentBlock = memo(function ContentBlock({
   const cancelImageOutpaintMode = useCallback(() => {
     setIsImageOutpaintMode(false)
   }, [])
+
+  const markImageCutoutPending = useCallback(
+    (targetBlockId: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'cutout')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'pending')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const completeImageCutout = useCallback(
+    (targetBlockId: string, file: UploadedFileValue) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'cutout')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failImageCutout = useCallback(
+    (targetBlockId: string, message: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'cutout')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startImageCutoutRequest = useImageCutoutSession({
+    workspaceId: params.workspaceId,
+    onPending: markImageCutoutPending,
+    onComplete: completeImageCutout,
+    onError: failImageCutout,
+  })
+
+  const startImageCutoutMode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    const sourceBlock = workflowBlocks[id]
+    if (!sourceBlock) {
+      return
+    }
+
+    const blockConfig = getBlockConfigFromCatalog('content')
+    if (!blockConfig) {
+      return
+    }
+
+    const targetBlockId = generateId()
+    const parentId = sourceBlock.data?.parentId
+    const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+    const targetPosition = {
+      x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+      y: sourcePosition.y,
+    }
+    const referenceRole =
+      getDefaultReferenceRole({
+        targetVariant: 'image',
+        model: DEFAULT_IMAGE_CUTOUT_MODEL,
+        sourceVariant: 'image',
+      }) ?? ('image_reference' satisfies ContentReferenceRole)
+    const newBlock = prepareBlockState({
+      id: targetBlockId,
+      type: 'content',
+      name: getUniqueBlockName('Image', workflowBlocks),
+      position: targetPosition,
+      data: {
+        contentVariant: 'image',
+        ...(parentId ? { parentId, extent: 'parent' } : {}),
+      },
+      parentId,
+      extent: parentId ? 'parent' : undefined,
+      blockConfig,
+    })
+    const reference: ContentReferenceRecord = {
+      sourceBlockId: id,
+      sourceVariant: 'image',
+      role: referenceRole,
+    }
+    const edge = createContentReferenceEdge({
+      id: generateId(),
+      source: id,
+      target: targetBlockId,
+      sourceHandle: getContentReferenceSourceHandleId('right'),
+      targetHandle: getContentReferenceTargetHandleId('left'),
+    })
+    const subBlockValues: Record<string, Record<string, unknown>> = {
+      [targetBlockId]: {
+        contentVariant: 'image',
+        aiPrompt: '',
+        aiModel: DEFAULT_IMAGE_CUTOUT_MODEL,
+        aiAspectRatio: 'auto',
+        file: null,
+        contentReferences: [reference],
+        generationStatus: 'pending',
+        generationKind: 'cutout',
+        generationError: null,
+      },
+    }
+
+    setIsImageCropMode(false)
+    setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
+    setIsImageOutpaintMode(false)
+    setPendingSelection([targetBlockId])
+    const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+    usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+    if (added) {
+      void startImageCutoutRequest({
+        targetBlockId,
+        sourceFile: resolvedFile,
+      })
+    }
+  }, [
+    canEditWorkflow,
+    collaborativeBatchAddBlocks,
+    data.isEmbedded,
+    data.isPreview,
+    id,
+    resolvedFile,
+    resolvedVariant,
+    setPendingSelection,
+    startImageCutoutRequest,
+    workflowBlocks,
+  ])
 
   const confirmImageCrop = useCallback(
     async (croppedFile: File) => {
@@ -3093,6 +3326,51 @@ export const ContentBlock = memo(function ContentBlock({
       ),
     [resolveBlockSourceValues]
   )
+  const retryImageCutout = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      resolvedGenerationKind !== 'cutout'
+    ) {
+      return
+    }
+
+    const sourceReference = resolvedContentReferences.find(
+      (reference) => reference.sourceVariant === 'image'
+    )
+    if (!sourceReference) {
+      failImageCutout(id, '缺少源图片引用，无法重试抠图。')
+      return
+    }
+
+    const sourceFile = extractStoredValue<UploadedFileValue | null>(
+      resolveBlockSourceValues(sourceReference.sourceBlockId),
+      'file',
+      null
+    )
+    if (!sourceFile?.key) {
+      failImageCutout(id, '源图片缺少文件信息。')
+      return
+    }
+
+    void startImageCutoutRequest({
+      targetBlockId: id,
+      sourceFile,
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    failImageCutout,
+    id,
+    resolvedContentReferences,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolveBlockSourceValues,
+    startImageCutoutRequest,
+  ])
   const getContentNodeIdAtPoint = useCallback(
     (clientX: number, clientY: number): string | null => {
       const elements = document.elementsFromPoint(clientX, clientY)
@@ -3758,6 +4036,9 @@ export const ContentBlock = memo(function ContentBlock({
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
+            generationStatus={normalizeImageGenerationStatus(resolvedGenerationStatus)}
+            generationKind={normalizeImageGenerationKind(resolvedGenerationKind)}
+            generationErrorMessage={resolvedGenerationError}
             isImageCropMode={isImageCropMode}
             isImageRepaintMode={isImageRepaintMode}
             isImageEraseMode={isImageEraseMode}
@@ -3769,6 +4050,7 @@ export const ContentBlock = memo(function ContentBlock({
             onStartImageRepaint={startImageRepaintMode}
             onStartImageErase={startImageEraseMode}
             onStartImageOutpaint={startImageOutpaintMode}
+            onStartImageCutout={startImageCutoutMode}
             onCancelImageCrop={cancelImageCropMode}
             onCancelImageRepaint={cancelImageRepaintMode}
             onCancelImageErase={cancelImageEraseMode}
@@ -3778,6 +4060,7 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
             onCreateImageEraseVariant={createImageEraseVariantNode}
             onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
+            onRetryImageCutout={retryImageCutout}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}

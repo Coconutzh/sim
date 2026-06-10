@@ -3,6 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  cutoutWorkspaceImageBodySchema,
+  cutoutWorkspaceImageContract,
   eraseWorkspaceImageBodySchema,
   outpaintWorkspaceImageBodySchema,
 } from '@/lib/api/contracts/media-images'
@@ -17,6 +19,35 @@ const sourceImage = {
 }
 
 describe('media image contracts', () => {
+  it('validates cutout source image without a client model field', () => {
+    const parsed = cutoutWorkspaceImageBodySchema.parse({
+      workspaceId: 'ws-1',
+      sourceImage,
+      model: 'jimeng-4.5',
+    })
+
+    expect(parsed).toMatchObject({
+      workspaceId: 'ws-1',
+      sourceImage: {
+        id: 'source-1',
+      },
+    })
+    expect(cutoutWorkspaceImageContract.path).toBe('/api/media/images/cutout')
+  })
+
+  it('rejects cutout requests without a workspace file source key', () => {
+    const result = cutoutWorkspaceImageBodySchema.safeParse({
+      workspaceId: 'ws-1',
+      sourceImage: {
+        ...sourceImage,
+        key: '',
+      },
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['sourceImage', 'key'])
+  })
+
   it('validates erase source image, mask image, and resolution', () => {
     const parsed = eraseWorkspaceImageBodySchema.parse({
       workspaceId: 'ws-1',

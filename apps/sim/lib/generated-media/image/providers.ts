@@ -11,7 +11,8 @@ import {
 
 const logger = createLogger('GeneratedImageProviders')
 const EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS = 1000
-const EVOLINK_IMAGE_TASK_MAX_ATTEMPTS = 90
+const EVOLINK_IMAGE_TASK_DEFAULT_MAX_ATTEMPTS = 90
+const EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS = 301
 const EVOLINK_FILE_UPLOAD_BASE_URL = 'https://files-api.evolink.ai/api/v1'
 const GEMINI_PRO_IMAGE_MODEL = 'gemini-3-pro-image' as const
 const GEMINI_PRO_IMAGE_PREVIEW_MODEL = 'gemini-3-pro-image-preview' as const
@@ -399,6 +400,12 @@ function isGeminiProImageModel(model: ImageGenerationModelId): boolean {
   return model === GEMINI_PRO_IMAGE_MODEL || model === GEMINI_PRO_IMAGE_PREVIEW_MODEL
 }
 
+function getEvolinkImageTaskMaxAttempts(model: ImageGenerationModelId): number {
+  return isGeminiProImageModel(model)
+    ? EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS
+    : EVOLINK_IMAGE_TASK_DEFAULT_MAX_ATTEMPTS
+}
+
 function buildGeminiCompatibleImageRequestBody({
   model,
   prompt,
@@ -586,7 +593,8 @@ async function generateImageWithGeminiCompatible({
 
   let imageUrl: string | null = null
   let taskPayload: Record<string, unknown> = payload
-  for (let attempt = 0; attempt < EVOLINK_IMAGE_TASK_MAX_ATTEMPTS; attempt++) {
+  const maxAttempts = getEvolinkImageTaskMaxAttempts(model)
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     throwIfAborted(abortSignal)
     if (attempt > 0) {
       await delay(EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS, abortSignal)
@@ -621,7 +629,10 @@ async function generateImageWithGeminiCompatible({
   }
 
   if (!imageUrl) {
-    throw new Error('Gemini compatible image task did not complete in time')
+    const waitSeconds = Math.round(((maxAttempts - 1) * EVOLINK_IMAGE_TASK_POLL_INTERVAL_MS) / 1000)
+    throw new Error(
+      `Gemini compatible image task ${taskId} for model ${model} did not complete within ${waitSeconds}s`
+    )
   }
 
   throwIfAborted(abortSignal)
