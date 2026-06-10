@@ -641,6 +641,39 @@ function getConfidenceViolationSummary(params: {
   )} is below required threshold ${threshold.toFixed(2)}.`
 }
 
+function getConfidenceClarificationQuestion(risk: DecisionActionRisk): string {
+  if (risk === 'ordinary_mutation') {
+    return '我不太确定你是要我现在直接修改画布，还是只继续讨论方案。你想让我现在执行修改吗？'
+  }
+  if (risk === 'structural_mutation') {
+    return '我不太确定你是要我现在创建/连接这些节点，还是先给你方案确认。你想让我现在改画布结构吗？'
+  }
+  if (risk === 'generation') {
+    return '我不太确定你是要我现在调用生成工具生成内容，还是只先更新节点提示词。你想现在生成吗？'
+  }
+  if (risk === 'complex_chain_generation') {
+    return '我不太确定你是要我现在创建内容链并自动生成节点内容，还是先只给方案确认。你想让我现在执行并生成吗？'
+  }
+  return '我不太确定你是否要我现在执行这个操作。请确认后我再继续。'
+}
+
+function markPlanForConfidenceClarification(params: {
+  plan: LocalAgentPlan
+  decision: LocalAgentDecision
+  call: LocalAgentToolCall
+  risk: DecisionActionRisk
+}): LocalAgentPlan {
+  const pendingPatch = getPatchFromToolCall(params.call)
+  return {
+    ...applyPendingPatchToPlan(
+      applyDecisionSemanticsToPlan(params.plan, params.decision),
+      pendingPatch
+    ),
+    requiresClarification: true,
+    clarificationQuestion: getConfidenceClarificationQuestion(params.risk),
+  }
+}
+
 function markPlanForAllowedToolCall(params: {
   plan: LocalAgentPlan
   decision: LocalAgentDecision
@@ -1046,6 +1079,12 @@ async function executeDecisionToolCall(params: {
     risk: actionRisk,
   })
   if (confidenceViolation) {
+    params.state.plan = markPlanForConfidenceClarification({
+      plan: params.state.plan,
+      decision: params.decision,
+      call,
+      risk: actionRisk,
+    })
     params.state.observations.push(buildDecisionObservation(confidenceViolation, false))
     return
   }
