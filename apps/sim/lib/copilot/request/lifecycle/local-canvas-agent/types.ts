@@ -18,6 +18,11 @@ export type LocalCanvasUserIntent =
   | 'mutate_canvas'
   | 'generate_output'
   | 'non_canvas'
+export type LocalAgentDecisionIntent =
+  | LocalCanvasUserIntent
+  | 'ask_confirmation'
+  | 'ask_clarification'
+  | 'ambiguous'
 export type LocalCanvasMutationPolicy = 'read_only' | 'propose_only' | 'allow_mutation'
 export type LocalCanvasReadPolicy = 'none' | 'optional' | 'required'
 export type LocalCanvasNodeKind = ContentNodePresetId | 'generic_workflow_block'
@@ -368,6 +373,12 @@ export interface LocalAgentToolCall {
   input: Record<string, unknown>
 }
 
+export interface LocalAgentDecisionSemantics {
+  intent?: LocalAgentDecisionIntent
+  confidence?: number
+  intentReason?: string
+}
+
 export type LocalAgentDecision =
   | LocalAgentToolCallDecision
   | LocalAgentParallelToolCallsDecision
@@ -375,7 +386,7 @@ export type LocalAgentDecision =
   | LocalAgentAskClarificationDecision
   | LocalAgentFinalAnswerDecision
 
-export interface LocalAgentToolCallDecision {
+export interface LocalAgentToolCallDecision extends LocalAgentDecisionSemantics {
   type: 'tool_call'
   toolName: LocalAgentToolName
   toolInput: Record<string, unknown>
@@ -383,7 +394,7 @@ export interface LocalAgentToolCallDecision {
   risk: LocalAgentRisk
 }
 
-export interface LocalAgentParallelToolCallsDecision {
+export interface LocalAgentParallelToolCallsDecision extends LocalAgentDecisionSemantics {
   type: 'tool_calls'
   toolCalls: Array<{
     toolName: LocalAgentToolName
@@ -394,19 +405,19 @@ export interface LocalAgentParallelToolCallsDecision {
   risk: LocalAgentRisk
 }
 
-export interface LocalAgentAskConfirmationDecision {
+export interface LocalAgentAskConfirmationDecision extends LocalAgentDecisionSemantics {
   type: 'ask_confirmation'
   question: string
   pendingToolCall?: LocalAgentToolCall
   risk: Extract<LocalAgentRisk, 'medium' | 'high'>
 }
 
-export interface LocalAgentAskClarificationDecision {
+export interface LocalAgentAskClarificationDecision extends LocalAgentDecisionSemantics {
   type: 'ask_clarification'
   question: string
 }
 
-export interface LocalAgentFinalAnswerDecision {
+export interface LocalAgentFinalAnswerDecision extends LocalAgentDecisionSemantics {
   type: 'final_answer'
   answer: string
   memoryUpdate?: LocalAgentThreadMemoryUpdate

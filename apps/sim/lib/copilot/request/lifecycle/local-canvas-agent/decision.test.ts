@@ -159,6 +159,28 @@ describe('local canvas agent decision', () => {
     })
   })
 
+  it('parses model-owned intent confidence and reason fields', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        type: 'tool_call',
+        intent: 'mutate_canvas',
+        intent_confidence: '0.86',
+        intent_reason: '用户选择了上一轮提供的垂直排版方案。',
+        toolName: 'canvas.apply_patch',
+        toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'vertical' }] } },
+        userVisibleReason: '我会更新画布布局。',
+        risk: 'low',
+      })
+    )
+
+    expect(decision).toMatchObject({
+      type: 'tool_call',
+      intent: 'mutate_canvas',
+      confidence: 0.86,
+      intentReason: '用户选择了上一轮提供的垂直排版方案。',
+    })
+  })
+
   it('budgets large tool outputs in the prompt with a stable output ref', () => {
     const observations: LocalAgentObservation[] = [
       {
@@ -278,6 +300,9 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('pendingToolCall.input.patch.operations must be an array')
     expect(prompt).toContain('Use type=tool_calls only for independent read-only')
     expect(prompt).toContain('Confirmation mode: auto')
+    expect(prompt).toContain('Runtime constraints')
+    expect(prompt).toContain('Include intent and confidence in every AgentDecision')
+    expect(prompt).not.toContain('Runtime intent hint')
     expect(prompt).toContain('If confirmation mode is manual')
   })
 })

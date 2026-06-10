@@ -10,6 +10,7 @@ import {
 import type {
   LocalAgentContext,
   LocalAgentDecision,
+  LocalAgentDecisionIntent,
   LocalAgentObservation,
   LocalAgentToolName,
   LocalCanvasMutationPolicy,
@@ -40,8 +41,25 @@ const LOCAL_AGENT_TOOL_NAMES = [
 
 const localAgentToolNameSchema = z.enum(LOCAL_AGENT_TOOL_NAMES)
 const localAgentRiskSchema = z.enum(['low', 'medium', 'high'])
+const decisionIntentSchema = z.enum([
+  'consult_design',
+  'inspect_canvas',
+  'propose_plan',
+  'mutate_canvas',
+  'generate_output',
+  'non_canvas',
+  'ask_confirmation',
+  'ask_clarification',
+  'ambiguous',
+] satisfies readonly LocalAgentDecisionIntent[])
+const decisionSemanticsSchema = {
+  intent: decisionIntentSchema.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  intentReason: z.string().min(1).optional(),
+} as const
 const toolCallSchema = z.object({
   type: z.literal('tool_call'),
+  ...decisionSemanticsSchema,
   toolName: localAgentToolNameSchema,
   toolInput: z.record(z.string(), z.unknown()).catch({}),
   userVisibleReason: z.string().min(1),
@@ -49,6 +67,7 @@ const toolCallSchema = z.object({
 })
 const parallelToolCallsSchema = z.object({
   type: z.literal('tool_calls'),
+  ...decisionSemanticsSchema,
   toolCalls: z
     .array(
       z.object({
@@ -64,6 +83,7 @@ const parallelToolCallsSchema = z.object({
 })
 const askConfirmationSchema = z.object({
   type: z.literal('ask_confirmation'),
+  ...decisionSemanticsSchema,
   question: z.string().min(1),
   pendingToolCall: z
     .object({
@@ -75,6 +95,7 @@ const askConfirmationSchema = z.object({
 })
 const askClarificationSchema = z.object({
   type: z.literal('ask_clarification'),
+  ...decisionSemanticsSchema,
   question: z.string().min(1),
 })
 const memoryUpdateSchema = z.object({
@@ -90,6 +111,7 @@ const memoryUpdateSchema = z.object({
 })
 const finalAnswerSchema = z.object({
   type: z.literal('final_answer'),
+  ...decisionSemanticsSchema,
   answer: z.string().min(1),
   memoryUpdate: memoryUpdateSchema.optional(),
 })
@@ -129,6 +151,16 @@ function readString(record: Record<string, unknown>, keys: string[]): string | u
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+function readNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  const value = readFirst(record, keys)
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
 function normalizeDecisionType(value: string | undefined): string | undefined {
   if (!value) return undefined
   const normalized = value
@@ -149,10 +181,22 @@ function normalizeDecisionType(value: string | undefined): string | undefined {
   return undefined
 }
 
+function normalizeDecisionSemantics(record: Record<string, unknown>): Record<string, unknown> {
+  const intent = readString(record, ['intent', 'userIntent', 'user_intent'])
+  const confidence = readNumber(record, ['confidence', 'intentConfidence', 'intent_confidence'])
+  const intentReason = readString(record, ['intentReason', 'intent_reason', 'reasoning'])
+  return {
+    ...(intent ? { intent } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(intentReason ? { intentReason } : {}),
+  }
+}
+
 function normalizeToolCallRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {}
   return {
     ...value,
+    ...normalizeDecisionSemantics(value),
     toolName: readFirst(value, ['toolName', 'tool_name', 'name', 'tool']),
     toolInput: readFirst(value, ['toolInput', 'tool_input', 'input', 'arguments', 'args']) ?? {},
     userVisibleReason:
@@ -198,6 +242,7 @@ function normalizeAgentDecisionInput(value: unknown): unknown {
     const rawToolCalls = readFirst(wrapped, ['toolCalls', 'tool_calls'])
     return {
       ...wrapped,
+      ...normalizeDecisionSemantics(wrapped),
       type,
       toolCalls: Array.isArray(rawToolCalls) ? rawToolCalls.map(normalizeToolCallRecord) : [],
       userVisibleReason:
@@ -210,6 +255,7 @@ function normalizeAgentDecisionInput(value: unknown): unknown {
   if (type === 'ask_confirmation') {
     return {
       ...wrapped,
+      ...normalizeDecisionSemantics(wrapped),
       type,
       question:
         readString(wrapped, ['question', 'confirmationQuestion', 'confirmation_question']) ??
@@ -224,6 +270,7 @@ function normalizeAgentDecisionInput(value: unknown): unknown {
   if (type === 'ask_clarification') {
     return {
       ...wrapped,
+      ...normalizeDecisionSemantics(wrapped),
       type,
       question:
         readString(wrapped, ['question', 'clarificationQuestion', 'clarification_question']) ??
@@ -234,6 +281,7 @@ function normalizeAgentDecisionInput(value: unknown): unknown {
   if (type === 'final_answer') {
     return {
       ...wrapped,
+      ...normalizeDecisionSemantics(wrapped),
       type,
       answer: readString(wrapped, ['answer', 'finalAnswer', 'final_answer', 'message']),
       memoryUpdate: readFirst(wrapped, ['memoryUpdate', 'memory_update']),
@@ -303,16 +351,19 @@ function buildToolDescriptorContext(context: LocalAgentContext): string {
     .join('\n')
 }
 
-function buildIntentPolicyContext(policy: {
-  userIntent?: LocalCanvasUserIntent
-  mutationPolicy?: LocalCanvasMutationPolicy
-  canvasReadPolicy?: LocalCanvasReadPolicy
-}): string {
+function buildRuntimeConstraintsContext(context: LocalAgentContext): string {
   return [
-    `userIntent: ${policy.userIntent ?? 'unknown'}`,
-    `mutationPolicy: ${policy.mutationPolicy ?? 'unknown'}`,
-    `canvasReadPolicy: ${policy.canvasReadPolicy ?? 'unknown'}`,
-  ].join('\n')
+    `confirmationMode: ${context.confirmationMode}`,
+    `canWriteCanvas: ${context.permissions.canWrite}`,
+    context.permissions.readonlyReason
+      ? `writeBlockedReason: ${context.permissions.readonlyReason}`
+      : '',
+    'confidenceThresholds: read=0.45, ordinary_canvas_mutation=0.68, structural_canvas_mutation=0.72, generation=0.72, complex_chain_generation=0.76',
+    'destructive canvas changes require ask_confirmation regardless of confidence',
+    'if confidence is below the threshold for the intended action, return ask_clarification instead of calling tools',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function buildPatchProtocolContext(): string {
@@ -426,6 +477,9 @@ export function buildLocalAgentDecisionPrompt(params: {
     userIntent?: LocalCanvasUserIntent
     mutationPolicy?: LocalCanvasMutationPolicy
     canvasReadPolicy?: LocalCanvasReadPolicy
+    confidence?: number
+    evidence?: string[]
+    reason?: string
   }
 }): string {
   const availableTools = selectAvailableLocalAgentTools(params.context)
@@ -434,18 +488,20 @@ export function buildLocalAgentDecisionPrompt(params: {
     `Selected node ids: ${params.context.selectedNodeIds.join(', ') || 'none'}`,
     `Confirmation mode: ${params.context.confirmationMode}`,
     `Available tools: ${summarizeAvailableToolNames(availableTools)}`,
-    `Runtime intent policy:\n${buildIntentPolicyContext(params.policy)}`,
+    `Runtime constraints:\n${buildRuntimeConstraintsContext(params.context)}`,
     `Thread memory:\n${buildMemoryContext(params.context)}`,
     `Enabled skill context:\n${buildSkillContext(params.context)}`,
     `Tool observations:\n${buildBudgetedObservationPromptWithOptions(params.observations, {
-      maxOutputChars: 1000,
-      maxPromptChars: 6000,
+      maxOutputChars: 560,
+      maxPromptChars: 5400,
     })}`,
     `Tool descriptors:\n${buildToolDescriptorContext(params.context)}`,
     buildPatchProtocolContext(),
     [
       'Return only AgentDecision JSON.',
       'Do not include chain-of-thought, markdown, or prose outside JSON.',
+      'Determine intent and confidence yourself from the latest request, conversation history, selected nodes, canvas context, tool observations, and available tools.',
+      'Include intent and confidence in every AgentDecision. Use intentReason for a concise reason when useful.',
       'Use tools to read canvas state instead of guessing from memory.',
       'If a user asks to discuss, plan, or wait for confirmation, do not call mutation tools.',
       'If confirmation mode is manual and a canvas write is needed, return ask_confirmation with pendingToolCall instead of applying the patch.',
@@ -465,6 +521,9 @@ export async function requestLocalAgentDecision(params: {
     userIntent?: LocalCanvasUserIntent
     mutationPolicy?: LocalCanvasMutationPolicy
     canvasReadPolicy?: LocalCanvasReadPolicy
+    confidence?: number
+    evidence?: string[]
+    reason?: string
   }
 }): Promise<LocalAgentDecision> {
   const request = {
@@ -474,7 +533,7 @@ export async function requestLocalAgentDecision(params: {
       context: params.context,
       role: 'decision',
       roleInstruction:
-        'You are the decision layer in a local canvas agent runtime. Choose exactly one next action as AgentDecision JSON, based on the user request, tool observations, runtime policy, and available tools.',
+        'You are the decision layer in a local canvas agent runtime. Choose exactly one next action as AgentDecision JSON, based on the user request, tool observations, runtime constraints, and available tools.',
     }),
     prompt: buildLocalAgentDecisionPrompt(params),
     temperature: params.context.thinkingLevel === 'extra' ? 0.15 : 0.05,
