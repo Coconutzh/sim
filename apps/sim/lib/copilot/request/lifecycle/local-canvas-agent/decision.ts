@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
+import {
+  normalizeLocalAgentToolName,
+  parseLooseJsonObject,
+  repairLocalAgentToolInput,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-call-repair'
 import { LOCAL_AGENT_TOOL_DESCRIPTORS } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { selectAvailableLocalAgentTools } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-registry'
 import {
@@ -125,14 +130,8 @@ export const localAgentDecisionSchema = z.discriminatedUnion('type', [
 ])
 
 function parseJsonObject(content: string): unknown {
-  const trimmed = content.trim()
-  if (!trimmed) return null
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    const match = trimmed.match(/\{[\s\S]*\}/)
-    return match ? JSON.parse(match[0]) : null
-  }
+  const parsed = parseLooseJsonObject(content)
+  return parsed.success ? parsed.value : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -194,11 +193,20 @@ function normalizeDecisionSemantics(record: Record<string, unknown>): Record<str
 
 function normalizeToolCallRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {}
+  const rawToolName = readFirst(value, ['toolName', 'tool_name', 'name', 'tool'])
+  const toolName = normalizeLocalAgentToolName(rawToolName) ?? rawToolName
+  const rawToolInput =
+    readFirst(value, ['toolInput', 'tool_input', 'input', 'arguments', 'args']) ?? {}
+  const normalizedToolName =
+    typeof toolName === 'string' ? normalizeLocalAgentToolName(toolName) : undefined
+  const toolInput = normalizedToolName
+    ? repairLocalAgentToolInput({ toolName: normalizedToolName, input: rawToolInput }).input
+    : rawToolInput
   return {
     ...value,
     ...normalizeDecisionSemantics(value),
-    toolName: readFirst(value, ['toolName', 'tool_name', 'name', 'tool']),
-    toolInput: readFirst(value, ['toolInput', 'tool_input', 'input', 'arguments', 'args']) ?? {},
+    toolName,
+    toolInput,
     userVisibleReason:
       readString(value, ['userVisibleReason', 'user_visible_reason', 'reason']) ??
       '调用工具读取或处理当前请求。',
@@ -207,10 +215,17 @@ function normalizeToolCallRecord(value: unknown): Record<string, unknown> {
 
 function normalizePendingToolCall(value: unknown): unknown {
   if (!isRecord(value)) return value
+  const rawName = readFirst(value, ['name', 'toolName', 'tool_name', 'tool'])
+  const name = normalizeLocalAgentToolName(rawName) ?? rawName
+  const rawInput = readFirst(value, ['input', 'toolInput', 'tool_input', 'arguments', 'args']) ?? {}
+  const normalizedName = typeof name === 'string' ? normalizeLocalAgentToolName(name) : undefined
+  const input = normalizedName
+    ? repairLocalAgentToolInput({ toolName: normalizedName, input: rawInput }).input
+    : rawInput
   return {
     ...value,
-    name: readFirst(value, ['name', 'toolName', 'tool_name', 'tool']),
-    input: readFirst(value, ['input', 'toolInput', 'tool_input', 'arguments', 'args']) ?? {},
+    name,
+    input,
   }
 }
 

@@ -510,6 +510,55 @@ describe('local canvas runtime manual confirmation', () => {
     expect(streamContext.streamComplete).toBe(true)
   })
 
+  it('does not persist memory for an aborted turn', async () => {
+    vi.useFakeTimers()
+    const streamContext = buildStreamContext()
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'auto',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockImplementationOnce(async (context: LocalAgentContext) => {
+      context.streamContext.wasAborted = true
+      return {
+        plan: patchPlan,
+        observations: [
+          {
+            toolName: 'canvas.apply_patch',
+            success: true,
+            summary: 'Patch applied',
+            timestamp: '2026-06-10T00:00:00.000Z',
+          },
+          {
+            toolName: 'canvas.verify_patch',
+            success: true,
+            summary: 'Patch verified',
+            timestamp: '2026-06-10T00:00:00.000Z',
+          },
+        ],
+        answer: 'Patch applied.',
+      }
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+    await vi.runAllTimersAsync()
+
+    expect(streamContext.streamComplete).toBe(true)
+    expect(mockSummarizeLocalAgentRun).not.toHaveBeenCalled()
+    expect(mockSaveLocalAgentMemory).not.toHaveBeenCalled()
+  })
+
   it('emits a visible final error when the auto tool loop throws', async () => {
     const streamContext = buildStreamContext()
     mockResolveLocalAgentContext.mockResolvedValue(

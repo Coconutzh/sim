@@ -24,6 +24,7 @@ import {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/stream'
 import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
 import { runLocalAgentToolLoop } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-loop'
+import { prepareLocalAgentMemoryPersistDecision } from '@/lib/copilot/request/lifecycle/local-canvas-agent/turn-finalizer'
 import type {
   LocalAgentContext,
   LocalAgentMemoryData,
@@ -144,18 +145,28 @@ async function persistMemoryBestEffort(params: {
   observations: LocalAgentObservation[]
 }): Promise<void> {
   try {
+    const persistDecision = prepareLocalAgentMemoryPersistDecision(params)
+    if (!persistDecision.persist) {
+      logger.info('Skipped local canvas agent memory persist for interrupted turn', {
+        chatId: params.context.chatId,
+        workspaceId: params.context.workspaceId,
+        workflowId: params.context.workflowId,
+        reason: persistDecision.reason,
+      })
+      return
+    }
     const toolResultRefs = await persistLocalAgentToolResultRefs({
-      context: params.context,
-      observations: params.observations,
+      context: persistDecision.context,
+      observations: persistDecision.observations,
     })
     const summary = await summarizeLocalAgentRun({
-      context: params.context,
-      memory: params.memory,
-      plan: params.plan,
-      observations: params.observations,
+      context: persistDecision.context,
+      memory: persistDecision.memory,
+      plan: persistDecision.plan,
+      observations: persistDecision.observations,
     })
     await saveLocalAgentMemory(
-      params.context,
+      persistDecision.context,
       appendLocalAgentToolResultRefs(summary, toolResultRefs)
     )
   } catch (error) {
@@ -174,8 +185,18 @@ function scheduleMemoryPersistBestEffort(params: {
   plan: LocalAgentPlan
   observations: LocalAgentObservation[]
 }): void {
+  const persistDecision = prepareLocalAgentMemoryPersistDecision(params)
+  if (!persistDecision.persist) {
+    logger.info('Skipped scheduling local canvas agent memory persist for interrupted turn', {
+      chatId: params.context.chatId,
+      workspaceId: params.context.workspaceId,
+      workflowId: params.context.workflowId,
+      reason: persistDecision.reason,
+    })
+    return
+  }
   setTimeout(() => {
-    void persistMemoryBestEffort(params)
+    void persistMemoryBestEffort(persistDecision)
   }, 0)
 }
 

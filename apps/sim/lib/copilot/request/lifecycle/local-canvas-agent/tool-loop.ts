@@ -1,11 +1,16 @@
 import { requestLocalAgentDecision } from '@/lib/copilot/request/lifecycle/local-canvas-agent/decision'
 import { classifyLocalCanvasUserIntent } from '@/lib/copilot/request/lifecycle/local-canvas-agent/intent'
 import {
+  createLocalAgentIterationBudget,
+  formatLocalAgentMaxStepSummary,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/iteration-budget'
+import {
   buildLocalAgentAnswer,
   selectLocalAgentNextToolCall,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
 import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
 import { buildLocalAgentPlan } from '@/lib/copilot/request/lifecycle/local-canvas-agent/planner'
+import { parseLocalAgentToolInputWithRepair } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-call-repair'
 import { getLocalAgentToolDescriptor } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
 import type {
@@ -1015,13 +1020,15 @@ async function executeDecisionToolCall(params: {
     return
   }
 
-  const parsedInput = descriptor.inputSchema.safeParse(params.decision.toolInput)
+  const parsedInput = parseLocalAgentToolInputWithRepair({
+    toolName: params.decision.toolName,
+    input: params.decision.toolInput,
+    inputSchema: descriptor.inputSchema,
+  })
   if (!parsedInput.success) {
     params.state.observations.push(
       buildDecisionObservation(
-        `Tool ${params.decision.toolName} input was invalid: ${parsedInput.error.issues
-          .map((issue) => issue.message)
-          .join('; ')}`,
+        `Tool ${params.decision.toolName} input was invalid: ${parsedInput.error}`,
         false
       )
     )
@@ -1147,13 +1154,15 @@ async function executeParallelDecisionToolCalls(params: {
       continue
     }
 
-    const parsedInput = descriptor.inputSchema.safeParse(requestedCall.toolInput)
+    const parsedInput = parseLocalAgentToolInputWithRepair({
+      toolName: requestedCall.toolName,
+      input: requestedCall.toolInput,
+      inputSchema: descriptor.inputSchema,
+    })
     if (!parsedInput.success) {
       params.state.observations.push(
         buildDecisionObservation(
-          `Tool ${requestedCall.toolName} input was invalid: ${parsedInput.error.issues
-            .map((issue) => issue.message)
-            .join('; ')}`,
+          `Tool ${requestedCall.toolName} input was invalid: ${parsedInput.error}`,
           false
         )
       )
@@ -1247,8 +1256,9 @@ async function runModelDrivenLocalAgentToolLoop(
     autoGenerationAttempted: false,
   }
   let stopSummary: string | null = null
+  const iterationBudget = createLocalAgentIterationBudget(MAX_STEPS)
 
-  for (let step = 0; step < MAX_STEPS; step += 1) {
+  for (let step = 0; iterationBudget.tryConsume(); step += 1) {
     if (context.options.abortSignal?.aborted) {
       context.streamContext.wasAborted = true
       stopSummary = 'Stopped because the request was cancelled.'
@@ -1295,7 +1305,7 @@ async function runModelDrivenLocalAgentToolLoop(
         (observation) => observation.toolName === 'decision' && !observation.success
       ).length
       state.observations.push(buildDecisionObservation(summary, false))
-      if (previousDecisionFailures === 0 && step < MAX_STEPS - 1) {
+      if (previousDecisionFailures === 0 && iterationBudget.hasRemaining()) {
         continue
       }
       stopSummary = 'Stopped because the model decision could not be produced.'
@@ -1404,7 +1414,7 @@ async function runModelDrivenLocalAgentToolLoop(
   }
   state.observations.push(
     buildDecisionObservation(
-      stopSummary ?? `Stopped after reaching the local canvas agent max step limit (${MAX_STEPS}).`,
+      stopSummary ?? formatLocalAgentMaxStepSummary(iterationBudget.maxSteps),
       false
     )
   )
@@ -1444,14 +1454,14 @@ async function runPlanDrivenLocalAgentToolLoop(
     pendingVerifyAfterGenerate: null,
     seen: new Set<string>(),
   }
-  let executedSteps = 0
+  const iterationBudget = createLocalAgentIterationBudget(MAX_STEPS)
   while (state.phase !== 'finish') {
     const call = getNextUnseenToolCall(context, state, plannedCalls)
     if (!call) break
-    if (executedSteps >= MAX_STEPS) {
+    if (!iterationBudget.tryConsume()) {
       observations.push({
         toolName: 'planner',
-        summary: `Stopped after reaching the local canvas agent max step limit (${MAX_STEPS}).`,
+        summary: formatLocalAgentMaxStepSummary(iterationBudget.maxSteps),
         success: false,
         timestamp: new Date().toISOString(),
       })
@@ -1468,7 +1478,6 @@ async function runPlanDrivenLocalAgentToolLoop(
       break
     }
     const result = await executeLocalAgentTool(context, call)
-    executedSteps += 1
     observations.push(observationFromToolResult(result))
     if (result.success && result.name === 'canvas.generate_node_output') {
       const output = asRecord(result.output)

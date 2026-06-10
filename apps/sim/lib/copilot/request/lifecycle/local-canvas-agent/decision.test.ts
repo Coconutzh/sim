@@ -136,6 +136,49 @@ describe('local canvas agent decision', () => {
     })
   })
 
+  it('repairs obvious tool aliases and JSON string arguments in decisions', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        type: 'tool',
+        tool: 'verify_patch',
+        args: '{"generation":{"nodeId":"node-1","field":"file"}}',
+        reason: 'Verify generated output.',
+      })
+    )
+
+    expect(decision).toEqual({
+      type: 'tool_call',
+      toolName: 'canvas.verify_patch',
+      toolInput: { generation: { nodeId: 'node-1', field: 'file' } },
+      userVisibleReason: 'Verify generated output.',
+      risk: 'low',
+    })
+  })
+
+  it('repairs JSON-encoded patch operations in model decisions', () => {
+    const decision = parseLocalAgentDecision(
+      JSON.stringify({
+        tool_name: 'apply_patch',
+        tool_input: {
+          patch: {
+            operations: ['{"type":"layout_nodes","direction":"horizontal"}'],
+          },
+        },
+        user_visible_reason: 'Apply layout.',
+      })
+    )
+
+    expect(decision).toMatchObject({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      toolInput: {
+        patch: {
+          operations: [{ type: 'layout_nodes', direction: 'horizontal' }],
+        },
+      },
+    })
+  })
+
   it('normalizes pending confirmation tool calls from model variants', () => {
     const decision = parseLocalAgentDecision(
       JSON.stringify({

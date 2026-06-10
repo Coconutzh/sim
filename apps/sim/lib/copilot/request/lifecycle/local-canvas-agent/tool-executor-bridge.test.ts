@@ -135,4 +135,45 @@ describe('local canvas tool executor bridge', () => {
       })
     )
   })
+
+  it('repairs JSON string tool input only after descriptor validation fails', async () => {
+    mockExecuteMediaTool.mockResolvedValue({
+      name: 'media.analyze_node_media',
+      success: true,
+      output: {
+        nodeId: 'video-1',
+        kind: 'video',
+        title: 'Video',
+        analysisMode: 'prompt_only',
+        analysisGoal: 'describe',
+        hasFile: false,
+        mediaContentAccess: {
+          hasFile: false,
+          binaryFetched: false,
+          contentEvidence: 'prompt_only',
+          canDescribeActualMedia: false,
+          safeDescriptionScope: 'prompt only',
+        },
+        file: null,
+        prompt: { field: 'videoPrompt', value: 'slow push in' },
+        analysis: ['prompt only'],
+        limitations: 'No file.',
+      },
+      summary: 'Analyzed media',
+    })
+
+    const result = await executeLocalAgentTool(buildContext(), {
+      name: 'media.analyze_node_media',
+      input: '{"nodeId":"video-1"}' as unknown as Record<string, unknown>,
+    })
+
+    expect(result).toMatchObject({ name: 'media.analyze_node_media', success: true })
+    expect(mockExecuteMediaTool).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'media.analyze_node_media',
+        input: { nodeId: 'video-1' },
+      })
+    )
+  })
 })

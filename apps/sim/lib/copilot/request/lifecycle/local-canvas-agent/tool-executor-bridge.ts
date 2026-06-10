@@ -3,13 +3,22 @@ import { executeCanvasTool } from '@/lib/copilot/request/lifecycle/local-canvas-
 import { executeContextTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-tools'
 import { executeMediaTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/media-tools'
 import {
+  buildLocalAgentToolTraceFields,
+  createLocalAgentOperationTrace,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/observability'
+import {
   emitLocalAgentToolCall,
   emitLocalAgentToolResult,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/stream'
+import { parseLocalAgentToolInputWithRepair } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-call-repair'
 import {
   getLocalAgentToolDescriptor,
   getLocalAgentToolTitle,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
+import {
+  applyLocalAgentToolRequestMiddleware,
+  applyLocalAgentToolResultMiddleware,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-middleware'
 import type {
   LocalAgentContext,
   LocalAgentToolCall,
@@ -55,28 +64,38 @@ export async function executeLocalAgentTool(
   call: LocalAgentToolCall
 ): Promise<LocalAgentToolResult> {
   const startedAt = Date.now()
+  const trace = createLocalAgentOperationTrace({
+    kind: 'tool',
+    name: call.name,
+    startedAtMs: startedAt,
+  })
+  const activeCall = await applyLocalAgentToolRequestMiddleware({
+    call,
+    middlewareContext: { context, trace },
+  })
   const toolCallId = await emitLocalAgentToolCall({
     context: context.streamContext,
     options: context.options,
-    toolName: call.name,
-    title: getLocalAgentToolTitle(call.name),
-    input: call.input,
+    toolName: activeCall.name,
+    title: getLocalAgentToolTitle(activeCall.name),
+    input: activeCall.input,
   })
 
-  const descriptor = getLocalAgentToolDescriptor(call.name)
+  const descriptor = getLocalAgentToolDescriptor(activeCall.name)
   if (!descriptor?.isEnabled(context)) {
     const result = {
-      name: call.name,
+      name: activeCall.name,
       success: false,
-      error: `Tool ${call.name} is not available for this request`,
-      summary: `Tool ${call.name} is not available`,
+      error: `Tool ${activeCall.name} is not available for this request`,
+      summary: `Tool ${activeCall.name} is not available`,
     } satisfies LocalAgentToolResult
     logger.warn('Local canvas agent tool unavailable', {
-      chatId: context.chatId,
-      workspaceId: context.workspaceId,
-      workflowId: context.workflowId,
-      toolName: call.name,
-      elapsedMs: Date.now() - startedAt,
+      ...buildLocalAgentToolTraceFields({
+        context,
+        trace,
+        call: activeCall,
+        result,
+      }),
     })
     await emitLocalAgentToolResult({
       context: context.streamContext,
@@ -89,48 +108,71 @@ export async function executeLocalAgentTool(
     return result
   }
 
-  const parsedInput = descriptor.inputSchema.safeParse(call.input)
+  const parsedInput = parseLocalAgentToolInputWithRepair({
+    toolName: activeCall.name,
+    input: activeCall.input,
+    inputSchema: descriptor.inputSchema,
+  })
   if (!parsedInput.success) {
-    const error = parsedInput.error.issues.map((issue) => issue.message).join('; ')
-    const result = {
-      name: call.name,
-      success: false,
-      error,
-      summary: `Tool ${call.name} input was invalid: ${error}`,
-    } satisfies LocalAgentToolResult
     logger.warn('Local canvas agent tool input invalid', {
-      chatId: context.chatId,
-      workspaceId: context.workspaceId,
-      workflowId: context.workflowId,
-      toolName: call.name,
-      elapsedMs: Date.now() - startedAt,
-      error,
+      ...buildLocalAgentToolTraceFields({
+        context,
+        trace,
+        call: activeCall,
+        result: parsedInput.result,
+      }),
+      error: parsedInput.error,
+      repairReason: parsedInput.repairReason,
     })
     await emitLocalAgentToolResult({
       context: context.streamContext,
       options: context.options,
       toolCallId,
       success: false,
-      summary: result.summary,
-      error: result.error,
+      summary: parsedInput.result.summary,
+      error: parsedInput.result.error,
     })
-    return result
+    return parsedInput.result
   }
 
-  const rawResult = isCanvasToolName(call.name)
-    ? await executeCanvasTool(context, { name: call.name, input: parsedInput.data })
-    : isMediaToolName(call.name)
-      ? await executeMediaTool(context, { name: call.name, input: parsedInput.data })
-      : await executeContextTool(context, { name: call.name, input: parsedInput.data })
-  const result = validateToolOutput(call, rawResult)
+  const executableCall = {
+    name: activeCall.name,
+    input: parsedInput.data,
+  } satisfies LocalAgentToolCall
+  if (parsedInput.repaired) {
+    logger.info('Local canvas agent tool input repaired', {
+      ...buildLocalAgentToolTraceFields({
+        context,
+        trace,
+        call: executableCall,
+      }),
+      repairReason: parsedInput.repairReason,
+    })
+  }
+  const rawResult = isCanvasToolName(executableCall.name)
+    ? await executeCanvasTool(context, {
+        name: executableCall.name,
+        input: executableCall.input,
+      })
+    : isMediaToolName(executableCall.name)
+      ? await executeMediaTool(context, {
+          name: executableCall.name,
+          input: executableCall.input,
+        })
+      : await executeContextTool(context, executableCall)
+  const validatedResult = validateToolOutput(executableCall, rawResult)
+  const result = await applyLocalAgentToolResultMiddleware({
+    call: executableCall,
+    result: validatedResult,
+    middlewareContext: { context, trace },
+  })
   logger.info('Local canvas agent tool executed', {
-    chatId: context.chatId,
-    workspaceId: context.workspaceId,
-    workflowId: context.workflowId,
-    toolName: call.name,
-    success: result.success,
-    elapsedMs: Date.now() - startedAt,
-    summary: result.summary,
+    ...buildLocalAgentToolTraceFields({
+      context,
+      trace,
+      call: executableCall,
+      result,
+    }),
   })
   await emitLocalAgentToolResult({
     context: context.streamContext,
