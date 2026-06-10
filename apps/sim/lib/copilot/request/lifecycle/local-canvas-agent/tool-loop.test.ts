@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   LocalAgentContext,
+  LocalAgentMemoryData,
   LocalAgentPlan,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
@@ -77,6 +78,28 @@ function buildLegacyContext(overrides: Partial<LocalAgentContext> = {}): LocalAg
       localAgentMode: 'legacy',
     },
   })
+}
+
+function buildLayoutDiscussionMemory(): LocalAgentMemoryData {
+  return {
+    version: 2,
+    scope: 'thread',
+    userId: 'user-1',
+    workspaceId: 'workspace-1',
+    workflowId: 'workflow-1',
+    agentCode: 'local_canvas_agent',
+    chatId: 'chat-1',
+    conversationSummary: 'The user is discussing node layout options for the current canvas.',
+    taskState: {
+      goal: 'Discuss and adjust the current canvas layout.',
+      completedSteps: ['Offered grid, horizontal, and vertical layout options.'],
+      openQuestions: ['The user needs to choose one layout direction.'],
+      lastObservation: 'No specific layout direction has been confirmed yet.',
+    },
+    canvasSummary: 'The current canvas has multiple content nodes.',
+    recentObservations: [],
+    updatedAt: '2026-06-10T00:00:00.000Z',
+  }
 }
 
 describe('local canvas tool loop', () => {
@@ -370,6 +393,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch },
         userVisibleReason: '我会应用布局修改。',
         risk: 'low',
@@ -411,6 +436,209 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
+  it('lets the model execute an ambiguous layout follow-up when confidence is high', async () => {
+    const patch = {
+      operations: [{ type: 'layout_nodes' as const, direction: 'vertical' as const }],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.86,
+      toolInput: { patch },
+      userVisibleReason: 'The user chose the vertical layout from the previous discussion.',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied vertical layout patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified vertical layout patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: 'I want the vertical layout.',
+        memory: buildLayoutDiscussionMemory(),
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(result.plan).toMatchObject({
+      userIntent: 'mutate_canvas',
+      mutationPolicy: 'allow_mutation',
+    })
+    expect(result.plan.intentEvidence).toContain('model_confident_tool_call')
+    expect(result.observations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: expect.stringContaining('read-only'),
+        }),
+      ])
+    )
+  })
+
+  it('asks for clarification instead of applying a low-confidence layout patch', async () => {
+    const patch = {
+      operations: [{ type: 'layout_nodes' as const, direction: 'vertical' as const }],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.55,
+      toolInput: { patch },
+      userVisibleReason: 'I may apply the vertical layout.',
+      risk: 'low',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: 'I might want the vertical layout.',
+        memory: buildLayoutDiscussionMemory(),
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      requiresClarification: true,
+      patch,
+    })
+    expect(result.answer).toBe(result.plan.clarificationQuestion)
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('below required threshold 0.68'),
+        }),
+      ])
+    )
+  })
+
+  it('asks for clarification instead of running low-confidence generation', async () => {
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.generate_node_output',
+      intent: 'generate_output',
+      confidence: 0.6,
+      toolInput: { nodeId: 'image-1' },
+      userVisibleReason: 'I may generate the selected image.',
+      risk: 'low',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['image-1'],
+        message: 'Maybe generate the image output.',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan.requiresClarification).toBe(true)
+    expect(result.answer).toBe(result.plan.clarificationQuestion)
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('below required threshold 0.72'),
+        }),
+      ])
+    )
+  })
+
+  it('asks for clarification before a low-confidence structural patch', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'visual',
+          kind: 'image' as const,
+          title: 'Reference visual',
+          fields: { aiPrompt: 'A calm reference visual.' },
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'visual',
+          sourceNodeId: 'text-1',
+          role: 'text_context' as const,
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.7,
+      toolInput: { patch },
+      userVisibleReason: 'I may create the referenced image node.',
+      risk: 'low',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: 'Maybe add an image node that references text-1.',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      requiresClarification: true,
+      patch,
+    })
+    expect(result.answer).toBe(result.plan.clarificationQuestion)
+  })
+
+  it('requires confirmation for destructive patches even when confidence is high', async () => {
+    const patch = {
+      operations: [{ type: 'clear_canvas' }],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.99,
+      toolInput: { patch },
+      userVisibleReason: 'I will clear the canvas.',
+      risk: 'high',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: 'Clear every node on this canvas.',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      requiresClarification: true,
+      requiresUserConfirmation: true,
+      risk: 'high',
+      patch,
+    })
+    expect(result.answer).toBe(result.plan.clarificationQuestion)
+  })
+
   it('auto-generates created media nodes after a verified patch when the user requested generation', async () => {
     const patch = {
       operations: [
@@ -426,6 +654,8 @@ describe('local canvas tool loop', () => {
     mockRequestLocalAgentDecision.mockResolvedValueOnce({
       type: 'tool_call',
       toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
       toolInput: { patch },
       userVisibleReason: '我会创建图片节点并生成内容。',
       risk: 'low',
@@ -523,6 +753,8 @@ describe('local canvas tool loop', () => {
     mockRequestLocalAgentDecision.mockResolvedValueOnce({
       type: 'tool_call',
       toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
       toolInput: { patch },
       userVisibleReason: '我会创建内容链并生成节点内容。',
       risk: 'low',
@@ -655,6 +887,8 @@ describe('local canvas tool loop', () => {
     mockRequestLocalAgentDecision.mockResolvedValueOnce({
       type: 'tool_call',
       toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
       toolInput: { patch },
       userVisibleReason: 'I will create the content nodes and generate their outputs.',
       risk: 'low',
@@ -748,6 +982,8 @@ describe('local canvas tool loop', () => {
     mockRequestLocalAgentDecision.mockResolvedValueOnce({
       type: 'tool_call',
       toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
       toolInput: { patch },
       userVisibleReason: '我会修改选中图片节点的提示词，但不生成图片。',
       risk: 'low',
@@ -800,6 +1036,8 @@ describe('local canvas tool loop', () => {
     mockRequestLocalAgentDecision.mockResolvedValueOnce({
       type: 'tool_call',
       toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
       toolInput: { patch },
       userVisibleReason: '我会把改写后的文案写回选中节点。',
       risk: 'low',
@@ -845,6 +1083,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch },
         userVisibleReason: '我会应用布局修改。',
         risk: 'low',
@@ -895,6 +1135,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch },
         userVisibleReason: '我会应用布局修改。',
         risk: 'low',
@@ -976,6 +1218,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch },
         userVisibleReason: '我会创建脚本、主视觉、视频和配乐节点并连接。',
         risk: 'low',
@@ -1108,6 +1352,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch },
         userVisibleReason: '我会只更新选中节点的可编辑字段。',
         risk: 'low',
@@ -1330,6 +1576,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
         userVisibleReason: '我会修改画布。',
         risk: 'low',
@@ -1364,6 +1612,8 @@ describe('local canvas tool loop', () => {
       .mockResolvedValueOnce({
         type: 'tool_call',
         toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.9,
         toolInput: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
         userVisibleReason: '我会修改画布。',
         risk: 'low',
