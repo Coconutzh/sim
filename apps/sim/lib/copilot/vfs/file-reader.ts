@@ -68,7 +68,7 @@ function detectImageMime(buf: Buffer, claimed: string): string {
   return claimed
 }
 
-interface PreparedVisionImage {
+export interface PreparedVisionImage {
   buffer: Buffer
   mediaType: string
   resized: boolean
@@ -84,7 +84,7 @@ interface PreparedVisionImage {
  * was needed, how many encode attempts it took, and the final
  * dimension/quality chosen.
  */
-async function prepareImageForVision(
+export async function prepareImageForVision(
   buffer: Buffer,
   claimedType: string
 ): Promise<PreparedVisionImage | null> {

@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useRef, useState } from 'react'
-import { GitBranch } from 'lucide-react'
+import { FileText, GitBranch } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   Button,
@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 import { useSubmitCopilotFeedback } from '@/hooks/queries/copilot-feedback'
 import { useForkTask } from '@/hooks/queries/tasks'
+import { useSaveMessageAsDocx } from '@/hooks/queries/workspace-files'
 import { useFolderStore } from '@/stores/folders/store'
 
 const SPECIAL_TAGS = 'thinking|options|usage_upgrade|credential|mothership-error|file'
@@ -65,7 +66,7 @@ export const MessageActions = memo(function MessageActions({
   messageId,
 }: MessageActionsProps) {
   const router = useRouter()
-  const params = useParams<{ workspaceId: string }>()
+  const params = useParams<{ workspaceId: string; workflowId?: string }>()
   const [copied, setCopied] = useState(false)
   const [copiedRequestId, setCopiedRequestId] = useState(false)
   const [pendingFeedback, setPendingFeedback] = useState<'up' | 'down' | null>(null)
@@ -74,6 +75,7 @@ export const MessageActions = memo(function MessageActions({
   const requestIdTimeoutRef = useRef<number | null>(null)
   const submitFeedback = useSubmitCopilotFeedback()
   const forkTask = useForkTask(params.workspaceId)
+  const saveAsDocx = useSaveMessageAsDocx()
 
   useEffect(() => {
     return () => {
@@ -162,6 +164,18 @@ export const MessageActions = memo(function MessageActions({
     }
   }
 
+  const handleSaveAsDocx = () => {
+    const text = content.trim()
+    if (!text || saveAsDocx.isPending) return
+    saveAsDocx.mutate({
+      workspaceId: params.workspaceId,
+      content: text,
+      chatId,
+      messageId,
+      workflowId: params.workflowId,
+    })
+  }
+
   const hasContent = Boolean(content)
   const canSubmitFeedback = Boolean(chatId && userQuery)
   const canFork = false
@@ -185,6 +199,22 @@ export const MessageActions = memo(function MessageActions({
             <Tooltip.Content side='top'>
               {copied ? 'Copied message' : 'Copy message'}
             </Tooltip.Content>
+          </Tooltip.Root>
+        )}
+        {hasContent && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                aria-label='Save as DOCX'
+                onClick={handleSaveAsDocx}
+                disabled={saveAsDocx.isPending}
+                className={cn(BUTTON_CLASS, saveAsDocx.isPending && 'cursor-wait opacity-60')}
+              >
+                <FileText className={ICON_CLASS} />
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Save as DOCX</Tooltip.Content>
           </Tooltip.Root>
         )}
         {canSubmitFeedback && (

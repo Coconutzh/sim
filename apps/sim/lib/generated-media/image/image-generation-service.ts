@@ -5,7 +5,11 @@ import type {
   ImageGenerationModelId,
   ImageResolutionValue,
 } from '@/lib/generated-media/image/image-generation-utils'
-import { DEFAULT_IMAGE_REPAINT_MODEL } from '@/lib/generated-media/image/image-generation-utils'
+import {
+  DEFAULT_IMAGE_CUTOUT_MODEL,
+  DEFAULT_IMAGE_REPAINT_MODEL,
+  DEFAULT_IMAGE_REPAINT_RESOLUTION,
+} from '@/lib/generated-media/image/image-generation-utils'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
 import {
   fetchWorkspaceFileBuffer,
@@ -47,6 +51,13 @@ interface EraseWorkspaceImageInput {
   abortSignal?: AbortSignal
 }
 
+interface CutoutWorkspaceImageInput {
+  workspaceId: string
+  userId: string
+  sourceImage: UserFileLike
+  abortSignal?: AbortSignal
+}
+
 interface OutpaintWorkspaceImageInput {
   workspaceId: string
   userId: string
@@ -78,9 +89,24 @@ interface GenerateWorkspaceImageFromPromptResult {
   }
 }
 
+interface CutoutWorkspaceImageResult {
+  file: UserFile
+  metadata: {
+    provider: string
+    providerModel: string
+    revisedPrompt?: string
+    hasAlpha: boolean
+    postProcessed: boolean
+  }
+}
+
 type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type EraseWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
+
+const CUTOUT_PROMPT =
+  'Cut out the main foreground subject from the provided image. Preserve the subject exactly, including fine edges such as hair, fabric, transparent materials, and shadows where appropriate. Remove the background completely. Return a clean PNG asset suitable for compositing. Do not add a checkerboard, white background, border, text, watermark, or extra objects.'
+const CUTOUT_BACKGROUND_COLOR_DISTANCE_THRESHOLD = 34
 
 const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, number> = {
   '1K': 1024,
@@ -92,6 +118,139 @@ function getGeneratedFileName(mimeType: string): string {
   if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'generated-image.jpg'
   if (mimeType.includes('webp')) return 'generated-image.webp'
   return 'generated-image.png'
+}
+
+function getColorDistanceSquared(
+  redA: number,
+  greenA: number,
+  blueA: number,
+  redB: number,
+  greenB: number,
+  blueB: number
+): number {
+  return (redA - redB) ** 2 + (greenA - greenB) ** 2 + (blueA - blueB) ** 2
+}
+
+async function hasRealAlphaChannel(buffer: Buffer): Promise<boolean> {
+  const { data, info } = await sharp(buffer).rotate().ensureAlpha().raw().toBuffer({
+    resolveWithObject: true,
+  })
+
+  for (let index = 3; index < data.length; index += info.channels) {
+    if (data[index] < 255) return true
+  }
+
+  return false
+}
+
+async function applyConnectedBackgroundAlpha(buffer: Buffer): Promise<Buffer | null> {
+  const { data, info } = await sharp(buffer).rotate().ensureAlpha().raw().toBuffer({
+    resolveWithObject: true,
+  })
+  const { width, height, channels } = info
+  if (width <= 1 || height <= 1 || channels < 4) return null
+
+  const pixelCount = width * height
+  const transparentPixels = new Uint8Array(pixelCount)
+  const queue = new Int32Array(pixelCount)
+  const cornerIndexes = [0, width - 1, (height - 1) * width, height * width - 1]
+  const backgroundSamples = cornerIndexes.map((pixelIndex) => {
+    const offset = pixelIndex * channels
+    return {
+      red: data[offset],
+      green: data[offset + 1],
+      blue: data[offset + 2],
+    }
+  })
+  const thresholdSquared = CUTOUT_BACKGROUND_COLOR_DISTANCE_THRESHOLD ** 2
+
+  const isBackgroundLike = (pixelIndex: number): boolean => {
+    const offset = pixelIndex * channels
+    const red = data[offset]
+    const green = data[offset + 1]
+    const blue = data[offset + 2]
+    return backgroundSamples.some(
+      (sample) =>
+        getColorDistanceSquared(red, green, blue, sample.red, sample.green, sample.blue) <=
+        thresholdSquared
+    )
+  }
+
+  let head = 0
+  let tail = 0
+  const enqueue = (pixelIndex: number) => {
+    if (transparentPixels[pixelIndex] || !isBackgroundLike(pixelIndex)) return
+    transparentPixels[pixelIndex] = 1
+    queue[tail] = pixelIndex
+    tail += 1
+  }
+
+  for (let x = 0; x < width; x++) {
+    enqueue(x)
+    enqueue((height - 1) * width + x)
+  }
+  for (let y = 1; y < height - 1; y++) {
+    enqueue(y * width)
+    enqueue(y * width + width - 1)
+  }
+
+  while (head < tail) {
+    const pixelIndex = queue[head]
+    head += 1
+    const x = pixelIndex % width
+    const y = Math.floor(pixelIndex / width)
+
+    if (x > 0) enqueue(pixelIndex - 1)
+    if (x + 1 < width) enqueue(pixelIndex + 1)
+    if (y > 0) enqueue(pixelIndex - width)
+    if (y + 1 < height) enqueue(pixelIndex + width)
+  }
+
+  if (tail === 0 || tail === pixelCount) return null
+
+  const output = Buffer.from(data)
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
+    if (transparentPixels[pixelIndex]) {
+      output[pixelIndex * channels + 3] = 0
+    }
+  }
+
+  return sharp(output, {
+    raw: {
+      width,
+      height,
+      channels,
+    },
+  })
+    .png()
+    .toBuffer()
+}
+
+async function ensureTransparentPng(buffer: Buffer): Promise<{
+  buffer: Buffer
+  hasAlpha: boolean
+  postProcessed: boolean
+}> {
+  if (await hasRealAlphaChannel(buffer)) {
+    return {
+      buffer: await sharp(buffer).png().toBuffer(),
+      hasAlpha: true,
+      postProcessed: false,
+    }
+  }
+
+  const postProcessedBuffer = await applyConnectedBackgroundAlpha(buffer)
+  if (postProcessedBuffer && (await hasRealAlphaChannel(postProcessedBuffer))) {
+    return {
+      buffer: postProcessedBuffer,
+      hasAlpha: true,
+      postProcessed: true,
+    }
+  }
+
+  throw new Error(
+    'Unable to generate a real transparent PNG. The model returned an opaque image and server post-processing could not derive an alpha mask.'
+  )
 }
 
 async function hydrateImageReferenceContext(
@@ -331,6 +490,10 @@ export function buildWorkspaceImageErasePrompt({
   ].join(' ')
 }
 
+export function buildWorkspaceImageCutoutPrompt(): string {
+  return CUTOUT_PROMPT
+}
+
 export async function repaintWorkspaceImage({
   workspaceId,
   userId,
@@ -409,6 +572,47 @@ export async function eraseWorkspaceImage({
       provider: generatedImage.provider,
       providerModel: generatedImage.providerModel,
       revisedPrompt: generatedImage.revisedPrompt,
+    },
+  }
+}
+
+export async function cutoutWorkspaceImage({
+  workspaceId,
+  userId,
+  sourceImage,
+  abortSignal,
+}: CutoutWorkspaceImageInput): Promise<CutoutWorkspaceImageResult> {
+  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [sourceImage],
+  })
+
+  const generatedImage = await generateImageWithProvider({
+    model: DEFAULT_IMAGE_CUTOUT_MODEL,
+    prompt: buildWorkspaceImageCutoutPrompt(),
+    aspectRatio: 'auto',
+    resolution: DEFAULT_IMAGE_REPAINT_RESOLUTION,
+    referenceContext,
+    abortSignal,
+  })
+  const transparentPng = await ensureTransparentPng(generatedImage.buffer)
+
+  const file = await uploadWorkspaceFile(
+    workspaceId,
+    userId,
+    transparentPng.buffer,
+    'generated-cutout.png',
+    'image/png'
+  )
+
+  return {
+    file,
+    metadata: {
+      provider: generatedImage.provider,
+      providerModel: generatedImage.providerModel,
+      revisedPrompt: generatedImage.revisedPrompt,
+      hasAlpha: transparentPng.hasAlpha,
+      postProcessed: transparentPng.postProcessed,
     },
   }
 }

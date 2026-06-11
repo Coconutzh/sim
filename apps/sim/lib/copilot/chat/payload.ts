@@ -241,12 +241,28 @@ export async function buildCopilotRequestPayload(
   const effectiveMode = mode === 'agent' ? 'build' : mode
   const transportMode = effectiveMode === 'build' ? 'agent' : effectiveMode
 
-  // Track uploaded files in the DB and build context tags instead of base64 inlining
   const uploadContexts: Array<{ type: string; content: string }> = []
   if (chatId && params.workspaceId && fileAttachments && fileAttachments.length > 0) {
     for (const f of fileAttachments) {
       const filename = (f.filename ?? f.name ?? 'file') as string
       const mediaType = (f.media_type ?? f.mimeType ?? 'application/octet-stream') as string
+      const workspaceFileId =
+        typeof f.workspaceFileId === 'string' && f.workspaceFileId.trim()
+          ? f.workspaceFileId
+          : typeof f.fileId === 'string' && f.fileId.trim()
+            ? f.fileId
+            : null
+      if (workspaceFileId) {
+        uploadContexts.push({
+          type: 'workspace_file_attachment',
+          content: [
+            `Workspace file "${filename}" (${mediaType}, ${f.size} bytes) is attached to this message.`,
+            `Read content with: read("files/by-id/${workspaceFileId}")`,
+            `Read metadata with: read("files/by-id/${workspaceFileId}/meta.json")`,
+          ].join('\n'),
+        })
+        continue
+      }
       try {
         const { displayName } = await trackChatUpload(
           params.workspaceId,
@@ -340,6 +356,7 @@ export async function buildCopilotRequestPayload(
     mode: transportMode,
     messageId: userMessageId,
     ...(allContexts.length > 0 ? { context: allContexts } : {}),
+    ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
     ...(chatId ? { chatId } : {}),
     ...(typeof prefetch === 'boolean' ? { prefetch } : {}),
     ...(implicitFeedback ? { implicitFeedback } : {}),

@@ -3,6 +3,7 @@ import { getContentCanvasModelOptions } from '@/lib/content-canvas/model-catalog
 export const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5' as const
 export const DEFAULT_IMAGE_PERSPECTIVE_MODEL = 'gemini-3-pro-image-preview' as const
 export const DEFAULT_IMAGE_REPAINT_MODEL = 'gemini-3-pro-image' as const
+export const DEFAULT_IMAGE_CUTOUT_MODEL = 'gemini-3-pro-image' as const
 export const DEFAULT_IMAGE_ASPECT_RATIO = 'auto' as const
 export const DEFAULT_IMAGE_REPAINT_RESOLUTION = '2K' as const
 

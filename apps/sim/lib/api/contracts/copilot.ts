@@ -251,10 +251,13 @@ const copilotPersistedMessageSchema = z
       .array(
         z.object({
           id: z.string(),
+          workspaceFileId: z.string().optional(),
           key: z.string(),
           filename: z.string(),
           media_type: z.string(),
           size: z.number(),
+          path: z.string().optional(),
+          storageContext: z.enum(['workspace', 'mothership']).optional(),
         })
       )
       .optional(),

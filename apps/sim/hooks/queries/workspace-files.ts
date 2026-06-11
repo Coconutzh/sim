@@ -11,6 +11,8 @@ import {
   registerWorkspaceFileContract,
   renameWorkspaceFileContract,
   restoreWorkspaceFileContract,
+  type SaveMessageAsDocxBody,
+  saveMessageAsDocxContract,
   updateWorkspaceFileContentContract,
 } from '@/lib/api/contracts/workspace-files'
 import {
@@ -344,6 +346,33 @@ export function useUploadWorkspaceFile() {
           duration: 5000,
         })
       }
+    },
+  })
+}
+
+interface SaveMessageAsDocxParams extends SaveMessageAsDocxBody {
+  workspaceId: string
+}
+
+export function useSaveMessageAsDocx() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ workspaceId, ...body }: SaveMessageAsDocxParams) =>
+      requestJson(saveMessageAsDocxContract, {
+        params: { id: workspaceId },
+        body,
+      }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceFilesKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: workspaceFilesKeys.storageInfo() })
+    },
+    onSuccess: (data) => {
+      toast.success(`Saved "${data.file.name}"`)
+    },
+    onError: (error) => {
+      logger.error('Failed to save message as DOCX:', error)
+      toast.error(error.message || 'Failed to save DOCX', { duration: 5000 })
     },
   })
 }

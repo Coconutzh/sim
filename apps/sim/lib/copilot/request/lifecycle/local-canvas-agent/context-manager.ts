@@ -193,7 +193,11 @@ function extractAttachments(requestPayload: Record<string, unknown>): LocalAgent
               : ''
       if (!name.trim()) return null
       return {
-        ...(typeof record.id === 'string' ? { id: record.id } : {}),
+        ...(typeof record.workspaceFileId === 'string'
+          ? { id: record.workspaceFileId }
+          : typeof record.id === 'string'
+            ? { id: record.id }
+            : {}),
         ...(typeof record.key === 'string' ? { key: record.key } : {}),
         name,
         ...(typeof record.type === 'string'
@@ -211,6 +215,9 @@ function extractAttachments(requestPayload: Record<string, unknown>): LocalAgent
             : typeof record.path === 'string'
               ? { url: record.path }
               : {}),
+        ...(record.storageContext === 'workspace' || record.storageContext === 'mothership'
+          ? { storageContext: record.storageContext }
+          : {}),
       } satisfies LocalAgentAttachment
     })
     .filter((item): item is LocalAgentAttachment => Boolean(item))

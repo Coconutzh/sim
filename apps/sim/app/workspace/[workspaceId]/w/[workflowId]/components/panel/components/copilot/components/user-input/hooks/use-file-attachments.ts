@@ -5,9 +5,9 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { toast } from '@/components/emcn'
-import { uploadViaApiFallback } from '@/lib/uploads/client/api-fallback'
-import { DirectUploadError, runUploadStrategy } from '@/lib/uploads/client/direct-upload'
 import { resolveFileType } from '@/lib/uploads/utils/file-utils'
+import { validateAttachmentFileType } from '@/lib/uploads/utils/validation'
+import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 
 const logger = createLogger('useFileAttachments')
 
@@ -26,11 +26,13 @@ const KILOBYTE = 1024
  */
 export interface AttachedFile {
   id: string
+  workspaceFileId?: string
   name: string
   size: number
   type: string
   path: string
   key?: string
+  storageContext?: 'workspace' | 'mothership'
   uploading: boolean
   previewUrl?: string
 }
@@ -40,10 +42,13 @@ export interface AttachedFile {
  */
 export interface MessageFileAttachment {
   id: string
+  workspaceFileId?: string
   key: string
   filename: string
   media_type: string
   size: number
+  path?: string
+  storageContext?: 'workspace' | 'mothership'
 }
 
 interface UseFileAttachmentsProps {
@@ -67,6 +72,7 @@ export function useFileAttachments(props: UseFileAttachmentsProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadWorkspaceFile = useUploadWorkspaceFile()
 
   /**
    * Cleanup preview URLs on unmount
@@ -118,14 +124,24 @@ export function useFileAttachments(props: UseFileAttachmentsProps) {
         return
       }
       if (!workspaceId) {
-        logger.error('workspaceId required for mothership uploads')
+        logger.error('workspaceId required for workspace file uploads')
         return
       }
 
       const files = Array.from(fileList)
       if (files.length === 0) return
 
-      const placeholders: AttachedFile[] = files.map((file) => ({
+      const validFiles = files.filter((file) => {
+        const validationError = validateAttachmentFileType(file.name)
+        if (!validationError) return true
+        toast.error(`Couldn't upload "${file.name}"`, {
+          description: validationError.message,
+        })
+        return false
+      })
+      if (validFiles.length === 0) return
+
+      const placeholders: AttachedFile[] = validFiles.map((file) => ({
         id: generateId(),
         name: file.name,
         size: file.size,
@@ -140,38 +156,33 @@ export function useFileAttachments(props: UseFileAttachmentsProps) {
 
       setAttachedFiles((prev) => [...prev, ...placeholders])
 
-      const presignedEndpoint = `/api/files/presigned?type=mothership&workspaceId=${encodeURIComponent(workspaceId)}`
-
       await Promise.all(
-        files.map(async (file, i) => {
+        validFiles.map(async (file, i) => {
           const placeholder = placeholders[i]
           try {
-            let result: { path: string; key: string }
-            try {
-              result = await runUploadStrategy({
-                file,
-                workspaceId,
-                context: 'mothership',
-                presignedEndpoint,
-              })
-            } catch (error) {
-              if (error instanceof DirectUploadError && error.code === 'FALLBACK_REQUIRED') {
-                const fallback = await uploadViaApiFallback(file, 'mothership', workspaceId)
-                if (!fallback.key) {
-                  throw new Error('Invalid upload response: missing key')
-                }
-                result = { path: fallback.path, key: fallback.key }
-              } else {
-                throw error
-              }
-            }
+            const result = await uploadWorkspaceFile.mutateAsync({
+              workspaceId,
+              file,
+              skipToast: true,
+            })
+            const uploadedFile = result.file
 
-            logger.info(`File uploaded successfully: ${result.path}`)
+            logger.info(`File uploaded successfully: ${uploadedFile.url}`)
 
             setAttachedFiles((prev) =>
               prev.map((f) =>
                 f.id === placeholder.id
-                  ? { ...f, path: result.path, key: result.key, uploading: false }
+                  ? {
+                      ...f,
+                      workspaceFileId: uploadedFile.id,
+                      name: uploadedFile.name,
+                      size: uploadedFile.size,
+                      type: uploadedFile.type,
+                      path: uploadedFile.url ?? '',
+                      key: uploadedFile.key,
+                      storageContext: 'workspace',
+                      uploading: false,
+                    }
                   : f
               )
             )
@@ -186,7 +197,7 @@ export function useFileAttachments(props: UseFileAttachmentsProps) {
         })
       )
     },
-    [userId, workspaceId]
+    [uploadWorkspaceFile, userId, workspaceId]
   )
 
   /**

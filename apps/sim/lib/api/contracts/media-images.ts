@@ -61,6 +61,11 @@ export const eraseWorkspaceImageBodySchema = z.object({
   resolution: imageGenerationResolutionSchema.default('2K'),
 })
 
+export const cutoutWorkspaceImageBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  sourceImage: userFileSchema,
+})
+
 export const imageOutpaintPlacementSchema = z
   .object({
     x: z.number().nonnegative('placement.x must be greater than or equal to 0'),
@@ -126,7 +131,7 @@ export const outpaintWorkspaceImageBodySchema = z
     }
   })
 
-const generatedWorkspaceFileSchema = z.object({
+export const generatedWorkspaceFileSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
@@ -140,6 +145,11 @@ const generatedImageMetadataSchema = z.object({
   provider: z.string(),
   providerModel: z.string(),
   revisedPrompt: z.string().optional(),
+})
+
+const generatedImageCutoutMetadataSchema = generatedImageMetadataSchema.extend({
+  hasAlpha: z.boolean(),
+  postProcessed: z.boolean(),
 })
 
 export const generateWorkspaceImageContract = defineRouteContract({
@@ -184,6 +194,20 @@ export const eraseWorkspaceImageContract = defineRouteContract({
   },
 })
 
+export const cutoutWorkspaceImageContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/images/cutout',
+  body: cutoutWorkspaceImageBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceFileSchema,
+      metadata: generatedImageCutoutMetadataSchema,
+    }),
+  },
+})
+
 export const outpaintWorkspaceImageContract = defineRouteContract({
   method: 'POST',
   path: '/api/media/images/outpaint',
@@ -201,6 +225,7 @@ export const outpaintWorkspaceImageContract = defineRouteContract({
 export type GenerateWorkspaceImageBody = z.input<typeof generateWorkspaceImageBodySchema>
 export type RepaintWorkspaceImageBody = z.input<typeof repaintWorkspaceImageBodySchema>
 export type EraseWorkspaceImageBody = z.input<typeof eraseWorkspaceImageBodySchema>
+export type CutoutWorkspaceImageBody = z.input<typeof cutoutWorkspaceImageBodySchema>
 export type OutpaintWorkspaceImageBody = z.input<typeof outpaintWorkspaceImageBodySchema>
 export type ImageGenerationResolution = z.output<typeof imageGenerationResolutionSchema>
 export type ImageOutpaintAspectRatio = z.output<typeof imageOutpaintAspectRatioSchema>

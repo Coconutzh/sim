@@ -1,6 +1,8 @@
 /**
  * @vitest-environment node
  */
+
+import sharp from 'sharp'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -26,6 +28,7 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
 }))
 
 import {
+  cutoutWorkspaceImage,
   eraseWorkspaceImage,
   generateWorkspaceImageFromPrompt,
   outpaintWorkspaceImage,
@@ -337,6 +340,210 @@ describe('generateWorkspaceImageFromPrompt', () => {
         providerModel: 'gemini-3-pro-image',
       },
     })
+  })
+
+  it('cuts out with fixed Nano Banana Pro model and preserves a real transparent PNG', async () => {
+    const transparentPng = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(
+            '<svg width="2" height="2" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="1" height="1" fill="red"/></svg>'
+          ),
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: transparentPng,
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_cutout',
+      name: 'generated-cutout.png',
+      size: transparentPng.byteLength,
+      type: 'image/png',
+      key: 'workspace/ws-1/generated-cutout.png',
+      url: '/api/files/serve/workspace/ws-1/generated-cutout.png?context=workspace',
+      context: 'workspace',
+    })
+
+    const result = await cutoutWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+    })
+
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        aspectRatio: 'auto',
+        resolution: '2K',
+        prompt: expect.stringContaining('Cut out the main foreground subject'),
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'source-1',
+              base64: Buffer.from('source-binary').toString('base64'),
+            }),
+          ],
+        },
+      })
+    )
+    expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
+      'ws-1',
+      'user-1',
+      expect.any(Buffer),
+      'generated-cutout.png',
+      'image/png'
+    )
+    expect(result).toMatchObject({
+      metadata: {
+        providerModel: 'gemini-3-pro-image',
+        hasAlpha: true,
+        postProcessed: false,
+      },
+    })
+  })
+
+  it('post-processes an opaque flat-background cutout into a transparent PNG', async () => {
+    const opaqueWhiteBackgroundPng = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(
+            '<svg width="8" height="8" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="4" height="4" fill="blue"/></svg>'
+          ),
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: opaqueWhiteBackgroundPng,
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_cutout',
+      name: 'generated-cutout.png',
+      size: opaqueWhiteBackgroundPng.byteLength,
+      type: 'image/png',
+      key: 'workspace/ws-1/generated-cutout.png',
+      url: '/api/files/serve/workspace/ws-1/generated-cutout.png?context=workspace',
+      context: 'workspace',
+    })
+
+    const result = await cutoutWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+    })
+    const uploadedBuffer = mockUploadWorkspaceFile.mock.calls[0]?.[2] as Buffer
+    const uploadedStats = await sharp(uploadedBuffer).stats()
+
+    expect(result.metadata).toMatchObject({
+      hasAlpha: true,
+      postProcessed: true,
+    })
+    expect(uploadedStats.channels[3]?.min).toBe(0)
+  })
+
+  it('rejects opaque cutout output when no real alpha mask can be derived', async () => {
+    const solidOpaquePng = await sharp({
+      create: {
+        width: 4,
+        height: 4,
+        channels: 3,
+        background: { r: 24, g: 80, b: 160 },
+      },
+    })
+      .png()
+      .toBuffer()
+
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: solidOpaquePng,
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+
+    await expect(
+      cutoutWorkspaceImage({
+        workspaceId: 'ws-1',
+        userId: 'user-1',
+        sourceImage: {
+          id: 'source-1',
+          name: 'source.png',
+          url: '',
+          key: 'workspace/source.png',
+          size: 100,
+          type: 'image/png',
+        },
+      })
+    ).rejects.toThrow('Unable to generate a real transparent PNG')
+    expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
   })
 
   it('outpaints with fixed Nano Banana Pro model, generated layout guides, and resolution', async () => {

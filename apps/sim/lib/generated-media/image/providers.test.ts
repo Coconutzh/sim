@@ -40,6 +40,7 @@ describe('generateImageWithProvider', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     global.fetch = originalFetch
     process.env = originalEnv
   })
@@ -335,5 +336,54 @@ describe('generateImageWithProvider', () => {
       'https://files.example.com/preview-source.png',
       'https://files.example.com/preview-mask.png',
     ])
+  })
+
+  it('allows Pro Image compatible tasks to poll for five minutes before timing out', async () => {
+    vi.useFakeTimers()
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === 'https://api.evolink.ai/v1/images/generations') {
+        return {
+          ok: true,
+          json: async () => ({
+            task_id: 'task-slow',
+          }),
+        }
+      }
+
+      if (url === 'https://api.evolink.ai/v1/tasks/task-slow') {
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'processing',
+          }),
+        }
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+    global.fetch = fetchMock
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    const result = generateImageWithProvider({
+      model: 'gemini-3-pro-image',
+      prompt: 'Cut out the subject',
+      aspectRatio: 'auto',
+      resolution: '2K',
+    })
+    const rejection = expect(result).rejects.toThrow(
+      'Gemini compatible image task task-slow for model gemini-3-pro-image did not complete within 300s'
+    )
+
+    await vi.runAllTimersAsync()
+
+    await rejection
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === 'https://api.evolink.ai/v1/tasks/task-slow'
+      )
+    ).toHaveLength(301)
   })
 })

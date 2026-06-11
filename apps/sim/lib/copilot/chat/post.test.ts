@@ -280,6 +280,40 @@ describe('handleUnifiedChatPost', () => {
     )
   })
 
+  it('passes workspace file attachments into the copilot payload', async () => {
+    const fileAttachments = [
+      {
+        id: 'attachment-1',
+        workspaceFileId: 'wf_123',
+        key: 'workspace/ws-1/brief.pdf',
+        filename: 'brief.pdf',
+        media_type: 'application/pdf',
+        size: 1234,
+        path: '/api/files/serve/workspace%2Fws-1%2Fbrief.pdf?context=workspace',
+        storageContext: 'workspace',
+      },
+    ]
+
+    const response = await handleUnifiedChatPost(
+      new NextRequest('http://localhost/api/copilot/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Summarize the attached file',
+          workspaceId: 'ws-1',
+          fileAttachments,
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(buildCopilotRequestPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileAttachments,
+      }),
+      { selectedModel: '' }
+    )
+  })
+
   it('rejects requests that have neither workflow nor workspace attachment', async () => {
     const response = await handleUnifiedChatPost(
       new NextRequest('http://localhost/api/copilot/chat', {

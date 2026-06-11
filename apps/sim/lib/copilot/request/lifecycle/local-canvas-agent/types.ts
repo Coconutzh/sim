@@ -130,6 +130,7 @@ export interface LocalAgentAttachment {
   type?: string
   size?: number
   url?: string
+  storageContext?: 'workspace' | 'mothership'
 }
 
 export interface LocalAgentAttachedContext {

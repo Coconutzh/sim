@@ -48,6 +48,7 @@
     "@marsidev/react-turnstile": "1.4.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@monaco-editor/react": "4.7.0",
+    "@napi-rs/canvas": "0.1.100",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/core": "2.7.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.200.0",
@@ -206,6 +207,7 @@
     "vitest": "^3.0.8"
   },
   "trustedDependencies": [
+    "@napi-rs/canvas",
     "canvas",
     "better-sqlite3",
     "ffmpeg-static",
