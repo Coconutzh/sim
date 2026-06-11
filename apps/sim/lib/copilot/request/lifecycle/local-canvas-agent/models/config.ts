@@ -29,6 +29,14 @@ function resolveActorApiKey(provider: ProviderId): string | undefined {
   return undefined
 }
 
+function resolveAuxiliaryApiKey(provider: ProviderId): string | undefined {
+  const contentAux = getEnv('CONTENT_CANVAS_AUX_API_KEY')?.trim()
+  if (contentAux) return contentAux
+  const shared = getEnv('LOCAL_CANVAS_AUX_API_KEY')?.trim()
+  if (shared) return shared
+  return resolveActorApiKey(provider)
+}
+
 function hasExplicitContentCanvasTextConfig(): boolean {
   return Boolean(
     getEnv('CONTENT_TEXT_GEMINI_API_KEY')?.trim() || getEnv('CONTENT_TEXT_GLM_API_KEY')?.trim()
@@ -87,6 +95,39 @@ export function resolveLocalCanvasAgentModelConfig(): LocalAgentModelConfig {
   }
 }
 
+export function resolveLocalAgentAuxiliaryModelConfig(params: {
+  fallback: LocalAgentModelConfig
+}): LocalAgentModelConfig {
+  const explicitModel =
+    getEnv('CONTENT_CANVAS_AUX_MODEL')?.trim() || getEnv('LOCAL_CANVAS_AUX_MODEL')?.trim()
+  if (!explicitModel) return params.fallback
+
+  const explicitProvider =
+    normalizeProvider(getEnv('CONTENT_CANVAS_AUX_PROVIDER')) ??
+    normalizeProvider(getEnv('LOCAL_CANVAS_AUX_PROVIDER')) ??
+    normalizeProvider(getProviderFromModel(explicitModel) ?? undefined)
+  if (!explicitProvider) {
+    logger.warn('Local canvas auxiliary model provider is not configured; falling back', {
+      model: explicitModel,
+      fallbackModel: params.fallback.model,
+    })
+    return params.fallback
+  }
+
+  const explicitMode =
+    getEnv('CONTENT_CANVAS_AUX_MODE') === 'tool-call' ||
+    getEnv('LOCAL_CANVAS_AUX_MODE') === 'tool-call'
+      ? 'tool-call'
+      : 'structured'
+
+  return {
+    provider: explicitProvider,
+    model: explicitModel,
+    mode: explicitMode,
+    apiKey: resolveAuxiliaryApiKey(explicitProvider),
+  }
+}
+
 export async function executeLocalAgentModelRequest(
   config: LocalAgentModelConfig,
   request: LocalAgentModelRequest
@@ -114,6 +155,9 @@ export async function executeLocalAgentModelRequest(
         finishReason: response.finishReason,
         tokens: response.tokens,
         responseChars: response.content?.length ?? 0,
+        systemPromptChars: request.systemPrompt.length,
+        promptChars: request.prompt.length,
+        messageCount: request.messages?.length ?? 0,
       })
       return response
     }
@@ -151,6 +195,9 @@ export async function executeLocalAgentModelRequest(
       finishReason: response.finishReason,
       tokens: response.tokens,
       responseChars: response.content?.length ?? 0,
+      systemPromptChars: request.systemPrompt.length,
+      promptChars: request.prompt.length,
+      messageCount: request.messages?.length ?? 0,
     })
     return response
   } catch (error) {
@@ -162,6 +209,9 @@ export async function executeLocalAgentModelRequest(
         config.provider ?? normalizeProvider(getProviderFromModel(config.model) ?? undefined),
       useContentCanvasTextResolver: config.useContentCanvasTextResolver === true,
       elapsedMs: Date.now() - startedAt,
+      systemPromptChars: request.systemPrompt.length,
+      promptChars: request.prompt.length,
+      messageCount: request.messages?.length ?? 0,
       error: error instanceof Error ? error.message : String(error),
     })
     throw error

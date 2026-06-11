@@ -1,3 +1,7 @@
+import {
+  buildLocalAgentPromptCacheContextParts,
+  getOrCreateLocalAgentPromptCacheEntry,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/prompt-cache'
 import type {
   LocalAgentContext,
   LocalAgentRole,
@@ -10,6 +14,7 @@ const USER_FACING_GUARD = [
   'Never address the user as a team or group unless the user explicitly asks for a team-broadcast style.',
   'Do not expose raw JSON, workflowId, workspaceId, database IDs, internal fields, or tool payloads unless the user explicitly asks for IDs.',
 ].join('\n')
+const ROLE_SYSTEM_PROMPT_VERSION = '2026-06-11-v1'
 
 function buildCapabilityContext(context: LocalAgentContext): string {
   const skills = context.skills
@@ -31,13 +36,25 @@ export function buildLocalAgentRoleSystemPrompt(params: {
   roleInstruction: string
   includeProfileInstructions?: boolean
 }): string {
-  return [
-    params.includeProfileInstructions ? params.context.agent.systemPrompt : '',
-    params.roleInstruction,
-    `Runtime role: ${params.role}`,
-    buildCapabilityContext(params.context),
-    USER_FACING_GUARD,
-  ]
-    .filter((part) => part.trim())
-    .join('\n\n')
+  return getOrCreateLocalAgentPromptCacheEntry({
+    kind: 'role-system-prompt',
+    role: params.role,
+    version: ROLE_SYSTEM_PROMPT_VERSION,
+    parts: {
+      context: buildLocalAgentPromptCacheContextParts(params.context),
+      roleInstruction: params.roleInstruction,
+      includeProfileInstructions: params.includeProfileInstructions === true,
+    },
+    build: () =>
+      [
+        params.includeProfileInstructions ? params.context.agent.systemPrompt : '',
+        params.roleInstruction,
+        `Runtime role: ${params.role}`,
+        buildCapabilityContext(params.context),
+        USER_FACING_GUARD,
+      ]
+        .filter((part) => part.trim())
+        .join('\n\n'),
+    measure: (value) => value.length,
+  }).value
 }

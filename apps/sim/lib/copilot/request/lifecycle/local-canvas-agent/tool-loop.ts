@@ -13,6 +13,12 @@ import { buildLocalAgentPlan } from '@/lib/copilot/request/lifecycle/local-canva
 import { parseLocalAgentToolInputWithRepair } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-call-repair'
 import { getLocalAgentToolDescriptor } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
+import {
+  assessLocalAgentToolGuardrails,
+  type LocalAgentToolGuardrailHistoryEntry,
+  recordLocalAgentToolGuardrailHistory,
+  reportLocalAgentToolGuardrailAssessment,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-guardrails'
 import type {
   LocalAgentContext,
   LocalAgentDecision,
@@ -21,6 +27,7 @@ import type {
   LocalAgentThreadMemoryUpdate,
   LocalAgentToolCall,
   LocalAgentToolLoopResult,
+  LocalAgentToolResult,
   LocalCanvasMutationPolicy,
   LocalCanvasPatch,
   LocalCanvasUserIntent,
@@ -64,6 +71,7 @@ interface ModelDrivenLoopState {
   pendingVerification: PendingVerification | null
   toolCallsExecuted: number
   autoGenerationAttempted: boolean
+  toolGuardrailHistory: LocalAgentToolGuardrailHistoryEntry[]
 }
 
 function asString(value: unknown): string {
@@ -982,6 +990,32 @@ function buildVerifiedCompletionAnswer(observations: LocalAgentObservation[]): s
   return '已完成画布修改，并完成验证。'
 }
 
+async function executeModelLoopToolCall(params: {
+  context: LocalAgentContext
+  state: ModelDrivenLoopState
+  call: LocalAgentToolCall
+  readOnly: boolean
+}): Promise<LocalAgentToolResult> {
+  const assessment = assessLocalAgentToolGuardrails({
+    history: params.state.toolGuardrailHistory,
+    call: params.call,
+    readOnly: params.readOnly,
+  })
+  reportLocalAgentToolGuardrailAssessment({
+    context: params.context,
+    call: params.call,
+    assessment,
+  })
+  const result = await executeLocalAgentTool(params.context, params.call)
+  recordLocalAgentToolGuardrailHistory({
+    history: params.state.toolGuardrailHistory,
+    call: params.call,
+    result,
+    readOnly: params.readOnly,
+  })
+  return result
+}
+
 async function executeAutoGenerationCandidates(params: {
   context: LocalAgentContext
   state: ModelDrivenLoopState
@@ -999,9 +1033,14 @@ async function executeAutoGenerationCandidates(params: {
   }
 
   for (const nodeId of nodeIds) {
-    const result = await executeLocalAgentTool(params.context, {
-      name: 'canvas.generate_node_output',
-      input: { nodeId },
+    const result = await executeModelLoopToolCall({
+      context: params.context,
+      state: params.state,
+      readOnly: false,
+      call: {
+        name: 'canvas.generate_node_output',
+        input: { nodeId },
+      },
     })
     params.state.toolCallsExecuted += 1
     params.state.observations.push(observationFromToolResult(result))
@@ -1118,7 +1157,12 @@ async function executeDecisionToolCall(params: {
   })
 
   params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
-  const result = await executeLocalAgentTool(params.context, call)
+  const result = await executeModelLoopToolCall({
+    context: params.context,
+    state: params.state,
+    call,
+    readOnly: callReadOnly,
+  })
   params.state.toolCallsExecuted += 1
   params.state.observations.push(observationFromToolResult(result))
   if (result.success) {
@@ -1157,7 +1201,7 @@ async function executeParallelDecisionToolCalls(params: {
   decision: Extract<LocalAgentDecision, { type: 'tool_calls' }>
   state: ModelDrivenLoopState
 }): Promise<void> {
-  const calls: LocalAgentToolCall[] = []
+  const calls: Array<{ call: LocalAgentToolCall; readOnly: boolean }> = []
   params.state.observations.push(buildDecisionObservation(params.decision.userVisibleReason, true))
 
   for (const requestedCall of params.decision.toolCalls) {
@@ -1201,10 +1245,8 @@ async function executeParallelDecisionToolCalls(params: {
       continue
     }
 
-    if (
-      !descriptor.isReadOnly(parsedInput.data) ||
-      !descriptor.isConcurrencySafe(parsedInput.data)
-    ) {
+    const readOnly = descriptor.isReadOnly(parsedInput.data)
+    if (!readOnly || !descriptor.isConcurrencySafe(parsedInput.data)) {
       params.state.observations.push(
         buildDecisionObservation(
           `Blocked ${call.name} from parallel execution because it is not read-only and concurrency-safe.`,
@@ -1214,11 +1256,18 @@ async function executeParallelDecisionToolCalls(params: {
       continue
     }
 
-    calls.push(call)
+    calls.push({ call, readOnly })
   }
 
   const results = await Promise.all(
-    calls.map((call) => executeLocalAgentTool(params.context, call))
+    calls.map(({ call, readOnly }) =>
+      executeModelLoopToolCall({
+        context: params.context,
+        state: params.state,
+        call,
+        readOnly,
+      })
+    )
   )
   params.state.toolCallsExecuted += results.length
   params.state.observations.push(...results.map(observationFromToolResult))
@@ -1229,9 +1278,14 @@ async function executePendingVerification(params: {
   state: ModelDrivenLoopState
 }): Promise<void> {
   if (!params.state.pendingVerification) return
-  const result = await executeLocalAgentTool(params.context, {
-    name: 'canvas.verify_patch',
-    input: params.state.pendingVerification.input,
+  const result = await executeModelLoopToolCall({
+    context: params.context,
+    state: params.state,
+    readOnly: true,
+    call: {
+      name: 'canvas.verify_patch',
+      input: params.state.pendingVerification.input,
+    },
   })
   params.state.toolCallsExecuted += 1
   params.state.observations.push(observationFromToolResult(result))
@@ -1244,9 +1298,14 @@ async function executeImmediateVerification(params: {
   input: Record<string, unknown>
 }): Promise<void> {
   params.state.pendingVerification = null
-  const result = await executeLocalAgentTool(params.context, {
-    name: 'canvas.verify_patch',
-    input: params.input,
+  const result = await executeModelLoopToolCall({
+    context: params.context,
+    state: params.state,
+    readOnly: true,
+    call: {
+      name: 'canvas.verify_patch',
+      input: params.input,
+    },
   })
   params.state.toolCallsExecuted += 1
   params.state.observations.push(observationFromToolResult(result))
@@ -1270,6 +1329,7 @@ async function runModelDrivenLocalAgentToolLoop(
     pendingVerification: null,
     toolCallsExecuted: 0,
     autoGenerationAttempted: false,
+    toolGuardrailHistory: [],
   }
   let stopSummary: string | null = null
   const iterationBudget = createLocalAgentIterationBudget(MAX_STEPS)

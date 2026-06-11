@@ -2,6 +2,10 @@ import { z } from 'zod'
 import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
 import {
+  buildLocalAgentPromptCacheContextParts,
+  getOrCreateLocalAgentPromptCacheEntry,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/prompt-cache'
+import {
   normalizeLocalAgentToolName,
   parseLooseJsonObject,
   repairLocalAgentToolInput,
@@ -9,7 +13,7 @@ import {
 import { LOCAL_AGENT_TOOL_DESCRIPTORS } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { selectAvailableLocalAgentTools } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-registry'
 import {
-  buildBudgetedObservationPromptWithOptions,
+  buildBudgetedObservationPromptResult,
   summarizeAvailableToolNames,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-result-budget'
 import type {
@@ -128,6 +132,10 @@ export const localAgentDecisionSchema = z.discriminatedUnion('type', [
   askClarificationSchema,
   finalAnswerSchema,
 ])
+
+const DECISION_TOOL_DESCRIPTOR_PROMPT_VERSION = '2026-06-11-v1'
+const DECISION_PATCH_PROTOCOL_PROMPT_VERSION = '2026-06-11-v1'
+const DECISION_RESPONSE_SCHEMA_VERSION = '2026-06-11-v1'
 
 function parseJsonObject(content: string): unknown {
   const parsed = parseLooseJsonObject(content)
@@ -355,15 +363,26 @@ function buildToolDescriptorContext(context: LocalAgentContext): string {
   const descriptors = LOCAL_AGENT_TOOL_DESCRIPTORS.filter((descriptor) =>
     availableNames.has(descriptor.name)
   )
-  return descriptors
-    .map((descriptor) => {
-      const schema = JSON.stringify(z.toJSONSchema(descriptor.inputSchema))
-      return [
-        `- ${descriptor.name}: ${descriptor.description}`,
-        `  inputSchema: ${clip(schema, 650)}`,
-      ].join('\n')
-    })
-    .join('\n')
+  return getOrCreateLocalAgentPromptCacheEntry({
+    kind: 'decision-tool-descriptors',
+    role: 'decision',
+    version: DECISION_TOOL_DESCRIPTOR_PROMPT_VERSION,
+    parts: {
+      context: buildLocalAgentPromptCacheContextParts(context),
+      availableTools: descriptors.map((descriptor) => descriptor.name),
+    },
+    build: () =>
+      descriptors
+        .map((descriptor) => {
+          const schema = JSON.stringify(z.toJSONSchema(descriptor.inputSchema))
+          return [
+            `- ${descriptor.name}: ${descriptor.description}`,
+            `  inputSchema: ${clip(schema, 650)}`,
+          ].join('\n')
+        })
+        .join('\n'),
+    measure: (value) => value.length,
+  }).value
 }
 
 function buildRuntimeConstraintsContext(context: LocalAgentContext): string {
@@ -381,7 +400,7 @@ function buildRuntimeConstraintsContext(context: LocalAgentContext): string {
     .join('\n')
 }
 
-function buildPatchProtocolContext(): string {
+function buildRawPatchProtocolContext(): string {
   return [
     'Patch protocol for canvas.propose_patch and canvas.apply_patch:',
     '- Use input shape {"patch":{"operations":[...]}}.',
@@ -468,6 +487,17 @@ function buildPatchProtocolContext(): string {
   ].join('\n')
 }
 
+function buildPatchProtocolContext(context: LocalAgentContext): string {
+  return getOrCreateLocalAgentPromptCacheEntry({
+    kind: 'decision-patch-protocol',
+    role: 'decision',
+    version: DECISION_PATCH_PROTOCOL_PROMPT_VERSION,
+    parts: buildLocalAgentPromptCacheContextParts(context),
+    build: buildRawPatchProtocolContext,
+    measure: (value) => value.length,
+  }).value
+}
+
 function isLengthFinishReason(finishReason: string | undefined): boolean {
   const normalized = finishReason?.trim().toLowerCase()
   return (
@@ -499,6 +529,12 @@ export function buildLocalAgentDecisionPrompt(params: {
   }
 }): string {
   const availableTools = selectAvailableLocalAgentTools(params.context)
+  const observationPrompt = buildBudgetedObservationPromptResult(params.observations, {
+    context: params.context,
+    role: 'decision',
+    maxOutputChars: 360,
+    maxPromptChars: 5000,
+  }).prompt
   return [
     `User request:\n${params.context.message}`,
     `Selected node ids: ${params.context.selectedNodeIds.join(', ') || 'none'}`,
@@ -507,12 +543,9 @@ export function buildLocalAgentDecisionPrompt(params: {
     `Runtime constraints:\n${buildRuntimeConstraintsContext(params.context)}`,
     `Thread memory:\n${buildMemoryContext(params.context)}`,
     `Enabled skill context:\n${buildSkillContext(params.context)}`,
-    `Tool observations:\n${buildBudgetedObservationPromptWithOptions(params.observations, {
-      maxOutputChars: 560,
-      maxPromptChars: 5400,
-    })}`,
+    `Tool observations:\n${observationPrompt}`,
     `Tool descriptors:\n${buildToolDescriptorContext(params.context)}`,
-    buildPatchProtocolContext(),
+    buildPatchProtocolContext(params.context),
     [
       'Return only AgentDecision JSON.',
       'Do not include chain-of-thought, markdown, or prose outside JSON.',
@@ -556,7 +589,16 @@ export async function requestLocalAgentDecision(params: {
     maxTokens: params.context.thinkingLevel === 'extra' ? 2200 : 1400,
     responseFormat: {
       name: 'local_canvas_agent_decision',
-      schema: z.toJSONSchema(localAgentDecisionSchema),
+      schema: JSON.parse(
+        getOrCreateLocalAgentPromptCacheEntry({
+          kind: 'decision-response-schema',
+          role: 'decision',
+          version: DECISION_RESPONSE_SCHEMA_VERSION,
+          parts: buildLocalAgentPromptCacheContextParts(params.context),
+          build: () => JSON.stringify(z.toJSONSchema(localAgentDecisionSchema)),
+          measure: (value) => value.length,
+        }).value
+      ),
       strict: true,
     },
     abortSignal: params.context.options.abortSignal,

@@ -1,9 +1,13 @@
+import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
+import { isLocalAgentPerformanceTelemetryEnabled } from '@/lib/copilot/request/lifecycle/local-canvas-agent/feature-flags'
 import type {
   LocalAgentContext,
   LocalAgentToolCall,
   LocalAgentToolResult,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
+
+const logger = createLogger('LocalCanvasAgentObservability')
 
 const REDACTED_KEYS = new Set([
   'apiKey',
@@ -43,6 +47,28 @@ export interface LocalAgentTraceLogFields {
   summary?: string
   inputPreview?: unknown
   outputPreview?: unknown
+}
+
+export interface LocalAgentPerformanceMetricFields {
+  kind: 'prompt_cache' | 'observation_budget' | 'tool_guardrail'
+  workspaceId?: string
+  workflowId?: string
+  chatId?: string
+  role?: string
+  cacheKind?: string
+  cacheHit?: boolean
+  cacheEnabled?: boolean
+  cacheKey?: string
+  chars?: number
+  rawChars?: number
+  budgetedChars?: number
+  omittedCount?: number
+  truncatedCount?: number
+  toolName?: string
+  repeatCount?: number
+  repeatedFailureCount?: number
+  noProgressRepeatCount?: number
+  warning?: string
 }
 
 function shouldRedactKey(key: string): boolean {
@@ -112,4 +138,13 @@ export function buildLocalAgentToolTraceFields(params: {
         ? undefined
         : redactLocalAgentTelemetryValue(params.result.output),
   }
+}
+
+export function recordLocalAgentPerformanceMetric(fields: LocalAgentPerformanceMetricFields): void {
+  if (!isLocalAgentPerformanceTelemetryEnabled()) return
+  logger.info('Local canvas agent performance metric', {
+    ...fields,
+    cacheKey: fields.cacheKey ? redactLocalAgentTelemetryValue(fields.cacheKey) : undefined,
+    warning: fields.warning ? redactLocalAgentTelemetryValue(fields.warning) : undefined,
+  })
 }

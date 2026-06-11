@@ -1,11 +1,15 @@
 /**
  * @vitest-environment node
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildLocalAgentDecisionPrompt,
   parseLocalAgentDecision,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/decision'
+import {
+  clearLocalAgentPromptCache,
+  getLocalAgentPromptCacheSize,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/prompt-cache'
 import type {
   LocalAgentContext,
   LocalAgentObservation,
@@ -41,6 +45,11 @@ function buildContext(overrides: Partial<LocalAgentContext> = {}): LocalAgentCon
 }
 
 describe('local canvas agent decision', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    clearLocalAgentPromptCache()
+  })
+
   it('parses tool call decisions from wrapped model JSON', () => {
     const decision = parseLocalAgentDecision(`
       Here is the JSON:
@@ -314,6 +323,62 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('audio')
     expect(prompt).toContain('Do not set file')
     expect(prompt).toContain('canvas.generate_node_output')
+  })
+
+  it('keeps decision prompt text identical when stable prompt cache is enabled', () => {
+    const params = {
+      context: buildContext({ message: '读取当前画布并总结。' }),
+      observations: [],
+      policy: {
+        userIntent: 'inspect_canvas' as const,
+        mutationPolicy: 'read_only' as const,
+        canvasReadPolicy: 'required' as const,
+      },
+    }
+    vi.stubEnv('LOCAL_CANVAS_AGENT_PROMPT_CACHE', 'false')
+    const uncachedPrompt = buildLocalAgentDecisionPrompt(params)
+
+    clearLocalAgentPromptCache()
+    vi.stubEnv('LOCAL_CANVAS_AGENT_PROMPT_CACHE', 'true')
+    const cachedPrompt = buildLocalAgentDecisionPrompt(params)
+    const secondCachedPrompt = buildLocalAgentDecisionPrompt(params)
+
+    expect(cachedPrompt).toBe(uncachedPrompt)
+    expect(secondCachedPrompt).toBe(cachedPrompt)
+    expect(getLocalAgentPromptCacheSize()).toBeGreaterThan(0)
+  })
+
+  it('invalidates cached tool descriptors when write permissions change', () => {
+    vi.stubEnv('LOCAL_CANVAS_AGENT_PROMPT_CACHE', 'true')
+    const writablePrompt = buildLocalAgentDecisionPrompt({
+      context: buildContext({ permissions: { canRead: true, canWrite: true, canPublish: false } }),
+      observations: [],
+      policy: {
+        userIntent: 'mutate_canvas',
+        mutationPolicy: 'allow_mutation',
+        canvasReadPolicy: 'required',
+      },
+    })
+    const readOnlyPrompt = buildLocalAgentDecisionPrompt({
+      context: buildContext({
+        permissions: {
+          canRead: true,
+          canWrite: false,
+          canPublish: false,
+          readonlyReason: 'read only test',
+        },
+      }),
+      observations: [],
+      policy: {
+        userIntent: 'inspect_canvas',
+        mutationPolicy: 'read_only',
+        canvasReadPolicy: 'required',
+      },
+    })
+
+    expect(writablePrompt).toContain('- canvas.apply_patch:')
+    expect(readOnlyPrompt).not.toContain('- canvas.apply_patch:')
+    expect(readOnlyPrompt).toContain('writeBlockedReason: read only test')
   })
 
   it('frames patch examples as adaptable recipes instead of fixed templates', () => {
