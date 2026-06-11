@@ -159,7 +159,8 @@ export function ProjectNotificationsCenter() {
     useOrganizationWorkgroups(organizationId)
   const organizationWorkgroups = organizationWorkgroupsData?.workgroups ?? []
   const isProjectAdmin = organizationWorkgroups.some(
-    (workgroup) => workgroup.currentUserRole === 'org_admin'
+    (workgroup) =>
+      workgroup.currentUserRole === 'org_admin' || workgroup.currentUserRole === 'project_admin'
   )
 
   const projectNotificationCenterQuery = useMemo(

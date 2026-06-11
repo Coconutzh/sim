@@ -2,8 +2,8 @@ import type React from 'react'
 import { redirect } from 'next/navigation'
 import { ToastProvider } from '@/components/emcn'
 import { getSession } from '@/lib/auth'
-import { InvitationBell } from '@/app/workspace/[workspaceId]/components/invitation-bell'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/impersonation-banner'
+import { LiteSidebar } from '@/app/workspace/[workspaceId]/lite-sidebar'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
@@ -27,7 +27,6 @@ export async function WorkspaceFullLayout({ children, params }: WorkspaceFullLay
   }
   const orgId = (session.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
   const initialOrgSettings = orgId ? await getOrgWhitelabelSettings(orgId) : null
-  const { Sidebar } = await import('@/app/workspace/[workspaceId]/w/components/sidebar/sidebar')
 
   return (
     <BrandingProvider initialOrgSettings={initialOrgSettings}>
@@ -39,12 +38,11 @@ export async function WorkspaceFullLayout({ children, params }: WorkspaceFullLay
             <ImpersonationBanner />
             <WorkspacePermissionsProvider>
               <WorkspaceScopeSync />
-              <InvitationBell />
               <div className='flex min-h-0 flex-1'>
                 <div className='shrink-0' suppressHydrationWarning>
-                  <Sidebar />
+                  <LiteSidebar workspaceId={workspaceId} />
                 </div>
-                <div className='flex min-w-0 flex-1 flex-col p-[8px] pl-0'>
+                <div className='flex min-w-0 flex-1 flex-col p-[8px]'>
                   <div className='flex-1 overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg)]'>
                     {children}
                   </div>

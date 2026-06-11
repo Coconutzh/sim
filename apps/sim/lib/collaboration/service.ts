@@ -5,9 +5,11 @@ import {
   auditLog,
   discipline,
   member,
+  organization,
   organizationAgentTemplate,
   permissions,
   personalCanvasWorkspace,
+  productionTask,
   settings,
   skill,
   user,
@@ -15,6 +17,7 @@ import {
   workflowPublicationScope,
   workflowPublicationVersion,
   workgroup,
+  workgroupJoinRequest,
   workgroupMember,
   workspace,
 } from '@sim/db/schema'
@@ -116,6 +119,44 @@ type ProductionTaskAuditAction =
   | typeof AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED
   | typeof AuditAction.PRODUCTION_TASK_MESSAGE_CREATED
   | typeof AuditAction.PRODUCTION_TASK_DDL_REMINDER
+
+type ProductionProjectStatus = 'active' | 'completed'
+type ProductionProjectPhaseStatus = 'active' | 'completed'
+
+interface ProductionProjectPhase {
+  id: string
+  name: string
+  dueAt: string | null
+  status: ProductionProjectPhaseStatus
+}
+
+interface ProductionProjectPhaseInput {
+  id?: string | null
+  name: string
+  dueAt?: string | null
+  status?: ProductionProjectPhaseStatus
+}
+
+interface ProductionProjectMetadata {
+  estimatedDueAt: string | null
+  phases: ProductionProjectPhase[]
+  productionProject: boolean
+  projectStatus: ProductionProjectStatus
+}
+
+interface ProductionProjectTaskStats {
+  completed: number
+  total: number
+  unfinished: number
+}
+
+const COMPLETED_PRODUCTION_TASK_STATUSES = new Set(['approved', 'archived'])
+const DEFAULT_PRODUCTION_PROJECT_METADATA: ProductionProjectMetadata = {
+  estimatedDueAt: null,
+  phases: [],
+  productionProject: false,
+  projectStatus: 'active',
+}
 const PRODUCTION_TASK_AUDIT_ACTIONS = [
   AuditAction.PRODUCTION_TASK_CREATED,
   AuditAction.PRODUCTION_TASK_UPDATED,
@@ -304,6 +345,78 @@ function toSlug(name: string): string {
   return slug || `team-${generateShortId(8)}`
 }
 
+function getObjectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function normalizeProductionProjectPhases(value: unknown): ProductionProjectPhase[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .slice(0, 24)
+    .map((item, index) => {
+      const phase = getObjectRecord(item)
+      const name = typeof phase.name === 'string' ? phase.name.trim() : ''
+      if (!name) return null
+      const id =
+        typeof phase.id === 'string' && phase.id.trim() ? phase.id.trim() : `phase-${index}`
+      const dueAt = typeof phase.dueAt === 'string' && phase.dueAt.trim() ? phase.dueAt : null
+      const status = phase.status === 'completed' ? 'completed' : 'active'
+      return { id, name, dueAt, status }
+    })
+    .filter((phase): phase is ProductionProjectPhase => Boolean(phase))
+}
+
+function normalizeProductionProjectPhaseUpdates(
+  phases: ProductionProjectPhaseInput[]
+): ProductionProjectPhase[] {
+  return phases
+    .slice(0, 24)
+    .map((phase) => {
+      const name = phase.name.trim()
+      if (!name) return null
+      return {
+        id: phase.id?.trim() || generateShortId(10),
+        name,
+        dueAt: phase.dueAt ?? null,
+        status: phase.status === 'completed' ? 'completed' : 'active',
+      }
+    })
+    .filter((phase): phase is ProductionProjectPhase => Boolean(phase))
+}
+
+function readProductionProjectMetadata(value: unknown): ProductionProjectMetadata {
+  const metadata = getObjectRecord(value)
+  const projectStatus = metadata.projectStatus === 'completed' ? 'completed' : 'active'
+  const estimatedDueAt =
+    typeof metadata.estimatedDueAt === 'string' && metadata.estimatedDueAt.trim()
+      ? metadata.estimatedDueAt
+      : null
+  return {
+    estimatedDueAt,
+    phases: normalizeProductionProjectPhases(metadata.phases),
+    productionProject: metadata.productionProject === true,
+    projectStatus,
+  }
+}
+
+function writeProductionProjectMetadata(
+  current: unknown,
+  updates: Partial<Omit<ProductionProjectMetadata, 'phases'>> & {
+    phases?: ProductionProjectPhaseInput[]
+  }
+) {
+  const next = { ...getObjectRecord(current) }
+  next.productionProject = updates.productionProject ?? true
+  if (updates.projectStatus) next.projectStatus = updates.projectStatus
+  if (updates.estimatedDueAt !== undefined) next.estimatedDueAt = updates.estimatedDueAt
+  if (updates.phases !== undefined) {
+    next.phases = normalizeProductionProjectPhaseUpdates(updates.phases)
+  }
+  return next
+}
+
 function workspaceDto(row: typeof workspace.$inferSelect) {
   return {
     id: row.id,
@@ -334,14 +447,66 @@ export async function getOrganizationRole(
   return (row?.role as OrganizationRole | undefined) ?? null
 }
 
+async function isPlatformAdmin(userId: string): Promise<boolean> {
+  const [row] = await db.select({ role: user.role }).from(user).where(eq(user.id, userId)).limit(1)
+  return row?.role === 'admin'
+}
+
+async function hasProjectAdminWorkgroupMembership(
+  userId: string,
+  organizationId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workgroupMember.id })
+    .from(workgroupMember)
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(
+      and(
+        eq(workgroupMember.userId, userId),
+        eq(workgroupMember.organizationId, organizationId),
+        eq(workgroupMember.role, 'admin'),
+        isNull(workgroup.archivedAt),
+        or(eq(discipline.agentCode, 'chief_director'), eq(discipline.code, 'pmo'))
+      )
+    )
+    .limit(1)
+
+  return Boolean(row)
+}
+
+async function canOverrideWorkgroupAdmin(userId: string, organizationId: string): Promise<boolean> {
+  if (await isPlatformAdmin(userId)) return true
+  const orgRole = await getOrganizationRole(userId, organizationId)
+  return orgRole === 'owner' || orgRole === 'admin'
+}
+
 export async function assertOrganizationAdmin(
   userId: string,
   organizationId: string
 ): Promise<void> {
   const role = await getOrganizationRole(userId, organizationId)
-  if (role !== 'owner' && role !== 'admin') {
-    throw new Error('Organization admin access required')
-  }
+  if (role === 'owner' || role === 'admin') return
+  if (await isPlatformAdmin(userId)) return
+  if (await hasProjectAdminWorkgroupMembership(userId, organizationId)) return
+  throw new Error('Organization admin access required')
+}
+
+async function hasOrganizationWorkgroupMembership(userId: string, organizationId: string) {
+  const [row] = await db
+    .select({ id: workgroupMember.id })
+    .from(workgroupMember)
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .where(
+      and(
+        eq(workgroupMember.userId, userId),
+        eq(workgroupMember.organizationId, organizationId),
+        isNull(workgroup.archivedAt)
+      )
+    )
+    .limit(1)
+
+  return Boolean(row)
 }
 
 export async function getWorkgroupMembership(userId: string, workgroupId: string) {
@@ -707,6 +872,9 @@ export async function listUserWorkgroups(userId: string) {
       workgroupId: workgroup.id,
       workgroupName: workgroup.name,
       organizationId: workgroup.organizationId,
+      organizationName: organization.name,
+      organizationLogo: organization.logo,
+      organizationMetadata: organization.metadata,
       disciplineId: discipline.id,
       disciplineCode: discipline.code,
       disciplineName: discipline.name,
@@ -716,6 +884,7 @@ export async function listUserWorkgroups(userId: string) {
     })
     .from(workgroupMember)
     .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .innerJoin(organization, eq(workgroup.organizationId, organization.id))
     .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
     .where(and(eq(workgroupMember.userId, userId), isNull(workgroup.archivedAt)))
     .orderBy(asc(workgroup.name))
@@ -733,21 +902,90 @@ export async function listUserWorkgroups(userId: string) {
         .groupBy(workgroupMember.workgroupId)
     : []
   const counts = new Map(countRows.map((row) => [row.workgroupId, row.count]))
+  const organizationIds = [...new Set(rows.map((row) => row.organizationId))]
+  const [actorIsPlatformAdmin, organizationRoleRows, taskStatRows] = await Promise.all([
+    isPlatformAdmin(userId),
+    organizationIds.length
+      ? db
+          .select({ organizationId: member.organizationId, role: member.role })
+          .from(member)
+          .where(and(eq(member.userId, userId), inArray(member.organizationId, organizationIds)))
+      : [],
+    organizationIds.length
+      ? db
+          .select({
+            organizationId: productionTask.organizationId,
+            status: productionTask.status,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(productionTask)
+          .where(inArray(productionTask.organizationId, organizationIds))
+          .groupBy(productionTask.organizationId, productionTask.status)
+      : [],
+  ])
+  const organizationRoles = new Map(
+    organizationRoleRows.map((row) => [row.organizationId, row.role])
+  )
+  const projectAdminOrganizationIds = new Set(
+    rows
+      .filter(
+        (row) =>
+          row.role === 'admin' &&
+          (['chief_director', 'show_director'].includes(row.agentCode ?? 'chief_director') ||
+            row.disciplineCode === 'pmo')
+      )
+      .map((row) => row.organizationId)
+  )
+  const taskStatsByOrganization = new Map<string, ProductionProjectTaskStats>()
+  for (const row of taskStatRows) {
+    const current = taskStatsByOrganization.get(row.organizationId) ?? {
+      completed: 0,
+      total: 0,
+      unfinished: 0,
+    }
+    current.total += row.count
+    if (COMPLETED_PRODUCTION_TASK_STATUSES.has(row.status)) {
+      current.completed += row.count
+    } else {
+      current.unfinished += row.count
+    }
+    taskStatsByOrganization.set(row.organizationId, current)
+  }
 
-  return rows.map((row) => ({
-    id: row.workgroupId,
-    name: row.workgroupName,
-    organizationId: row.organizationId,
-    discipline: {
-      id: row.disciplineId ?? '',
-      code: row.disciplineCode ?? 'chief_director',
-      name: row.disciplineName ?? '总导演',
-      agentCode: row.agentCode ?? 'chief_director',
-    },
-    role: row.role,
-    teamWorkspaceId: row.teamWorkspaceId ?? '',
-    memberCount: counts.get(row.workgroupId) ?? 0,
-  }))
+  return rows.map((row) => {
+    const projectMetadata = readProductionProjectMetadata(row.organizationMetadata)
+    return {
+      id: row.workgroupId,
+      name: row.workgroupName,
+      organizationId: row.organizationId,
+      organization: {
+        id: row.organizationId,
+        name: row.organizationName,
+        logo: row.organizationLogo,
+        projectStatus: projectMetadata.projectStatus,
+        estimatedDueAt: projectMetadata.estimatedDueAt,
+        phases: projectMetadata.phases,
+        canManageProject:
+          actorIsPlatformAdmin ||
+          ['owner', 'admin'].includes(organizationRoles.get(row.organizationId) ?? '') ||
+          projectAdminOrganizationIds.has(row.organizationId),
+        taskStats: taskStatsByOrganization.get(row.organizationId) ?? {
+          completed: 0,
+          total: 0,
+          unfinished: 0,
+        },
+      },
+      discipline: {
+        id: row.disciplineId ?? '',
+        code: row.disciplineCode ?? 'chief_director',
+        name: row.disciplineName ?? '总导演',
+        agentCode: row.agentCode ?? 'chief_director',
+      },
+      role: row.role,
+      teamWorkspaceId: row.teamWorkspaceId ?? '',
+      memberCount: counts.get(row.workgroupId) ?? 0,
+    }
+  })
 }
 
 export async function getDefaultActiveWorkgroupId(userId: string): Promise<string | null> {
@@ -940,12 +1178,207 @@ export async function createWorkgroup(params: {
   return { id: workgroupId, name: params.name, disciplineId: params.disciplineId, teamWorkspaceId }
 }
 
+export async function createProductionProject(params: {
+  actorUserId: string
+  estimatedDueAt?: string | null
+  phases?: ProductionProjectPhaseInput[]
+  name: string
+}) {
+  if (!(await isPlatformAdmin(params.actorUserId))) {
+    throw new Error('Platform admin access required')
+  }
+
+  const now = new Date()
+  const organizationId = generateId()
+  const workgroupId = generateId()
+  const teamWorkspaceId = generateId()
+  const directorDiscipline =
+    (await getDisciplineById('discipline_chief_director')) ??
+    DISCIPLINES.find((item) => item.code === 'chief_director')
+  const workgroupName = '导演组'
+  const projectMetadata = writeProductionProjectMetadata(DEFAULT_PRODUCTION_PROJECT_METADATA, {
+    estimatedDueAt: params.estimatedDueAt ?? null,
+    phases: params.phases ?? [],
+    productionProject: true,
+    projectStatus: 'active',
+  })
+  const readableProjectMetadata = readProductionProjectMetadata(projectMetadata)
+
+  if (!directorDiscipline) throw new Error('Director discipline not found')
+
+  await db.transaction(async (tx) => {
+    await tx.insert(organization).values({
+      id: organizationId,
+      name: params.name,
+      slug: `${toSlug(params.name)}-${generateShortId(6)}`,
+      metadata: projectMetadata,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(workgroup).values({
+      id: workgroupId,
+      organizationId,
+      name: workgroupName,
+      slug: `${toSlug(workgroupName)}-${generateShortId(6)}`,
+      disciplineId: directorDiscipline.id,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(workspace).values({
+      id: teamWorkspaceId,
+      name: `${params.name} / ${workgroupName} 团队画布`,
+      color: '#33C482',
+      ownerId: params.actorUserId,
+      organizationId,
+      workgroupId,
+      workspaceMode: 'organization',
+      billedAccountUserId: params.actorUserId,
+      allowPersonalApiKeys: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx
+      .update(workgroup)
+      .set({ teamWorkspaceId, updatedAt: now })
+      .where(eq(workgroup.id, workgroupId))
+
+    await tx.insert(workgroupMember).values({
+      id: generateId(),
+      organizationId,
+      workgroupId,
+      userId: params.actorUserId,
+      role: 'admin',
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(permissions).values({
+      id: generateId(),
+      userId: params.actorUserId,
+      entityType: 'workspace',
+      entityId: teamWorkspaceId,
+      permissionType: 'admin',
+      createdAt: now,
+      updatedAt: now,
+    })
+  })
+
+  await createDefaultWorkflowForWorkspace({
+    userId: params.actorUserId,
+    workspaceId: teamWorkspaceId,
+    name: '团队画布',
+    description: `${params.name} 的默认团队画布`,
+  })
+
+  recordAudit({
+    workspaceId: teamWorkspaceId,
+    actorId: params.actorUserId,
+    action: AuditAction.ORGANIZATION_CREATED,
+    resourceType: AuditResourceType.ORGANIZATION,
+    resourceId: organizationId,
+    resourceName: params.name,
+    description: `Created production project "${params.name}"`,
+    metadata: {
+      organizationId,
+      workgroupId,
+      teamWorkspaceId,
+      estimatedDueAt: readableProjectMetadata.estimatedDueAt,
+      phaseCount: readableProjectMetadata.phases.length,
+    },
+  })
+
+  return {
+    organizationId,
+    name: params.name,
+    status: 'active' as const,
+    estimatedDueAt: readableProjectMetadata.estimatedDueAt,
+    phases: readableProjectMetadata.phases,
+    primaryWorkgroupId: workgroupId,
+    teamWorkspaceId,
+  }
+}
+
+export async function updateProductionProject(params: {
+  actorUserId: string
+  estimatedDueAt?: string | null
+  organizationId: string
+  phases?: ProductionProjectPhaseInput[]
+  status?: ProductionProjectStatus
+}) {
+  await assertOrganizationAdmin(params.actorUserId, params.organizationId)
+  const [row] = await db
+    .select({
+      id: organization.id,
+      name: organization.name,
+      metadata: organization.metadata,
+    })
+    .from(organization)
+    .where(eq(organization.id, params.organizationId))
+    .limit(1)
+
+  if (!row) throw new Error('Project not found')
+
+  const nextMetadata = writeProductionProjectMetadata(row.metadata, {
+    estimatedDueAt: params.estimatedDueAt,
+    phases: params.phases,
+    projectStatus: params.status,
+  })
+
+  await db
+    .update(organization)
+    .set({ metadata: nextMetadata, updatedAt: new Date() })
+    .where(eq(organization.id, params.organizationId))
+
+  const [primaryWorkgroup] = await db
+    .select({
+      id: workgroup.id,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroup)
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(
+      and(
+        eq(workgroup.organizationId, params.organizationId),
+        isNull(workgroup.archivedAt),
+        or(eq(discipline.agentCode, 'chief_director'), eq(discipline.code, 'pmo'))
+      )
+    )
+    .orderBy(asc(workgroup.createdAt))
+    .limit(1)
+
+  const metadata = readProductionProjectMetadata(nextMetadata)
+  return {
+    organizationId: row.id,
+    name: row.name,
+    status: metadata.projectStatus,
+    estimatedDueAt: metadata.estimatedDueAt,
+    phases: metadata.phases,
+    primaryWorkgroupId: primaryWorkgroup?.id ?? null,
+    teamWorkspaceId: primaryWorkgroup?.teamWorkspaceId ?? null,
+  }
+}
+
 export async function listOrganizationWorkgroups(params: {
   userId: string
   organizationId: string
 }) {
   const orgRole = await getOrganizationRole(params.userId, params.organizationId)
   const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin'
+  const isProjectAdmin =
+    isOrgAdmin ||
+    (await isPlatformAdmin(params.userId)) ||
+    (await hasProjectAdminWorkgroupMembership(params.userId, params.organizationId))
+  const hasProjectAccess =
+    isProjectAdmin ||
+    Boolean(orgRole) ||
+    (await hasOrganizationWorkgroupMembership(params.userId, params.organizationId))
+
+  if (!hasProjectAccess) {
+    throw new Error('Organization membership required')
+  }
 
   const baseRows = await db
     .select({
@@ -963,15 +1396,7 @@ export async function listOrganizationWorkgroups(params: {
       workgroupMember,
       and(eq(workgroupMember.workgroupId, workgroup.id), eq(workgroupMember.userId, params.userId))
     )
-    .where(
-      isOrgAdmin
-        ? and(eq(workgroup.organizationId, params.organizationId), isNull(workgroup.archivedAt))
-        : and(
-            eq(workgroup.organizationId, params.organizationId),
-            isNull(workgroup.archivedAt),
-            eq(workgroupMember.userId, params.userId)
-          )
-    )
+    .where(and(eq(workgroup.organizationId, params.organizationId), isNull(workgroup.archivedAt)))
     .orderBy(asc(workgroup.name))
 
   const memberCounts = baseRows.length
@@ -996,7 +1421,7 @@ export async function listOrganizationWorkgroups(params: {
     agentCode: row.agentCode ?? 'chief_director',
     teamWorkspaceId: row.teamWorkspaceId ?? '',
     memberCount: countMap.get(row.id) ?? 0,
-    currentUserRole: isOrgAdmin ? 'org_admin' : row.memberRole,
+    currentUserRole: isOrgAdmin ? 'org_admin' : isProjectAdmin ? 'project_admin' : row.memberRole,
   }))
 }
 
@@ -1060,6 +1485,7 @@ export async function getWorkgroupMembers(params: { userId: string; workgroupId:
       name: user.name,
       email: user.email,
       avatarUrl: user.image,
+      accountRole: user.role,
       role: workgroupMember.role,
       joinedAt: workgroupMember.createdAt,
     })
@@ -1269,6 +1695,32 @@ export async function updateWorkgroupMemberRole(params: {
     .where(eq(workgroup.id, params.workgroupId))
     .limit(1)
   if (!wg) throw new Error('Workgroup not found')
+  const [targetMembership] = await db
+    .select({ accountRole: user.role, role: workgroupMember.role })
+    .from(workgroupMember)
+    .innerJoin(user, eq(workgroupMember.userId, user.id))
+    .where(
+      and(
+        eq(workgroupMember.workgroupId, params.workgroupId),
+        eq(workgroupMember.userId, params.userId)
+      )
+    )
+    .limit(1)
+  if (!targetMembership) throw new Error('Workgroup member not found')
+  if (
+    targetMembership.role === 'admin' &&
+    targetMembership.accountRole === 'admin' &&
+    params.role !== 'admin'
+  ) {
+    throw new Error('Cannot demote a platform admin from team admin')
+  }
+  if (
+    targetMembership.role === 'admin' &&
+    params.role !== 'admin' &&
+    !(await canOverrideWorkgroupAdmin(params.actorUserId, wg.organizationId))
+  ) {
+    throw new Error('Only project administrators can demote a team admin')
+  }
   if (params.role !== 'admin') {
     const adminRows = await db
       .select({ userId: workgroupMember.userId })
@@ -1325,6 +1777,30 @@ export async function removeWorkgroupMember(params: {
     .where(eq(workgroup.id, params.workgroupId))
     .limit(1)
   if (!wg) throw new Error('Workgroup not found')
+  if (params.actorUserId === params.userId) {
+    throw new Error('Cannot remove yourself from a workgroup')
+  }
+  const [targetMembership] = await db
+    .select({ accountRole: user.role, role: workgroupMember.role })
+    .from(workgroupMember)
+    .innerJoin(user, eq(workgroupMember.userId, user.id))
+    .where(
+      and(
+        eq(workgroupMember.workgroupId, params.workgroupId),
+        eq(workgroupMember.userId, params.userId)
+      )
+    )
+    .limit(1)
+  if (!targetMembership) throw new Error('Workgroup member not found')
+  if (targetMembership.role === 'admin' && targetMembership.accountRole === 'admin') {
+    throw new Error('Cannot remove a platform admin from team admin')
+  }
+  if (
+    targetMembership.role === 'admin' &&
+    !(await canOverrideWorkgroupAdmin(params.actorUserId, wg.organizationId))
+  ) {
+    throw new Error('Only project administrators can remove a team admin')
+  }
   const adminRows = await db
     .select({ userId: workgroupMember.userId })
     .from(workgroupMember)
@@ -1367,6 +1843,256 @@ export async function removeWorkgroupMember(params: {
       targetUserId: params.userId,
     },
   })
+}
+
+type WorkgroupJoinRequestRow = typeof workgroupJoinRequest.$inferSelect
+
+function formatWorkgroupJoinRequest(
+  row: WorkgroupJoinRequestRow,
+  requester: {
+    id: string
+    name: string | null
+    email: string | null
+    avatarUrl: string | null
+  }
+) {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    workgroupId: row.workgroupId,
+    requesterUserId: row.requesterUserId,
+    requester,
+    role: row.role,
+    message: row.message,
+    status: row.status,
+    reviewedBy: row.reviewedBy,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewNote: row.reviewNote,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+async function getJoinRequestRequester(userId: string) {
+  const [row] = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatarUrl: user.image,
+    })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1)
+
+  return (
+    row ?? {
+      id: userId,
+      name: null,
+      email: null,
+      avatarUrl: null,
+    }
+  )
+}
+
+async function getWorkgroupForJoinRequest(workgroupId: string) {
+  const [row] = await db
+    .select({
+      id: workgroup.id,
+      name: workgroup.name,
+      organizationId: workgroup.organizationId,
+      teamWorkspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroup)
+    .where(and(eq(workgroup.id, workgroupId), isNull(workgroup.archivedAt)))
+    .limit(1)
+
+  if (!row) throw new Error('Workgroup not found')
+  return row
+}
+
+export async function listWorkgroupJoinRequests(params: {
+  actorUserId: string
+  workgroupId: string
+}) {
+  await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
+  const rows = await db
+    .select({
+      request: workgroupJoinRequest,
+      requester: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.image,
+      },
+    })
+    .from(workgroupJoinRequest)
+    .innerJoin(user, eq(workgroupJoinRequest.requesterUserId, user.id))
+    .where(
+      and(
+        eq(workgroupJoinRequest.workgroupId, params.workgroupId),
+        eq(workgroupJoinRequest.status, 'pending')
+      )
+    )
+    .orderBy(asc(workgroupJoinRequest.createdAt))
+
+  return rows.map((row) => formatWorkgroupJoinRequest(row.request, row.requester))
+}
+
+export async function createWorkgroupJoinRequest(params: {
+  actorUserId: string
+  workgroupId: string
+  message?: string
+}) {
+  const wg = await getWorkgroupForJoinRequest(params.workgroupId)
+  const hasProjectAccess =
+    Boolean(await getOrganizationRole(params.actorUserId, wg.organizationId)) ||
+    (await hasOrganizationWorkgroupMembership(params.actorUserId, wg.organizationId))
+  if (!hasProjectAccess) {
+    throw new Error('Project membership required')
+  }
+
+  const existingMembership = await getWorkgroupMembership(params.actorUserId, params.workgroupId)
+  if (existingMembership) {
+    throw new Error('You are already a member of this team')
+  }
+
+  const now = new Date()
+  const message = params.message?.trim() || null
+  const [row] = await db
+    .insert(workgroupJoinRequest)
+    .values({
+      id: generateId(),
+      organizationId: wg.organizationId,
+      workgroupId: wg.id,
+      requesterUserId: params.actorUserId,
+      role: 'member',
+      message,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [workgroupJoinRequest.workgroupId, workgroupJoinRequest.requesterUserId],
+      targetWhere: sql`${workgroupJoinRequest.status} = 'pending'`,
+      set: {
+        message,
+        updatedAt: now,
+      },
+    })
+    .returning()
+
+  const requester = await getJoinRequestRequester(params.actorUserId)
+  return formatWorkgroupJoinRequest(row, requester)
+}
+
+export async function reviewWorkgroupJoinRequest(params: {
+  actorUserId: string
+  workgroupId: string
+  requestId: string
+  action: 'approve' | 'reject'
+  role: WorkgroupRole
+  reviewNote?: string
+}) {
+  await assertWorkgroupAdmin(params.actorUserId, params.workgroupId)
+  const wg = await getWorkgroupForJoinRequest(params.workgroupId)
+  const [existing] = await db
+    .select()
+    .from(workgroupJoinRequest)
+    .where(
+      and(
+        eq(workgroupJoinRequest.id, params.requestId),
+        eq(workgroupJoinRequest.workgroupId, params.workgroupId)
+      )
+    )
+    .limit(1)
+
+  if (!existing) throw new Error('Join request not found')
+  if (existing.status !== 'pending') throw new Error('Join request has already been reviewed')
+
+  const now = new Date()
+  const nextStatus = params.action === 'approve' ? 'approved' : 'rejected'
+
+  await db.transaction(async (tx) => {
+    if (params.action === 'approve') {
+      await tx
+        .insert(workgroupMember)
+        .values({
+          id: generateId(),
+          organizationId: wg.organizationId,
+          workgroupId: wg.id,
+          userId: existing.requesterUserId,
+          role: params.role,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [workgroupMember.workgroupId, workgroupMember.userId],
+          set: { role: params.role, updatedAt: now },
+        })
+
+      if (wg.teamWorkspaceId) {
+        await tx
+          .insert(permissions)
+          .values({
+            id: generateId(),
+            userId: existing.requesterUserId,
+            entityType: 'workspace',
+            entityId: wg.teamWorkspaceId,
+            permissionType: workspacePermissionForWorkgroupRole(params.role),
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [permissions.userId, permissions.entityType, permissions.entityId],
+            set: {
+              permissionType: workspacePermissionForWorkgroupRole(params.role),
+              updatedAt: now,
+            },
+          })
+      }
+    }
+
+    await tx
+      .update(workgroupJoinRequest)
+      .set({
+        status: nextStatus,
+        role: params.role,
+        reviewedBy: params.actorUserId,
+        reviewedAt: now,
+        reviewNote: params.reviewNote?.trim() || null,
+        updatedAt: now,
+      })
+      .where(eq(workgroupJoinRequest.id, existing.id))
+  })
+
+  recordAudit({
+    workspaceId: wg.teamWorkspaceId,
+    actorId: params.actorUserId,
+    action:
+      params.action === 'approve' ? AuditAction.MEMBER_INVITED : AuditAction.INVITATION_REJECTED,
+    resourceType: AuditResourceType.WORKSPACE,
+    resourceId: wg.id,
+    resourceName: wg.name,
+    description:
+      params.action === 'approve' ? 'Approved team join request' : 'Rejected team join request',
+    metadata: {
+      organizationId: wg.organizationId,
+      workgroupId: wg.id,
+      requestId: existing.id,
+      requesterUserId: existing.requesterUserId,
+      role: params.role,
+      reviewNote: params.reviewNote?.trim() || null,
+    },
+  })
+
+  const [updated] = await db
+    .select()
+    .from(workgroupJoinRequest)
+    .where(eq(workgroupJoinRequest.id, existing.id))
+    .limit(1)
+  const requester = await getJoinRequestRequester(existing.requesterUserId)
+  return formatWorkgroupJoinRequest(updated, requester)
 }
 
 export async function getOrCreatePersonalWorkspace(params: {

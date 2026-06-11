@@ -1,5 +1,4 @@
 import { NoteIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
 import {
   DEFAULT_AUDIO_MODEL,
   DEFAULT_AUDIO_PARAMETERS,
@@ -8,8 +7,9 @@ import {
   DEFAULT_VIDEO_FRAME_ASPECT_RATIO_PRESET,
   DEFAULT_VIDEO_MODEL_FAMILY,
 } from '@/lib/generated-media/video/video-generation-utils'
+import type { BlockConfig } from '@/blocks/types'
 
-const DEFAULT_AUDIO_PARAMETERS_RECORD: Record<string, unknown> = { ...DEFAULT_AUDIO_PARAMETERS }
+const CONTENT_AUDIO_PARAMETERS_DEFAULT: Record<string, unknown> = { ...DEFAULT_AUDIO_PARAMETERS }
 
 export const ContentBlock: BlockConfig = {
   type: 'content',
@@ -123,7 +123,7 @@ export const ContentBlock: BlockConfig = {
       id: 'audioParameters',
       title: 'Audio Parameters',
       type: 'short-input',
-      defaultValue: DEFAULT_AUDIO_PARAMETERS_RECORD,
+      defaultValue: CONTENT_AUDIO_PARAMETERS_DEFAULT,
       hidden: true,
       paramVisibility: 'hidden',
     },

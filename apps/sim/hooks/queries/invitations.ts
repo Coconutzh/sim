@@ -6,15 +6,16 @@ import {
   type BatchInvitationResult as BatchInvitationResultContract,
   batchWorkspaceInvitationsContract,
   cancelInvitationContract,
-  listWorkspaceInvitationsContract,
   listMyPendingInvitationsContract,
+  listWorkspaceInvitationsContract,
   type MyPendingInvitation,
   type PendingInvitationRow,
-  removeWorkspaceMemberContract,
   rejectInvitationContract,
+  removeWorkspaceMemberContract,
   resendInvitationContract,
 } from '@/lib/api/contracts/invitations'
 import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
+import { collaborationKeys } from '@/hooks/queries/collaboration'
 import { workspaceCredentialKeys } from '@/hooks/queries/credentials'
 import { organizationKeys } from '@/hooks/queries/organization'
 import { workspaceKeys } from '@/hooks/queries/workspace'
@@ -84,7 +85,7 @@ export function useMyPendingInvitations() {
       return data.invitations
     },
     staleTime: 30 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: 10 * 1000,
   })
 }
 
@@ -100,6 +101,9 @@ export function useAcceptMyInvitation() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: invitationKeys.mine() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.workgroupLists() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.agentProfiles() })
       queryClient.invalidateQueries({ queryKey: organizationKeys.all })
       queryClient.invalidateQueries({ queryKey: workspaceKeys.all })
     },
@@ -118,6 +122,7 @@ export function useRejectMyInvitation() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: invitationKeys.mine() })
+      queryClient.invalidateQueries({ queryKey: collaborationKeys.myWorkgroups() })
       queryClient.invalidateQueries({ queryKey: organizationKeys.all })
     },
   })

@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
+import type { ProductionProjectPhase } from '@/lib/api/contracts/production-projects'
 import {
   useCreatePersonalWorkspace,
   useCreateTeamWorkspace,
@@ -35,6 +36,35 @@ function getWorkspaceEditorHref(workspaceId?: string, workflows?: WorkflowMetada
 
 interface UseLiteCanvasNavigationProps {
   workspaceId: string
+}
+
+export interface ProjectWorkspaceEntry {
+  canManageProject: boolean
+  estimatedDueAt: string | null
+  id: string
+  name: string
+  logoUrl: string | null
+  primaryWorkgroupId: string
+  primaryWorkgroupName: string
+  phases: ProductionProjectPhase[]
+  disciplineName: string
+  role: 'admin' | 'member'
+  teamWorkspaceId: string
+  teamCount: number
+  memberCount: number
+  projectStatus: 'active' | 'completed'
+  taskStats: {
+    completed: number
+    total: number
+    unfinished: number
+  }
+  href: string
+}
+
+export interface CanvasContextSummary {
+  detail: string
+  kind: 'team' | 'personal' | 'project'
+  label: string
 }
 
 export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigationProps) {
@@ -95,7 +125,8 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
   const isProjectAdmin =
     organizationWorkgroupsData?.workgroups.some(
-      (workgroup) => workgroup.currentUserRole === 'org_admin'
+      (workgroup) =>
+        workgroup.currentUserRole === 'org_admin' || workgroup.currentUserRole === 'project_admin'
     ) ?? false
 
   const canCreatePersonalCanvas = Boolean(
@@ -111,6 +142,64 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
   const personalHref = getWorkspaceEditorHref(personalWorkspaceId, personalWorkflows)
   const teamHref = teamWorkspaceId ? getWorkspaceEditorHref(teamWorkspaceId, teamWorkflows) : '#'
   const teamScopedWorkspaceId = teamWorkspaceId || workspaceId
+  const currentCanvasKind: CanvasContextSummary['kind'] =
+    activeWorkspace?.canvasScope === 'personal'
+      ? 'personal'
+      : activeWorkspace?.canvasScope === 'team' || activeWorkspace?.id === teamWorkspaceId
+        ? 'team'
+        : 'project'
+  const canvasContext: CanvasContextSummary = {
+    kind: currentCanvasKind,
+    label:
+      currentCanvasKind === 'personal'
+        ? '个人画布'
+        : currentCanvasKind === 'team'
+          ? '团队画布'
+          : '项目工作区',
+    detail:
+      currentCanvasKind === 'personal'
+        ? (activeWorkspace?.name ?? activePersonalDraftWorkspace?.name ?? '个人草稿')
+        : activeWorkgroup
+          ? `${activeWorkgroup.discipline.name} / ${activeWorkgroup.name}`
+          : (activeWorkspace?.name ?? '团队画布'),
+  }
+
+  const projectEntries = useMemo<ProjectWorkspaceEntry[]>(() => {
+    const groups = new Map<string, ProjectWorkspaceEntry>()
+    for (const group of workgroups) {
+      const existing = groups.get(group.organizationId)
+      const isDefault = group.id === workgroupsData?.defaultWorkgroupId
+      const href = group.teamWorkspaceId
+        ? `/workspace/${group.teamWorkspaceId}/w`
+        : `/workspace/${workspaceId}/home`
+      if (!existing || isDefault) {
+        groups.set(group.organizationId, {
+          canManageProject: group.organization.canManageProject,
+          estimatedDueAt: group.organization.estimatedDueAt,
+          id: group.organization.id,
+          name: group.organization.name,
+          logoUrl: group.organization.logo,
+          primaryWorkgroupId: group.id,
+          primaryWorkgroupName: group.name,
+          phases: group.organization.phases,
+          disciplineName: group.discipline.name,
+          role: group.role,
+          teamWorkspaceId: group.teamWorkspaceId,
+          teamCount: existing ? existing.teamCount + 1 : 1,
+          memberCount: group.memberCount,
+          projectStatus: group.organization.projectStatus,
+          taskStats: group.organization.taskStats,
+          href,
+        })
+        continue
+      }
+      existing.teamCount += 1
+      existing.memberCount += group.memberCount
+      existing.canManageProject = existing.canManageProject || group.organization.canManageProject
+      existing.role = existing.role === 'admin' || group.role === 'admin' ? 'admin' : 'member'
+    }
+    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  }, [workgroups, workgroupsData?.defaultWorkgroupId, workspaceId])
 
   const createPersonalCanvas = useCallback(
     async (name: string) => {
@@ -169,7 +258,42 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     [activeWorkgroupId, router, setActiveWorkgroup, workgroups, workspaces, workspaceId]
   )
 
+  const openProjectWorkspace = useCallback(
+    async (targetWorkgroupId: string) => {
+      const targetWorkgroup = workgroups.find((workgroup) => workgroup.id === targetWorkgroupId)
+      if (!targetWorkgroup) return
+
+      await setActiveWorkgroup(targetWorkgroupId)
+      if (targetWorkgroup.teamWorkspaceId) {
+        router.push(`/workspace/${targetWorkgroup.teamWorkspaceId}/w`)
+        return
+      }
+
+      const targetWorkspaceId =
+        workspaces.find(
+          (workspace) =>
+            workspace.canvasScope === 'personal' && workspace.workgroupId === targetWorkgroupId
+        )?.id || workspaceId
+      router.push(`/workspace/${targetWorkspaceId}/home`)
+    },
+    [router, setActiveWorkgroup, workgroups, workspaces, workspaceId]
+  )
+
+  const openProjectTask = useCallback(
+    async (targetWorkgroupId: string, taskId: string) => {
+      const targetWorkgroup = workgroups.find((workgroup) => workgroup.id === targetWorkgroupId)
+      if (!targetWorkgroup?.teamWorkspaceId) return
+
+      await setActiveWorkgroup(targetWorkgroupId)
+      router.push(
+        `/workspace/${targetWorkgroup.teamWorkspaceId}/showcase?tab=tasks&taskId=${taskId}`
+      )
+    },
+    [router, setActiveWorkgroup, workgroups]
+  )
+
   return {
+    activeWorkspace,
     activePersonalDraftWorkspace,
     activeWorkgroup,
     activeWorkgroupId,
@@ -182,12 +306,16 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     isLoading: isWorkspacesLoading || isWorkgroupsLoading,
     isProjectAdmin,
     isSettingActiveWorkgroup,
+    canvasContext,
     personalDraftWorkspaces,
     personalHref,
     personalWorkspaceId,
+    projectEntries,
     showcaseHref: `/workspace/${teamScopedWorkspaceId}/showcase`,
     splitHref: `/workspace/${teamScopedWorkspaceId}/split`,
     switchWorkgroup,
+    openProjectWorkspace,
+    openProjectTask,
     teamHref,
     teamManagementHref: `/workspace/${teamScopedWorkspaceId}/team-management`,
     teamWorkspaceId,

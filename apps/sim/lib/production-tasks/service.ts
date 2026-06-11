@@ -4,11 +4,14 @@ import {
   discipline,
   member,
   personalCanvasWorkspace,
+  productionShowcaseAttachment,
+  productionShowcaseItem,
   productionTask,
   productionTaskAttachment,
   productionTaskDependency,
   productionTaskMessage,
   productionTaskReadReceipt,
+  productionTaskSubmission,
   productionTaskSubmissionAttachment,
   user,
   workflow,
@@ -26,8 +29,13 @@ import type {
   ProductionTaskAttachmentKind,
   ProductionTaskMessage,
   ProductionTaskScope,
+  ProductionTaskSubmission,
   ProductionTaskStatus,
 } from '@/lib/api/contracts/production-tasks'
+import type {
+  ProductionShowcaseCategory,
+  ProductionShowcaseItem,
+} from '@/lib/api/contracts/production-showcase-items'
 import { type AgentCode, isAgentCode } from '@/lib/collaboration/definitions'
 import { notifyProductionTaskRealtime } from '@/lib/production-tasks/realtime'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -40,7 +48,10 @@ type WorkgroupRole = 'admin' | 'member'
 type ProductionTaskRow = typeof productionTask.$inferSelect
 type ProductionTaskAttachmentRow = typeof productionTaskAttachment.$inferSelect
 type ProductionTaskMessageRow = typeof productionTaskMessage.$inferSelect
+type ProductionTaskSubmissionRow = typeof productionTaskSubmission.$inferSelect
 type ProductionTaskSubmissionAttachmentRow = typeof productionTaskSubmissionAttachment.$inferSelect
+type ProductionShowcaseItemRow = typeof productionShowcaseItem.$inferSelect
+type ProductionShowcaseAttachmentRow = typeof productionShowcaseAttachment.$inferSelect
 
 interface ProductionTaskAttachmentInput {
   name: string
@@ -150,7 +161,9 @@ function isOrganizationAdmin(role: OrganizationRole): boolean {
 function isDirectorLikeMembership(membership: ActorMembership): boolean {
   return (
     membership.agentCode === 'chief_director' ||
+    membership.agentCode === 'show_director' ||
     membership.disciplineCode === 'chief_director' ||
+    membership.disciplineCode === 'show_director' ||
     membership.disciplineCode === 'pmo'
   )
 }
@@ -161,6 +174,24 @@ function isDirectorLikeContext(context: ActorTaskContext): boolean {
 
 function normalizeAgentCode(value: string | null): AgentCode | null {
   return value && isAgentCode(value) ? value : null
+}
+
+function normalizeShowcaseCategory(value: string): ProductionShowcaseCategory {
+  if (
+    value === 'copywriting' ||
+    value === 'lighting' ||
+    value === 'sound' ||
+    value === 'stage_design' ||
+    value === 'visual' ||
+    value === 'video' ||
+    value === 'image' ||
+    value === 'document' ||
+    value === 'parameter' ||
+    value === 'other'
+  ) {
+    return value
+  }
+  return 'other'
 }
 
 function getMembershipRole(context: ActorTaskContext, workgroupId: string): WorkgroupRole | null {
@@ -231,33 +262,35 @@ async function getActorTaskContext(
   userId: string,
   organizationId: string
 ): Promise<ActorTaskContext> {
-  const organizationRole = await getOrganizationRole(userId, organizationId)
-  if (!organizationRole) {
+  const [organizationRole, rows] = await Promise.all([
+    getOrganizationRole(userId, organizationId),
+    db
+      .select({
+        workgroupId: workgroupMember.workgroupId,
+        role: workgroupMember.role,
+        disciplineCode: discipline.code,
+        agentCode: discipline.agentCode,
+      })
+      .from(workgroupMember)
+      .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+      .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+      .where(
+        and(
+          eq(workgroupMember.userId, userId),
+          eq(workgroupMember.organizationId, organizationId),
+          isNull(workgroup.archivedAt)
+        )
+      )
+  ])
+
+  if (!organizationRole && rows.length === 0) {
     throw new ProductionTaskServiceError('Organization membership required', 403)
   }
-
-  const rows = await db
-    .select({
-      workgroupId: workgroupMember.workgroupId,
-      role: workgroupMember.role,
-      disciplineCode: discipline.code,
-      agentCode: discipline.agentCode,
-    })
-    .from(workgroupMember)
-    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
-    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
-    .where(
-      and(
-        eq(workgroupMember.userId, userId),
-        eq(workgroupMember.organizationId, organizationId),
-        isNull(workgroup.archivedAt)
-      )
-    )
 
   return {
     userId,
     organizationId,
-    organizationRole,
+    organizationRole: organizationRole ?? 'member',
     memberships: rows.map((row) => ({
       workgroupId: row.workgroupId,
       role: row.role,
@@ -423,6 +456,32 @@ async function getTaskRow(taskId: string): Promise<ProductionTaskRow> {
   return assertFound(row, 'Production task not found')
 }
 
+async function getNextSubmissionVersion(taskId: string): Promise<number> {
+  const [row] = await db
+    .select({ maxVersion: sql<number>`coalesce(max(${productionTaskSubmission.versionNumber}), 0)` })
+    .from(productionTaskSubmission)
+    .where(eq(productionTaskSubmission.taskId, taskId))
+    .limit(1)
+
+  return Number(row?.maxVersion ?? 0) + 1
+}
+
+async function getLatestSubmittedSubmission(taskId: string): Promise<ProductionTaskSubmissionRow> {
+  const [row] = await db
+    .select()
+    .from(productionTaskSubmission)
+    .where(
+      and(
+        eq(productionTaskSubmission.taskId, taskId),
+        eq(productionTaskSubmission.status, 'submitted')
+      )
+    )
+    .orderBy(desc(productionTaskSubmission.versionNumber))
+    .limit(1)
+
+  return assertFound(row, 'Submitted task version not found')
+}
+
 async function assertWorkflowBelongsToWorkspace(workflowId: string, workspaceId: string) {
   const [row] = await db
     .select({ id: workflow.id, workspaceId: workflow.workspaceId })
@@ -514,15 +573,13 @@ async function replaceTaskAttachments(params: {
   )
 }
 
-async function replaceTaskSubmissionAttachments(params: {
+async function insertTaskSubmissionAttachments(params: {
   taskId: string
+  submissionId: string
   userId: string
   attachments: ResolvedProductionTaskAttachmentInput[]
   createdAt?: Date
 }) {
-  await db
-    .delete(productionTaskSubmissionAttachment)
-    .where(eq(productionTaskSubmissionAttachment.taskId, params.taskId))
   if (params.attachments.length === 0) return
 
   const createdAt = params.createdAt ?? new Date()
@@ -530,6 +587,7 @@ async function replaceTaskSubmissionAttachments(params: {
     params.attachments.map((attachment) => ({
       id: generateId(),
       taskId: params.taskId,
+      submissionId: params.submissionId,
       name: attachment.name,
       url: attachment.url,
       source: attachment.source,
@@ -605,6 +663,15 @@ function getProductionTaskAttachmentDownloadUrl(params: {
   return `/api/production-tasks/${encodeURIComponent(params.taskId)}/attachments/${encodeURIComponent(params.attachmentId)}/download?kind=${params.kind}`
 }
 
+function getProductionShowcaseAttachmentDownloadUrl(params: {
+  itemId: string
+  attachmentId: string
+  source: string
+}): string | null {
+  if (params.source !== 'workspace_file') return null
+  return `/api/production-showcase-items/${encodeURIComponent(params.itemId)}/attachments/${encodeURIComponent(params.attachmentId)}/download`
+}
+
 function mapProductionTaskAttachment(
   row: ProductionTaskAttachmentRow | ProductionTaskSubmissionAttachmentRow,
   users: Map<string, UserSummary>,
@@ -619,6 +686,30 @@ function mapProductionTaskAttachment(
       taskId: row.taskId,
       attachmentId: row.id,
       kind,
+      source,
+    }),
+    source,
+    workspaceFileId: row.workspaceFileId,
+    key: row.key,
+    contentType: row.contentType,
+    size: row.size,
+    createdBy: row.createdBy ? (users.get(row.createdBy) ?? null) : null,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+
+function mapProductionShowcaseAttachment(
+  row: ProductionShowcaseAttachmentRow,
+  users: Map<string, UserSummary>
+): ProductionTaskAttachment {
+  const source = row.source === 'workspace_file' ? 'workspace_file' : 'url'
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    downloadUrl: getProductionShowcaseAttachmentDownloadUrl({
+      itemId: row.itemId,
+      attachmentId: row.id,
       source,
     }),
     source,
@@ -649,11 +740,6 @@ async function enrichTasks(
   const taskIds = rows.map((row) => row.id)
   const workgroups = await getWorkgroupSummaries(
     rows.flatMap((row) => [row.sourceWorkgroupId, row.assigneeWorkgroupId])
-  )
-  const users = await getUserSummaries(
-    rows
-      .flatMap((row) => [row.createdBy, row.submittedBy, row.reviewedBy])
-      .filter(Boolean) as string[]
   )
 
   const messageRows = await db
@@ -709,6 +795,14 @@ async function enrichTasks(
           .where(inArray(productionTaskAttachment.taskId, taskIds))
           .orderBy(asc(productionTaskAttachment.createdAt))
       : []
+  const submissionRows =
+    taskIds.length > 0
+      ? await db
+          .select()
+          .from(productionTaskSubmission)
+          .where(inArray(productionTaskSubmission.taskId, taskIds))
+          .orderBy(desc(productionTaskSubmission.versionNumber))
+      : []
   const submissionAttachmentRows =
     taskIds.length > 0
       ? await db
@@ -717,10 +811,17 @@ async function enrichTasks(
           .where(inArray(productionTaskSubmissionAttachment.taskId, taskIds))
           .orderBy(asc(productionTaskSubmissionAttachment.createdAt))
       : []
-  const attachmentUsers = await getUserSummaries(
-    [...attachmentRows, ...submissionAttachmentRows]
-      .map((row) => row.createdBy)
-      .filter(Boolean) as string[]
+  const users = await getUserSummaries(
+    [
+      ...rows.flatMap((row) => [row.createdBy, row.submittedBy, row.reviewedBy]),
+      ...submissionRows.flatMap((row) => [
+        row.submittedBy,
+        row.reviewedBy,
+        row.adoptedBy,
+      ]),
+      ...attachmentRows.map((row) => row.createdBy),
+      ...submissionAttachmentRows.map((row) => row.createdBy),
+    ].filter(Boolean) as string[]
   )
 
   const lastReadByTaskId = new Map(receiptRows.map((row) => [row.taskId, row.lastReadAt]))
@@ -742,15 +843,47 @@ async function enrichTasks(
   const attachmentsByTaskId = new Map<string, ProductionTaskAttachment[]>()
   for (const attachment of attachmentRows) {
     const existing = attachmentsByTaskId.get(attachment.taskId) ?? []
-    existing.push(mapProductionTaskAttachment(attachment, attachmentUsers, 'task'))
+    existing.push(mapProductionTaskAttachment(attachment, users, 'task'))
     attachmentsByTaskId.set(attachment.taskId, existing)
   }
 
   const submissionAttachmentsByTaskId = new Map<string, ProductionTaskAttachment[]>()
+  const submissionAttachmentsBySubmissionId = new Map<string, ProductionTaskAttachment[]>()
   for (const attachment of submissionAttachmentRows) {
+    const mapped = mapProductionTaskAttachment(attachment, users, 'submission')
     const existing = submissionAttachmentsByTaskId.get(attachment.taskId) ?? []
-    existing.push(mapProductionTaskAttachment(attachment, attachmentUsers, 'submission'))
+    existing.push(mapped)
     submissionAttachmentsByTaskId.set(attachment.taskId, existing)
+    if (attachment.submissionId) {
+      const submissionExisting = submissionAttachmentsBySubmissionId.get(attachment.submissionId) ?? []
+      submissionExisting.push(mapped)
+      submissionAttachmentsBySubmissionId.set(attachment.submissionId, submissionExisting)
+    }
+  }
+
+  const submissionsByTaskId = new Map<string, ProductionTaskSubmission[]>()
+  for (const submission of submissionRows) {
+    const existing = submissionsByTaskId.get(submission.taskId) ?? []
+    existing.push({
+      id: submission.id,
+      taskId: submission.taskId,
+      versionNumber: submission.versionNumber,
+      workflowId: submission.workflowId,
+      nodeId: submission.nodeId,
+      note: submission.note,
+      status: submission.status,
+      submittedBy: submission.submittedBy ? (users.get(submission.submittedBy) ?? null) : null,
+      submittedAt: submission.submittedAt.toISOString(),
+      reviewedBy: submission.reviewedBy ? (users.get(submission.reviewedBy) ?? null) : null,
+      reviewedAt: toIso(submission.reviewedAt),
+      reviewNote: submission.reviewNote,
+      adoptedBy: submission.adoptedBy ? (users.get(submission.adoptedBy) ?? null) : null,
+      adoptedAt: toIso(submission.adoptedAt),
+      createdAt: submission.createdAt.toISOString(),
+      updatedAt: submission.updatedAt.toISOString(),
+      attachments: submissionAttachmentsBySubmissionId.get(submission.id) ?? [],
+    })
+    submissionsByTaskId.set(submission.taskId, existing)
   }
 
   return rows.map((row) => {
@@ -776,6 +909,8 @@ async function enrichTasks(
         },
       ]
     })
+    const submissions = submissionsByTaskId.get(row.id) ?? []
+    const latestSubmission = submissions[0] ?? null
 
     return {
       id: row.id,
@@ -805,7 +940,10 @@ async function enrichTasks(
       unreadMessageCount,
       blockedBy,
       attachments: attachmentsByTaskId.get(row.id) ?? [],
-      submissionAttachments: submissionAttachmentsByTaskId.get(row.id) ?? [],
+      submissionAttachments:
+        latestSubmission?.attachments ?? submissionAttachmentsByTaskId.get(row.id) ?? [],
+      submissions,
+      latestSubmission,
       permissions: computeTaskPermissions(row, context),
     }
   })
@@ -853,6 +991,336 @@ function recordProductionTaskAudit(params: {
       ...params.metadata,
     },
   })
+}
+
+function computeShowcasePermissions(
+  item: ProductionShowcaseItemRow,
+  context: ActorTaskContext
+): { canWithdraw: boolean } {
+  return {
+    canWithdraw:
+      item.createdBy === context.userId ||
+      isOrganizationAdmin(context.organizationRole) ||
+      isDirectorLikeContext(context),
+  }
+}
+
+async function enrichShowcaseItems(
+  rows: ProductionShowcaseItemRow[],
+  context: ActorTaskContext
+): Promise<ProductionShowcaseItem[]> {
+  if (rows.length === 0) return []
+
+  const itemIds = rows.map((row) => row.id)
+  const workgroups = await getWorkgroupSummaries(rows.map((row) => row.sourceWorkgroupId))
+  const submissionIds = rows.map((row) => row.submissionId).filter(Boolean) as string[]
+  const submissionRows =
+    submissionIds.length > 0
+      ? await db
+          .select({
+            id: productionTaskSubmission.id,
+            versionNumber: productionTaskSubmission.versionNumber,
+          })
+          .from(productionTaskSubmission)
+          .where(inArray(productionTaskSubmission.id, submissionIds))
+      : []
+  const submissionVersionById = new Map(
+    submissionRows.map((row) => [row.id, row.versionNumber])
+  )
+  const attachmentRows =
+    itemIds.length > 0
+      ? await db
+          .select()
+          .from(productionShowcaseAttachment)
+          .where(inArray(productionShowcaseAttachment.itemId, itemIds))
+          .orderBy(asc(productionShowcaseAttachment.createdAt))
+      : []
+  const users = await getUserSummaries(
+    [
+      ...rows.flatMap((row) => [row.createdBy, row.withdrawnBy]),
+      ...attachmentRows.map((row) => row.createdBy),
+    ].filter(Boolean) as string[]
+  )
+  const attachmentsByItemId = new Map<string, ProductionTaskAttachment[]>()
+  for (const attachment of attachmentRows) {
+    const existing = attachmentsByItemId.get(attachment.itemId) ?? []
+    existing.push(mapProductionShowcaseAttachment(attachment, users))
+    attachmentsByItemId.set(attachment.itemId, existing)
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    organizationId: row.organizationId,
+    sourceWorkspaceId: row.sourceWorkspaceId,
+    sourceWorkgroup:
+      workgroups.get(row.sourceWorkgroupId) ?? fallbackWorkgroup(row.sourceWorkgroupId),
+    taskId: row.taskId,
+    submissionId: row.submissionId,
+    submissionVersionNumber: row.submissionId
+      ? (submissionVersionById.get(row.submissionId) ?? null)
+      : null,
+    title: row.title,
+    description: row.description,
+    category: normalizeShowcaseCategory(row.category),
+    content: row.content,
+    status: row.status === 'withdrawn' ? 'withdrawn' : 'published',
+    createdBy: row.createdBy ? (users.get(row.createdBy) ?? null) : null,
+    withdrawnBy: row.withdrawnBy ? (users.get(row.withdrawnBy) ?? null) : null,
+    withdrawnAt: toIso(row.withdrawnAt),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    attachments: attachmentsByItemId.get(row.id) ?? [],
+    permissions: computeShowcasePermissions(row, context),
+  }))
+}
+
+function recordProductionShowcaseAudit(params: {
+  action:
+    | typeof AuditAction.PRODUCTION_SHOWCASE_ITEM_CREATED
+    | typeof AuditAction.PRODUCTION_SHOWCASE_ITEM_WITHDRAWN
+  actorUserId: string
+  item: ProductionShowcaseItemRow
+  description: string
+}) {
+  recordAudit({
+    workspaceId: params.item.sourceWorkspaceId,
+    actorId: params.actorUserId,
+    action: params.action,
+    resourceType: AuditResourceType.PRODUCTION_SHOWCASE_ITEM,
+    resourceId: params.item.id,
+    resourceName: params.item.title,
+    description: params.description,
+    metadata: {
+      productionShowcaseEvent: params.action,
+      organizationId: params.item.organizationId,
+      sourceWorkspaceId: params.item.sourceWorkspaceId,
+      sourceWorkgroupId: params.item.sourceWorkgroupId,
+      taskId: params.item.taskId,
+      submissionId: params.item.submissionId,
+      category: params.item.category,
+      status: params.item.status,
+    },
+  })
+}
+
+async function insertProductionShowcaseAttachments(params: {
+  itemId: string
+  userId: string
+  attachments: ResolvedProductionTaskAttachmentInput[]
+  createdAt?: Date
+}) {
+  if (params.attachments.length === 0) return
+
+  const createdAt = params.createdAt ?? new Date()
+  await db.insert(productionShowcaseAttachment).values(
+    params.attachments.map((attachment) => ({
+      id: generateId(),
+      itemId: params.itemId,
+      name: attachment.name,
+      url: attachment.url,
+      source: attachment.source,
+      workspaceFileId: attachment.workspaceFileId,
+      key: attachment.key,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      createdBy: params.userId,
+      createdAt,
+    }))
+  )
+}
+
+export async function listProductionShowcaseItems(params: {
+  userId: string
+  workspaceId: string
+  category?: ProductionShowcaseCategory
+  includeWithdrawn?: boolean
+  limit?: number
+}): Promise<ProductionShowcaseItem[]> {
+  const workspaceContext = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  const conditions: SQL[] = [
+    eq(productionShowcaseItem.organizationId, workspaceContext.organizationId),
+  ]
+  if (params.category) {
+    conditions.push(eq(productionShowcaseItem.category, params.category))
+  }
+  const canSeeWithdrawn =
+    isOrganizationAdmin(workspaceContext.organizationRole) || isDirectorLikeContext(workspaceContext)
+  if (!params.includeWithdrawn || !canSeeWithdrawn) {
+    conditions.push(eq(productionShowcaseItem.status, 'published'))
+  }
+
+  const rows = await db
+    .select()
+    .from(productionShowcaseItem)
+    .where(and(...conditions))
+    .orderBy(desc(productionShowcaseItem.createdAt))
+    .limit(params.limit ?? 50)
+
+  return enrichShowcaseItems(rows, workspaceContext)
+}
+
+export async function createProductionShowcaseItem(params: {
+  userId: string
+  workspaceId: string
+  title: string
+  description?: string | null
+  category: ProductionShowcaseCategory
+  content?: string | null
+  taskId?: string | null
+  submissionId?: string | null
+  attachments?: ProductionTaskAttachmentInput[]
+}): Promise<ProductionShowcaseItem> {
+  const context = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  let taskId = params.taskId ?? null
+  let submissionId = params.submissionId ?? null
+
+  if (taskId) {
+    const task = await getTaskRow(taskId)
+    assertAllowed(task.organizationId === context.organizationId, 'Production task access denied')
+    assertAllowed(computeTaskPermissions(task, context).canMessage, 'Production task access denied')
+  }
+
+  if (submissionId) {
+    const [submission] = await db
+      .select({
+        id: productionTaskSubmission.id,
+        taskId: productionTaskSubmission.taskId,
+        organizationId: productionTask.organizationId,
+      })
+      .from(productionTaskSubmission)
+      .innerJoin(productionTask, eq(productionTaskSubmission.taskId, productionTask.id))
+      .where(eq(productionTaskSubmission.id, submissionId))
+      .limit(1)
+    assertFound(submission, 'Production task submission not found')
+    assertAllowed(submission.organizationId === context.organizationId, 'Production task access denied')
+    taskId = taskId ?? submission.taskId
+  }
+
+  const attachments = await resolveTaskAttachments({
+    workspaceId: params.workspaceId,
+    attachments: params.attachments ?? [],
+  })
+  assertAllowed(
+    Boolean(params.content?.trim()) || attachments.length > 0 || Boolean(submissionId),
+    'Publish text, attachments, or a task submission'
+  )
+
+  const now = new Date()
+  const [row] = await db
+    .insert(productionShowcaseItem)
+    .values({
+      id: generateId(),
+      organizationId: context.organizationId,
+      sourceWorkspaceId: params.workspaceId,
+      sourceWorkgroupId: context.workgroupId,
+      taskId,
+      submissionId,
+      title: params.title,
+      description: params.description ?? null,
+      category: params.category,
+      content: params.content?.trim() || null,
+      status: 'published',
+      createdBy: params.userId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+
+  await insertProductionShowcaseAttachments({
+    itemId: row.id,
+    userId: params.userId,
+    attachments,
+    createdAt: now,
+  })
+
+  recordProductionShowcaseAudit({
+    action: AuditAction.PRODUCTION_SHOWCASE_ITEM_CREATED,
+    actorUserId: params.userId,
+    item: row,
+    description: `Project overview result "${row.title}" was published`,
+  })
+
+  const [item] = await enrichShowcaseItems([row], context)
+  return item
+}
+
+export async function withdrawProductionShowcaseItem(params: {
+  userId: string
+  workspaceId: string
+  itemId: string
+}): Promise<ProductionShowcaseItem> {
+  const context = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  const [existing] = await db
+    .select()
+    .from(productionShowcaseItem)
+    .where(eq(productionShowcaseItem.id, params.itemId))
+    .limit(1)
+  const item = assertFound(existing, 'Production showcase item not found')
+  assertAllowed(item.organizationId === context.organizationId, 'Production showcase access denied')
+  assertAllowed(computeShowcasePermissions(item, context).canWithdraw, 'Showcase withdraw access required')
+
+  const now = new Date()
+  const [row] = await db
+    .update(productionShowcaseItem)
+    .set({
+      status: 'withdrawn',
+      withdrawnBy: params.userId,
+      withdrawnAt: now,
+      updatedAt: now,
+    })
+    .where(eq(productionShowcaseItem.id, params.itemId))
+    .returning()
+
+  recordProductionShowcaseAudit({
+    action: AuditAction.PRODUCTION_SHOWCASE_ITEM_WITHDRAWN,
+    actorUserId: params.userId,
+    item: row,
+    description: `Project overview result "${row.title}" was withdrawn`,
+  })
+
+  const [enriched] = await enrichShowcaseItems([row], context)
+  return enriched
+}
+
+export async function downloadProductionShowcaseAttachment(params: {
+  userId: string
+  itemId: string
+  attachmentId: string
+}): Promise<{ buffer: Buffer; name: string; contentType: string }> {
+  const [item] = await db
+    .select()
+    .from(productionShowcaseItem)
+    .where(eq(productionShowcaseItem.id, params.itemId))
+    .limit(1)
+  const showcaseItem = assertFound(item, 'Production showcase item not found')
+  const context = await getActorTaskContext(params.userId, showcaseItem.organizationId)
+  assertAllowed(context.memberships.length > 0 || isOrganizationAdmin(context.organizationRole), 'Production showcase access denied')
+
+  const [attachment] = await db
+    .select()
+    .from(productionShowcaseAttachment)
+    .where(
+      and(
+        eq(productionShowcaseAttachment.id, params.attachmentId),
+        eq(productionShowcaseAttachment.itemId, params.itemId)
+      )
+    )
+    .limit(1)
+  assertFound(attachment, 'Production showcase attachment not found')
+  assertAllowed(
+    attachment.source === 'workspace_file' && Boolean(attachment.key),
+    'Only uploaded showcase files can be downloaded through this endpoint'
+  )
+
+  const buffer = await downloadFile({
+    key: attachment.key as string,
+    context: 'workspace',
+  })
+  return {
+    buffer,
+    name: attachment.name,
+    contentType: attachment.contentType ?? 'application/octet-stream',
+  }
 }
 
 export async function listProductionTasks(params: {
@@ -919,11 +1387,8 @@ export async function createProductionTask(params: {
   attachments?: ProductionTaskAttachmentInput[]
 }): Promise<ProductionTask> {
   const context = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
-  const canCreate =
-    isOrganizationAdmin(context.organizationRole) ||
-    isDirectorLikeContext(context) ||
-    context.sourceMembershipRole === 'admin'
-  assertAllowed(canCreate, 'Production task creation requires director or team admin access')
+  const canCreate = isDirectorLikeContext(context)
+  assertAllowed(canCreate, 'Production task creation requires director team access')
 
   const assignee = assertFound(
     await getActiveWorkgroup(params.assigneeWorkgroupId),
@@ -1136,6 +1601,8 @@ export async function submitProductionTask(params: {
   }
 
   const now = new Date()
+  const versionNumber = await getNextSubmissionVersion(params.taskId)
+  const submissionId = generateId()
   const [row] = await db
     .update(productionTask)
     .set({
@@ -1153,8 +1620,23 @@ export async function submitProductionTask(params: {
     .where(eq(productionTask.id, params.taskId))
     .returning()
 
-  await replaceTaskSubmissionAttachments({
+  await db.insert(productionTaskSubmission).values({
+    id: submissionId,
     taskId: row.id,
+    versionNumber,
+    workflowId: params.workflowId ?? null,
+    nodeId: params.nodeId ?? null,
+    note: submissionNote,
+    status: 'submitted',
+    submittedBy: params.userId,
+    submittedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await insertTaskSubmissionAttachments({
+    taskId: row.id,
+    submissionId,
     userId: params.userId,
     attachments: submissionAttachments,
     createdAt: now,
@@ -1171,6 +1653,8 @@ export async function submitProductionTask(params: {
       resultNodeId: params.nodeId ?? null,
       hasSubmissionNote: Boolean(submissionNote),
       submissionAttachmentCount: submissionAttachments.length,
+      submissionId,
+      submissionVersionNumber: versionNumber,
     },
   })
 
@@ -1243,6 +1727,7 @@ export async function reviewProductionTask(params: {
   assertAllowed(existing.status === 'submitted', 'Only submitted tasks can be reviewed')
 
   const now = new Date()
+  const submission = await getLatestSubmittedSubmission(params.taskId)
   const status: ProductionTaskStatus =
     params.action === 'approve' ? 'approved' : 'changes_requested'
   const [row] = await db
@@ -1256,6 +1741,26 @@ export async function reviewProductionTask(params: {
     })
     .where(eq(productionTask.id, params.taskId))
     .returning()
+
+  if (params.action === 'approve') {
+    await db
+      .update(productionTaskSubmission)
+      .set({ adoptedAt: null, adoptedBy: null, updatedAt: now })
+      .where(eq(productionTaskSubmission.taskId, params.taskId))
+  }
+
+  await db
+    .update(productionTaskSubmission)
+    .set({
+      status,
+      reviewNote: params.reviewNote ?? null,
+      reviewedBy: params.userId,
+      reviewedAt: now,
+      adoptedBy: params.action === 'approve' ? params.userId : null,
+      adoptedAt: params.action === 'approve' ? now : null,
+      updatedAt: now,
+    })
+    .where(eq(productionTaskSubmission.id, submission.id))
 
   recordProductionTaskAudit({
     action:
@@ -1271,6 +1776,8 @@ export async function reviewProductionTask(params: {
     metadata: {
       productionTaskNotification: true,
       reviewNote: params.reviewNote ?? null,
+      submissionId: submission.id,
+      submissionVersionNumber: submission.versionNumber,
     },
   })
 

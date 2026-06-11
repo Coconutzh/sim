@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
-import { WorkgroupTeamManagement } from '@/app/workspace/[workspaceId]/team-management/workgroup-team-management'
+import { ProductionTeamManagement } from '@/app/workspace/[workspaceId]/team-management/production-team-management'
 
 export const metadata: Metadata = {
   title: 'Team Management',
 }
 
 export default function TeamManagementPage() {
-  return <WorkgroupTeamManagement />
+  return <ProductionTeamManagement />
 }

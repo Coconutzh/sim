@@ -1339,6 +1339,54 @@ export const workgroupMember = pgTable(
   })
 )
 
+export const workgroupJoinRequestStatusEnum = pgEnum('workgroup_join_request_status', [
+  'pending',
+  'approved',
+  'rejected',
+  'cancelled',
+])
+
+export type WorkgroupJoinRequestStatus =
+  (typeof workgroupJoinRequestStatusEnum.enumValues)[number]
+
+export const workgroupJoinRequest = pgTable(
+  'workgroup_join_request',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workgroupId: text('workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    requesterUserId: text('requester_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    role: workgroupMemberRoleEnum('role').notNull().default('member'),
+    message: text('message'),
+    status: workgroupJoinRequestStatusEnum('status').notNull().default('pending'),
+    reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewNote: text('review_note'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationStatusIdx: index('workgroup_join_request_org_status_idx').on(
+      table.organizationId,
+      table.status
+    ),
+    workgroupStatusIdx: index('workgroup_join_request_workgroup_status_idx').on(
+      table.workgroupId,
+      table.status
+    ),
+    requesterIdx: index('workgroup_join_request_requester_idx').on(table.requesterUserId),
+    pendingUnique: uniqueIndex('workgroup_join_request_pending_unique')
+      .on(table.workgroupId, table.requesterUserId)
+      .where(sql`${table.status} = 'pending'`),
+  })
+)
+
 export const member = pgTable(
   'member',
   {
@@ -1601,6 +1649,50 @@ export const productionTaskReadReceipt = pgTable(
   })
 )
 
+export const productionTaskSubmission = pgTable(
+  'production_task_submission',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => productionTask.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    workflowId: text('workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
+    nodeId: text('node_id'),
+    note: text('note'),
+    status: productionTaskStatusEnum('status').notNull().default('submitted'),
+    submittedBy: text('submitted_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    submittedAt: timestamp('submitted_at').defaultNow().notNull(),
+    reviewedBy: text('reviewed_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewNote: text('review_note'),
+    adoptedBy: text('adopted_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    adoptedAt: timestamp('adopted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskVersionUnique: uniqueIndex('production_task_submission_task_version_unique').on(
+      table.taskId,
+      table.versionNumber
+    ),
+    taskSubmittedAtIdx: index('production_task_submission_task_submitted_at_idx').on(
+      table.taskId,
+      table.submittedAt
+    ),
+    statusIdx: index('production_task_submission_status_idx').on(table.status),
+    workflowIdx: index('production_task_submission_workflow_idx').on(table.workflowId),
+  })
+)
+
 export const productionTaskDependency = pgTable(
   'production_task_dependency',
   {
@@ -1662,6 +1754,9 @@ export const productionTaskSubmissionAttachment = pgTable(
     taskId: text('task_id')
       .notNull()
       .references(() => productionTask.id, { onDelete: 'cascade' }),
+    submissionId: text('submission_id').references(() => productionTaskSubmission.id, {
+      onDelete: 'cascade',
+    }),
     name: text('name').notNull(),
     url: text('url').notNull(),
     source: text('source').notNull().default('url'),
@@ -1682,6 +1777,87 @@ export const productionTaskSubmissionAttachment = pgTable(
       table.createdAt
     ),
     workspaceFileIdx: index('production_task_submission_attachment_workspace_file_idx').on(
+      table.workspaceFileId
+    ),
+    submissionCreatedAtIdx: index(
+      'production_task_submission_attachment_submission_created_at_idx'
+    ).on(table.submissionId, table.createdAt),
+  })
+)
+
+export const productionShowcaseItem = pgTable(
+  'production_showcase_item',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    sourceWorkspaceId: text('source_workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    sourceWorkgroupId: text('source_workgroup_id')
+      .notNull()
+      .references(() => workgroup.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => productionTask.id, { onDelete: 'set null' }),
+    submissionId: text('submission_id').references(() => productionTaskSubmission.id, {
+      onDelete: 'set null',
+    }),
+    title: text('title').notNull(),
+    description: text('description'),
+    category: text('category').notNull().default('other'),
+    content: text('content'),
+    status: text('status').notNull().default('published'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    withdrawnBy: text('withdrawn_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    withdrawnAt: timestamp('withdrawn_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationStatusCreatedIdx: index('production_showcase_item_org_status_created_idx').on(
+      table.organizationId,
+      table.status,
+      table.createdAt
+    ),
+    sourceWorkgroupIdx: index('production_showcase_item_source_workgroup_idx').on(
+      table.sourceWorkgroupId
+    ),
+    taskIdx: index('production_showcase_item_task_idx').on(table.taskId),
+    submissionIdx: index('production_showcase_item_submission_idx').on(table.submissionId),
+  })
+)
+
+export const productionShowcaseAttachment = pgTable(
+  'production_showcase_attachment',
+  {
+    id: text('id').primaryKey(),
+    itemId: text('item_id')
+      .notNull()
+      .references(() => productionShowcaseItem.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    source: text('source').notNull().default('url'),
+    workspaceFileId: text('workspace_file_id').references((): AnyPgColumn => workspaceFiles.id, {
+      onDelete: 'set null',
+    }),
+    key: text('key'),
+    contentType: text('content_type'),
+    size: integer('size'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    itemCreatedAtIdx: index('production_showcase_attachment_item_created_at_idx').on(
+      table.itemId,
+      table.createdAt
+    ),
+    workspaceFileIdx: index('production_showcase_attachment_workspace_file_idx').on(
       table.workspaceFileId
     ),
   })

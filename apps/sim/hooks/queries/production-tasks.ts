@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   type CreateProductionTaskBody,
@@ -25,6 +31,10 @@ export interface ProductionTaskFilters {
   limit?: number
 }
 
+interface ProductionTaskQueryOptions {
+  refetchIntervalMs?: false | number
+}
+
 export const productionTaskKeys = {
   all: ['production-tasks'] as const,
   lists: () => [...productionTaskKeys.all, 'list'] as const,
@@ -35,7 +45,11 @@ export const productionTaskKeys = {
   messages: (taskId?: string) => [...productionTaskKeys.detail(taskId), 'messages'] as const,
 }
 
-export function useProductionTasks(workspaceId?: string, filters?: ProductionTaskFilters) {
+export function useProductionTasks(
+  workspaceId?: string,
+  filters?: ProductionTaskFilters,
+  options?: ProductionTaskQueryOptions
+) {
   return useQuery({
     queryKey: productionTaskKeys.list(workspaceId, filters),
     queryFn: ({ signal }) =>
@@ -51,8 +65,35 @@ export function useProductionTasks(workspaceId?: string, filters?: ProductionTas
       }),
     enabled: Boolean(workspaceId),
     staleTime: 30 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: options?.refetchIntervalMs ?? 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useProductionTasksForWorkspaces(
+  workspaceIds: string[],
+  filters?: ProductionTaskFilters,
+  options?: ProductionTaskQueryOptions
+) {
+  return useQueries({
+    queries: workspaceIds.map((workspaceId) => ({
+      queryKey: productionTaskKeys.list(workspaceId, filters),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        requestJson(listProductionTasksContract, {
+          query: {
+            workspaceId,
+            workflowId: filters?.workflowId,
+            scope: filters?.scope,
+            status: filters?.status,
+            limit: filters?.limit,
+          },
+          signal,
+        }),
+      enabled: Boolean(workspaceId),
+      staleTime: 30 * 1000,
+      refetchInterval: options?.refetchIntervalMs ?? 30 * 1000,
+      placeholderData: keepPreviousData,
+    })),
   })
 }
 
@@ -136,8 +177,8 @@ export function useProductionTaskMessages(taskId?: string) {
         signal,
       }),
     enabled: Boolean(taskId),
-    staleTime: 15 * 1000,
-    refetchInterval: 15 * 1000,
+    staleTime: 5 * 1000,
+    refetchInterval: 5 * 1000,
   })
 }
 

@@ -483,13 +483,13 @@ export function HomeCopilot({ chatId }: HomeProps = {}) {
               title={teamWorkspaceId ? 'Team canvas' : 'Initialize team canvas'}
             />
             <CanvasEntryCard
-              description='Read-only published versions shared with your team or organization.'
+              description='查看项目成果、任务进度、全局时间线和提交审核历史。'
               disabled={!activeWorkgroupId}
-              eyebrow='Read-only'
+              eyebrow='Overview'
               href={`/workspace/${teamWorkspaceId ?? workspaceId}/showcase`}
               icon={Compass}
-              meta='Published work'
-              title='Showcase canvas'
+              meta='成果 + 进度'
+              title='项目总览'
             />
           </div>
           <div className='mt-10 flex flex-col items-center'>

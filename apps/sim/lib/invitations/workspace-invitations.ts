@@ -26,6 +26,7 @@ import { getWorkspaceInvitePolicy, type WorkspaceInvitePolicy } from '@/lib/work
 import { validateInvitationsAllowed } from '@/ee/access-control/utils/permission-check'
 
 export interface WorkspaceInvitationContext {
+  canGrantAdmin: boolean
   workspaceId: string
   inviterId: string
   inviterName: string
@@ -90,17 +91,23 @@ export async function prepareWorkspaceInvitationContext({
     throw new WorkspaceInvitationError({ message: 'Canvas not found', status: 404 })
   }
 
-  const hasAdminAccess = await hasWorkspaceAdminAccess(inviterId, workspaceId)
-  if (!hasAdminAccess && workspaceDetails.ownerId !== inviterId) {
+  if (workspaceDetails.workspaceMode === 'personal') {
     throw new WorkspaceInvitationError({
-      message: 'You need admin permissions to invite users',
+      message: 'Personal canvases do not support shared members',
       status: 403,
     })
   }
 
-  if (workspaceDetails.workspaceMode === 'personal') {
+  const hasAdminAccess = await hasWorkspaceAdminAccess(inviterId, workspaceId)
+  const canInviteAsTeamMember = Boolean(
+    workspaceDetails.workspaceMode === 'organization' &&
+      workspaceDetails.workgroupId &&
+      access.canWrite
+  )
+  const canGrantAdmin = hasAdminAccess || workspaceDetails.ownerId === inviterId
+  if (!canGrantAdmin && !canInviteAsTeamMember) {
     throw new WorkspaceInvitationError({
-      message: 'Personal canvases do not support shared members',
+      message: 'You need team access to invite users',
       status: 403,
     })
   }
@@ -115,6 +122,7 @@ export async function prepareWorkspaceInvitationContext({
   }
 
   return {
+    canGrantAdmin,
     workspaceId,
     inviterId,
     inviterName,
@@ -144,6 +152,13 @@ export async function createWorkspaceInvitation({
     })
   }
   const invitationPermission = permission as PermissionType
+  if (invitationPermission === 'admin' && !context.canGrantAdmin) {
+    throw new WorkspaceInvitationError({
+      message: 'Only team admins can invite another admin',
+      status: 403,
+      email,
+    })
+  }
 
   const normalizedEmail = normalizeEmail(email)
   let membershipIntent: InvitationMembershipIntent = 'internal'
