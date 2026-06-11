@@ -77,7 +77,9 @@ describe('local canvas intent policy', () => {
       requiresUserConfirmation: false,
     })
     expect(decision.confidence).toBeGreaterThan(0.8)
-    expect(decision.evidence).toEqual(expect.arrayContaining(['consult_signal']))
+    expect(decision.evidence).toEqual(
+      expect.arrayContaining(['consult_signal', 'explicit_read_only_signal'])
+    )
   })
 
   it('allows explicit canvas content-chain creation even when the subject is exam-related', () => {
@@ -95,7 +97,7 @@ describe('local canvas intent policy', () => {
     )
   })
 
-  it('allows text-to-image workflow creation with design copy and image output wording', () => {
+  it('does not treat text-to-image workflow wording as an explicit read-only boundary', () => {
     const decision = classifyLocalCanvasUserIntent(
       buildContext({
         message:
@@ -103,12 +105,9 @@ describe('local canvas intent policy', () => {
       })
     )
 
-    expect(decision).toMatchObject({
-      mutationPolicy: 'allow_mutation',
-      canvasReadPolicy: 'required',
-      requiresUserConfirmation: false,
-    })
-    expect(decision.userIntent).toMatch(/^(generate_output|mutate_canvas)$/)
+    expect(decision.requiresUserConfirmation).toBe(false)
+    expect(decision.evidence).not.toContain('explicit_read_only_signal')
+    expect(decision.evidence).not.toContain('propose_only_signal')
   })
 
   it('allows selected node prompt edits when the user only forbids generation', () => {

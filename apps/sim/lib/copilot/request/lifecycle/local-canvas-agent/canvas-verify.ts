@@ -6,6 +6,7 @@ import type {
   CanvasSnapshot,
   LocalCanvasAddContentReferenceOperation,
   LocalCanvasCreateNodeOperation,
+  LocalCanvasDeleteNodeOperation,
   LocalCanvasLayoutOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
@@ -160,6 +161,47 @@ function buildContentReferenceEdgeEndpoints(params: {
 
 function getOperationId(operation: LocalCanvasPatchOperation, index: number): string {
   return operation.operationId ?? `${operation.type}:${index + 1}`
+}
+
+function verifyDeletedNode(params: {
+  snapshot: CanvasSnapshot
+  operation: LocalCanvasDeleteNodeOperation
+  operationId: string
+  references: Map<string, string>
+  errors: string[]
+  operationResults: LocalCanvasVerifyOperationResult[]
+}): void {
+  const nodeId = resolvePatchNodeId(params.operation.nodeId, params.references)
+  const node = params.snapshot.nodes.find((item) => item.id === nodeId)
+  const connectedEdges = params.snapshot.edges.filter(
+    (edge) => edge.source === nodeId || edge.target === nodeId
+  )
+  if (node || connectedEdges.length > 0) {
+    const error = node
+      ? `Deleted node "${params.operation.nodeId}" still exists after patch`
+      : `Deleted node "${params.operation.nodeId}" still has ${connectedEdges.length} connected edge(s) after patch`
+    params.errors.push(error)
+    params.operationResults.push({
+      operationId: params.operationId,
+      operationType: params.operation.type,
+      nodeId,
+      expected: 'missing-node',
+      actual: node
+        ? { kind: node.kind, title: node.name }
+        : { connectedEdges: connectedEdges.length },
+      success: false,
+      error,
+    })
+    return
+  }
+  params.operationResults.push({
+    operationId: params.operationId,
+    operationType: params.operation.type,
+    nodeId,
+    expected: 'missing-node',
+    actual: 'missing-node',
+    success: true,
+  })
 }
 
 function sanitizeVerificationValue(value: unknown): unknown {
@@ -599,6 +641,16 @@ export async function verifyLocalCanvasPatch(params: {
           operationResults,
         })
       }
+    }
+    if (operation.type === 'delete_node') {
+      verifyDeletedNode({
+        snapshot,
+        operation,
+        operationId,
+        references: patchReferences,
+        errors,
+        operationResults,
+      })
     }
     if (operation.type === 'connect') {
       const sourceNodeId = resolvePatchNodeId(operation.sourceNodeId, patchReferences)

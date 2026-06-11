@@ -493,6 +493,182 @@ describe('local canvas tool loop', () => {
     )
   })
 
+  it('lets the model create a text-to-image workflow when the prompt is not explicitly read-only', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'lighting_copy',
+          kind: 'text' as const,
+          title: '舞台灯光设计文案',
+          fields: { contentHtml: '<p>生成舞台灯光效果的设计文案。</p>' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'lighting_visual',
+          kind: 'image' as const,
+          title: '舞台灯光效果图',
+          fields: { aiPrompt: '根据舞台灯光设计文案生成效果图。' },
+        },
+        {
+          type: 'connect' as const,
+          sourceNodeId: 'lighting_copy',
+          targetNodeId: 'lighting_visual',
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.9,
+      toolInput: { patch },
+      userVisibleReason: '我会创建设计文案节点和效果图节点，并建立引用关系。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied text-to-image workflow patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified text-to-image workflow patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message:
+          '生成一个文生图工作流，首先生成舞台灯光效果的设计文案，然后用这个设计文案生成效果图',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(result.plan).toMatchObject({
+      mutationPolicy: 'allow_mutation',
+    })
+    expect(result.plan.intentEvidence).toContain('model_confident_tool_call')
+    expect(result.observations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: expect.stringContaining('read-only'),
+        }),
+      ])
+    )
+  })
+
+  it('lets the model execute a sequenced script-to-visual-to-video-to-audio chain', async () => {
+    const patch = {
+      operations: [
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'script',
+          kind: 'text' as const,
+          title: '舞台灯光设计文案',
+          fields: { contentHtml: '<p>舞台灯光从冷蓝追光过渡到暖金面光。</p>' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'visual',
+          kind: 'image' as const,
+          title: '舞台灯光主视觉',
+          fields: { aiPrompt: '根据舞台灯光设计文案生成主视觉效果图。' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'video',
+          kind: 'video' as const,
+          title: '舞台灯光动态视频',
+          fields: { videoPrompt: '基于主视觉制作灯光逐步亮起的镜头。' },
+        },
+        {
+          type: 'create_node' as const,
+          clientNodeId: 'audio',
+          kind: 'audio' as const,
+          title: '氛围配乐',
+          fields: { audioPrompt: '生成适合舞台灯光揭幕的电子氛围配乐。' },
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'visual',
+          sourceNodeId: 'script',
+          role: 'text_context' as const,
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'video',
+          sourceNodeId: 'visual',
+          role: 'video_first_frame' as const,
+        },
+        {
+          type: 'add_content_reference' as const,
+          consumerNodeId: 'audio',
+          sourceNodeId: 'script',
+          role: 'text_context' as const,
+        },
+      ],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.91,
+      toolInput: { patch },
+      userVisibleReason: '我会创建脚本、主视觉、视频和配乐节点，并建立引用关系。',
+      risk: 'low',
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: { verification: { success: true } },
+        summary: 'Applied sequenced creative chain patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true },
+        summary: 'Verified sequenced creative chain patch',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message:
+          '先生成舞台灯光效果的设计文案，再基于文案生成主视觉效果图、视频和配乐，并把这些节点串成工作流。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch },
+    })
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(2, expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch },
+    })
+    expect(result.plan.intentEvidence).toContain('model_confident_tool_call')
+    expect(result.observations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: expect.stringContaining('read-only'),
+        }),
+      ])
+    )
+  })
+
   it('asks for clarification instead of applying a low-confidence layout patch', async () => {
     const patch = {
       operations: [{ type: 'layout_nodes' as const, direction: 'vertical' as const }],
@@ -637,6 +813,39 @@ describe('local canvas tool loop', () => {
       patch,
     })
     expect(result.answer).toBe(result.plan.clarificationQuestion)
+  })
+
+  it('requires confirmation before deleting a specific node', async () => {
+    const patch = {
+      operations: [{ type: 'delete_node' as const, nodeId: 'text-1' }],
+    }
+    mockRequestLocalAgentDecision.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'canvas.apply_patch',
+      intent: 'mutate_canvas',
+      confidence: 0.95,
+      toolInput: { patch },
+      userVisibleReason: '我会删除指定节点。',
+      risk: 'high',
+    })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        selectedNodeIds: ['text-1'],
+        message: '删除选中的这个文案节点。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      requiresClarification: true,
+      requiresUserConfirmation: true,
+      risk: 'high',
+      patch,
+    })
+    expect(result.answer).toBe(result.plan.clarificationQuestion)
+    expect(result.answer).toContain('删除或清空画布内容')
   })
 
   it('auto-generates created media nodes after a verified patch when the user requested generation', async () => {
@@ -1605,6 +1814,110 @@ describe('local canvas tool loop', () => {
       ])
     )
     expect(result.answer).toBe('我先只给方案，不会改画布。')
+  })
+
+  it('blocks high-confidence mutation when the user explicitly asks to only discuss', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.92,
+        toolInput: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                clientNodeId: 'script',
+                kind: 'text',
+                title: '脚本',
+                fields: { contentHtml: '<p>先写方案。</p>' },
+              },
+            ],
+          },
+        },
+        userVisibleReason: '我会创建脚本节点。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '我只讨论方案，不会改画布。',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '只讨论一个脚本到主视觉到视频到配乐的工作流方案，不要改画布也不要创建节点。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      mutationPolicy: 'propose_only',
+      requiresUserConfirmation: true,
+    })
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('proposal or confirmation first'),
+        }),
+      ])
+    )
+    expect(result.answer).toBe('我只讨论方案，不会改画布。')
+  })
+
+  it('blocks high-confidence mutation when the user asks to execute only after confirmation', async () => {
+    mockRequestLocalAgentDecision
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'canvas.apply_patch',
+        intent: 'mutate_canvas',
+        confidence: 0.93,
+        toolInput: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                clientNodeId: 'visual',
+                kind: 'image',
+                title: '效果图',
+                fields: { aiPrompt: '舞台灯光效果图。' },
+              },
+            ],
+          },
+        },
+        userVisibleReason: '我会创建效果图节点。',
+        risk: 'low',
+      })
+      .mockResolvedValueOnce({
+        type: 'final_answer',
+        answer: '需要你确认后我再执行。',
+      })
+
+    const result = await runLocalAgentToolLoop(
+      buildContext({
+        requestPayload: { localAgentMode: 'model_tool_loop' },
+        message: '生成一个文生图工作流，先生成设计文案再生成效果图，但等我确认后再执行。',
+      })
+    )
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(result.plan).toMatchObject({
+      mutationPolicy: 'propose_only',
+      requiresUserConfirmation: true,
+    })
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolName: 'decision',
+          success: false,
+          summary: expect.stringContaining('proposal or confirmation first'),
+        }),
+      ])
+    )
+    expect(result.answer).toBe('需要你确认后我再执行。')
   })
 
   it('treats manual confirmation mode as propose-only in the model loop', async () => {

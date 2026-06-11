@@ -5,6 +5,7 @@ import type {
   CanvasSnapshot,
   LocalCanvasAddContentReferenceOperation,
   LocalCanvasConnectOperation,
+  LocalCanvasDeleteNodeOperation,
   LocalCanvasLayoutOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
@@ -38,6 +39,15 @@ import {
 
 const NODE_GAP_X = 360
 const NODE_GAP_Y = 220
+const SUPPORTED_PATCH_OPERATION_TYPES = new Set([
+  'create_node',
+  'update_node',
+  'delete_node',
+  'connect',
+  'add_content_reference',
+  'remove_content_reference',
+  'layout_nodes',
+])
 
 type CanvasEdge = CanvasSnapshot['edges'][number]
 type ConnectionTarget = {
@@ -519,6 +529,21 @@ function validateContentReferenceOperation(
   }
 }
 
+function validateDeleteNodeOperation(
+  operation: LocalCanvasDeleteNodeOperation,
+  knownNodes: Map<string, CanvasNodeRecord>,
+  idMap: Map<string, string>,
+  errors: string[]
+): string | null {
+  const nodeId = resolveNodeId(operation.nodeId, idMap)
+  if (!knownNodes.has(nodeId)) {
+    errors.push(`Node "${operation.nodeId}" was not found`)
+    return null
+  }
+  knownNodes.delete(nodeId)
+  return nodeId
+}
+
 export function validateLocalCanvasPatch(
   patch: LocalCanvasPatch,
   snapshot?: CanvasSnapshot
@@ -533,6 +558,11 @@ export function validateLocalCanvasPatch(
   for (const operation of patch.operations) {
     if (!operation || typeof operation !== 'object' || !('type' in operation)) {
       errors.push('Patch operation must be an object with a type')
+      continue
+    }
+    const operationType = (operation as { type?: unknown }).type
+    if (typeof operationType !== 'string' || !SUPPORTED_PATCH_OPERATION_TYPES.has(operationType)) {
+      errors.push(`Unsupported patch operation type "${String(operationType)}"`)
       continue
     }
     if (operation.type === 'create_node') {
@@ -564,6 +594,9 @@ export function validateLocalCanvasPatch(
       const result = adapter.validatePatch({ ...operation, nodeId } as LocalCanvasPatchOperation)
       errors.push(...result.errors)
     }
+    if (operation.type === 'delete_node' && snapshot) {
+      validateDeleteNodeOperation(operation, knownNodes, idMap, errors)
+    }
     if (operation.type === 'connect' && snapshot) {
       const sourceNodeId = resolveNodeId(operation.sourceNodeId, idMap)
       const targetNodeId = resolveNodeId(operation.targetNodeId, idMap)
@@ -590,6 +623,13 @@ export function validateLocalCanvasPatch(
     }
   }
   return { valid: errors.length === 0, errors }
+}
+
+function buildDeleteNodeOperation(nodeId: string): EditWorkflowOperation {
+  return {
+    operation_type: 'delete',
+    block_id: nodeId,
+  }
 }
 
 export function buildEditWorkflowOperationsFromPatch(params: {
@@ -639,6 +679,19 @@ export function buildEditWorkflowOperationsFromPatch(params: {
         ...node,
         values: { ...node.values, ...patchOperation.fields },
       })
+      continue
+    }
+
+    if (patchOperation.type === 'delete_node') {
+      const nodeId = resolveNodeId(patchOperation.nodeId, idMap)
+      if (!knownNodes.has(nodeId)) continue
+      operations.push(buildDeleteNodeOperation(nodeId))
+      knownNodes.delete(nodeId)
+      virtualEdges.splice(
+        0,
+        virtualEdges.length,
+        ...virtualEdges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+      )
       continue
     }
 

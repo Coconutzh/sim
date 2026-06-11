@@ -244,6 +244,7 @@ export interface CanvasNodeAdapter {
 export type LocalCanvasPatchOperation =
   | LocalCanvasCreateNodeOperation
   | LocalCanvasUpdateNodeOperation
+  | LocalCanvasDeleteNodeOperation
   | LocalCanvasConnectOperation
   | LocalCanvasAddContentReferenceOperation
   | LocalCanvasRemoveContentReferenceOperation
@@ -270,6 +271,12 @@ export interface LocalCanvasUpdateNodeOperation {
   operationId?: string
   nodeId: string
   fields: Record<string, unknown>
+}
+
+export interface LocalCanvasDeleteNodeOperation {
+  type: 'delete_node'
+  operationId?: string
+  nodeId: string
 }
 
 export interface LocalCanvasConnectOperation {

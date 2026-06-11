@@ -507,24 +507,35 @@ function isMutationToolCallName(toolName: LocalAgentToolCall['name']): boolean {
   )
 }
 
-function shouldHardBlockMutationFromIntent(plan: LocalAgentPlan): boolean {
+function hasHardMutationSafetyBoundary(plan: LocalAgentPlan, evidence: Set<string>): boolean {
+  return (
+    plan.mutationPolicy === 'propose_only' ||
+    plan.requiresUserConfirmation === true ||
+    evidence.has('explicit_read_only_signal') ||
+    evidence.has('propose_only_signal') ||
+    evidence.has('destructive_canvas_request') ||
+    evidence.has('empty_message') ||
+    evidence.has('non_canvas_signal')
+  )
+}
+
+function isModelMutationIntent(intent: LocalAgentDecision['intent']): boolean {
+  return intent === 'mutate_canvas' || intent === 'generate_output'
+}
+
+function shouldHardBlockMutationFromIntent(
+  plan: LocalAgentPlan,
+  call: LocalAgentToolCall,
+  decisionIntent: LocalAgentDecision['intent']
+): boolean {
   if (plan.mutationPolicy !== 'read_only') return false
   const evidence = new Set(plan.intentEvidence ?? [])
-  if (plan.userIntent === 'non_canvas' || plan.userIntent === 'propose_plan') return true
-  if (plan.userIntent === 'consult_design' && evidence.has('model_intent:consult_design')) {
-    return true
+  if (hasHardMutationSafetyBoundary(plan, evidence)) return true
+  if (call.name === 'canvas.propose_patch' && decisionIntent === 'propose_plan') {
+    return false
   }
-  if (plan.userIntent === 'inspect_canvas' && evidence.has('model_intent:inspect_canvas')) {
-    return true
-  }
-  return (
-    evidence.has('consult_signal') ||
-    evidence.has('discussion_follow_up_signal') ||
-    evidence.has('inspection_signal') ||
-    evidence.has('non_canvas_signal') ||
-    evidence.has('propose_only_signal') ||
-    evidence.has('empty_message')
-  )
+  if (isModelMutationIntent(decisionIntent)) return false
+  return true
 }
 
 function isLocalCanvasUserIntent(value: unknown): value is LocalCanvasUserIntent {
@@ -560,12 +571,15 @@ function getPolicyViolationSummary(params: {
   plan: LocalAgentPlan
   call: LocalAgentToolCall
   readOnly: boolean
+  decisionIntent?: LocalAgentDecision['intent']
 }): string | null {
   if (
     params.mutationPolicy === 'read_only' &&
     (!params.readOnly || params.call.name === 'canvas.propose_patch')
   ) {
-    if (!shouldHardBlockMutationFromIntent(params.plan)) return null
+    if (!shouldHardBlockMutationFromIntent(params.plan, params.call, params.decisionIntent)) {
+      return null
+    }
     return `Blocked ${params.call.name} because this request is read-only.`
   }
   if (params.mutationPolicy === 'propose_only' && isMutationToolCallName(params.call.name)) {
@@ -1050,6 +1064,7 @@ async function executeDecisionToolCall(params: {
     plan: params.state.plan,
     call,
     readOnly: callReadOnly,
+    decisionIntent: params.decision.intent,
   })
   if (policyViolation) {
     params.state.observations.push(buildDecisionObservation(policyViolation, false))
@@ -1179,6 +1194,7 @@ async function executeParallelDecisionToolCalls(params: {
       plan: params.state.plan,
       call,
       readOnly: descriptor.isReadOnly(parsedInput.data),
+      decisionIntent: params.decision.intent,
     })
     if (policyViolation) {
       params.state.observations.push(buildDecisionObservation(policyViolation, false))

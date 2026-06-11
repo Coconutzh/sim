@@ -1171,6 +1171,44 @@ describe('local canvas tools', () => {
     ])
   })
 
+  it('applies delete_node patches through workflow delete operations after confirmation', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce(textSnapshot()).mockResolvedValueOnce({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const result = await executeCanvasTool(buildContext(), {
+      name: 'canvas.apply_patch',
+      input: {
+        patch: {
+          operations: [{ type: 'delete_node', nodeId: 'text-1' }],
+        },
+      },
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result).toMatchObject({ success: true })
+    const [executeInput] = mockEditWorkflowExecute.mock.calls[0]
+    expect(executeInput.operations).toEqual([{ operation_type: 'delete', block_id: 'text-1' }])
+    expect(result.output).toMatchObject({
+      machineSummary: {
+        deletedNodeIds: ['text-1'],
+      },
+      verification: {
+        success: true,
+        operationResults: [
+          expect.objectContaining({
+            operationType: 'delete_node',
+            nodeId: 'text-1',
+            success: true,
+          }),
+        ],
+      },
+    })
+  })
+
   it('rejects connect patches that reference missing nodes', async () => {
     mockLoadCanvasSnapshot.mockResolvedValueOnce(textSnapshot())
 

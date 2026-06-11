@@ -849,4 +849,45 @@ describe('local canvas patch verification', () => {
     expect(result.success).toBe(false)
     expect(result.errors).toContain('Generated field "file" was not written on node "image-1"')
   })
+
+  it('verifies deleted nodes and their connected edges are gone', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 360, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const result = await verifyLocalCanvasPatch({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      selectedNodeIds: [],
+      patch: {
+        operations: [{ type: 'delete_node', operationId: 'delete-text', nodeId: 'text-1' }],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(result.operationResults).toEqual([
+      expect.objectContaining({
+        operationId: 'delete-text',
+        operationType: 'delete_node',
+        nodeId: 'text-1',
+        expected: 'missing-node',
+        actual: 'missing-node',
+        success: true,
+      }),
+    ])
+  })
 })
