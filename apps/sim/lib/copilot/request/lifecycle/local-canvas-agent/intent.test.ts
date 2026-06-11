@@ -95,6 +95,22 @@ describe('local canvas intent policy', () => {
     )
   })
 
+  it('allows text-to-image workflow creation with design copy and image output wording', () => {
+    const decision = classifyLocalCanvasUserIntent(
+      buildContext({
+        message:
+          '生成一个文生图工作流，首先生成舞台灯光效果的设计文案，然后用这个设计文案生成效果图',
+      })
+    )
+
+    expect(decision).toMatchObject({
+      mutationPolicy: 'allow_mutation',
+      canvasReadPolicy: 'required',
+      requiresUserConfirmation: false,
+    })
+    expect(decision.userIntent).toMatch(/^(generate_output|mutate_canvas)$/)
+  })
+
   it('allows selected node prompt edits when the user only forbids generation', () => {
     const decision = classifyLocalCanvasUserIntent(
       buildContext({

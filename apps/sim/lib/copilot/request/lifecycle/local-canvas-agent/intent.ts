@@ -25,7 +25,7 @@ function matchesAny(message: string, patterns: readonly RegExp[]): boolean {
 }
 
 const CONSULT_PATTERNS = [
-  /先.{0,10}(?:告诉|说|讲|聊|讨论|规划|设计|分析)/,
+  /(?:^|[，。,.、\s])先(?!生成|创建|新建|新增|搭建|制作).{0,10}(?:告诉|说|讲|聊|讨论|规划|设计|分析)/,
   /(?:如何|怎么|怎样).{0,12}(?:设计|搭建|规划|构建|安排)/,
   /(?:讨论|聊聊|商量|给我思路|给我建议|设计思路|工作流如何设计)/,
   /(?:先别|不要|暂时别).{0,12}(?:创建|修改|执行|改画布|动画布|生成节点)/,
@@ -70,6 +70,13 @@ const MUTATION_TERMS = [
   'delete',
   'remove',
   'clear',
+] as const
+
+const CANVAS_CREATION_PATTERNS = [
+  /(?:^|[，。,.、\s])(?:生成|创建|新建|新增|搭建|制作).{0,18}(?:工作流|内容链|节点链|节点|画布)/,
+  /(?:工作流|内容链|节点链|节点|画布).{0,18}(?:创建|新建|新增|搭建|制作)/,
+  /(?:^|[\s,.])(?:create|add|build|make).{0,24}(?:workflow|content chain|node chain|node|canvas)/i,
+  /(?:workflow|content chain|node chain|node|canvas).{0,24}(?:create|add|build|make)/i,
 ] as const
 
 const STRONG_CANVAS_MUTATION_TERMS = [
@@ -125,9 +132,15 @@ const GENERATION_TERMS = [
   'prompt 生成',
   '生成正文',
   '生成图片',
+  '生成效果图',
   '生成视频',
   '生成音频',
   'generate output',
+] as const
+
+const GENERATION_PATTERNS = [
+  /(?:生成|生图|出图|产出|渲染).{0,16}(?:效果图|图片|图像|主视觉|视觉|image|picture)/i,
+  /(?:效果图|图片|图像|主视觉|视觉|image|picture).{0,16}(?:生成|生图|出图|产出|渲染)/i,
 ] as const
 
 const INSPECTION_TERMS = [
@@ -157,9 +170,14 @@ const CANVAS_CONTEXT_TERMS = [
   'workflow',
   'canvas',
   '内容链',
+  '节点链',
+  '文生图',
   '文案',
   '脚本',
   '主视觉',
+  '图片',
+  '图像',
+  '效果图',
   '视频',
   '音频',
   '配乐',
@@ -223,11 +241,14 @@ function hasProposeOnlySignal(message: string): boolean {
 }
 
 function hasMutationSignal(message: string): boolean {
-  return includesAny(message, MUTATION_TERMS)
+  return includesAny(message, MUTATION_TERMS) || matchesAny(message, CANVAS_CREATION_PATTERNS)
 }
 
 function hasStrongCanvasMutationSignal(message: string): boolean {
-  return includesAny(message, STRONG_CANVAS_MUTATION_TERMS)
+  return (
+    includesAny(message, STRONG_CANVAS_MUTATION_TERMS) ||
+    matchesAny(message, CANVAS_CREATION_PATTERNS)
+  )
 }
 
 function hasContextWriteSignal(message: string): boolean {
@@ -237,7 +258,7 @@ function hasContextWriteSignal(message: string): boolean {
 function hasGenerationSignal(message: string): boolean {
   if (/(?:不要|先别|暂时别|不需要|不用).{0,8}生成/.test(message)) return false
   if (/(?:do not|don't|without).{0,12}generat/i.test(message)) return false
-  return includesAny(message, GENERATION_TERMS)
+  return includesAny(message, GENERATION_TERMS) || matchesAny(message, GENERATION_PATTERNS)
 }
 
 function hasCanvasSignal(message: string): boolean {
