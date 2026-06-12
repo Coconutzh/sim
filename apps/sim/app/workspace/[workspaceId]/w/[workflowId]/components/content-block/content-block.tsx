@@ -28,12 +28,19 @@ import {
   Scissors,
   Type,
   Upload,
+  UploadCloud,
   Video,
 } from 'lucide-react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
+import { toast } from '@/components/emcn'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
+import type {
+  ProductionShowcaseCategory,
+  ProductionShowcaseSourceNodeVariant,
+} from '@/lib/api/contracts/production-showcase-items'
+import type { ProductionTaskAttachmentInput } from '@/lib/api/contracts/production-tasks'
 import { getContentCanvasModelsByFamily } from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
@@ -127,6 +134,7 @@ import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hoo
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
 import { useContentCanvasModelAvailability } from '@/hooks/queries/content-canvas'
+import { useCreateProductionShowcaseItem } from '@/hooks/queries/production-showcase-items'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -601,6 +609,79 @@ function renderContentHtml(input: string | null | undefined, emptyStateText: str
   }
 
   return Array.from(doc.body.childNodes).map((child, index) => renderNode(child, `root-${index}`))
+}
+
+function truncateShowcaseText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
+}
+
+function getTemporaryShowcaseTitle(): string {
+  return `临时成果 ${new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date())}`
+}
+
+function getShowcaseTitleFromText(plainText: string): string {
+  const title = plainText.trim()
+  return title ? truncateShowcaseText(title, 48) : getTemporaryShowcaseTitle()
+}
+
+function getShowcaseTitleFromFile(file: UploadedFileValue | null, prompt: string): string {
+  const title = file?.name?.trim() || prompt.trim()
+  return title ? truncateShowcaseText(title, 80) : getTemporaryShowcaseTitle()
+}
+
+function getShowcaseCategory(variant: ContentVariant): ProductionShowcaseCategory {
+  if (variant === 'text') return 'copywriting'
+  if (variant === 'image') return 'image'
+  if (variant === 'video') return 'video'
+  if (variant === 'audio') return 'sound'
+  return 'other'
+}
+
+function getShowcaseSourceNodeVariant(
+  variant: ContentVariant
+): ProductionShowcaseSourceNodeVariant {
+  return variant
+}
+
+function getShowcasePromptForVariant(params: {
+  variant: ContentVariant
+  aiPrompt: string
+  audioPrompt: string
+  videoPrompt: string
+}): string {
+  if (params.variant === 'audio') return params.audioPrompt
+  if (params.variant === 'video') return params.videoPrompt
+  return params.aiPrompt
+}
+
+function getShowcaseAttachmentsFromFile(
+  file: UploadedFileValue | null
+): ProductionTaskAttachmentInput[] {
+  if (!file) return []
+
+  const url = resolveUserFileUrl(file)
+  const name = file.name?.trim() || file.key?.split('/').filter(Boolean).at(-1) || '画布文件'
+
+  if (file.id?.trim()) {
+    return [
+      {
+        source: 'workspace_file',
+        name,
+        workspaceFileId: file.id.trim(),
+        url,
+        key: file.key,
+        contentType: file.type,
+        size: file.size,
+      },
+    ]
+  }
+
+  return url ? [{ source: 'url', name, url }] : []
 }
 
 function getReferenceChipLabel(
@@ -2050,12 +2131,14 @@ export const ContentBlock = memo(function ContentBlock({
   data,
   selected,
 }: NodeProps<ContentBlockNodeData>) {
-  const params = useParams<{ workspaceId: string }>()
+  const params = useParams<{ workspaceId: string; workflowId: string }>()
+  const router = useRouter()
   const reactFlowInstance = useReactFlow()
   const { fitViewToBounds } = useCanvasViewport(reactFlowInstance, {
     embedded: Boolean(data.isEmbedded),
   })
   const uploadWorkspaceFileMutation = useUploadWorkspaceFile()
+  const createShowcaseItem = useCreateProductionShowcaseItem()
   const variant = data.contentVariant as ContentVariant | undefined
 
   const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual({
@@ -2358,6 +2441,33 @@ export const ContentBlock = memo(function ContentBlock({
         : resolvedVariant === 'audio'
           ? effectiveAudioModel
           : videoReferenceModelId
+  const showcasePlainText = useMemo(
+    () => (resolvedVariant === 'text' ? getPlainTextFromHtml(resolvedHtml) : ''),
+    [resolvedHtml, resolvedVariant]
+  )
+  const showcasePrompt = useMemo(
+    () =>
+      getShowcasePromptForVariant({
+        variant: resolvedVariant,
+        aiPrompt: resolvedAiPrompt,
+        audioPrompt: resolvedAudioPrompt,
+        videoPrompt: resolvedVideoPrompt,
+      }),
+    [resolvedAiPrompt, resolvedAudioPrompt, resolvedVariant, resolvedVideoPrompt]
+  )
+  const showcaseAttachments = useMemo(
+    () =>
+      resolvedVariant === 'text'
+        ? []
+        : getShowcaseAttachmentsFromFile(resolveUserFileUrl(resolvedFile) ? resolvedFile : null),
+    [resolvedFile, resolvedVariant]
+  )
+  const canSubmitToShowcase =
+    selected &&
+    canEditWorkflow &&
+    !data.isPreview &&
+    !data.isEmbedded &&
+    (resolvedVariant === 'text' ? showcasePlainText.length > 0 : showcaseAttachments.length > 0)
   const createMenuItems = useMemo(
     () =>
       CONTENT_NODE_MENU_ITEMS.filter((item) =>
@@ -2365,6 +2475,49 @@ export const ContentBlock = memo(function ContentBlock({
       ),
     [resolvedVariant]
   )
+
+  const submitToShowcase = async () => {
+    const sourceWorkflowId = activeWorkflowId || params.workflowId
+    if (!params.workspaceId || !sourceWorkflowId) {
+      toast({ message: '缺少项目或画布上下文，无法提交成果。', duration: 2600 })
+      return
+    }
+
+    const content =
+      resolvedVariant === 'text' ? showcasePlainText.trim() : showcasePrompt.trim() || null
+    if (!content && showcaseAttachments.length === 0) {
+      toast({ message: '当前节点没有可提交的文字或文件。', duration: 2400 })
+      return
+    }
+
+    const title =
+      resolvedVariant === 'text'
+        ? getShowcaseTitleFromText(showcasePlainText)
+        : getShowcaseTitleFromFile(resolvedFile, showcasePrompt)
+
+    try {
+      const result = await createShowcaseItem.mutateAsync({
+        workspaceId: params.workspaceId,
+        title,
+        description: null,
+        category: getShowcaseCategory(resolvedVariant),
+        content: content ? truncateShowcaseText(content, 10000) : null,
+        sourceWorkflowId,
+        sourceNodeId: id,
+        sourceNodeVariant: getShowcaseSourceNodeVariant(resolvedVariant),
+        attachments: showcaseAttachments,
+      })
+      toast({ message: '已提交到成果中心，正在打开编辑界面。', duration: 2200 })
+      router.push(
+        `/workspace/${params.workspaceId}/showcase?tab=results&itemId=${result.item.id}&edit=1`
+      )
+    } catch (error) {
+      toast({
+        message: error instanceof Error ? error.message : '提交成果失败',
+        duration: 2800,
+      })
+    }
+  }
 
   const createReferencedContentNode = useCallback(
     (targetVariant: ContentVariant, anchor: 'left' | 'right') => {
@@ -4005,6 +4158,34 @@ export const ContentBlock = memo(function ContentBlock({
           }
         }}
       >
+        {canSubmitToShowcase && (
+          <button
+            type='button'
+            aria-label='提交成果'
+            title='提交成果'
+            disabled={createShowcaseItem.isPending}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void submitToShowcase()
+            }}
+            className={cn(
+              'nodrag nopan absolute top-2 right-2 z-[70] inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)]/95 px-3 text-[var(--text-primary)] text-xs shadow-sm backdrop-blur transition-colors hover-hover:bg-[var(--surface-3)]',
+              createShowcaseItem.isPending && 'cursor-not-allowed opacity-70'
+            )}
+          >
+            {createShowcaseItem.isPending ? (
+              <Loader2 className='h-3.5 w-3.5 animate-spin' />
+            ) : (
+              <UploadCloud className='h-3.5 w-3.5' />
+            )}
+            <span>提交成果</span>
+          </button>
+        )}
+
         {!data.isPreview && !data.isEmbedded && !(resolvedVariant === 'image' && resolvedFile) && (
           <div className='nodrag nopan'>
             <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
