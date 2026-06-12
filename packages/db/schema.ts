@@ -1346,8 +1346,7 @@ export const workgroupJoinRequestStatusEnum = pgEnum('workgroup_join_request_sta
   'cancelled',
 ])
 
-export type WorkgroupJoinRequestStatus =
-  (typeof workgroupJoinRequestStatusEnum.enumValues)[number]
+export type WorkgroupJoinRequestStatus = (typeof workgroupJoinRequestStatusEnum.enumValues)[number]
 
 export const workgroupJoinRequest = pgTable(
   'workgroup_join_request',

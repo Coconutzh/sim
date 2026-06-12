@@ -1,11 +1,11 @@
 import { z } from 'zod'
+import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import {
   productionTaskAttachmentBodySchema,
   productionTaskAttachmentSchema,
   productionTaskUserSchema,
   productionTaskWorkgroupSchema,
 } from '@/lib/api/contracts/production-tasks'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 export const productionShowcaseCategorySchema = z.enum([
@@ -161,9 +161,7 @@ export type ProductionShowcaseItem = z.output<typeof productionShowcaseItemSchem
 export const productionShowcaseItemsResponseSchema = z.object({
   items: z.array(productionShowcaseItemSchema),
 })
-export type ProductionShowcaseItemsResponse = z.output<
-  typeof productionShowcaseItemsResponseSchema
->
+export type ProductionShowcaseItemsResponse = z.output<typeof productionShowcaseItemsResponseSchema>
 
 export const productionShowcaseItemResponseSchema = z.object({
   item: productionShowcaseItemSchema,

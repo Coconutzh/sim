@@ -25,23 +25,23 @@ import { generateId } from '@sim/utils/id'
 import type { SQL } from 'drizzle-orm'
 import { and, asc, desc, eq, gte, inArray, isNull, lte, not, or, sql } from 'drizzle-orm'
 import type {
+  ProductionShowcaseCategory,
+  ProductionShowcaseItem,
+  ProductionShowcaseSourceNodeVariant,
+} from '@/lib/api/contracts/production-showcase-items'
+import type {
   ProductionTask,
   ProductionTaskAttachment,
   ProductionTaskAttachmentKind,
   ProductionTaskMessage,
   ProductionTaskScope,
-  ProductionTaskSubmission,
   ProductionTaskStatus,
+  ProductionTaskSubmission,
 } from '@/lib/api/contracts/production-tasks'
-import type {
-  ProductionShowcaseCategory,
-  ProductionShowcaseItem,
-  ProductionShowcaseSourceNodeVariant,
-} from '@/lib/api/contracts/production-showcase-items'
 import { type AgentCode, isAgentCode } from '@/lib/collaboration/definitions'
 import { notifyProductionTaskRealtime } from '@/lib/production-tasks/realtime'
-import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { getWorkspaceFile } from '@/lib/uploads/contexts/workspace'
+import { downloadFile } from '@/lib/uploads/core/storage-service'
 
 const logger = createLogger('ProductionTasks')
 
@@ -299,7 +299,7 @@ async function getActorTaskContext(
           eq(workgroupMember.organizationId, organizationId),
           isNull(workgroup.archivedAt)
         )
-      )
+      ),
   ])
 
   if (!organizationRole && rows.length === 0) {
@@ -477,7 +477,9 @@ async function getTaskRow(taskId: string): Promise<ProductionTaskRow> {
 
 async function getNextSubmissionVersion(taskId: string): Promise<number> {
   const [row] = await db
-    .select({ maxVersion: sql<number>`coalesce(max(${productionTaskSubmission.versionNumber}), 0)` })
+    .select({
+      maxVersion: sql<number>`coalesce(max(${productionTaskSubmission.versionNumber}), 0)`,
+    })
     .from(productionTaskSubmission)
     .where(eq(productionTaskSubmission.taskId, taskId))
     .limit(1)
@@ -843,11 +845,7 @@ async function enrichTasks(
   const users = await getUserSummaries(
     [
       ...rows.flatMap((row) => [row.createdBy, row.submittedBy, row.reviewedBy]),
-      ...submissionRows.flatMap((row) => [
-        row.submittedBy,
-        row.reviewedBy,
-        row.adoptedBy,
-      ]),
+      ...submissionRows.flatMap((row) => [row.submittedBy, row.reviewedBy, row.adoptedBy]),
       ...attachmentRows.map((row) => row.createdBy),
       ...submissionAttachmentRows.map((row) => row.createdBy),
     ].filter(Boolean) as string[]
@@ -884,7 +882,8 @@ async function enrichTasks(
     existing.push(mapped)
     submissionAttachmentsByTaskId.set(attachment.taskId, existing)
     if (attachment.submissionId) {
-      const submissionExisting = submissionAttachmentsBySubmissionId.get(attachment.submissionId) ?? []
+      const submissionExisting =
+        submissionAttachmentsBySubmissionId.get(attachment.submissionId) ?? []
       submissionExisting.push(mapped)
       submissionAttachmentsBySubmissionId.set(attachment.submissionId, submissionExisting)
     }
@@ -1058,9 +1057,7 @@ async function enrichShowcaseItems(
           .from(productionTaskSubmission)
           .where(inArray(productionTaskSubmission.id, submissionIds))
       : []
-  const submissionVersionById = new Map(
-    submissionRows.map((row) => [row.id, row.versionNumber])
-  )
+  const submissionVersionById = new Map(submissionRows.map((row) => [row.id, row.versionNumber]))
   const attachmentRows =
     itemIds.length > 0
       ? await db
@@ -1196,7 +1193,8 @@ export async function listProductionShowcaseItems(params: {
     conditions.push(eq(productionShowcaseItem.category, params.category))
   }
   const canSeeWithdrawn =
-    isOrganizationAdmin(workspaceContext.organizationRole) || isDirectorLikeContext(workspaceContext)
+    isOrganizationAdmin(workspaceContext.organizationRole) ||
+    isDirectorLikeContext(workspaceContext)
   if (!params.includeWithdrawn || !canSeeWithdrawn) {
     conditions.push(eq(productionShowcaseItem.status, 'published'))
   }
@@ -1227,7 +1225,7 @@ export async function createProductionShowcaseItem(params: {
 }): Promise<ProductionShowcaseItem> {
   const context = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
   let taskId = params.taskId ?? null
-  let submissionId = params.submissionId ?? null
+  const submissionId = params.submissionId ?? null
   const sourceWorkflowId = params.sourceWorkflowId ?? null
   const sourceNodeId = params.sourceNodeId ?? null
   const sourceNodeVariant = params.sourceNodeVariant ?? null
@@ -1259,7 +1257,10 @@ export async function createProductionShowcaseItem(params: {
       .where(eq(productionTaskSubmission.id, submissionId))
       .limit(1)
     assertFound(submission, 'Production task submission not found')
-    assertAllowed(submission.organizationId === context.organizationId, 'Production task access denied')
+    assertAllowed(
+      submission.organizationId === context.organizationId,
+      'Production task access denied'
+    )
     taskId = taskId ?? submission.taskId
   }
 
@@ -1403,7 +1404,10 @@ export async function withdrawProductionShowcaseItem(params: {
     .limit(1)
   const item = assertFound(existing, 'Production showcase item not found')
   assertAllowed(item.organizationId === context.organizationId, 'Production showcase access denied')
-  assertAllowed(computeShowcasePermissions(item, context).canWithdraw, 'Showcase withdraw access required')
+  assertAllowed(
+    computeShowcasePermissions(item, context).canWithdraw,
+    'Showcase withdraw access required'
+  )
 
   const now = new Date()
   const [row] = await db
@@ -1440,7 +1444,10 @@ export async function downloadProductionShowcaseAttachment(params: {
     .limit(1)
   const showcaseItem = assertFound(item, 'Production showcase item not found')
   const context = await getActorTaskContext(params.userId, showcaseItem.organizationId)
-  assertAllowed(context.memberships.length > 0 || isOrganizationAdmin(context.organizationRole), 'Production showcase access denied')
+  assertAllowed(
+    context.memberships.length > 0 || isOrganizationAdmin(context.organizationRole),
+    'Production showcase access denied'
+  )
 
   const [attachment] = await db
     .select()
