@@ -18,12 +18,13 @@ import {
   Maximize2,
   MessageSquare,
   Paperclip,
+  Pencil,
   Plus,
   Send,
   UploadCloud,
   X,
 } from 'lucide-react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -59,7 +60,9 @@ import {
 } from '@/hooks/queries/collaboration'
 import {
   useCreateProductionShowcaseItem,
+  useProductionShowcaseItem,
   useProductionShowcaseItems,
+  useUpdateProductionShowcaseItem,
   useWithdrawProductionShowcaseItem,
 } from '@/hooks/queries/production-showcase-items'
 import {
@@ -281,6 +284,29 @@ function getUploadedAttachmentInputs(
   return [...attachments, ...parseAttachmentLines(attachmentLines)].slice(0, 20)
 }
 
+function getUploadedAttachmentDraftsFromItems(
+  attachments: ProductionTaskAttachment[]
+): UploadedAttachmentDraft[] {
+  return attachments
+    .filter((attachment) => attachment.source === 'workspace_file' && attachment.workspaceFileId)
+    .map((attachment) => ({
+      source: 'workspace_file' as const,
+      name: attachment.name,
+      workspaceFileId: attachment.workspaceFileId as string,
+      url: attachment.url,
+      key: attachment.key ?? '',
+      contentType: attachment.contentType ?? '',
+      size: attachment.size ?? 0,
+    }))
+}
+
+function getAttachmentLinesFromItems(attachments: ProductionTaskAttachment[]): string {
+  return attachments
+    .filter((attachment) => attachment.source === 'url' || !attachment.workspaceFileId)
+    .map((attachment) => `${attachment.name} | ${attachment.url}`)
+    .join('\n')
+}
+
 function AttachmentList({ items }: { items: ProductionTaskAttachment[] }) {
   if (items.length === 0) return null
   return (
@@ -292,6 +318,7 @@ function AttachmentList({ items }: { items: ProductionTaskAttachment[] }) {
           target='_blank'
           rel='noreferrer'
           download={attachment.name}
+          onClick={(event) => event.stopPropagation()}
           className='flex items-center gap-2 rounded-[7px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-[12px] text-[var(--badge-blue-text)] transition-colors hover-hover:bg-[var(--surface-3)]'
         >
           <FileText className='h-3.5 w-3.5 shrink-0' />
@@ -479,7 +506,9 @@ function TaskChatSurface({
 }
 
 export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
+  const router = useRouter()
   const searchParams = useSearchParams()
+  const routedResultItemId = searchParams.get('itemId') ?? undefined
   const resultAttachmentInputRef = useRef<HTMLInputElement>(null)
   const taskAttachmentInputRef = useRef<HTMLInputElement>(null)
   const submissionAttachmentInputRef = useRef<HTMLInputElement>(null)
@@ -494,7 +523,12 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   )
   const { data: taskData } = useProductionTasks(workspaceId, { scope: 'auto', limit: 100 })
   const { data: showcaseData } = useProductionShowcaseItems(workspaceId, { limit: 100 })
+  const { data: routedShowcaseItemData } = useProductionShowcaseItem(
+    routedResultItemId,
+    workspaceId
+  )
   const createShowcaseItem = useCreateProductionShowcaseItem()
+  const updateShowcaseItem = useUpdateProductionShowcaseItem()
   const withdrawShowcaseItem = useWithdrawProductionShowcaseItem()
   const createTask = useCreateProductionTask()
   const submitTask = useSubmitProductionTask()
@@ -525,6 +559,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const [resultUploadedAttachments, setResultUploadedAttachments] = useState<
     UploadedAttachmentDraft[]
   >([])
+  const [editingResultId, setEditingResultId] = useState<string | null>(null)
   const [resultTaskId, setResultTaskId] = useState<string | null>(null)
   const [resultSubmissionId, setResultSubmissionId] = useState<string | null>(null)
   const [submissionNote, setSubmissionNote] = useState('')
@@ -552,6 +587,12 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const selectedTask = useMemo(
     () => tasks.find((task) => task.id === selectedTaskId) ?? null,
     [selectedTaskId, tasks]
+  )
+  const editingResult = useMemo(
+    () =>
+      showcaseItems.find((item) => item.id === editingResultId) ??
+      (routedShowcaseItemData?.item.id === editingResultId ? routedShowcaseItemData.item : null),
+    [editingResultId, routedShowcaseItemData?.item, showcaseItems]
   )
   const { data: messagesData } = useProductionTaskMessages(selectedTask?.id)
   const messages = messagesData?.messages ?? []
@@ -599,7 +640,37 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
       setIsCreateTaskOpen(false)
       setSelectedTaskId(taskId)
     }
-  }, [canCreateTask, searchParams])
+    if (routedResultItemId) {
+      setActiveTab('results')
+      setIsCreateTaskOpen(false)
+      setSelectedTaskId(null)
+    }
+  }, [canCreateTask, routedResultItemId, searchParams])
+
+  useEffect(() => {
+    if (!routedResultItemId || searchParams.get('edit') !== '1') return
+    if (editingResultId === routedResultItemId) return
+    const item =
+      showcaseItems.find((showcaseItem) => showcaseItem.id === routedResultItemId) ??
+      routedShowcaseItemData?.item
+    if (!item) return
+
+    setEditingResultId(item.id)
+    setResultTitle(item.title)
+    setResultCategory(item.category)
+    setResultDescription(item.description ?? '')
+    setResultContent(item.content ?? '')
+    setResultAttachmentLines(getAttachmentLinesFromItems(item.attachments))
+    setResultUploadedAttachments(getUploadedAttachmentDraftsFromItems(item.attachments))
+    setResultTaskId(item.taskId)
+    setResultSubmissionId(item.submissionId)
+  }, [
+    editingResultId,
+    routedResultItemId,
+    routedShowcaseItemData?.item,
+    searchParams,
+    showcaseItems,
+  ])
 
   useEffect(() => {
     if (!isCreateTaskOpen || taskAssigneeWorkgroupId || assignableWorkgroups.length === 0) return
@@ -672,6 +743,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   }
 
   const resetResultForm = () => {
+    setEditingResultId(null)
     setResultTitle('')
     setResultCategory('copywriting')
     setResultDescription('')
@@ -680,6 +752,29 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     setResultUploadedAttachments([])
     setResultTaskId(null)
     setResultSubmissionId(null)
+  }
+
+  const loadResultIntoForm = (item: ProductionShowcaseItem) => {
+    setEditingResultId(item.id)
+    setResultTitle(item.title)
+    setResultCategory(item.category)
+    setResultDescription(item.description ?? '')
+    setResultContent(item.content ?? '')
+    setResultAttachmentLines(getAttachmentLinesFromItems(item.attachments))
+    setResultUploadedAttachments(getUploadedAttachmentDraftsFromItems(item.attachments))
+    setResultTaskId(item.taskId)
+    setResultSubmissionId(item.submissionId)
+  }
+
+  const openResultEditor = (item: ProductionShowcaseItem) => {
+    setActiveTab('results')
+    loadResultIntoForm(item)
+    router.replace(`/workspace/${workspaceId}/showcase?tab=results&itemId=${item.id}&edit=1`)
+  }
+
+  const closeResultEditor = () => {
+    resetResultForm()
+    router.replace(`/workspace/${workspaceId}/showcase?tab=results`)
   }
 
   const resetCreateTaskForm = () => {
@@ -708,6 +803,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     submission: ProductionTaskSubmission
   ) => {
     setActiveTab('results')
+    setEditingResultId(null)
     setResultTitle(`${task.title} v${submission.versionNumber}`)
     setResultCategory('other')
     setResultDescription(task.description ?? '')
@@ -718,7 +814,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     setResultSubmissionId(submission.id)
   }
 
-  const handleCreateResult = async () => {
+  const handleSaveResult = async () => {
     const attachments = getUploadedAttachmentInputs(
       resultUploadedAttachments,
       resultAttachmentLines
@@ -736,21 +832,38 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     }
 
     try {
-      await createShowcaseItem.mutateAsync({
-        workspaceId,
-        title: resultTitle.trim(),
-        description: resultDescription.trim() || null,
-        category: resultCategory,
-        content: resultContent.trim() || null,
-        taskId: resultTaskId,
-        submissionId: resultSubmissionId,
-        attachments,
-      })
-      resetResultForm()
-      toast({ message: '成果已发布到项目总览', duration: 2200 })
+      if (editingResultId) {
+        const result = await updateShowcaseItem.mutateAsync({
+          itemId: editingResultId,
+          body: {
+            workspaceId,
+            title: resultTitle.trim(),
+            description: resultDescription.trim() || null,
+            category: resultCategory,
+            content: resultContent.trim() || null,
+            attachments,
+          },
+        })
+        loadResultIntoForm(result.item)
+        toast({ message: '成果卡片已保存', duration: 2200 })
+      } else {
+        await createShowcaseItem.mutateAsync({
+          workspaceId,
+          title: resultTitle.trim(),
+          description: resultDescription.trim() || null,
+          category: resultCategory,
+          content: resultContent.trim() || null,
+          taskId: resultTaskId,
+          submissionId: resultSubmissionId,
+          attachments,
+        })
+        resetResultForm()
+        toast({ message: '成果已发布到项目总览', duration: 2200 })
+      }
     } catch (error) {
+      const fallbackMessage = editingResultId ? '保存成果失败' : '发布成果失败'
       toast({
-        message: error instanceof Error ? error.message : '发布成果失败',
+        message: error instanceof Error ? error.message : fallbackMessage,
         duration: 2800,
       })
     }
@@ -1166,7 +1279,26 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                     showcaseItems.map((item) => (
                       <article
                         key={item.id}
-                        className='flex min-h-[220px] flex-col rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'
+                        role={item.permissions.canEdit ? 'button' : undefined}
+                        tabIndex={item.permissions.canEdit ? 0 : undefined}
+                        onClick={() => {
+                          if (item.permissions.canEdit) openResultEditor(item)
+                        }}
+                        onKeyDown={(event) => {
+                          if (!item.permissions.canEdit) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openResultEditor(item)
+                          }
+                        }}
+                        className={cn(
+                          'flex min-h-[220px] flex-col rounded-[8px] border bg-[var(--surface-2)] p-3 text-left transition-colors',
+                          editingResultId === item.id
+                            ? 'border-[var(--brand-accent)] ring-1 ring-[var(--brand-accent)]/25'
+                            : 'border-[var(--border)]',
+                          item.permissions.canEdit &&
+                            'cursor-pointer hover-hover:bg-[var(--surface-3)]'
+                        )}
                       >
                         <div className='flex items-start justify-between gap-2'>
                           <Badge variant='gray-secondary' size='sm' className='rounded-full px-2'>
@@ -1197,17 +1329,36 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                             <div className='truncate'>{item.sourceWorkgroup.name}</div>
                             <div className='mt-0.5'>{formatDateTime(item.createdAt)}</div>
                           </div>
-                          {item.permissions.canWithdraw && item.status === 'published' ? (
-                            <Button
-                              type='button'
-                              size='sm'
-                              variant='ghost'
-                              onClick={() => void handleWithdrawResult(item)}
-                              disabled={withdrawShowcaseItem.isPending}
-                            >
-                              撤回
-                            </Button>
-                          ) : null}
+                          <div className='flex shrink-0 items-center gap-1'>
+                            {item.permissions.canEdit ? (
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='ghost'
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openResultEditor(item)
+                                }}
+                              >
+                                <Pencil className='mr-1 h-3.5 w-3.5' />
+                                编辑
+                              </Button>
+                            ) : null}
+                            {item.permissions.canWithdraw && item.status === 'published' ? (
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='ghost'
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleWithdrawResult(item)
+                                }}
+                                disabled={withdrawShowcaseItem.isPending}
+                              >
+                                撤回
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
                       </article>
                     ))
@@ -1218,14 +1369,25 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
               <aside className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
                 <div className='border-[var(--border)] border-b px-4 py-3'>
                   <div className='flex items-center gap-2 font-semibold text-[14px] text-[var(--text-primary)]'>
-                    <Plus className='h-4 w-4' />
-                    发布成果
+                    {editingResultId ? (
+                      <Pencil className='h-4 w-4' />
+                    ) : (
+                      <Plus className='h-4 w-4' />
+                    )}
+                    {editingResultId ? '编辑成果' : '发布成果'}
                   </div>
                   <p className='mt-1 text-[12px] text-[var(--text-tertiary)]'>
-                    可以发布文字、链接、本地文件，也可以从任务提交版本发布。
+                    {editingResult
+                      ? `来自 ${editingResult.sourceWorkgroup.name}，可继续补充标题、说明、内容和附件。`
+                      : '可以发布文字、链接、本地文件，也可以从任务提交版本发布。'}
                   </p>
                 </div>
                 <div className='space-y-3 p-4'>
+                  {editingResult?.sourceWorkflowId ? (
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-secondary)]'>
+                      已关联团队画布节点，来源团队：{editingResult.sourceWorkgroup.name}
+                    </div>
+                  ) : null}
                   <div className='space-y-1.5'>
                     <label
                       htmlFor='production-result-title'
@@ -1321,16 +1483,29 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                       已关联任务提交版本，可直接发布为成果。
                     </div>
                   ) : null}
+                  {editingResult && !editingResult.permissions.canEdit ? (
+                    <div className='rounded-[8px] border border-[var(--badge-amber-border)] bg-[var(--badge-amber-bg)] px-3 py-2 text-[12px] text-[var(--badge-amber-text)]'>
+                      当前账号没有编辑该成果的权限。
+                    </div>
+                  ) : null}
                   <div className='flex items-center justify-end gap-2'>
-                    <Button type='button' variant='ghost' onClick={resetResultForm}>
-                      清空
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      onClick={editingResultId ? closeResultEditor : resetResultForm}
+                    >
+                      {editingResultId ? '关闭' : '清空'}
                     </Button>
                     <Button
                       type='button'
-                      onClick={() => void handleCreateResult()}
-                      disabled={createShowcaseItem.isPending}
+                      onClick={() => void handleSaveResult()}
+                      disabled={
+                        createShowcaseItem.isPending ||
+                        updateShowcaseItem.isPending ||
+                        Boolean(editingResult && !editingResult.permissions.canEdit)
+                      }
                     >
-                      发布成果
+                      {editingResultId ? '保存修改' : '发布成果'}
                     </Button>
                   </div>
                 </div>

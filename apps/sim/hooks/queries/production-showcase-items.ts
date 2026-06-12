@@ -3,8 +3,11 @@ import { requestJson } from '@/lib/api/client/request'
 import {
   type CreateProductionShowcaseItemBody,
   createProductionShowcaseItemContract,
+  getProductionShowcaseItemContract,
   listProductionShowcaseItemsContract,
   type ProductionShowcaseCategory,
+  type UpdateProductionShowcaseItemBody,
+  updateProductionShowcaseItemContract,
   withdrawProductionShowcaseItemContract,
 } from '@/lib/api/contracts/production-showcase-items'
 
@@ -19,6 +22,9 @@ export const productionShowcaseItemKeys = {
   lists: () => [...productionShowcaseItemKeys.all, 'list'] as const,
   list: (workspaceId?: string, filters?: ProductionShowcaseItemFilters) =>
     [...productionShowcaseItemKeys.lists(), workspaceId ?? '', filters ?? {}] as const,
+  details: () => [...productionShowcaseItemKeys.all, 'detail'] as const,
+  detail: (itemId?: string, workspaceId?: string) =>
+    [...productionShowcaseItemKeys.details(), itemId ?? '', workspaceId ?? ''] as const,
 }
 
 export function useProductionShowcaseItems(
@@ -50,6 +56,37 @@ export function useCreateProductionShowcaseItem() {
       requestJson(createProductionShowcaseItemContract, { body }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: productionShowcaseItemKeys.lists() })
+    },
+  })
+}
+
+export function useProductionShowcaseItem(itemId?: string, workspaceId?: string) {
+  return useQuery({
+    queryKey: productionShowcaseItemKeys.detail(itemId, workspaceId),
+    queryFn: ({ signal }) =>
+      requestJson(getProductionShowcaseItemContract, {
+        params: { itemId: itemId as string },
+        query: { workspaceId: workspaceId as string },
+        signal,
+      }),
+    enabled: Boolean(itemId && workspaceId),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useUpdateProductionShowcaseItem() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { itemId: string; body: UpdateProductionShowcaseItemBody }) =>
+      requestJson(updateProductionShowcaseItemContract, {
+        params: { itemId: variables.itemId },
+        body: variables.body,
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: productionShowcaseItemKeys.lists() })
+      queryClient.invalidateQueries({
+        queryKey: productionShowcaseItemKeys.detail(variables.itemId, variables.body.workspaceId),
+      })
     },
   })
 }
