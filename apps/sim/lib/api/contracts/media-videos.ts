@@ -2,11 +2,7 @@ import { z } from 'zod'
 import { userFileSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
-export const videoGenerationModelSchema = z.enum([
-  'wan2.7-i2v',
-  'wan2.6-t2v',
-  'wan2.6-i2v-flash',
-])
+export const videoGenerationModelSchema = z.enum(['wan2.7-i2v', 'wan2.6-t2v', 'wan2.6-i2v-flash'])
 export const videoGenerationMediaTypeSchema = z.enum(['first_frame', 'last_frame'])
 export const videoGenerationResolutionSchema = z.enum(['720P', '1080P'])
 export const videoFrameAspectRatioPresetSchema = z.enum(['16:9', '9:16', '1:1'])
@@ -80,7 +76,31 @@ export const generateWorkspaceVideoBodySchema = z
     }
   })
 
-const generatedWorkspaceFileSchema = z.object({
+export const trimWorkspaceVideoBodySchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    sourceFile: userFileSchema,
+    startSeconds: z.number().min(0, 'startSeconds must be greater than or equal to 0'),
+    endSeconds: z.number().positive('endSeconds must be greater than 0'),
+  })
+  .superRefine((value, context) => {
+    if (value.endSeconds <= value.startSeconds) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'endSeconds must be greater than startSeconds',
+        path: ['endSeconds'],
+      })
+    }
+  })
+
+export const generateWorkspaceVideoThumbnailsBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  sourceFile: userFileSchema,
+  durationSeconds: z.number().positive('durationSeconds must be greater than 0'),
+  frameCount: z.number().int().min(1).max(24).default(12),
+})
+
+export const generatedWorkspaceVideoFileSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
@@ -105,10 +125,40 @@ export const generateWorkspaceVideoContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       success: z.literal(true),
-      file: generatedWorkspaceFileSchema,
+      file: generatedWorkspaceVideoFileSchema,
       metadata: generatedVideoMetadataSchema,
     }),
   },
 })
 
+export const trimWorkspaceVideoContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/videos/trim',
+  body: trimWorkspaceVideoBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceVideoFileSchema,
+    }),
+  },
+})
+
+export const generateWorkspaceVideoThumbnailsContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/videos/thumbnails',
+  body: generateWorkspaceVideoThumbnailsBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      thumbnails: z.array(z.string()),
+    }),
+  },
+})
+
 export type GenerateWorkspaceVideoBody = z.input<typeof generateWorkspaceVideoBodySchema>
+export type TrimWorkspaceVideoBody = z.input<typeof trimWorkspaceVideoBodySchema>
+export type GenerateWorkspaceVideoThumbnailsBody = z.input<
+  typeof generateWorkspaceVideoThumbnailsBodySchema
+>

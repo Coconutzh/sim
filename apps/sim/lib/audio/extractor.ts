@@ -1,67 +1,16 @@
-import { execSync } from 'node:child_process'
-import fsSync from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createLogger } from '@sim/logger'
-import ffmpegStatic from 'ffmpeg-static'
 import ffmpeg from 'fluent-ffmpeg'
 import type {
   AudioExtractionOptions,
   AudioExtractionResult,
   AudioMetadata,
 } from '@/lib/audio/types'
+import { ensureFfmpegBinary } from '@/lib/media/ffmpeg'
 
 const logger = createLogger('AudioExtractor')
-
-let ffmpegInitialized = false
-let ffmpegPath: string | null = null
-
-/**
- * Lazy initialization of FFmpeg - only runs when needed, not at module load
- */
-function ensureFfmpeg(): void {
-  if (ffmpegInitialized) {
-    if (!ffmpegPath) {
-      throw new Error(
-        'FFmpeg not found. Install: brew install ffmpeg (macOS) / apk add ffmpeg (Alpine) / apt-get install ffmpeg (Ubuntu)'
-      )
-    }
-    return
-  }
-
-  ffmpegInitialized = true
-
-  // Try ffmpeg-static binary
-  if (ffmpegStatic && typeof ffmpegStatic === 'string') {
-    try {
-      fsSync.accessSync(ffmpegStatic, fsSync.constants.X_OK)
-      ffmpegPath = ffmpegStatic
-      ffmpeg.setFfmpegPath(ffmpegPath)
-      logger.info('[FFmpeg] Using ffmpeg-static:', ffmpegPath)
-      return
-    } catch {
-      // Binary doesn't exist or not executable
-    }
-  }
-
-  // Try system ffmpeg (cross-platform)
-  try {
-    const cmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg'
-    const result = execSync(cmd, { encoding: 'utf-8' }).trim()
-    // On Windows, 'where' returns multiple paths - take first
-    ffmpegPath = result.split('\n')[0]
-    ffmpeg.setFfmpegPath(ffmpegPath)
-    logger.info('[FFmpeg] Using system ffmpeg:', ffmpegPath)
-    return
-  } catch {
-    // System ffmpeg not found
-  }
-
-  // No FFmpeg found - set flag but don't throw yet
-  // Error will be thrown when user tries to use video extraction
-  logger.warn('[FFmpeg] No FFmpeg binary found at module load time')
-}
 
 /**
  * Extract audio from video or convert audio format using FFmpeg
@@ -72,7 +21,7 @@ export async function extractAudioFromVideo(
   options: AudioExtractionOptions = {}
 ): Promise<AudioExtractionResult> {
   // Initialize FFmpeg on first use
-  ensureFfmpeg()
+  ensureFfmpegBinary()
   const isVideo = mimeType.startsWith('video/')
   const isAudio = mimeType.startsWith('audio/')
 
@@ -185,7 +134,7 @@ async function convertAudioWithFFmpeg(
  * Get audio metadata using ffprobe
  */
 export async function getAudioMetadata(buffer: Buffer, mimeType: string): Promise<AudioMetadata> {
-  ensureFfmpeg() // Initialize FFmpeg/ffprobe
+  ensureFfmpegBinary() // Initialize FFmpeg/ffprobe
   const tempDir = os.tmpdir()
   const inputExt = getExtensionFromMimeType(mimeType)
   const inputFile = path.join(tempDir, `ffprobe-input-${Date.now()}.${inputExt}`)
@@ -210,7 +159,7 @@ export async function getAudioMetadata(buffer: Buffer, mimeType: string): Promis
  * Get audio metadata from a file path using ffprobe
  */
 async function getAudioMetadataFromFile(filePath: string): Promise<AudioMetadata> {
-  ensureFfmpeg() // Initialize FFmpeg/ffprobe
+  ensureFfmpegBinary() // Initialize FFmpeg/ffprobe
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) {

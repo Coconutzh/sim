@@ -32,8 +32,13 @@ import {
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
+import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
+import {
+  type TrimWorkspaceVideoBody,
+  trimWorkspaceVideoContract,
+} from '@/lib/api/contracts/media-videos'
 import { getContentCanvasModelsByFamily } from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
@@ -121,6 +126,8 @@ import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflow
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
 import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
+import { VideoTrimOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-overlay'
+import type { VideoTrimRange } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
@@ -422,6 +429,20 @@ function matchesVariantFile(value: unknown, variant: ContentVariant): boolean {
 
 function isUploadedFileValue(value: unknown): value is UploadedFileValue {
   return hasUploadedFileValue(value)
+}
+
+function toTrimRequestFile(file: UploadedFileValue): TrimWorkspaceVideoBody['sourceFile'] | null {
+  if (!file.key) return null
+
+  return {
+    id: file.id ?? '',
+    name: file.name ?? 'video',
+    url: file.path ?? '',
+    key: file.key,
+    size: file.size ?? 0,
+    type: file.type ?? 'video/mp4',
+    context: file.context,
+  }
 }
 
 function normalizeVideoModelFamily(value: unknown, legacyModelValue?: unknown): VideoModelFamily {
@@ -1175,7 +1196,10 @@ function MediaContentCard({
   isImageRepaintMode,
   isImageEraseMode,
   isImageOutpaintMode,
+  isVideoTrimMode,
   isImageCropProcessing,
+  isVideoTrimProcessing,
+  videoTrimError,
   onAddReference,
   onRemoveReference,
   onStartImageCrop,
@@ -1183,11 +1207,14 @@ function MediaContentCard({
   onStartImageErase,
   onStartImageOutpaint,
   onStartImageCutout,
+  onStartVideoTrim,
   onCancelImageCrop,
   onCancelImageRepaint,
   onCancelImageErase,
   onCancelImageOutpaint,
+  onCancelVideoTrim,
   onConfirmImageCrop,
+  onConfirmVideoTrim,
   onCreateImagePerspectiveVariant,
   onCreateImageRepaintVariant,
   onCreateImageEraseVariant,
@@ -1234,7 +1261,10 @@ function MediaContentCard({
   isImageRepaintMode: boolean
   isImageEraseMode: boolean
   isImageOutpaintMode: boolean
+  isVideoTrimMode: boolean
   isImageCropProcessing: boolean
+  isVideoTrimProcessing: boolean
+  videoTrimError: string | null
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
   onStartImageCrop: () => void
@@ -1242,11 +1272,14 @@ function MediaContentCard({
   onStartImageErase: () => void
   onStartImageOutpaint: () => void
   onStartImageCutout: () => void
+  onStartVideoTrim: () => void
   onCancelImageCrop: () => void
   onCancelImageRepaint: () => void
   onCancelImageErase: () => void
   onCancelImageOutpaint: () => void
+  onCancelVideoTrim: () => void
   onConfirmImageCrop: (file: File) => Promise<void>
+  onConfirmVideoTrim: (range: VideoTrimRange) => Promise<void>
   onCreateImagePerspectiveVariant: (params: {
     file: UploadedFileValue
     model: ImageGenerationModelId
@@ -1275,6 +1308,7 @@ function MediaContentCard({
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const uploadFileMutation = useUploadWorkspaceFile()
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
@@ -1290,13 +1324,19 @@ function MediaContentCard({
   > | null>(null)
 
   const mediaPath = file?.path ?? ''
+  const trimSourceFile = useMemo(
+    () => (file ? toTrimRequestFile(file) : null),
+    [file?.context, file?.id, file?.key, file?.name, file?.path, file?.size, file?.type]
+  )
   const canUpload = canEdit && !isPreview
   const accept = variant === 'image' ? 'image/*' : variant === 'video' ? 'video/*' : 'audio/*'
   const cardWidth =
     variant === 'image'
       ? IMAGE_CARD_WIDTH
       : variant === 'video'
-        ? VIDEO_CARD_WIDTH
+        ? isVideoTrimMode
+          ? 720
+          : VIDEO_CARD_WIDTH
         : AUDIO_CARD_WIDTH
   const cardHeight =
     variant === 'image'
@@ -1570,7 +1610,7 @@ function MediaContentCard({
   const showUploadAction =
     selected &&
     canUpload &&
-    (variant !== 'image' || !hasMedia) &&
+    ((variant !== 'image' && variant !== 'video') || !hasMedia) &&
     !isImageCutoutPending &&
     !isImageCutoutError
   const showImageCropAction =
@@ -1593,6 +1633,15 @@ function MediaContentCard({
     !isImageRepaintMode &&
     !isImageEraseMode &&
     !isImageOutpaintMode
+  const showVideoToolbar =
+    selected && canUpload && variant === 'video' && hasMedia && !isVideoTrimMode
+  const isTrimDerivedVideo =
+    variant === 'video' &&
+    contentReferences.some(
+      (reference) => reference.sourceVariant === 'video' && reference.role === 'text_context'
+    )
+  const showVideoComposer =
+    variant === 'video' && !isVideoTrimMode && (!hasMedia || !isTrimDerivedVideo)
 
   useEffect(() => {
     if (!showImageToolbar) {
@@ -1726,8 +1775,31 @@ function MediaContentCard({
         </div>
       )}
 
+      {showVideoToolbar && (
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5'>
+          <button
+            type='button'
+            aria-label='剪辑视频'
+            title='剪辑视频'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              onStartVideoTrim()
+            }}
+            className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            <Scissors className='h-3.5 w-3.5' />
+          </button>
+        </div>
+      )}
+
       <div
-        className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
+        className={cn(
+          'relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] transition-[width,min-height]',
+          isVideoTrimMode && variant === 'video' && 'shadow-[0_0_0_1px_rgba(255,255,255,0.08)]'
+        )}
         style={{ width: cardWidth, minHeight: cardHeight }}
       >
         <input
@@ -1770,15 +1842,24 @@ function MediaContentCard({
               )}
             </div>
           ) : variant === 'video' ? (
-            <div className='flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3'>
+            <div
+              className={cn(
+                'flex flex-col gap-3 bg-[var(--surface-1)] px-3 py-3',
+                isVideoTrimMode ? 'w-[720px]' : 'w-[360px]'
+              )}
+            >
               {/* biome-ignore lint/a11y/useMediaCaption: uploaded local video cards do not have a caption track in this iteration. */}
               <video
+                ref={videoRef}
                 src={mediaPath}
                 controls
                 preload='metadata'
-                className='nodrag nopan aspect-video w-full rounded-xl bg-black object-contain'
+                className={cn(
+                  'nopan aspect-video w-full rounded-xl bg-black object-contain',
+                  isVideoTrimMode && 'nodrag rounded-[18px]'
+                )}
                 onPointerDown={(event) => {
-                  event.stopPropagation()
+                  if (isVideoTrimMode) event.stopPropagation()
                 }}
                 onError={() => setIsBroken(true)}
               />
@@ -1916,6 +1997,19 @@ function MediaContentCard({
         />
       ) : null}
 
+      {variant === 'video' && hasMedia && isVideoTrimMode && file ? (
+        <VideoTrimOverlay
+          videoRef={videoRef}
+          videoSrc={mediaPath}
+          workspaceId={params.workspaceId}
+          sourceFile={trimSourceFile}
+          isProcessing={isVideoTrimProcessing}
+          error={videoTrimError}
+          onCancel={onCancelVideoTrim}
+          onConfirm={onConfirmVideoTrim}
+        />
+      ) : null}
+
       {showImageComposer && !isPreview && !isEmbedded && (
         <MediaContentAiComposer
           canEdit={canEdit}
@@ -1943,7 +2037,7 @@ function MediaContentCard({
         />
       )}
 
-      {variant === 'video' && !isPreview && !isEmbedded && (
+      {showVideoComposer && !isPreview && !isEmbedded && (
         <div className='mt-3 flex flex-col gap-3'>
           <ReferenceComposerHeader
             canEdit={canEdit}
@@ -2145,6 +2239,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [isImageRepaintMode, setIsImageRepaintMode] = useState(false)
   const [isImageEraseMode, setIsImageEraseMode] = useState(false)
   const [isImageOutpaintMode, setIsImageOutpaintMode] = useState(false)
+  const [isVideoTrimMode, setIsVideoTrimMode] = useState(false)
+  const [isVideoTrimProcessing, setIsVideoTrimProcessing] = useState(false)
+  const [videoTrimError, setVideoTrimError] = useState<string | null>(null)
   const [referenceDragState, setReferenceDragState] = useState<ContentReferenceDragState | null>(
     null
   )
@@ -2646,6 +2743,50 @@ export const ContentBlock = memo(function ContentBlock({
     setIsImageOutpaintMode(false)
   }, [])
 
+  const startVideoTrimMode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'video' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    setIsImageCropMode(false)
+    setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
+    setIsImageOutpaintMode(false)
+    setVideoTrimError(null)
+    setIsVideoTrimMode(true)
+    requestAnimationFrame(() => {
+      const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
+      if (!node) return
+      fitViewToBounds({
+        nodes: [node],
+        padding: 0.04,
+        maxZoom: 1.2,
+        duration: 300,
+      })
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    fitViewToBounds,
+    id,
+    reactFlowInstance,
+    resolvedFile,
+    resolvedVariant,
+  ])
+
+  const cancelVideoTrimMode = useCallback(() => {
+    if (isVideoTrimProcessing) return
+    setVideoTrimError(null)
+    setIsVideoTrimMode(false)
+  }, [isVideoTrimProcessing])
+
   const markImageCutoutPending = useCallback(
     (targetBlockId: string) => {
       collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'cutout')
@@ -2881,6 +3022,131 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedAiModel,
       setPendingSelection,
       uploadWorkspaceFileMutation,
+      workflowBlocks,
+    ]
+  )
+
+  const confirmVideoTrim = useCallback(
+    async ({ startSeconds, endSeconds }: VideoTrimRange) => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+        throw new Error('Video trimming is not available for this workflow.')
+      }
+      if (!params.workspaceId) {
+        throw new Error('Missing workspace context for video trimming.')
+      }
+      if (resolvedVariant !== 'video' || !resolvedFile) {
+        throw new Error('Source video node no longer has a video file.')
+      }
+
+      const sourceFile = toTrimRequestFile(resolvedFile)
+      if (!sourceFile) {
+        throw new Error('Source video file is missing a storage key.')
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        throw new Error('Source video node no longer exists.')
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        throw new Error('Unable to create a video content node.')
+      }
+
+      setIsVideoTrimProcessing(true)
+      setVideoTrimError(null)
+
+      try {
+        const trimResult = await requestJson(trimWorkspaceVideoContract, {
+          body: {
+            workspaceId: params.workspaceId,
+            sourceFile,
+            startSeconds,
+            endSeconds,
+          },
+        })
+
+        const targetBlockId = generateId()
+        const parentId = sourceBlock.data?.parentId
+        const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+        const targetPosition = {
+          x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+          y: sourcePosition.y,
+        }
+        const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+        const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+        const uploadedFile: UploadedFileValue = {
+          id: trimResult.file.id,
+          name: trimResult.file.name,
+          path: trimResult.file.url,
+          key: trimResult.file.key,
+          size: trimResult.file.size,
+          type: trimResult.file.type,
+          context: trimResult.file.context,
+        }
+        const newBlock = prepareBlockState({
+          id: targetBlockId,
+          type: 'content',
+          name: getUniqueBlockName('Video', workflowBlocks),
+          position: targetPosition,
+          data: {
+            contentVariant: 'video',
+            ...(parentId ? { parentId, extent: 'parent' } : {}),
+          },
+          parentId,
+          extent: parentId ? 'parent' : undefined,
+          blockConfig,
+        })
+        const reference: ContentReferenceRecord = {
+          sourceBlockId: id,
+          sourceVariant: 'video',
+          role: 'text_context',
+        }
+        const edge = createContentReferenceEdge({
+          id: generateId(),
+          source: id,
+          target: targetBlockId,
+          sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+          targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        })
+        const subBlockValues: Record<string, Record<string, unknown>> = {
+          [targetBlockId]: {
+            contentVariant: 'video',
+            videoPrompt: '',
+            videoModel: DEFAULT_VIDEO_MODEL,
+            videoModelFamily: effectiveVideoModelFamily,
+            videoFrameAspectRatioPreset: resolvedVideoFrameAspectRatioPreset,
+            videoParameters: resolvedVideoParameters,
+            videoMedia: [],
+            file: uploadedFile,
+            contentReferences: [reference],
+          },
+        }
+
+        setPendingSelection([targetBlockId])
+        collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+        usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+        setIsVideoTrimMode(false)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Video trim failed.'
+        setVideoTrimError(message)
+      } finally {
+        setIsVideoTrimProcessing(false)
+      }
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      effectiveVideoModelFamily,
+      id,
+      params.workspaceId,
+      resolvedFile,
+      resolvedVariant,
+      resolvedVideoFrameAspectRatioPreset,
+      resolvedVideoParameters,
+      setPendingSelection,
       workflowBlocks,
     ]
   )
@@ -3266,6 +3532,20 @@ export const ContentBlock = memo(function ContentBlock({
     resolvedVariant,
     selected,
   ])
+
+  useEffect(() => {
+    if (
+      isVideoTrimMode &&
+      (!selected ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'video' ||
+        !resolvedFile)
+    ) {
+      setIsVideoTrimMode(false)
+      setVideoTrimError(null)
+    }
+  }, [data.isEmbedded, data.isPreview, isVideoTrimMode, resolvedFile, resolvedVariant, selected])
 
   const resolveBlockSourceValues = useCallback(
     (blockId: string): StoredValueRecord => {
@@ -4005,11 +4285,14 @@ export const ContentBlock = memo(function ContentBlock({
           }
         }}
       >
-        {!data.isPreview && !data.isEmbedded && !(resolvedVariant === 'image' && resolvedFile) && (
-          <div className='nodrag nopan'>
-            <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
-          </div>
-        )}
+        {!data.isPreview &&
+          !data.isEmbedded &&
+          !(resolvedVariant === 'image' && resolvedFile) &&
+          !(resolvedVariant === 'video' && resolvedFile) && (
+            <div className='nodrag nopan'>
+              <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
+            </div>
+          )}
 
         {resolvedVariant === 'image' ||
         resolvedVariant === 'video' ||
@@ -4043,7 +4326,10 @@ export const ContentBlock = memo(function ContentBlock({
             isImageRepaintMode={isImageRepaintMode}
             isImageEraseMode={isImageEraseMode}
             isImageOutpaintMode={isImageOutpaintMode}
+            isVideoTrimMode={isVideoTrimMode}
             isImageCropProcessing={uploadWorkspaceFileMutation.isPending}
+            isVideoTrimProcessing={isVideoTrimProcessing}
+            videoTrimError={videoTrimError}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onStartImageCrop={startImageCropMode}
@@ -4051,11 +4337,14 @@ export const ContentBlock = memo(function ContentBlock({
             onStartImageErase={startImageEraseMode}
             onStartImageOutpaint={startImageOutpaintMode}
             onStartImageCutout={startImageCutoutMode}
+            onStartVideoTrim={startVideoTrimMode}
             onCancelImageCrop={cancelImageCropMode}
             onCancelImageRepaint={cancelImageRepaintMode}
             onCancelImageErase={cancelImageEraseMode}
             onCancelImageOutpaint={cancelImageOutpaintMode}
+            onCancelVideoTrim={cancelVideoTrimMode}
             onConfirmImageCrop={confirmImageCrop}
+            onConfirmVideoTrim={confirmVideoTrim}
             onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
             onCreateImageEraseVariant={createImageEraseVariantNode}
