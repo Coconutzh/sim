@@ -25,6 +25,19 @@ export type ProductionShowcaseCategory = z.output<typeof productionShowcaseCateg
 export const productionShowcaseStatusSchema = z.enum(['published', 'withdrawn'])
 export type ProductionShowcaseStatus = z.output<typeof productionShowcaseStatusSchema>
 
+export const productionShowcaseSourceNodeVariantSchema = z.enum([
+  'text',
+  'image',
+  'video',
+  'audio',
+  'document',
+  'file',
+  'other',
+])
+export type ProductionShowcaseSourceNodeVariant = z.output<
+  typeof productionShowcaseSourceNodeVariantSchema
+>
+
 export const productionShowcaseItemParamsSchema = z.object({
   itemId: z.string().trim().min(1, 'itemId is required'),
 })
@@ -41,18 +54,72 @@ export const productionShowcaseItemsQuerySchema = z.object({
 })
 export type ProductionShowcaseItemsQuery = z.output<typeof productionShowcaseItemsQuerySchema>
 
-export const createProductionShowcaseItemBodySchema = z.object({
+export const productionShowcaseItemQuerySchema = z.object({
   workspaceId: workspaceIdSchema,
-  title: z.string().trim().min(1, 'title is required').max(160),
-  description: z.string().trim().max(2000).nullable().optional(),
-  category: productionShowcaseCategorySchema.default('other'),
-  content: z.string().trim().max(10000).nullable().optional(),
-  taskId: z.string().trim().min(1).nullable().optional(),
-  submissionId: z.string().trim().min(1).nullable().optional(),
-  attachments: z.array(productionTaskAttachmentBodySchema).max(20).optional(),
 })
+export type ProductionShowcaseItemQuery = z.output<typeof productionShowcaseItemQuerySchema>
+
+export const createProductionShowcaseItemBodySchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    title: z.string().trim().min(1, 'title is required').max(160),
+    description: z.string().trim().max(2000).nullable().optional(),
+    category: productionShowcaseCategorySchema.default('other'),
+    content: z.string().trim().max(10000).nullable().optional(),
+    sourceWorkflowId: z.string().trim().min(1).nullable().optional(),
+    sourceNodeId: z.string().trim().min(1).nullable().optional(),
+    sourceNodeVariant: productionShowcaseSourceNodeVariantSchema.nullable().optional(),
+    taskId: z.string().trim().min(1).nullable().optional(),
+    submissionId: z.string().trim().min(1).nullable().optional(),
+    attachments: z.array(productionTaskAttachmentBodySchema).max(20).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.sourceNodeId && !value.sourceWorkflowId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sourceWorkflowId'],
+        message: 'sourceWorkflowId is required when sourceNodeId is provided',
+      })
+    }
+    if (value.sourceNodeVariant && !value.sourceNodeId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sourceNodeId'],
+        message: 'sourceNodeId is required when sourceNodeVariant is provided',
+      })
+    }
+  })
 export type CreateProductionShowcaseItemBody = z.input<
   typeof createProductionShowcaseItemBodySchema
+>
+
+export const updateProductionShowcaseItemBodySchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    title: z.string().trim().min(1, 'title cannot be empty').max(160).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    category: productionShowcaseCategorySchema.optional(),
+    content: z.string().trim().max(10000).nullable().optional(),
+    attachments: z.array(productionTaskAttachmentBodySchema).max(20).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasUpdate =
+      value.title !== undefined ||
+      value.description !== undefined ||
+      value.category !== undefined ||
+      value.content !== undefined ||
+      value.attachments !== undefined
+
+    if (!hasUpdate) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['title'],
+        message: 'Provide at least one showcase item field to update',
+      })
+    }
+  })
+export type UpdateProductionShowcaseItemBody = z.input<
+  typeof updateProductionShowcaseItemBodySchema
 >
 
 export const withdrawProductionShowcaseItemBodySchema = z.object({
@@ -66,6 +133,9 @@ export const productionShowcaseItemSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
   sourceWorkspaceId: z.string().nullable(),
+  sourceWorkflowId: z.string().nullable(),
+  sourceNodeId: z.string().nullable(),
+  sourceNodeVariant: productionShowcaseSourceNodeVariantSchema.nullable(),
   sourceWorkgroup: productionTaskWorkgroupSchema,
   taskId: z.string().nullable(),
   submissionId: z.string().nullable(),
@@ -83,6 +153,7 @@ export const productionShowcaseItemSchema = z.object({
   attachments: z.array(productionTaskAttachmentSchema),
   permissions: z.object({
     canWithdraw: z.boolean(),
+    canEdit: z.boolean(),
   }),
 })
 export type ProductionShowcaseItem = z.output<typeof productionShowcaseItemSchema>
@@ -110,6 +181,22 @@ export const createProductionShowcaseItemContract = defineRouteContract({
   method: 'POST',
   path: '/api/production-showcase-items',
   body: createProductionShowcaseItemBodySchema,
+  response: { mode: 'json', schema: productionShowcaseItemResponseSchema },
+})
+
+export const getProductionShowcaseItemContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/production-showcase-items/[itemId]',
+  params: productionShowcaseItemParamsSchema,
+  query: productionShowcaseItemQuerySchema,
+  response: { mode: 'json', schema: productionShowcaseItemResponseSchema },
+})
+
+export const updateProductionShowcaseItemContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/production-showcase-items/[itemId]',
+  params: productionShowcaseItemParamsSchema,
+  body: updateProductionShowcaseItemBodySchema,
   response: { mode: 'json', schema: productionShowcaseItemResponseSchema },
 })
 

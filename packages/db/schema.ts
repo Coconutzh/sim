@@ -1798,6 +1798,11 @@ export const productionShowcaseItem = pgTable(
     sourceWorkgroupId: text('source_workgroup_id')
       .notNull()
       .references(() => workgroup.id, { onDelete: 'cascade' }),
+    sourceWorkflowId: text('source_workflow_id').references(() => workflow.id, {
+      onDelete: 'set null',
+    }),
+    sourceNodeId: text('source_node_id'),
+    sourceNodeVariant: text('source_node_variant'),
     taskId: text('task_id').references(() => productionTask.id, { onDelete: 'set null' }),
     submissionId: text('submission_id').references(() => productionTaskSubmission.id, {
       onDelete: 'set null',
@@ -1826,6 +1831,10 @@ export const productionShowcaseItem = pgTable(
     sourceWorkgroupIdx: index('production_showcase_item_source_workgroup_idx').on(
       table.sourceWorkgroupId
     ),
+    sourceWorkflowIdx: index('production_showcase_item_source_workflow_idx').on(
+      table.sourceWorkflowId
+    ),
+    sourceNodeIdx: index('production_showcase_item_source_node_idx').on(table.sourceNodeId),
     taskIdx: index('production_showcase_item_task_idx').on(table.taskId),
     submissionIdx: index('production_showcase_item_submission_idx').on(table.submissionId),
   })
