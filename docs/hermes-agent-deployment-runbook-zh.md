@@ -150,6 +150,32 @@ Header: x-api-key: <INTERNAL_API_SECRET>
 | 401 | 调 SIM 探针的 `x-api-key` 错误 | 检查运维密钥 |
 | 503 | Hermes 未配置、不可达或能力不完整 | 不放量，按 `error` 字段排查 |
 
+### 6.3 Hermes -> SIM 工具调用审计
+
+SIM 会把 Hermes 调用 internal tool 的关键链路写入：
+
+```text
+hermes_tool_call_audit
+```
+
+该表只记录摘要和引用，不记录完整 prompt、画布正文、网页全文或密钥。上线前必须执行迁移：
+
+```text
+packages/db/migrations/0220_hermes_tool_call_audit.sql
+```
+
+排障时优先按以下字段串联：
+
+- `trace_id`
+- `hermes_run_id`
+- `sim_request_id`
+- `user_id`
+- `workspace_id`
+- `workflow_id`
+- `tool_name`
+- `status`
+- `error_code`
+
 ## 7. 本地启动顺序
 
 1. 启动 SIM 依赖：DB、Redis、Realtime、Next.js。

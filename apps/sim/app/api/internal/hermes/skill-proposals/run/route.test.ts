@@ -4,7 +4,8 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRunHermesSkillProposalOperation } = vi.hoisted(() => ({
+const { mockRecordHermesToolCallAudit, mockRunHermesSkillProposalOperation } = vi.hoisted(() => ({
+  mockRecordHermesToolCallAudit: vi.fn(),
   mockRunHermesSkillProposalOperation: vi.fn(),
 }))
 
@@ -16,6 +17,10 @@ vi.mock('@/lib/core/config/env', () => ({
 
 vi.mock('@/lib/hermes/skill-proposals', () => ({
   runHermesSkillProposalOperation: mockRunHermesSkillProposalOperation,
+}))
+
+vi.mock('@/lib/hermes/tool-call-audit', () => ({
+  recordHermesToolCallAudit: mockRecordHermesToolCallAudit,
 }))
 
 import { POST } from '@/app/api/internal/hermes/skill-proposals/run/route'
@@ -71,6 +76,13 @@ describe('Hermes skill proposal internal route', () => {
     expect(response.status).toBe(401)
     expect(payload.errorCode).toBe('UNAUTHENTICATED_SERVICE')
     expect(mockRunHermesSkillProposalOperation).not.toHaveBeenCalled()
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'sim_skill_proposal_run',
+        status: 'unauthenticated',
+        errorCode: 'UNAUTHENTICATED_SERVICE',
+      })
+    )
   })
 
   it('parses the contract and creates proposal records through the service', async () => {
@@ -101,6 +113,21 @@ describe('Hermes skill proposal internal route', () => {
         status: 'pending_review',
       })
     )
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'sim_skill_proposal_run',
+        status: 'success',
+        userId: 'user-1',
+        organizationId: 'org-1',
+        operation: 'propose_create',
+        inputSummary: expect.objectContaining({
+          operation: 'propose_create',
+        }),
+        outputSummary: expect.objectContaining({
+          proposalId: 'proposal-1',
+        }),
+      })
+    )
   })
 
   it('does not expose publish operations through the Hermes internal contract', async () => {
@@ -118,5 +145,12 @@ describe('Hermes skill proposal internal route', () => {
 
     expect(response.status).toBe(400)
     expect(mockRunHermesSkillProposalOperation).not.toHaveBeenCalled()
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'sim_skill_proposal_run',
+        status: 'error',
+        errorCode: 'INVALID_REQUEST',
+      })
+    )
   })
 })

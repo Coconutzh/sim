@@ -1534,6 +1534,13 @@
       "when": 1779369954340,
       "tag": "0219_hermes_skill_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1779369954341,
+      "tag": "0220_hermes_tool_call_audit",
+      "breakpoints": true
     }
   ]
 }

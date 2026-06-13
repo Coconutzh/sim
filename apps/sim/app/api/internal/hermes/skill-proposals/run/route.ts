@@ -13,8 +13,10 @@ import { parseRequest } from '@/lib/api/server'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { runHermesSkillProposalOperation } from '@/lib/hermes/skill-proposals'
+import { recordHermesToolCallAudit } from '@/lib/hermes/tool-call-audit'
 
 const logger = createLogger('HermesSkillProposalAPI')
+const TOOL_NAME = 'sim_skill_proposal_run'
 
 function getServiceToken(request: NextRequest): string | null {
   const directToken = request.headers.get('x-sim-service-token')
@@ -76,6 +78,7 @@ function statusForErrorCode(errorCode: HermesSkillProposalErrorCode): number {
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const auditId = generateId()
+  const startedAt = Date.now()
   const headerTraceId = request.headers.get('x-trace-id') ?? undefined
 
   if (!verifyHermesServiceRequest(request)) {
@@ -85,11 +88,38 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       hasServiceToken: Boolean(getServiceToken(request)),
       configured: Boolean(env.HERMES_SERVICE_TOKEN),
     })
+    await recordHermesToolCallAudit({
+      auditId,
+      traceId: headerTraceId,
+      toolName: TOOL_NAME,
+      status: 'unauthenticated',
+      inputSummary: {
+        hasServiceToken: Boolean(getServiceToken(request)),
+        configured: Boolean(env.HERMES_SERVICE_TOKEN),
+      },
+      outputSummary: { success: false },
+      durationMs: Date.now() - startedAt,
+      errorCode: 'UNAUTHENTICATED_SERVICE',
+      error: 'Hermes service authentication failed',
+    })
     return authErrorResponse({ auditId, traceId: headerTraceId })
   }
 
   const parsed = await parseRequest(hermesSkillProposalRunContract, request, {})
-  if (!parsed.success) return parsed.response
+  if (!parsed.success) {
+    await recordHermesToolCallAudit({
+      auditId,
+      traceId: headerTraceId,
+      toolName: TOOL_NAME,
+      status: 'error',
+      inputSummary: { validation: 'failed' },
+      outputSummary: { success: false },
+      durationMs: Date.now() - startedAt,
+      errorCode: 'INVALID_REQUEST',
+      error: 'Hermes skill proposal request validation failed',
+    })
+    return parsed.response
+  }
 
   const body = parsed.data.body
   const traceId = body.traceId ?? headerTraceId
@@ -117,6 +147,31 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       operation: body.operation,
     })
 
+    await recordHermesToolCallAudit({
+      auditId,
+      traceId,
+      hermesRunId: body.hermesRunId,
+      userId: body.userId,
+      organizationId: body.organizationId,
+      toolName: TOOL_NAME,
+      operation: body.operation,
+      status: 'success',
+      inputSummary: {
+        operation: body.operation,
+        hasTargetSkillId: 'targetSkillId' in body,
+        hasProposalId: 'proposalId' in body,
+      },
+      outputSummary: {
+        success: true,
+        answerLength: response.answer.length,
+        proposalId: response.proposal?.id,
+        skillId: response.skill?.id,
+        skillCount: response.skills?.length,
+      },
+      risk: 'risk' in body ? body.risk : undefined,
+      durationMs: Date.now() - startedAt,
+    })
+
     return NextResponse.json(response, { status: 200 })
   } catch (error) {
     const err = toError(error)
@@ -138,6 +193,27 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId: body.userId,
       organizationId: body.organizationId,
       operation: body.operation,
+      errorCode,
+      error: err.message,
+    })
+
+    await recordHermesToolCallAudit({
+      auditId,
+      traceId,
+      hermesRunId: body.hermesRunId,
+      userId: body.userId,
+      organizationId: body.organizationId,
+      toolName: TOOL_NAME,
+      operation: body.operation,
+      status: 'error',
+      inputSummary: {
+        operation: body.operation,
+        hasTargetSkillId: 'targetSkillId' in body,
+        hasProposalId: 'proposalId' in body,
+      },
+      outputSummary: { success: false, errorCode },
+      risk: 'risk' in body ? body.risk : undefined,
+      durationMs: Date.now() - startedAt,
       errorCode,
       error: err.message,
     })

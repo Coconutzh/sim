@@ -2184,6 +2184,66 @@ export const skillRevision = pgTable(
   })
 )
 
+export const hermesToolCallAudit = pgTable(
+  'hermes_tool_call_audit',
+  {
+    id: text('id').primaryKey(),
+    traceId: text('trace_id'),
+    hermesRunId: text('hermes_run_id'),
+    simRequestId: text('sim_request_id'),
+    userId: text('user_id'),
+    organizationId: text('organization_id'),
+    workspaceId: text('workspace_id'),
+    workflowId: text('workflow_id'),
+    toolName: text('tool_name').notNull(),
+    mode: text('mode'),
+    operation: text('operation'),
+    status: text('status').notNull(),
+    inputSummary: jsonb('input_summary')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    outputSummary: jsonb('output_summary')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    risk: text('risk'),
+    requiresConfirmation: boolean('requires_confirmation'),
+    changedNodeIds: jsonb('changed_node_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    generatedNodeIds: jsonb('generated_node_ids')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    verificationSummary: text('verification_summary'),
+    durationMs: integer('duration_ms'),
+    errorCode: text('error_code'),
+    error: text('error'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    traceIdIdx: index('hermes_tool_call_audit_trace_id_idx').on(table.traceId),
+    hermesRunIdIdx: index('hermes_tool_call_audit_hermes_run_id_idx').on(table.hermesRunId),
+    organizationCreatedIdx: index('hermes_tool_call_audit_org_created_idx').on(
+      table.organizationId,
+      table.createdAt
+    ),
+    workspaceWorkflowCreatedIdx: index('hermes_tool_call_audit_workspace_workflow_created_idx').on(
+      table.workspaceId,
+      table.workflowId,
+      table.createdAt
+    ),
+    userCreatedIdx: index('hermes_tool_call_audit_user_created_idx').on(
+      table.userId,
+      table.createdAt
+    ),
+    toolStatusIdx: index('hermes_tool_call_audit_tool_status_idx').on(
+      table.toolName,
+      table.status,
+      table.createdAt
+    ),
+  })
+)
+
 export const copilotSkillCard = pgTable(
   'copilot_skill_card',
   {

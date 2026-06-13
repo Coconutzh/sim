@@ -4,7 +4,8 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRunLocalCanvasAgentHeadless } = vi.hoisted(() => ({
+const { mockRecordHermesToolCallAudit, mockRunLocalCanvasAgentHeadless } = vi.hoisted(() => ({
+  mockRecordHermesToolCallAudit: vi.fn(),
   mockRunLocalCanvasAgentHeadless: vi.fn(),
 }))
 
@@ -16,6 +17,10 @@ vi.mock('@/lib/core/config/env', () => ({
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent', () => ({
   runLocalCanvasAgentHeadless: mockRunLocalCanvasAgentHeadless,
+}))
+
+vi.mock('@/lib/hermes/tool-call-audit', () => ({
+  recordHermesToolCallAudit: mockRecordHermesToolCallAudit,
 }))
 
 import { POST } from '@/app/api/internal/hermes/canvas-agent/run/route'
@@ -53,6 +58,13 @@ describe('Hermes canvas agent internal route', () => {
     expect(response.status).toBe(401)
     expect(payload.errorCode).toBe('UNAUTHENTICATED_SERVICE')
     expect(mockRunLocalCanvasAgentHeadless).not.toHaveBeenCalled()
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'sim_canvas_agent_run',
+        status: 'unauthenticated',
+        errorCode: 'UNAUTHENTICATED_SERVICE',
+      })
+    )
   })
 
   it('parses the contract and calls the headless runtime for authorized requests', async () => {
@@ -81,6 +93,20 @@ describe('Hermes canvas agent internal route', () => {
         message: 'read canvas',
         mode: 'read_only',
         selectedNodeIds: ['node-1'],
+      })
+    )
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'sim_canvas_agent_run',
+        status: 'success',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        mode: 'read_only',
+        inputSummary: expect.objectContaining({
+          messageLength: 'read canvas'.length,
+          selectedNodeCount: 1,
+        }),
       })
     )
   })
