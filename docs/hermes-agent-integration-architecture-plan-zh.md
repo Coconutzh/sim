@@ -715,6 +715,7 @@ send_message
 - `hermes_tool_call_audit`：持久化记录 Hermes 调 SIM internal tool 的调用链路。
 - `apps/sim/lib/hermes/tool-call-audit.ts`：统一裁剪 input/output summary，避免把完整 prompt、画布正文、网页全文或异常堆栈写入审计。
 - `POST /api/internal/hermes/canvas-agent/run` 和 `POST /api/internal/hermes/skill-proposals/run`：在鉴权失败、contract validation 失败、业务成功/失败时均写入 tool-call audit。
+- `GET /api/organizations/[id]/hermes/health` 和 Project Admin 中的 Hermes runtime health 面板：组织管理员可检查 Hermes 服务配置、commit、capability、session-key header 和必需 toolset 是否满足接入要求。
 - `GET /api/organizations/[id]/hermes/tool-call-audits` 和 Project Admin 中的 Hermes tool-call audit 面板：只向组织管理员暴露已脱敏的组织内调用记录，用于追踪 trace、Hermes run、确认状态、错误码和 verify 结果。
 
 画布写入必须可追踪到：

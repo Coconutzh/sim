@@ -275,8 +275,8 @@ Hermes 自动学习
 
 ## 12. 后续增强项
 
-- 在 SIM 管理后台增加 Hermes health 面板。
 - 将 Hermes memory provider 从本地 session namespace 升级为 SIM-backed provider。
-- 为 `hermes_tool_call_audit` 增加管理后台查询、过滤和导出视图。
+- 为 Hermes health 面板补充通知、告警和发布阻断策略。
+- 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
 - 对网页 / 文件抓取加入内容摘要、引用和 prompt-injection 风险标记。
 - 对 Skill Proposal 增加 diff 可视化、批注、灰度发布和团队回滚 UI。
