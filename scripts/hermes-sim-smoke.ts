@@ -2,7 +2,7 @@
 
 type CheckStatus = 'pass' | 'fail' | 'skip'
 
-interface CheckResult {
+export interface CheckResult {
   name: string
   status: CheckStatus
   detail?: string
@@ -469,16 +469,18 @@ function printResults(results: CheckResult[], json: boolean): void {
   }
 }
 
-async function main(): Promise<void> {
-  const options = parseOptions(process.argv.slice(2))
+export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<{
+  options: Options
+  results: CheckResult[]
+}> {
+  const options = parseOptions(argv)
   const results: CheckResult[] = []
   const hermesUrl = requiredEnv('HERMES_API_URL', results)
   const hermesApiKey = requiredEnv('HERMES_API_KEY', results)
   const simBaseUrl = trimTrailingSlash(envString('SIM_BASE_URL') ?? 'http://127.0.0.1:3000')
 
   if (!hermesUrl || !hermesApiKey) {
-    printResults(results, options.json)
-    process.exit(1)
+    return { options, results }
   }
 
   const hermesBaseUrl = trimTrailingSlash(hermesUrl)
@@ -498,8 +500,15 @@ async function main(): Promise<void> {
     })
   }
 
+  return { options, results }
+}
+
+async function main(): Promise<void> {
+  const { options, results } = await runSmoke()
   printResults(results, options.json)
   process.exit(results.some((result) => result.status === 'fail') ? 1 : 0)
 }
 
-await main()
+if (import.meta.main) {
+  await main()
+}
