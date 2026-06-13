@@ -57,6 +57,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { CopilotSkillCardManager } from '@/app/workspace/[workspaceId]/project-admin/components/copilot-skill-card-manager'
 import { HermesHealthPanel } from '@/app/workspace/[workspaceId]/project-admin/components/hermes-health-panel'
 import { HermesToolCallAuditPanel } from '@/app/workspace/[workspaceId]/project-admin/components/hermes-tool-call-audit-panel'
+import { HermesUserMemoryPanel } from '@/app/workspace/[workspaceId]/project-admin/components/hermes-user-memory-panel'
 import { SkillProposalGovernance } from '@/app/workspace/[workspaceId]/project-admin/components/skill-proposal-governance'
 import { useOrganizationRetention } from '@/ee/data-retention/hooks/data-retention'
 import {
@@ -2993,6 +2994,8 @@ export function ProjectAdminCenter() {
         <HermesHealthPanel organizationId={organizationId} />
 
         <SkillProposalGovernance organizationId={organizationId} />
+
+        <HermesUserMemoryPanel organizationId={organizationId} />
 
         <HermesToolCallAuditPanel organizationId={organizationId} />
 

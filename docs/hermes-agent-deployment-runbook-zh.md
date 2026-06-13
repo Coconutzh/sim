@@ -407,7 +407,8 @@ Hermes 自动学习
 
 ## 13. 后续增强项
 
-- 对 SIM-backed memory 增加真实服务级 A/B 隔离 E2E、语义检索和管理员可视化排障面板。
+- 对 SIM-backed memory 增加完整 Hermes API Server + LLM 两轮真实 chat A/B 隔离 E2E，并增强语义检索。
+- Hermes user memory 已在 project-admin 提供基础只读排障面板；后续可继续补导出、删除/归档审核流和异常告警。
 - 为 Hermes health 面板补充通知、告警和发布阻断策略。
 - 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
 - 对网页 / 文件抓取加入内容摘要、引用和 prompt-injection 风险标记。

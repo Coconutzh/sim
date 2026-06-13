@@ -11,10 +11,15 @@ import {
 import { generateId } from '@sim/utils/id'
 import { and, desc, eq, isNull, or } from 'drizzle-orm'
 import type {
+  HermesUserMemoryAdminEntry,
+  ListHermesUserMemoriesQuery,
+} from '@/lib/api/contracts/hermes-user-memories'
+import type {
   HermesUserMemoryCategory,
   HermesUserMemoryEntry,
   ParsedHermesUserMemoryRunBody,
 } from '@/lib/api/contracts/internal/hermes-user-memory'
+import { assertOrganizationAdmin } from '@/lib/collaboration/service'
 
 const MAX_MEMORY_CONTENT_LENGTH = 1000
 const MAX_METADATA_STRING_LENGTH = 500
@@ -108,6 +113,26 @@ function serializeMemory(row: typeof hermesUserMemory.$inferSelect): HermesUserM
       row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
         ? row.metadata
         : {},
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lastSeenAt: row.lastSeenAt.toISOString(),
+  }
+}
+
+function serializeAdminMemory(
+  row: typeof hermesUserMemory.$inferSelect
+): HermesUserMemoryAdminEntry {
+  return {
+    id: row.id,
+    userId: row.userId,
+    organizationId: row.organizationId,
+    workspaceId: row.workspaceId,
+    category: toCategory(row.category),
+    content: row.content,
+    source: row.source,
+    sourceHermesRunId: row.sourceHermesRunId,
+    sourceTraceId: row.sourceTraceId,
+    evidenceRefs: Array.isArray(row.evidenceRefs) ? row.evidenceRefs : [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastSeenAt: row.lastSeenAt.toISOString(),
@@ -469,4 +494,31 @@ export async function runHermesUserMemoryOperation(body: ParsedHermesUserMemoryR
   if (body.operation === 'prefetch') return prefetchHermesUserMemory(body)
   if (body.operation === 'sync_turn') return syncHermesUserMemoryTurn(body)
   return writeHermesUserMemory(body)
+}
+
+export async function listHermesUserMemories(params: {
+  requesterUserId: string
+  organizationId: string
+  query: ListHermesUserMemoriesQuery
+}): Promise<HermesUserMemoryAdminEntry[]> {
+  await assertOrganizationAdmin(params.requesterUserId, params.organizationId)
+
+  const rows = await db
+    .select()
+    .from(hermesUserMemory)
+    .where(
+      and(
+        eq(hermesUserMemory.organizationId, params.organizationId),
+        isNull(hermesUserMemory.deletedAt),
+        params.query.userId ? eq(hermesUserMemory.userId, params.query.userId) : undefined,
+        params.query.workspaceId
+          ? eq(hermesUserMemory.workspaceId, params.query.workspaceId)
+          : undefined,
+        params.query.category ? eq(hermesUserMemory.category, params.query.category) : undefined
+      )
+    )
+    .orderBy(desc(hermesUserMemory.lastSeenAt), desc(hermesUserMemory.updatedAt))
+    .limit(params.query.limit)
+
+  return rows.map(serializeAdminMemory)
 }
