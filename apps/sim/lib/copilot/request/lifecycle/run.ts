@@ -17,6 +17,7 @@ import {
   CopilotBackendError,
   runStreamLoop,
 } from '@/lib/copilot/request/go/stream'
+import { runHermesAgent } from '@/lib/copilot/request/lifecycle/hermes-agent'
 import { runLocalCanvasAgent } from '@/lib/copilot/request/lifecycle/local-canvas-agent'
 import {
   runLocalWorkflowFallback,
@@ -140,7 +141,14 @@ export async function runCopilotLifecycle(
   })
 
   try {
-    if (requestPayload.workflowCopilotMode === 'content_canvas_v1') {
+    if (requestPayload.workflowCopilotMode === 'hermes_agent_v1') {
+      await runHermesAgent({
+        requestPayload,
+        context,
+        execContext,
+        options: lifecycleOptions,
+      })
+    } else if (requestPayload.workflowCopilotMode === 'content_canvas_v1') {
       await runLocalCanvasAgent({
         requestPayload,
         context,
@@ -193,6 +201,7 @@ export async function runCopilotLifecycle(
   } catch (error) {
     if (
       requestPayload.workflowCopilotMode !== 'content_canvas_v1' &&
+      requestPayload.workflowCopilotMode !== 'hermes_agent_v1' &&
       shouldUseLocalWorkflowFallback({
         workflowId,
         disableAuth: Boolean(env.DISABLE_AUTH),

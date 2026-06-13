@@ -41,7 +41,7 @@ interface BuildPayloadParams {
   userPermission?: string
   userTimezone?: string
   conversationHistory?: unknown[]
-  workflowCopilotMode?: 'legacy_workflow' | 'content_canvas_v1'
+  workflowCopilotMode?: 'legacy_workflow' | 'content_canvas_v1' | 'hermes_agent_v1'
   confirmationMode?: 'manual' | 'auto'
   thinkingLevel?: 'standard' | 'extra'
   autoSelectionContexts?: Array<{

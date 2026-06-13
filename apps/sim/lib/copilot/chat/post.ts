@@ -132,7 +132,9 @@ const ChatMessageSchema = z.object({
   resourceAttachments: z.array(ResourceAttachmentSchema).optional(),
   provider: z.string().optional(),
   contexts: z.array(ChatContextSchema).optional(),
-  workflowCopilotMode: z.enum(['legacy_workflow', 'content_canvas_v1']).optional(),
+  workflowCopilotMode: z
+    .enum(['legacy_workflow', 'content_canvas_v1', 'hermes_agent_v1'])
+    .optional(),
   confirmationMode: z.enum(['manual', 'auto']).optional(),
   thinkingLevel: z.enum(['standard', 'extra']).optional(),
   autoSelectionContexts: z.array(AutoSelectionContextSchema).optional(),

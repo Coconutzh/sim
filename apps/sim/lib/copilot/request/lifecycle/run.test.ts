@@ -7,12 +7,16 @@ const {
   mockRunStreamLoop,
   mockRunLocalWorkflowFallback,
   mockShouldUseLocalWorkflowFallback,
+  mockRunHermesAgent,
   mockRunLocalCanvasAgent,
   mockPrepareExecutionContext,
 } = vi.hoisted(() => ({
   mockRunStreamLoop: vi.fn(),
   mockRunLocalWorkflowFallback: vi.fn(),
   mockShouldUseLocalWorkflowFallback: vi.fn(() => false),
+  mockRunHermesAgent: vi.fn(async ({ context }: { context: { accumulatedContent: string } }) => {
+    context.accumulatedContent = 'hermes done'
+  }),
   mockRunLocalCanvasAgent: vi.fn(
     async ({ context }: { context: { accumulatedContent: string } }) => {
       context.accumulatedContent = 'agent done'
@@ -71,6 +75,10 @@ vi.mock('@/lib/copilot/request/go/stream', () => ({
 vi.mock('@/lib/copilot/request/lifecycle/local-workflow-fallback', () => ({
   runLocalWorkflowFallback: mockRunLocalWorkflowFallback,
   shouldUseLocalWorkflowFallback: mockShouldUseLocalWorkflowFallback,
+}))
+
+vi.mock('@/lib/copilot/request/lifecycle/hermes-agent', () => ({
+  runHermesAgent: mockRunHermesAgent,
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent', () => ({
@@ -134,5 +142,28 @@ describe('runCopilotLifecycle', () => {
     expect(mockRunLocalWorkflowFallback).not.toHaveBeenCalled()
     expect(result.success).toBe(true)
     expect(result.content).toBe('agent done')
+  })
+
+  it('routes hermes_agent_v1 to Hermes without calling the Go checkpoint loop', async () => {
+    const result = await runCopilotLifecycle(
+      {
+        message: '帮我分析画布',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        workflowCopilotMode: 'hermes_agent_v1',
+      },
+      {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      }
+    )
+
+    expect(mockRunHermesAgent).toHaveBeenCalledTimes(1)
+    expect(mockRunStreamLoop).not.toHaveBeenCalled()
+    expect(mockRunLocalCanvasAgent).not.toHaveBeenCalled()
+    expect(mockRunLocalWorkflowFallback).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.content).toBe('hermes done')
   })
 })

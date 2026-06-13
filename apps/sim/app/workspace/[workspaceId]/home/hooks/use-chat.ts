@@ -401,7 +401,8 @@ function isChatSendOptions(value: unknown): value is ChatSendOptions {
   if (
     workflowCopilotMode !== undefined &&
     workflowCopilotMode !== 'legacy_workflow' &&
-    workflowCopilotMode !== 'content_canvas_v1'
+    workflowCopilotMode !== 'content_canvas_v1' &&
+    workflowCopilotMode !== 'hermes_agent_v1'
   ) {
     return false
   }

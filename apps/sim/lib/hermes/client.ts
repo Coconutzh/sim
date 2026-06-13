@@ -21,6 +21,13 @@ export interface HermesChatCompletionParams {
 export interface HermesChatCompletionResult {
   id?: string
   content: string
+  sessionId?: string
+  sessionKey?: string
+  usage?: {
+    prompt: number
+    completion: number
+    total: number
+  }
   raw: unknown
 }
 
@@ -64,6 +71,20 @@ function extractContent(payload: unknown): string {
   return typeof content === 'string' ? content : ''
 }
 
+function extractUsage(payload: unknown): HermesChatCompletionResult['usage'] {
+  if (!payload || typeof payload !== 'object') return undefined
+  const usage = (payload as Record<string, unknown>).usage
+  if (!usage || typeof usage !== 'object') return undefined
+  const record = usage as Record<string, unknown>
+  const prompt = record.prompt_tokens
+  const completion = record.completion_tokens
+  const total = record.total_tokens
+  if (typeof prompt !== 'number' || typeof completion !== 'number' || typeof total !== 'number') {
+    return undefined
+  }
+  return { prompt, completion, total }
+}
+
 export async function callHermesChatCompletion(
   params: HermesChatCompletionParams
 ): Promise<HermesChatCompletionResult> {
@@ -105,6 +126,9 @@ export async function callHermesChatCompletion(
           ? ((raw as Record<string, unknown>).id as string)
           : undefined,
       content,
+      sessionId: response.headers.get('x-hermes-session-id') ?? undefined,
+      sessionKey: response.headers.get('x-hermes-session-key') ?? undefined,
+      usage: extractUsage(raw),
       raw,
     }
   } catch (error) {

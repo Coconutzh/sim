@@ -59,7 +59,7 @@ export interface QueuedMessage {
   options?: ChatSendOptions
 }
 
-export type WorkflowCopilotMode = 'legacy_workflow' | 'content_canvas_v1'
+export type WorkflowCopilotMode = 'legacy_workflow' | 'content_canvas_v1' | 'hermes_agent_v1'
 export type ConfirmationMode = 'manual' | 'auto'
 export type ThinkingLevel = 'standard' | 'extra'
 
