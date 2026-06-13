@@ -20,6 +20,7 @@ interface Options {
   chat: boolean
   canvasRead: boolean
   skillList: boolean
+  skillProposalCreate: boolean
   memory: boolean
   skipSimHealth: boolean
 }
@@ -42,7 +43,7 @@ function printUsage(): void {
   process.stdout.write(`SIM Hermes smoke test
 
 Usage:
-  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--skill-list] [--memory] [--json]
+  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--skill-list] [--skill-proposal-create] [--memory] [--json]
 
 Required env:
   HERMES_API_URL              Hermes API Server base URL, e.g. http://127.0.0.1:8642
@@ -54,12 +55,15 @@ Optional env:
   HERMES_REQUIRED_TOOLSETS    Default sim
   HERMES_FORBIDDEN_TOOLSETS   Default browser,code_execution,computer_use,cronjob,delegation,file,terminal
   HERMES_SMOKE_MODEL          Optional Hermes model override
-  HERMES_SMOKE_USER_ID        Required for --canvas-read / --skill-list
-  HERMES_SMOKE_ORGANIZATION_ID Required for --skill-list, recommended for all SIM metadata
+  HERMES_SMOKE_USER_ID        Required for --canvas-read / --skill-list / --skill-proposal-create
+  HERMES_SMOKE_ORGANIZATION_ID Required for --skill-list / --skill-proposal-create, recommended for all SIM metadata
+  HERMES_SMOKE_WORKGROUP_ID   Required for --skill-proposal-create
   HERMES_SMOKE_WORKSPACE_ID   Required for --canvas-read
   HERMES_SMOKE_WORKFLOW_ID    Required for --canvas-read
   HERMES_SMOKE_OTHER_USER_ID  Required for --memory isolation check
+  HERMES_SMOKE_WRITE_CONFIRM  Must be CREATE_SKILL_PROPOSAL for --skill-proposal-create
   HERMES_SMOKE_CHAT_ID        Optional stable chat id, default hermes-smoke
+  HERMES_SMOKE_AGENT_CODE     Optional SIM agent code for skill proposal smoke
   HERMES_SMOKE_SELECTED_NODE_IDS Comma-separated selected node ids
   HERMES_SMOKE_TIMEOUT_MS     Default 20000
 
@@ -69,6 +73,7 @@ Notes:
   --chat sends a no-tool OpenAI-compatible chat completion.
   --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode.
   --skill-list asks Hermes to list published SIM skills only.
+  --skill-proposal-create creates a pending-review SIM skill proposal and compares it.
   --memory exercises SIM-backed Hermes user memory write/prefetch/isolation through SIM internal APIs.
 `)
 }
@@ -84,6 +89,7 @@ function parseOptions(argv: string[]): Options {
     chat: flags.has('--chat'),
     canvasRead: flags.has('--canvas-read'),
     skillList: flags.has('--skill-list'),
+    skillProposalCreate: flags.has('--skill-proposal-create'),
     memory: flags.has('--memory'),
     skipSimHealth: flags.has('--skip-sim-health'),
   }
@@ -323,6 +329,33 @@ async function postSimMemory(
   })
 }
 
+async function postSimSkillProposal(
+  simBaseUrl: string,
+  body: Record<string, unknown>
+): Promise<JsonResponse> {
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  if (!serviceToken) {
+    return {
+      ok: false,
+      status: 0,
+      payload: {
+        errorCode: 'MISSING_ENV',
+        error: 'HERMES_SERVICE_TOKEN is required for --skill-proposal-create',
+      },
+    }
+  }
+
+  return fetchJson(`${simBaseUrl}/api/internal/hermes/skill-proposals/run`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-sim-service-token': serviceToken,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
 function buildSimMetadata(): Record<string, unknown> {
   const selectedNodeIds = envList('HERMES_SMOKE_SELECTED_NODE_IDS', [])
   return {
@@ -389,6 +422,16 @@ function requireSimContext(results: CheckResult[], keys: string[]): boolean {
     }
   }
   return ok
+}
+
+function requireWriteConfirm(results: CheckResult[], expected: string): boolean {
+  if (envString('HERMES_SMOKE_WRITE_CONFIRM') === expected) return true
+  results.push({
+    name: 'env:HERMES_SMOKE_WRITE_CONFIRM',
+    status: 'fail',
+    detail: `Set HERMES_SMOKE_WRITE_CONFIRM=${expected} to run this write smoke`,
+  })
+  return false
 }
 
 async function runCanvasReadSmoke(
@@ -480,6 +523,98 @@ async function runSkillListSmoke(
     name: 'hermes.sim-skill-list',
     status: response.ok && content.length > 0 ? 'pass' : 'fail',
     detail: response.ok ? content.slice(0, 240) : `HTTP ${response.status}`,
+  })
+}
+
+function buildSkillProposalBaseBody(traceId: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    userId: envString('HERMES_SMOKE_USER_ID'),
+    organizationId: envString('HERMES_SMOKE_ORGANIZATION_ID'),
+    workgroupId: envString('HERMES_SMOKE_WORKGROUP_ID'),
+    traceId,
+    hermesRunId: `hermes-smoke-skill-proposal-${Date.now()}`,
+  }
+  const workspaceId = envString('HERMES_SMOKE_WORKSPACE_ID')
+  if (workspaceId) body.workspaceId = workspaceId
+  const agentCode = envString('HERMES_SMOKE_AGENT_CODE')
+  if (agentCode) body.agentCode = agentCode
+  return body
+}
+
+async function runSkillProposalCreateSmoke(
+  simBaseUrl: string,
+  results: CheckResult[]
+): Promise<void> {
+  const hasContext = requireSimContext(results, [
+    'HERMES_SERVICE_TOKEN',
+    'HERMES_SMOKE_USER_ID',
+    'HERMES_SMOKE_ORGANIZATION_ID',
+    'HERMES_SMOKE_WORKGROUP_ID',
+  ])
+  const hasWriteConfirm = requireWriteConfirm(results, 'CREATE_SKILL_PROPOSAL')
+  if (!hasContext || !hasWriteConfirm) return
+
+  const traceId = `hermes-skill-proposal-smoke-${Date.now()}`
+  const title = `[SMOKE] Hermes Skill Proposal ${traceId}`
+  const content = [
+    '# SIM Hermes Smoke Skill',
+    '',
+    `Trace: ${traceId}`,
+    '',
+    'Use this proposal only to verify the Hermes -> SIM Skill Proposal review bridge.',
+    'It must stay pending review until a human admin explicitly publishes or rejects it.',
+  ].join('\n')
+  const common = buildSkillProposalBaseBody(traceId)
+
+  const createResponse = await postSimSkillProposal(simBaseUrl, {
+    ...common,
+    operation: 'propose_create',
+    title,
+    description: 'Smoke-test proposal created by the SIM Hermes release gate.',
+    proposedContent: content,
+    evidenceRefs: [`smoke:${traceId}`],
+    risk: 'low',
+    status: 'pending_review',
+  })
+  const createPayload = asRecord(createResponse.payload)
+  const proposal = asRecord(createPayload?.proposal)
+  const proposalId = readString(proposal, 'id')
+  results.push({
+    name: 'sim.skill-proposal-create',
+    status:
+      createResponse.ok &&
+      createPayload?.success === true &&
+      readString(proposal, 'status') === 'pending_review' &&
+      Boolean(proposalId)
+        ? 'pass'
+        : 'fail',
+    detail: createResponse.ok
+      ? `proposal ${proposalId ?? 'missing'}`
+      : `HTTP ${createResponse.status}`,
+    data: {
+      proposalId,
+      status: readString(proposal, 'status'),
+      title: readString(proposal, 'title'),
+    },
+  })
+  if (!(createResponse.ok && createPayload?.success === true && proposalId)) return
+
+  const compareResponse = await postSimSkillProposal(simBaseUrl, {
+    ...common,
+    operation: 'compare',
+    proposalId,
+  })
+  const comparePayload = asRecord(compareResponse.payload)
+  const comparison = asRecord(comparePayload?.comparison)
+  results.push({
+    name: 'sim.skill-proposal-compare',
+    status:
+      compareResponse.ok &&
+      comparePayload?.success === true &&
+      readString(comparison, 'proposalId') === proposalId
+        ? 'pass'
+        : 'fail',
+    detail: compareResponse.ok ? `proposal ${proposalId}` : `HTTP ${compareResponse.status}`,
   })
 }
 
@@ -630,6 +765,7 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     if (options.chat) await runChatSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.canvasRead) await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.skillList) await runSkillListSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.skillProposalCreate) await runSkillProposalCreateSmoke(simBaseUrl, results)
     if (options.memory) await runMemorySmoke(simBaseUrl, results)
   } catch (error) {
     results.push({

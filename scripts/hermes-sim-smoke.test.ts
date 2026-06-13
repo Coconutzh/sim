@@ -12,9 +12,12 @@ const ENV_KEYS = [
   'HERMES_SMOKE_USER_ID',
   'HERMES_SMOKE_OTHER_USER_ID',
   'HERMES_SMOKE_ORGANIZATION_ID',
+  'HERMES_SMOKE_WORKGROUP_ID',
   'HERMES_SMOKE_WORKSPACE_ID',
   'HERMES_SMOKE_WORKFLOW_ID',
   'HERMES_SMOKE_CHAT_ID',
+  'HERMES_SMOKE_WRITE_CONFIRM',
+  'HERMES_SMOKE_AGENT_CODE',
   'HERMES_SMOKE_SELECTED_NODE_IDS',
   'HERMES_SMOKE_MODEL',
   'HERMES_SMOKE_TIMEOUT_MS',
@@ -309,6 +312,106 @@ describe('hermes-sim-smoke', () => {
       userId: 'user-b',
       organizationId: 'org-1',
       operation: 'prefetch',
+    })
+  })
+
+  it('can include the SIM skill proposal create smoke with compare verification', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SERVICE_TOKEN = 'service-token'
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_ORGANIZATION_ID = 'org-1'
+    process.env.HERMES_SMOKE_WORKGROUP_ID = 'workgroup-1'
+    process.env.HERMES_SMOKE_WRITE_CONFIRM = 'CREATE_SKILL_PROPOSAL'
+    const proposalBodies: Array<Record<string, unknown>> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/api/internal/hermes/skill-proposals/run')) {
+        expect((init?.headers as Record<string, string>)['x-sim-service-token']).toBe(
+          'service-token'
+        )
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        proposalBodies.push(body)
+        if (body.operation === 'propose_create') {
+          expect(body.status).toBe('pending_review')
+          expect(body.workgroupId).toBe('workgroup-1')
+          return jsonResponse({
+            success: true,
+            operation: 'propose_create',
+            answer: 'Created SIM skill proposal',
+            auditId: 'audit-1',
+            proposal: {
+              id: 'proposal-1',
+              status: 'pending_review',
+              title: body.title,
+            },
+          })
+        }
+        if (body.operation === 'compare') {
+          return jsonResponse({
+            success: true,
+            operation: 'compare',
+            answer: 'Prepared comparison',
+            auditId: 'audit-2',
+            comparison: {
+              proposalId: body.proposalId,
+              targetSkillId: null,
+              targetContent: null,
+              proposedContent: 'content',
+              proposedDiff: null,
+            },
+          })
+        }
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--skill-proposal-create'])
+
+    expect(results.map((result) => [result.name, result.status])).toEqual([
+      ['hermes.health', 'pass'],
+      ['hermes.capabilities', 'pass'],
+      ['hermes.toolsets', 'pass'],
+      ['sim.skill-proposal-create', 'pass'],
+      ['sim.skill-proposal-compare', 'pass'],
+    ])
+    expect(proposalBodies.map((body) => body.operation)).toEqual(['propose_create', 'compare'])
+    expect(proposalBodies[0]).toMatchObject({
+      userId: 'user-a',
+      organizationId: 'org-1',
+      workgroupId: 'workgroup-1',
+      operation: 'propose_create',
+      risk: 'low',
+    })
+    expect(proposalBodies[1]).toMatchObject({
+      userId: 'user-a',
+      organizationId: 'org-1',
+      operation: 'compare',
+      proposalId: 'proposal-1',
     })
   })
 })

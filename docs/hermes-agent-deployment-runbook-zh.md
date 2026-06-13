@@ -270,6 +270,17 @@ HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
 bun run hermes:smoke -- --skill-list
 ```
 
+需要验证 SIM Skill Proposal 写入链路时，加 `--skill-proposal-create`。该模式会直接调用 SIM internal proposal API，创建一条 `pending_review` 的 smoke proposal，再用 `compare` 读回校验；不会 publish、enable、disable、delete 或 rollback。因为它会写入数据库，必须显式设置 `HERMES_SMOKE_WRITE_CONFIRM=CREATE_SKILL_PROPOSAL`：
+
+```bash
+HERMES_SERVICE_TOKEN=<same-as-SIM_SERVICE_TOKEN> \
+HERMES_SMOKE_USER_ID=<user-id> \
+HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
+HERMES_SMOKE_WORKGROUP_ID=<workgroup-id> \
+HERMES_SMOKE_WRITE_CONFIRM=CREATE_SKILL_PROPOSAL \
+bun run hermes:smoke -- --skill-proposal-create
+```
+
 需要验证 SIM-backed Hermes user memory 时，加 `--memory`。该模式会直接调用 SIM internal memory API，验证服务令牌、用户 A 写入、用户 A 召回、用户 B 隔离，以及“当前画布 / pendingActionId”等临时任务状态被拒绝写入：
 
 ```bash
@@ -283,6 +294,7 @@ bun run hermes:smoke -- --memory
 注意：
 
 - `HERMES_SMOKE_USER_ID` 和 `HERMES_SMOKE_OTHER_USER_ID` 都必须是该组织下的有效用户，否则 SIM 权限校验会返回 403。
+- `--skill-proposal-create` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 tool；Hermes fork 侧的 `plugins/sim` 测试仍需证明 `sim_skill_proposal_run` 会把 `propose_create` / `compare` 转发到同一个 SIM internal API。
 - `--memory` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 memory tool；Hermes fork 侧的 `plugins/memory/sim` provider 仍需通过 Python 测试证明它会把 `prefetch` / `sync_turn` / 显式记忆工具调用转发到同一个 SIM internal API。
 - 若要验证完整 Hermes API Server + LLM 自动记忆链路，应在 `--memory` 通过后，再用同一个 `X-Hermes-Session-Key` 和 SIM metadata 做两轮真实 chat：第一轮表达长期偏好，第二轮换 session 询问偏好是否可召回。
 
@@ -342,9 +354,10 @@ POST /api/organizations/[id]/hermes/tool-call-audits/cleanup
 5. 调用 `bun run hermes:smoke`，确认 Hermes capabilities、toolset policy 和 SIM 聚合 health 均通过。
 6. 使用 `bun run hermes:smoke -- --chat` 验证 OpenAI-compatible chat completion 可用。
 7. 使用 `bun run hermes:smoke -- --canvas-read` 或 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。
-8. 使用 `bun run hermes:smoke -- --memory` 验证 SIM-backed Hermes user memory 的写入、召回、用户隔离和临时画布状态拒绝。
-9. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
-10. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
+8. 使用 `bun run hermes:smoke -- --skill-proposal-create` 验证 Hermes Skill Proposal 候选写入和 compare 读回链路。
+9. 使用 `bun run hermes:smoke -- --memory` 验证 SIM-backed Hermes user memory 的写入、召回、用户隔离和临时画布状态拒绝。
+10. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
+11. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
 
 ## 9. 生产发布检查清单
 
@@ -356,7 +369,7 @@ POST /api/organizations/[id]/hermes/tool-call-audits/cleanup
 - [ ] `HERMES_HOME` 不与其他环境、其他租户混用。
 - [ ] Hermes health 返回的 commit 与部署清单一致。
 - [ ] SIM `/api/internal/hermes/health` 返回 200。
-- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list`、`--memory` 的对应 smoke 也通过。
+- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list`、`--skill-proposal-create`、`--memory` 的对应 smoke 也通过。
 - [ ] Hermes tool allowlist 不包含 `browser`、`terminal`、`file`、`code_execution`、`computer_use`、`delegation`、`cronjob` 等生产禁用 toolset。
 - [ ] SIM internal route 鉴权在 body parse 之前执行。
 - [ ] 画布写入仍走 SIM patch validation、apply、verify。
