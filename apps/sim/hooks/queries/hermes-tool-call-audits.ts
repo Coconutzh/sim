@@ -1,6 +1,10 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
+  type CleanupHermesToolCallAuditsBody,
+  cleanupHermesToolCallAuditsContract,
+  type ExportHermesToolCallAuditsQueryInput,
+  exportHermesToolCallAuditsContract,
   type ListHermesToolCallAuditsQueryInput,
   listHermesToolCallAuditsContract,
 } from '@/lib/api/contracts/hermes-tool-call-audits'
@@ -31,5 +35,34 @@ export function useHermesToolCallAudits(
     enabled: Boolean(organizationId),
     staleTime: 20 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function exportHermesToolCallAuditRows(
+  organizationId: string,
+  query: ExportHermesToolCallAuditsQueryInput = {}
+) {
+  return requestJson(exportHermesToolCallAuditsContract, {
+    params: { id: organizationId },
+    query,
+  })
+}
+
+export function useCleanupHermesToolCallAudits() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: { organizationId: string } & CleanupHermesToolCallAuditsBody) =>
+      requestJson(cleanupHermesToolCallAuditsContract, {
+        params: { id: variables.organizationId },
+        body: {
+          retentionHours: variables.retentionHours,
+          dryRun: variables.dryRun,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: hermesToolCallAuditKeys.lists(variables.organizationId),
+      })
+    },
   })
 }

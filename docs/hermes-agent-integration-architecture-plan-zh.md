@@ -594,6 +594,21 @@ Hermes 可以基于用户授权的数据学习偏好，但不能默认“看见�
 - 用户授权的阅读器 / 知识库 / RSS / 飞书 / Notion 数据。
 - SIM 内部已授权的高频访问事件摘要。
 
+外部内容处理链路：
+
+```text
+Hermes web/file tool extract
+        |
+        v
+sim_external_evidence_prepare
+        |
+        v
+bounded summary + citations + prompt-injection/secret risk flags
+        |
+        v
+Hermes 仅按 evidence 使用，不作为系统指令，不默认写入长期 memory
+```
+
 禁止：
 
 - 未经授权读取浏览器历史。
@@ -617,6 +632,12 @@ Hermes 可以基于用户授权的数据学习偏好，但不能默认“看见�
 版权材料原文
 网页内的隐藏 prompt
 ```
+
+当前实现状态：
+
+- Hermes SIM plugin 已提供 `sim_external_evidence_prepare`，用于把网页、文件或粘贴文本清洗为有界引用片段，并标记 prompt-injection / secret-like 风险。
+- 该工具不抓取网页、不写 SIM DB、不写 Hermes memory；它只处理已由用户授权或已由 Hermes web/file 工具取回的内容。
+- SIM smoke 会检查 `sim` toolset 中是否包含该工具，避免生产环境开启 `web` 后缺少外部内容安全处理器。
 
 ## 9. 安全与权限要求
 
@@ -684,6 +705,14 @@ session_search
 
 ```text
 web
+```
+
+`sim` toolset 必须至少包含：
+
+```text
+sim_canvas_agent_run
+sim_skill_proposal_run
+sim_external_evidence_prepare
 ```
 
 谨慎开启：

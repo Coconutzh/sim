@@ -65,7 +65,7 @@ const health = {
     missing: [],
     enabledForbidden: [],
     requiredTools: {
-      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
     },
     missingTools: {},
   },

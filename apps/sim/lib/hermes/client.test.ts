@@ -81,7 +81,11 @@ describe('Hermes client health probe', () => {
           {
             name: 'sim',
             enabled: true,
-            tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+            tools: [
+              'sim_canvas_agent_run',
+              'sim_skill_proposal_run',
+              'sim_external_evidence_prepare',
+            ],
           },
           { name: 'memory', enabled: true, tools: ['memory'] },
         ],
@@ -178,12 +182,14 @@ describe('Hermes client health probe', () => {
     expect(result.status).toBe('degraded')
     expect(result.toolsets?.missing).toEqual([])
     expect(result.toolsets?.requiredTools).toEqual({
-      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
     })
     expect(result.toolsets?.missingTools).toEqual({
-      sim: ['sim_skill_proposal_run'],
+      sim: ['sim_skill_proposal_run', 'sim_external_evidence_prepare'],
     })
-    expect(result.error).toContain('required Hermes tools missing: sim(sim_skill_proposal_run)')
+    expect(result.error).toContain(
+      'required Hermes tools missing: sim(sim_skill_proposal_run, sim_external_evidence_prepare)'
+    )
   })
 
   it('marks the runtime degraded when forbidden toolsets are enabled', async () => {
@@ -211,7 +217,11 @@ describe('Hermes client health probe', () => {
           {
             name: 'sim',
             enabled: true,
-            tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+            tools: [
+              'sim_canvas_agent_run',
+              'sim_skill_proposal_run',
+              'sim_external_evidence_prepare',
+            ],
           },
           { name: 'terminal', enabled: true, tools: ['terminal', 'process'] },
         ],

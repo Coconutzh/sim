@@ -100,7 +100,11 @@ describe('hermes-sim-smoke', () => {
             {
               name: 'sim',
               enabled: true,
-              tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
             },
             { name: 'memory', enabled: true, tools: ['memory'] },
           ],
@@ -156,6 +160,7 @@ describe('hermes-sim-smoke', () => {
     expect(toolsets?.status).toBe('fail')
     expect(toolsets?.detail).toContain('forbidden enabled: terminal')
     expect(toolsets?.detail).toContain('missing sim tools: sim_skill_proposal_run')
+    expect(toolsets?.detail).toContain('sim_external_evidence_prepare')
   })
 
   it('can include the optional no-tool chat completion smoke', async () => {
@@ -178,7 +183,11 @@ describe('hermes-sim-smoke', () => {
             {
               name: 'sim',
               enabled: true,
-              tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
             },
           ],
         })
@@ -226,7 +235,11 @@ describe('hermes-sim-smoke', () => {
             {
               name: 'sim',
               enabled: true,
-              tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
             },
           ],
         })

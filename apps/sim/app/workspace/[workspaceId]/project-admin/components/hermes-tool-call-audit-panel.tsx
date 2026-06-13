@@ -1,14 +1,19 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Activity, AlertTriangle } from 'lucide-react'
+import { Activity, AlertTriangle, Download, Trash2 } from 'lucide-react'
 import { buttonVariants, Loader } from '@/components/emcn'
 import type {
+  HermesToolCallAuditCleanup,
   HermesToolCallAuditEntry,
   HermesToolCallAuditStatus,
 } from '@/lib/api/contracts/hermes-tool-call-audits'
 import { cn } from '@/lib/core/utils/cn'
-import { useHermesToolCallAudits } from '@/hooks/queries/hermes-tool-call-audits'
+import {
+  exportHermesToolCallAuditRows,
+  useCleanupHermesToolCallAudits,
+  useHermesToolCallAudits,
+} from '@/hooks/queries/hermes-tool-call-audits'
 
 const STATUS_OPTIONS: { value: HermesToolCallAuditStatus | ''; label: string }[] = [
   { value: '', label: 'All statuses' },
@@ -67,6 +72,22 @@ function auditIdLabel(value: string | null | undefined, fallback = 'Not recorded
 function nodeListLabel(ids: string[]): string {
   if (ids.length === 0) return 'None'
   return ids.slice(0, 8).join(', ') + (ids.length > 8 ? ` +${ids.length - 8}` : '')
+}
+
+function downloadJsonFile(payload: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function auditExportFilename(): string {
+  return `hermes-tool-call-audits-${new Date().toISOString().slice(0, 10)}.json`
 }
 
 function HermesToolCallAuditCard({ audit }: { audit: HermesToolCallAuditEntry }) {
@@ -165,6 +186,9 @@ function HermesToolCallAuditCard({ audit }: { audit: HermesToolCallAuditEntry })
 export function HermesToolCallAuditPanel({ organizationId }: HermesToolCallAuditPanelProps) {
   const [status, setStatus] = useState<HermesToolCallAuditStatus | ''>('')
   const [toolName, setToolName] = useState('')
+  const [retentionHours, setRetentionHours] = useState('720')
+  const [cleanupResult, setCleanupResult] = useState<HermesToolCallAuditCleanup | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
   const query = useMemo(
     () => ({
       status: status || undefined,
@@ -178,6 +202,45 @@ export function HermesToolCallAuditPanel({ organizationId }: HermesToolCallAudit
     query
   )
   const audits = data?.audits ?? []
+  const cleanupMutation = useCleanupHermesToolCallAudits()
+  const retentionHoursNumber = Number.parseInt(retentionHours, 10)
+  const canRunCleanup =
+    Boolean(organizationId) &&
+    Number.isFinite(retentionHoursNumber) &&
+    retentionHoursNumber >= 24 &&
+    retentionHoursNumber <= 87600 &&
+    !cleanupMutation.isPending
+
+  const handleExport = async () => {
+    if (!organizationId) return
+    setIsExporting(true)
+    try {
+      const payload = await exportHermesToolCallAuditRows(organizationId, {
+        ...query,
+        limit: 1000,
+      })
+      downloadJsonFile(payload, auditExportFilename())
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleCleanup = async (dryRun: boolean) => {
+    if (!organizationId || !canRunCleanup) return
+    if (!dryRun) {
+      const confirmed = window.confirm(
+        'Delete Hermes tool-call audit rows older than the selected retention window? Export evidence first if needed.'
+      )
+      if (!confirmed) return
+    }
+
+    const result = await cleanupMutation.mutateAsync({
+      organizationId,
+      retentionHours: retentionHoursNumber,
+      dryRun,
+    })
+    setCleanupResult(result.cleanup)
+  }
 
   return (
     <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
@@ -215,6 +278,15 @@ export function HermesToolCallAuditPanel({ organizationId }: HermesToolCallAudit
           <button
             type='button'
             className={buttonVariants({ size: 'sm', variant: 'default' })}
+            disabled={!organizationId || isExporting}
+            onClick={() => void handleExport()}
+          >
+            <Download className='mr-1 h-[13px] w-[13px]' />
+            {isExporting ? 'Exporting...' : 'Export JSON'}
+          </button>
+          <button
+            type='button'
+            className={buttonVariants({ size: 'sm', variant: 'default' })}
             disabled={isFetching}
             onClick={() => void refetch()}
           >
@@ -229,6 +301,59 @@ export function HermesToolCallAuditPanel({ organizationId }: HermesToolCallAudit
           {error instanceof Error ? error.message : 'Unable to load Hermes tool-call audits.'}
         </div>
       )}
+
+      <div className='grid gap-3 border-[var(--border)] border-b px-4 py-3 md:grid-cols-[1fr_auto]'>
+        <div>
+          <div className='flex items-center gap-2 font-medium text-[13px] text-[var(--text-primary)]'>
+            <Trash2 className='h-[14px] w-[14px] text-[var(--text-icon)]' />
+            Audit export and retention
+          </div>
+          <p className='mt-1 max-w-[760px] text-[12px] text-[var(--text-muted)]'>
+            Export the current filtered evidence before cleanup. Retention only deletes sanitized
+            Hermes tool-call audit rows for this organization.
+          </p>
+          {cleanupResult && (
+            <div className='mt-2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--text-muted)]'>
+              {cleanupResult.dryRun ? 'Previewed' : 'Cleaned'} rows older than{' '}
+              {cleanupResult.retentionHours}h. Matched {cleanupResult.matchedCount}; deleted{' '}
+              {cleanupResult.deletedCount}. Cutoff {formatDate(cleanupResult.cutoff)}.
+            </div>
+          )}
+          {cleanupMutation.error && (
+            <div className='mt-2 text-[12px] text-red-500'>
+              {cleanupMutation.error instanceof Error
+                ? cleanupMutation.error.message
+                : 'Unable to clean Hermes tool-call audits.'}
+            </div>
+          )}
+        </div>
+        <div className='flex flex-wrap items-center gap-2 md:justify-end'>
+          <input
+            className='h-8 w-[150px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]'
+            inputMode='numeric'
+            placeholder='Retention hours'
+            value={retentionHours}
+            onChange={(event) => setRetentionHours(event.target.value)}
+            aria-label='Hermes audit cleanup retention hours'
+          />
+          <button
+            type='button'
+            className={buttonVariants({ size: 'sm', variant: 'default' })}
+            disabled={!canRunCleanup}
+            onClick={() => void handleCleanup(true)}
+          >
+            Preview cleanup
+          </button>
+          <button
+            type='button'
+            className={buttonVariants({ size: 'sm', variant: 'default' })}
+            disabled={!canRunCleanup}
+            onClick={() => void handleCleanup(false)}
+          >
+            Delete old audits
+          </button>
+        </div>
+      </div>
 
       <div className='grid gap-3 p-4'>
         {isLoading ? (

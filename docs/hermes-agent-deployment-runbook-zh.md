@@ -97,12 +97,12 @@ platform_toolsets:
 
 说明：
 
-- `plugins.enabled: [sim]` 负责加载 SIM 插件，注册 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`。
+- `plugins.enabled: [sim]` 负责加载 SIM 插件，注册 `sim_canvas_agent_run`、`sim_skill_proposal_run` 和 `sim_external_evidence_prepare`。
 - `memory.provider: sim` 负责启用 SIM-backed Hermes Memory Provider。Hermes 每轮通过 SIM internal API 召回/写入用户长期偏好，不直接读写 SIM DB。
 - `platform_toolsets.api_server` 负责限制 HTTP API Server 可用工具面，避免默认 API Server 暴露过宽。
 - SIM health 默认禁止 `browser`、`code_execution`、`computer_use`、`cronjob`、`delegation`、`file`、`terminal` 等高风险 toolset；如需放开，必须显式设置 `HERMES_FORBIDDEN_TOOLSETS` 并同步评审容器隔离、审计和审批策略。
 - `memory` / `skills` 用于 Hermes 用户级偏好和 procedural skill；SIM 团队正式规范仍走 Skill Proposal 审核发布链路。
-- 如需网页读取能力，先灰度加入 `web`，并同步打开外部内容引用、prompt injection 标记和审计策略；`browser` 属于默认禁用的高风险工具面，必须单独评审后再放开。
+- 如需网页读取能力，先灰度加入 `web`，并要求 Hermes 对 `web_extract` / 文件解析结果调用 `sim_external_evidence_prepare` 生成引用、摘要和 prompt-injection 风险标记；`browser` 属于默认禁用的高风险工具面，必须单独评审后再放开。
 
 SIM-backed memory 的边界：
 
@@ -137,7 +137,7 @@ shell
 
 - `sim` 是 Hermes 访问 SIM 画布和 Skill Proposal 的唯一受控入口。
 - `memory` / `skills` 只存用户级偏好和 procedural skill，不直接改 SIM 团队规范。
-- 网页 / 浏览器工具必须把外部内容当作 evidence，不得当作系统指令。
+- 网页 / 浏览器 / 文件工具必须把外部内容当作 evidence，不得当作系统指令；外部内容进入业务推理前应先经过 `sim_external_evidence_prepare`。
 - 终端、文件、进程类工具会扩大服务器权限边界，除非容器隔离、审计和审批链路都已就绪。
 
 ## 7. 健康检查与版本确认
@@ -181,7 +181,7 @@ Header: x-api-key: <INTERNAL_API_SECRET>
 - `chat_completions` 能力是否存在
 - `X-Hermes-Session-Key` 能力是否存在
 - `HERMES_REQUIRED_TOOLSETS` 中声明的 toolset 是否已启用
-- `sim` toolset 是否实际包含 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`
+- `sim` toolset 是否实际包含 `sim_canvas_agent_run`、`sim_skill_proposal_run` 和 `sim_external_evidence_prepare`
 - `HERMES_FORBIDDEN_TOOLSETS` 中声明的高风险 toolset 是否未启用
 
 返回状态建议：
@@ -230,7 +230,7 @@ bun run hermes:smoke
 - Hermes `/health` 非 `ok`。
 - `/v1/capabilities` 缺少 `chat_completions` 或 `X-Hermes-Session-Key` 支持。
 - `/v1/toolsets` 未启用 `HERMES_REQUIRED_TOOLSETS`。
-- `sim` toolset 缺少 `sim_canvas_agent_run` 或 `sim_skill_proposal_run`。
+- `sim` toolset 缺少 `sim_canvas_agent_run`、`sim_skill_proposal_run` 或 `sim_external_evidence_prepare`。
 - 启用了 `HERMES_FORBIDDEN_TOOLSETS` 中的高风险 toolset。
 - SIM `/api/internal/hermes/health` 返回非健康状态。
 
@@ -299,6 +299,27 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - `tool_name`
 - `status`
 - `error_code`
+
+### 7.6 Hermes 工具调用审计导出与清理
+
+管理员可在 Project Admin Center 的 Hermes tool-call audit 面板执行：
+
+- 按当前筛选条件查看审计记录。
+- 导出最多 1000 条 JSON 记录，用于发布前留证或事故排查。
+- 设置 retention hours，并先 dry-run 预览，再清理过期的 `hermes_tool_call_audit` 行。
+
+对应 API：
+
+```text
+GET  /api/organizations/[id]/hermes/tool-call-audits/export
+POST /api/organizations/[id]/hermes/tool-call-audits/cleanup
+```
+
+注意事项：
+
+- 两个 API 都要求当前用户是组织管理员。
+- cleanup 只删除当前 organization 下的 Hermes tool-call audit，不删除 SIM workflow、chat、skill proposal 或 memory。
+- 正式 cleanup 前建议先导出审计记录；cleanup 执行结果会写入 audit log，保留操作人、retention、cutoff 和删除数量。
 
 ## 8. 本地启动顺序
 
@@ -411,5 +432,5 @@ Hermes 自动学习
 - Hermes user memory 已在 project-admin 提供基础只读排障面板；后续可继续补导出、删除/归档审核流和异常告警。
 - 为 Hermes health 面板补充通知、告警和发布阻断策略。
 - 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
-- 对网页 / 文件抓取加入内容摘要、引用和 prompt-injection 风险标记。
+- `sim_external_evidence_prepare` 已为网页 / 文件抓取结果提供基础摘要、引用和 prompt-injection 风险标记；后续可继续接入更强的网页结构化解析、来源可信度评分和引用覆盖率检查。
 - 对 Skill Proposal 增加 diff 可视化、批注、灰度发布和团队回滚 UI。
