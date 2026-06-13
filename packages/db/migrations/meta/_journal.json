@@ -1527,6 +1527,13 @@
       "when": 1779369954339,
       "tag": "0218_showcase_item_canvas_source",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1779369954340,
+      "tag": "0219_hermes_skill_proposals",
+      "breakpoints": true
     }
   ]
 }

@@ -2041,6 +2041,28 @@ export const agentSkillBindingScopeEnum = pgEnum('agent_skill_binding_scope', [
 
 export type AgentSkillBindingScope = (typeof agentSkillBindingScopeEnum.enumValues)[number]
 
+export const skillProposalTypeEnum = pgEnum('skill_proposal_type', ['create', 'patch', 'deprecate'])
+export type SkillProposalType = (typeof skillProposalTypeEnum.enumValues)[number]
+
+export const skillProposalRiskEnum = pgEnum('skill_proposal_risk', ['low', 'medium', 'high'])
+export type SkillProposalRisk = (typeof skillProposalRiskEnum.enumValues)[number]
+
+export const skillProposalStatusEnum = pgEnum('skill_proposal_status', [
+  'draft',
+  'pending_review',
+  'approved',
+  'rejected',
+  'published',
+])
+export type SkillProposalStatus = (typeof skillProposalStatusEnum.enumValues)[number]
+
+export const skillRevisionAuthorTypeEnum = pgEnum('skill_revision_author_type', [
+  'user',
+  'admin',
+  'hermes',
+])
+export type SkillRevisionAuthorType = (typeof skillRevisionAuthorTypeEnum.enumValues)[number]
+
 export const agentSkillBinding = pgTable(
   'agent_skill_binding',
   {
@@ -2071,6 +2093,93 @@ export const agentSkillBinding = pgTable(
       table.workgroupId,
       table.skillId,
       table.scope
+    ),
+  })
+)
+
+export const skillProposal = pgTable(
+  'skill_proposal',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    workgroupId: text('workgroup_id').references(() => workgroup.id, {
+      onDelete: 'set null',
+    }),
+    agentCode: text('agent_code'),
+    sourceUserId: text('source_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    sourceHermesRunId: text('source_hermes_run_id'),
+    targetSkillId: text('target_skill_id').references(() => skill.id, {
+      onDelete: 'set null',
+    }),
+    publishedSkillId: text('published_skill_id').references(() => skill.id, {
+      onDelete: 'set null',
+    }),
+    type: skillProposalTypeEnum('type').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    proposedContent: text('proposed_content'),
+    proposedDiff: text('proposed_diff'),
+    evidenceRefs: jsonb('evidence_refs').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    risk: skillProposalRiskEnum('risk').notNull().default('low'),
+    status: skillProposalStatusEnum('status').notNull().default('pending_review'),
+    reviewerId: text('reviewer_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    reviewNote: text('review_note'),
+    reviewedAt: timestamp('reviewed_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationStatusIdx: index('skill_proposal_organization_status_idx').on(
+      table.organizationId,
+      table.status,
+      table.updatedAt
+    ),
+    sourceUserIdx: index('skill_proposal_source_user_idx').on(table.sourceUserId),
+    targetSkillIdx: index('skill_proposal_target_skill_idx').on(table.targetSkillId),
+    publishedSkillIdx: index('skill_proposal_published_skill_idx').on(table.publishedSkillId),
+    workgroupIdx: index('skill_proposal_workgroup_idx').on(table.workgroupId),
+    agentCodeIdx: index('skill_proposal_agent_code_idx').on(table.agentCode),
+  })
+)
+
+export const skillRevision = pgTable(
+  'skill_revision',
+  {
+    id: text('id').primaryKey(),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    content: text('content').notNull(),
+    diff: text('diff'),
+    authorType: skillRevisionAuthorTypeEnum('author_type').notNull(),
+    authorId: text('author_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    sourceProposalId: text('source_proposal_id').references(() => skillProposal.id, {
+      onDelete: 'set null',
+    }),
+    rollbackTargetRevisionId: text('rollback_target_revision_id'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    skillVersionUnique: uniqueIndex('skill_revision_skill_version_unique').on(
+      table.skillId,
+      table.version
+    ),
+    skillIdIdx: index('skill_revision_skill_id_idx').on(table.skillId),
+    sourceProposalIdx: index('skill_revision_source_proposal_idx').on(table.sourceProposalId),
+    rollbackTargetRevisionIdx: index('skill_revision_rollback_target_revision_idx').on(
+      table.rollbackTargetRevisionId
     ),
   })
 )
