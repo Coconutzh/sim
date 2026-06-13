@@ -58,6 +58,7 @@ describe('runHermesAgent', () => {
     await runHermesAgent({
       requestPayload: {
         message: 'read the selected node',
+        organizationId: 'org-1',
         workspaceId: 'workspace-1',
         workflowId: 'workflow-1',
         model: 'hermes-agent',
@@ -76,6 +77,7 @@ describe('runHermesAgent', () => {
     expect(mockCallHermesSimAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
+        organizationId: 'org-1',
         workspaceId: 'workspace-1',
         workflowId: 'workflow-1',
         chatId: 'chat-1',

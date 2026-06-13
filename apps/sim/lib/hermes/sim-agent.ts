@@ -1,3 +1,8 @@
+import { db } from '@sim/db'
+import { workspace } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { eq } from 'drizzle-orm'
 import {
   callHermesChatCompletion,
   type HermesChatCompletionResult,
@@ -5,6 +10,7 @@ import {
 } from '@/lib/hermes/client'
 
 const MAX_HERMES_HEADER_VALUE_LENGTH = 240
+const logger = createLogger('HermesSimAgent')
 
 export interface HermesSimAgentParams {
   userId: string
@@ -71,9 +77,34 @@ function buildSimMetadata(params: HermesSimAgentParams): Record<string, unknown>
   }
 }
 
+async function resolveOrganizationId(
+  params: Pick<HermesSimAgentParams, 'organizationId' | 'workspaceId'>
+): Promise<string | undefined> {
+  if (params.organizationId) return params.organizationId
+  if (!params.workspaceId) return undefined
+
+  try {
+    const [row] = await db
+      .select({ organizationId: workspace.organizationId })
+      .from(workspace)
+      .where(eq(workspace.id, params.workspaceId))
+      .limit(1)
+    return row?.organizationId ?? undefined
+  } catch (error) {
+    const err = toError(error)
+    logger.warn('Failed to resolve Hermes organization context', {
+      workspaceId: params.workspaceId,
+      error: err.message,
+    })
+    return undefined
+  }
+}
+
 export async function callHermesSimAgent(
   params: HermesSimAgentParams
 ): Promise<HermesChatCompletionResult> {
+  const organizationId = await resolveOrganizationId(params)
+  const scopedParams = organizationId ? { ...params, organizationId } : params
   const messages: HermesChatMessage[] = [
     { role: 'system', content: buildSimHermesSystemPrompt() },
     { role: 'user', content: params.message },
@@ -82,9 +113,9 @@ export async function callHermesSimAgent(
   return callHermesChatCompletion({
     messages,
     model: params.model,
-    sessionId: buildHermesSessionId(params),
-    sessionKey: buildHermesSessionKey(params),
-    metadata: buildSimMetadata(params),
+    sessionId: buildHermesSessionId(scopedParams),
+    sessionKey: buildHermesSessionKey(scopedParams),
+    metadata: buildSimMetadata(scopedParams),
     signal: params.signal,
   })
 }

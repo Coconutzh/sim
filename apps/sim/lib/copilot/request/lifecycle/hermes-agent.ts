@@ -81,6 +81,7 @@ export async function runHermesAgent({
   try {
     const result = await callHermesSimAgent({
       userId: execContext.userId,
+      organizationId: getString(requestPayload.organizationId),
       workspaceId: getString(requestPayload.workspaceId) ?? execContext.workspaceId,
       workflowId: getString(requestPayload.workflowId) ?? execContext.workflowId,
       chatId: execContext.chatId,
