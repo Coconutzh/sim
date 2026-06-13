@@ -60,6 +60,8 @@ E:\project\hermes-agent-sim
 | `HERMES_HEALTH_TIMEOUT_MS` | 否 | SIM 探测 Hermes health/capabilities/toolsets 的超时时间，默认 5000ms |
 | `HERMES_REQUIRED_TOOLSETS` | 否 | SIM 要求 Hermes API Server 启用的 toolset，默认 `sim`；可设为 `sim,memory,skills` |
 | `HERMES_FORBIDDEN_TOOLSETS` | 否 | SIM 生产流量禁止启用的 Hermes toolset；默认 `browser,code_execution,computer_use,cronjob,delegation,file,terminal` |
+| `HERMES_HEALTH_NOTIFY_URL` | 否 | 发布阻断脚本的 webhook 告警地址；不配置则只输出本地日志 |
+| `HERMES_HEALTH_NOTIFY_ON` | 否 | 发布阻断脚本的告警触发策略：`failure`、`always` 或 `never`，默认 `failure` |
 | `INTERNAL_API_SECRET` | 是 | SIM 内部运维接口鉴权，`/api/internal/hermes/health` 使用 `x-api-key` 校验 |
 
 ### 4.2 Hermes 侧
@@ -206,12 +208,22 @@ bun run check:hermes-health -- --base-url https://sim.example.com --api-key "$IN
 bun run check:hermes-health -- --url https://sim.example.com/api/internal/hermes/health
 ```
 
+CI/CD 告警示例：
+
+```bash
+bun run check:hermes-health -- \
+  --base-url https://sim.example.com \
+  --api-key "$INTERNAL_API_SECRET" \
+  --notify-url "$HERMES_HEALTH_NOTIFY_URL"
+```
+
 脚本行为：
 
 - 请求 `GET /api/internal/hermes/health`，自动带 `x-api-key`。
 - HTTP 非 200、返回体 `ok !== true`、请求超时或网络错误时退出码为 1。
 - 缺少 URL 或 `INTERNAL_API_SECRET` 时退出码为 2。
 - 使用 `--json` 可输出结构化 payload，方便 CI 上传诊断日志。
+- 配置 `--notify-url` 或 `HERMES_HEALTH_NOTIFY_URL` 后，默认仅在失败时发送 webhook；可用 `--notify-on always|failure|never` 覆盖。
 
 ### 7.4 跨服务 smoke test
 
@@ -430,7 +442,7 @@ Hermes 自动学习
 
 - 对 SIM-backed memory 增加完整 Hermes API Server + LLM 两轮真实 chat A/B 隔离 E2E，并增强语义检索。
 - Hermes user memory 已在 project-admin 提供基础只读排障面板；后续可继续补导出、删除/归档审核流和异常告警。
-- 为 Hermes health 面板补充通知、告警和发布阻断策略。
+- Hermes health 发布阻断脚本已支持 webhook 告警；后续可为 project-admin health 面板补充同等通知策略和历史告警视图。
 - 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
 - `sim_external_evidence_prepare` 已为网页 / 文件抓取结果提供基础摘要、引用和 prompt-injection 风险标记；后续可继续接入更强的网页结构化解析、来源可信度评分和引用覆盖率检查。
 - 对 Skill Proposal 增加 diff 可视化、批注、灰度发布和团队回滚 UI。
