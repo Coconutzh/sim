@@ -72,7 +72,33 @@ E:\project\hermes-agent-sim
 | `HERMES_HOME` | 是 | Hermes memory / skill / session state 根目录；生产必须按租户或环境隔离 |
 | `HERMES_BUILD_COMMIT` | 建议 | 构建时注入当前 Hermes fork commit，便于 health 排障 |
 
-## 5. Hermes 工具 allowlist 建议
+## 5. Hermes config.yaml 必需配置
+
+仅设置环境变量不够。`plugins/sim` 是 Hermes standalone plugin，必须在 Hermes `config.yaml` 显式启用，否则 `/v1/toolsets` 可能看到 `sim` 名称，但实际工具注册表没有 SIM 工具。
+
+生产最小配置建议：
+
+```yaml
+plugins:
+  enabled:
+    - sim
+
+platform_toolsets:
+  api_server:
+    - sim
+    - memory
+    - skills
+    - session_search
+```
+
+说明：
+
+- `plugins.enabled: [sim]` 负责加载 SIM 插件，注册 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`。
+- `platform_toolsets.api_server` 负责限制 HTTP API Server 可用工具面，避免默认 API Server 暴露过宽。
+- `memory` / `skills` 用于 Hermes 用户级偏好和 procedural skill；SIM 团队正式规范仍走 Skill Proposal 审核发布链路。
+- 如需网页/浏览器能力，先灰度加入 `web` 或 `browser`，并同步打开外部内容引用、prompt injection 标记和审计策略。
+
+## 6. Hermes 工具 allowlist 建议
 
 生产环境默认启用最小 toolset：
 
@@ -101,9 +127,9 @@ shell
 - 网页 / 浏览器工具必须把外部内容当作 evidence，不得当作系统指令。
 - 终端、文件、进程类工具会扩大服务器权限边界，除非容器隔离、审计和审批链路都已就绪。
 
-## 6. 健康检查与版本确认
+## 7. 健康检查与版本确认
 
-### 6.1 Hermes 原生 health
+### 7.1 Hermes 原生 health
 
 Hermes API Server 暴露：
 
@@ -123,8 +149,9 @@ GET /v1/toolsets
 - `commit` 非空且符合当前部署 commit
 - `/v1/capabilities` 可用，说明 `HERMES_API_KEY` / `API_SERVER_KEY` 匹配
 - `/v1/toolsets` 中 required toolsets 均为 enabled
+- `/v1/toolsets` 或能力探针中 `sim` 启用，且 Hermes 运行日志没有 `sim` plugin 未启用或缺少 `SIM_INTERNAL_API_URL` / `SIM_SERVICE_TOKEN` 的错误
 
-### 6.2 SIM 侧聚合探针
+### 7.2 SIM 侧聚合探针
 
 SIM 新增内部探针：
 
@@ -150,7 +177,7 @@ Header: x-api-key: <INTERNAL_API_SECRET>
 | 401 | 调 SIM 探针的 `x-api-key` 错误 | 检查运维密钥 |
 | 503 | Hermes 未配置、不可达或能力不完整 | 不放量，按 `error` 字段排查 |
 
-### 6.3 Hermes -> SIM 工具调用审计
+### 7.3 Hermes -> SIM 工具调用审计
 
 SIM 会把 Hermes 调用 internal tool 的关键链路写入：
 
@@ -176,7 +203,7 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - `status`
 - `error_code`
 
-## 7. 本地启动顺序
+## 8. 本地启动顺序
 
 1. 启动 SIM 依赖：DB、Redis、Realtime、Next.js。
 2. 启动 Hermes API Server，确保 `API_SERVER_KEY`、`SIM_INTERNAL_API_URL`、`SIM_SERVICE_TOKEN` 已设置。
@@ -186,7 +213,7 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 6. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
 7. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
 
-## 8. 生产发布检查清单
+## 9. 生产发布检查清单
 
 发布前必须确认：
 
@@ -202,7 +229,7 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - [ ] Skill Proposal publish 和 rollback 只对管理员开放。
 - [ ] 日志不记录完整 prompt、网页全文、密钥、token、用户隐私正文。
 
-## 9. Skill Proposal 发布闭环
+## 10. Skill Proposal 发布闭环
 
 正确闭环：
 
@@ -240,7 +267,7 @@ Hermes 自动学习
 - Hermes 不应成为“无需审批的生产规则发布者”。
 - Hermes 用户级 memory / skill 与 SIM 团队级 DB skill 必须分层。
 
-## 10. 常见故障排查
+## 11. 常见故障排查
 
 | 现象 | 可能原因 | 排查 |
 | --- | --- | --- |
@@ -253,27 +280,27 @@ Hermes 自动学习
 | proposal 无法 publish | 当前用户非组织管理员或 proposal 状态不对 | 走管理员审核流程 |
 | 用户偏好串号 | `HERMES_HOME` 或 session key 复用 | 检查 session namespace 和部署隔离 |
 
-## 11. 回滚策略
+## 12. 回滚策略
 
-### 11.1 Hermes 服务回滚
+### 12.1 Hermes 服务回滚
 
 - 回滚 Hermes 容器镜像或 git commit。
 - 保持 `API_SERVER_KEY` 不变，避免 SIM 配置同时变更。
 - 回滚后立刻检查 `/health` commit 和 SIM 聚合 health。
 
-### 11.2 SIM 接入回滚
+### 12.2 SIM 接入回滚
 
 - 将 SIM Copilot mode 从 `hermes_agent_v1` 切回现有本地画布 Agent 模式。
 - 保留 Hermes internal routes，但停止入口流量。
 - 不删除 proposal/revision 表，避免丢失审核记录。
 
-### 11.3 Skill 内容回滚
+### 12.3 Skill 内容回滚
 
 - 使用 SIM rollback API 回滚到指定 `skillRevision`。
 - 只回滚已发布团队 skill；Hermes 用户级 personal skill 由 Hermes 自身管理。
 - 回滚后补一条 proposal 或审计备注，说明原因。
 
-## 12. 后续增强项
+## 13. 后续增强项
 
 - 将 Hermes memory provider 从本地 session namespace 升级为 SIM-backed provider。
 - 为 Hermes health 面板补充通知、告警和发布阻断策略。
