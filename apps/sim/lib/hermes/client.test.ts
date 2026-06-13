@@ -78,8 +78,12 @@ describe('Hermes client health probe', () => {
       }
       return jsonResponse({
         data: [
-          { name: 'sim', enabled: true },
-          { name: 'memory', enabled: true },
+          {
+            name: 'sim',
+            enabled: true,
+            tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+          },
+          { name: 'memory', enabled: true, tools: ['memory'] },
         ],
       })
     })
@@ -93,6 +97,17 @@ describe('Hermes client health probe', () => {
     expect(result.commit).toBe('abc123')
     expect(result.capabilities?.chatCompletions).toBe(true)
     expect(result.toolsets?.missing).toEqual([])
+    expect(result.toolsets?.forbidden).toEqual([
+      'browser',
+      'code_execution',
+      'computer_use',
+      'cronjob',
+      'delegation',
+      'file',
+      'terminal',
+    ])
+    expect(result.toolsets?.enabledForbidden).toEqual([])
+    expect(result.toolsets?.missingTools).toEqual({})
     expect(fetch).toHaveBeenCalledTimes(3)
   })
 
@@ -115,7 +130,7 @@ describe('Hermes client health probe', () => {
           },
         })
       }
-      return jsonResponse({ data: [{ name: 'memory', enabled: true }] })
+      return jsonResponse({ data: [{ name: 'memory', enabled: true, tools: ['memory'] }] })
     })
 
     const result = await checkHermesHealth()
@@ -123,7 +138,93 @@ describe('Hermes client health probe', () => {
     expect(result.ok).toBe(false)
     expect(result.status).toBe('degraded')
     expect(result.toolsets?.missing).toEqual(['sim'])
+    expect(result.toolsets?.missingTools).toEqual({})
     expect(result.error).toContain('required Hermes toolsets missing: sim')
+  })
+
+  it('marks the runtime degraded when a required SIM tool is missing', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local',
+      HERMES_API_KEY: 'test-key',
+      HERMES_REQUIRED_TOOLSETS: 'sim',
+    })
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok', version: '1.2.3' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            responses_api: true,
+            skills_api: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      return jsonResponse({
+        data: [
+          {
+            name: 'sim',
+            enabled: true,
+            tools: ['sim_canvas_agent_run'],
+          },
+        ],
+      })
+    })
+
+    const result = await checkHermesHealth()
+
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe('degraded')
+    expect(result.toolsets?.missing).toEqual([])
+    expect(result.toolsets?.requiredTools).toEqual({
+      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+    })
+    expect(result.toolsets?.missingTools).toEqual({
+      sim: ['sim_skill_proposal_run'],
+    })
+    expect(result.error).toContain('required Hermes tools missing: sim(sim_skill_proposal_run)')
+  })
+
+  it('marks the runtime degraded when forbidden toolsets are enabled', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local',
+      HERMES_API_KEY: 'test-key',
+      HERMES_REQUIRED_TOOLSETS: 'sim',
+      HERMES_FORBIDDEN_TOOLSETS: 'terminal,file,code_execution',
+    })
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok', version: '1.2.3' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            responses_api: true,
+            skills_api: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      return jsonResponse({
+        data: [
+          {
+            name: 'sim',
+            enabled: true,
+            tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+          },
+          { name: 'terminal', enabled: true, tools: ['terminal', 'process'] },
+        ],
+      })
+    })
+
+    const result = await checkHermesHealth()
+
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe('degraded')
+    expect(result.toolsets?.missing).toEqual([])
+    expect(result.toolsets?.enabledForbidden).toEqual(['terminal'])
+    expect(result.error).toContain('forbidden Hermes toolsets enabled: terminal')
   })
 
   it('reports unreachable when the Hermes service cannot be contacted', async () => {

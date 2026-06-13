@@ -59,6 +59,7 @@ E:\project\hermes-agent-sim
 | `HERMES_SERVICE_TOKEN` | 是 | Hermes 调 SIM internal API 的服务令牌，至少 32 位随机字符串 |
 | `HERMES_HEALTH_TIMEOUT_MS` | 否 | SIM 探测 Hermes health/capabilities/toolsets 的超时时间，默认 5000ms |
 | `HERMES_REQUIRED_TOOLSETS` | 否 | SIM 要求 Hermes API Server 启用的 toolset，默认 `sim`；可设为 `sim,memory,skills` |
+| `HERMES_FORBIDDEN_TOOLSETS` | 否 | SIM 生产流量禁止启用的 Hermes toolset；默认 `browser,code_execution,computer_use,cronjob,delegation,file,terminal` |
 | `INTERNAL_API_SECRET` | 是 | SIM 内部运维接口鉴权，`/api/internal/hermes/health` 使用 `x-api-key` 校验 |
 
 ### 4.2 Hermes 侧
@@ -95,6 +96,7 @@ platform_toolsets:
 
 - `plugins.enabled: [sim]` 负责加载 SIM 插件，注册 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`。
 - `platform_toolsets.api_server` 负责限制 HTTP API Server 可用工具面，避免默认 API Server 暴露过宽。
+- SIM health 默认禁止 `browser`、`code_execution`、`computer_use`、`cronjob`、`delegation`、`file`、`terminal` 等高风险 toolset；如需放开，必须显式设置 `HERMES_FORBIDDEN_TOOLSETS` 并同步评审容器隔离、审计和审批策略。
 - `memory` / `skills` 用于 Hermes 用户级偏好和 procedural skill；SIM 团队正式规范仍走 Skill Proposal 审核发布链路。
 - 如需网页/浏览器能力，先灰度加入 `web` 或 `browser`，并同步打开外部内容引用、prompt injection 标记和审计策略。
 

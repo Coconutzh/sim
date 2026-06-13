@@ -70,6 +70,8 @@ export function HermesHealthPanel({ organizationId }: HermesHealthPanelProps) {
   const health = isHealthResponse(data) ? data : null
   const toolsets = health?.toolsets
   const missingToolsets = toolsets?.missing ?? []
+  const enabledForbiddenToolsets = toolsets?.enabledForbidden ?? []
+  const missingTools = Object.entries(toolsets?.missingTools ?? {})
 
   return (
     <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
@@ -184,7 +186,7 @@ export function HermesHealthPanel({ organizationId }: HermesHealthPanelProps) {
               <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
                 <div className='mb-3 flex items-center gap-2 font-medium text-[12px] text-[var(--text-primary)]'>
                   <CheckCircle2 className='h-[14px] w-[14px] text-[var(--text-icon)]' />
-                  Required toolsets
+                  Toolset policy
                 </div>
                 {!toolsets ? (
                   <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 text-[12px] text-[var(--text-muted)]'>
@@ -199,6 +201,10 @@ export function HermesHealthPanel({ organizationId }: HermesHealthPanelProps) {
                     <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 text-[var(--text-muted)]'>
                       Enabled: {toolsets.enabled.length > 0 ? toolsets.enabled.join(', ') : 'None'}
                     </div>
+                    <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 text-[var(--text-muted)]'>
+                      Forbidden:{' '}
+                      {toolsets.forbidden.length > 0 ? toolsets.forbidden.join(', ') : 'None'}
+                    </div>
                     <div
                       className={cn(
                         'rounded-[8px] border p-2',
@@ -208,6 +214,34 @@ export function HermesHealthPanel({ organizationId }: HermesHealthPanelProps) {
                       )}
                     >
                       Missing: {missingToolsets.length > 0 ? missingToolsets.join(', ') : 'None'}
+                    </div>
+                    <div
+                      className={cn(
+                        'rounded-[8px] border p-2',
+                        enabledForbiddenToolsets.length > 0
+                          ? 'border-red-500/30 bg-red-500/10 text-red-500'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                      )}
+                    >
+                      Enabled forbidden:{' '}
+                      {enabledForbiddenToolsets.length > 0
+                        ? enabledForbiddenToolsets.join(', ')
+                        : 'None'}
+                    </div>
+                    <div
+                      className={cn(
+                        'rounded-[8px] border p-2',
+                        missingTools.length > 0
+                          ? 'border-red-500/30 bg-red-500/10 text-red-500'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                      )}
+                    >
+                      Missing tools:{' '}
+                      {missingTools.length > 0
+                        ? missingTools
+                            .map(([toolset, tools]) => `${toolset}: ${tools.join(', ')}`)
+                            .join(' / ')
+                        : 'None'}
                     </div>
                   </div>
                 )}

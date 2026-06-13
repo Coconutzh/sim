@@ -28,8 +28,12 @@ export type HermesCapabilitySummary = z.output<typeof hermesCapabilitySummarySch
 export const hermesToolsetSummarySchema = z.object({
   checked: z.boolean(),
   required: z.array(z.string()),
+  forbidden: z.array(z.string()),
   enabled: z.array(z.string()),
   missing: z.array(z.string()),
+  enabledForbidden: z.array(z.string()),
+  requiredTools: z.record(z.string(), z.array(z.string())),
+  missingTools: z.record(z.string(), z.array(z.string())),
 })
 export type HermesToolsetSummary = z.output<typeof hermesToolsetSummarySchema>
 

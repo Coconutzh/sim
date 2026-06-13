@@ -4,6 +4,15 @@ import { env, envNumber } from '@/lib/core/config/env'
 
 const logger = createLogger('HermesClient')
 const DEFAULT_HEALTH_TIMEOUT_MS = 5000
+const DEFAULT_FORBIDDEN_TOOLSETS = [
+  'browser',
+  'code_execution',
+  'computer_use',
+  'cronjob',
+  'delegation',
+  'file',
+  'terminal',
+] as const
 
 export interface HermesChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -56,8 +65,12 @@ export interface HermesCapabilitySummary {
 export interface HermesToolsetSummary {
   checked: boolean
   required: string[]
+  forbidden: string[]
   enabled: string[]
   missing: string[]
+  enabledForbidden: string[]
+  requiredTools: Record<string, string[]>
+  missingTools: Record<string, string[]>
 }
 
 export interface HermesHealthCheckResult {
@@ -111,8 +124,21 @@ function getHermesRequiredToolsets(): string[] {
     .filter(Boolean)
 }
 
+function getHermesForbiddenToolsets(): string[] {
+  const raw = env.HERMES_FORBIDDEN_TOOLSETS
+  if (raw === undefined) return [...DEFAULT_FORBIDDEN_TOOLSETS]
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
 function getHermesHealthTimeoutMs(): number {
   return envNumber(env.HERMES_HEALTH_TIMEOUT_MS, DEFAULT_HEALTH_TIMEOUT_MS, { min: 1000 })
+}
+
+const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
+  sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -160,22 +186,56 @@ function normalizeCapabilities(payload: unknown): HermesCapabilitySummary {
   }
 }
 
-function normalizeToolsets(payload: unknown, required: string[]): HermesToolsetSummary {
+function normalizeToolsets(
+  payload: unknown,
+  required: string[],
+  forbidden: string[]
+): HermesToolsetSummary {
   const record = asRecord(payload)
   const data = Array.isArray(record?.data) ? record.data : []
-  const enabled = data
+  const entries = data
     .map((item) => asRecord(item))
     .filter((item): item is Record<string, unknown> => Boolean(item))
+  const enabled = entries
     .filter((item) => item.enabled === true)
     .map((item) => readString(item, 'name'))
     .filter((name): name is string => Boolean(name))
     .sort()
   const enabledSet = new Set(enabled)
+  const forbiddenSet = new Set(forbidden)
+  const enabledEntriesByName = new Map(
+    entries
+      .filter((item) => item.enabled === true)
+      .map((item) => [readString(item, 'name'), item] as const)
+      .filter((item): item is readonly [string, Record<string, unknown>] => Boolean(item[0]))
+  )
+  const requiredTools = Object.fromEntries(
+    required
+      .filter((name) => REQUIRED_TOOLS_BY_TOOLSET[name]?.length)
+      .map((name) => [name, REQUIRED_TOOLS_BY_TOOLSET[name]])
+  )
+  const missingTools = Object.fromEntries(
+    Object.entries(requiredTools)
+      .map(([toolset, tools]) => {
+        const item = enabledEntriesByName.get(toolset)
+        if (!item) return [toolset, []] as const
+        const actualTools = Array.isArray(item?.tools)
+          ? item.tools.filter((tool): tool is string => typeof tool === 'string')
+          : []
+        const actualToolSet = new Set(actualTools)
+        return [toolset, tools.filter((tool) => !actualToolSet.has(tool))] as const
+      })
+      .filter(([, tools]) => tools.length > 0)
+  )
   return {
     checked: true,
     required,
+    forbidden,
     enabled,
     missing: required.filter((name) => !enabledSet.has(name)),
+    enabledForbidden: enabled.filter((name) => forbiddenSet.has(name)),
+    requiredTools,
+    missingTools,
   }
 }
 
@@ -261,19 +321,38 @@ export async function checkHermesHealth(
 
     let toolsets: HermesToolsetSummary | undefined
     const requiredToolsets = getHermesRequiredToolsets()
-    if (options.includeToolsets !== false && requiredToolsets.length > 0) {
+    const forbiddenToolsets = getHermesForbiddenToolsets()
+    if (
+      options.includeToolsets !== false &&
+      (requiredToolsets.length > 0 || forbiddenToolsets.length > 0)
+    ) {
       const toolsetsResponse = await fetchHermesJson(config, '/v1/toolsets', options.signal)
       if (toolsetsResponse.ok) {
-        toolsets = normalizeToolsets(toolsetsResponse.payload, requiredToolsets)
+        toolsets = normalizeToolsets(toolsetsResponse.payload, requiredToolsets, forbiddenToolsets)
         if (toolsets.missing.length > 0) {
           issues.push(`required Hermes toolsets missing: ${toolsets.missing.join(', ')}`)
+        }
+        if (toolsets.enabledForbidden.length > 0) {
+          issues.push(`forbidden Hermes toolsets enabled: ${toolsets.enabledForbidden.join(', ')}`)
+        }
+        const missingTools = Object.entries(toolsets.missingTools)
+        if (missingTools.length > 0) {
+          issues.push(
+            `required Hermes tools missing: ${missingTools
+              .map(([toolset, tools]) => `${toolset}(${tools.join(', ')})`)
+              .join('; ')}`
+          )
         }
       } else {
         toolsets = {
           checked: false,
           required: requiredToolsets,
+          forbidden: forbiddenToolsets,
           enabled: [],
           missing: requiredToolsets,
+          enabledForbidden: [],
+          requiredTools: {},
+          missingTools: {},
         }
         issues.push(`Hermes toolsets check failed with status ${toolsetsResponse.status}`)
       }

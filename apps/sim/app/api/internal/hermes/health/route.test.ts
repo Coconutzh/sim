@@ -47,8 +47,22 @@ describe('Hermes health internal route', () => {
       toolsets: {
         checked: true,
         required: ['sim'],
+        forbidden: [
+          'browser',
+          'code_execution',
+          'computer_use',
+          'cronjob',
+          'delegation',
+          'file',
+          'terminal',
+        ],
         enabled: ['sim'],
         missing: [],
+        enabledForbidden: [],
+        requiredTools: {
+          sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+        },
+        missingTools: {},
       },
       responseStatus: 200,
     })
