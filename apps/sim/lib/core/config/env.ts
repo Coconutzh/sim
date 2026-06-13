@@ -38,6 +38,9 @@ export const env = createEnv({
     // Copilot
     COPILOT_API_KEY:                       z.string().min(1).optional(),           // Secret for internal sim agent API authentication
     SIM_AGENT_API_URL:                     z.string().url().optional(),            // URL for internal sim agent API
+    HERMES_API_URL:                        z.string().url().optional(),            // Self-hosted Hermes API Server base URL
+    HERMES_API_KEY:                        z.string().min(1).optional(),           // API key used by SIM when calling Hermes API Server
+    HERMES_SERVICE_TOKEN:                  z.string().min(32).optional(),          // Service token Hermes uses when calling SIM internal APIs
     AGENT_INDEXER_URL:                     z.string().url().optional(),            // URL for agent training data indexer
     AGENT_INDEXER_API_KEY:                 z.string().min(1).optional(),           // API key for agent indexer authentication
     COPILOT_STREAM_TTL_SECONDS:            z.number().optional(),                  // Redis TTL for copilot SSE buffer
