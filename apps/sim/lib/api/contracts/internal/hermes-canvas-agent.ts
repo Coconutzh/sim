@@ -68,6 +68,7 @@ export const hermesCanvasAgentRunBodySchema = z.object({
   selectedNodeIds: z.array(nonEmptyIdSchema).max(200).optional().default([]),
   mode: hermesCanvasAgentModeSchema.optional().default('read_only'),
   confirmationMode: z.enum(['auto', 'manual']).optional().default('manual'),
+  pendingActionId: nonEmptyIdSchema.optional(),
   traceId: z.string().trim().min(1).max(200).optional(),
   hermesRunId: z.string().trim().min(1).max(200).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -82,6 +83,7 @@ const hermesCanvasAgentRunSuccessResponseSchema = z.object({
   intent: z.string().optional(),
   risk: hermesCanvasAgentRiskSchema,
   requiresConfirmation: z.boolean(),
+  pendingActionId: nonEmptyIdSchema.optional(),
   proposedPatchSummary: z.string().optional(),
   changedNodeIds: z.array(z.string()),
   generatedNodeIds: z.array(z.string()),
@@ -109,6 +111,7 @@ const hermesCanvasAgentRunErrorResponseSchema = z.object({
   intent: z.string().optional(),
   risk: hermesCanvasAgentRiskSchema.optional(),
   requiresConfirmation: z.boolean().optional(),
+  pendingActionId: nonEmptyIdSchema.optional(),
   proposedPatchSummary: z.string().optional(),
   changedNodeIds: z.array(z.string()).optional(),
   generatedNodeIds: z.array(z.string()).optional(),
@@ -132,6 +135,6 @@ export const hermesCanvasAgentRunContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: hermesCanvasAgentRunResponseSchema,
-    status: [200, 400, 401, 403, 404, 501, 500],
+    status: [200, 400, 401, 403, 404, 500],
   },
 })

@@ -1,6 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { generateId } from '@sim/utils/id'
 import { resolveLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import {
   appendLocalAgentToolResultRefs,
@@ -14,7 +13,16 @@ import {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
 import { summarizeLocalAgentRun } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/summarizer'
 import { verifyLocalAgentFinalAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/verifier'
-import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
+import {
+  deleteLocalAgentPendingPlan,
+  executeConfirmedLocalAgentPlan,
+  isSimpleLocalAgentPendingPlanConfirm,
+  LOCAL_CANVAS_CONFIRM_PREFIX,
+  LOCAL_CANVAS_REVISE_PREFIX,
+  parseLocalAgentPendingPlanCommand,
+  peekLocalAgentPendingPlan,
+  putLocalAgentPendingPlan,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/pending-plan'
 import { classifyLocalCanvasAgentRouting } from '@/lib/copilot/request/lifecycle/local-canvas-agent/routing'
 import { persistLocalAgentSessionMetadata } from '@/lib/copilot/request/lifecycle/local-canvas-agent/session'
 import {
@@ -22,7 +30,6 @@ import {
   emitLocalAgentText,
   emitLocalAgentThinking,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/stream'
-import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
 import { runLocalAgentToolLoop } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-loop'
 import { prepareLocalAgentMemoryPersistDecision } from '@/lib/copilot/request/lifecycle/local-canvas-agent/turn-finalizer'
 import type {
@@ -30,7 +37,6 @@ import type {
   LocalAgentMemoryData,
   LocalAgentObservation,
   LocalAgentPlan,
-  LocalAgentToolCall,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import type {
   ExecutionContext,
@@ -39,104 +45,6 @@ import type {
 } from '@/lib/copilot/request/types'
 
 const logger = createLogger('LocalCanvasAgentRuntime')
-const CONFIRM_PREFIX = '__local_canvas_confirm__:'
-const REVISE_PREFIX = '__local_canvas_revise__:'
-const PENDING_PLAN_TTL_MS = 30 * 60 * 1000
-const pendingPlans = new Map<
-  string,
-  {
-    id: string
-    context: LocalAgentContext
-    plan: LocalAgentPlan
-    createdAt: number
-  }
->()
-
-function getPendingKey(context: LocalAgentContext): string {
-  return [
-    context.userId,
-    context.workspaceId,
-    context.workflowId,
-    context.chatId ?? 'no-chat',
-  ].join(':')
-}
-
-function parseCommand(message: string): { action: 'confirm' | 'revise'; id: string } | null {
-  if (message.startsWith(CONFIRM_PREFIX))
-    return { action: 'confirm', id: message.slice(CONFIRM_PREFIX.length) }
-  if (message.startsWith(REVISE_PREFIX))
-    return { action: 'revise', id: message.slice(REVISE_PREFIX.length) }
-  return null
-}
-
-function isSimpleConfirm(message: string): boolean {
-  return /^(确认|继续|执行|开始执行|可以执行|yes|confirm|go ahead|run it)$/i.test(message.trim())
-}
-
-function isPendingPlanExpired(pending: { createdAt: number }, now = Date.now()): boolean {
-  return now - pending.createdAt > PENDING_PLAN_TTL_MS
-}
-
-function deleteExpiredPendingPlans(now = Date.now()): void {
-  for (const [key, pending] of pendingPlans) {
-    if (isPendingPlanExpired(pending, now)) pendingPlans.delete(key)
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-}
-
-function throwIfAborted(context: LocalAgentContext): void {
-  if (context.options.abortSignal?.aborted) {
-    context.streamContext.wasAborted = true
-    throw new Error('Request was cancelled')
-  }
-}
-
-function buildGenerationVerifyInput(output: unknown): Record<string, unknown> {
-  const record = asRecord(output)
-  const nodeId = typeof record.nodeId === 'string' ? record.nodeId : ''
-  const field = typeof record.verifiedField === 'string' ? record.verifiedField : ''
-  return nodeId && field ? { generation: { nodeId, field } } : {}
-}
-
-async function executeConfirmedPlan(context: LocalAgentContext, plan: LocalAgentPlan) {
-  const observations: LocalAgentObservation[] = []
-  if (plan.patch) {
-    throwIfAborted(context)
-    const result = await executeLocalAgentTool(context, {
-      name: 'canvas.apply_patch',
-      input: { patch: plan.patch },
-    } satisfies LocalAgentToolCall)
-    observations.push(observationFromToolResult(result))
-    if (result.success) {
-      throwIfAborted(context)
-      const verifyResult = await executeLocalAgentTool(context, {
-        name: 'canvas.verify_patch',
-        input: { patch: plan.patch },
-      })
-      observations.push(observationFromToolResult(verifyResult))
-    }
-  }
-  for (const nodeId of plan.generateNodeIds ?? []) {
-    throwIfAborted(context)
-    const result = await executeLocalAgentTool(context, {
-      name: 'canvas.generate_node_output',
-      input: { nodeId },
-    })
-    observations.push(observationFromToolResult(result))
-    if (result.success) {
-      throwIfAborted(context)
-      const verifyResult = await executeLocalAgentTool(context, {
-        name: 'canvas.verify_patch',
-        input: buildGenerationVerifyInput(result.output),
-      })
-      observations.push(observationFromToolResult(verifyResult))
-    }
-  }
-  return observations
-}
 
 async function persistMemoryBestEffort(params: {
   context: LocalAgentContext
@@ -288,12 +196,11 @@ async function loadMemoryBestEffort(context: LocalAgentContext): Promise<LocalAg
 }
 
 async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boolean> {
-  const command = parseCommand(context.message)
-  const pendingKey = getPendingKey(context)
-  const pending = pendingPlans.get(pendingKey)
-  const shouldConfirm = command?.action === 'confirm' || isSimpleConfirm(context.message)
-  if (pending && isPendingPlanExpired(pending)) {
-    pendingPlans.delete(pendingKey)
+  const command = parseLocalAgentPendingPlanCommand(context.message)
+  const pendingResult = peekLocalAgentPendingPlan(context)
+  const shouldConfirm =
+    command?.action === 'confirm' || isSimpleLocalAgentPendingPlanConfirm(context.message)
+  if (pendingResult.status === 'expired') {
     if (shouldConfirm || command?.action === 'revise') {
       await emitLocalAgentText(
         context.streamContext,
@@ -303,15 +210,14 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
       context.streamContext.streamComplete = true
       return true
     }
-    deleteExpiredPendingPlans()
     return false
   }
-  deleteExpiredPendingPlans()
-  if (!pending) return false
+  if (pendingResult.status !== 'found') return false
   if (!shouldConfirm && command?.action !== 'revise') return false
 
+  const pending = pendingResult.pending
   if (command && command.id !== pending.id) {
-    pendingPlans.delete(pendingKey)
+    deleteLocalAgentPendingPlan(context)
     await emitLocalAgentText(
       context.streamContext,
       context.options,
@@ -322,7 +228,7 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
   }
 
   if (command?.action === 'revise') {
-    pendingPlans.delete(pendingKey)
+    deleteLocalAgentPendingPlan(context)
     await emitLocalAgentText(
       context.streamContext,
       context.options,
@@ -332,10 +238,10 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
     return true
   }
 
-  pendingPlans.delete(pendingKey)
+  deleteLocalAgentPendingPlan(context)
   const memory = await loadMemoryBestEffort(context)
   const contextWithMemory = { ...context, memory }
-  const observations = await executeConfirmedPlan(contextWithMemory, pending.plan)
+  const observations = await executeConfirmedLocalAgentPlan(contextWithMemory, pending.plan)
   const answer = await buildLocalAgentAnswer({
     context: contextWithMemory,
     plan: pending.plan,
@@ -370,7 +276,8 @@ function buildPlanPreview(plan: LocalAgentPlan): string {
 function hasManualMutation(plan: LocalAgentPlan): boolean {
   return (
     Boolean(plan.patch && plan.patch.operations.length > 0) ||
-    Boolean(plan.generateNodeIds && plan.generateNodeIds.length > 0)
+    Boolean(plan.generateNodeIds && plan.generateNodeIds.length > 0) ||
+    Boolean(plan.generationTargets && plan.generationTargets.length > 0)
   )
 }
 
@@ -445,21 +352,26 @@ export async function runLocalCanvasAgent(params: {
     const { plan, observations, answer } = manualLoopResult
 
     if (hasManualMutation(plan)) {
-      deleteExpiredPendingPlans()
-      const id = generateId()
-      pendingPlans.set(getPendingKey(localContext), {
-        id,
-        context: contextWithMemory,
+      const pending = putLocalAgentPendingPlan({
+        context: localContext,
         plan,
-        createdAt: Date.now(),
+        source: 'sim_ui',
       })
       await emitLocalAgentOptions({
         context: params.context,
         options: params.options,
         text: buildPlanPreview(plan),
         optionItems: [
-          { id: `${CONFIRM_PREFIX}${id}`, label: 'Confirm', value: `${CONFIRM_PREFIX}${id}` },
-          { id: `${REVISE_PREFIX}${id}`, label: 'Revise', value: `${REVISE_PREFIX}${id}` },
+          {
+            id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+            label: 'Confirm',
+            value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+          },
+          {
+            id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+            label: 'Revise',
+            value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+          },
         ],
       })
       params.context.streamComplete = true
@@ -510,21 +422,26 @@ export async function runLocalCanvasAgent(params: {
   const { plan, observations, answer } = loopResult
 
   if (plan.requiresUserConfirmation && hasManualMutation(plan)) {
-    deleteExpiredPendingPlans()
-    const id = generateId()
-    pendingPlans.set(getPendingKey(localContext), {
-      id,
-      context: contextWithMemory,
+    const pending = putLocalAgentPendingPlan({
+      context: localContext,
       plan,
-      createdAt: Date.now(),
+      source: 'sim_ui',
     })
     await emitLocalAgentOptions({
       context: params.context,
       options: params.options,
       text: buildPlanPreview(plan),
       optionItems: [
-        { id: `${CONFIRM_PREFIX}${id}`, label: 'Confirm', value: `${CONFIRM_PREFIX}${id}` },
-        { id: `${REVISE_PREFIX}${id}`, label: 'Revise', value: `${REVISE_PREFIX}${id}` },
+        {
+          id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+          label: 'Confirm',
+          value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+        },
+        {
+          id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+          label: 'Revise',
+          value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+        },
       ],
     })
     params.context.streamComplete = true

@@ -18,6 +18,8 @@ const {
   mockResolveLocalAgentContext,
   mockRunLocalAgentToolLoop,
   mockSummarizeCanvas,
+  mockBuildLocalAgentAnswer,
+  mockExecuteLocalAgentTool,
 } = vi.hoisted(() => ({
   mockBuildCanvasSummaryTextFromParts: vi.fn(),
   mockLoadCanvasSnapshot: vi.fn(),
@@ -27,6 +29,8 @@ const {
   mockResolveLocalAgentContext: vi.fn(),
   mockRunLocalAgentToolLoop: vi.fn(),
   mockSummarizeCanvas: vi.fn(),
+  mockBuildLocalAgentAnswer: vi.fn(),
+  mockExecuteLocalAgentTool: vi.fn(),
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context', () => ({
@@ -44,8 +48,16 @@ vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/memory', () => ({
   loadLocalAgentMemory: mockLoadLocalAgentMemory,
 }))
 
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor', () => ({
+  buildLocalAgentAnswer: mockBuildLocalAgentAnswer,
+}))
+
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/session', () => ({
   persistLocalAgentSessionMetadata: mockPersistLocalAgentSessionMetadata,
+}))
+
+vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge', () => ({
+  executeLocalAgentTool: mockExecuteLocalAgentTool,
 }))
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/tool-loop', () => ({
@@ -91,7 +103,7 @@ function buildLocalContext(overrides: Partial<LocalAgentContext> = {}): Partial<
     workflowId: 'workflow-1',
     chatId: 'chat-1',
     selectedNodeIds: ['node-1'],
-    permissions: { canRead: true, canWrite: false, canPublish: false },
+    permissions: { canRead: true, canWrite: true, canPublish: false },
     agent: { code: 'chief_director', name: 'Chief Director', description: '', systemPrompt: '' },
     workgroup: {
       id: 'workgroup-1',
@@ -108,6 +120,8 @@ function buildLocalContext(overrides: Partial<LocalAgentContext> = {}): Partial<
     confirmationMode: 'manual',
     thinkingLevel: 'standard',
     requestPayload: {},
+    streamContext: { wasAborted: false } as LocalAgentContext['streamContext'],
+    options: {},
     ...overrides,
   }
 }
@@ -156,7 +170,7 @@ describe('runLocalCanvasAgentHeadless', () => {
               operationId: 'create-hook',
               clientNodeId: 'hook-1',
               kind: 'text',
-              name: 'Hook',
+              title: 'Hook',
               fields: { content: 'hello' },
             },
           ],
@@ -165,6 +179,44 @@ describe('runLocalCanvasAgentHeadless', () => {
       observations: [],
       answer: 'A Hook node can be proposed.',
     })
+    mockBuildLocalAgentAnswer.mockResolvedValue('已完成画布修改，并完成验证。')
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                operationId: 'create-hook',
+                clientNodeId: 'hook-1',
+                kind: 'text',
+                title: 'Hook',
+                fields: { content: 'hello' },
+              },
+            ],
+          },
+          verification: {
+            success: true,
+            operationResults: [{ operationId: 'create-hook', nodeId: 'node-created' }],
+          },
+          createdNodeMap: { 'hook-1': 'node-created' },
+          machineSummary: {
+            createdNodeMap: { 'hook-1': 'node-created' },
+            writeBackFields: [{ nodeId: 'node-created', field: 'content', status: 'verified' }],
+            deletedNodeIds: [],
+            referenceChanges: [],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true, summary: 'Verified canvas patch' },
+        summary: 'Verified canvas patch',
+      })
     mockSummarizeCanvas.mockReturnValue([nodeSummary])
     mockReadCanvasNodeDetail.mockReturnValue(nodeDetail)
     mockBuildCanvasSummaryTextFromParts.mockReturnValue('summary text')
@@ -239,6 +291,7 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(result.mode).toBe('propose')
     expect(result.risk).toBe('medium')
     expect(result.requiresConfirmation).toBe(true)
+    expect(result.pendingActionId).toEqual(expect.any(String))
     expect(result.changedNodeIds).toEqual([])
     expect(result.generatedNodeIds).toEqual([])
     expect(result.proposedPatchSummary).toContain('Patch operations (1): create_node')
@@ -248,7 +301,7 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(mockRunLocalAgentToolLoop).toHaveBeenCalledOnce()
   })
 
-  it('refuses mutating modes until the SIM approval flow is implemented', async () => {
+  it('requires a pending action id before applying a proposed canvas mutation', async () => {
     const result = await runLocalCanvasAgentHeadless({
       userId: 'user-1',
       workspaceId: 'workspace-1',
@@ -259,9 +312,182 @@ describe('runLocalCanvasAgentHeadless', () => {
     })
 
     expect(result.success).toBe(false)
-    if (result.success) throw new Error('expected not implemented result')
-    expect(result.errorCode).toBe('TOOL_EXECUTION_FAILED')
+    if (result.success) throw new Error('expected confirmation requirement')
+    expect(result.errorCode).toBe('CONFIRMATION_REQUIRED')
     expect(result.requiresConfirmation).toBe(true)
-    expect(mockResolveLocalAgentContext).not.toHaveBeenCalled()
+    expect(mockResolveLocalAgentContext).toHaveBeenCalledOnce()
+  })
+
+  it('applies a confirmed proposal through SIM tools and returns verification evidence', async () => {
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'create a hook node',
+      mode: 'propose',
+      auditId: 'audit-propose-apply',
+    })
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+    expect(proposal.pendingActionId).toEqual(expect.any(String))
+
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'confirmed by user',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-apply',
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error)
+    expect(result.mode).toBe('apply_after_confirm')
+    expect(result.requiresConfirmation).toBe(false)
+    expect(result.pendingActionId).toBe(proposal.pendingActionId)
+    expect(result.changedNodeIds).toEqual(['node-created'])
+    expect(result.generatedNodeIds).toEqual([])
+    expect(result.verificationSummary).toContain('canvas.verify_patch: success')
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ name: 'canvas.apply_patch' })
+    )
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ name: 'canvas.verify_patch' })
+    )
+  })
+
+  it('does not report success when confirmed apply verification fails', async () => {
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'create a hook node',
+      mode: 'propose',
+      auditId: 'audit-propose-verify-fail',
+    })
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+
+    mockExecuteLocalAgentTool.mockReset()
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                operationId: 'create-hook',
+                clientNodeId: 'hook-1',
+                kind: 'text',
+                title: 'Hook',
+                fields: { content: 'hello' },
+              },
+            ],
+          },
+          verification: {
+            success: true,
+            operationResults: [{ operationId: 'create-hook', nodeId: 'node-created' }],
+          },
+          createdNodeMap: { 'hook-1': 'node-created' },
+          machineSummary: {
+            createdNodeMap: { 'hook-1': 'node-created' },
+            writeBackFields: [{ nodeId: 'node-created', field: 'content', status: 'verified' }],
+            deletedNodeIds: [],
+            referenceChanges: [],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: false,
+        output: { success: false, summary: 'Verification failed' },
+        summary: 'Verification failed',
+      })
+
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'confirmed by user',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-verify-fail',
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error('expected verification failure')
+    expect(result.errorCode).toBe('VERIFY_FAILED')
+    expect(result.changedNodeIds).toEqual(['node-created'])
+    expect(result.verificationSummary).toContain('canvas.verify_patch: failed')
+  })
+
+  it('checks write permission again before confirmed apply', async () => {
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'create a hook node',
+      mode: 'propose',
+      auditId: 'audit-propose-permission',
+    })
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        permissions: {
+          canRead: true,
+          canWrite: false,
+          canPublish: false,
+          readonlyReason: 'Write denied',
+        },
+      })
+    )
+
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'confirmed by user',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-permission',
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error('expected permission failure')
+    expect(result.errorCode).toBe('USER_PERMISSION_DENIED')
+    expect(result.error).toBe('Write denied')
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown pending action id for apply-after-confirm', async () => {
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'confirmed by user',
+      mode: 'apply_after_confirm',
+      pendingActionId: 'missing-action',
+      auditId: 'audit-missing-action',
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error('expected expired confirmation')
+    expect(result.errorCode).toBe('CONFIRMATION_EXPIRED')
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
   })
 })

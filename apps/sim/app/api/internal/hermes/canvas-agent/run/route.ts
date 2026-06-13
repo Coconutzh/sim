@@ -58,7 +58,13 @@ function statusForResult(result: HermesCanvasAgentRunResponse): number {
   if (result.errorCode === 'WORKFLOW_NOT_FOUND' || result.errorCode === 'WORKSPACE_NOT_FOUND') {
     return 404
   }
-  if (result.errorCode === 'TOOL_EXECUTION_FAILED' && result.mode !== 'read_only') return 501
+  if (
+    result.errorCode === 'CONFIRMATION_REQUIRED' ||
+    result.errorCode === 'CONFIRMATION_EXPIRED' ||
+    result.errorCode === 'PATCH_VALIDATION_FAILED'
+  ) {
+    return 400
+  }
   return 500
 }
 
@@ -95,6 +101,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     selectedNodeIds: body.selectedNodeIds,
     mode: body.mode,
     confirmationMode: body.confirmationMode,
+    pendingActionId: body.pendingActionId,
     traceId,
     hermesRunId: body.hermesRunId,
     auditId,

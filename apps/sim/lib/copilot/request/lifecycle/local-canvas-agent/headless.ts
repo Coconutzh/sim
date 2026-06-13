@@ -9,6 +9,12 @@ import {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import { resolveLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import { loadLocalAgentMemory } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
+import { buildLocalAgentAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
+import {
+  consumeLocalAgentPendingPlan,
+  executeConfirmedLocalAgentPlan,
+  putLocalAgentPendingPlan,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/pending-plan'
 import { persistLocalAgentSessionMetadata } from '@/lib/copilot/request/lifecycle/local-canvas-agent/session'
 import { runLocalAgentToolLoop } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-loop'
 import type {
@@ -16,6 +22,7 @@ import type {
   CanvasNodeSummary,
   LocalAgentContext,
   LocalAgentMemoryData,
+  LocalAgentObservation,
   LocalAgentPlan,
   LocalAgentRisk,
   LocalAgentToolLoopResult,
@@ -55,6 +62,7 @@ export interface LocalCanvasAgentHeadlessInput {
   selectedNodeIds?: string[]
   mode: LocalCanvasAgentHeadlessMode
   confirmationMode?: 'auto' | 'manual'
+  pendingActionId?: string
   traceId?: string
   hermesRunId?: string
   auditId?: string
@@ -81,6 +89,7 @@ export type LocalCanvasAgentHeadlessResult =
       intent?: string
       risk: LocalAgentRisk
       requiresConfirmation: boolean
+      pendingActionId?: string
       proposedPatchSummary?: string
       changedNodeIds: string[]
       generatedNodeIds: string[]
@@ -96,6 +105,7 @@ export type LocalCanvasAgentHeadlessResult =
       intent?: string
       risk?: LocalAgentRisk
       requiresConfirmation?: boolean
+      pendingActionId?: string
       proposedPatchSummary?: string
       changedNodeIds?: string[]
       generatedNodeIds?: string[]
@@ -150,25 +160,6 @@ function buildReadOnlyAnswer(params: {
     `选中节点：\n${selected}`,
     `画布摘要：\n${params.summaryText}`,
   ].join('\n\n')
-}
-
-function notImplementedResult(
-  input: LocalCanvasAgentHeadlessInput,
-  auditId: string
-): LocalCanvasAgentHeadlessResult {
-  return {
-    success: false,
-    answer: '',
-    mode: input.mode,
-    risk: input.mode === 'read_only' ? 'low' : 'medium',
-    requiresConfirmation: input.mode !== 'read_only',
-    changedNodeIds: [],
-    generatedNodeIds: [],
-    auditId,
-    traceId: input.traceId,
-    errorCode: 'TOOL_EXECUTION_FAILED',
-    error: `Hermes canvas mode "${input.mode}" is not implemented yet. Use read_only first.`,
-  }
 }
 
 function createEmptyHeadlessMemory(context: LocalAgentContext): LocalAgentMemoryData {
@@ -235,6 +226,125 @@ function hasProposedMutation(plan: LocalAgentPlan): boolean {
   )
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+}
+
+function getProposalValidationError(
+  observations: LocalAgentObservation[]
+): LocalAgentObservation | null {
+  for (const observation of observations) {
+    if (observation.toolName !== 'canvas.propose_patch') continue
+    if (!observation.success) return observation
+    const validation = asRecord(asRecord(observation.output).validation)
+    if (validation.valid === false) return observation
+  }
+  return null
+}
+
+function getObservationErrorSummary(observation: LocalAgentObservation): string {
+  const output = asRecord(observation.output)
+  const validation = asRecord(output.validation)
+  const validationErrors = readStringArray(validation.errors)
+  if (validationErrors.length > 0) return validationErrors.join('; ')
+  return observation.summary || 'Local canvas agent tool execution failed'
+}
+
+function addString(value: unknown, ids: Set<string>): void {
+  if (typeof value === 'string' && value.trim()) ids.add(value)
+}
+
+function collectChangedNodeIds(observations: LocalAgentObservation[]): string[] {
+  const ids = new Set<string>()
+  for (const observation of observations) {
+    if (observation.toolName !== 'canvas.apply_patch') continue
+    const output = asRecord(observation.output)
+    const machineSummary = asRecord(output.machineSummary)
+    const createdNodeMap = {
+      ...asRecord(output.createdNodeMap),
+      ...asRecord(machineSummary.createdNodeMap),
+    }
+    for (const value of Object.values(createdNodeMap)) addString(value, ids)
+    for (const nodeId of readStringArray(machineSummary.deletedNodeIds)) addString(nodeId, ids)
+
+    const writeBackFields = Array.isArray(machineSummary.writeBackFields)
+      ? machineSummary.writeBackFields.map(asRecord)
+      : []
+    for (const item of writeBackFields) addString(item.nodeId, ids)
+
+    const referenceChanges = Array.isArray(machineSummary.referenceChanges)
+      ? machineSummary.referenceChanges.map(asRecord)
+      : []
+    for (const item of referenceChanges) {
+      addString(item.consumerNodeId, ids)
+      addString(item.sourceNodeId, ids)
+    }
+
+    const patch = asRecord(output.patch)
+    const operations = Array.isArray(patch.operations) ? patch.operations.map(asRecord) : []
+    for (const operation of operations) {
+      addString(operation.nodeId, ids)
+      addString(operation.sourceNodeId, ids)
+      addString(operation.targetNodeId, ids)
+      addString(operation.consumerNodeId, ids)
+    }
+  }
+  return [...ids]
+}
+
+function collectGeneratedNodeIds(observations: LocalAgentObservation[]): string[] {
+  const ids = new Set<string>()
+  for (const observation of observations) {
+    if (observation.toolName !== 'canvas.generate_node_output' || !observation.success) continue
+    addString(asRecord(observation.output).nodeId, ids)
+  }
+  return [...ids]
+}
+
+function buildVerificationSummary(observations: LocalAgentObservation[]): string | undefined {
+  const verificationLines = observations
+    .filter(
+      (observation) =>
+        observation.toolName === 'canvas.apply_patch' ||
+        observation.toolName === 'canvas.verify_patch' ||
+        observation.toolName === 'canvas.generate_node_output'
+    )
+    .map(
+      (observation) =>
+        `${observation.toolName}: ${observation.success ? 'success' : 'failed'} - ${
+          observation.summary
+        }`
+    )
+  return verificationLines.length ? verificationLines.join('\n') : undefined
+}
+
+function isVerificationFailure(observation: LocalAgentObservation): boolean {
+  if (observation.toolName === 'canvas.verify_patch' && !observation.success) return true
+  if (observation.toolName !== 'canvas.apply_patch') return false
+  const verification = asRecord(asRecord(observation.output).verification)
+  return verification.success === false
+}
+
+function errorCodeForFailedObservation(
+  observation: LocalAgentObservation
+): LocalCanvasAgentHeadlessErrorCode {
+  if (isVerificationFailure(observation)) return 'VERIFY_FAILED'
+  if (observation.toolName === 'canvas.generate_node_output') return 'GENERATION_FAILED'
+  if (
+    observation.toolName === 'canvas.apply_patch' &&
+    /valid|validation|required|not found|unsupported|patch/i.test(observation.summary)
+  ) {
+    return 'PATCH_VALIDATION_FAILED'
+  }
+  return 'TOOL_EXECUTION_FAILED'
+}
+
 function buildProposalAnswer(
   loopResult: LocalAgentToolLoopResult,
   proposalSummary: string
@@ -282,8 +392,36 @@ async function runProposalMode(params: {
   }
   const loopResult = await runLocalAgentToolLoop(proposalContext)
   const proposedPatchSummary = summarizeProposalPlan(loopResult.plan)
-  const requiresConfirmation =
-    hasProposedMutation(loopResult.plan) || Boolean(loopResult.plan.requiresUserConfirmation)
+  const proposalValidationError = getProposalValidationError(loopResult.observations)
+  if (proposalValidationError) {
+    const error = getObservationErrorSummary(proposalValidationError)
+    return {
+      success: false,
+      answer: `画布修改方案未通过校验：${error}`,
+      mode: params.input.mode,
+      intent: loopResult.plan.userIntent ?? 'propose_plan',
+      risk: loopResult.plan.risk,
+      requiresConfirmation: false,
+      proposedPatchSummary,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      verificationSummary: buildVerificationSummary(loopResult.observations),
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'PATCH_VALIDATION_FAILED',
+      error,
+    }
+  }
+
+  const hasMutation = hasProposedMutation(loopResult.plan)
+  const requiresConfirmation = hasMutation || Boolean(loopResult.plan.requiresUserConfirmation)
+  const pending = hasMutation
+    ? putLocalAgentPendingPlan({
+        context: proposalContext,
+        plan: loopResult.plan,
+        source: 'hermes',
+      })
+    : null
 
   logger.info('Hermes proposal canvas agent request completed', {
     auditId: params.auditId,
@@ -294,6 +432,7 @@ async function runProposalMode(params: {
     workflowId: params.input.workflowId,
     risk: loopResult.plan.risk,
     requiresConfirmation,
+    pendingActionId: pending?.id,
     observationCount: loopResult.observations.length,
   })
 
@@ -304,6 +443,7 @@ async function runProposalMode(params: {
     intent: loopResult.plan.userIntent ?? 'propose_plan',
     risk: loopResult.plan.risk,
     requiresConfirmation,
+    pendingActionId: pending?.id,
     proposedPatchSummary,
     changedNodeIds: [],
     generatedNodeIds: [],
@@ -313,14 +453,172 @@ async function runProposalMode(params: {
   }
 }
 
+function buildConfirmationExpiredResult(params: {
+  input: LocalCanvasAgentHeadlessInput
+  auditId: string
+}): LocalCanvasAgentHeadlessResult {
+  return {
+    success: false,
+    answer: '这个确认请求已经过期或不属于当前画布会话，请重新生成修改方案。',
+    mode: params.input.mode,
+    risk: 'medium',
+    requiresConfirmation: true,
+    changedNodeIds: [],
+    generatedNodeIds: [],
+    auditId: params.auditId,
+    traceId: params.input.traceId,
+    errorCode: 'CONFIRMATION_EXPIRED',
+    error: 'Pending canvas action was not found for the current user/workspace/workflow/chat',
+  }
+}
+
+async function buildApplySuccessAnswer(params: {
+  context: LocalAgentContext
+  plan: LocalAgentPlan
+  observations: LocalAgentObservation[]
+}): Promise<string> {
+  try {
+    const answer = await buildLocalAgentAnswer(params)
+    if (answer.trim()) return answer
+  } catch (error) {
+    logger.warn('Failed to build Hermes confirmed canvas apply answer', {
+      chatId: params.context.chatId,
+      workspaceId: params.context.workspaceId,
+      workflowId: params.context.workflowId,
+      error: toError(error).message,
+    })
+  }
+  return '已完成画布修改，并完成验证。'
+}
+
+async function runApplyAfterConfirmMode(params: {
+  input: LocalCanvasAgentHeadlessInput
+  auditId: string
+  localContext: LocalAgentContext
+}): Promise<LocalCanvasAgentHeadlessResult> {
+  if (!params.input.pendingActionId) {
+    return {
+      success: false,
+      answer: '执行画布写入前需要用户确认产生的 pendingActionId。',
+      mode: params.input.mode,
+      risk: 'medium',
+      requiresConfirmation: true,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'CONFIRMATION_REQUIRED',
+      error: 'pendingActionId is required for apply_after_confirm mode',
+    }
+  }
+
+  if (!params.localContext.permissions.canRead || !params.localContext.permissions.canWrite) {
+    return {
+      success: false,
+      answer: '',
+      mode: params.input.mode,
+      risk: 'medium',
+      requiresConfirmation: false,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'USER_PERMISSION_DENIED',
+      error: params.localContext.permissions.readonlyReason ?? 'Canvas write access denied',
+    }
+  }
+
+  const consumed = consumeLocalAgentPendingPlan({
+    context: params.localContext,
+    pendingActionId: params.input.pendingActionId,
+  })
+  if (consumed.status !== 'found') {
+    return buildConfirmationExpiredResult({ input: params.input, auditId: params.auditId })
+  }
+
+  const memory = await loadMemoryForHeadless(params.localContext)
+  const applyContext: LocalAgentContext = {
+    ...params.localContext,
+    memory,
+    confirmationMode: 'manual',
+    requestPayload: {
+      ...params.localContext.requestPayload,
+      localAgentMode: 'headless_apply_after_confirm',
+      hermesCanvasMode: 'apply_after_confirm',
+      pendingActionId: params.input.pendingActionId,
+    },
+  }
+  const observations = await executeConfirmedLocalAgentPlan(applyContext, consumed.pending.plan)
+  const changedNodeIds = collectChangedNodeIds(observations)
+  const generatedNodeIds = collectGeneratedNodeIds(observations)
+  const verificationSummary = buildVerificationSummary(observations)
+  const failedObservation = observations.find((observation) => !observation.success)
+
+  if (failedObservation) {
+    const error = getObservationErrorSummary(failedObservation)
+    const errorCode = errorCodeForFailedObservation(failedObservation)
+    return {
+      success: false,
+      answer:
+        errorCode === 'VERIFY_FAILED'
+          ? `画布写入后验证失败：${error}`
+          : `画布确认执行失败：${error}`,
+      mode: params.input.mode,
+      intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
+      risk: consumed.pending.plan.risk,
+      requiresConfirmation: false,
+      pendingActionId: params.input.pendingActionId,
+      proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
+      changedNodeIds,
+      generatedNodeIds,
+      verificationSummary,
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode,
+      error,
+    }
+  }
+
+  const answer = await buildApplySuccessAnswer({
+    context: applyContext,
+    plan: consumed.pending.plan,
+    observations,
+  })
+
+  logger.info('Hermes confirmed canvas agent apply completed', {
+    auditId: params.auditId,
+    traceId: params.input.traceId,
+    hermesRunId: params.input.hermesRunId,
+    userId: params.input.userId,
+    workspaceId: params.input.workspaceId,
+    workflowId: params.input.workflowId,
+    pendingActionId: params.input.pendingActionId,
+    risk: consumed.pending.plan.risk,
+    changedNodeCount: changedNodeIds.length,
+    generatedNodeCount: generatedNodeIds.length,
+  })
+
+  return {
+    success: true,
+    answer,
+    mode: params.input.mode,
+    intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
+    risk: consumed.pending.plan.risk,
+    requiresConfirmation: false,
+    pendingActionId: params.input.pendingActionId,
+    proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
+    changedNodeIds,
+    generatedNodeIds,
+    verificationSummary,
+    auditId: params.auditId,
+    traceId: params.input.traceId,
+  }
+}
+
 export async function runLocalCanvasAgentHeadless(
   input: LocalCanvasAgentHeadlessInput
 ): Promise<LocalCanvasAgentHeadlessResult> {
   const auditId = input.auditId ?? generateId()
-
-  if (input.mode === 'apply_after_confirm') {
-    return notImplementedResult(input, auditId)
-  }
 
   const streamContext = createHeadlessStreamContext({
     chatId: input.chatId,
@@ -349,7 +647,12 @@ export async function runLocalCanvasAgentHeadless(
         confirmationMode: input.confirmationMode ?? 'manual',
         hermesRunId: input.hermesRunId,
         hermesMetadata: input.metadata,
-        localAgentMode: 'headless_read_only',
+        localAgentMode:
+          input.mode === 'apply_after_confirm'
+            ? 'headless_apply_after_confirm'
+            : input.mode === 'propose'
+              ? 'headless_propose'
+              : 'headless_read_only',
       },
       execContext,
       streamContext,
@@ -360,6 +663,10 @@ export async function runLocalCanvasAgentHeadless(
 
     if (input.mode === 'propose') {
       return await runProposalMode({ input, auditId, localContext })
+    }
+
+    if (input.mode === 'apply_after_confirm') {
+      return await runApplyAfterConfirmMode({ input, auditId, localContext })
     }
 
     if (!localContext.permissions.canRead) {
