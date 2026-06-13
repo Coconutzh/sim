@@ -26,6 +26,7 @@ export const skillProposalListQuerySchema = z.object({
   status: hermesSkillProposalStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 })
+export type SkillProposalListQueryInput = z.input<typeof skillProposalListQuerySchema>
 export type SkillProposalListQuery = z.output<typeof skillProposalListQuerySchema>
 
 export const skillProposalReviewBodySchema = z.object({
@@ -59,6 +60,29 @@ export const skillRevisionSchema = z.object({
 })
 export type SkillRevision = z.output<typeof skillRevisionSchema>
 
+export const listSkillProposalsResponseSchema = z.object({
+  proposals: z.array(hermesSkillProposalSchema),
+})
+export type ListSkillProposalsResponse = z.output<typeof listSkillProposalsResponseSchema>
+
+export const reviewSkillProposalResponseSchema = z.object({
+  proposal: hermesSkillProposalSchema,
+})
+export type ReviewSkillProposalResponse = z.output<typeof reviewSkillProposalResponseSchema>
+
+export const publishSkillProposalResponseSchema = z.object({
+  proposal: hermesSkillProposalSchema,
+  skill: hermesPublishedSkillSchema,
+  revision: skillRevisionSchema,
+})
+export type PublishSkillProposalResponse = z.output<typeof publishSkillProposalResponseSchema>
+
+export const rollbackSkillRevisionResponseSchema = z.object({
+  skill: hermesPublishedSkillSchema,
+  revision: skillRevisionSchema,
+})
+export type RollbackSkillRevisionResponse = z.output<typeof rollbackSkillRevisionResponseSchema>
+
 export const listSkillProposalsContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/skill-proposals',
@@ -66,7 +90,7 @@ export const listSkillProposalsContract = defineRouteContract({
   query: skillProposalListQuerySchema,
   response: {
     mode: 'json',
-    schema: z.object({ proposals: z.array(hermesSkillProposalSchema) }),
+    schema: listSkillProposalsResponseSchema,
     status: [200, 401, 403, 500],
   },
 })
@@ -78,7 +102,7 @@ export const reviewSkillProposalContract = defineRouteContract({
   body: skillProposalReviewBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({ proposal: hermesSkillProposalSchema }),
+    schema: reviewSkillProposalResponseSchema,
     status: [200, 400, 401, 403, 404, 500],
   },
 })
@@ -90,11 +114,7 @@ export const publishSkillProposalContract = defineRouteContract({
   body: skillProposalPublishBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({
-      proposal: hermesSkillProposalSchema,
-      skill: hermesPublishedSkillSchema,
-      revision: skillRevisionSchema,
-    }),
+    schema: publishSkillProposalResponseSchema,
     status: [200, 400, 401, 403, 404, 409, 500],
   },
 })
@@ -106,10 +126,7 @@ export const rollbackSkillRevisionContract = defineRouteContract({
   body: skillRollbackBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({
-      skill: hermesPublishedSkillSchema,
-      revision: skillRevisionSchema,
-    }),
+    schema: rollbackSkillRevisionResponseSchema,
     status: [200, 400, 401, 403, 404, 500],
   },
 })
