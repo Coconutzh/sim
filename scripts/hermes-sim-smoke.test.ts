@@ -16,6 +16,8 @@ const ENV_KEYS = [
   'HERMES_SMOKE_WORKSPACE_ID',
   'HERMES_SMOKE_WORKFLOW_ID',
   'HERMES_SMOKE_CHAT_ID',
+  'HERMES_SMOKE_SESSION_ID',
+  'HERMES_SMOKE_CANVAS_TITLE',
   'HERMES_SMOKE_WRITE_CONFIRM',
   'HERMES_SMOKE_AGENT_CODE',
   'HERMES_SMOKE_SELECTED_NODE_IDS',
@@ -257,6 +259,9 @@ describe('hermes-sim-smoke', () => {
             workflowId: 'workflow-1',
           },
         })
+        expect(
+          (body.metadata as Record<string, Record<string, unknown>>).sim.chatId
+        ).toBeUndefined()
         return jsonResponse({
           output: [
             {
@@ -279,6 +284,127 @@ describe('hermes-sim-smoke', () => {
     const { results } = await runSmoke(['--skip-sim-health', '--canvas-read'])
 
     expect(results.find((result) => result.name === 'hermes.sim-canvas-read')?.status).toBe('pass')
+  })
+
+  it('verifies canvas propose and apply-after-confirm through Responses API tool calls', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_WORKSPACE_ID = 'workspace-1'
+    process.env.HERMES_SMOKE_WORKFLOW_ID = 'workflow-1'
+    process.env.HERMES_SMOKE_SESSION_ID = 'session-write-smoke'
+    process.env.HERMES_SMOKE_WRITE_CONFIRM = 'APPLY_CANVAS_PROPOSAL'
+    process.env.HERMES_SERVICE_TOKEN = 'service-token'
+    process.env.HERMES_SMOKE_CANVAS_TITLE = 'Hermes Smoke Test Node'
+    const responseBodies: Array<Record<string, unknown>> = []
+    let readCount = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/api/internal/hermes/canvas-agent/run')) {
+        expect((init?.headers as Record<string, string>)['x-sim-service-token']).toBe(
+          'service-token'
+        )
+        readCount += 1
+        return jsonResponse({
+          success: true,
+          canvas: {
+            nodeCount: readCount === 1 ? 2 : 3,
+            nodes:
+              readCount === 1
+                ? [{ name: 'Start' }, { name: 'Existing' }]
+                : [{ name: 'Start' }, { name: 'Existing' }, { name: 'Hermes Smoke Test Node' }],
+          },
+        })
+      }
+      if (url.endsWith('/v1/responses')) {
+        expect((init?.headers as Record<string, string>)['x-hermes-session-id']).toBe(
+          'session-write-smoke'
+        )
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        responseBodies.push(body)
+        if (responseBodies.length === 1) {
+          return jsonResponse({
+            output: [
+              {
+                type: 'function_call',
+                name: 'sim_canvas_agent_run',
+                arguments: '{"mode":"propose"}',
+                call_id: 'call-propose',
+              },
+              {
+                type: 'function_call_output',
+                call_id: 'call-propose',
+                output: JSON.stringify({
+                  success: true,
+                  mode: 'propose',
+                  requiresConfirmation: true,
+                  pendingActionId: 'pending-1',
+                }),
+              },
+            ],
+          })
+        }
+        return jsonResponse({
+          output: [
+            {
+              type: 'function_call',
+              name: 'sim_canvas_agent_run',
+              arguments: '{"mode":"apply_after_confirm","pendingActionId":"pending-1"}',
+              call_id: 'call-apply',
+            },
+            {
+              type: 'function_call_output',
+              call_id: 'call-apply',
+              output: JSON.stringify({
+                success: true,
+                mode: 'apply_after_confirm',
+                pendingActionId: 'pending-1',
+                changedNodeIds: ['node-created'],
+                verificationSummary: 'canvas.verify_patch: success',
+              }),
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--canvas-propose-apply'])
+
+    expect(results.find((result) => result.name === 'hermes.sim-canvas-propose')?.status).toBe(
+      'pass'
+    )
+    expect(
+      results.find((result) => result.name === 'hermes.sim-canvas-apply-after-confirm')?.status
+    ).toBe('pass')
+    expect(results.find((result) => result.name === 'sim.canvas-write-verify')?.status).toBe('pass')
+    expect(responseBodies).toHaveLength(2)
+    expect(String(responseBodies[0].input)).toContain('Propose creating one temporary text')
+    expect(String(responseBodies[1].input)).toContain('pending-1')
   })
 
   it('fails skill list smoke when Hermes does not emit the expected tool call', async () => {

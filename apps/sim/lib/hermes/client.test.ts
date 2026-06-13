@@ -20,7 +20,12 @@ vi.mock('@/lib/core/config/env', () => ({
   },
 }))
 
-import { callHermesChatCompletion, checkHermesHealth, HermesClientError } from '@/lib/hermes/client'
+import {
+  callHermesChatCompletion,
+  callHermesResponse,
+  checkHermesHealth,
+  HermesClientError,
+} from '@/lib/hermes/client'
 
 function resetEnv(values: Record<string, number | string | undefined> = {}) {
   for (const key of Object.keys(mockEnv)) delete mockEnv[key]
@@ -317,5 +322,80 @@ describe('callHermesChatCompletion', () => {
     await expect(
       callHermesChatCompletion({ messages: [{ role: 'user', content: 'hello' }] })
     ).rejects.toBeInstanceOf(HermesClientError)
+  })
+})
+
+describe('callHermesResponse', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn())
+    resetEnv({
+      HERMES_API_URL: 'http://127.0.0.1:8642/',
+      HERMES_API_KEY: 'test-key',
+    })
+  })
+
+  it('posts Responses API input with SIM metadata and extracts output text', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'resp-1',
+          output: [
+            {
+              type: 'function_call',
+              name: 'sim_canvas_agent_run',
+              call_id: 'call-1',
+            },
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'Canvas has three nodes.' }],
+            },
+          ],
+          usage: { input_tokens: 11, output_tokens: 5, total_tokens: 16 },
+        }),
+        {
+          status: 200,
+          headers: {
+            'x-hermes-session-id': 'session-1',
+            'x-hermes-session-key': 'key-1',
+          },
+        }
+      )
+    )
+
+    const result = await callHermesResponse({
+      instructions: 'Use SIM tools.',
+      input: 'read canvas',
+      sessionId: 'session-1',
+      sessionKey: 'key-1',
+      metadata: { sim: { userId: 'user-1' } },
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:8642/v1/responses',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          authorization: 'Bearer test-key',
+          'x-hermes-session-id': 'session-1',
+          'x-hermes-session-key': 'key-1',
+        }),
+      })
+    )
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+    expect(body).toMatchObject({
+      instructions: 'Use SIM tools.',
+      input: 'read canvas',
+      metadata: { sim: { userId: 'user-1' } },
+      store: false,
+    })
+    expect(result).toEqual({
+      id: 'resp-1',
+      content: 'Canvas has three nodes.',
+      sessionId: 'session-1',
+      sessionKey: 'key-1',
+      usage: { prompt: 11, completion: 5, total: 16 },
+      raw: expect.any(Object),
+    })
   })
 })

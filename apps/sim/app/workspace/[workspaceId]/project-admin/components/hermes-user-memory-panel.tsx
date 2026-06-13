@@ -1,14 +1,17 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Brain, Loader } from 'lucide-react'
+import { AlertTriangle, Brain, Download, Loader, Trash2 } from 'lucide-react'
 import { buttonVariants } from '@/components/emcn'
 import type {
   HermesUserMemoryAdminCategory,
   HermesUserMemoryAdminEntry,
 } from '@/lib/api/contracts/hermes-user-memories'
 import { cn } from '@/lib/core/utils/cn'
-import { useHermesUserMemories } from '@/hooks/queries/hermes-user-memories'
+import {
+  useDeleteHermesUserMemory,
+  useHermesUserMemories,
+} from '@/hooks/queries/hermes-user-memories'
 
 const CATEGORY_OPTIONS: { value: HermesUserMemoryAdminCategory | ''; label: string }[] = [
   { value: '', label: 'All categories' },
@@ -61,7 +64,31 @@ function evidenceLabel(refs: string[]): string {
   return refs.slice(0, 6).join(', ') + (refs.length > 6 ? ` +${refs.length - 6}` : '')
 }
 
-function HermesUserMemoryCard({ memory }: { memory: HermesUserMemoryAdminEntry }) {
+function exportMemories(memories: HermesUserMemoryAdminEntry[]): void {
+  if (typeof window === 'undefined') return
+  const blob = new Blob(
+    [JSON.stringify({ exportedAt: new Date().toISOString(), memories }, null, 2)],
+    {
+      type: 'application/json',
+    }
+  )
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `hermes-user-memories-${new Date().toISOString().slice(0, 10)}.json`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function HermesUserMemoryCard({
+  deleting,
+  memory,
+  onDelete,
+}: {
+  deleting: boolean
+  memory: HermesUserMemoryAdminEntry
+  onDelete: (memory: HermesUserMemoryAdminEntry) => void
+}) {
   return (
     <article className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-4'>
       <div className='flex flex-wrap items-start justify-between gap-3'>
@@ -88,9 +115,20 @@ function HermesUserMemoryCard({ memory }: { memory: HermesUserMemoryAdminEntry }
             <span>Last seen: {formatDate(memory.lastSeenAt)}</span>
           </div>
         </div>
-        <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
-          Memory {memory.id}
-        </span>
+        <div className='flex flex-wrap items-center gap-2'>
+          <span className='rounded-[8px] border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)]'>
+            Memory {memory.id}
+          </span>
+          <button
+            type='button'
+            className={buttonVariants({ size: 'sm', variant: 'ghost' })}
+            disabled={deleting}
+            onClick={() => onDelete(memory)}
+          >
+            <Trash2 className='mr-1 h-[13px] w-[13px]' />
+            Delete
+          </button>
+        </div>
       </div>
 
       <p className='mt-3 whitespace-pre-wrap break-words rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-3 text-[12px] text-[var(--text-primary)]'>
@@ -129,7 +167,34 @@ export function HermesUserMemoryPanel({ organizationId }: HermesUserMemoryPanelP
     organizationId,
     query
   )
+  const deleteMemory = useDeleteHermesUserMemory()
   const memories = data?.memories ?? []
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const handleDelete = (memory: HermesUserMemoryAdminEntry) => {
+    if (!organizationId) return
+    const confirmed = window.confirm(
+      `Delete Hermes user memory ${memory.id}? This removes it from future SIM-backed Hermes memory prefetches.`
+    )
+    if (!confirmed) return
+    setDeleteError(null)
+    deleteMemory.mutate(
+      {
+        memoryId: memory.id,
+        organizationId,
+        body: { reason: 'Deleted from SIM project admin Hermes user memory panel' },
+      },
+      {
+        onError: (mutationError) => {
+          setDeleteError(
+            mutationError instanceof Error
+              ? mutationError.message
+              : 'Unable to delete Hermes user memory.'
+          )
+        },
+      }
+    )
+  }
 
   return (
     <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
@@ -180,13 +245,23 @@ export function HermesUserMemoryPanel({ organizationId }: HermesUserMemoryPanelP
           >
             Refresh
           </button>
+          <button
+            type='button'
+            className={buttonVariants({ size: 'sm', variant: 'outline' })}
+            disabled={!memories.length}
+            onClick={() => exportMemories(memories)}
+          >
+            <Download className='mr-1 h-[13px] w-[13px]' />
+            Export JSON
+          </button>
         </div>
       </div>
 
-      {error && (
+      {(error || deleteError) && (
         <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3 text-[12px] text-red-500'>
           <AlertTriangle className='h-[14px] w-[14px]' />
-          {error instanceof Error ? error.message : 'Unable to load Hermes user memories.'}
+          {deleteError ??
+            (error instanceof Error ? error.message : 'Unable to load Hermes user memories.')}
         </div>
       )}
 
@@ -202,7 +277,14 @@ export function HermesUserMemoryPanel({ organizationId }: HermesUserMemoryPanelP
             appear here after the SIM-backed memory provider accepts them.
           </div>
         ) : (
-          memories.map((memory) => <HermesUserMemoryCard key={memory.id} memory={memory} />)
+          memories.map((memory) => (
+            <HermesUserMemoryCard
+              key={memory.id}
+              deleting={deleteMemory.isPending && deleteMemory.variables?.memoryId === memory.id}
+              memory={memory}
+              onDelete={handleDelete}
+            />
+          ))
         )}
 
         {isFetching && !isLoading && (

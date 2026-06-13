@@ -112,6 +112,7 @@ SIM-backed memory 的边界：
 - 不写入当前画布 task state、pendingActionId、tool result ref、画布/网页全文、密钥/token、团队未审核生产规范。
 - SIM 侧存储表为 `hermes_user_memory`，按 `userId + organizationId + optional workspaceId` 隔离。
 - Hermes 缺少 SIM session metadata 中的 `userId` 或 `organizationId` 时，SIM memory provider 必须空转，不得落到共享 profile。
+- Project Admin 的 Hermes user memory 面板用于只读排障、当前筛选结果 JSON 导出和单条 soft delete。删除后该 memory 不再进入后续 SIM-backed Hermes memory prefetch；删除操作会写入 organization audit log，不能由 Hermes 自动触发。
 
 ## 6. Hermes 工具 allowlist 建议
 
@@ -262,6 +263,20 @@ HERMES_SMOKE_WORKFLOW_ID=<workflow-id> \
 bun run hermes:smoke -- --canvas-read
 ```
 
+需要验证 Hermes LLM turn -> SIM canvas tool -> Local Canvas Agent 的写入闭环时，加 `--canvas-propose-apply`。该模式会先要求 Hermes 调用 `sim_canvas_agent_run(mode=propose)`，从 SIM 返回中取出真实 `pendingActionId`，再模拟用户确认并要求 Hermes 调用 `sim_canvas_agent_run(mode=apply_after_confirm, pendingActionId=...)`。它会实际修改目标 workflow，因此必须使用可丢弃或专用 smoke workflow，并显式设置 `HERMES_SMOKE_WRITE_CONFIRM=APPLY_CANVAS_PROPOSAL`：
+
+```bash
+HERMES_SMOKE_USER_ID=<user-id> \
+HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
+HERMES_SMOKE_WORKSPACE_ID=<workspace-id> \
+HERMES_SMOKE_WORKFLOW_ID=<disposable-workflow-id> \
+HERMES_SERVICE_TOKEN=<same-as-SIM_SERVICE_TOKEN> \
+HERMES_SMOKE_WRITE_CONFIRM=APPLY_CANVAS_PROPOSAL \
+bun run hermes:smoke -- --canvas-propose-apply
+```
+
+在 SIM Copilot 的 `hermes_agent_v1` 模式中，Hermes 如果返回 `mode=propose` 且包含 `pendingActionId`，前端消息会渲染“确认执行画布修改”选项。用户点击后会把 `__local_canvas_confirm__:<pendingActionId>` 送回同一 chat，SIM lifecycle 会转换成明确的 Hermes 指令，要求再次调用 `sim_canvas_agent_run(mode=apply_after_confirm, pendingActionId=...)`；不要让前端或 Hermes 直接构造底层 workflow patch。
+
 需要验证 Hermes -> SIM Skill 只读列表时，显式提供组织上下文后加 `--skill-list`。该模式同样要求 Hermes Responses API 输出中实际出现 `sim_skill_proposal_run` 的 `function_call`，且只允许读取 published skills，不创建 proposal：
 
 ```bash
@@ -294,7 +309,9 @@ bun run hermes:smoke -- --memory
 注意：
 
 - `HERMES_SMOKE_USER_ID` 和 `HERMES_SMOKE_OTHER_USER_ID` 都必须是该组织下的有效用户，否则 SIM 权限校验会返回 403。
-- `--canvas-read` / `--skill-list` 会验证 Hermes 是否真的调用了 SIM tool；如果只生成自然语言答复但未产生对应 `function_call`，smoke 必须失败。
+- `--canvas-read` / `--canvas-propose-apply` / `--skill-list` 会验证 Hermes 是否真的调用了 SIM tool；如果只生成自然语言答复但未产生对应 `function_call`，smoke 必须失败。
+- `HERMES_SMOKE_CHAT_ID` 只在你要绑定一个真实 SIM copilot chat 时设置；普通 headless smoke 不要设置它，否则 Local Canvas Agent 会尝试读取不存在的 `copilot_chats` 记录。需要固定 Hermes gateway session 时用 `HERMES_SMOKE_SESSION_ID`。
+- `--canvas-propose-apply` 是真实写入 smoke：会留下新增或修改后的画布节点。不要指向生产或人工正在编辑的 workflow；如需保留干净环境，应先克隆/新建 disposable workflow，再运行该 smoke。
 - `--skill-proposal-create` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 tool；Hermes fork 侧的 `plugins/sim` 测试仍需证明 `sim_skill_proposal_run` 会把 `propose_create` / `compare` 转发到同一个 SIM internal API。
 - `--memory` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 memory tool；Hermes fork 侧的 `plugins/memory/sim` provider 仍需通过 Python 测试证明它会把 `prefetch` / `sync_turn` / 显式记忆工具调用转发到同一个 SIM internal API。
 - 若要验证完整 Hermes API Server + LLM 自动记忆链路，应在 `--memory` 通过后，再用同一个 `X-Hermes-Session-Key` 和 SIM metadata 做两轮真实 chat：第一轮表达长期偏好，第二轮换 session 询问偏好是否可召回。
@@ -348,17 +365,50 @@ POST /api/organizations/[id]/hermes/tool-call-audits/cleanup
 
 ## 8. 本地启动顺序
 
-1. 启动 SIM 依赖：DB、Redis、Realtime、Next.js。
-2. 启动 Hermes API Server，确保 `API_SERVER_KEY`、`SIM_INTERNAL_API_URL`、`SIM_SERVICE_TOKEN` 已设置。
-3. 在 SIM 环境配置 `HERMES_API_URL`、`HERMES_API_KEY`、`HERMES_SERVICE_TOKEN`。
-4. 调用 `bun run check:hermes-health -- --base-url <SIM_URL>`，确认退出码为 0。
-5. 调用 `bun run hermes:smoke`，确认 Hermes capabilities、toolset policy 和 SIM 聚合 health 均通过。
-6. 使用 `bun run hermes:smoke -- --chat` 验证 OpenAI-compatible chat completion 可用。
-7. 使用 `bun run hermes:smoke -- --canvas-read` 或 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。
-8. 使用 `bun run hermes:smoke -- --skill-proposal-create` 验证 Hermes Skill Proposal 候选写入和 compare 读回链路。
-9. 使用 `bun run hermes:smoke -- --memory` 验证 SIM-backed Hermes user memory 的写入、召回、用户隔离和临时画布状态拒绝。
-10. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
-11. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
+0. 如本地尚未配置 SIM / Hermes 双向 token，可先生成缺失的本地 env：
+
+   ```bash
+   bun run hermes:setup-local-env
+   ```
+
+   该命令只补缺失项，不覆盖已有值；会在 SIM `apps/sim/.env` 和 Hermes `../hermes-agent-sim/.env` 写入互相匹配的 `HERMES_API_KEY` / `API_SERVER_KEY`、`HERMES_SERVICE_TOKEN` / `SIM_SERVICE_TOKEN`，并在默认 `../.hermes-sim-local/config.yaml` 创建安全的 SIM Hermes 配置。若 SIM env 已有可兼容 Hermes 的本地 LLM key（例如 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY`、`CONTENT_TEXT_GEMINI_API_KEY`、`ZHIPU_API_KEY`），且 Hermes env 尚未配置任何 LLM provider key，该命令会复制一份到 Hermes env 并补上 `model.provider` / `model.default`；不会打印密钥值。若两侧已有 token 但不一致，会直接失败，避免静默改坏环境。`hermes:smoke` 会默认读取上述两个 env 文件，`check:hermes-health` 会默认读取 SIM env 文件；如果 CI 已显式注入环境变量，显式环境变量优先。
+
+   如只想查看计划变更：
+
+   ```bash
+   bun run hermes:setup-local-env -- --dry-run
+   ```
+
+1. 再跑静态 preflight，确认两个仓库、env 映射、token 对齐和 Hermes SIM plugin 都就绪：
+
+   ```bash
+   bun run hermes:preflight
+   ```
+
+   如果希望同时要求本地 SIM / Hermes 端口已经启动，加：
+
+   ```bash
+   bun run hermes:preflight -- --require-services
+   ```
+
+   如果要在启动前就阻断“没有 LLM provider key，后续 `--chat` / tool-call E2E 必然失败”的情况，加 `--require-llm`。该检查会识别常见 Hermes provider key（如 `OPENROUTER_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY`、`GOOGLE_API_KEY` / `GEMINI_API_KEY`、`GLM_API_KEY` 等），但不会打印密钥值。
+
+   preflight 还会读取 Hermes `config.yaml`，检查 `plugins.enabled` 包含 `sim`、`memory.provider` 为 `sim`、`platform_toolsets.api_server` 包含 SIM 所需 toolset 且未暴露生产禁用 toolset。
+
+   默认路径约定：SIM env 读取 `apps/sim/.env`，Hermes fork 读取 `../hermes-agent-sim`，Hermes env 读取 `../hermes-agent-sim/.env`，Hermes config 读取 `HERMES_HOME/config.yaml`。本地路径不一致时用 `--sim-env`、`--hermes-repo`、`--hermes-env`、`--hermes-config` 覆盖，或配置 `SIM_ENV_FILE`、`HERMES_REPO_PATH`、`HERMES_ENV_FILE`、`HERMES_CONFIG_FILE`。
+
+2. 启动 SIM 依赖：DB、Redis、Realtime、Next.js。
+3. 启动 Hermes API Server，确保 `API_SERVER_KEY`、`SIM_INTERNAL_API_URL`、`SIM_SERVICE_TOKEN` 已设置。
+4. 在 SIM 环境配置 `HERMES_API_URL`、`HERMES_API_KEY`、`HERMES_SERVICE_TOKEN`。
+5. 服务启动后再跑 `bun run hermes:preflight -- --require-services`，确认 SIM 和 Hermes listener 都可达。
+6. 调用 `bun run check:hermes-health -- --base-url <SIM_URL>`，确认退出码为 0。
+7. 调用 `bun run hermes:smoke`，确认 Hermes capabilities、toolset policy 和 SIM 聚合 health 均通过。
+8. 使用 `bun run hermes:smoke -- --chat` 验证 OpenAI-compatible chat completion 可用。
+9. 使用 `bun run hermes:smoke -- --canvas-read` 或 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。`hermes_agent_v1` 走 Hermes Responses API，不走普通 no-tool chat completion；验收时要看到 Hermes `output` 中有 `sim_canvas_agent_run`，且 `hermes_tool_call_audit` 记录为 `success`。
+10. 使用 `bun run hermes:smoke -- --canvas-propose-apply` 在 disposable workflow 上验证 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
+11. 使用 `bun run hermes:smoke -- --skill-proposal-create` 验证 Hermes Skill Proposal 候选写入和 compare 读回链路。
+12. 使用 `bun run hermes:smoke -- --memory` 验证 SIM-backed Hermes user memory 的写入、召回、用户隔离和临时画布状态拒绝。
+13. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
 
 ## 9. 生产发布检查清单
 
@@ -370,7 +420,7 @@ POST /api/organizations/[id]/hermes/tool-call-audits/cleanup
 - [ ] `HERMES_HOME` 不与其他环境、其他租户混用。
 - [ ] Hermes health 返回的 commit 与部署清单一致。
 - [ ] SIM `/api/internal/hermes/health` 返回 200。
-- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list`、`--skill-proposal-create`、`--memory` 的对应 smoke 也通过。
+- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--canvas-propose-apply`、`--skill-list`、`--skill-proposal-create`、`--memory` 的对应 smoke 也通过。
 - [ ] Hermes tool allowlist 不包含 `browser`、`terminal`、`file`、`code_execution`、`computer_use`、`delegation`、`cronjob` 等生产禁用 toolset。
 - [ ] SIM internal route 鉴权在 body parse 之前执行。
 - [ ] 画布写入仍走 SIM patch validation、apply、verify。
@@ -455,7 +505,7 @@ Hermes 自动学习
 ## 13. 后续增强项
 
 - 对 SIM-backed memory 增加完整 Hermes API Server + LLM 两轮真实 chat A/B 隔离 E2E，并增强语义检索。
-- Hermes user memory 已在 project-admin 提供基础只读排障面板；后续可继续补导出、删除/归档审核流和异常告警。
+- Hermes user memory 已在 project-admin 提供基础管理面板；后续可继续补批量归档审核流和异常告警。
 - Hermes health 发布阻断脚本已支持 webhook 告警；后续可为 project-admin health 面板补充同等通知策略和历史告警视图。
 - 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
 - `sim_external_evidence_prepare` 已为网页 / 文件抓取结果提供基础摘要、引用和 prompt-injection 风险标记；后续可继续接入更强的网页结构化解析、来源可信度评分和引用覆盖率检查。

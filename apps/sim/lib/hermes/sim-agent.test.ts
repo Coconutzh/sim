@@ -3,8 +3,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCallHermesChatCompletion, mockLoggerWarn, mockSelect } = vi.hoisted(() => ({
-  mockCallHermesChatCompletion: vi.fn(),
+const { mockCallHermesResponse, mockLoggerWarn, mockSelect } = vi.hoisted(() => ({
+  mockCallHermesResponse: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockSelect: vi.fn(),
 }))
@@ -29,7 +29,7 @@ vi.mock('@sim/logger', () => ({
 }))
 
 vi.mock('@/lib/hermes/client', () => ({
-  callHermesChatCompletion: mockCallHermesChatCompletion,
+  callHermesResponse: mockCallHermesResponse,
 }))
 
 import { callHermesSimAgent } from '@/lib/hermes/sim-agent'
@@ -37,7 +37,7 @@ import { callHermesSimAgent } from '@/lib/hermes/sim-agent'
 describe('callHermesSimAgent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockCallHermesChatCompletion.mockResolvedValue({
+    mockCallHermesResponse.mockResolvedValue({
       content: 'ok',
       raw: {},
     })
@@ -56,8 +56,10 @@ describe('callHermesSimAgent', () => {
     })
 
     expect(mockSelect).not.toHaveBeenCalled()
-    expect(mockCallHermesChatCompletion).toHaveBeenCalledWith(
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
+        input: 'read canvas',
+        instructions: expect.stringContaining('must call sim_canvas_agent_run'),
         sessionId: 'sim:chat:chat-1',
         sessionKey: 'sim:org:org-1:user:user-1',
         metadata: {
@@ -88,7 +90,7 @@ describe('callHermesSimAgent', () => {
     expect(mockSelect).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: expect.anything() })
     )
-    expect(mockCallHermesChatCompletion).toHaveBeenCalledWith(
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionKey: 'sim:org:org-from-workspace:user:user-1',
         metadata: expect.objectContaining({
@@ -118,7 +120,7 @@ describe('callHermesSimAgent', () => {
       'Failed to resolve Hermes organization context',
       expect.objectContaining({ workspaceId: 'workspace-1', error: 'db unavailable' })
     )
-    expect(mockCallHermesChatCompletion).toHaveBeenCalledWith(
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionKey: 'sim:org:none:user:user-1',
         metadata: expect.objectContaining({

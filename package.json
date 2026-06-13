@@ -29,6 +29,8 @@
     "check:api-validation": "bun run scripts/check-api-validation-contracts.ts --check",
     "check:api-validation:strict": "bun run scripts/check-api-validation-contracts.ts --check --enforce-boundary-baseline",
     "check:hermes-health": "bun run scripts/check-hermes-health.ts",
+    "hermes:preflight": "bun run scripts/check-hermes-local-preflight.ts",
+    "hermes:setup-local-env": "bun run scripts/setup-hermes-local-env.ts",
     "hermes:smoke": "bun run scripts/hermes-sim-smoke.ts",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
     "check:tool-registry-boundary": "bun run scripts/check-tool-registry-boundary.ts",

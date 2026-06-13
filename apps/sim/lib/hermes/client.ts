@@ -28,6 +28,17 @@ export interface HermesChatCompletionParams {
   signal?: AbortSignal
 }
 
+export interface HermesResponseParams {
+  input: string
+  instructions: string
+  model?: string
+  sessionId?: string
+  sessionKey?: string
+  metadata?: Record<string, unknown>
+  signal?: AbortSignal
+  store?: boolean
+}
+
 export interface HermesChatCompletionResult {
   id?: string
   content: string
@@ -400,13 +411,32 @@ function extractContent(payload: unknown): string {
   return typeof content === 'string' ? content : ''
 }
 
+function extractResponsesContent(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return ''
+  const output = (payload as Record<string, unknown>).output
+  if (!Array.isArray(output)) return ''
+  const parts: string[] = []
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue
+    const content = (item as Record<string, unknown>).content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue
+      const record = block as Record<string, unknown>
+      const text = record.text
+      if (typeof text === 'string' && text.trim()) parts.push(text)
+    }
+  }
+  return parts.join('\n')
+}
+
 function extractUsage(payload: unknown): HermesChatCompletionResult['usage'] {
   if (!payload || typeof payload !== 'object') return undefined
   const usage = (payload as Record<string, unknown>).usage
   if (!usage || typeof usage !== 'object') return undefined
   const record = usage as Record<string, unknown>
-  const prompt = record.prompt_tokens
-  const completion = record.completion_tokens
+  const prompt = record.prompt_tokens ?? record.input_tokens
+  const completion = record.completion_tokens ?? record.output_tokens
   const total = record.total_tokens
   if (typeof prompt !== 'number' || typeof completion !== 'number' || typeof total !== 'number') {
     return undefined
@@ -464,6 +494,61 @@ export async function callHermesChatCompletion(
     if (error instanceof HermesClientError) throw error
     const err = toError(error)
     logger.error('Hermes API request failed', { error: err.message })
+    throw new HermesClientError(err.message)
+  }
+}
+
+export async function callHermesResponse(
+  params: HermesResponseParams
+): Promise<HermesChatCompletionResult> {
+  const config = getHermesClientConfig()
+  if (!config) {
+    throw new HermesClientError('Hermes API is not configured')
+  }
+
+  try {
+    const response = await fetch(`${config.baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        'content-type': 'application/json',
+        ...(params.sessionId ? { 'x-hermes-session-id': params.sessionId } : {}),
+        ...(params.sessionKey ? { 'x-hermes-session-key': params.sessionKey } : {}),
+      },
+      body: JSON.stringify({
+        model: params.model,
+        instructions: params.instructions,
+        input: params.input,
+        metadata: params.metadata,
+        store: params.store ?? false,
+      }),
+      signal: params.signal,
+    })
+
+    const raw = (await response.json().catch(() => ({}))) as unknown
+    if (!response.ok) {
+      const message =
+        raw && typeof raw === 'object' && typeof (raw as Record<string, unknown>).error === 'string'
+          ? ((raw as Record<string, unknown>).error as string)
+          : 'Hermes API request failed'
+      throw new HermesClientError(message, response.status)
+    }
+
+    return {
+      id:
+        raw && typeof raw === 'object' && typeof (raw as Record<string, unknown>).id === 'string'
+          ? ((raw as Record<string, unknown>).id as string)
+          : undefined,
+      content: extractResponsesContent(raw),
+      sessionId: response.headers.get('x-hermes-session-id') ?? undefined,
+      sessionKey: response.headers.get('x-hermes-session-key') ?? undefined,
+      usage: extractUsage(raw),
+      raw,
+    }
+  } catch (error) {
+    if (error instanceof HermesClientError) throw error
+    const err = toError(error)
+    logger.error('Hermes Responses API request failed', { error: err.message })
     throw new HermesClientError(err.message)
   }
 }

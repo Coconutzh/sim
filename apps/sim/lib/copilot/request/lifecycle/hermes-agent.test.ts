@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MothershipStreamV1EventType } from '@/lib/copilot/generated/mothership-stream-v1'
-import type { StreamingContext } from '@/lib/copilot/request/types'
+import { ContentBlockType, type StreamingContext } from '@/lib/copilot/request/types'
 
 const { mockCallHermesSimAgent } = vi.hoisted(() => ({
   mockCallHermesSimAgent: vi.fn(),
@@ -111,5 +111,82 @@ describe('runHermesAgent', () => {
     expect(context.errors).toEqual(['Hermes Agent is unavailable: connection refused'])
     expect(context.accumulatedContent).toBe('Hermes Agent is unavailable: connection refused')
     expect(context.streamComplete).toBe(true)
+  })
+
+  it('renders a confirmation option when Hermes returns a SIM canvas proposal', async () => {
+    mockCallHermesSimAgent.mockResolvedValue({
+      id: 'resp-1',
+      content: 'Hermes prepared a canvas proposal.',
+      sessionId: 'sim:chat:chat-1',
+      sessionKey: 'sim:org:none:user:user-1',
+      raw: {
+        output: [
+          {
+            type: 'function_call_output',
+            output: JSON.stringify({
+              success: true,
+              mode: 'propose',
+              requiresConfirmation: true,
+              pendingActionId: 'pending-1',
+            }),
+          },
+        ],
+      },
+    })
+    const context = createContext()
+    const onEvent = vi.fn()
+
+    await runHermesAgent({
+      requestPayload: { message: 'add a canvas node' },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+      },
+      options: { onEvent },
+    })
+
+    expect(context.accumulatedContent).toContain('Hermes prepared a canvas proposal.')
+    expect(context.accumulatedContent).toContain('__local_canvas_confirm__:pending-1')
+    expect(context.contentBlocks.some((block) => block.type === ContentBlockType.options)).toBe(
+      true
+    )
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: MothershipStreamV1EventType.text,
+        payload: expect.objectContaining({
+          text: expect.stringContaining('__local_canvas_confirm__:pending-1'),
+        }),
+      })
+    )
+  })
+
+  it('turns a Hermes canvas confirmation option into apply_after_confirm instructions', async () => {
+    const context = createContext()
+
+    await runHermesAgent({
+      requestPayload: { message: '__local_canvas_confirm__:pending-1' },
+      context,
+      execContext: {
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockCallHermesSimAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('mode=apply_after_confirm'),
+      })
+    )
+    expect(mockCallHermesSimAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('pending-1'),
+      })
+    )
   })
 })

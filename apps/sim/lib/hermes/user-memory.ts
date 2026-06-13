@@ -1,3 +1,4 @@
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import {
   hermesUserMemory,
@@ -521,4 +522,65 @@ export async function listHermesUserMemories(params: {
     .limit(params.query.limit)
 
   return rows.map(serializeAdminMemory)
+}
+
+export async function deleteHermesUserMemory(params: {
+  requesterUserId: string
+  organizationId: string
+  memoryId: string
+  reason?: string
+}): Promise<{ memory: HermesUserMemoryAdminEntry; deletedAt: string }> {
+  await assertOrganizationAdmin(params.requesterUserId, params.organizationId)
+
+  const [existing] = await db
+    .select()
+    .from(hermesUserMemory)
+    .where(
+      and(
+        eq(hermesUserMemory.id, params.memoryId),
+        eq(hermesUserMemory.organizationId, params.organizationId),
+        isNull(hermesUserMemory.deletedAt)
+      )
+    )
+    .limit(1)
+  if (!existing) throw new HermesUserMemoryScopeError('Hermes user memory not found')
+
+  const now = new Date()
+  const [deleted] = await db
+    .update(hermesUserMemory)
+    .set({
+      deletedAt: now,
+      updatedAt: now,
+      metadata: {
+        ...(existing.metadata ?? {}),
+        adminDeletedBy: params.requesterUserId,
+        adminDeletedAt: now.toISOString(),
+        adminDeleteReason: params.reason?.trim() || null,
+      },
+    })
+    .where(eq(hermesUserMemory.id, existing.id))
+    .returning()
+
+  recordAudit({
+    actorId: params.requesterUserId,
+    action: AuditAction.ORGANIZATION_UPDATED,
+    resourceType: AuditResourceType.ORGANIZATION,
+    resourceId: params.organizationId,
+    resourceName: 'Hermes user memory',
+    description: `Deleted Hermes user memory ${existing.id}`,
+    metadata: {
+      organizationId: params.organizationId,
+      memoryId: existing.id,
+      memoryUserId: existing.userId,
+      workspaceId: existing.workspaceId,
+      category: existing.category,
+      deletionEvent: 'hermes_user_memory.deleted',
+      reason: params.reason?.trim() || null,
+    },
+  })
+
+  return {
+    memory: serializeAdminMemory(deleted ?? existing),
+    deletedAt: now.toISOString(),
+  }
 }

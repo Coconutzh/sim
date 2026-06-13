@@ -12,6 +12,11 @@ export type HermesUserMemoryOrganizationParams = z.output<
   typeof hermesUserMemoryOrganizationParamsSchema
 >
 
+export const hermesUserMemoryDeleteParamsSchema = hermesUserMemoryOrganizationParamsSchema.extend({
+  memoryId: nonEmptyIdSchema,
+})
+export type HermesUserMemoryDeleteParams = z.output<typeof hermesUserMemoryDeleteParamsSchema>
+
 export const listHermesUserMemoriesQuerySchema = z.object({
   userId: nonEmptyIdSchema.optional(),
   workspaceId: workspaceIdSchema.optional(),
@@ -43,6 +48,17 @@ export const listHermesUserMemoriesResponseSchema = z.object({
 })
 export type ListHermesUserMemoriesResponse = z.output<typeof listHermesUserMemoriesResponseSchema>
 
+export const deleteHermesUserMemoryBodySchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+})
+export type DeleteHermesUserMemoryBody = z.input<typeof deleteHermesUserMemoryBodySchema>
+
+export const deleteHermesUserMemoryResponseSchema = z.object({
+  memory: hermesUserMemoryAdminEntrySchema,
+  deletedAt: z.string(),
+})
+export type DeleteHermesUserMemoryResponse = z.output<typeof deleteHermesUserMemoryResponseSchema>
+
 export const listHermesUserMemoriesContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/hermes/user-memories',
@@ -52,5 +68,17 @@ export const listHermesUserMemoriesContract = defineRouteContract({
     mode: 'json',
     schema: listHermesUserMemoriesResponseSchema,
     status: [200, 401, 403, 500],
+  },
+})
+
+export const deleteHermesUserMemoryContract = defineRouteContract({
+  method: 'DELETE',
+  path: '/api/organizations/[id]/hermes/user-memories/[memoryId]',
+  params: hermesUserMemoryDeleteParamsSchema,
+  body: deleteHermesUserMemoryBodySchema,
+  response: {
+    mode: 'json',
+    schema: deleteHermesUserMemoryResponseSchema,
+    status: [200, 401, 403, 404, 500],
   },
 })

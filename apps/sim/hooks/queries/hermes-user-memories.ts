@@ -1,6 +1,8 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
+  type DeleteHermesUserMemoryBody,
+  deleteHermesUserMemoryContract,
   type ListHermesUserMemoriesQueryInput,
   listHermesUserMemoriesContract,
 } from '@/lib/api/contracts/hermes-user-memories'
@@ -31,5 +33,25 @@ export function useHermesUserMemories(
     enabled: Boolean(organizationId),
     staleTime: 20 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useDeleteHermesUserMemory() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (variables: {
+      memoryId: string
+      organizationId: string
+      body?: DeleteHermesUserMemoryBody
+    }) =>
+      requestJson(deleteHermesUserMemoryContract, {
+        params: { id: variables.organizationId, memoryId: variables.memoryId },
+        body: variables.body ?? {},
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: hermesUserMemoryKeys.lists(variables.organizationId),
+      })
+    },
   })
 }

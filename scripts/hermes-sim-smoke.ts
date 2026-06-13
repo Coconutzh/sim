@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { parseDotEnv } from './check-hermes-local-preflight'
+
 type CheckStatus = 'pass' | 'fail' | 'skip'
 
 export interface CheckResult {
@@ -18,6 +22,7 @@ interface JsonResponse {
 interface Options {
   json: boolean
   chat: boolean
+  canvasProposeApply: boolean
   canvasRead: boolean
   skillList: boolean
   skillProposalCreate: boolean
@@ -26,6 +31,8 @@ interface Options {
 }
 
 const DEFAULT_REQUIRED_TOOLSETS = ['sim']
+const DEFAULT_SIM_ENV_FILE = path.join('apps', 'sim', '.env')
+let cachedSmokeSessionId: string | undefined
 const DEFAULT_FORBIDDEN_TOOLSETS = [
   'browser',
   'code_execution',
@@ -43,7 +50,7 @@ function printUsage(): void {
   process.stdout.write(`SIM Hermes smoke test
 
 Usage:
-  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--skill-list] [--skill-proposal-create] [--memory] [--json]
+  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--canvas-propose-apply] [--skill-list] [--skill-proposal-create] [--memory] [--json]
 
 Required env:
   HERMES_API_URL              Hermes API Server base URL, e.g. http://127.0.0.1:8642
@@ -52,30 +59,55 @@ Required env:
 Optional env:
   SIM_BASE_URL                SIM base URL, default http://127.0.0.1:3000
   INTERNAL_API_SECRET         Enables SIM /api/internal/hermes/health check
+  HERMES_SERVICE_TOKEN        Required for --canvas-propose-apply / --skill-proposal-create / --memory service checks
   HERMES_REQUIRED_TOOLSETS    Default sim
   HERMES_FORBIDDEN_TOOLSETS   Default browser,code_execution,computer_use,cronjob,delegation,file,terminal
   HERMES_SMOKE_MODEL          Optional Hermes model override
-  HERMES_SMOKE_USER_ID        Required for --canvas-read / --skill-list / --skill-proposal-create
+  HERMES_SMOKE_USER_ID        Required for --canvas-read / --canvas-propose-apply / --skill-list / --skill-proposal-create
   HERMES_SMOKE_ORGANIZATION_ID Required for --skill-list / --skill-proposal-create, recommended for all SIM metadata
   HERMES_SMOKE_WORKGROUP_ID   Required for --skill-proposal-create
-  HERMES_SMOKE_WORKSPACE_ID   Required for --canvas-read
-  HERMES_SMOKE_WORKFLOW_ID    Required for --canvas-read
+  HERMES_SMOKE_WORKSPACE_ID   Required for --canvas-read / --canvas-propose-apply
+  HERMES_SMOKE_WORKFLOW_ID    Required for --canvas-read / --canvas-propose-apply
   HERMES_SMOKE_OTHER_USER_ID  Required for --memory isolation check
-  HERMES_SMOKE_WRITE_CONFIRM  Must be CREATE_SKILL_PROPOSAL for --skill-proposal-create
-  HERMES_SMOKE_CHAT_ID        Optional stable chat id, default hermes-smoke
+  HERMES_SMOKE_WRITE_CONFIRM  Must be CREATE_SKILL_PROPOSAL for --skill-proposal-create, APPLY_CANVAS_PROPOSAL for --canvas-propose-apply
+  HERMES_SMOKE_CHAT_ID        Optional real SIM copilot chat id; omit for headless canvas smoke
+  HERMES_SMOKE_SESSION_ID     Optional Hermes gateway session id; defaults to an ephemeral smoke id
+  HERMES_SMOKE_CANVAS_TITLE   Optional title for the temporary node created by --canvas-propose-apply
   HERMES_SMOKE_AGENT_CODE     Optional SIM agent code for skill proposal smoke
   HERMES_SMOKE_SELECTED_NODE_IDS Comma-separated selected node ids
-  HERMES_SMOKE_TIMEOUT_MS     Default 20000
+  HERMES_SMOKE_TIMEOUT_MS     Default 120000
+  HERMES_SMOKE_LOAD_ENV_FILES Set to false to disable auto-loading apps/sim/.env and ../hermes-agent-sim/.env
 
 Notes:
   Default checks are read-only: Hermes health, capabilities, toolset policy,
   and SIM aggregated health when INTERNAL_API_SECRET is present.
   --chat sends a no-tool OpenAI-compatible chat completion.
   --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode and verifies the tool call.
+  --canvas-propose-apply asks Hermes to propose a canvas mutation, then confirms the exact pendingActionId.
   --skill-list asks Hermes to list published SIM skills only and verifies the tool call.
   --skill-proposal-create creates a pending-review SIM skill proposal and compares it.
   --memory exercises SIM-backed Hermes user memory write/prefetch/isolation through SIM internal APIs.
 `)
+}
+
+async function readEnvFile(filePath: string): Promise<Record<string, string>> {
+  try {
+    return parseDotEnv(await readFile(filePath, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function applyMissingEnv(values: Record<string, string>): void {
+  for (const [key, value] of Object.entries(values)) {
+    if (process.env[key] === undefined) process.env[key] = value
+  }
+}
+
+async function loadDefaultLocalEnvFiles(cwd = process.cwd()): Promise<void> {
+  if (process.env.HERMES_SMOKE_LOAD_ENV_FILES?.trim().toLowerCase() === 'false') return
+  applyMissingEnv(await readEnvFile(path.resolve(cwd, DEFAULT_SIM_ENV_FILE)))
+  applyMissingEnv(await readEnvFile(path.resolve(path.dirname(cwd), 'hermes-agent-sim', '.env')))
 }
 
 function parseOptions(argv: string[]): Options {
@@ -87,6 +119,7 @@ function parseOptions(argv: string[]): Options {
   return {
     json: flags.has('--json'),
     chat: flags.has('--chat'),
+    canvasProposeApply: flags.has('--canvas-propose-apply'),
     canvasRead: flags.has('--canvas-read'),
     skillList: flags.has('--skill-list'),
     skillProposalCreate: flags.has('--skill-proposal-create'),
@@ -107,6 +140,13 @@ function envList(name: string, fallback: string[]): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function smokeSessionId(): string {
+  const configured = envString('HERMES_SMOKE_SESSION_ID') ?? envString('HERMES_SMOKE_CHAT_ID')
+  if (configured) return configured
+  cachedSmokeSessionId ??= `hermes-smoke-${Date.now()}`
+  return cachedSmokeSessionId
 }
 
 function trimTrailingSlash(value: string): string {
@@ -140,6 +180,29 @@ function responseHasFunctionCall(payload: unknown, toolName: string): boolean {
   )
 }
 
+function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  if (typeof value !== 'string') return undefined
+  try {
+    return asRecord(JSON.parse(value))
+  } catch {
+    return undefined
+  }
+}
+
+function responseFunctionCallOutputs(payload: unknown): Record<string, unknown>[] {
+  return responseOutputItems(payload)
+    .filter((item) => item.type === 'function_call_output')
+    .map((item) => parseJsonObject(item.output))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+}
+
+function firstToolOutput(payload: unknown): Record<string, unknown> | undefined {
+  return responseFunctionCallOutputs(payload)[0]
+}
+
 function responseOutputText(payload: unknown): string {
   return responseOutputItems(payload)
     .flatMap((item) => readArray(item, 'content'))
@@ -152,7 +215,7 @@ function responseOutputText(payload: unknown): string {
 
 function getTimeoutMs(): number {
   const raw = Number(envString('HERMES_SMOKE_TIMEOUT_MS'))
-  return Number.isFinite(raw) && raw >= 1000 ? raw : 20000
+  return Number.isFinite(raw) && raw >= 1000 ? raw : 120000
 }
 
 async function fetchJson(
@@ -166,6 +229,12 @@ async function fetchJson(
     const response = await fetch(url, { ...init, signal: controller.signal })
     const payload = (await response.json().catch(() => ({}))) as unknown
     return { ok: response.ok, status: response.status, payload }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      payload: { error: error instanceof Error ? error.message : String(error) },
+    }
   } finally {
     clearTimeout(timeout)
   }
@@ -201,6 +270,19 @@ function summarizePayload(payload: unknown): unknown {
   }
 }
 
+function payloadError(payload: unknown): string | undefined {
+  const record = asRecord(payload)
+  const direct = readString(record, 'error') ?? readString(record, 'message')
+  if (direct) return direct
+  const nestedError = asRecord(record?.error)
+  return readString(nestedError, 'message') ?? readString(nestedError, 'detail')
+}
+
+function httpFailureDetail(response: JsonResponse): string {
+  const error = payloadError(response.payload)
+  return error ? `HTTP ${response.status}: ${error}` : `HTTP ${response.status}`
+}
+
 async function checkHermesHealth(
   baseUrl: string,
   apiKey: string,
@@ -214,7 +296,7 @@ async function checkHermesHealth(
   results.push({
     name: 'hermes.health',
     status: response.ok && status === 'ok' ? 'pass' : 'fail',
-    detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}`,
+    detail: response.status === 0 ? payloadError(response.payload) : `HTTP ${response.status}`,
     data: summarizePayload(response.payload),
   })
 }
@@ -229,6 +311,15 @@ async function checkCapabilities(
     headers: buildAuthHeaders(apiKey),
   })
   const features = asRecord(asRecord(response.payload)?.features)
+  if (response.status === 0) {
+    results.push({
+      name: 'hermes.capabilities',
+      status: 'fail',
+      detail: payloadError(response.payload) ?? 'request failed',
+      data: response.payload,
+    })
+    return
+  }
   const issues: string[] = []
   if (features?.chat_completions !== true) issues.push('missing chat_completions')
   if (features?.session_key_header !== 'X-Hermes-Session-Key') {
@@ -253,6 +344,15 @@ async function checkToolsets(
     method: 'GET',
     headers: buildAuthHeaders(apiKey),
   })
+  if (response.status === 0) {
+    results.push({
+      name: 'hermes.toolsets',
+      status: 'fail',
+      detail: payloadError(response.payload) ?? 'request failed',
+      data: response.payload,
+    })
+    return
+  }
   const data = readArray(asRecord(response.payload), 'data')
   const entries = data.map((item) => asRecord(item)).filter(Boolean) as Record<string, unknown>[]
   const enabled = entries
@@ -319,7 +419,7 @@ async function checkSimHealth(simBaseUrl: string, results: CheckResult[]): Promi
   results.push({
     name: 'sim.hermes-health',
     status: response.ok && payload?.ok === true ? 'pass' : 'fail',
-    detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}`,
+    detail: response.status === 0 ? payloadError(response.payload) : `HTTP ${response.status}`,
     data: summarizePayload(response.payload),
   })
 }
@@ -380,13 +480,14 @@ async function postSimSkillProposal(
 
 function buildSimMetadata(): Record<string, unknown> {
   const selectedNodeIds = envList('HERMES_SMOKE_SELECTED_NODE_IDS', [])
+  const chatId = envString('HERMES_SMOKE_CHAT_ID')
   return {
     sim: {
       userId: envString('HERMES_SMOKE_USER_ID'),
       organizationId: envString('HERMES_SMOKE_ORGANIZATION_ID'),
       workspaceId: envString('HERMES_SMOKE_WORKSPACE_ID'),
       workflowId: envString('HERMES_SMOKE_WORKFLOW_ID'),
-      chatId: envString('HERMES_SMOKE_CHAT_ID') ?? 'hermes-smoke',
+      ...(chatId ? { chatId } : {}),
       ...(selectedNodeIds.length > 0 ? { selectedNodeIds } : {}),
       traceId: `hermes-smoke-${Date.now()}`,
     },
@@ -404,7 +505,7 @@ async function runChatSmoke(
       ...buildAuthHeaders(apiKey),
       'content-type': 'application/json',
       'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID') ?? 'anonymous'}`,
-      'x-hermes-session-id': envString('HERMES_SMOKE_CHAT_ID') ?? 'hermes-smoke',
+      'x-hermes-session-id': smokeSessionId(),
     },
     body: JSON.stringify({
       model: envString('HERMES_SMOKE_MODEL'),
@@ -427,7 +528,7 @@ async function runChatSmoke(
   results.push({
     name: 'hermes.chat',
     status: response.ok && content.includes('SIM_HERMES_SMOKE_OK') ? 'pass' : 'fail',
-    detail: response.ok ? content.slice(0, 160) : `HTTP ${response.status}`,
+    detail: response.ok ? content.slice(0, 160) : httpFailureDetail(response),
   })
 }
 
@@ -477,7 +578,7 @@ async function runCanvasReadSmoke(
       ...buildAuthHeaders(apiKey),
       'content-type': 'application/json',
       'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID')}`,
-      'x-hermes-session-id': envString('HERMES_SMOKE_CHAT_ID') ?? 'hermes-smoke',
+      'x-hermes-session-id': smokeSessionId(),
     },
     body: JSON.stringify({
       model: envString('HERMES_SMOKE_MODEL'),
@@ -498,7 +599,161 @@ async function runCanvasReadSmoke(
         : 'fail',
     detail: response.ok
       ? `${responseHasFunctionCall(response.payload, 'sim_canvas_agent_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
-      : `HTTP ${response.status}`,
+      : httpFailureDetail(response),
+  })
+}
+
+async function runCanvasProposeApplySmoke(
+  baseUrl: string,
+  apiKey: string,
+  simBaseUrl: string,
+  results: CheckResult[]
+): Promise<void> {
+  if (
+    !requireSimContext(results, [
+      'HERMES_SMOKE_USER_ID',
+      'HERMES_SMOKE_WORKSPACE_ID',
+      'HERMES_SMOKE_WORKFLOW_ID',
+    ])
+  ) {
+    return
+  }
+  if (!requireWriteConfirm(results, 'APPLY_CANVAS_PROPOSAL')) return
+  const serviceToken = requiredEnv('HERMES_SERVICE_TOKEN', results)
+  if (!serviceToken) return
+
+  const sessionId = smokeSessionId()
+  const nodeTitle =
+    envString('HERMES_SMOKE_CANVAS_TITLE') ?? `Hermes Smoke Node ${new Date().toISOString()}`
+  const baseHeaders = {
+    ...buildAuthHeaders(apiKey),
+    'content-type': 'application/json',
+    'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID')}`,
+    'x-hermes-session-id': sessionId,
+  }
+  const readCanvas = (label: string) =>
+    fetchJson(`${simBaseUrl}/api/internal/hermes/canvas-agent/run`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'x-sim-service-token': serviceToken,
+      },
+      body: JSON.stringify({
+        userId: envString('HERMES_SMOKE_USER_ID'),
+        organizationId: envString('HERMES_SMOKE_ORGANIZATION_ID'),
+        workspaceId: envString('HERMES_SMOKE_WORKSPACE_ID'),
+        workflowId: envString('HERMES_SMOKE_WORKFLOW_ID'),
+        mode: 'read_only',
+        message: `Read canvas state before/after ${label} smoke.`,
+        traceId: `hermes-smoke-canvas-${label}-${Date.now()}`,
+      }),
+    })
+
+  const beforeRead = await readCanvas('before')
+  const beforeCanvas = asRecord(asRecord(beforeRead.payload)?.canvas)
+  const beforeNodeCount = beforeCanvas?.nodeCount
+  if (!beforeRead.ok || typeof beforeNodeCount !== 'number') {
+    results.push({
+      name: 'sim.canvas-write-before-read',
+      status: 'fail',
+      detail: beforeRead.ok ? 'missing canvas node count' : httpFailureDetail(beforeRead),
+    })
+    return
+  }
+
+  const proposalResponse = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are a SIM smoke-test agent. You must use sim_canvas_agent_run exactly once with mode=propose. Do not apply changes in this step.',
+      input: `Propose creating one temporary text content node titled "${nodeTitle}" on the SIM canvas. The node should contain a short smoke-test note. Return the pendingActionId from SIM.`,
+      metadata: buildSimMetadata(),
+      store: false,
+    }),
+  })
+  const proposalOutput = firstToolOutput(proposalResponse.payload)
+  const pendingActionId = readString(proposalOutput, 'pendingActionId')
+  const proposalOk =
+    proposalResponse.ok &&
+    responseHasFunctionCall(proposalResponse.payload, 'sim_canvas_agent_run') &&
+    proposalOutput?.success === true &&
+    proposalOutput.mode === 'propose' &&
+    proposalOutput.requiresConfirmation === true &&
+    Boolean(pendingActionId)
+  results.push({
+    name: 'hermes.sim-canvas-propose',
+    status: proposalOk ? 'pass' : 'fail',
+    detail: proposalResponse.ok
+      ? proposalOk
+        ? `pendingActionId ${pendingActionId}`
+        : `proposal missing expected pending action${responseOutputText(proposalResponse.payload) ? ` - ${responseOutputText(proposalResponse.payload).slice(0, 200)}` : ''}`
+      : httpFailureDetail(proposalResponse),
+  })
+  if (!proposalOk || !pendingActionId) return
+
+  const applyResponse = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are a SIM smoke-test agent. The user has explicitly confirmed the pending SIM canvas proposal. You must use sim_canvas_agent_run exactly once with mode=apply_after_confirm and the provided pendingActionId.',
+      input: `User confirmation: apply the SIM canvas proposal now. Use pendingActionId "${pendingActionId}" and do not invent a different id.`,
+      metadata: buildSimMetadata(),
+      store: false,
+    }),
+  })
+  const applyOutput = firstToolOutput(applyResponse.payload)
+  const changedNodeIds = readArray(applyOutput, 'changedNodeIds').filter(
+    (item): item is string => typeof item === 'string' && item.length > 0
+  )
+  const applyOk =
+    applyResponse.ok &&
+    responseHasFunctionCall(applyResponse.payload, 'sim_canvas_agent_run') &&
+    applyOutput?.success === true &&
+    applyOutput.mode === 'apply_after_confirm' &&
+    applyOutput.pendingActionId === pendingActionId &&
+    changedNodeIds.length > 0
+  results.push({
+    name: 'hermes.sim-canvas-apply-after-confirm',
+    status: applyOk ? 'pass' : 'fail',
+    detail: applyResponse.ok
+      ? applyOk
+        ? `changed ${changedNodeIds.join(', ')}`
+        : `apply missing expected write confirmation${responseOutputText(applyResponse.payload) ? ` - ${responseOutputText(applyResponse.payload).slice(0, 200)}` : ''}`
+      : httpFailureDetail(applyResponse),
+    data: applyOk
+      ? {
+          pendingActionId,
+          changedNodeIds,
+          verificationSummary: readString(applyOutput, 'verificationSummary'),
+        }
+      : undefined,
+  })
+
+  if (!applyOk) return
+
+  const afterRead = await readCanvas('after')
+  const afterCanvas = asRecord(asRecord(afterRead.payload)?.canvas)
+  const afterNodeCount = afterCanvas?.nodeCount
+  const afterNodes = readArray(afterCanvas, 'nodes').map((node) => asRecord(node))
+  const hasExpectedNode = afterNodes.some((node) => readString(node, 'name') === nodeTitle)
+  const writeVerified =
+    afterRead.ok &&
+    typeof afterNodeCount === 'number' &&
+    afterNodeCount >= beforeNodeCount + 1 &&
+    hasExpectedNode
+  results.push({
+    name: 'sim.canvas-write-verify',
+    status: writeVerified ? 'pass' : 'fail',
+    detail: afterRead.ok
+      ? writeVerified
+        ? `node count ${beforeNodeCount} -> ${afterNodeCount}; found "${nodeTitle}"`
+        : `expected node count >= ${beforeNodeCount + 1} and title "${nodeTitle}", got ${afterNodeCount ?? 'unknown'}`
+      : httpFailureDetail(afterRead),
   })
 }
 
@@ -517,7 +772,7 @@ async function runSkillListSmoke(
       ...buildAuthHeaders(apiKey),
       'content-type': 'application/json',
       'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID')}`,
-      'x-hermes-session-id': envString('HERMES_SMOKE_CHAT_ID') ?? 'hermes-smoke',
+      'x-hermes-session-id': smokeSessionId(),
     },
     body: JSON.stringify({
       model: envString('HERMES_SMOKE_MODEL'),
@@ -538,7 +793,7 @@ async function runSkillListSmoke(
         : 'fail',
     detail: response.ok
       ? `${responseHasFunctionCall(response.payload, 'sim_skill_proposal_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
-      : `HTTP ${response.status}`,
+      : httpFailureDetail(response),
   })
 }
 
@@ -780,6 +1035,9 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     if (!options.skipSimHealth) await checkSimHealth(simBaseUrl, results)
     if (options.chat) await runChatSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.canvasRead) await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.canvasProposeApply) {
+      await runCanvasProposeApplySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
+    }
     if (options.skillList) await runSkillListSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.skillProposalCreate) await runSkillProposalCreateSmoke(simBaseUrl, results)
     if (options.memory) await runMemorySmoke(simBaseUrl, results)
@@ -795,6 +1053,7 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
 }
 
 async function main(): Promise<void> {
+  await loadDefaultLocalEnvFiles()
   const { options, results } = await runSmoke()
   printResults(results, options.json)
   process.exit(results.some((result) => result.status === 'fail') ? 1 : 0)

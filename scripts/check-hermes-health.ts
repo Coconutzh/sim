@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { parseDotEnv } from './check-hermes-local-preflight'
+
 type NotifyOn = 'failure' | 'always' | 'never'
 
 interface CheckOptions {
@@ -39,6 +43,7 @@ interface CheckIo {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
+const DEFAULT_SIM_ENV_FILE = path.join('apps', 'sim', '.env')
 const HEALTH_PATH = '/api/internal/hermes/health'
 
 function usage(): string {
@@ -59,7 +64,20 @@ function usage(): string {
     '  SIM_HERMES_HEALTH_URL, SIM_APP_URL, NEXT_PUBLIC_APP_URL, BETTER_AUTH_URL, VERCEL_URL',
     '  INTERNAL_API_SECRET, HERMES_HEALTH_TIMEOUT_MS',
     '  HERMES_HEALTH_NOTIFY_URL, HERMES_HEALTH_NOTIFY_ON',
+    '  HERMES_HEALTH_LOAD_ENV_FILE=false disables auto-loading apps/sim/.env',
   ].join('\n')
+}
+
+async function loadDefaultSimEnvFile(cwd = process.cwd()): Promise<void> {
+  if (process.env.HERMES_HEALTH_LOAD_ENV_FILE?.trim().toLowerCase() === 'false') return
+  try {
+    const values = parseDotEnv(await readFile(path.resolve(cwd, DEFAULT_SIM_ENV_FILE), 'utf8'))
+    for (const [key, value] of Object.entries(values)) {
+      if (process.env[key] === undefined) process.env[key] = value
+    }
+  } catch {
+    return
+  }
 }
 
 function readNext(argv: string[], index: number, flag: string): string {
@@ -305,6 +323,7 @@ export async function runHermesHealthCheck(
 }
 
 async function main(): Promise<void> {
+  await loadDefaultSimEnvFile()
   const exitCode = await runHermesHealthCheck(process.argv.slice(2))
   if (exitCode !== 0) process.exit(exitCode)
 }

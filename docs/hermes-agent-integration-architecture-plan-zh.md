@@ -285,7 +285,7 @@ SIM 后端通过 Hermes API Server 调用 Hermes，不直接 import Hermes Pytho
 
 推荐：
 
-- 短期使用 `/v1/chat/completions` 或 `/v1/responses`。
+- 短期保留 `/v1/chat/completions` 做 no-tool 连通性验证；SIM 业务态 `hermes_agent_v1` 必须优先走 `/v1/responses`，这样才能在返回的 `output` 中审计到 `sim_canvas_agent_run` / `sim_skill_proposal_run` 的真实 `function_call`，避免模型绕过工具只输出自然语言。
 - 需要长期任务、SSE 事件、审批流时使用 `/v1/runs` 和 `/v1/runs/{run_id}/events`。
 - 传入稳定 session key，用于用户级 memory/skill 隔离。
 
@@ -449,7 +449,7 @@ Hermes 原生 memory/skill 更偏单用户 CLI profile。SIM 生产是多用户�
 - Hermes provider 只做 HTTP adapter；用户/组织/画布归属校验、内容过滤、长期 memory 存储都由 SIM 执行。
 - MVP 仅做保守抽取：只有出现明确“记住/以后/偏好/习惯”等稳定偏好信号时才写入；密钥、token、当前画布任务状态、pendingActionId、tool result ref、网页/画布全文会被拒绝。
 - SIM smoke 已提供 `--memory` 模式，确定性验证 service token、用户 A 写入、用户 A 召回、用户 B 隔离、临时画布状态拒绝；完整 Hermes API Server + LLM 自动记忆链路仍需在联调环境补两轮真实 chat 回归。
-- SIM project-admin 已提供 Hermes user memory 只读排障面板，组织管理员可按 user、workspace、category 查询已接受的长期用户偏好；该面板不暴露内部 metadata。
+- SIM project-admin 已提供 Hermes user memory 管理面板，组织管理员可按 user、workspace、category 查询已接受的长期用户偏好、导出当前筛选 JSON，并对单条 memory 执行 soft delete；该面板不暴露内部 metadata，删除后不会再进入 SIM-backed Hermes prefetch。
 - 后续仍需补语义检索增强和更完整的运行态诊断。
 
 ## 7. Skill 分工与权限治理
@@ -858,6 +858,8 @@ rollback target
 - 创建、更新、连接、布局等基本 patch 成功。
 - verify 失败时 Hermes 不得宣称成功。
 - 审计日志完整。
+- `bun run hermes:smoke -- --canvas-propose-apply` 在 disposable workflow 上通过，证明 Hermes LLM turn 会先调用 `sim_canvas_agent_run(mode=propose)`，再携带真实 `pendingActionId` 调用 `mode=apply_after_confirm`。
+- SIM Copilot `hermes_agent_v1` UI 必须把 proposal 返回的 `pendingActionId` 渲染为确认选项；点击确认后只能走 Hermes -> `sim_canvas_agent_run(mode=apply_after_confirm)`，不得由前端或 Hermes 直接构造底层 workflow patch。
 
 ### Phase 5：生成节点输出
 
@@ -1213,6 +1215,7 @@ L4 secret: token、cookie、密钥、内部连接串、个人敏感信息
 - verify 失败时返回 `VERIFY_FAILED`，并给出可恢复说明。
 - 审计日志能串起 Hermes run、SIM request、patch、确认、verify。
 - 回归测试覆盖成功写入、权限拒绝、verify 失败。
+- 跨服务 smoke 覆盖 `--canvas-propose-apply`，并要求 `changedNodeIds.length > 0`、`hermes_tool_call_audit.status = success`。
 
 ### 18.5 Phase 6/7 DoD
 
