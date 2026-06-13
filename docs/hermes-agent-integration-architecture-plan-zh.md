@@ -442,6 +442,15 @@ Hermes 原生 memory/skill 更偏单用户 CLI profile。SIM 生产是多用户�
 
 正式方案优先级更高。
 
+当前实现状态：
+
+- SIM 已提供 `hermes_user_memory` 表和 `/api/internal/hermes/memory/run` internal API。
+- Hermes fork 已提供 `plugins/memory/sim`，通过 `memory.provider: sim` 激活。
+- Hermes provider 只做 HTTP adapter；用户/组织/画布归属校验、内容过滤、长期 memory 存储都由 SIM 执行。
+- MVP 仅做保守抽取：只有出现明确“记住/以后/偏好/习惯”等稳定偏好信号时才写入；密钥、token、当前画布任务状态、pendingActionId、tool result ref、网页/画布全文会被拒绝。
+- SIM smoke 已提供 `--memory` 模式，确定性验证 service token、用户 A 写入、用户 A 召回、用户 B 隔离、临时画布状态拒绝；完整 Hermes API Server + LLM 自动记忆链路仍需在联调环境补两轮真实 chat 回归。
+- 后续仍需补语义检索增强、可视化排障和运营管理面板。
+
 ## 7. Skill 分工与权限治理
 
 ### 7.1 总原则
@@ -847,6 +856,7 @@ rollback target
 - 用户 A/B memory 不串。
 - 用户偏好可在后续会话召回。
 - 当前画布 task state 不污染全局用户画像。
+- `bun run hermes:smoke -- --memory` 通过，证明 SIM internal memory API 的服务令牌、写入、召回、跨用户隔离和临时状态拒绝均有效。
 
 ### Phase 7：Skill Proposal 审核流
 
@@ -1178,6 +1188,8 @@ L4 secret: token、cookie、密钥、内部连接串、个人敏感信息
 
 - Hermes memory 按用户/租户隔离。
 - 用户 A 的偏好不会被用户 B 召回。
+- 当前画布 task state 不进入 `hermes_user_memory`；仍留在 SIM local canvas thread memory。
+- `bun run hermes:smoke -- --memory` 通过，并在完整联调环境至少补一组 Hermes API Server 两轮真实 chat 召回验证。
 - Hermes personal skill 只影响个人。
 - SIM published skill 只能通过 proposal + review + publish 生效。
 - proposal 有 evidence、diff、risk、reviewer、revision。

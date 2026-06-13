@@ -2244,6 +2244,49 @@ export const hermesToolCallAudit = pgTable(
   })
 )
 
+export const hermesUserMemory = pgTable(
+  'hermes_user_memory',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, {
+      onDelete: 'set null',
+    }),
+    category: text('category').notNull(),
+    content: text('content').notNull(),
+    source: text('source').notNull().default('hermes'),
+    sourceHermesRunId: text('source_hermes_run_id'),
+    sourceTraceId: text('source_trace_id'),
+    evidenceRefs: jsonb('evidence_refs').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    userOrganizationUpdatedIdx: index('hermes_user_memory_user_org_updated_idx').on(
+      table.userId,
+      table.organizationId,
+      table.updatedAt
+    ),
+    workspaceUpdatedIdx: index('hermes_user_memory_workspace_updated_idx').on(
+      table.workspaceId,
+      table.updatedAt
+    ),
+    categoryIdx: index('hermes_user_memory_category_idx').on(table.category),
+    deletedAtIdx: index('hermes_user_memory_deleted_at_idx').on(table.deletedAt),
+  })
+)
+
 export const copilotSkillCard = pgTable(
   'copilot_skill_card',
   {

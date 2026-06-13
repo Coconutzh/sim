@@ -84,6 +84,9 @@ plugins:
   enabled:
     - sim
 
+memory:
+  provider: sim
+
 platform_toolsets:
   api_server:
     - sim
@@ -95,10 +98,18 @@ platform_toolsets:
 说明：
 
 - `plugins.enabled: [sim]` 负责加载 SIM 插件，注册 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`。
+- `memory.provider: sim` 负责启用 SIM-backed Hermes Memory Provider。Hermes 每轮通过 SIM internal API 召回/写入用户长期偏好，不直接读写 SIM DB。
 - `platform_toolsets.api_server` 负责限制 HTTP API Server 可用工具面，避免默认 API Server 暴露过宽。
 - SIM health 默认禁止 `browser`、`code_execution`、`computer_use`、`cronjob`、`delegation`、`file`、`terminal` 等高风险 toolset；如需放开，必须显式设置 `HERMES_FORBIDDEN_TOOLSETS` 并同步评审容器隔离、审计和审批策略。
 - `memory` / `skills` 用于 Hermes 用户级偏好和 procedural skill；SIM 团队正式规范仍走 Skill Proposal 审核发布链路。
 - 如需网页读取能力，先灰度加入 `web`，并同步打开外部内容引用、prompt injection 标记和审计策略；`browser` 属于默认禁用的高风险工具面，必须单独评审后再放开。
+
+SIM-backed memory 的边界：
+
+- 只写入用户长期偏好、沟通风格、内容兴趣、工具习惯、跨项目 workflow habit。
+- 不写入当前画布 task state、pendingActionId、tool result ref、画布/网页全文、密钥/token、团队未审核生产规范。
+- SIM 侧存储表为 `hermes_user_memory`，按 `userId + organizationId + optional workspaceId` 隔离。
+- Hermes 缺少 SIM session metadata 中的 `userId` 或 `organizationId` 时，SIM memory provider 必须空转，不得落到共享 profile。
 
 ## 6. Hermes 工具 allowlist 建议
 
@@ -247,6 +258,22 @@ HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
 bun run hermes:smoke -- --skill-list
 ```
 
+需要验证 SIM-backed Hermes user memory 时，加 `--memory`。该模式会直接调用 SIM internal memory API，验证服务令牌、用户 A 写入、用户 A 召回、用户 B 隔离，以及“当前画布 / pendingActionId”等临时任务状态被拒绝写入：
+
+```bash
+HERMES_SERVICE_TOKEN=<same-as-sim-HERMES_SERVICE_TOKEN> \
+HERMES_SMOKE_USER_ID=<user-a-id> \
+HERMES_SMOKE_OTHER_USER_ID=<user-b-id> \
+HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
+bun run hermes:smoke -- --memory
+```
+
+注意：
+
+- `HERMES_SMOKE_USER_ID` 和 `HERMES_SMOKE_OTHER_USER_ID` 都必须是该组织下的有效用户，否则 SIM 权限校验会返回 403。
+- `--memory` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 memory tool；Hermes fork 侧的 `plugins/memory/sim` provider 仍需通过 Python 测试证明它会把 `prefetch` / `sync_turn` / 显式记忆工具调用转发到同一个 SIM internal API。
+- 若要验证完整 Hermes API Server + LLM 自动记忆链路，应在 `--memory` 通过后，再用同一个 `X-Hermes-Session-Key` 和 SIM metadata 做两轮真实 chat：第一轮表达长期偏好，第二轮换 session 询问偏好是否可召回。
+
 ### 7.5 Hermes -> SIM 工具调用审计
 
 SIM 会把 Hermes 调用 internal tool 的关键链路写入：
@@ -282,8 +309,9 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 5. 调用 `bun run hermes:smoke`，确认 Hermes capabilities、toolset policy 和 SIM 聚合 health 均通过。
 6. 使用 `bun run hermes:smoke -- --chat` 验证 OpenAI-compatible chat completion 可用。
 7. 使用 `bun run hermes:smoke -- --canvas-read` 或 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。
-8. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
-9. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
+8. 使用 `bun run hermes:smoke -- --memory` 验证 SIM-backed Hermes user memory 的写入、召回、用户隔离和临时画布状态拒绝。
+9. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
+10. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
 
 ## 9. 生产发布检查清单
 
@@ -295,11 +323,12 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - [ ] `HERMES_HOME` 不与其他环境、其他租户混用。
 - [ ] Hermes health 返回的 commit 与部署清单一致。
 - [ ] SIM `/api/internal/hermes/health` 返回 200。
-- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list` 的对应 smoke 也通过。
+- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list`、`--memory` 的对应 smoke 也通过。
 - [ ] Hermes tool allowlist 不包含 `browser`、`terminal`、`file`、`code_execution`、`computer_use`、`delegation`、`cronjob` 等生产禁用 toolset。
 - [ ] SIM internal route 鉴权在 body parse 之前执行。
 - [ ] 画布写入仍走 SIM patch validation、apply、verify。
 - [ ] Skill Proposal publish 和 rollback 只对管理员开放。
+- [ ] Hermes memory provider 使用 `memory.provider: sim`，且未把当前画布状态、pendingActionId、原始网页全文或密钥写入长期用户 memory。
 - [ ] 日志不记录完整 prompt、网页全文、密钥、token、用户隐私正文。
 
 ## 10. Skill Proposal 发布闭环
@@ -350,10 +379,11 @@ Hermes 自动学习
 | missing toolsets: sim | Hermes API Server 未启用 SIM plugin/toolset | 检查 Hermes config/toolsets |
 | required Hermes tools missing | Hermes `sim` toolset 启用但 SIM plugin 实际工具未注册完整 | 检查 `plugins.enabled: [sim]`、Hermes 启动日志和 `/v1/toolsets` 的 `tools` |
 | forbidden Hermes toolsets enabled | Hermes API Server 暴露了 SIM 生产禁用 toolset | 收紧 `platform_toolsets.api_server`，或显式评审后调整 `HERMES_FORBIDDEN_TOOLSETS` |
+| Hermes 用户偏好无法跨会话召回 | Hermes 未设置 `memory.provider: sim`，或 API Server 未启用 `memory` toolset，或 SIM session metadata 缺少 user/org | 检查 Hermes config、`SIM_INTERNAL_API_URL`、`SIM_SERVICE_TOKEN`、gateway metadata |
 | canvas apply 返回 `CONFIRMATION_REQUIRED` | Hermes 未传 pendingActionId 或用户未确认 | 先 propose，再用户确认，再 apply |
 | canvas apply 返回 `VERIFY_FAILED` | SIM verify 未通过 | 不宣称执行成功，提示用户恢复/重试 |
 | proposal 无法 publish | 当前用户非组织管理员或 proposal 状态不对 | 走管理员审核流程 |
-| 用户偏好串号 | `HERMES_HOME` 或 session key 复用 | 检查 session namespace 和部署隔离 |
+| 用户偏好串号 | `memory.provider` 未使用 SIM-backed provider，或 SIM metadata/user/org 传递错误 | 检查 `memory.provider: sim`、session key、SIM metadata 和 `hermes_user_memory` scope |
 
 ## 12. 回滚策略
 
@@ -377,7 +407,7 @@ Hermes 自动学习
 
 ## 13. 后续增强项
 
-- 将 Hermes memory provider 从本地 session namespace 升级为 SIM-backed provider。
+- 对 SIM-backed memory 增加真实服务级 A/B 隔离 E2E、语义检索和管理员可视化排障面板。
 - 为 Hermes health 面板补充通知、告警和发布阻断策略。
 - 为 `hermes_tool_call_audit` 增加导出视图和 retention 策略。
 - 对网页 / 文件抓取加入内容摘要、引用和 prompt-injection 风险标记。

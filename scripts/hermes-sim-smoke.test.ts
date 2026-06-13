@@ -4,11 +4,13 @@ import { runSmoke } from './hermes-sim-smoke'
 const ENV_KEYS = [
   'HERMES_API_URL',
   'HERMES_API_KEY',
+  'HERMES_SERVICE_TOKEN',
   'HERMES_REQUIRED_TOOLSETS',
   'HERMES_FORBIDDEN_TOOLSETS',
   'INTERNAL_API_SECRET',
   'SIM_BASE_URL',
   'HERMES_SMOKE_USER_ID',
+  'HERMES_SMOKE_OTHER_USER_ID',
   'HERMES_SMOKE_ORGANIZATION_ID',
   'HERMES_SMOKE_WORKSPACE_ID',
   'HERMES_SMOKE_WORKFLOW_ID',
@@ -198,5 +200,102 @@ describe('hermes-sim-smoke', () => {
     const { results } = await runSmoke(['--skip-sim-health', '--chat'])
 
     expect(results.find((result) => result.name === 'hermes.chat')?.status).toBe('pass')
+  })
+
+  it('can include the SIM-backed memory smoke with user isolation and ephemeral rejection', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SERVICE_TOKEN = 'service-token'
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_OTHER_USER_ID = 'user-b'
+    process.env.HERMES_SMOKE_ORGANIZATION_ID = 'org-1'
+    const memoryBodies: Array<Record<string, unknown>> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: ['sim_canvas_agent_run', 'sim_skill_proposal_run'],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/api/internal/hermes/memory/run')) {
+        expect((init?.headers as Record<string, string>)['x-sim-service-token']).toBe(
+          'service-token'
+        )
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        memoryBodies.push(body)
+        if (body.operation === 'write' && String(body.content).includes('当前画布')) {
+          return jsonResponse(
+            {
+              success: false,
+              errorCode: 'INVALID_MEMORY_CONTENT',
+              error: 'Canvas task state cannot be stored in Hermes user memory',
+            },
+            400
+          )
+        }
+        if (body.operation === 'write') {
+          return jsonResponse({ success: true, operation: 'write', created: 1 })
+        }
+        if (body.operation === 'prefetch' && body.userId === 'user-b') {
+          return jsonResponse({ success: true, operation: 'prefetch', memories: [] })
+        }
+        if (body.operation === 'prefetch') {
+          return jsonResponse({
+            success: true,
+            operation: 'prefetch',
+            memories: [
+              {
+                content: `${body.query}: 用户做短视频脚本时偏好先出三版 hook，再生成分镜。`,
+              },
+            ],
+          })
+        }
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--memory'])
+
+    expect(results.map((result) => [result.name, result.status])).toEqual([
+      ['hermes.health', 'pass'],
+      ['hermes.capabilities', 'pass'],
+      ['hermes.toolsets', 'pass'],
+      ['sim.hermes-memory-write', 'pass'],
+      ['sim.hermes-memory-prefetch', 'pass'],
+      ['sim.hermes-memory-user-isolation', 'pass'],
+      ['sim.hermes-memory-reject-ephemeral', 'pass'],
+    ])
+    expect(memoryBodies.map((body) => body.operation)).toEqual([
+      'write',
+      'prefetch',
+      'prefetch',
+      'write',
+    ])
+    expect(memoryBodies[0]).toMatchObject({
+      userId: 'user-a',
+      organizationId: 'org-1',
+      operation: 'write',
+      category: 'workflow_habit',
+    })
+    expect(memoryBodies[2]).toMatchObject({
+      userId: 'user-b',
+      organizationId: 'org-1',
+      operation: 'prefetch',
+    })
   })
 })

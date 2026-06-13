@@ -20,6 +20,7 @@ interface Options {
   chat: boolean
   canvasRead: boolean
   skillList: boolean
+  memory: boolean
   skipSimHealth: boolean
 }
 
@@ -41,7 +42,7 @@ function printUsage(): void {
   process.stdout.write(`SIM Hermes smoke test
 
 Usage:
-  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--skill-list] [--json]
+  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--skill-list] [--memory] [--json]
 
 Required env:
   HERMES_API_URL              Hermes API Server base URL, e.g. http://127.0.0.1:8642
@@ -57,6 +58,7 @@ Optional env:
   HERMES_SMOKE_ORGANIZATION_ID Required for --skill-list, recommended for all SIM metadata
   HERMES_SMOKE_WORKSPACE_ID   Required for --canvas-read
   HERMES_SMOKE_WORKFLOW_ID    Required for --canvas-read
+  HERMES_SMOKE_OTHER_USER_ID  Required for --memory isolation check
   HERMES_SMOKE_CHAT_ID        Optional stable chat id, default hermes-smoke
   HERMES_SMOKE_SELECTED_NODE_IDS Comma-separated selected node ids
   HERMES_SMOKE_TIMEOUT_MS     Default 20000
@@ -67,6 +69,7 @@ Notes:
   --chat sends a no-tool OpenAI-compatible chat completion.
   --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode.
   --skill-list asks Hermes to list published SIM skills only.
+  --memory exercises SIM-backed Hermes user memory write/prefetch/isolation through SIM internal APIs.
 `)
 }
 
@@ -81,6 +84,7 @@ function parseOptions(argv: string[]): Options {
     chat: flags.has('--chat'),
     canvasRead: flags.has('--canvas-read'),
     skillList: flags.has('--skill-list'),
+    memory: flags.has('--memory'),
     skipSimHealth: flags.has('--skip-sim-health'),
   }
 }
@@ -292,6 +296,33 @@ async function checkSimHealth(simBaseUrl: string, results: CheckResult[]): Promi
   })
 }
 
+async function postSimMemory(
+  simBaseUrl: string,
+  body: Record<string, unknown>
+): Promise<JsonResponse> {
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  if (!serviceToken) {
+    return {
+      ok: false,
+      status: 0,
+      payload: {
+        errorCode: 'MISSING_ENV',
+        error: 'HERMES_SERVICE_TOKEN is required for --memory',
+      },
+    }
+  }
+
+  return fetchJson(`${simBaseUrl}/api/internal/hermes/memory/run`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-sim-service-token': serviceToken,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
 function buildSimMetadata(): Record<string, unknown> {
   const selectedNodeIds = envList('HERMES_SMOKE_SELECTED_NODE_IDS', [])
   return {
@@ -452,6 +483,113 @@ async function runSkillListSmoke(
   })
 }
 
+function readMemories(payload: unknown): Record<string, unknown>[] {
+  return readArray(asRecord(payload), 'memories')
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+}
+
+function memoryContains(payload: unknown, marker: string): boolean {
+  return readMemories(payload).some((memory) => readString(memory, 'content')?.includes(marker))
+}
+
+function baseMemoryBody(traceId: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    userId: envString('HERMES_SMOKE_USER_ID'),
+    organizationId: envString('HERMES_SMOKE_ORGANIZATION_ID'),
+    traceId,
+    hermesRunId: `hermes-smoke-memory-${Date.now()}`,
+  }
+  const workspaceId = envString('HERMES_SMOKE_WORKSPACE_ID')
+  if (workspaceId) body.workspaceId = workspaceId
+  return body
+}
+
+async function runMemorySmoke(simBaseUrl: string, results: CheckResult[]): Promise<void> {
+  if (
+    !requireSimContext(results, [
+      'HERMES_SERVICE_TOKEN',
+      'HERMES_SMOKE_USER_ID',
+      'HERMES_SMOKE_OTHER_USER_ID',
+      'HERMES_SMOKE_ORGANIZATION_ID',
+    ])
+  ) {
+    return
+  }
+
+  const traceId = `hermes-memory-smoke-${Date.now()}`
+  const marker = `${traceId}-preference`
+  const memoryContent = `${marker}: 用户做短视频脚本时偏好先出三版 hook，再生成分镜。`
+  const common = baseMemoryBody(traceId)
+
+  const writeResponse = await postSimMemory(simBaseUrl, {
+    ...common,
+    operation: 'write',
+    content: memoryContent,
+    category: 'workflow_habit',
+    evidenceRefs: [`smoke:${traceId}`],
+    metadata: { smoke: true },
+  })
+  const writePayload = asRecord(writeResponse.payload)
+  results.push({
+    name: 'sim.hermes-memory-write',
+    status: writeResponse.ok && writePayload?.success === true ? 'pass' : 'fail',
+    detail: writeResponse.ok ? `HTTP ${writeResponse.status}` : `HTTP ${writeResponse.status}`,
+    data: summarizePayload(writeResponse.payload),
+  })
+  if (!(writeResponse.ok && writePayload?.success === true)) return
+
+  const prefetchResponse = await postSimMemory(simBaseUrl, {
+    ...common,
+    operation: 'prefetch',
+    query: marker,
+    limit: 5,
+  })
+  results.push({
+    name: 'sim.hermes-memory-prefetch',
+    status:
+      prefetchResponse.ok && memoryContains(prefetchResponse.payload, marker) ? 'pass' : 'fail',
+    detail: prefetchResponse.ok
+      ? `matched ${readMemories(prefetchResponse.payload).length} item(s)`
+      : `HTTP ${prefetchResponse.status}`,
+  })
+
+  const otherUserResponse = await postSimMemory(simBaseUrl, {
+    ...common,
+    userId: envString('HERMES_SMOKE_OTHER_USER_ID'),
+    operation: 'prefetch',
+    query: marker,
+    limit: 5,
+  })
+  results.push({
+    name: 'sim.hermes-memory-user-isolation',
+    status:
+      otherUserResponse.ok && !memoryContains(otherUserResponse.payload, marker) ? 'pass' : 'fail',
+    detail: otherUserResponse.ok
+      ? `other user matched ${readMemories(otherUserResponse.payload).length} item(s)`
+      : `HTTP ${otherUserResponse.status}`,
+  })
+
+  const ephemeralResponse = await postSimMemory(simBaseUrl, {
+    ...common,
+    operation: 'write',
+    content: `${marker}: 记住当前画布这个节点已经生成过视频了，下一步继续用 pendingActionId。`,
+    category: 'workflow_habit',
+  })
+  const ephemeralPayload = asRecord(ephemeralResponse.payload)
+  results.push({
+    name: 'sim.hermes-memory-reject-ephemeral',
+    status:
+      ephemeralResponse.status === 400 &&
+      ephemeralPayload?.success === false &&
+      ephemeralPayload.errorCode === 'INVALID_MEMORY_CONTENT'
+        ? 'pass'
+        : 'fail',
+    detail: `HTTP ${ephemeralResponse.status}`,
+    data: summarizePayload(ephemeralResponse.payload),
+  })
+}
+
 function printResults(results: CheckResult[], json: boolean): void {
   const failed = results.filter((result) => result.status === 'fail')
   if (json) {
@@ -492,6 +630,7 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     if (options.chat) await runChatSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.canvasRead) await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.skillList) await runSkillListSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.memory) await runMemorySmoke(simBaseUrl, results)
   } catch (error) {
     results.push({
       name: 'smoke.unhandled-error',

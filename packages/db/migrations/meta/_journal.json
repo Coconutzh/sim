@@ -1541,6 +1541,13 @@
       "when": 1779369954341,
       "tag": "0220_hermes_tool_call_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1779369954342,
+      "tag": "0221_hermes_user_memory",
+      "breakpoints": true
     }
   ]
 }
