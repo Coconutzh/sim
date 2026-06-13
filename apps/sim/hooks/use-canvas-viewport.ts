@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import type { Node, ReactFlowInstance } from 'reactflow'
 import { BLOCK_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 
-interface VisibleBounds {
+export interface VisibleCanvasBounds {
   width: number
   height: number
   offsetLeft: number
@@ -14,11 +14,24 @@ export interface CanvasViewportOptions {
   embedded?: boolean
 }
 
+export interface CanvasViewportTransform {
+  x: number
+  y: number
+  zoom: number
+}
+
+export interface FlowRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /**
  * Gets the visible canvas bounds accounting for sidebar, terminal, and panel overlays.
  * When embedded, uses the container rect directly since CSS variable offsets don't apply.
  */
-function getVisibleCanvasBounds(options?: CanvasViewportOptions): VisibleBounds {
+export function getVisibleCanvasBounds(options?: CanvasViewportOptions): VisibleCanvasBounds {
   const flowContainer = document.querySelector('.react-flow')
 
   if (options?.embedded && flowContainer) {
@@ -66,6 +79,22 @@ function getVisibleCanvasBounds(options?: CanvasViewportOptions): VisibleBounds 
     offsetLeft: visibleLeft - rect.left,
     offsetRight: rect.right - visibleRight,
     offsetBottom: rect.bottom - visibleBottom,
+  }
+}
+
+export function getVisibleFlowRect(
+  viewport: CanvasViewportTransform,
+  bounds: VisibleCanvasBounds
+): FlowRect | null {
+  if (viewport.zoom <= 0 || bounds.width <= 0 || bounds.height <= 0) {
+    return null
+  }
+
+  return {
+    x: (bounds.offsetLeft - viewport.x) / viewport.zoom,
+    y: -viewport.y / viewport.zoom,
+    width: bounds.width / viewport.zoom,
+    height: bounds.height / viewport.zoom,
   }
 }
 

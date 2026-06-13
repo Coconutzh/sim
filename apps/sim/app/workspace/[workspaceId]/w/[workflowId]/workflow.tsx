@@ -304,6 +304,14 @@ const LazyWorkflowControls = lazy(() =>
   }))
 )
 
+const LazyWorkflowMinimap = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-minimap/workflow-minimap'
+  ).then((mod) => ({
+    default: mod.WorkflowMinimap,
+  }))
+)
+
 const logger = createLogger('Workflow')
 
 const DEFAULT_PASTE_OFFSET = { x: 50, y: 50 }
@@ -5632,9 +5640,14 @@ const WorkflowContent = React.memo(
                     )}
 
                     {!IS_LOW_MEMORY_DEV && (
-                      <Suspense fallback={null}>
-                        <LazyWorkflowControls />
-                      </Suspense>
+                      <>
+                        <Suspense fallback={null}>
+                          <LazyWorkflowMinimap nodes={nodesForRender} />
+                        </Suspense>
+                        <Suspense fallback={null}>
+                          <LazyWorkflowControls />
+                        </Suspense>
+                      </>
                     )}
                     {shouldRenderAuxiliaryEditorChrome && (
                       <Suspense fallback={null}>
@@ -5746,7 +5759,6 @@ const WorkflowContent = React.memo(
               </Suspense>
             )}
           </div>
-
         </div>
 
         {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (
