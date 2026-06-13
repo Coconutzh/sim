@@ -361,6 +361,143 @@ describe('runLocalCanvasAgentHeadless', () => {
     )
   })
 
+  it('generates output for confirmed newly created nodes after patch verification', async () => {
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: {
+        goal: 'Create and generate a hook node',
+        risk: 'medium',
+        userIntent: 'generate_output',
+        mutationPolicy: 'propose_only',
+        requiresUserConfirmation: true,
+        requiresClarification: false,
+        steps: [
+          {
+            id: 'step-1',
+            title: 'Create a hook node and generate text',
+            intent: 'generate',
+            toolHints: ['canvas.propose_patch'],
+            expectedObservation: 'Patch and generation target are proposed',
+          },
+        ],
+        successCriteria: ['Generated node output is verified'],
+        patch: {
+          operations: [
+            {
+              type: 'create_node',
+              operationId: 'create-hook',
+              clientNodeId: 'hook-1',
+              kind: 'text',
+              title: 'Hook',
+              fields: { aiPrompt: 'write a hook' },
+            },
+          ],
+        },
+        generationTargets: [{ clientNodeId: 'hook-1', reason: 'Generate the new hook text' }],
+      },
+      observations: [],
+      answer: 'A generated Hook node can be proposed.',
+    })
+    mockExecuteLocalAgentTool.mockReset()
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {
+          patch: {
+            operations: [
+              {
+                type: 'create_node',
+                operationId: 'create-hook',
+                clientNodeId: 'hook-1',
+                kind: 'text',
+                title: 'Hook',
+                fields: { aiPrompt: 'write a hook' },
+              },
+            ],
+          },
+          verification: {
+            success: true,
+            operationResults: [{ operationId: 'create-hook', nodeId: 'node-created' }],
+          },
+          machineSummary: {
+            createdNodeMap: { 'hook-1': 'node-created' },
+            writeBackFields: [{ nodeId: 'node-created', field: 'aiPrompt', status: 'verified' }],
+            deletedNodeIds: [],
+            referenceChanges: [],
+          },
+        },
+        summary: 'Applied canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true, summary: 'Verified canvas patch' },
+        summary: 'Verified canvas patch',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.generate_node_output',
+        success: true,
+        output: {
+          nodeId: 'node-created',
+          kind: 'text',
+          verifiedField: 'contentHtml',
+          contentHtml: '<p>Generated hook</p>',
+        },
+        summary: 'Generated output for text node',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: { success: true, summary: 'Verified generated field' },
+        summary: 'Verified generated field',
+      })
+
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'create and generate a hook node',
+      mode: 'propose',
+      auditId: 'audit-generate-propose',
+    })
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'confirmed by user',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-generate-apply',
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error)
+    expect(result.changedNodeIds).toEqual(['node-created'])
+    expect(result.generatedNodeIds).toEqual(['node-created'])
+    expect(result.verificationSummary).toContain('canvas.generate_node_output: success')
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(
+      3,
+      expect.any(Object),
+      expect.objectContaining({
+        name: 'canvas.generate_node_output',
+        input: { nodeId: 'node-created' },
+      })
+    )
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(
+      4,
+      expect.any(Object),
+      expect.objectContaining({
+        name: 'canvas.verify_patch',
+        input: { generation: { nodeId: 'node-created', field: 'contentHtml' } },
+      })
+    )
+  })
+
   it('does not report success when confirmed apply verification fails', async () => {
     const proposal = await runLocalCanvasAgentHeadless({
       userId: 'user-1',
