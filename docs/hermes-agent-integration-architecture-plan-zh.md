@@ -664,28 +664,31 @@ SIM 端必须重新校验用户权限，不能因为请求来自 Hermes 就信�
 建议初期 toolset：
 
 ```text
-web
-browser
+sim
 memory
 skills
 session_search
-sim-canvas
-sim-skill-proposal
+```
+
+可灰度开启：
+
+```text
+web
 ```
 
 谨慎开启：
 
 ```text
+browser
 terminal
 file
-process
-execute_code
-delegate_task
+code_execution
+delegation
 cronjob
-send_message
+messaging
 ```
 
-如果开启 terminal/file/process，必须运行在隔离容器、低权限用户、受控 cwd、受控网络环境中。
+SIM health 默认把 `browser`、`code_execution`、`computer_use`、`cronjob`、`delegation`、`file`、`terminal` 视为生产禁用 toolset；如果开启这些能力，必须显式调整 `HERMES_FORBIDDEN_TOOLSETS`，并运行在隔离容器、低权限用户、受控 cwd、受控网络环境中。
 
 ## 10. 观测、审计和回滚
 
@@ -715,7 +718,7 @@ send_message
 - `hermes_tool_call_audit`：持久化记录 Hermes 调 SIM internal tool 的调用链路。
 - `apps/sim/lib/hermes/tool-call-audit.ts`：统一裁剪 input/output summary，避免把完整 prompt、画布正文、网页全文或异常堆栈写入审计。
 - `POST /api/internal/hermes/canvas-agent/run` 和 `POST /api/internal/hermes/skill-proposals/run`：在鉴权失败、contract validation 失败、业务成功/失败时均写入 tool-call audit。
-- `GET /api/organizations/[id]/hermes/health` 和 Project Admin 中的 Hermes runtime health 面板：组织管理员可检查 Hermes 服务配置、commit、capability、session-key header 和必需 toolset 是否满足接入要求。
+- `GET /api/organizations/[id]/hermes/health` 和 Project Admin 中的 Hermes runtime health 面板：组织管理员可检查 Hermes 服务配置、commit、capability、session-key header、必需 toolset、SIM 必需工具和禁用 toolset 是否满足接入要求。
 - `GET /api/organizations/[id]/hermes/tool-call-audits` 和 Project Admin 中的 Hermes tool-call audit 面板：只向组织管理员暴露已脱敏的组织内调用记录，用于追踪 trace、Hermes run、确认状态、错误码和 verify 结果。
 
 画布写入必须可追踪到：
@@ -1193,7 +1196,7 @@ L4 secret: token、cookie、密钥、内部连接串、个人敏感信息
 - 使用共享 `~/.hermes` 存储多用户长期 memory。
 - 把本地绝对路径写入业务代码。
 - 把网页或文件内容作为系统指令拼接。
-- production tool allowlist 默认开启 terminal/file/process。
+- production tool allowlist 默认开启 browser/terminal/file/code_execution/delegation/cronjob 等高风险 toolset。
 - 日志记录完整 prompt、网页全文、token 或敏感正文。
 
 ## 20. 风险矩阵
@@ -1206,7 +1209,7 @@ L4 secret: token、cookie、密钥、内部连接串、个人敏感信息
 | 画布误写 | 破坏用户 workflow | Hermes 绕过 SIM patch/verify | 写入只能由 SIM runtime 完成，危险操作二次确认 |
 | Prompt injection | Agent 执行恶意指令 | 网页/文件/节点内容包含指令 | 不可信内容只作 evidence，工具 allowlist，输出过滤 |
 | 上游升级冲突 | fork 难维护 | 大量修改 Hermes core | 小 patch、plugin 化、upstream-sync 分支、集成测试 |
-| 工具权限过大 | 数据泄漏或服务器风险 | 生产默认开启 terminal/file/process | 容器隔离、最小 toolset、allowlist、审计 |
+| 工具权限过大 | 数据泄漏或服务器风险 | 生产默认开启 browser/terminal/file/code_execution/delegation/cronjob | 容器隔离、最小 toolset、allowlist、审计 |
 
 ## 21. 最终定位
 

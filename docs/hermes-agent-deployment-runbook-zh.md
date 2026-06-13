@@ -98,7 +98,7 @@ platform_toolsets:
 - `platform_toolsets.api_server` 负责限制 HTTP API Server 可用工具面，避免默认 API Server 暴露过宽。
 - SIM health 默认禁止 `browser`、`code_execution`、`computer_use`、`cronjob`、`delegation`、`file`、`terminal` 等高风险 toolset；如需放开，必须显式设置 `HERMES_FORBIDDEN_TOOLSETS` 并同步评审容器隔离、审计和审批策略。
 - `memory` / `skills` 用于 Hermes 用户级偏好和 procedural skill；SIM 团队正式规范仍走 Skill Proposal 审核发布链路。
-- 如需网页/浏览器能力，先灰度加入 `web` 或 `browser`，并同步打开外部内容引用、prompt injection 标记和审计策略。
+- 如需网页读取能力，先灰度加入 `web`，并同步打开外部内容引用、prompt injection 标记和审计策略；`browser` 属于默认禁用的高风险工具面，必须单独评审后再放开。
 
 ## 6. Hermes 工具 allowlist 建议
 
@@ -225,7 +225,7 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - [ ] `HERMES_HOME` 不与其他环境、其他租户混用。
 - [ ] Hermes health 返回的 commit 与部署清单一致。
 - [ ] SIM `/api/internal/hermes/health` 返回 200。
-- [ ] Hermes tool allowlist 不包含 terminal/file/process 类高危工具。
+- [ ] Hermes tool allowlist 不包含 `browser`、`terminal`、`file`、`code_execution`、`computer_use`、`delegation`、`cronjob` 等生产禁用 toolset。
 - [ ] SIM internal route 鉴权在 body parse 之前执行。
 - [ ] 画布写入仍走 SIM patch validation、apply、verify。
 - [ ] Skill Proposal publish 和 rollback 只对管理员开放。
@@ -277,6 +277,8 @@ Hermes 自动学习
 | SIM health 返回 `unreachable` | Hermes 进程未启动、URL 错误、网络不通 | 直接访问 Hermes `/health` |
 | capabilities 401 | `HERMES_API_KEY` 与 Hermes `API_SERVER_KEY` 不一致 | 重置两侧密钥 |
 | missing toolsets: sim | Hermes API Server 未启用 SIM plugin/toolset | 检查 Hermes config/toolsets |
+| required Hermes tools missing | Hermes `sim` toolset 启用但 SIM plugin 实际工具未注册完整 | 检查 `plugins.enabled: [sim]`、Hermes 启动日志和 `/v1/toolsets` 的 `tools` |
+| forbidden Hermes toolsets enabled | Hermes API Server 暴露了 SIM 生产禁用 toolset | 收紧 `platform_toolsets.api_server`，或显式评审后调整 `HERMES_FORBIDDEN_TOOLSETS` |
 | canvas apply 返回 `CONFIRMATION_REQUIRED` | Hermes 未传 pendingActionId 或用户未确认 | 先 propose，再用户确认，再 apply |
 | canvas apply 返回 `VERIFY_FAILED` | SIM verify 未通过 | 不宣称执行成功，提示用户恢复/重试 |
 | proposal 无法 publish | 当前用户非组织管理员或 proposal 状态不对 | 走管理员审核流程 |
