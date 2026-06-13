@@ -28,6 +28,7 @@
     "check:boundaries": "bun run scripts/check-monorepo-boundaries.ts",
     "check:api-validation": "bun run scripts/check-api-validation-contracts.ts --check",
     "check:api-validation:strict": "bun run scripts/check-api-validation-contracts.ts --check --enforce-boundary-baseline",
+    "check:hermes-health": "bun run scripts/check-hermes-health.ts",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
     "check:tool-registry-boundary": "bun run scripts/check-tool-registry-boundary.ts",
     "check:zustand-v5": "bun run scripts/check-zustand-v5-selectors.ts",

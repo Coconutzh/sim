@@ -170,6 +170,8 @@ Header: x-api-key: <INTERNAL_API_SECRET>
 - `chat_completions` 能力是否存在
 - `X-Hermes-Session-Key` 能力是否存在
 - `HERMES_REQUIRED_TOOLSETS` 中声明的 toolset 是否已启用
+- `sim` toolset 是否实际包含 `sim_canvas_agent_run` 和 `sim_skill_proposal_run`
+- `HERMES_FORBIDDEN_TOOLSETS` 中声明的高风险 toolset 是否未启用
 
 返回状态建议：
 
@@ -179,7 +181,73 @@ Header: x-api-key: <INTERNAL_API_SECRET>
 | 401 | 调 SIM 探针的 `x-api-key` 错误 | 检查运维密钥 |
 | 503 | Hermes 未配置、不可达或能力不完整 | 不放量，按 `error` 字段排查 |
 
-### 7.3 Hermes -> SIM 工具调用审计
+### 7.3 发布阻断脚本
+
+SIM 提供可用于 CI/CD 或上线前手动执行的阻断脚本：
+
+```bash
+bun run check:hermes-health -- --base-url https://sim.example.com --api-key "$INTERNAL_API_SECRET"
+```
+
+也可以直接传完整探针 URL：
+
+```bash
+bun run check:hermes-health -- --url https://sim.example.com/api/internal/hermes/health
+```
+
+脚本行为：
+
+- 请求 `GET /api/internal/hermes/health`，自动带 `x-api-key`。
+- HTTP 非 200、返回体 `ok !== true`、请求超时或网络错误时退出码为 1。
+- 缺少 URL 或 `INTERNAL_API_SECRET` 时退出码为 2。
+- 使用 `--json` 可输出结构化 payload，方便 CI 上传诊断日志。
+
+### 7.4 跨服务 smoke test
+
+上线前还应从 SIM 仓库根目录运行跨服务 smoke test，直接验证 Hermes API Server 的 health、capabilities、toolset policy，以及 SIM 聚合 health：
+
+```bash
+HERMES_API_URL=http://127.0.0.1:8642 \
+HERMES_API_KEY=<same-as-API_SERVER_KEY> \
+SIM_BASE_URL=http://127.0.0.1:3000 \
+INTERNAL_API_SECRET=<sim-internal-secret> \
+bun run hermes:smoke
+```
+
+默认 smoke test 是只读的，不会调用画布写入或创建 Skill Proposal。它会失败于：
+
+- Hermes `/health` 非 `ok`。
+- `/v1/capabilities` 缺少 `chat_completions` 或 `X-Hermes-Session-Key` 支持。
+- `/v1/toolsets` 未启用 `HERMES_REQUIRED_TOOLSETS`。
+- `sim` toolset 缺少 `sim_canvas_agent_run` 或 `sim_skill_proposal_run`。
+- 启用了 `HERMES_FORBIDDEN_TOOLSETS` 中的高风险 toolset。
+- SIM `/api/internal/hermes/health` 返回非健康状态。
+
+需要真实跑 Hermes chat 时加：
+
+```bash
+bun run hermes:smoke -- --chat
+```
+
+需要验证 Hermes -> SIM 只读画布工具调用时，显式提供上下文后再加 `--canvas-read`：
+
+```bash
+HERMES_SMOKE_USER_ID=<user-id> \
+HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
+HERMES_SMOKE_WORKSPACE_ID=<workspace-id> \
+HERMES_SMOKE_WORKFLOW_ID=<workflow-id> \
+bun run hermes:smoke -- --canvas-read
+```
+
+需要验证 Hermes -> SIM Skill 只读列表时，显式提供组织上下文后加 `--skill-list`。该模式只允许读取 published skills，不创建 proposal：
+
+```bash
+HERMES_SMOKE_USER_ID=<user-id> \
+HERMES_SMOKE_ORGANIZATION_ID=<org-id> \
+bun run hermes:smoke -- --skill-list
+```
+
+### 7.5 Hermes -> SIM 工具调用审计
 
 SIM 会把 Hermes 调用 internal tool 的关键链路写入：
 
@@ -210,10 +278,12 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 1. 启动 SIM 依赖：DB、Redis、Realtime、Next.js。
 2. 启动 Hermes API Server，确保 `API_SERVER_KEY`、`SIM_INTERNAL_API_URL`、`SIM_SERVICE_TOKEN` 已设置。
 3. 在 SIM 环境配置 `HERMES_API_URL`、`HERMES_API_KEY`、`HERMES_SERVICE_TOKEN`。
-4. 调用 `GET /api/internal/hermes/health`，确认 `ok = true`。
-5. 使用 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。
-6. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
-7. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
+4. 调用 `bun run check:hermes-health -- --base-url <SIM_URL>`，确认退出码为 0。
+5. 调用 `bun run hermes:smoke`，确认 Hermes capabilities、toolset policy 和 SIM 聚合 health 均通过。
+6. 使用 `bun run hermes:smoke -- --chat` 验证 OpenAI-compatible chat completion 可用。
+7. 使用 `bun run hermes:smoke -- --canvas-read` 或 SIM Copilot 的 `hermes_agent_v1` 模式做 read-only 画布读取。
+8. 再做 propose -> 用户确认 -> apply_after_confirm 的完整写入回归。
+9. 最后验证 Skill Proposal：Hermes 只创建 proposal，不直接 publish。
 
 ## 9. 生产发布检查清单
 
@@ -225,6 +295,7 @@ packages/db/migrations/0220_hermes_tool_call_audit.sql
 - [ ] `HERMES_HOME` 不与其他环境、其他租户混用。
 - [ ] Hermes health 返回的 commit 与部署清单一致。
 - [ ] SIM `/api/internal/hermes/health` 返回 200。
+- [ ] `bun run hermes:smoke` 退出码为 0；如上线含真实工具调用，`--chat`、`--canvas-read`、`--skill-list` 的对应 smoke 也通过。
 - [ ] Hermes tool allowlist 不包含 `browser`、`terminal`、`file`、`code_execution`、`computer_use`、`delegation`、`cronjob` 等生产禁用 toolset。
 - [ ] SIM internal route 鉴权在 body parse 之前执行。
 - [ ] 画布写入仍走 SIM patch validation、apply、verify。
