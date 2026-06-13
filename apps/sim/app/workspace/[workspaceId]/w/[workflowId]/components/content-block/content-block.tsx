@@ -15,6 +15,7 @@ import { generateId } from '@sim/utils/id'
 import {
   Box as BoxIcon,
   Brush,
+  Camera,
   Copy as CopyIcon,
   Crop as CropIcon,
   Eraser,
@@ -37,6 +38,8 @@ import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
 import {
+  type CaptureWorkspaceVideoFrameBody,
+  captureWorkspaceVideoFrameContract,
   type EnhanceWorkspaceVideoBody,
   enhanceWorkspaceVideoContract,
   type TrimWorkspaceVideoBody,
@@ -139,6 +142,11 @@ import {
   type VideoEnhanceGenerationStatus,
   type VideoEnhanceParametersValue,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-enhance-utils'
+import { VideoFrameCaptureMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-frame-capture-menu'
+import {
+  resolveVideoFrameCaptureTime,
+  type VideoFrameCaptureMode,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-frame-capture-utils'
 import { VideoTrimOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-overlay'
 import type { VideoTrimRange } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -160,7 +168,7 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
-type ImageGenerationKind = 'cutout'
+type ImageGenerationKind = 'cutout' | 'video_frame_capture'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
 type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -407,7 +415,7 @@ function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus |
 }
 
 function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
-  return value === 'cutout' ? value : null
+  return value === 'cutout' || value === 'video_frame_capture' ? value : null
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -463,6 +471,13 @@ function toTrimRequestFile(file: UploadedFileValue): TrimWorkspaceVideoBody['sou
 function toEnhanceRequestFile(
   file: UploadedFileValue
 ): EnhanceWorkspaceVideoBody['sourceFile'] | null {
+  const sourceFile = toTrimRequestFile(file)
+  return sourceFile ? { ...sourceFile } : null
+}
+
+function toFrameCaptureRequestFile(
+  file: UploadedFileValue
+): CaptureWorkspaceVideoFrameBody['sourceFile'] | null {
   const sourceFile = toTrimRequestFile(file)
   return sourceFile ? { ...sourceFile } : null
 }
@@ -1233,6 +1248,7 @@ function MediaContentCard({
   onStartImageCutout,
   onStartVideoTrim,
   onStartVideoEnhance,
+  onCaptureVideoFrame,
   onCancelImageCrop,
   onCancelImageRepaint,
   onCancelImageErase,
@@ -1246,6 +1262,7 @@ function MediaContentCard({
   onCreateImageEraseVariant,
   onCreateImageOutpaintVariant,
   onRetryImageCutout,
+  onRetryVideoFrameCapture,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
@@ -1303,6 +1320,10 @@ function MediaContentCard({
   onStartImageCutout: () => void
   onStartVideoTrim: () => void
   onStartVideoEnhance: () => void
+  onCaptureVideoFrame: (params: {
+    mode: VideoFrameCaptureMode
+    timeSeconds: number
+  }) => Promise<void> | void
   onCancelImageCrop: () => void
   onCancelImageRepaint: () => void
   onCancelImageErase: () => void
@@ -1322,6 +1343,7 @@ function MediaContentCard({
     targetAspectRatio: ImageOutpaintAspectRatio
   ) => Promise<void> | void
   onRetryImageCutout: () => void
+  onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
@@ -1345,6 +1367,7 @@ function MediaContentCard({
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
   const [isPerspectiveMenuOpen, setIsPerspectiveMenuOpen] = useState(false)
+  const [isFrameCaptureMenuOpen, setIsFrameCaptureMenuOpen] = useState(false)
   const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
   const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
@@ -1646,12 +1669,18 @@ function MediaContentCard({
   const isImageCutoutNode = variant === 'image' && generationKind === 'cutout'
   const isImageCutoutPending = isImageCutoutNode && generationStatus === 'pending' && !file
   const isImageCutoutError = isImageCutoutNode && generationStatus === 'error' && !file
+  const isVideoFrameCaptureNode = variant === 'image' && generationKind === 'video_frame_capture'
+  const isVideoFrameCapturePending =
+    isVideoFrameCaptureNode && generationStatus === 'pending' && !file
+  const isVideoFrameCaptureError = isVideoFrameCaptureNode && generationStatus === 'error' && !file
   const showUploadAction =
     selected &&
     canUpload &&
     ((variant !== 'image' && variant !== 'video') || !hasMedia) &&
     !isImageCutoutPending &&
     !isImageCutoutError &&
+    !isVideoFrameCapturePending &&
+    !isVideoFrameCaptureError &&
     !isVideoEnhanceNode
   const showImageCropAction =
     selected &&
@@ -1663,7 +1692,12 @@ function MediaContentCard({
     !isImageEraseMode &&
     !isImageOutpaintMode
   const showImageComposer =
-    variant === 'image' && !hasMedia && !isImageCutoutPending && !isImageCutoutError
+    variant === 'image' &&
+    !hasMedia &&
+    !isImageCutoutPending &&
+    !isImageCutoutError &&
+    !isVideoFrameCapturePending &&
+    !isVideoFrameCaptureError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -1692,6 +1726,30 @@ function MediaContentCard({
       setIsPerspectiveMenuOpen(false)
     }
   }, [showImageToolbar])
+
+  useEffect(() => {
+    if (!showVideoToolbar) {
+      setIsFrameCaptureMenuOpen(false)
+    }
+  }, [showVideoToolbar])
+
+  const handleSelectVideoFrameCapture = useCallback(
+    (mode: VideoFrameCaptureMode) => {
+      setIsFrameCaptureMenuOpen(false)
+      setError(null)
+      const captureTime = resolveVideoFrameCaptureTime(videoRef.current, mode)
+      if (!captureTime.ok) {
+        setError(captureTime.error)
+        return
+      }
+
+      void onCaptureVideoFrame({
+        mode,
+        timeSeconds: captureTime.timeSeconds,
+      })
+    },
+    [onCaptureVideoFrame]
+  )
 
   return (
     <div ref={rootRef} className='relative'>
@@ -1851,6 +1909,29 @@ function MediaContentCard({
           >
             <Sparkles className='h-3.5 w-3.5' />
           </button>
+          <div className='nodrag nopan relative'>
+            <button
+              type='button'
+              aria-label='截帧'
+              title='截帧'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                setIsFrameCaptureMenuOpen((current) => !current)
+              }}
+              className={cn(
+                'nodrag nopan inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]',
+                isFrameCaptureMenuOpen && 'bg-[var(--surface-3)]'
+              )}
+            >
+              <Camera className='h-3.5 w-3.5' />
+            </button>
+            {isFrameCaptureMenuOpen ? (
+              <VideoFrameCaptureMenu onSelect={handleSelectVideoFrameCapture} />
+            ) : null}
+          </div>
         </div>
       )}
 
@@ -1965,6 +2046,33 @@ function MediaContentCard({
               }}
             >
               <Scissors className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
+          </div>
+        ) : isVideoFrameCapturePending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>截帧中...</div>
+          </div>
+        ) : isVideoFrameCaptureError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '截帧失败，请重试。'}
+            </div>
+            <button
+              type='button'
+              aria-label='重试截帧'
+              title='重试截帧'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryVideoFrameCapture()
+              }}
+            >
+              <Camera className='h-3.5 w-3.5' />
               <span>重试</span>
             </button>
           </div>
@@ -2296,6 +2404,17 @@ export const ContentBlock = memo(function ContentBlock({
   >(id, 'videoEnhanceSourceFile')
   const [videoEnhanceParametersValue, setVideoEnhanceParametersValue] =
     useSubBlockValue<VideoEnhanceParametersValue>(id, 'videoEnhanceParameters')
+  const [videoFrameCaptureSourceFileValue] = useSubBlockValue<
+    CaptureWorkspaceVideoFrameBody['sourceFile'] | null
+  >(id, 'videoFrameCaptureSourceFile')
+  const [videoFrameCaptureModeValue] = useSubBlockValue<VideoFrameCaptureMode | null>(
+    id,
+    'videoFrameCaptureMode'
+  )
+  const [videoFrameCaptureTimeSecondsValue] = useSubBlockValue<number | null>(
+    id,
+    'videoFrameCaptureTimeSeconds'
+  )
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
   const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
     ContentReferenceRecord[]
@@ -2491,6 +2610,31 @@ export const ContentBlock = memo(function ContentBlock({
       DEFAULT_VIDEO_ENHANCE_PARAMETERS
     )
   )
+  const resolvedVideoFrameCaptureSourceFile = extractStoredValue<
+    CaptureWorkspaceVideoFrameBody['sourceFile'] | null
+  >(
+    data.isPreview
+      ? sourceValues
+      : ({ videoFrameCaptureSourceFile: videoFrameCaptureSourceFileValue } as StoredValueRecord),
+    'videoFrameCaptureSourceFile',
+    null
+  )
+  const resolvedVideoFrameCaptureMode = extractStoredValue<VideoFrameCaptureMode | null>(
+    data.isPreview
+      ? sourceValues
+      : ({ videoFrameCaptureMode: videoFrameCaptureModeValue } as StoredValueRecord),
+    'videoFrameCaptureMode',
+    null
+  )
+  const resolvedVideoFrameCaptureTimeSeconds = extractStoredValue<number | null>(
+    data.isPreview
+      ? sourceValues
+      : ({
+          videoFrameCaptureTimeSeconds: videoFrameCaptureTimeSecondsValue,
+        } as StoredValueRecord),
+    'videoFrameCaptureTimeSeconds',
+    null
+  )
   const resolvedVideoFrameAspectRatioPreset = isVideoFrameAspectRatioPreset(
     extractStoredValue<string>(
       data.isPreview
@@ -2548,6 +2692,11 @@ export const ContentBlock = memo(function ContentBlock({
   })
   const effectiveImageModel = getEffectiveContentModelId({
     requestedModelId: resolvedAiModel,
+    availability: modelAvailability?.image ?? null,
+    fallbackModelId: DEFAULT_IMAGE_AI_MODEL,
+  })
+  const effectiveDefaultImageModel = getEffectiveContentModelId({
+    requestedModelId: DEFAULT_IMAGE_AI_MODEL,
     availability: modelAvailability?.image ?? null,
     fallbackModelId: DEFAULT_IMAGE_AI_MODEL,
   })
@@ -3433,6 +3582,193 @@ export const ContentBlock = memo(function ContentBlock({
     resolvedVideoEnhanceSourceFile,
   ])
 
+  const markVideoFrameCapturePending = useCallback(
+    (targetBlockId: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'pending')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const completeVideoFrameCapture = useCallback(
+    (targetBlockId: string, file: UploadedFileValue) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failVideoFrameCapture = useCallback(
+    (targetBlockId: string, message: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startVideoFrameCaptureRequest = useCallback(
+    async (request: {
+      targetBlockId: string
+      sourceFile: CaptureWorkspaceVideoFrameBody['sourceFile']
+      mode: VideoFrameCaptureMode
+      timeSeconds: number
+    }) => {
+      markVideoFrameCapturePending(request.targetBlockId)
+
+      try {
+        const captureResult = await requestJson(captureWorkspaceVideoFrameContract, {
+          body: {
+            workspaceId: params.workspaceId,
+            sourceFile: request.sourceFile,
+            timeSeconds: request.timeSeconds,
+            mode: request.mode,
+          },
+        })
+        const uploadedFile: UploadedFileValue = {
+          id: captureResult.file.id,
+          name: captureResult.file.name,
+          path: captureResult.file.url,
+          key: captureResult.file.key,
+          size: captureResult.file.size,
+          type: captureResult.file.type,
+          context: captureResult.file.context,
+        }
+
+        completeVideoFrameCapture(request.targetBlockId, uploadedFile)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Video frame capture failed.'
+        failVideoFrameCapture(request.targetBlockId, message)
+      }
+    },
+    [
+      completeVideoFrameCapture,
+      failVideoFrameCapture,
+      markVideoFrameCapturePending,
+      params.workspaceId,
+    ]
+  )
+
+  const createVideoFrameCaptureNode = useCallback(
+    ({ mode, timeSeconds }: { mode: VideoFrameCaptureMode; timeSeconds: number }) => {
+      if (
+        !canEditWorkflow ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'video' ||
+        !resolvedFile
+      ) {
+        return
+      }
+      if (!params.workspaceId) {
+        return
+      }
+
+      const sourceFile = toFrameCaptureRequestFile(resolvedFile)
+      if (!sourceFile) {
+        return
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        return
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        return
+      }
+
+      const targetBlockId = generateId()
+      const parentId = sourceBlock.data?.parentId
+      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+      const targetPosition = {
+        x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+      const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+      const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+      const newBlock = prepareBlockState({
+        id: targetBlockId,
+        type: 'content',
+        name: getUniqueBlockName('Image', workflowBlocks),
+        position: targetPosition,
+        data: {
+          contentVariant: 'image',
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: 'video',
+        role: 'video_frame_capture',
+      }
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: id,
+        target: targetBlockId,
+        sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+      })
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          contentVariant: 'image',
+          aiPrompt: '',
+          aiModel: effectiveDefaultImageModel,
+          aiAspectRatio: 'auto',
+          file: null,
+          contentReferences: [reference],
+          generationKind: 'video_frame_capture',
+          generationStatus: 'pending',
+          generationError: null,
+          videoFrameCaptureSourceFile: sourceFile,
+          videoFrameCaptureMode: mode,
+          videoFrameCaptureTimeSeconds: timeSeconds,
+        },
+      }
+
+      setIsImageCropMode(false)
+      setIsImageRepaintMode(false)
+      setIsImageEraseMode(false)
+      setIsImageOutpaintMode(false)
+      setIsVideoTrimMode(false)
+      setVideoTrimError(null)
+      setPendingSelection([targetBlockId])
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      if (added) {
+        void startVideoFrameCaptureRequest({
+          targetBlockId,
+          sourceFile,
+          mode,
+          timeSeconds,
+        })
+      }
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      effectiveDefaultImageModel,
+      id,
+      params.workspaceId,
+      resolvedFile,
+      resolvedVariant,
+      setPendingSelection,
+      startVideoFrameCaptureRequest,
+      workflowBlocks,
+    ]
+  )
+
   const createImagePerspectiveVariantNode = useCallback(
     async ({ file, model }: { file: UploadedFileValue; model: ImageGenerationModelId }) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
@@ -3933,6 +4269,60 @@ export const ContentBlock = memo(function ContentBlock({
     resolveBlockSourceValues,
     startImageCutoutRequest,
   ])
+
+  const retryVideoFrameCapture = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      resolvedGenerationKind !== 'video_frame_capture'
+    ) {
+      return
+    }
+
+    if (!resolvedVideoFrameCaptureSourceFile?.key) {
+      failVideoFrameCapture(id, '源视频缺少文件信息。')
+      return
+    }
+
+    if (
+      resolvedVideoFrameCaptureMode !== 'current' &&
+      resolvedVideoFrameCaptureMode !== 'first' &&
+      resolvedVideoFrameCaptureMode !== 'last'
+    ) {
+      failVideoFrameCapture(id, '缺少截帧模式，无法重试。')
+      return
+    }
+
+    const timeSeconds =
+      typeof resolvedVideoFrameCaptureTimeSeconds === 'number'
+        ? resolvedVideoFrameCaptureTimeSeconds
+        : Number(resolvedVideoFrameCaptureTimeSeconds)
+    if (!Number.isFinite(timeSeconds) || timeSeconds < 0) {
+      failVideoFrameCapture(id, '缺少截帧时间，无法重试。')
+      return
+    }
+
+    void startVideoFrameCaptureRequest({
+      targetBlockId: id,
+      sourceFile: resolvedVideoFrameCaptureSourceFile,
+      mode: resolvedVideoFrameCaptureMode,
+      timeSeconds,
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    failVideoFrameCapture,
+    id,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolvedVideoFrameCaptureMode,
+    resolvedVideoFrameCaptureSourceFile,
+    resolvedVideoFrameCaptureTimeSeconds,
+    startVideoFrameCaptureRequest,
+  ])
   const getContentNodeIdAtPoint = useCallback(
     (clientX: number, clientY: number): string | null => {
       const elements = document.elementsFromPoint(clientX, clientY)
@@ -4400,10 +4790,12 @@ export const ContentBlock = memo(function ContentBlock({
         return []
       }
 
-      const isVideoRole =
-        reference.role === 'video_first_frame' || reference.role === 'video_last_frame'
-      const sourceBlockId = isVideoRole ? reference.sourceBlockId : id
-      const targetBlockId = isVideoRole ? id : reference.sourceBlockId
+      const isSourceToTargetRole =
+        reference.role === 'video_first_frame' ||
+        reference.role === 'video_last_frame' ||
+        reference.role === 'video_frame_capture'
+      const sourceBlockId = isSourceToTargetRole ? reference.sourceBlockId : id
+      const targetBlockId = isSourceToTargetRole ? id : reference.sourceBlockId
       const sourceX = workflowBlocks[sourceBlockId]?.position.x ?? 0
       const targetX = workflowBlocks[targetBlockId]?.position.x ?? 0
 
@@ -4629,6 +5021,7 @@ export const ContentBlock = memo(function ContentBlock({
             onStartImageCutout={startImageCutoutMode}
             onStartVideoTrim={startVideoTrimMode}
             onStartVideoEnhance={createVideoEnhanceNode}
+            onCaptureVideoFrame={createVideoFrameCaptureNode}
             onCancelImageCrop={cancelImageCropMode}
             onCancelImageRepaint={cancelImageRepaintMode}
             onCancelImageErase={cancelImageEraseMode}
@@ -4642,6 +5035,7 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImageEraseVariant={createImageEraseVariantNode}
             onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
+            onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}

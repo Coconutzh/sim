@@ -9,6 +9,7 @@ export const videoFrameAspectRatioPresetSchema = z.enum(['16:9', '9:16', '1:1'])
 export const videoEnhanceResolutionSchema = z.enum(['1080p', '2k', '4k'])
 export const videoEnhanceFrameRateSchema = z.enum(['source', '30fps', '60fps', '90fps'])
 export const videoEnhanceSlowMotionSchema = z.enum(['source', '2x'])
+export const videoFrameCaptureModeSchema = z.enum(['current', 'first', 'last'])
 
 export const videoGenerationMediaSchema = z.object({
   type: videoGenerationMediaTypeSchema,
@@ -112,7 +113,7 @@ export const enhanceWorkspaceVideoBodySchema = z.object({
   coverTimeSeconds: z.number().min(0).optional(),
 })
 
-export const generatedWorkspaceVideoFileSchema = z.object({
+export const generatedWorkspaceFileSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
@@ -120,6 +121,15 @@ export const generatedWorkspaceVideoFileSchema = z.object({
   type: z.string(),
   key: z.string(),
   context: z.string().optional(),
+})
+
+export const generatedWorkspaceVideoFileSchema = generatedWorkspaceFileSchema
+
+export const captureWorkspaceVideoFrameBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  sourceFile: userFileSchema,
+  timeSeconds: z.number().min(0, 'timeSeconds must be greater than or equal to 0'),
+  mode: videoFrameCaptureModeSchema,
 })
 
 const generatedVideoMetadataSchema = z.object({
@@ -177,6 +187,19 @@ export const enhanceWorkspaceVideoContract = defineRouteContract({
   },
 })
 
+export const captureWorkspaceVideoFrameContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/videos/capture-frame',
+  body: captureWorkspaceVideoFrameBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceFileSchema,
+    }),
+  },
+})
+
 export const generateWorkspaceVideoThumbnailsContract = defineRouteContract({
   method: 'POST',
   path: '/api/media/videos/thumbnails',
@@ -193,6 +216,7 @@ export const generateWorkspaceVideoThumbnailsContract = defineRouteContract({
 export type GenerateWorkspaceVideoBody = z.input<typeof generateWorkspaceVideoBodySchema>
 export type TrimWorkspaceVideoBody = z.input<typeof trimWorkspaceVideoBodySchema>
 export type EnhanceWorkspaceVideoBody = z.input<typeof enhanceWorkspaceVideoBodySchema>
+export type CaptureWorkspaceVideoFrameBody = z.input<typeof captureWorkspaceVideoFrameBodySchema>
 export type GenerateWorkspaceVideoThumbnailsBody = z.input<
   typeof generateWorkspaceVideoThumbnailsBodySchema
 >

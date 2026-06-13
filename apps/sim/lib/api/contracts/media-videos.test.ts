@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { enhanceWorkspaceVideoBodySchema } from '@/lib/api/contracts/media-videos'
+import {
+  captureWorkspaceVideoFrameBodySchema,
+  enhanceWorkspaceVideoBodySchema,
+} from '@/lib/api/contracts/media-videos'
 
 const sourceFile = {
   id: 'wf_source',
@@ -12,6 +15,42 @@ const sourceFile = {
 }
 
 describe('media video contracts', () => {
+  it.each(['current', 'first', 'last'] as const)(
+    'accepts valid %s frame capture parameters',
+    (mode) => {
+      const result = captureWorkspaceVideoFrameBodySchema.safeParse({
+        workspaceId: 'ws-1',
+        sourceFile,
+        timeSeconds: mode === 'last' ? 4.95 : 0,
+        mode,
+      })
+
+      expect(result.success).toBe(true)
+    }
+  )
+
+  it('rejects negative frame capture times', () => {
+    const result = captureWorkspaceVideoFrameBodySchema.safeParse({
+      workspaceId: 'ws-1',
+      sourceFile,
+      timeSeconds: -0.01,
+      mode: 'current',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects unsupported frame capture modes', () => {
+    const result = captureWorkspaceVideoFrameBodySchema.safeParse({
+      workspaceId: 'ws-1',
+      sourceFile,
+      timeSeconds: 0,
+      mode: 'middle',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
   it('accepts valid video enhancement parameters', () => {
     const result = enhanceWorkspaceVideoBodySchema.safeParse({
       workspaceId: 'ws-1',

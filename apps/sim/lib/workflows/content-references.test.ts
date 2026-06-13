@@ -27,6 +27,9 @@ describe('content reference capabilities', () => {
     expect(getAllowedReferencingContentNodeVariants('video')).toEqual(['text'])
     expect(getAllowedReferencingContentNodeVariants('audio')).toEqual(['video'])
 
+    expect(
+      getAllowedReferenceSourceVariants('image', 'gemini-3.1-flash-image-preview')
+    ).not.toContain('video')
     expect(canContentNodeVariantReferenceSource('audio', 'image')).toBe(false)
     expect(canContentNodeVariantReferenceSource('video', 'audio')).toBe(true)
   })
@@ -157,6 +160,26 @@ describe('content reference capabilities', () => {
         references,
       })
     ).toBeNull()
+  })
+
+  it('allows persisted video frame capture references on image nodes without opening normal video image references', () => {
+    expect(
+      getModelDisabledReason({
+        targetVariant: 'image',
+        model: 'gemini-3.1-flash-image-preview',
+        references: [
+          {
+            sourceBlockId: 'video-1',
+            sourceVariant: 'video',
+            role: 'video_frame_capture',
+          },
+        ],
+      })
+    ).toBeNull()
+    expect(getAllowedReferenceSourceVariants('image', 'gemini-3.1-flash-image-preview')).toEqual([
+      'text',
+      'image',
+    ])
   })
 
   it('keeps text models from using audio references while allowing compatible video references', () => {
@@ -444,5 +467,46 @@ describe('content reference canvas reconciliation', () => {
         edges,
       })
     ).toEqual(['video-edge'])
+  })
+
+  it('infers and matches video frame capture reference edges', () => {
+    const edges = [
+      {
+        id: 'frame-capture-edge',
+        source: 'video-source',
+        target: 'image-target',
+        data: { kind: CONTENT_REFERENCE_EDGE_KIND },
+      },
+    ]
+
+    expect(
+      inferContentReferencesFromCanvas({
+        targetBlockId: 'image-target',
+        targetVariant: 'image',
+        model: 'gemini-3.1-flash-image-preview',
+        edges,
+        candidateBlockIds: ['image-target', 'video-source'],
+        resolveVariant: (blockId) => (blockId === 'video-source' ? 'video' : 'image'),
+        resolveFileKey: () => null,
+      })
+    ).toEqual([
+      {
+        sourceBlockId: 'video-source',
+        sourceVariant: 'video',
+        role: 'video_frame_capture',
+      },
+    ])
+
+    expect(
+      findMatchingContentReferenceEdgeIds({
+        targetBlockId: 'image-target',
+        reference: {
+          sourceBlockId: 'video-source',
+          sourceVariant: 'video',
+          role: 'video_frame_capture',
+        },
+        edges,
+      })
+    ).toEqual(['frame-capture-edge'])
   })
 })

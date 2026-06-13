@@ -145,6 +145,7 @@ function isContentReferenceRole(value: unknown): value is ContentReferenceRole {
   return (
     value === 'text_context' ||
     value === 'image_reference' ||
+    value === 'video_frame_capture' ||
     value === 'video_first_frame' ||
     value === 'video_last_frame' ||
     value === 'audio_reference'
@@ -334,6 +335,14 @@ export function getModelDisabledReason(params: {
   const references = normalizeContentReferences(params.references)
 
   for (const reference of references) {
+    if (
+      params.targetVariant === 'image' &&
+      reference.sourceVariant === 'video' &&
+      reference.role === 'video_frame_capture'
+    ) {
+      continue
+    }
+
     const allowedRoles = getAllowedRolesForSourceVariant(capability, reference.sourceVariant)
     if (!allowedRoles.includes(reference.role)) {
       return `This model does not support ${getHumanVariantLabel(reference.sourceVariant)} references.`
@@ -471,6 +480,7 @@ export function upsertContentReference(
     if (
       nextReference.role === 'video_first_frame' ||
       nextReference.role === 'video_last_frame' ||
+      nextReference.role === 'video_frame_capture' ||
       nextReference.role === 'audio_reference'
     ) {
       return false
@@ -520,6 +530,18 @@ export function inferContentReferencesFromCanvas(params: {
         sourceVariant,
         role: autoLinkRole,
       })
+      continue
+    }
+
+    if (edge.target === params.targetBlockId) {
+      const sourceVariant = params.resolveVariant(edge.source)
+      if (params.targetVariant === 'image' && sourceVariant === 'video') {
+        inferred.push({
+          sourceBlockId: edge.source,
+          sourceVariant,
+          role: 'video_frame_capture',
+        })
+      }
       continue
     }
 
@@ -575,14 +597,19 @@ export function findMatchingContentReferenceEdgeIds(params: {
 
     if (
       params.reference.role === 'video_first_frame' ||
-      params.reference.role === 'video_last_frame'
+      params.reference.role === 'video_last_frame' ||
+      params.reference.role === 'video_frame_capture'
     ) {
       const expectedAutoLinkType =
-        params.reference.role === 'video_first_frame' ? 'video_first_frame' : 'video_last_frame'
+        params.reference.role === 'video_first_frame'
+          ? 'video_first_frame'
+          : params.reference.role === 'video_last_frame'
+            ? 'video_last_frame'
+            : null
 
       return edge.source === params.reference.sourceBlockId &&
         edge.target === params.targetBlockId &&
-        edge.data?.autoLinkType === expectedAutoLinkType
+        (expectedAutoLinkType ? edge.data?.autoLinkType === expectedAutoLinkType : true)
         ? [edge.id]
         : []
     }
