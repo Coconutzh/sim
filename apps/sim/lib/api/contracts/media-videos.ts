@@ -6,6 +6,9 @@ export const videoGenerationModelSchema = z.enum(['wan2.7-i2v', 'wan2.6-t2v', 'w
 export const videoGenerationMediaTypeSchema = z.enum(['first_frame', 'last_frame'])
 export const videoGenerationResolutionSchema = z.enum(['720P', '1080P'])
 export const videoFrameAspectRatioPresetSchema = z.enum(['16:9', '9:16', '1:1'])
+export const videoEnhanceResolutionSchema = z.enum(['1080p', '2k', '4k'])
+export const videoEnhanceFrameRateSchema = z.enum(['source', '30fps', '60fps', '90fps'])
+export const videoEnhanceSlowMotionSchema = z.enum(['source', '2x'])
 
 export const videoGenerationMediaSchema = z.object({
   type: videoGenerationMediaTypeSchema,
@@ -100,6 +103,15 @@ export const generateWorkspaceVideoThumbnailsBodySchema = z.object({
   frameCount: z.number().int().min(1).max(24).default(12),
 })
 
+export const enhanceWorkspaceVideoBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  sourceFile: userFileSchema,
+  resolution: videoEnhanceResolutionSchema,
+  frameRate: videoEnhanceFrameRateSchema,
+  slowMotion: videoEnhanceSlowMotionSchema,
+  coverTimeSeconds: z.number().min(0).optional(),
+})
+
 export const generatedWorkspaceVideoFileSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -144,6 +156,27 @@ export const trimWorkspaceVideoContract = defineRouteContract({
   },
 })
 
+export const enhanceWorkspaceVideoContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/media/videos/enhance',
+  body: enhanceWorkspaceVideoBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      file: generatedWorkspaceVideoFileSchema,
+      metadata: z
+        .object({
+          provider: z.literal('ffmpeg'),
+          resolution: videoEnhanceResolutionSchema,
+          frameRate: videoEnhanceFrameRateSchema,
+          slowMotion: videoEnhanceSlowMotionSchema,
+        })
+        .optional(),
+    }),
+  },
+})
+
 export const generateWorkspaceVideoThumbnailsContract = defineRouteContract({
   method: 'POST',
   path: '/api/media/videos/thumbnails',
@@ -159,6 +192,7 @@ export const generateWorkspaceVideoThumbnailsContract = defineRouteContract({
 
 export type GenerateWorkspaceVideoBody = z.input<typeof generateWorkspaceVideoBodySchema>
 export type TrimWorkspaceVideoBody = z.input<typeof trimWorkspaceVideoBodySchema>
+export type EnhanceWorkspaceVideoBody = z.input<typeof enhanceWorkspaceVideoBodySchema>
 export type GenerateWorkspaceVideoThumbnailsBody = z.input<
   typeof generateWorkspaceVideoThumbnailsBodySchema
 >

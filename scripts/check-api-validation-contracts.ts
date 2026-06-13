@@ -9,8 +9,8 @@ const QUERY_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/queries')
 const SELECTOR_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/selectors')
 
 const BASELINE = {
-  totalRoutes: 454,
-  zodRoutes: 429,
+  totalRoutes: 455,
+  zodRoutes: 430,
   nonZodRoutes: 25,
 } as const
 
