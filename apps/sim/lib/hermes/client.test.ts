@@ -4,28 +4,157 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockEnv } = vi.hoisted(() => ({
-  mockEnv: {
-    HERMES_API_URL: 'http://127.0.0.1:8642/' as string | undefined,
-    HERMES_API_KEY: 'test-key' as string | undefined,
-  },
+  mockEnv: {} as Record<string, number | string | undefined>,
 }))
 
 vi.mock('@/lib/core/config/env', () => ({
   env: mockEnv,
+  envNumber: (
+    value: number | string | undefined | null,
+    fallback: number,
+    options: { min?: number } = {}
+  ) => {
+    const min = options.min ?? 0
+    const parsed = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(parsed) && parsed >= min ? parsed : fallback
+  },
 }))
 
-import { callHermesChatCompletion, HermesClientError } from '@/lib/hermes/client'
+import { callHermesChatCompletion, checkHermesHealth, HermesClientError } from '@/lib/hermes/client'
+
+function resetEnv(values: Record<string, number | string | undefined> = {}) {
+  for (const key of Object.keys(mockEnv)) delete mockEnv[key]
+  Object.assign(mockEnv, values)
+}
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+describe('Hermes client health probe', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn())
+    resetEnv()
+  })
+
+  it('reports unconfigured when Hermes URL or key is missing', async () => {
+    const result = await checkHermesHealth()
+
+    expect(result.configured).toBe(false)
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe('unconfigured')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('checks health, capabilities, and required toolsets', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local/',
+      HERMES_API_KEY: 'test-key',
+      HERMES_REQUIRED_TOOLSETS: 'sim,memory',
+    })
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      expect((init?.headers as Record<string, string>).authorization).toBe('Bearer test-key')
+      const url = String(input)
+      if (url.endsWith('/health')) {
+        return jsonResponse({
+          status: 'ok',
+          version: '1.2.3',
+          commit: 'abc123',
+        })
+      }
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            responses_api: true,
+            skills_api: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      return jsonResponse({
+        data: [
+          { name: 'sim', enabled: true },
+          { name: 'memory', enabled: true },
+        ],
+      })
+    })
+
+    const result = await checkHermesHealth()
+
+    expect(result.ok).toBe(true)
+    expect(result.status).toBe('healthy')
+    expect(result.baseUrl).toBe('http://hermes.local')
+    expect(result.version).toBe('1.2.3')
+    expect(result.commit).toBe('abc123')
+    expect(result.capabilities?.chatCompletions).toBe(true)
+    expect(result.toolsets?.missing).toEqual([])
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('marks the runtime degraded when a required toolset is missing', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local',
+      HERMES_API_KEY: 'test-key',
+      HERMES_REQUIRED_TOOLSETS: 'sim',
+    })
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok', version: '1.2.3' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            responses_api: true,
+            skills_api: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      return jsonResponse({ data: [{ name: 'memory', enabled: true }] })
+    })
+
+    const result = await checkHermesHealth()
+
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe('degraded')
+    expect(result.toolsets?.missing).toEqual(['sim'])
+    expect(result.error).toContain('required Hermes toolsets missing: sim')
+  })
+
+  it('reports unreachable when the Hermes service cannot be contacted', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local',
+      HERMES_API_KEY: 'test-key',
+    })
+    vi.mocked(fetch).mockRejectedValue(new Error('connection refused'))
+
+    const result = await checkHermesHealth()
+
+    expect(result.configured).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe('unreachable')
+    expect(result.error).toBe('connection refused')
+  })
+})
 
 describe('callHermesChatCompletion', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
-    mockEnv.HERMES_API_URL = 'http://127.0.0.1:8642/'
-    mockEnv.HERMES_API_KEY = 'test-key'
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn())
+    resetEnv({
+      HERMES_API_URL: 'http://127.0.0.1:8642/',
+      HERMES_API_KEY: 'test-key',
+    })
   })
 
   it('posts OpenAI-compatible messages with Hermes session headers and metadata', async () => {
-    const fetchMock = vi.fn(async () => {
-      return new Response(
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
         JSON.stringify({
           id: 'chatcmpl-1',
           choices: [{ message: { content: 'hello from hermes' } }],
@@ -39,8 +168,7 @@ describe('callHermesChatCompletion', () => {
           },
         }
       )
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    )
 
     const result = await callHermesChatCompletion({
       messages: [{ role: 'user', content: 'hello' }],
@@ -49,7 +177,7 @@ describe('callHermesChatCompletion', () => {
       metadata: { sim: { userId: 'user-1' } },
     })
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       'http://127.0.0.1:8642/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
@@ -60,7 +188,7 @@ describe('callHermesChatCompletion', () => {
         }),
       })
     )
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
     expect(body.metadata).toEqual({ sim: { userId: 'user-1' } })
     expect(result).toEqual({
       id: 'chatcmpl-1',
@@ -73,8 +201,7 @@ describe('callHermesChatCompletion', () => {
   })
 
   it('fails clearly when Hermes is not configured', async () => {
-    mockEnv.HERMES_API_URL = undefined
-    mockEnv.HERMES_API_KEY = undefined
+    resetEnv()
 
     await expect(
       callHermesChatCompletion({ messages: [{ role: 'user', content: 'hello' }] })

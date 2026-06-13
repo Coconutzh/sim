@@ -248,6 +248,34 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(mockPersistLocalAgentSessionMetadata).toHaveBeenCalledOnce()
   })
 
+  it('returns read-only canvas summary when no node is selected', async () => {
+    mockResolveLocalAgentContext.mockResolvedValue(buildLocalContext({ selectedNodeIds: [] }))
+    mockReadCanvasNodeDetail.mockReturnValue(null)
+
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'what is on the canvas?',
+      selectedNodeIds: [],
+      mode: 'read_only',
+      traceId: 'trace-no-selection',
+      auditId: 'audit-no-selection',
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error)
+    expect(result.auditId).toBe('audit-no-selection')
+    expect(result.traceId).toBe('trace-no-selection')
+    expect(result.requiresConfirmation).toBe(false)
+    expect(result.changedNodeIds).toEqual([])
+    expect(result.generatedNodeIds).toEqual([])
+    expect(result.canvas?.selectedNodeIds).toEqual([])
+    expect(result.canvas?.selectedNodeDetails).toEqual([])
+    expect(result.answer).toContain('当前没有选中节点')
+  })
+
   it('denies read-only access when local permissions cannot read the canvas', async () => {
     mockResolveLocalAgentContext.mockResolvedValue(
       buildLocalContext({

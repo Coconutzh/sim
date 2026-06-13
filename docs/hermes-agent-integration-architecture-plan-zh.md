@@ -6,6 +6,8 @@
 
 本方案基于当前 SIM 源码中的 Local Canvas Agent Runtime 和本地 Hermes Agent fork 讨论结论制定。后续实现、评审和排期应优先遵守本文；如需偏离，必须在方案评审中明确说明原因、影响范围、回滚方案和安全边界。
 
+部署、运维、健康检查、环境变量和发布前检查清单见 `docs/hermes-agent-deployment-runbook-zh.md`。
+
 ## 1. 最终决策
 
 采用方案二：Hermes 作为全局主控 Agent，SIM Local Canvas Agent Runtime 作为 Hermes 可调用的专属画布子能力。

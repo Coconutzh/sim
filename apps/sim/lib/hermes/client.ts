@@ -1,8 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { env } from '@/lib/core/config/env'
+import { env, envNumber } from '@/lib/core/config/env'
 
 const logger = createLogger('HermesClient')
+const DEFAULT_HEALTH_TIMEOUT_MS = 5000
 
 export interface HermesChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -36,6 +37,49 @@ export interface HermesClientConfig {
   apiKey: string
 }
 
+export type HermesHealthStatus = 'unconfigured' | 'healthy' | 'degraded' | 'unreachable'
+
+export interface HermesRuntimeBuildInfo {
+  version?: string
+  commit?: string | null
+  release?: string | null
+  buildTime?: string | null
+}
+
+export interface HermesCapabilitySummary {
+  chatCompletions: boolean
+  responsesApi: boolean
+  skillsApi: boolean
+  sessionKeyHeader?: string
+}
+
+export interface HermesToolsetSummary {
+  checked: boolean
+  required: string[]
+  enabled: string[]
+  missing: string[]
+}
+
+export interface HermesHealthCheckResult {
+  configured: boolean
+  ok: boolean
+  status: HermesHealthStatus
+  checkedAt: string
+  baseUrl?: string
+  version?: string
+  commit?: string | null
+  build?: HermesRuntimeBuildInfo
+  capabilities?: HermesCapabilitySummary
+  toolsets?: HermesToolsetSummary
+  responseStatus?: number
+  error?: string
+}
+
+export interface HermesHealthCheckOptions {
+  signal?: AbortSignal
+  includeToolsets?: boolean
+}
+
 export class HermesClientError extends Error {
   constructor(
     message: string,
@@ -55,6 +99,212 @@ export function getHermesClientConfig(): HermesClientConfig | null {
   return {
     baseUrl: trimTrailingSlash(env.HERMES_API_URL),
     apiKey: env.HERMES_API_KEY,
+  }
+}
+
+function getHermesRequiredToolsets(): string[] {
+  const raw = env.HERMES_REQUIRED_TOOLSETS
+  if (raw === undefined) return ['sim']
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+function getHermesHealthTimeoutMs(): number {
+  return envNumber(env.HERMES_HEALTH_TIMEOUT_MS, DEFAULT_HEALTH_TIMEOUT_MS, { min: 1000 })
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function readString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key]
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function readNullableString(
+  record: Record<string, unknown> | undefined,
+  key: string
+): string | null | undefined {
+  const value = record?.[key]
+  if (value === null) return null
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function normalizeBuildInfo(payload: unknown): HermesRuntimeBuildInfo {
+  const record = asRecord(payload)
+  const build = asRecord(record?.build)
+  return {
+    version: readString(build, 'version') ?? readString(record, 'version'),
+    commit: readNullableString(build, 'commit') ?? readNullableString(record, 'commit'),
+    release: readNullableString(build, 'release') ?? readNullableString(record, 'release'),
+    buildTime:
+      readNullableString(build, 'buildTime') ??
+      readNullableString(build, 'build_time') ??
+      readNullableString(record, 'buildTime') ??
+      readNullableString(record, 'build_time'),
+  }
+}
+
+function normalizeCapabilities(payload: unknown): HermesCapabilitySummary {
+  const record = asRecord(payload)
+  const features = asRecord(record?.features)
+  return {
+    chatCompletions: features?.chat_completions === true,
+    responsesApi: features?.responses_api === true,
+    skillsApi: features?.skills_api === true,
+    sessionKeyHeader: readString(features, 'session_key_header'),
+  }
+}
+
+function normalizeToolsets(payload: unknown, required: string[]): HermesToolsetSummary {
+  const record = asRecord(payload)
+  const data = Array.isArray(record?.data) ? record.data : []
+  const enabled = data
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .filter((item) => item.enabled === true)
+    .map((item) => readString(item, 'name'))
+    .filter((name): name is string => Boolean(name))
+    .sort()
+  const enabledSet = new Set(enabled)
+  return {
+    checked: true,
+    required,
+    enabled,
+    missing: required.filter((name) => !enabledSet.has(name)),
+  }
+}
+
+async function fetchHermesJson(
+  config: HermesClientConfig,
+  path: string,
+  signal?: AbortSignal
+): Promise<{ ok: boolean; status: number; payload: unknown }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), getHermesHealthTimeoutMs())
+  const abortFromParent = () => controller.abort()
+
+  if (signal?.aborted) {
+    controller.abort()
+  } else {
+    signal?.addEventListener('abort', abortFromParent, { once: true })
+  }
+
+  try {
+    const response = await fetch(`${config.baseUrl}${path}`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${config.apiKey}`,
+      },
+      signal: controller.signal,
+    })
+    const payload = (await response.json().catch(() => ({}))) as unknown
+    return { ok: response.ok, status: response.status, payload }
+  } finally {
+    clearTimeout(timeout)
+    signal?.removeEventListener('abort', abortFromParent)
+  }
+}
+
+export async function checkHermesHealth(
+  options: HermesHealthCheckOptions = {}
+): Promise<HermesHealthCheckResult> {
+  const checkedAt = new Date().toISOString()
+  const config = getHermesClientConfig()
+  if (!config) {
+    return {
+      configured: false,
+      ok: false,
+      status: 'unconfigured',
+      checkedAt,
+      error: 'HERMES_API_URL and HERMES_API_KEY must both be configured',
+    }
+  }
+
+  try {
+    const health = await fetchHermesJson(config, '/health', options.signal)
+    const build = normalizeBuildInfo(health.payload)
+    if (!health.ok) {
+      return {
+        configured: true,
+        ok: false,
+        status: 'unreachable',
+        checkedAt,
+        baseUrl: config.baseUrl,
+        version: build.version,
+        commit: build.commit,
+        build,
+        responseStatus: health.status,
+        error: `Hermes health check failed with status ${health.status}`,
+      }
+    }
+
+    const issues: string[] = []
+    if (readString(asRecord(health.payload), 'status') !== 'ok') {
+      issues.push('Hermes health status is not ok')
+    }
+
+    const capabilitiesResponse = await fetchHermesJson(config, '/v1/capabilities', options.signal)
+    const capabilities = normalizeCapabilities(capabilitiesResponse.payload)
+    if (!capabilitiesResponse.ok) {
+      issues.push(`Hermes capabilities check failed with status ${capabilitiesResponse.status}`)
+    }
+    if (!capabilities.chatCompletions) issues.push('chat_completions capability is missing')
+    if (capabilities.sessionKeyHeader !== 'X-Hermes-Session-Key') {
+      issues.push('session key header capability is missing')
+    }
+
+    let toolsets: HermesToolsetSummary | undefined
+    const requiredToolsets = getHermesRequiredToolsets()
+    if (options.includeToolsets !== false && requiredToolsets.length > 0) {
+      const toolsetsResponse = await fetchHermesJson(config, '/v1/toolsets', options.signal)
+      if (toolsetsResponse.ok) {
+        toolsets = normalizeToolsets(toolsetsResponse.payload, requiredToolsets)
+        if (toolsets.missing.length > 0) {
+          issues.push(`required Hermes toolsets missing: ${toolsets.missing.join(', ')}`)
+        }
+      } else {
+        toolsets = {
+          checked: false,
+          required: requiredToolsets,
+          enabled: [],
+          missing: requiredToolsets,
+        }
+        issues.push(`Hermes toolsets check failed with status ${toolsetsResponse.status}`)
+      }
+    }
+
+    const ok = issues.length === 0
+    return {
+      configured: true,
+      ok,
+      status: ok ? 'healthy' : 'degraded',
+      checkedAt,
+      baseUrl: config.baseUrl,
+      version: build.version,
+      commit: build.commit,
+      build,
+      capabilities,
+      toolsets,
+      responseStatus: capabilitiesResponse.ok ? health.status : capabilitiesResponse.status,
+      error: issues.length > 0 ? issues.join('; ') : undefined,
+    }
+  } catch (error) {
+    const err = toError(error)
+    logger.warn('Hermes health check failed', { error: err.message, baseUrl: config.baseUrl })
+    return {
+      configured: true,
+      ok: false,
+      status: 'unreachable',
+      checkedAt,
+      baseUrl: config.baseUrl,
+      error: err.message,
+    }
   }
 }
 
