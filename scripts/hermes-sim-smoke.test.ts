@@ -214,6 +214,124 @@ describe('hermes-sim-smoke', () => {
     expect(results.find((result) => result.name === 'hermes.chat')?.status).toBe('pass')
   })
 
+  it('verifies canvas read smoke through a Responses API tool call', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_WORKSPACE_ID = 'workspace-1'
+    process.env.HERMES_SMOKE_WORKFLOW_ID = 'workflow-1'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/v1/responses')) {
+        expect((init?.headers as Record<string, string>)['x-hermes-session-key']).toBe(
+          'sim:smoke:user:user-a'
+        )
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        expect(body.metadata).toMatchObject({
+          sim: {
+            userId: 'user-a',
+            workspaceId: 'workspace-1',
+            workflowId: 'workflow-1',
+          },
+        })
+        return jsonResponse({
+          output: [
+            {
+              type: 'function_call',
+              name: 'sim_canvas_agent_run',
+              arguments: '{"mode":"read_only"}',
+              call_id: 'call-1',
+            },
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'Canvas has two nodes.' }],
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--canvas-read'])
+
+    expect(results.find((result) => result.name === 'hermes.sim-canvas-read')?.status).toBe('pass')
+  })
+
+  it('fails skill list smoke when Hermes does not emit the expected tool call', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_ORGANIZATION_ID = 'org-1'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/v1/responses')) {
+        return jsonResponse({
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'There are zero skills.' }],
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--skill-list'])
+
+    const skillList = results.find((result) => result.name === 'hermes.sim-skill-list')
+    expect(skillList?.status).toBe('fail')
+    expect(skillList?.detail).toContain('tool call missing')
+  })
+
   it('can include the SIM-backed memory smoke with user isolation and ephemeral rejection', async () => {
     configureHermesEnv()
     process.env.HERMES_SERVICE_TOKEN = 'service-token'

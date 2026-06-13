@@ -71,8 +71,8 @@ Notes:
   Default checks are read-only: Hermes health, capabilities, toolset policy,
   and SIM aggregated health when INTERNAL_API_SECRET is present.
   --chat sends a no-tool OpenAI-compatible chat completion.
-  --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode.
-  --skill-list asks Hermes to list published SIM skills only.
+  --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode and verifies the tool call.
+  --skill-list asks Hermes to list published SIM skills only and verifies the tool call.
   --skill-proposal-create creates a pending-review SIM skill proposal and compares it.
   --memory exercises SIM-backed Hermes user memory write/prefetch/isolation through SIM internal APIs.
 `)
@@ -126,6 +126,28 @@ function readString(record: Record<string, unknown> | undefined, key: string): s
 function readArray(record: Record<string, unknown> | undefined, key: string): unknown[] {
   const value = record?.[key]
   return Array.isArray(value) ? value : []
+}
+
+function responseOutputItems(payload: unknown): Record<string, unknown>[] {
+  return readArray(asRecord(payload), 'output')
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+}
+
+function responseHasFunctionCall(payload: unknown, toolName: string): boolean {
+  return responseOutputItems(payload).some(
+    (item) => item.type === 'function_call' && item.name === toolName
+  )
+}
+
+function responseOutputText(payload: unknown): string {
+  return responseOutputItems(payload)
+    .flatMap((item) => readArray(item, 'content'))
+    .map((content) => asRecord(content))
+    .filter((content): content is Record<string, unknown> => Boolean(content))
+    .map((content) => readString(content, 'text') ?? '')
+    .filter(Boolean)
+    .join('\n')
 }
 
 function getTimeoutMs(): number {
@@ -449,7 +471,7 @@ async function runCanvasReadSmoke(
     return
   }
 
-  const response = await fetchJson(`${baseUrl}/v1/chat/completions`, {
+  const response = await fetchJson(`${baseUrl}/v1/responses`, {
     method: 'POST',
     headers: {
       ...buildAuthHeaders(apiKey),
@@ -459,27 +481,24 @@ async function runCanvasReadSmoke(
     },
     body: JSON.stringify({
       model: envString('HERMES_SMOKE_MODEL'),
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a SIM smoke-test agent. Use sim_canvas_agent_run with mode=read_only only.',
-        },
-        {
-          role: 'user',
-          content:
-            'Inspect the SIM canvas in read_only mode and return a concise summary. Do not propose or apply changes.',
-        },
-      ],
+      instructions:
+        'You are a SIM smoke-test agent. You must use sim_canvas_agent_run with mode=read_only only.',
+      input:
+        'Inspect the SIM canvas in read_only mode and return a concise summary. Do not propose or apply changes.',
       metadata: buildSimMetadata(),
+      store: false,
     }),
   })
-  const choices = readArray(asRecord(response.payload), 'choices')
-  const content = readString(asRecord(asRecord(choices[0])?.message), 'content') ?? ''
+  const content = responseOutputText(response.payload)
   results.push({
     name: 'hermes.sim-canvas-read',
-    status: response.ok && content.length > 0 ? 'pass' : 'fail',
-    detail: response.ok ? content.slice(0, 240) : `HTTP ${response.status}`,
+    status:
+      response.ok && responseHasFunctionCall(response.payload, 'sim_canvas_agent_run')
+        ? 'pass'
+        : 'fail',
+    detail: response.ok
+      ? `${responseHasFunctionCall(response.payload, 'sim_canvas_agent_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
+      : `HTTP ${response.status}`,
   })
 }
 
@@ -492,7 +511,7 @@ async function runSkillListSmoke(
     return
   }
 
-  const response = await fetchJson(`${baseUrl}/v1/chat/completions`, {
+  const response = await fetchJson(`${baseUrl}/v1/responses`, {
     method: 'POST',
     headers: {
       ...buildAuthHeaders(apiKey),
@@ -502,27 +521,24 @@ async function runSkillListSmoke(
     },
     body: JSON.stringify({
       model: envString('HERMES_SMOKE_MODEL'),
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a SIM smoke-test agent. Use sim_skill_proposal_run only for list_published. Do not create, patch, submit, publish, enable, disable, delete, or roll back skills.',
-        },
-        {
-          role: 'user',
-          content:
-            'List published SIM skills for this organization and summarize the count. This is read-only.',
-        },
-      ],
+      instructions:
+        'You are a SIM smoke-test agent. You must use sim_skill_proposal_run only for list_published. Do not create, patch, submit, publish, enable, disable, delete, or roll back skills.',
+      input:
+        'List published SIM skills for this organization and summarize the count. This is read-only.',
       metadata: buildSimMetadata(),
+      store: false,
     }),
   })
-  const choices = readArray(asRecord(response.payload), 'choices')
-  const content = readString(asRecord(asRecord(choices[0])?.message), 'content') ?? ''
+  const content = responseOutputText(response.payload)
   results.push({
     name: 'hermes.sim-skill-list',
-    status: response.ok && content.length > 0 ? 'pass' : 'fail',
-    detail: response.ok ? content.slice(0, 240) : `HTTP ${response.status}`,
+    status:
+      response.ok && responseHasFunctionCall(response.payload, 'sim_skill_proposal_run')
+        ? 'pass'
+        : 'fail',
+    detail: response.ok
+      ? `${responseHasFunctionCall(response.payload, 'sim_skill_proposal_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
+      : `HTTP ${response.status}`,
   })
 }
 

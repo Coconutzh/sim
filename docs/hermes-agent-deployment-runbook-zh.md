@@ -252,7 +252,7 @@ bun run hermes:smoke
 bun run hermes:smoke -- --chat
 ```
 
-需要验证 Hermes -> SIM 只读画布工具调用时，显式提供上下文后再加 `--canvas-read`：
+需要验证 Hermes -> SIM 只读画布工具调用时，显式提供上下文后再加 `--canvas-read`。该模式使用 Hermes Responses API，并要求返回的 `output` 中实际出现 `sim_canvas_agent_run` 的 `function_call`，避免“模型只写了一段文字但没调用工具”也误判为通过：
 
 ```bash
 HERMES_SMOKE_USER_ID=<user-id> \
@@ -262,7 +262,7 @@ HERMES_SMOKE_WORKFLOW_ID=<workflow-id> \
 bun run hermes:smoke -- --canvas-read
 ```
 
-需要验证 Hermes -> SIM Skill 只读列表时，显式提供组织上下文后加 `--skill-list`。该模式只允许读取 published skills，不创建 proposal：
+需要验证 Hermes -> SIM Skill 只读列表时，显式提供组织上下文后加 `--skill-list`。该模式同样要求 Hermes Responses API 输出中实际出现 `sim_skill_proposal_run` 的 `function_call`，且只允许读取 published skills，不创建 proposal：
 
 ```bash
 HERMES_SMOKE_USER_ID=<user-id> \
@@ -294,6 +294,7 @@ bun run hermes:smoke -- --memory
 注意：
 
 - `HERMES_SMOKE_USER_ID` 和 `HERMES_SMOKE_OTHER_USER_ID` 都必须是该组织下的有效用户，否则 SIM 权限校验会返回 403。
+- `--canvas-read` / `--skill-list` 会验证 Hermes 是否真的调用了 SIM tool；如果只生成自然语言答复但未产生对应 `function_call`，smoke 必须失败。
 - `--skill-proposal-create` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 tool；Hermes fork 侧的 `plugins/sim` 测试仍需证明 `sim_skill_proposal_run` 会把 `propose_create` / `compare` 转发到同一个 SIM internal API。
 - `--memory` 是确定性服务级 smoke，不依赖 LLM 是否按提示调用 memory tool；Hermes fork 侧的 `plugins/memory/sim` provider 仍需通过 Python 测试证明它会把 `prefetch` / `sync_turn` / 显式记忆工具调用转发到同一个 SIM internal API。
 - 若要验证完整 Hermes API Server + LLM 自动记忆链路，应在 `--memory` 通过后，再用同一个 `X-Hermes-Session-Key` 和 SIM metadata 做两轮真实 chat：第一轮表达长期偏好，第二轮换 session 询问偏好是否可召回。
