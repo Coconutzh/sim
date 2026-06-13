@@ -55,6 +55,7 @@ import {
 } from '@/lib/collaboration/publication-state-tree'
 import { cn } from '@/lib/core/utils/cn'
 import { CopilotSkillCardManager } from '@/app/workspace/[workspaceId]/project-admin/components/copilot-skill-card-manager'
+import { HermesToolCallAuditPanel } from '@/app/workspace/[workspaceId]/project-admin/components/hermes-tool-call-audit-panel'
 import { SkillProposalGovernance } from '@/app/workspace/[workspaceId]/project-admin/components/skill-proposal-governance'
 import { useOrganizationRetention } from '@/ee/data-retention/hooks/data-retention'
 import {
@@ -2989,6 +2990,8 @@ export function ProjectAdminCenter() {
         </section>
 
         <SkillProposalGovernance organizationId={organizationId} />
+
+        <HermesToolCallAuditPanel organizationId={organizationId} />
 
         <section className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
           <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>

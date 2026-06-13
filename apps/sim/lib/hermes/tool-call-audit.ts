@@ -1,6 +1,13 @@
 import { db } from '@sim/db'
 import { hermesToolCallAudit } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { and, desc, eq } from 'drizzle-orm'
+import type {
+  HermesToolCallAuditEntry,
+  HermesToolCallAuditStatus,
+  ListHermesToolCallAuditsQuery,
+} from '@/lib/api/contracts/hermes-tool-call-audits'
+import { assertOrganizationAdmin } from '@/lib/collaboration/service'
 
 const logger = createLogger('HermesToolCallAudit')
 const MAX_SUMMARY_STRING_LENGTH = 2000
@@ -33,6 +40,12 @@ export interface HermesToolCallAuditParams {
   error?: string
 }
 
+export interface ListHermesToolCallAuditsParams {
+  userId: string
+  organizationId: string
+  query: ListHermesToolCallAuditsQuery
+}
+
 function trim(value: string | undefined, maxLength: number): string | undefined {
   if (!value) return undefined
   return value.length > maxLength ? value.slice(0, maxLength) : value
@@ -59,6 +72,75 @@ function cleanIds(ids: string[] | undefined): string[] {
   return Array.isArray(ids)
     ? ids.filter((id) => typeof id === 'string' && id.trim().length > 0).slice(0, 200)
     : []
+}
+
+function toStatus(value: string): HermesToolCallAuditStatus {
+  return value === 'success' || value === 'unauthenticated' ? value : 'error'
+}
+
+function toSummary(value: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function toIds(value: string[] | null | undefined): string[] {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []
+}
+
+function serializeToolCallAudit(
+  row: typeof hermesToolCallAudit.$inferSelect
+): HermesToolCallAuditEntry {
+  return {
+    id: row.id,
+    traceId: row.traceId,
+    hermesRunId: row.hermesRunId,
+    simRequestId: row.simRequestId,
+    userId: row.userId,
+    organizationId: row.organizationId,
+    workspaceId: row.workspaceId,
+    workflowId: row.workflowId,
+    toolName: row.toolName,
+    mode: row.mode,
+    operation: row.operation,
+    status: toStatus(row.status),
+    inputSummary: toSummary(row.inputSummary),
+    outputSummary: toSummary(row.outputSummary),
+    risk: row.risk,
+    requiresConfirmation: row.requiresConfirmation,
+    changedNodeIds: toIds(row.changedNodeIds),
+    generatedNodeIds: toIds(row.generatedNodeIds),
+    verificationSummary: row.verificationSummary,
+    durationMs: row.durationMs,
+    errorCode: row.errorCode,
+    error: row.error,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+
+export async function listHermesToolCallAudits(
+  params: ListHermesToolCallAuditsParams
+): Promise<HermesToolCallAuditEntry[]> {
+  await assertOrganizationAdmin(params.userId, params.organizationId)
+
+  const rows = await db
+    .select()
+    .from(hermesToolCallAudit)
+    .where(
+      and(
+        eq(hermesToolCallAudit.organizationId, params.organizationId),
+        params.query.status ? eq(hermesToolCallAudit.status, params.query.status) : undefined,
+        params.query.toolName ? eq(hermesToolCallAudit.toolName, params.query.toolName) : undefined,
+        params.query.workflowId
+          ? eq(hermesToolCallAudit.workflowId, params.query.workflowId)
+          : undefined,
+        params.query.hermesRunId
+          ? eq(hermesToolCallAudit.hermesRunId, params.query.hermesRunId)
+          : undefined
+      )
+    )
+    .orderBy(desc(hermesToolCallAudit.createdAt))
+    .limit(params.query.limit)
+
+  return rows.map(serializeToolCallAudit)
 }
 
 export async function recordHermesToolCallAudit(params: HermesToolCallAuditParams): Promise<void> {
