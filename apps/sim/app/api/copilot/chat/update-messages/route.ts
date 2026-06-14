@@ -15,6 +15,7 @@ import {
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { advanceHermesConversationGeneration } from '@/lib/hermes/conversation-metadata'
 
 const logger = createLogger('CopilotChatUpdateAPI')
 
@@ -82,7 +83,11 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       updateData.planArtifact = planArtifact
     }
 
-    if (config !== undefined) {
+    const existingMessages = Array.isArray(chat.messages) ? chat.messages : []
+    const isClearingExistingChat = normalizedMessages.length === 0 && existingMessages.length > 0
+    if (isClearingExistingChat) {
+      updateData.config = advanceHermesConversationGeneration(config ?? chat.config)
+    } else if (config !== undefined) {
       updateData.config = config
     }
 

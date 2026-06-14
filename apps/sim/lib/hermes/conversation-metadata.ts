@@ -54,6 +54,27 @@ function readGeneration(config: unknown): number {
     : 0
 }
 
+export function advanceHermesConversationGeneration(config: unknown): Record<string, unknown> {
+  const currentConfig = asRecord(config)
+  const {
+    conversation: _conversation,
+    latestResponseId: _latestResponseId,
+    latestSessionId: _latestSessionId,
+    latestSessionKey: _latestSessionKey,
+    ...retainedHermes
+  } = asRecord(currentConfig.hermes)
+  const generation = readGeneration(currentConfig) + 1
+  return {
+    ...currentConfig,
+    hermes: {
+      ...retainedHermes,
+      version: HERMES_METADATA_VERSION,
+      generation,
+      updatedAt: new Date().toISOString(),
+    },
+  }
+}
+
 function sanitizeConversationPart(value: string): string {
   return value.replace(/[^\w:.-]/g, '_')
 }

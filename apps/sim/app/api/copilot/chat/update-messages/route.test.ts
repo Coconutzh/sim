@@ -369,6 +369,56 @@ describe('Copilot Chat Update Messages API Route', () => {
       })
     })
 
+    it('should advance Hermes conversation generation when clearing an existing chat', async () => {
+      authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
+
+      const existingChat = {
+        id: 'chat-clear',
+        userId: 'user-123',
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: 'Hello',
+            timestamp: '2024-01-01T10:00:00.000Z',
+          },
+        ],
+        config: {
+          hermes: {
+            generation: 3,
+            conversation: 'old-conversation',
+            latestResponseId: 'resp-old',
+          },
+        },
+      }
+      mockLimit.mockResolvedValueOnce([existingChat])
+
+      const req = createMockRequest('POST', {
+        chatId: 'chat-clear',
+        messages: [],
+      })
+
+      const response = await POST(req)
+
+      expect(response.status).toBe(200)
+      expect(mockSet).toHaveBeenCalledWith({
+        messages: [],
+        updatedAt: expect.any(Date),
+        config: {
+          hermes: expect.objectContaining({
+            version: 'v1',
+            generation: 4,
+            updatedAt: expect.any(String),
+          }),
+        },
+      })
+      const setArg = mockSet.mock.calls[0][0] as {
+        config: { hermes: Record<string, unknown> }
+      }
+      expect(setArg.config.hermes.conversation).toBeUndefined()
+      expect(setArg.config.hermes.latestResponseId).toBeUndefined()
+    })
+
     it('should handle database errors during chat lookup', async () => {
       authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
 
