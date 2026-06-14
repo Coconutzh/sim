@@ -862,6 +862,7 @@ async function runCanvasHistorySmoke(
 async function runCanvasProposeSmoke(
   baseUrl: string,
   apiKey: string,
+  simBaseUrl: string,
   results: CheckResult[]
 ): Promise<void> {
   if (
@@ -874,6 +875,10 @@ async function runCanvasProposeSmoke(
     return
   }
 
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  const beforeRead = serviceToken
+    ? await readCanvasSnapshot(simBaseUrl, serviceToken, 'canvas-proposal-before')
+    : undefined
   const nodeTitle =
     envString('HERMES_SMOKE_CANVAS_TITLE') ?? `Hermes Smoke Proposal ${new Date().toISOString()}`
   const response = await fetchJson(`${baseUrl}/v1/responses`, {
@@ -915,6 +920,7 @@ async function runCanvasProposeSmoke(
       pendingActionId,
     },
   })
+  await verifyReadOnlyCanvasUnchanged(simBaseUrl, beforeRead, 'canvas-proposal', results)
 }
 
 async function runCanvasProposeApplySmoke(
@@ -1362,7 +1368,9 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     if (options.canvasHistory) {
       await runCanvasHistorySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
     }
-    if (options.canvasPropose) await runCanvasProposeSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.canvasPropose) {
+      await runCanvasProposeSmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
+    }
     if (options.canvasProposeApply) {
       await runCanvasProposeApplySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
     }

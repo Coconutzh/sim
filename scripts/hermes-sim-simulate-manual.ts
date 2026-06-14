@@ -59,6 +59,7 @@ const CASE_REQUIRED_ENV: Record<SimulatedManualCaseName, string[]> = {
   'canvas-proposal': [
     'HERMES_API_URL',
     'HERMES_API_KEY',
+    'HERMES_SERVICE_TOKEN',
     'HERMES_SMOKE_USER_ID',
     'HERMES_SMOKE_WORKSPACE_ID',
     'HERMES_SMOKE_WORKFLOW_ID',
