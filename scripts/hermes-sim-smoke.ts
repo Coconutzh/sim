@@ -115,7 +115,7 @@ function applyMissingEnv(values: Record<string, string>): void {
   }
 }
 
-async function loadDefaultLocalEnvFiles(cwd = process.cwd()): Promise<void> {
+export async function loadDefaultLocalEnvFiles(cwd = process.cwd()): Promise<void> {
   if (process.env.HERMES_SMOKE_LOAD_ENV_FILES?.trim().toLowerCase() === 'false') return
   applyMissingEnv(await readEnvFile(path.resolve(cwd, DEFAULT_SIM_ENV_FILE)))
   applyMissingEnv(await readEnvFile(path.resolve(path.dirname(cwd), 'hermes-agent-sim', '.env')))

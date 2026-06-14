@@ -835,6 +835,8 @@ bun run hermes:simulate-manual -- --case canvas-history
 bun run hermes:simulate-manual -- --case isolation
 ```
 
+当前 API 级模拟入口落在 `scripts/hermes-sim-simulate-manual.ts`，并通过根目录脚本 `hermes:simulate-manual` 暴露。它复用 `scripts/hermes-sim-smoke.ts` 的真实 SIM/Hermes API 链路，不 mock Hermes 主链路；浏览器级模拟后续再用 Playwright / CDP 单独补齐。
+
 脚本必须接收显式上下文，不能默认扫库随机取数据：
 
 ```text

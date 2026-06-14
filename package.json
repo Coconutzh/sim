@@ -32,6 +32,7 @@
     "hermes:preflight": "bun run scripts/check-hermes-local-preflight.ts",
     "hermes:setup-local-env": "bun run scripts/setup-hermes-local-env.ts",
     "hermes:smoke": "bun run scripts/hermes-sim-smoke.ts",
+    "hermes:simulate-manual": "bun run scripts/hermes-sim-simulate-manual.ts",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
     "check:tool-registry-boundary": "bun run scripts/check-tool-registry-boundary.ts",
     "check:zustand-v5": "bun run scripts/check-zustand-v5-selectors.ts",
