@@ -837,6 +837,14 @@ bun run hermes:simulate-manual -- --case isolation
 
 当前 API 级模拟入口落在 `scripts/hermes-sim-simulate-manual.ts`，并通过根目录脚本 `hermes:simulate-manual` 暴露。它复用 `scripts/hermes-sim-smoke.ts` 的真实 SIM/Hermes API 链路，不 mock Hermes 主链路；浏览器级模拟后续再用 Playwright / CDP 单独补齐。
 
+当前落地口径：
+
+- `hermes:simulate-manual` 是“自动化模拟手工测试”的第一阶段入口，覆盖 API 级人工流程模拟。
+- 该脚本必须复用真实 SIM API、Hermes Gateway、Hermes 插件和 SIM internal tool route；只允许在测试自身做断言与结果汇总，不允许 mock 主调用链。
+- 默认所有写画布用例都必须安全降级为 proposal 校验；只有显式设置写入确认开关时，才允许进入真实 apply/verify。
+- 后续新增 Hermes / SIM Agent / Local Canvas Agent 能力时，必须同步补充对应 case，不能只补人工 checklist。
+- 浏览器级模拟尚未完成前，文档中的浏览器级条目作为后续 Playwright / CDP 验收范围，不视为当前 API 级脚本已经覆盖。
+
 脚本必须接收显式上下文，不能默认扫库随机取数据：
 
 ```text
@@ -852,6 +860,7 @@ HERMES_SMOKE_AGENT_ID=hermes_agent_v1
 | 字段 | 要求 |
 | --- | --- |
 | caseName | 当前模拟场景名称 |
+| smokeFlags | 当前用例实际启用的 smoke 子能力开关 |
 | requestIds | SIM requestId、Hermes responseId、toolCallId |
 | conversationKey | 当前 Hermes conversation key，脱敏后输出 |
 | toolCalls | 实际触发的 SIM tool 列表 |
@@ -898,6 +907,7 @@ API 级模拟应覆盖：
 - 写画布场景必须断言先 proposal、再确认、再 apply、再 verify，不能绕过用户确认。
 - 测试数据必须隔离，不能复用生产用户或生产 workspace。
 - 失败日志必须保留 responseId、toolCallId、pendingActionId、auditId，方便追查。
+- 能用脚本稳定验证的手工步骤必须进入 `hermes:simulate-manual`；不能长期只停留在人工说明。
 
 自动化模拟不能替代以下人工验收：
 

@@ -88,8 +88,8 @@ Options:
 Notes:
   This is API-level simulated manual testing. It exercises real SIM/Hermes APIs
   through scripts/hermes-sim-smoke.ts and emits the fields required by the plan:
-  caseName, requestIds, conversationKey, toolCalls, dbChecks, stateDiff, pass,
-  failureReason, and raw checks.
+  caseName, smokeFlags, requestIds, conversationKey, toolCalls, dbChecks,
+  stateDiff, pass, failureReason, and raw checks.
 `)
 }
 
@@ -168,7 +168,7 @@ function inferToolCalls(checks: CheckResult[]): string[] {
     if (/canvas-(read|propose|apply)/.test(text)) tools.add('sim_canvas_agent_run')
     if (/canvas-history/.test(text)) tools.add('sim_canvas_history_query')
     if (/skill-proposal|skill-list/.test(text)) tools.add('sim_skill_proposal_run')
-    if (/memory/.test(text)) tools.add('sim_memory_run')
+    if (/^sim\.hermes-memory/.test(check.name)) tools.add('sim_memory_run')
   }
   return [...tools]
 }

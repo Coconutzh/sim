@@ -74,6 +74,26 @@ describe('hermes simulated manual runner', () => {
     )
   })
 
+  it('does not infer SIM memory tool calls from the chat-memory case name alone', async () => {
+    mockRunSmoke.mockResolvedValueOnce({
+      results: [
+        {
+          name: 'hermes.conversation-chain',
+          status: 'pass',
+          detail: 'chat-memory phrase was remembered in the current conversation',
+        },
+      ],
+    })
+
+    const [result] = await runSimulatedManualCases({
+      cases: ['chat-memory'],
+      json: true,
+    })
+
+    expect(result.pass).toBe(true)
+    expect(result.toolCalls).not.toContain('sim_memory_run')
+  })
+
   it('fails before smoke when required explicit context is missing', async () => {
     process.env.HERMES_SMOKE_WORKFLOW_ID = ''
 
