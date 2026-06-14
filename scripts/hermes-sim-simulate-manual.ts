@@ -5,6 +5,7 @@ import { type CheckResult, loadDefaultLocalEnvFiles, runSmoke } from './hermes-s
 type SimulatedManualCaseName =
   | 'chat-memory'
   | 'canvas-summary'
+  | 'canvas-proposal'
   | 'canvas-propose-confirm-apply'
   | 'canvas-history'
   | 'isolation'
@@ -30,6 +31,7 @@ interface SimulatedManualCaseResult {
 const ALL_CASES: SimulatedManualCaseName[] = [
   'chat-memory',
   'canvas-summary',
+  'canvas-proposal',
   'canvas-propose-confirm-apply',
   'canvas-history',
   'isolation',
@@ -38,6 +40,7 @@ const ALL_CASES: SimulatedManualCaseName[] = [
 const CASE_FLAGS: Record<SimulatedManualCaseName, string[]> = {
   'chat-memory': ['--chat', '--conversation-chain'],
   'canvas-summary': ['--canvas-read'],
+  'canvas-proposal': ['--canvas-propose'],
   'canvas-propose-confirm-apply': ['--canvas-propose-apply'],
   'canvas-history': ['--canvas-history'],
   isolation: ['--conversation-chain'],
@@ -49,6 +52,13 @@ const CASE_REQUIRED_ENV: Record<SimulatedManualCaseName, string[]> = {
     'HERMES_API_URL',
     'HERMES_API_KEY',
     'HERMES_SERVICE_TOKEN',
+    'HERMES_SMOKE_USER_ID',
+    'HERMES_SMOKE_WORKSPACE_ID',
+    'HERMES_SMOKE_WORKFLOW_ID',
+  ],
+  'canvas-proposal': [
+    'HERMES_API_URL',
+    'HERMES_API_KEY',
     'HERMES_SMOKE_USER_ID',
     'HERMES_SMOKE_WORKSPACE_ID',
     'HERMES_SMOKE_WORKFLOW_ID',
@@ -79,6 +89,7 @@ function printUsage(): void {
 Usage:
   bun run hermes:simulate-manual -- --case chat-memory [--json]
   bun run hermes:simulate-manual -- --case canvas-summary
+  bun run hermes:simulate-manual -- --case canvas-proposal
   bun run hermes:simulate-manual -- --case canvas-propose-confirm-apply
   bun run hermes:simulate-manual -- --case canvas-history
   bun run hermes:simulate-manual -- --case isolation
@@ -92,6 +103,8 @@ Notes:
   through scripts/hermes-sim-smoke.ts and emits the fields required by the plan:
   caseName, smokeFlags, requestIds, conversationKey, toolCalls, dbChecks,
   stateDiff, pass, failureReason, and raw checks.
+  canvas-proposal verifies proposal + pendingActionId without applying canvas changes.
+  canvas-propose-confirm-apply requires HERMES_SMOKE_WRITE_CONFIRM=APPLY_CANVAS_PROPOSAL.
 `)
 }
 

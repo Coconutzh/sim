@@ -830,6 +830,7 @@ bun run hermes:smoke -- --canvas-history
 ```text
 bun run hermes:simulate-manual -- --case chat-memory
 bun run hermes:simulate-manual -- --case canvas-summary
+bun run hermes:simulate-manual -- --case canvas-proposal
 bun run hermes:simulate-manual -- --case canvas-propose-confirm-apply
 bun run hermes:simulate-manual -- --case canvas-history
 bun run hermes:simulate-manual -- --case isolation
@@ -841,7 +842,7 @@ bun run hermes:simulate-manual -- --case isolation
 
 - `hermes:simulate-manual` 是“自动化模拟手工测试”的第一阶段入口，覆盖 API 级人工流程模拟。
 - 该脚本必须复用真实 SIM API、Hermes Gateway、Hermes 插件和 SIM internal tool route；只允许在测试自身做断言与结果汇总，不允许 mock 主调用链。
-- 默认所有写画布用例都必须安全降级为 proposal 校验；只有显式设置写入确认开关时，才允许进入真实 apply/verify。
+- 默认所有写画布用例都必须安全降级为 `canvas-proposal` 的 proposal 校验；只有显式设置写入确认开关时，才允许运行 `canvas-propose-confirm-apply` 进入真实 apply/verify。
 - 后续新增 Hermes / SIM Agent / Local Canvas Agent 能力时，必须同步补充对应 case，不能只补人工 checklist。
 - 浏览器级模拟尚未完成前，文档中的浏览器级条目作为后续 Playwright / CDP 验收范围，不视为当前 API 级脚本已经覆盖。
 

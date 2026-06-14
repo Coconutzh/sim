@@ -78,6 +78,36 @@ describe('hermes simulated manual runner', () => {
     )
   })
 
+  it('runs a safe canvas proposal simulation without write confirmation', async () => {
+    process.env.HERMES_SMOKE_WRITE_CONFIRM = ''
+    mockRunSmoke.mockResolvedValueOnce({
+      results: [
+        {
+          name: 'hermes.sim-canvas-propose',
+          status: 'pass',
+          detail: 'pendingActionId pending-1',
+          data: {
+            responseId: 'resp-propose-1',
+            toolCallId: 'call-propose-1',
+            pendingActionId: 'pending-1',
+          },
+        },
+      ],
+    })
+
+    const [result] = await runSimulatedManualCases({
+      cases: ['canvas-proposal'],
+      json: true,
+    })
+
+    expect(mockRunSmoke).toHaveBeenCalledWith(['--canvas-propose', '--skip-sim-health'])
+    expect(result.pass).toBe(true)
+    expect(result.requestIds.pendingActionId).toBe('pending-1')
+    expect(result.requestIds.responseId).toBe('resp-propose-1')
+    expect(result.requestIds.toolCallId).toBe('call-propose-1')
+    expect(result.stateDiff).toEqual({})
+  })
+
   it('does not infer SIM memory tool calls from the chat-memory case name alone', async () => {
     mockRunSmoke.mockResolvedValueOnce({
       results: [
