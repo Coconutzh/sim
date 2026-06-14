@@ -6,7 +6,12 @@ import {
 } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
-export const hermesCanvasAgentModeSchema = z.enum(['read_only', 'propose', 'apply_after_confirm'])
+export const hermesCanvasAgentModeSchema = z.enum([
+  'read_only',
+  'propose',
+  'compile_patch',
+  'apply_after_confirm',
+])
 export type HermesCanvasAgentMode = z.output<typeof hermesCanvasAgentModeSchema>
 
 export const hermesCanvasAgentRiskSchema = z.enum(['low', 'medium', 'high'])
@@ -58,6 +63,49 @@ export const hermesCanvasNodeDetailSchema = hermesCanvasNodeSummarySchema.extend
 })
 export type HermesCanvasNodeDetail = z.output<typeof hermesCanvasNodeDetailSchema>
 
+const hermesCanvasPatchOperationSchema = z
+  .object({
+    type: z.string().trim().min(1, 'Patch operation type is required'),
+  })
+  .passthrough()
+
+const hermesCanvasPatchSchema = z
+  .object({
+    operations: z
+      .array(hermesCanvasPatchOperationSchema)
+      .min(1, 'Patch must include at least one operation')
+      .max(100, 'Patch cannot include more than 100 operations'),
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .passthrough()
+
+export const hermesCanvasStructuredTaskSchema = z.object({
+  intent: z.enum(['inspect_canvas', 'propose_plan', 'mutate_canvas', 'generate_output']).optional(),
+  goal: z.string().trim().min(1, 'Structured task goal is required').max(4000),
+  constraints: z.array(z.string().trim().min(1).max(1000)).max(50).optional(),
+  expectedChanges: z.array(z.string().trim().min(1).max(1000)).max(50).optional(),
+  userPreferences: z.array(z.string().trim().min(1).max(1000)).max(50).optional(),
+  clarificationState: z.record(z.string(), z.unknown()).optional(),
+  risk: hermesCanvasAgentRiskSchema.optional(),
+  patch: hermesCanvasPatchSchema.optional(),
+  generateNodeIds: z.array(nonEmptyIdSchema).max(50).optional(),
+  generationTargets: z
+    .array(
+      z
+        .object({
+          nodeId: nonEmptyIdSchema.optional(),
+          clientNodeId: z.string().trim().min(1).max(200).optional(),
+          afterOperationId: z.string().trim().min(1).max(200).optional(),
+          kind: z.string().trim().min(1).max(100).optional(),
+          reason: z.string().trim().max(1000).optional(),
+        })
+        .passthrough()
+    )
+    .max(50)
+    .optional(),
+})
+export type HermesCanvasStructuredTask = z.output<typeof hermesCanvasStructuredTaskSchema>
+
 export const hermesCanvasAgentRunBodySchema = z.object({
   userId: nonEmptyIdSchema,
   organizationId: nonEmptyIdSchema.optional(),
@@ -69,6 +117,7 @@ export const hermesCanvasAgentRunBodySchema = z.object({
   mode: hermesCanvasAgentModeSchema.optional().default('read_only'),
   confirmationMode: z.enum(['auto', 'manual']).optional().default('manual'),
   pendingActionId: nonEmptyIdSchema.optional(),
+  structuredTask: hermesCanvasStructuredTaskSchema.optional(),
   traceId: z.string().trim().min(1).max(200).optional(),
   hermesRunId: z.string().trim().min(1).max(200).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),

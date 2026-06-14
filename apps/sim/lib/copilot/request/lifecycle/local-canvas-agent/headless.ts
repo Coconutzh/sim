@@ -7,6 +7,7 @@ import {
   readCanvasNodeDetail,
   summarizeCanvas,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
+import { validateLocalCanvasPatch } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-patch'
 import { resolveLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import { loadLocalAgentMemory } from '@/lib/copilot/request/lifecycle/local-canvas-agent/memory'
 import { buildLocalAgentAnswer } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
@@ -26,6 +27,8 @@ import type {
   LocalAgentPlan,
   LocalAgentRisk,
   LocalAgentToolLoopResult,
+  LocalCanvasGenerationTarget,
+  LocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import type {
@@ -36,7 +39,11 @@ import type {
 
 const logger = createLogger('LocalCanvasAgentHeadless')
 
-export type LocalCanvasAgentHeadlessMode = 'read_only' | 'propose' | 'apply_after_confirm'
+export type LocalCanvasAgentHeadlessMode =
+  | 'read_only'
+  | 'propose'
+  | 'compile_patch'
+  | 'apply_after_confirm'
 
 export type LocalCanvasAgentHeadlessErrorCode =
   | 'USER_PERMISSION_DENIED'
@@ -63,11 +70,39 @@ export interface LocalCanvasAgentHeadlessInput {
   mode: LocalCanvasAgentHeadlessMode
   confirmationMode?: 'auto' | 'manual'
   pendingActionId?: string
+  structuredTask?: LocalCanvasAgentStructuredTask
   traceId?: string
   hermesRunId?: string
   auditId?: string
   metadata?: Record<string, unknown>
   abortSignal?: AbortSignal
+}
+
+export interface LocalCanvasAgentStructuredPatch {
+  operations: Array<Record<string, unknown> & { type: string }>
+  reason?: string
+}
+
+export interface LocalCanvasAgentStructuredGenerationTarget {
+  nodeId?: string
+  clientNodeId?: string
+  afterOperationId?: string
+  kind?: string
+  reason?: string
+  [key: string]: unknown
+}
+
+export interface LocalCanvasAgentStructuredTask {
+  intent?: 'inspect_canvas' | 'propose_plan' | 'mutate_canvas' | 'generate_output'
+  goal: string
+  constraints?: string[]
+  expectedChanges?: string[]
+  userPreferences?: string[]
+  clarificationState?: Record<string, unknown>
+  risk?: LocalAgentRisk
+  patch?: LocalCanvasAgentStructuredPatch
+  generateNodeIds?: string[]
+  generationTargets?: LocalCanvasAgentStructuredGenerationTarget[]
 }
 
 export interface LocalCanvasAgentHeadlessCanvasResult {
@@ -453,6 +488,154 @@ async function runProposalMode(params: {
   }
 }
 
+function buildCompilePatchPlan(
+  task: LocalCanvasAgentStructuredTask,
+  patch: LocalCanvasPatch
+): LocalAgentPlan {
+  const expectedChanges = task.expectedChanges?.length
+    ? task.expectedChanges
+    : ['Compiled patch validates against the current canvas snapshot']
+  return {
+    goal: task.goal,
+    risk: task.risk ?? 'medium',
+    userIntent: task.intent === 'generate_output' ? 'generate_output' : 'mutate_canvas',
+    mutationPolicy: 'propose_only',
+    canvasReadPolicy: 'required',
+    requiresUserConfirmation: true,
+    requiresClarification: false,
+    steps: [
+      {
+        id: 'compile_patch',
+        title: 'Compile Hermes structured task into a SIM canvas patch proposal',
+        intent: 'update',
+        toolHints: ['canvas.propose_patch'],
+        expectedObservation: 'Patch is validated and stored as a pending proposal',
+      },
+    ],
+    successCriteria: expectedChanges,
+    patch,
+    generateNodeIds: task.generateNodeIds,
+    generationTargets: task.generationTargets as LocalCanvasGenerationTarget[] | undefined,
+  }
+}
+
+async function runCompilePatchMode(params: {
+  input: LocalCanvasAgentHeadlessInput
+  auditId: string
+  localContext: LocalAgentContext
+}): Promise<LocalCanvasAgentHeadlessResult> {
+  if (!params.localContext.permissions.canRead) {
+    return {
+      success: false,
+      answer: '',
+      mode: params.input.mode,
+      risk: 'low',
+      requiresConfirmation: false,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'USER_PERMISSION_DENIED',
+      error: params.localContext.permissions.readonlyReason ?? 'Canvas access denied',
+    }
+  }
+
+  const task = params.input.structuredTask
+  if (!task?.patch) {
+    return {
+      success: false,
+      answer: 'compile_patch 需要 Hermes 传入 structuredTask.patch，不能只传自然语言。',
+      mode: params.input.mode,
+      risk: 'medium',
+      requiresConfirmation: false,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'PATCH_VALIDATION_FAILED',
+      error: 'structuredTask.patch is required for compile_patch mode',
+    }
+  }
+
+  // double-cast-allowed: contract validates the structured task envelope before SIM patch validation narrows operation details
+  const patch = task.patch as unknown as LocalCanvasPatch
+  const snapshot = await loadCanvasSnapshot({
+    workflowId: params.localContext.workflowId,
+    workspaceId: params.localContext.workspaceId,
+  })
+  const validation = validateLocalCanvasPatch(patch, snapshot)
+  const plan = buildCompilePatchPlan(task, patch)
+  const proposedPatchSummary = summarizeProposalPlan(plan)
+
+  if (!validation.valid) {
+    const error = validation.errors.join('; ')
+    return {
+      success: false,
+      answer: `Hermes 结构化画布方案未通过 SIM patch 校验：${error}`,
+      mode: params.input.mode,
+      intent: plan.userIntent,
+      risk: plan.risk,
+      requiresConfirmation: false,
+      proposedPatchSummary,
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      verificationSummary: `compile_patch validation failed: ${error}`,
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      errorCode: 'PATCH_VALIDATION_FAILED',
+      error,
+    }
+  }
+
+  const compileContext: LocalAgentContext = {
+    ...params.localContext,
+    confirmationMode: 'manual',
+    requestPayload: {
+      ...params.localContext.requestPayload,
+      localAgentMode: 'headless_compile_patch',
+      hermesCanvasMode: 'compile_patch',
+      deterministicCompiler: true,
+    },
+  }
+  const pending = putLocalAgentPendingPlan({
+    context: compileContext,
+    plan,
+    source: 'hermes',
+  })
+
+  logger.info('Hermes compile-patch canvas agent request completed', {
+    auditId: params.auditId,
+    traceId: params.input.traceId,
+    hermesRunId: params.input.hermesRunId,
+    userId: params.input.userId,
+    workspaceId: params.input.workspaceId,
+    workflowId: params.input.workflowId,
+    pendingActionId: pending.id,
+    operationCount: task.patch.operations.length,
+    generationTargetCount: task.generationTargets?.length ?? task.generateNodeIds?.length ?? 0,
+  })
+
+  return {
+    success: true,
+    answer: [
+      '已将 Hermes 的结构化任务编译为 SIM 画布修改方案，等待用户确认后才能执行。',
+      `建议摘要：\n${proposedPatchSummary}`,
+      '当前是 compile_patch/proposal 模式：没有执行任何画布写入。',
+    ].join('\n\n'),
+    mode: params.input.mode,
+    intent: plan.userIntent,
+    risk: plan.risk,
+    requiresConfirmation: true,
+    pendingActionId: pending.id,
+    proposedPatchSummary,
+    changedNodeIds: [],
+    generatedNodeIds: [],
+    verificationSummary: 'compile_patch validated the patch; no canvas mutation was executed.',
+    auditId: params.auditId,
+    traceId: params.input.traceId,
+  }
+}
+
 function buildConfirmationExpiredResult(params: {
   input: LocalCanvasAgentHeadlessInput
   auditId: string
@@ -650,9 +833,11 @@ export async function runLocalCanvasAgentHeadless(
         localAgentMode:
           input.mode === 'apply_after_confirm'
             ? 'headless_apply_after_confirm'
-            : input.mode === 'propose'
-              ? 'headless_propose'
-              : 'headless_read_only',
+            : input.mode === 'compile_patch'
+              ? 'headless_compile_patch'
+              : input.mode === 'propose'
+                ? 'headless_propose'
+                : 'headless_read_only',
       },
       execContext,
       streamContext,
@@ -663,6 +848,10 @@ export async function runLocalCanvasAgentHeadless(
 
     if (input.mode === 'propose') {
       return await runProposalMode({ input, auditId, localContext })
+    }
+
+    if (input.mode === 'compile_patch') {
+      return await runCompilePatchMode({ input, auditId, localContext })
     }
 
     if (input.mode === 'apply_after_confirm') {

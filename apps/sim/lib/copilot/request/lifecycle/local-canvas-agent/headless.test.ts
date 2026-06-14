@@ -171,7 +171,7 @@ describe('runLocalCanvasAgentHeadless', () => {
               clientNodeId: 'hook-1',
               kind: 'text',
               title: 'Hook',
-              fields: { content: 'hello' },
+              fields: { contentHtml: '<p>hello</p>' },
             },
           ],
         },
@@ -327,6 +327,69 @@ describe('runLocalCanvasAgentHeadless', () => {
       'Proposal-only request; no canvas mutation was executed.'
     )
     expect(mockRunLocalAgentToolLoop).toHaveBeenCalledOnce()
+  })
+
+  it('compiles a Hermes structured patch into a pending proposal without model reasoning', async () => {
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'compile this patch',
+      mode: 'compile_patch',
+      auditId: 'audit-compile',
+      structuredTask: {
+        goal: 'Create a hook node',
+        expectedChanges: ['A new hook node is ready for confirmation'],
+        patch: {
+          operations: [
+            {
+              type: 'create_node',
+              operationId: 'create-hook',
+              clientNodeId: 'hook-1',
+              kind: 'text',
+              title: 'Hook',
+              fields: { contentHtml: '<p>hello</p>' },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error)
+    expect(result.mode).toBe('compile_patch')
+    expect(result.requiresConfirmation).toBe(true)
+    expect(result.pendingActionId).toEqual(expect.any(String))
+    expect(result.changedNodeIds).toEqual([])
+    expect(result.generatedNodeIds).toEqual([])
+    expect(result.proposedPatchSummary).toContain('Patch operations (1): create_node')
+    expect(result.verificationSummary).toBe(
+      'compile_patch validated the patch; no canvas mutation was executed.'
+    )
+    expect(mockLoadCanvasSnapshot).toHaveBeenCalledOnce()
+    expect(mockRunLocalAgentToolLoop).not.toHaveBeenCalled()
+  })
+
+  it('rejects compile_patch when Hermes omits the structured patch', async () => {
+    const result = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'compile this patch',
+      mode: 'compile_patch',
+      auditId: 'audit-compile-missing-patch',
+      structuredTask: {
+        goal: 'Create a hook node',
+      },
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error('expected compile_patch validation failure')
+    expect(result.errorCode).toBe('PATCH_VALIDATION_FAILED')
+    expect(mockLoadCanvasSnapshot).not.toHaveBeenCalled()
+    expect(mockRunLocalAgentToolLoop).not.toHaveBeenCalled()
   })
 
   it('requires a pending action id before applying a proposed canvas mutation', async () => {

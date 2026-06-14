@@ -110,4 +110,72 @@ describe('Hermes canvas agent internal route', () => {
       })
     )
   })
+
+  it('passes compile_patch structuredTask through to the headless runtime and audit', async () => {
+    mockRunLocalCanvasAgentHeadless.mockResolvedValueOnce({
+      success: true,
+      answer: 'compiled',
+      mode: 'compile_patch',
+      risk: 'medium',
+      requiresConfirmation: true,
+      pendingActionId: 'pending-1',
+      proposedPatchSummary: 'Patch operations (1): create_node',
+      changedNodeIds: [],
+      generatedNodeIds: [],
+      verificationSummary: 'compile_patch validated the patch; no canvas mutation was executed.',
+      auditId: 'audit-1',
+    })
+
+    const structuredTask = {
+      goal: 'Create a hook node',
+      expectedChanges: ['Create Hook'],
+      patch: {
+        operations: [
+          {
+            type: 'create_node',
+            operationId: 'create-hook',
+            clientNodeId: 'hook-1',
+            kind: 'text',
+            title: 'Hook',
+          },
+        ],
+      },
+    }
+
+    const response = await POST(
+      buildRequest({
+        token: 'h'.repeat(32),
+        body: JSON.stringify({
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          workflowId: 'workflow-1',
+          message: 'compile patch',
+          mode: 'compile_patch',
+          structuredTask,
+        }),
+      })
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.mode).toBe('compile_patch')
+    expect(mockRunLocalCanvasAgentHeadless).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'compile_patch',
+        structuredTask,
+      })
+    )
+    expect(mockRecordHermesToolCallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'compile_patch',
+        requiresConfirmation: true,
+        inputSummary: expect.objectContaining({
+          hasStructuredTask: true,
+        }),
+        outputSummary: expect.objectContaining({
+          pendingActionId: 'pending-1',
+        }),
+      })
+    )
+  })
 })

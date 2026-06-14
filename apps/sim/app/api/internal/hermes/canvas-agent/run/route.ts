@@ -136,6 +136,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       mode: body.mode,
       confirmationMode: body.confirmationMode,
       pendingActionId: body.pendingActionId,
+      structuredTask: body.structuredTask,
       traceId,
       hermesRunId: body.hermesRunId,
       auditId,
@@ -184,6 +185,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       selectedNodeCount: body.selectedNodeIds.length,
       confirmationMode: body.confirmationMode,
       hasPendingActionId: Boolean(body.pendingActionId),
+      hasStructuredTask: Boolean(body.structuredTask),
     },
     outputSummary: {
       success: result.success,
