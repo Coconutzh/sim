@@ -175,14 +175,21 @@ function inferToolCalls(checks: CheckResult[]): string[] {
 
 function buildRequestIds(checks: CheckResult[]): Record<string, string> {
   const ids: Record<string, string> = {}
+  const idKeys = [
+    'requestId',
+    'responseId',
+    'toolCallId',
+    'auditId',
+    'pendingActionId',
+    'proposalId',
+    'conversation',
+  ] as const
   for (const check of checks) {
     const data = asRecord(check.data)
-    const pendingActionId = readString(data, 'pendingActionId')
-    const proposalId = readString(data, 'proposalId')
-    const conversation = readString(data, 'conversation')
-    if (pendingActionId) ids.pendingActionId = pendingActionId
-    if (proposalId) ids.proposalId = proposalId
-    if (conversation) ids.conversation = conversation
+    for (const key of idKeys) {
+      const value = readString(data, key)
+      if (value && !ids[key]) ids[key] = value
+    }
   }
   return ids
 }

@@ -351,6 +351,7 @@ describe('hermes-sim-smoke', () => {
           (body.metadata as Record<string, Record<string, unknown>>).sim.chatId
         ).toBeUndefined()
         return jsonResponse({
+          id: 'resp-canvas-read',
           output: [
             {
               type: 'function_call',
@@ -371,7 +372,13 @@ describe('hermes-sim-smoke', () => {
 
     const { results } = await runSmoke(['--skip-sim-health', '--canvas-read'])
 
-    expect(results.find((result) => result.name === 'hermes.sim-canvas-read')?.status).toBe('pass')
+    const canvasRead = results.find((result) => result.name === 'hermes.sim-canvas-read')
+    expect(canvasRead?.status).toBe('pass')
+    expect(canvasRead?.data).toMatchObject({
+      responseId: 'resp-canvas-read',
+      toolCallId: 'call-1',
+      toolName: 'sim_canvas_agent_run',
+    })
   })
 
   it('verifies canvas history smoke through a Responses API tool call', async () => {
@@ -416,6 +423,7 @@ describe('hermes-sim-smoke', () => {
           },
         })
         return jsonResponse({
+          id: 'resp-canvas-history',
           output: [
             {
               type: 'function_call',
@@ -436,9 +444,13 @@ describe('hermes-sim-smoke', () => {
 
     const { results } = await runSmoke(['--skip-sim-health', '--canvas-history'])
 
-    expect(results.find((result) => result.name === 'hermes.sim-canvas-history')?.status).toBe(
-      'pass'
-    )
+    const canvasHistory = results.find((result) => result.name === 'hermes.sim-canvas-history')
+    expect(canvasHistory?.status).toBe('pass')
+    expect(canvasHistory?.data).toMatchObject({
+      responseId: 'resp-canvas-history',
+      toolCallId: 'call-history',
+      toolName: 'sim_canvas_history_query',
+    })
   })
 
   it('verifies canvas propose and apply-after-confirm through Responses API tool calls', async () => {
@@ -503,6 +515,7 @@ describe('hermes-sim-smoke', () => {
         responseBodies.push(body)
         if (responseBodies.length === 1) {
           return jsonResponse({
+            id: 'resp-propose',
             output: [
               {
                 type: 'function_call',
@@ -524,6 +537,7 @@ describe('hermes-sim-smoke', () => {
           })
         }
         return jsonResponse({
+          id: 'resp-apply',
           output: [
             {
               type: 'function_call',
@@ -551,12 +565,22 @@ describe('hermes-sim-smoke', () => {
 
     const { results } = await runSmoke(['--skip-sim-health', '--canvas-propose-apply'])
 
-    expect(results.find((result) => result.name === 'hermes.sim-canvas-propose')?.status).toBe(
-      'pass'
+    const canvasPropose = results.find((result) => result.name === 'hermes.sim-canvas-propose')
+    expect(canvasPropose?.status).toBe('pass')
+    expect(canvasPropose?.data).toMatchObject({
+      responseId: 'resp-propose',
+      toolCallId: 'call-propose',
+      pendingActionId: 'pending-1',
+    })
+    const canvasApply = results.find(
+      (result) => result.name === 'hermes.sim-canvas-apply-after-confirm'
     )
-    expect(
-      results.find((result) => result.name === 'hermes.sim-canvas-apply-after-confirm')?.status
-    ).toBe('pass')
+    expect(canvasApply?.status).toBe('pass')
+    expect(canvasApply?.data).toMatchObject({
+      responseId: 'resp-apply',
+      toolCallId: 'call-apply',
+      pendingActionId: 'pending-1',
+    })
     expect(results.find((result) => result.name === 'sim.canvas-write-verify')?.status).toBe('pass')
     expect(responseBodies).toHaveLength(2)
     expect(String(responseBodies[0].input)).toContain('Propose creating one temporary text')

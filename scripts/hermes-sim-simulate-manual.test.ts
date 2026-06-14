@@ -46,6 +46,8 @@ describe('hermes simulated manual runner', () => {
           status: 'pass',
           detail: 'changed node-created',
           data: {
+            responseId: 'resp-apply-1',
+            toolCallId: 'call-apply-1',
             pendingActionId: 'pending-1',
             changedNodeIds: ['node-created'],
             verificationSummary: 'canvas.verify_patch: success',
@@ -66,6 +68,8 @@ describe('hermes simulated manual runner', () => {
 
     expect(mockRunSmoke).toHaveBeenCalledWith(['--canvas-propose-apply', '--skip-sim-health'])
     expect(result.pass).toBe(true)
+    expect(result.requestIds.responseId).toBe('resp-apply-1')
+    expect(result.requestIds.toolCallId).toBe('call-apply-1')
     expect(result.requestIds.pendingActionId).toBe('pending-1')
     expect(result.toolCalls).toContain('sim_canvas_agent_run')
     expect(result.stateDiff.changedNodeIds).toEqual(['node-created'])

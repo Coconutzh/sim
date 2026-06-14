@@ -194,6 +194,27 @@ function responseHasFunctionCall(payload: unknown, toolName: string): boolean {
   )
 }
 
+function firstFunctionCall(
+  payload: unknown,
+  toolName?: string
+): Record<string, unknown> | undefined {
+  return responseOutputItems(payload).find(
+    (item) => item.type === 'function_call' && (!toolName || item.name === toolName)
+  )
+}
+
+function responseEvidence(payload: unknown, toolName?: string): Record<string, string> {
+  const response = asRecord(payload)
+  const call = firstFunctionCall(payload, toolName)
+  return Object.fromEntries(
+    [
+      ['responseId', readString(response, 'id')],
+      ['toolCallId', readString(call, 'call_id') ?? readString(call, 'id')],
+      ['toolName', readString(call, 'name')],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]))
+  )
+}
+
 function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -543,6 +564,7 @@ async function runChatSmoke(
     name: 'hermes.chat',
     status: response.ok && content.includes('SIM_HERMES_SMOKE_OK') ? 'pass' : 'fail',
     detail: response.ok ? content.slice(0, 160) : httpFailureDetail(response),
+    data: responseEvidence(response.payload),
   })
 }
 
@@ -614,7 +636,14 @@ async function runConversationChainSmoke(
     detail: ok
       ? `conversation continued and isolated (${conversation})`
       : `first=${first.status} second=${second.status} isolated=${isolated.status} second="${secondText.slice(0, 120)}" isolated="${isolatedText.slice(0, 120)}"`,
-    data: { conversation, isolatedConversation, marker },
+    data: {
+      conversation,
+      isolatedConversation,
+      marker,
+      firstResponseId: readString(asRecord(first.payload), 'id'),
+      secondResponseId: readString(asRecord(second.payload), 'id'),
+      isolatedResponseId: readString(asRecord(isolated.payload), 'id'),
+    },
   })
 }
 
@@ -686,6 +715,7 @@ async function runCanvasReadSmoke(
     detail: response.ok
       ? `${responseHasFunctionCall(response.payload, 'sim_canvas_agent_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
       : httpFailureDetail(response),
+    data: responseEvidence(response.payload, 'sim_canvas_agent_run'),
   })
 }
 
@@ -732,6 +762,7 @@ async function runCanvasHistorySmoke(
     detail: response.ok
       ? `${responseHasFunctionCall(response.payload, 'sim_canvas_history_query') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
       : httpFailureDetail(response),
+    data: responseEvidence(response.payload, 'sim_canvas_history_query'),
   })
 }
 
@@ -786,6 +817,10 @@ async function runCanvasProposeSmoke(
         ? `pendingActionId ${pendingActionId}`
         : `proposal missing expected pending action${responseOutputText(response.payload) ? ` - ${responseOutputText(response.payload).slice(0, 200)}` : ''}`
       : httpFailureDetail(response),
+    data: {
+      ...responseEvidence(response.payload, 'sim_canvas_agent_run'),
+      pendingActionId,
+    },
   })
 }
 
@@ -877,6 +912,10 @@ async function runCanvasProposeApplySmoke(
         ? `pendingActionId ${pendingActionId}`
         : `proposal missing expected pending action${responseOutputText(proposalResponse.payload) ? ` - ${responseOutputText(proposalResponse.payload).slice(0, 200)}` : ''}`
       : httpFailureDetail(proposalResponse),
+    data: {
+      ...responseEvidence(proposalResponse.payload, 'sim_canvas_agent_run'),
+      pendingActionId,
+    },
   })
   if (!proposalOk || !pendingActionId) return
 
@@ -913,6 +952,7 @@ async function runCanvasProposeApplySmoke(
       : httpFailureDetail(applyResponse),
     data: applyOk
       ? {
+          ...responseEvidence(applyResponse.payload, 'sim_canvas_agent_run'),
           pendingActionId,
           changedNodeIds,
           verificationSummary: readString(applyOutput, 'verificationSummary'),
