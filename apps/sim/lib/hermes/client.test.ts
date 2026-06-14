@@ -88,6 +88,7 @@ describe('Hermes client health probe', () => {
             enabled: true,
             tools: [
               'sim_canvas_agent_run',
+              'sim_canvas_history_query',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -187,13 +188,18 @@ describe('Hermes client health probe', () => {
     expect(result.status).toBe('degraded')
     expect(result.toolsets?.missing).toEqual([])
     expect(result.toolsets?.requiredTools).toEqual({
-      sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
+      sim: [
+        'sim_canvas_agent_run',
+        'sim_canvas_history_query',
+        'sim_skill_proposal_run',
+        'sim_external_evidence_prepare',
+      ],
     })
     expect(result.toolsets?.missingTools).toEqual({
-      sim: ['sim_skill_proposal_run', 'sim_external_evidence_prepare'],
+      sim: ['sim_canvas_history_query', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
     })
     expect(result.error).toContain(
-      'required Hermes tools missing: sim(sim_skill_proposal_run, sim_external_evidence_prepare)'
+      'required Hermes tools missing: sim(sim_canvas_history_query, sim_skill_proposal_run, sim_external_evidence_prepare)'
     )
   })
 
@@ -224,6 +230,7 @@ describe('Hermes client health probe', () => {
             enabled: true,
             tools: [
               'sim_canvas_agent_run',
+              'sim_canvas_history_query',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -397,5 +404,39 @@ describe('callHermesResponse', () => {
       usage: { prompt: 11, completion: 5, total: 16 },
       raw: expect.any(Object),
     })
+  })
+
+  it('passes native conversation chain fields to the Responses API', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ id: 'resp-2', output: [] }), { status: 200 })
+    )
+
+    await callHermesResponse({
+      instructions: 'Use SIM tools.',
+      input: 'continue',
+      conversation: 'sim:org:org-1:user:user-1:workspace:ws-1:workflow:wf-1:chat:chat-1:gen:0',
+      store: true,
+      truncation: 'auto',
+    })
+
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+    expect(body).toMatchObject({
+      conversation: 'sim:org:org-1:user:user-1:workspace:ws-1:workflow:wf-1:chat:chat-1:gen:0',
+      store: true,
+      truncation: 'auto',
+    })
+    expect(body.previous_response_id).toBeUndefined()
+  })
+
+  it('rejects mutually exclusive conversation chain inputs before calling Hermes', async () => {
+    await expect(
+      callHermesResponse({
+        instructions: 'Use SIM tools.',
+        input: 'continue',
+        conversation: 'sim:chat:1',
+        previousResponseId: 'resp-1',
+      })
+    ).rejects.toThrow('mutually exclusive')
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

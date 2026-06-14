@@ -22,6 +22,9 @@ interface JsonResponse {
 interface Options {
   json: boolean
   chat: boolean
+  conversationChain: boolean
+  canvasPropose: boolean
+  canvasHistory: boolean
   canvasProposeApply: boolean
   canvasRead: boolean
   skillList: boolean
@@ -43,14 +46,19 @@ const DEFAULT_FORBIDDEN_TOOLSETS = [
   'terminal',
 ]
 const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
-  sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
+  sim: [
+    'sim_canvas_agent_run',
+    'sim_canvas_history_query',
+    'sim_skill_proposal_run',
+    'sim_external_evidence_prepare',
+  ],
 }
 
 function printUsage(): void {
   process.stdout.write(`SIM Hermes smoke test
 
 Usage:
-  bun run scripts/hermes-sim-smoke.ts [--chat] [--canvas-read] [--canvas-propose-apply] [--skill-list] [--skill-proposal-create] [--memory] [--json]
+  bun run scripts/hermes-sim-smoke.ts [--chat] [--conversation-chain] [--canvas-read] [--canvas-propose] [--canvas-propose-apply] [--canvas-history] [--skill-list] [--skill-proposal-create] [--memory] [--json]
 
 Required env:
   HERMES_API_URL              Hermes API Server base URL, e.g. http://127.0.0.1:8642
@@ -82,8 +90,11 @@ Notes:
   Default checks are read-only: Hermes health, capabilities, toolset policy,
   and SIM aggregated health when INTERNAL_API_SECRET is present.
   --chat sends a no-tool OpenAI-compatible chat completion.
+  --conversation-chain verifies Responses API conversation + store=true continuity and isolation.
   --canvas-read asks Hermes to call sim_canvas_agent_run in read_only mode and verifies the tool call.
+  --canvas-propose asks Hermes to create a confirmable proposal without applying it.
   --canvas-propose-apply asks Hermes to propose a canvas mutation, then confirms the exact pendingActionId.
+  --canvas-history asks Hermes to call sim_canvas_history_query and verifies the tool call.
   --skill-list asks Hermes to list published SIM skills only and verifies the tool call.
   --skill-proposal-create creates a pending-review SIM skill proposal and compares it.
   --memory exercises SIM-backed Hermes user memory write/prefetch/isolation through SIM internal APIs.
@@ -119,6 +130,9 @@ function parseOptions(argv: string[]): Options {
   return {
     json: flags.has('--json'),
     chat: flags.has('--chat'),
+    conversationChain: flags.has('--conversation-chain'),
+    canvasPropose: flags.has('--canvas-propose'),
+    canvasHistory: flags.has('--canvas-history'),
     canvasProposeApply: flags.has('--canvas-propose-apply'),
     canvasRead: flags.has('--canvas-read'),
     skillList: flags.has('--skill-list'),
@@ -532,6 +546,78 @@ async function runChatSmoke(
   })
 }
 
+async function runConversationChainSmoke(
+  baseUrl: string,
+  apiKey: string,
+  results: CheckResult[]
+): Promise<void> {
+  const marker = `SIM_CHAIN_ALPHA_${Date.now()}`
+  const conversation = `sim:smoke:conversation:${Date.now()}`
+  const isolatedConversation = `${conversation}:isolated`
+  const headers = {
+    ...buildAuthHeaders(apiKey),
+    'content-type': 'application/json',
+    'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID') ?? 'anonymous'}`,
+  }
+
+  const first = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are responding to a SIM-Hermes conversation-chain smoke test. Do not call tools.',
+      input: `Remember this test phrase for this conversation only: ${marker}. Reply with SIM_CHAIN_STORED.`,
+      conversation,
+      store: true,
+      truncation: 'auto',
+    }),
+  })
+  const second = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are responding to a SIM-Hermes conversation-chain smoke test. Do not call tools.',
+      input: 'What was the test phrase from the previous turn?',
+      conversation,
+      store: true,
+      truncation: 'auto',
+    }),
+  })
+  const isolated = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are responding to a SIM-Hermes conversation-chain smoke test. If the current conversation has no prior test phrase, reply exactly: SIM_CHAIN_NONE. Do not call tools.',
+      input: 'What was the previous test phrase?',
+      conversation: isolatedConversation,
+      store: true,
+      truncation: 'auto',
+    }),
+  })
+
+  const secondText = responseOutputText(second.payload)
+  const isolatedText = responseOutputText(isolated.payload)
+  const ok =
+    first.ok &&
+    second.ok &&
+    isolated.ok &&
+    secondText.includes(marker) &&
+    !isolatedText.includes(marker)
+  results.push({
+    name: 'hermes.conversation-chain',
+    status: ok ? 'pass' : 'fail',
+    detail: ok
+      ? `conversation continued and isolated (${conversation})`
+      : `first=${first.status} second=${second.status} isolated=${isolated.status} second="${secondText.slice(0, 120)}" isolated="${isolatedText.slice(0, 120)}"`,
+    data: { conversation, isolatedConversation, marker },
+  })
+}
+
 function requireSimContext(results: CheckResult[], keys: string[]): boolean {
   let ok = true
   for (const key of keys) {
@@ -599,6 +685,106 @@ async function runCanvasReadSmoke(
         : 'fail',
     detail: response.ok
       ? `${responseHasFunctionCall(response.payload, 'sim_canvas_agent_run') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
+      : httpFailureDetail(response),
+  })
+}
+
+async function runCanvasHistorySmoke(
+  baseUrl: string,
+  apiKey: string,
+  results: CheckResult[]
+): Promise<void> {
+  if (
+    !requireSimContext(results, [
+      'HERMES_SMOKE_USER_ID',
+      'HERMES_SMOKE_WORKSPACE_ID',
+      'HERMES_SMOKE_WORKFLOW_ID',
+    ])
+  ) {
+    return
+  }
+
+  const response = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers: {
+      ...buildAuthHeaders(apiKey),
+      'content-type': 'application/json',
+      'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID')}`,
+      'x-hermes-session-id': smokeSessionId(),
+    },
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are a SIM smoke-test agent. You must use sim_canvas_history_query exactly once with query=recent_operations before answering. Do not call sim_canvas_agent_run in this step.',
+      input:
+        'Query the authoritative SIM canvas operation history for this workflow and summarize the latest operation count.',
+      metadata: buildSimMetadata(),
+      store: false,
+    }),
+  })
+  const content = responseOutputText(response.payload)
+  results.push({
+    name: 'hermes.sim-canvas-history',
+    status:
+      response.ok && responseHasFunctionCall(response.payload, 'sim_canvas_history_query')
+        ? 'pass'
+        : 'fail',
+    detail: response.ok
+      ? `${responseHasFunctionCall(response.payload, 'sim_canvas_history_query') ? 'tool called' : 'tool call missing'}${content ? ` - ${content.slice(0, 200)}` : ''}`
+      : httpFailureDetail(response),
+  })
+}
+
+async function runCanvasProposeSmoke(
+  baseUrl: string,
+  apiKey: string,
+  results: CheckResult[]
+): Promise<void> {
+  if (
+    !requireSimContext(results, [
+      'HERMES_SMOKE_USER_ID',
+      'HERMES_SMOKE_WORKSPACE_ID',
+      'HERMES_SMOKE_WORKFLOW_ID',
+    ])
+  ) {
+    return
+  }
+
+  const nodeTitle =
+    envString('HERMES_SMOKE_CANVAS_TITLE') ?? `Hermes Smoke Proposal ${new Date().toISOString()}`
+  const response = await fetchJson(`${baseUrl}/v1/responses`, {
+    method: 'POST',
+    headers: {
+      ...buildAuthHeaders(apiKey),
+      'content-type': 'application/json',
+      'x-hermes-session-key': `sim:smoke:user:${envString('HERMES_SMOKE_USER_ID')}`,
+      'x-hermes-session-id': smokeSessionId(),
+    },
+    body: JSON.stringify({
+      model: envString('HERMES_SMOKE_MODEL'),
+      instructions:
+        'You are a SIM smoke-test agent. You must use sim_canvas_agent_run exactly once with mode=propose. Do not apply changes.',
+      input: `Propose creating one temporary text content node titled "${nodeTitle}" on the SIM canvas. Return the pendingActionId from SIM.`,
+      metadata: buildSimMetadata(),
+      store: false,
+    }),
+  })
+  const output = firstToolOutput(response.payload)
+  const pendingActionId = readString(output, 'pendingActionId')
+  const ok =
+    response.ok &&
+    responseHasFunctionCall(response.payload, 'sim_canvas_agent_run') &&
+    output?.success === true &&
+    output.mode === 'propose' &&
+    output.requiresConfirmation === true &&
+    Boolean(pendingActionId)
+  results.push({
+    name: 'hermes.sim-canvas-propose',
+    status: ok ? 'pass' : 'fail',
+    detail: response.ok
+      ? ok
+        ? `pendingActionId ${pendingActionId}`
+        : `proposal missing expected pending action${responseOutputText(response.payload) ? ` - ${responseOutputText(response.payload).slice(0, 200)}` : ''}`
       : httpFailureDetail(response),
   })
 }
@@ -1034,7 +1220,12 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     await checkToolsets(hermesBaseUrl, hermesApiKey, results)
     if (!options.skipSimHealth) await checkSimHealth(simBaseUrl, results)
     if (options.chat) await runChatSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.conversationChain) {
+      await runConversationChainSmoke(hermesBaseUrl, hermesApiKey, results)
+    }
     if (options.canvasRead) await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.canvasHistory) await runCanvasHistorySmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.canvasPropose) await runCanvasProposeSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.canvasProposeApply) {
       await runCanvasProposeApplySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
     }

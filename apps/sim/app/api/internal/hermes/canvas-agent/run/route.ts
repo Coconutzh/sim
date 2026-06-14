@@ -188,6 +188,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     outputSummary: {
       success: result.success,
       answerLength: result.answer.length,
+      pendingActionId: result.pendingActionId,
       proposedPatchSummaryLength: result.proposedPatchSummary?.length ?? 0,
       errorCode: result.success ? undefined : result.errorCode,
     },

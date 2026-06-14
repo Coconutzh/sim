@@ -3,11 +3,15 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCallHermesResponse, mockLoggerWarn, mockSelect } = vi.hoisted(() => ({
-  mockCallHermesResponse: vi.fn(),
-  mockLoggerWarn: vi.fn(),
-  mockSelect: vi.fn(),
-}))
+const { mockCallHermesResponse, mockEnv, mockLoggerWarn, mockSelect, mockUpdate } = vi.hoisted(
+  () => ({
+    mockCallHermesResponse: vi.fn(),
+    mockEnv: {} as Record<string, boolean | number | string | undefined>,
+    mockLoggerWarn: vi.fn(),
+    mockSelect: vi.fn(),
+    mockUpdate: vi.fn(),
+  })
+)
 
 function createSelectChain<T>(result: T) {
   const chain: Record<string, unknown> = {}
@@ -20,6 +24,7 @@ function createSelectChain<T>(result: T) {
 vi.mock('@sim/db', () => ({
   db: {
     select: mockSelect,
+    update: mockUpdate,
   },
 }))
 
@@ -32,13 +37,30 @@ vi.mock('@/lib/hermes/client', () => ({
   callHermesResponse: mockCallHermesResponse,
 }))
 
+vi.mock('@/lib/core/config/env', () => ({
+  env: mockEnv,
+  isTruthy: (value: string | boolean | number | undefined) =>
+    typeof value === 'string' ? value.toLowerCase() === 'true' || value === '1' : Boolean(value),
+}))
+
 import { callHermesSimAgent } from '@/lib/hermes/sim-agent'
+
+function createUpdateChain() {
+  const chain: Record<string, unknown> = {}
+  ;(chain as any).set = vi.fn(() => chain)
+  ;(chain as any).where = vi.fn(() => Promise.resolve([]))
+  return chain
+}
 
 describe('callHermesSimAgent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    for (const key of Object.keys(mockEnv)) delete mockEnv[key]
     mockCallHermesResponse.mockResolvedValue({
+      id: 'resp-1',
       content: 'ok',
+      sessionId: 'session-1',
+      sessionKey: 'key-1',
       raw: {},
     })
   })
@@ -60,6 +82,7 @@ describe('callHermesSimAgent', () => {
       expect.objectContaining({
         input: 'read canvas',
         instructions: expect.stringContaining('must call sim_canvas_agent_run'),
+        store: false,
         sessionId: 'sim:chat:chat-1',
         sessionKey: 'sim:org:org-1:user:user-1',
         metadata: {
@@ -75,6 +98,59 @@ describe('callHermesSimAgent', () => {
         },
       })
     )
+  })
+
+  it('enables Hermes native conversation chain when the feature flag and chat scope are present', async () => {
+    mockEnv.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED = 'true'
+    mockSelect
+      .mockReturnValueOnce(
+        createSelectChain([
+          {
+            config: {
+              hermes: {
+                generation: 2,
+                latestResponseId: 'resp-old',
+              },
+            },
+          },
+        ])
+      )
+      .mockReturnValueOnce(createSelectChain([{ config: { existing: true } }]))
+    const updateChain = createUpdateChain()
+    mockUpdate.mockReturnValueOnce(updateChain)
+
+    await callHermesSimAgent({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'What canvas change did we discuss earlier?',
+    })
+
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation:
+          'sim:org:org-1:user:user-1:workspace:workspace-1:workflow:workflow-1:chat:chat-1:gen:2',
+        store: true,
+        truncation: 'auto',
+        instructions: expect.stringContaining('sim_canvas_history_query'),
+      })
+    )
+    expect(updateChain.set).toHaveBeenCalledWith({
+      config: expect.objectContaining({
+        existing: true,
+        hermes: expect.objectContaining({
+          nativeConversationChainEnabled: true,
+          conversation:
+            'sim:org:org-1:user:user-1:workspace:workspace-1:workflow:workflow-1:chat:chat-1:gen:2',
+          generation: 2,
+          latestResponseId: 'resp-1',
+          latestSessionId: 'session-1',
+          latestSessionKey: 'key-1',
+        }),
+      }),
+    })
   })
 
   it('resolves organization id from workspace when the request payload omits it', async () => {

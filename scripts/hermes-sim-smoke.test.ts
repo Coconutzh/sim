@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runSmoke } from './hermes-sim-smoke'
 
 const ENV_KEYS = [
@@ -107,6 +107,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -164,7 +165,9 @@ describe('hermes-sim-smoke', () => {
     const toolsets = results.find((result) => result.name === 'hermes.toolsets')
     expect(toolsets?.status).toBe('fail')
     expect(toolsets?.detail).toContain('forbidden enabled: terminal')
-    expect(toolsets?.detail).toContain('missing sim tools: sim_skill_proposal_run')
+    expect(toolsets?.detail).toContain('missing sim tools:')
+    expect(toolsets?.detail).toContain('sim_canvas_history_query')
+    expect(toolsets?.detail).toContain('sim_skill_proposal_run')
     expect(toolsets?.detail).toContain('sim_external_evidence_prepare')
   })
 
@@ -190,6 +193,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -216,6 +220,89 @@ describe('hermes-sim-smoke', () => {
     expect(results.find((result) => result.name === 'hermes.chat')?.status).toBe('pass')
   })
 
+  it('verifies Responses API conversation chain continuity and isolation', async () => {
+    configureHermesEnv()
+    const responseBodies: Array<Record<string, unknown>> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_canvas_history_query',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/v1/responses')) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        responseBodies.push(body)
+        expect(body.store).toBe(true)
+        expect(body.truncation).toBe('auto')
+        const inputText = String(body.input)
+        const marker = inputText.match(/SIM_CHAIN_ALPHA_\d+/)?.[0] ?? 'SIM_CHAIN_ALPHA_UNKNOWN'
+        if (responseBodies.length === 1) {
+          return jsonResponse({
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: 'SIM_CHAIN_STORED' }],
+              },
+            ],
+          })
+        }
+        if (responseBodies.length === 2) {
+          const firstInput = String(responseBodies[0].input)
+          const storedMarker =
+            firstInput.match(/SIM_CHAIN_ALPHA_\d+/)?.[0] ?? 'SIM_CHAIN_ALPHA_UNKNOWN'
+          return jsonResponse({
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: storedMarker }],
+              },
+            ],
+          })
+        }
+        return jsonResponse({
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: `SIM_CHAIN_NONE ${marker}` }],
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--conversation-chain'])
+
+    expect(results.find((result) => result.name === 'hermes.conversation-chain')?.status).toBe(
+      'pass'
+    )
+    expect(responseBodies).toHaveLength(3)
+    expect(responseBodies[0].conversation).toBe(responseBodies[1].conversation)
+    expect(responseBodies[2].conversation).not.toBe(responseBodies[0].conversation)
+  })
+
   it('verifies canvas read smoke through a Responses API tool call', async () => {
     configureHermesEnv()
     process.env.HERMES_SMOKE_USER_ID = 'user-a'
@@ -240,6 +327,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -286,6 +374,73 @@ describe('hermes-sim-smoke', () => {
     expect(results.find((result) => result.name === 'hermes.sim-canvas-read')?.status).toBe('pass')
   })
 
+  it('verifies canvas history smoke through a Responses API tool call', async () => {
+    configureHermesEnv()
+    process.env.HERMES_SMOKE_USER_ID = 'user-a'
+    process.env.HERMES_SMOKE_WORKSPACE_ID = 'workspace-1'
+    process.env.HERMES_SMOKE_WORKFLOW_ID = 'workflow-1'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      if (url.endsWith('/v1/toolsets')) {
+        return jsonResponse({
+          data: [
+            {
+              name: 'sim',
+              enabled: true,
+              tools: [
+                'sim_canvas_agent_run',
+                'sim_canvas_history_query',
+                'sim_skill_proposal_run',
+                'sim_external_evidence_prepare',
+              ],
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/v1/responses')) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        expect(body.metadata).toMatchObject({
+          sim: {
+            userId: 'user-a',
+            workspaceId: 'workspace-1',
+            workflowId: 'workflow-1',
+          },
+        })
+        return jsonResponse({
+          output: [
+            {
+              type: 'function_call',
+              name: 'sim_canvas_history_query',
+              arguments: '{"query":"recent_operations"}',
+              call_id: 'call-history',
+            },
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'There is one prior operation.' }],
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { results } = await runSmoke(['--skip-sim-health', '--canvas-history'])
+
+    expect(results.find((result) => result.name === 'hermes.sim-canvas-history')?.status).toBe(
+      'pass'
+    )
+  })
+
   it('verifies canvas propose and apply-after-confirm through Responses API tool calls', async () => {
     configureHermesEnv()
     process.env.HERMES_SMOKE_USER_ID = 'user-a'
@@ -316,6 +471,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -430,6 +586,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -484,6 +641,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],
@@ -586,6 +744,7 @@ describe('hermes-sim-smoke', () => {
               enabled: true,
               tools: [
                 'sim_canvas_agent_run',
+                'sim_canvas_history_query',
                 'sim_skill_proposal_run',
                 'sim_external_evidence_prepare',
               ],

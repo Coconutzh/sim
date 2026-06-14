@@ -37,6 +37,9 @@ export interface HermesResponseParams {
   metadata?: Record<string, unknown>
   signal?: AbortSignal
   store?: boolean
+  conversation?: string
+  previousResponseId?: string
+  truncation?: 'auto'
 }
 
 export interface HermesChatCompletionResult {
@@ -149,7 +152,12 @@ function getHermesHealthTimeoutMs(): number {
 }
 
 const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
-  sim: ['sim_canvas_agent_run', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
+  sim: [
+    'sim_canvas_agent_run',
+    'sim_canvas_history_query',
+    'sim_skill_proposal_run',
+    'sim_external_evidence_prepare',
+  ],
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -505,6 +513,11 @@ export async function callHermesResponse(
   if (!config) {
     throw new HermesClientError('Hermes API is not configured')
   }
+  if (params.conversation && params.previousResponseId) {
+    throw new HermesClientError(
+      'Hermes Responses API conversation and previousResponseId are mutually exclusive'
+    )
+  }
 
   try {
     const response = await fetch(`${config.baseUrl}/v1/responses`, {
@@ -521,6 +534,9 @@ export async function callHermesResponse(
         input: params.input,
         metadata: params.metadata,
         store: params.store ?? false,
+        ...(params.conversation ? { conversation: params.conversation } : {}),
+        ...(params.previousResponseId ? { previous_response_id: params.previousResponseId } : {}),
+        ...(params.truncation ? { truncation: params.truncation } : {}),
       }),
       signal: params.signal,
     })

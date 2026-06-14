@@ -44,6 +44,7 @@ export const env = createEnv({
     HERMES_HEALTH_TIMEOUT_MS:              z.number().optional(),                  // Timeout for SIM health probes against Hermes API Server
     HERMES_REQUIRED_TOOLSETS:              z.string().optional(),                  // Comma-separated Hermes toolsets required by this SIM deployment (default: sim)
     HERMES_FORBIDDEN_TOOLSETS:             z.string().optional(),                  // Comma-separated Hermes toolsets that must not be enabled for SIM production traffic
+    HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED: z.boolean().optional(),              // Enable Hermes Responses API conversation/store=true chaining for SIM copilot chats
     AGENT_INDEXER_URL:                     z.string().url().optional(),            // URL for agent training data indexer
     AGENT_INDEXER_API_KEY:                 z.string().min(1).optional(),           // API key for agent indexer authentication
     COPILOT_STREAM_TTL_SECONDS:            z.number().optional(),                  // Redis TTL for copilot SSE buffer
