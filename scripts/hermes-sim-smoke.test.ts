@@ -308,6 +308,7 @@ describe('hermes-sim-smoke', () => {
     process.env.HERMES_SMOKE_USER_ID = 'user-a'
     process.env.HERMES_SMOKE_WORKSPACE_ID = 'workspace-1'
     process.env.HERMES_SMOKE_WORKFLOW_ID = 'workflow-1'
+    process.env.HERMES_SERVICE_TOKEN = 'service-token'
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
@@ -333,6 +334,23 @@ describe('hermes-sim-smoke', () => {
               ],
             },
           ],
+        })
+      }
+      if (url.endsWith('/api/internal/hermes/canvas-agent/run')) {
+        expect((init?.headers as Record<string, string>)['x-sim-service-token']).toBe(
+          'service-token'
+        )
+        return jsonResponse({
+          success: true,
+          canvas: {
+            nodeCount: 2,
+            edgeCount: 1,
+            nodes: [
+              { id: 'node-1', name: 'Start', type: 'trigger' },
+              { id: 'node-2', name: 'Existing', type: 'text' },
+            ],
+            edges: [{ id: 'edge-1', source: 'node-1', target: 'node-2' }],
+          },
         })
       }
       if (url.endsWith('/v1/responses')) {
@@ -379,6 +397,9 @@ describe('hermes-sim-smoke', () => {
       toolCallId: 'call-1',
       toolName: 'sim_canvas_agent_run',
     })
+    expect(
+      results.find((result) => result.name === 'sim.canvas-read-read-only-verify')?.status
+    ).toBe('pass')
   })
 
   it('verifies canvas history smoke through a Responses API tool call', async () => {
@@ -386,6 +407,7 @@ describe('hermes-sim-smoke', () => {
     process.env.HERMES_SMOKE_USER_ID = 'user-a'
     process.env.HERMES_SMOKE_WORKSPACE_ID = 'workspace-1'
     process.env.HERMES_SMOKE_WORKFLOW_ID = 'workflow-1'
+    process.env.HERMES_SERVICE_TOKEN = 'service-token'
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/health')) return jsonResponse({ status: 'ok' })
@@ -411,6 +433,23 @@ describe('hermes-sim-smoke', () => {
               ],
             },
           ],
+        })
+      }
+      if (url.endsWith('/api/internal/hermes/canvas-agent/run')) {
+        expect((init?.headers as Record<string, string>)['x-sim-service-token']).toBe(
+          'service-token'
+        )
+        return jsonResponse({
+          success: true,
+          canvas: {
+            nodeCount: 2,
+            edgeCount: 1,
+            nodes: [
+              { id: 'node-1', name: 'Start', type: 'trigger' },
+              { id: 'node-2', name: 'Existing', type: 'text' },
+            ],
+            edges: [{ id: 'edge-1', source: 'node-1', target: 'node-2' }],
+          },
         })
       }
       if (url.endsWith('/v1/responses')) {
@@ -451,6 +490,9 @@ describe('hermes-sim-smoke', () => {
       toolCallId: 'call-history',
       toolName: 'sim_canvas_history_query',
     })
+    expect(
+      results.find((result) => result.name === 'sim.canvas-history-read-only-verify')?.status
+    ).toBe('pass')
   })
 
   it('verifies canvas propose and apply-after-confirm through Responses API tool calls', async () => {

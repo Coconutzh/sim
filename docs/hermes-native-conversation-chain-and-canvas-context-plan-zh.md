@@ -853,6 +853,7 @@ HERMES_SMOKE_WORKSPACE_ID=<workspaceId>
 HERMES_SMOKE_WORKFLOW_ID=<workflowId>
 HERMES_SMOKE_CHAT_ID=<chatId>
 HERMES_SMOKE_AGENT_ID=hermes_agent_v1
+HERMES_SERVICE_TOKEN=<service token，用于只读 diff / apply / audit 校验>
 ```
 
 每个模拟用例的输出必须包含：

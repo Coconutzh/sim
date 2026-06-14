@@ -215,6 +215,87 @@ function responseEvidence(payload: unknown, toolName?: string): Record<string, s
   )
 }
 
+function canvasSnapshot(payload: unknown): Record<string, unknown> | undefined {
+  const canvas = asRecord(asRecord(payload)?.canvas)
+  if (!canvas) return undefined
+  const nodes = readArray(canvas, 'nodes')
+    .map((node) => asRecord(node))
+    .filter((node): node is Record<string, unknown> => Boolean(node))
+    .map((node) => ({
+      id: readString(node, 'id'),
+      name: readString(node, 'name'),
+      type: readString(node, 'type'),
+    }))
+  const edges = readArray(canvas, 'edges')
+    .map((edge) => asRecord(edge))
+    .filter((edge): edge is Record<string, unknown> => Boolean(edge))
+    .map((edge) => ({
+      id: readString(edge, 'id'),
+      source: readString(edge, 'source'),
+      target: readString(edge, 'target'),
+    }))
+  return {
+    nodeCount: canvas.nodeCount,
+    edgeCount: canvas.edgeCount,
+    nodes,
+    edges,
+  }
+}
+
+function canvasSnapshotFingerprint(snapshot: Record<string, unknown> | undefined): string {
+  return JSON.stringify(snapshot ?? {})
+}
+
+function readCanvasSnapshot(simBaseUrl: string, serviceToken: string, label: string) {
+  return fetchJson(`${simBaseUrl}/api/internal/hermes/canvas-agent/run`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-sim-service-token': serviceToken,
+    },
+    body: JSON.stringify({
+      userId: envString('HERMES_SMOKE_USER_ID'),
+      organizationId: envString('HERMES_SMOKE_ORGANIZATION_ID'),
+      workspaceId: envString('HERMES_SMOKE_WORKSPACE_ID'),
+      workflowId: envString('HERMES_SMOKE_WORKFLOW_ID'),
+      mode: 'read_only',
+      message: `Read canvas state for ${label} smoke verification.`,
+      traceId: `hermes-smoke-canvas-${label}-${Date.now()}`,
+    }),
+  })
+}
+
+async function verifyReadOnlyCanvasUnchanged(
+  simBaseUrl: string,
+  beforeRead: JsonResponse | undefined,
+  label: string,
+  results: CheckResult[]
+): Promise<void> {
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  if (!serviceToken || !beforeRead) return
+  const beforeSnapshot = canvasSnapshot(beforeRead.payload)
+  const afterRead = await readCanvasSnapshot(simBaseUrl, serviceToken, `${label}-after`)
+  const afterSnapshot = canvasSnapshot(afterRead.payload)
+  const unchanged =
+    beforeRead.ok &&
+    afterRead.ok &&
+    canvasSnapshotFingerprint(beforeSnapshot) === canvasSnapshotFingerprint(afterSnapshot)
+  results.push({
+    name: `sim.${label}-read-only-verify`,
+    status: unchanged ? 'pass' : 'fail',
+    detail: afterRead.ok
+      ? unchanged
+        ? `canvas unchanged (${String(beforeSnapshot?.nodeCount ?? 'unknown')} nodes)`
+        : 'canvas changed during read-only smoke'
+      : httpFailureDetail(afterRead),
+    data: {
+      before: beforeSnapshot,
+      after: afterSnapshot,
+    },
+  })
+}
+
 function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -675,6 +756,7 @@ function requireWriteConfirm(results: CheckResult[], expected: string): boolean 
 async function runCanvasReadSmoke(
   baseUrl: string,
   apiKey: string,
+  simBaseUrl: string,
   results: CheckResult[]
 ): Promise<void> {
   if (
@@ -687,6 +769,10 @@ async function runCanvasReadSmoke(
     return
   }
 
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  const beforeRead = serviceToken
+    ? await readCanvasSnapshot(simBaseUrl, serviceToken, 'canvas-read-before')
+    : undefined
   const response = await fetchJson(`${baseUrl}/v1/responses`, {
     method: 'POST',
     headers: {
@@ -717,11 +803,13 @@ async function runCanvasReadSmoke(
       : httpFailureDetail(response),
     data: responseEvidence(response.payload, 'sim_canvas_agent_run'),
   })
+  await verifyReadOnlyCanvasUnchanged(simBaseUrl, beforeRead, 'canvas-read', results)
 }
 
 async function runCanvasHistorySmoke(
   baseUrl: string,
   apiKey: string,
+  simBaseUrl: string,
   results: CheckResult[]
 ): Promise<void> {
   if (
@@ -734,6 +822,10 @@ async function runCanvasHistorySmoke(
     return
   }
 
+  const serviceToken = envString('HERMES_SERVICE_TOKEN')
+  const beforeRead = serviceToken
+    ? await readCanvasSnapshot(simBaseUrl, serviceToken, 'canvas-history-before')
+    : undefined
   const response = await fetchJson(`${baseUrl}/v1/responses`, {
     method: 'POST',
     headers: {
@@ -764,6 +856,7 @@ async function runCanvasHistorySmoke(
       : httpFailureDetail(response),
     data: responseEvidence(response.payload, 'sim_canvas_history_query'),
   })
+  await verifyReadOnlyCanvasUnchanged(simBaseUrl, beforeRead, 'canvas-history', results)
 }
 
 async function runCanvasProposeSmoke(
@@ -1263,8 +1356,12 @@ export async function runSmoke(argv: string[] = process.argv.slice(2)): Promise<
     if (options.conversationChain) {
       await runConversationChainSmoke(hermesBaseUrl, hermesApiKey, results)
     }
-    if (options.canvasRead) await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, results)
-    if (options.canvasHistory) await runCanvasHistorySmoke(hermesBaseUrl, hermesApiKey, results)
+    if (options.canvasRead) {
+      await runCanvasReadSmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
+    }
+    if (options.canvasHistory) {
+      await runCanvasHistorySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
+    }
     if (options.canvasPropose) await runCanvasProposeSmoke(hermesBaseUrl, hermesApiKey, results)
     if (options.canvasProposeApply) {
       await runCanvasProposeApplySmoke(hermesBaseUrl, hermesApiKey, simBaseUrl, results)
