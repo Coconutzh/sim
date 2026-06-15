@@ -33,7 +33,7 @@ import {
   Video,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
+import { Handle, type NodeProps, Position, useReactFlow, useViewport } from 'reactflow'
 import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
@@ -119,6 +119,7 @@ import {
   type VideoParametersValue,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
+import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
@@ -2344,6 +2345,7 @@ export const ContentBlock = memo(function ContentBlock({
 }: NodeProps<ContentBlockNodeData>) {
   const params = useParams<{ workspaceId: string }>()
   const reactFlowInstance = useReactFlow()
+  const viewport = useViewport()
   const { fitViewToBounds } = useCanvasViewport(reactFlowInstance, {
     embedded: Boolean(data.isEmbedded),
   })
@@ -2446,6 +2448,7 @@ export const ContentBlock = memo(function ContentBlock({
     collaborativeBatchRemoveEdges,
     collaborativeBatchAddEdges,
     collaborativeSetSubblockValue,
+    collaborativeUpdateBlockName,
   } = useCollaborativeWorkflow()
   const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
@@ -4959,6 +4962,15 @@ export const ContentBlock = memo(function ContentBlock({
           }
         }}
       >
+        <ContentNodeTitleBar
+          blockId={id}
+          name={data.name}
+          variant={resolvedVariant}
+          canEdit={canEditWorkflow && !data.isPreview && !data.isEmbedded}
+          zoom={viewport.zoom}
+          onRename={(nextName) => collaborativeUpdateBlockName(id, nextName).success}
+        />
+
         {!data.isPreview &&
           !data.isEmbedded &&
           !(resolvedVariant === 'image' && resolvedFile) &&
