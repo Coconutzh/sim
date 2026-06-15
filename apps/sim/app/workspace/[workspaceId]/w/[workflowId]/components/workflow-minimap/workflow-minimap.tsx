@@ -29,28 +29,10 @@ interface WorkflowMinimapProps {
   nodes: Node[]
 }
 
-function useCanvasThemeIsDark(): boolean {
-  const [isDark, setIsDark] = useState(false)
-
-  useEffect(() => {
-    const root = document.documentElement
-    const updateTheme = () => setIsDark(root.classList.contains('dark'))
-
-    updateTheme()
-    const observer = new MutationObserver(updateTheme)
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
-
-    return () => observer.disconnect()
-  }, [])
-
-  return isDark
-}
-
 function WorkflowMinimapComponent({ nodes }: WorkflowMinimapProps) {
   const reactFlowInstance = useReactFlow()
   const viewport = useViewport()
   const blocks = useWorkflowStore((state) => state.blocks)
-  const isDarkCanvas = useCanvasThemeIsDark()
   const [resizeTick, setResizeTick] = useState(0)
 
   useSidebarStore(
@@ -125,8 +107,7 @@ function WorkflowMinimapComponent({ nodes }: WorkflowMinimapProps) {
   return (
     <div
       className={cn(
-        'nodrag nopan absolute bottom-[60px] left-[16px] z-10 hidden h-[128px] w-[200px] cursor-crosshair overflow-hidden rounded-lg border shadow-lg sm:block',
-        isDarkCanvas ? 'border-neutral-300/80 bg-neutral-100' : 'border-white/10 bg-[#1B1C20]'
+        'nodrag nopan absolute bottom-[60px] left-[16px] z-10 hidden h-[128px] w-[200px] cursor-crosshair overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-1)] shadow-lg sm:block'
       )}
       onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
@@ -135,26 +116,13 @@ function WorkflowMinimapComponent({ nodes }: WorkflowMinimapProps) {
       onPointerMove={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-x-0 top-[26px] h-px',
-          isDarkCanvas ? 'bg-neutral-300' : 'bg-white/10'
-        )}
-      />
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-[24px] h-px',
-          isDarkCanvas ? 'bg-neutral-300' : 'bg-white/10'
-        )}
-      />
+      <div className='pointer-events-none absolute inset-x-0 top-[26px] h-px bg-[var(--border)]' />
+      <div className='pointer-events-none absolute inset-x-0 bottom-[24px] h-px bg-[var(--border)]' />
 
       {minimapData.nodeRects.map((rect, index) => (
         <div
           key={`${index}-${rect.x}-${rect.y}`}
-          className={cn(
-            'pointer-events-none absolute rounded-[1px]',
-            isDarkCanvas ? 'bg-neutral-500/70' : 'bg-[#565862]/80'
-          )}
+          className='pointer-events-none absolute rounded-[1px] bg-[var(--surface-7)]'
           style={{
             transform: `translate3d(${rect.x}px, ${rect.y}px, 0)`,
             width: Math.max(2, rect.width),
@@ -165,10 +133,7 @@ function WorkflowMinimapComponent({ nodes }: WorkflowMinimapProps) {
 
       {minimapData.viewportRect && (
         <div
-          className={cn(
-            'pointer-events-none absolute rounded-[2px] border',
-            isDarkCanvas ? 'border-neutral-700/80 bg-neutral-700/10' : 'border-white/35 bg-white/5'
-          )}
+          className='pointer-events-none absolute rounded-[2px] border border-[var(--text-secondary)] bg-[var(--surface-2)]/35'
           style={{
             transform: `translate3d(${minimapData.viewportRect.x}px, ${minimapData.viewportRect.y}px, 0)`,
             width: Math.max(6, minimapData.viewportRect.width),

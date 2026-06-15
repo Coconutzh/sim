@@ -52,7 +52,7 @@ export function ContentAiComposerShell({
       onClick={stopCanvasClick}
       onDoubleClick={stopCanvasClick}
     >
-      <div className='overflow-hidden rounded-[22px] border border-[#303038] bg-[#1D1F24] text-[#F5F7FA] shadow-[0_20px_50px_rgba(0,0,0,0.18)]'>
+      <div className='overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-[0_20px_50px_rgba(0,0,0,0.18)]'>
         <div className='relative px-4 pt-4 pb-3'>
           {header ? <div className='mb-3'>{header}</div> : null}
 
@@ -74,14 +74,14 @@ export function ContentAiComposerShell({
             disabled={!canEdit}
             rows={3}
             className={cn(
-              'h-[92px] w-full resize-none bg-transparent text-sm leading-6 caret-[#F5F7FA] outline-none placeholder:text-[#9FA5B2]',
+              'h-[92px] w-full resize-none bg-transparent text-sm leading-6 caret-[var(--text-primary)] outline-none placeholder:text-[var(--text-subtle)]',
               !canEdit && 'cursor-not-allowed opacity-70'
             )}
           />
 
           {isGenerating && (
-            <div className='pointer-events-none absolute inset-x-4 top-4 bottom-3 flex items-start justify-between rounded-2xl border border-white/5 bg-[linear-gradient(90deg,rgba(255,255,255,0.02),rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-3 py-3'>
-              <div className='flex items-center gap-2 text-[#D8DDE7] text-xs'>
+            <div className='pointer-events-none absolute inset-x-4 top-4 bottom-3 flex items-start justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-1)]/95 px-3 py-3'>
+              <div className='flex items-center gap-2 text-[var(--text-secondary)] text-xs'>
                 <Loader2 className='h-3.5 w-3.5 animate-spin' />
                 <span>{loadingLabel}</span>
               </div>
@@ -94,12 +94,12 @@ export function ContentAiComposerShell({
           )}
         </div>
 
-        <div className='border-white/5 border-t px-4 py-3'>{footer}</div>
+        <div className='border-[var(--border)] border-t px-4 py-3'>{footer}</div>
 
         {afterFooter}
 
         {error && (
-          <div className='border-white/5 border-t bg-[#2A1D21] px-4 py-2.5 text-[#FFB7C0] text-[11px]'>
+          <div className='border-[var(--border)] border-t bg-[var(--surface-3)] px-4 py-2.5 text-[11px] text-[var(--text-error)]'>
             {error}
           </div>
         )}
@@ -131,7 +131,7 @@ export function ComposerSendButton({
       className={cn(
         'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
         !canEdit || isGenerating
-          ? 'cursor-not-allowed bg-[#3A3E47] text-[#8C92A0]'
+          ? 'cursor-not-allowed bg-[var(--surface-5)] text-[var(--text-muted)]'
           : 'bg-[#F4B740] text-[#1D1F24] hover-hover:bg-[#F6C15A]'
       )}
       onMouseDown={(event) => {
@@ -168,7 +168,7 @@ export function ComposerActionChip({
         event.preventDefault()
         event.stopPropagation()
       }}
-      className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#F5F7FA] text-xs transition-colors hover-hover:bg-white/10'
+      className='rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-primary)] text-xs transition-colors hover-hover:bg-[var(--surface-3)]'
     >
       {children}
     </button>

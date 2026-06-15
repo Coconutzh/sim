@@ -698,7 +698,7 @@ function getReferenceChipPreview(node: PromptContextReferencedNode | undefined):
     )
 
   return (
-    <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-white/8 text-[#D6DBE5]'>
+    <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-4)] text-[var(--text-secondary)]'>
       {icon}
     </span>
   )
@@ -732,8 +732,8 @@ function ReferenceComposerHeader({
           onAddReference()
         }}
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#F5F7FA] transition-colors',
-          canEdit ? 'hover-hover:bg-white/10' : 'cursor-not-allowed opacity-60'
+          'flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] transition-colors',
+          canEdit ? 'hover-hover:bg-[var(--surface-3)]' : 'cursor-not-allowed opacity-60'
         )}
         aria-label='Add canvas reference'
       >
@@ -745,7 +745,7 @@ function ReferenceComposerHeader({
         return (
           <div
             key={`${reference.sourceBlockId}:${reference.role}`}
-            className='flex max-w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[#D6DBE5] text-[11px]'
+            className='flex max-w-full items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)]'
           >
             {getReferenceChipPreview(node)}
             <span className='truncate'>{getReferenceChipLabel(reference, node)}</span>
@@ -762,8 +762,8 @@ function ReferenceComposerHeader({
                 onRemoveReference(reference)
               }}
               className={cn(
-                'text-[#9FA5B2] transition-colors',
-                canEdit ? 'hover-hover:text-white' : 'cursor-not-allowed opacity-60'
+                'text-[var(--text-muted)] transition-colors',
+                canEdit ? 'hover-hover:text-[var(--text-primary)]' : 'cursor-not-allowed opacity-60'
               )}
               aria-label='Remove reference'
             >

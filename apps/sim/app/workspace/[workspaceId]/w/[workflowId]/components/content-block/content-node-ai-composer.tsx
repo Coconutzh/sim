@@ -56,7 +56,7 @@ export function ContentNodeAiComposer({
       onSubmit={onSubmit}
       footer={
         <div className='flex items-center justify-between gap-3'>
-          <label className='flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#E3E7EF] text-xs'>
+          <label className='flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs'>
             <Sparkles className='h-3.5 w-3.5 shrink-0 text-[#F4B740]' />
             <select
               value={model}
@@ -86,8 +86,8 @@ export function ContentNodeAiComposer({
       }
       afterFooter={
         hasPendingResult ? (
-          <div className='flex items-center justify-between gap-3 border-white/5 border-t bg-black/10 px-4 py-3'>
-            <div className='text-[#D6DBE5] text-xs'>AI 内容已生成，选择写回方式</div>
+          <div className='flex items-center justify-between gap-3 border-[var(--border)] border-t bg-[var(--surface-1)] px-4 py-3'>
+            <div className='text-[var(--text-secondary)] text-xs'>AI 内容已生成，选择写回方式</div>
             <div className='flex items-center gap-2'>
               <ComposerActionChip onClick={onReplace}>替换</ComposerActionChip>
               <ComposerActionChip onClick={onAppend}>追加</ComposerActionChip>

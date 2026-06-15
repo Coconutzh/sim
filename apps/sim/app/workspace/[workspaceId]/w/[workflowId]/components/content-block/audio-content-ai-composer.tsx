@@ -7,9 +7,9 @@ import { cn } from '@/lib/core/utils/cn'
 import {
   AUDIO_MODE_OPTIONS,
   AUDIO_VOICE_MODE_OPTIONS,
-  buildAudioGenerationSummary,
   type AudioGenerationModelId,
   type AudioGenerationParametersValue,
+  buildAudioGenerationSummary,
 } from '@/lib/generated-media/audio/audio-generation-utils'
 import {
   ComposerSendButton,
@@ -70,8 +70,8 @@ function SegmentButton({
       className={cn(
         'flex min-w-0 items-center justify-center gap-1 rounded-[14px] px-3 py-2 text-xs transition-colors',
         active
-          ? 'bg-[#515157] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-          : 'text-[#8D939F] hover-hover:bg-white/5',
+          ? 'bg-[var(--surface-5)] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+          : 'text-[var(--text-muted)] hover-hover:bg-[var(--surface-3)]',
         disabled && 'cursor-not-allowed opacity-60'
       )}
     >
@@ -98,13 +98,13 @@ function SegmentedControl({
 }) {
   return (
     <div className='flex flex-col gap-2'>
-      <div className='flex items-center gap-1 text-[#9EA4B1] text-xs'>
+      <div className='flex items-center gap-1 text-[var(--text-secondary)] text-xs'>
         {icon}
         <span>{label}</span>
       </div>
       <div
         className={cn(
-          'grid rounded-[18px] bg-[#2F3136] p-1',
+          'grid rounded-[18px] bg-[var(--surface-1)] p-1',
           options.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
         )}
       >
@@ -137,7 +137,7 @@ function PanelInput({
 }) {
   return (
     <label className='flex flex-col gap-2'>
-      <span className='text-[#9EA4B1] text-xs'>{label}</span>
+      <span className='text-[var(--text-secondary)] text-xs'>{label}</span>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -145,7 +145,7 @@ function PanelInput({
         onClick={stopEvent}
         disabled={disabled}
         placeholder={placeholder}
-        className='rounded-[14px] border border-white/8 bg-[#2F3136] px-3 py-2 text-sm text-[#F5F7FA] outline-none placeholder:text-[#7B8190] disabled:cursor-not-allowed disabled:opacity-60'
+        className='rounded-[14px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-primary)] text-sm outline-none placeholder:text-[var(--text-subtle)] disabled:cursor-not-allowed disabled:opacity-60'
       />
     </label>
   )
@@ -191,12 +191,12 @@ export function AudioContentAiComposer({
       header={header}
       afterFooter={
         settingsOpen ? (
-          <div className='border-white/5 border-t bg-[#1B1D21] px-4 py-4'>
+          <div className='border-[var(--border)] border-t bg-[var(--surface-1)] px-4 py-4'>
             <div className='flex flex-col gap-4'>
               <div className='flex items-center justify-between gap-3'>
                 <div>
-                  <div className='font-medium text-[#F5F7FA] text-sm'>Suno 参数</div>
-                  <div className='mt-1 text-[#8D939F] text-[11px]'>
+                  <div className='font-medium text-[var(--text-primary)] text-sm'>Suno 参数</div>
+                  <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
                     {parameters.customMode
                       ? '当前主输入框会作为歌词提交。'
                       : '当前主输入框会作为歌曲描述提交。'}
@@ -209,7 +209,7 @@ export function AudioContentAiComposer({
                     event.stopPropagation()
                     setSettingsOpen(false)
                   }}
-                  className='rounded-full border border-white/10 px-2 py-1 text-[11px] text-[#B9C0CC]'
+                  className='rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)]'
                 >
                   关闭
                 </button>
@@ -284,7 +284,7 @@ export function AudioContentAiComposer({
       footer={
         <div className='flex items-center justify-between gap-3'>
           <div className='flex min-w-0 items-center gap-2'>
-            <label className='flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#E3E7EF] text-xs'>
+            <label className='flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs'>
               <Sparkles className='h-3.5 w-3.5 shrink-0 text-[#F4B740]' />
               <select
                 value={model}
@@ -296,7 +296,11 @@ export function AudioContentAiComposer({
                 className='max-w-[140px] truncate bg-transparent outline-none'
               >
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)}>
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    disabled={Boolean(option.disabledReason)}
+                  >
                     {option.label}
                     {option.disabledReason ? ' (Unavailable)' : ''}
                   </option>
@@ -317,10 +321,10 @@ export function AudioContentAiComposer({
                 setSettingsOpen((current) => !current)
               }}
               className={cn(
-                'flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs transition-colors',
+                'flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-xs transition-colors',
                 !canEdit || isGenerating
-                  ? 'cursor-not-allowed text-[#7B8190]'
-                  : 'text-[#F5F7FA] hover-hover:bg-white/10'
+                  ? 'cursor-not-allowed text-[var(--text-muted)]'
+                  : 'text-[var(--text-secondary)] hover-hover:bg-[var(--surface-3)] hover-hover:text-[var(--text-primary)]'
               )}
             >
               <Settings2 className='h-3.5 w-3.5 text-[#8DD8FF]' />
