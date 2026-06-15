@@ -130,6 +130,7 @@ import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { ImageRepaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-repaint-overlay'
+import { ImageToolbarActions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-toolbar-actions'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
@@ -1275,6 +1276,7 @@ function MediaContentCard({
   generationStatus,
   generationKind,
   generationErrorMessage,
+  nodeName,
   isImageCropMode,
   isImageRepaintMode,
   isImageEraseMode,
@@ -1347,6 +1349,7 @@ function MediaContentCard({
   generationStatus: ContentGenerationStatus | null
   generationKind: ContentGenerationKind | null
   generationErrorMessage: string | null
+  nodeName?: string
   isImageCropMode: boolean
   isImageRepaintMode: boolean
   isImageEraseMode: boolean
@@ -1918,6 +1921,19 @@ function MediaContentCard({
           >
             <Expand className='h-3.5 w-3.5' />
           </button>
+          {file ? (
+            <ImageToolbarActions
+              file={file}
+              imageSrc={mediaPath}
+              nodeName={nodeName}
+              isReplacing={uploadFileMutation.isPending}
+              onReplace={() => {
+                setIsPerspectiveMenuOpen(false)
+                openFileDialog()
+              }}
+              onError={setError}
+            />
+          ) : null}
         </div>
       )}
 
@@ -5059,6 +5075,7 @@ export const ContentBlock = memo(function ContentBlock({
               normalizeVideoEnhanceGenerationKind(resolvedGenerationKind)
             }
             generationErrorMessage={resolvedGenerationError}
+            nodeName={data.name}
             isImageCropMode={isImageCropMode}
             isImageRepaintMode={isImageRepaintMode}
             isImageEraseMode={isImageEraseMode}
