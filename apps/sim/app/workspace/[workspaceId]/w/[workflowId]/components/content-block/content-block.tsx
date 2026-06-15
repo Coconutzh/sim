@@ -1,6 +1,11 @@
 ﻿'use client'
 
-import type { ChangeEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
+import type {
+  ChangeEvent,
+  ReactNode,
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from 'react'
 import {
   createElement,
   Fragment,
@@ -258,6 +263,7 @@ const DEFAULT_BACKGROUND_COLOR = '#FFF8C5'
 const DEFAULT_FONT_SIZE = 16
 const IMAGE_CARD_WIDTH = 320
 const IMAGE_CARD_HEIGHT = 240
+const SCROLLBAR_HIT_TARGET_SIZE = 18
 const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
@@ -815,6 +821,23 @@ function TextToolbarButton({
   )
 }
 
+function isPointerOnScrollableScrollbar(
+  element: HTMLElement,
+  event: ReactPointerEvent<HTMLElement>
+): boolean {
+  const hasVerticalScrollbar = element.scrollHeight > element.clientHeight
+  const hasHorizontalScrollbar = element.scrollWidth > element.clientWidth
+  if (!hasVerticalScrollbar && !hasHorizontalScrollbar) return false
+
+  const rect = element.getBoundingClientRect()
+  const isOnVerticalScrollbar =
+    hasVerticalScrollbar && event.clientX >= rect.right - SCROLLBAR_HIT_TARGET_SIZE
+  const isOnHorizontalScrollbar =
+    hasHorizontalScrollbar && event.clientY >= rect.bottom - SCROLLBAR_HIT_TARGET_SIZE
+
+  return isOnVerticalScrollbar || isOnHorizontalScrollbar
+}
+
 function TextContentCard({
   blockId,
   selected,
@@ -1027,18 +1050,34 @@ function TextContentCard({
     submitPrompt()
   }, [currentModelDisabledReason, submitPrompt])
 
+  const handleTextContentWheelCapture = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!selected && !isEditing) return
+      event.stopPropagation()
+    },
+    [isEditing, selected]
+  )
+
+  const handleTextContentPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isPointerOnScrollableScrollbar(event.currentTarget, event)) return
+      event.stopPropagation()
+    },
+    []
+  )
+
   const editingContentClassName =
-    'nodrag nopan px-4 py-3 text-[var(--text-primary)] outline-none [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const displayContentClassName =
-    'nopan px-4 py-3 text-[var(--text-primary)] [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
-  const cardMinHeight = clampTextHeight(height)
+    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+  const cardHeight = clampTextHeight(height)
 
   const showToolbar = selected && !isPreview
   const normalizedHtml = normalizeContentHtml(isEditing ? draftHtml : html)
   const isEmpty = !isMeaningfulHtml(normalizedHtml)
 
   return (
-    <div className='relative' style={{ width, minHeight: cardMinHeight }}>
+    <div className='relative' style={{ width }}>
       {showToolbar && (
         <div
           className='nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
@@ -1114,7 +1153,7 @@ function TextContentCard({
 
       <div
         className='relative rounded-2xl border border-[var(--border)] shadow-sm transition-shadow'
-        style={{ backgroundColor, minHeight: cardMinHeight }}
+        style={{ backgroundColor, height: cardHeight }}
       >
         {isEditing ? (
           <div
@@ -1132,14 +1171,18 @@ function TextContentCard({
               syncDraftFromEditor()
               setIsEditing(false)
             }}
+            onPointerDownCapture={handleTextContentPointerDownCapture}
+            onWheelCapture={handleTextContentWheelCapture}
             className={editingContentClassName}
-            style={{ fontSize, minHeight: cardMinHeight }}
+            style={{ fontSize }}
           />
         ) : (
           <div
             key='display'
-            className={displayContentClassName}
-            style={{ fontSize, minHeight: cardMinHeight }}
+            className={cn(displayContentClassName, selected && 'allow-scroll')}
+            style={{ fontSize }}
+            onPointerDownCapture={handleTextContentPointerDownCapture}
+            onWheelCapture={handleTextContentWheelCapture}
             onDoubleClickCapture={(event) => {
               event.stopPropagation()
               enterEditing()
