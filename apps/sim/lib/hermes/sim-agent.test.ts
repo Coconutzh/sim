@@ -3,15 +3,29 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCallHermesResponse, mockEnv, mockLoggerWarn, mockSelect, mockUpdate } = vi.hoisted(
-  () => ({
-    mockCallHermesResponse: vi.fn(),
-    mockEnv: {} as Record<string, boolean | number | string | undefined>,
-    mockLoggerWarn: vi.fn(),
-    mockSelect: vi.fn(),
-    mockUpdate: vi.fn(),
-  })
-)
+const {
+  MockHermesClientError,
+  mockCallHermesResponse,
+  mockEnv,
+  mockLoggerWarn,
+  mockSelect,
+  mockUpdate,
+} = vi.hoisted(() => ({
+  MockHermesClientError: class HermesClientError extends Error {
+    constructor(
+      message: string,
+      public readonly status?: number
+    ) {
+      super(message)
+      this.name = 'HermesClientError'
+    }
+  },
+  mockCallHermesResponse: vi.fn(),
+  mockEnv: {} as Record<string, boolean | number | string | undefined>,
+  mockLoggerWarn: vi.fn(),
+  mockSelect: vi.fn(),
+  mockUpdate: vi.fn(),
+}))
 
 function createSelectChain<T>(result: T) {
   const chain: Record<string, unknown> = {}
@@ -35,6 +49,7 @@ vi.mock('@sim/logger', () => ({
 
 vi.mock('@/lib/hermes/client', () => ({
   callHermesResponse: mockCallHermesResponse,
+  HermesClientError: MockHermesClientError,
 }))
 
 vi.mock('@/lib/core/config/env', () => ({
@@ -66,6 +81,8 @@ describe('callHermesSimAgent', () => {
   })
 
   it('uses the provided organization id in Hermes session scope and metadata', async () => {
+    mockEnv.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED = 'false'
+
     await callHermesSimAgent({
       userId: 'user-1',
       organizationId: 'org-1',
@@ -81,7 +98,7 @@ describe('callHermesSimAgent', () => {
     expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         input: 'read canvas',
-        instructions: expect.stringContaining('must call sim_canvas_agent_run'),
+        instructions: expect.stringContaining('must call a SIM canvas tool'),
         store: false,
         sessionId: 'sim:chat:chat-1',
         sessionKey: 'sim:org:org-1:user:user-1',
@@ -98,9 +115,70 @@ describe('callHermesSimAgent', () => {
         },
       })
     )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('call web_extract before answering'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_canvas_media_prepare'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('vision_analyze'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_canvas_task_propose'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('Do not hand-write SIM patch.operations'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_canvas_apply_pending'),
+      })
+    )
   })
 
-  it('enables Hermes native conversation chain when the feature flag and chat scope are present', async () => {
+  it('passes explicit structured Responses input when provided', async () => {
+    mockEnv.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED = 'false'
+
+    const input = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'input_text' as const, text: 'describe this image' },
+          { type: 'input_image' as const, image_url: 'data:image/png;base64,AAAA' },
+        ],
+      },
+    ]
+
+    await callHermesSimAgent({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'describe this image',
+      input,
+    })
+
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input,
+        store: false,
+      })
+    )
+  })
+
+  it('uses the latest stored Hermes response id when native conversation chain is enabled', async () => {
     mockEnv.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED = 'true'
     mockSelect
       .mockReturnValueOnce(
@@ -130,8 +208,7 @@ describe('callHermesSimAgent', () => {
 
     expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
-        conversation:
-          'sim:org:org-1:user:user-1:workspace:workspace-1:workflow:workflow-1:chat:chat-1:gen:2',
+        previousResponseId: 'resp-old',
         store: true,
         truncation: 'auto',
         instructions: expect.stringContaining('sim_canvas_history_query'),
@@ -148,6 +225,115 @@ describe('callHermesSimAgent', () => {
           latestResponseId: 'resp-1',
           latestSessionId: 'session-1',
           latestSessionKey: 'key-1',
+        }),
+      }),
+    })
+  })
+
+  it('defaults native conversation chain on and seeds from SIM history when no prior Hermes response exists', async () => {
+    mockSelect
+      .mockReturnValueOnce(
+        createSelectChain([
+          {
+            config: {
+              hermes: {
+                generation: 1,
+              },
+            },
+          },
+        ])
+      )
+      .mockReturnValueOnce(createSelectChain([{ config: {} }]))
+    const updateChain = createUpdateChain()
+    mockUpdate.mockReturnValueOnce(updateChain)
+
+    await callHermesSimAgent({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'Use this paper and car image.',
+      conversationHistory: [
+        { role: 'user', content: 'I uploaded BrickNet.pdf and car.png.' },
+        { role: 'assistant', content: 'The image is a white futuristic LEGO car.' },
+      ],
+    })
+
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation:
+          'sim:org:org-1:user:user-1:workspace:workspace-1:workflow:workflow-1:chat:chat-1:gen:1',
+        conversationHistory: [
+          { role: 'user', content: 'I uploaded BrickNet.pdf and car.png.' },
+          { role: 'assistant', content: 'The image is a white futuristic LEGO car.' },
+        ],
+        store: true,
+        truncation: 'auto',
+      })
+    )
+  })
+
+  it('repairs a missing Hermes previous response by retrying with SIM history seed', async () => {
+    mockEnv.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED = 'true'
+    mockSelect
+      .mockReturnValueOnce(
+        createSelectChain([
+          {
+            config: {
+              hermes: {
+                generation: 0,
+                latestResponseId: 'resp-missing',
+              },
+            },
+          },
+        ])
+      )
+      .mockReturnValueOnce(createSelectChain([{ config: {} }]))
+    const updateChain = createUpdateChain()
+    mockUpdate.mockReturnValueOnce(updateChain)
+    mockCallHermesResponse
+      .mockRejectedValueOnce(
+        new MockHermesClientError('Previous response not found: resp-missing', 404)
+      )
+      .mockResolvedValueOnce({
+        id: 'resp-repaired',
+        content: 'ok',
+        sessionId: 'session-2',
+        sessionKey: 'key-2',
+        raw: {},
+      })
+
+    await callHermesSimAgent({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'Continue.',
+      conversationHistory: [{ role: 'user', content: 'Earlier SIM chat context.' }],
+    })
+
+    expect(mockCallHermesResponse).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        previousResponseId: 'resp-missing',
+        store: true,
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        conversation:
+          'sim:org:org-1:user:user-1:workspace:workspace-1:workflow:workflow-1:chat:chat-1:gen:0',
+        conversationHistory: [{ role: 'user', content: 'Earlier SIM chat context.' }],
+        store: true,
+      })
+    )
+    expect(updateChain.set).toHaveBeenCalledWith({
+      config: expect.objectContaining({
+        hermes: expect.objectContaining({
+          latestResponseId: 'resp-repaired',
         }),
       }),
     })

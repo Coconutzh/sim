@@ -10,6 +10,8 @@ import type {
 
 export const LOCAL_CANVAS_CONFIRM_PREFIX = '__local_canvas_confirm__:'
 export const LOCAL_CANVAS_REVISE_PREFIX = '__local_canvas_revise__:'
+export const LOCAL_CANVAS_PREVIEW_CONFIRM_PREFIX = '__local_canvas_preview_confirm__:'
+export const LOCAL_CANVAS_PREVIEW_DISCARD_PREFIX = '__local_canvas_preview_discard__:'
 
 const PENDING_PLAN_TTL_MS = 30 * 60 * 1000
 
@@ -24,6 +26,10 @@ export interface LocalAgentPendingPlan {
   createdAt: number
 }
 
+export interface LocalAgentPreviewPlan extends LocalAgentPendingPlan {
+  source: 'hermes'
+}
+
 export type LocalAgentPendingPlanLookup =
   | { status: 'found'; pending: LocalAgentPendingPlan }
   | { status: 'expired' }
@@ -36,6 +42,7 @@ export type LocalAgentPendingPlanConsumeResult =
   | { status: 'id_mismatch' }
 
 const pendingPlans = new Map<string, LocalAgentPendingPlan>()
+const previewPlans = new Map<string, LocalAgentPreviewPlan>()
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -63,16 +70,34 @@ function deleteExpiredPendingPlans(now = Date.now()): void {
   for (const [key, pending] of pendingPlans) {
     if (isPendingPlanExpired(pending, now)) pendingPlans.delete(key)
   }
+  for (const [key, preview] of previewPlans) {
+    if (isPendingPlanExpired(preview, now)) previewPlans.delete(key)
+  }
 }
 
 export function parseLocalAgentPendingPlanCommand(
   message: string
-): { action: 'confirm' | 'revise'; id: string } | null {
+):
+  | { action: 'confirm' | 'revise'; id: string }
+  | { action: 'preview_confirm' | 'preview_discard'; id: string }
+  | null {
   if (message.startsWith(LOCAL_CANVAS_CONFIRM_PREFIX)) {
     return { action: 'confirm', id: message.slice(LOCAL_CANVAS_CONFIRM_PREFIX.length) }
   }
   if (message.startsWith(LOCAL_CANVAS_REVISE_PREFIX)) {
     return { action: 'revise', id: message.slice(LOCAL_CANVAS_REVISE_PREFIX.length) }
+  }
+  if (message.startsWith(LOCAL_CANVAS_PREVIEW_CONFIRM_PREFIX)) {
+    return {
+      action: 'preview_confirm',
+      id: message.slice(LOCAL_CANVAS_PREVIEW_CONFIRM_PREFIX.length),
+    }
+  }
+  if (message.startsWith(LOCAL_CANVAS_PREVIEW_DISCARD_PREFIX)) {
+    return {
+      action: 'preview_discard',
+      id: message.slice(LOCAL_CANVAS_PREVIEW_DISCARD_PREFIX.length),
+    }
   }
   return null
 }
@@ -125,6 +150,51 @@ export function deleteLocalAgentPendingPlan(context: LocalAgentContext): void {
   pendingPlans.delete(getPendingKey(context))
 }
 
+export function putLocalAgentPreviewPlan(params: {
+  context: LocalAgentContext
+  plan: LocalAgentPlan
+}): LocalAgentPreviewPlan {
+  deleteExpiredPendingPlans()
+  const preview: LocalAgentPreviewPlan = {
+    id: generateId(),
+    userId: params.context.userId,
+    workspaceId: params.context.workspaceId,
+    workflowId: params.context.workflowId,
+    chatId: params.context.chatId,
+    plan: params.plan,
+    source: 'hermes',
+    createdAt: Date.now(),
+  }
+  previewPlans.set(getPendingKey(params.context), preview)
+  return preview
+}
+
+export function deleteLocalAgentPreviewPlan(context: LocalAgentContext): void {
+  previewPlans.delete(getPendingKey(context))
+}
+
+export function consumeLocalAgentPreviewPlan(params: {
+  context: LocalAgentContext
+  previewActionId: string
+}): LocalAgentPendingPlanConsumeResult {
+  const previewKey = getPendingKey(params.context)
+  const preview = previewPlans.get(previewKey)
+  if (!preview) {
+    deleteExpiredPendingPlans()
+    return { status: 'not_found' }
+  }
+  if (isPendingPlanExpired(preview)) {
+    previewPlans.delete(previewKey)
+    return { status: 'expired' }
+  }
+  deleteExpiredPendingPlans()
+  if (preview.id !== params.previewActionId) {
+    return { status: 'id_mismatch' }
+  }
+  previewPlans.delete(previewKey)
+  return { status: 'found', pending: preview }
+}
+
 export function consumeLocalAgentPendingPlan(params: {
   context: LocalAgentContext
   pendingActionId: string
@@ -141,7 +211,6 @@ export function consumeLocalAgentPendingPlan(params: {
   }
   deleteExpiredPendingPlans()
   if (pending.id !== params.pendingActionId) {
-    pendingPlans.delete(pendingKey)
     return { status: 'id_mismatch' }
   }
   pendingPlans.delete(pendingKey)

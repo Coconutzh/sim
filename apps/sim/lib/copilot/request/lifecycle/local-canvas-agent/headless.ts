@@ -53,6 +53,7 @@ export type LocalCanvasAgentHeadlessErrorCode =
   | 'PATCH_VALIDATION_FAILED'
   | 'CONFIRMATION_REQUIRED'
   | 'CONFIRMATION_EXPIRED'
+  | 'CONFIRMATION_SUPERSEDED'
   | 'TOOL_EXECUTION_FAILED'
   | 'VERIFY_FAILED'
   | 'GENERATION_FAILED'
@@ -639,10 +640,14 @@ async function runCompilePatchMode(params: {
 function buildConfirmationExpiredResult(params: {
   input: LocalCanvasAgentHeadlessInput
   auditId: string
+  status?: 'expired' | 'not_found' | 'id_mismatch'
 }): LocalCanvasAgentHeadlessResult {
+  const superseded = params.status === 'id_mismatch'
   return {
     success: false,
-    answer: '这个确认请求已经过期或不属于当前画布会话，请重新生成修改方案。',
+    answer: superseded
+      ? '这个确认请求已被更新的画布方案替代，请使用最新的确认按钮执行。'
+      : '这个确认请求已经过期或不属于当前画布会话，请重新生成修改方案。',
     mode: params.input.mode,
     risk: 'medium',
     requiresConfirmation: true,
@@ -650,8 +655,10 @@ function buildConfirmationExpiredResult(params: {
     generatedNodeIds: [],
     auditId: params.auditId,
     traceId: params.input.traceId,
-    errorCode: 'CONFIRMATION_EXPIRED',
-    error: 'Pending canvas action was not found for the current user/workspace/workflow/chat',
+    errorCode: superseded ? 'CONFIRMATION_SUPERSEDED' : 'CONFIRMATION_EXPIRED',
+    error: superseded
+      ? 'Pending canvas action id does not match the latest pending action for the current user/workspace/workflow/chat'
+      : 'Pending canvas action was not found for the current user/workspace/workflow/chat',
   }
 }
 
@@ -716,7 +723,11 @@ async function runApplyAfterConfirmMode(params: {
     pendingActionId: params.input.pendingActionId,
   })
   if (consumed.status !== 'found') {
-    return buildConfirmationExpiredResult({ input: params.input, auditId: params.auditId })
+    return buildConfirmationExpiredResult({
+      input: params.input,
+      auditId: params.auditId,
+      status: consumed.status,
+    })
   }
 
   const memory = await loadMemoryForHeadless(params.localContext)

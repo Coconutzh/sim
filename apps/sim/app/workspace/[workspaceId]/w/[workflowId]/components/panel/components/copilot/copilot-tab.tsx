@@ -328,7 +328,7 @@ export function CopilotTab({
     copilotChatId,
     getWorkflowCopilotUseChatOptions({
       workflowId: activeWorkflowId || undefined,
-      fixedSendOptions: { workflowCopilotMode: 'content_canvas_v1' },
+      fixedSendOptions: { workflowCopilotMode: 'hermes_agent_v1' },
       onTitleUpdate: loadCopilotChats,
       onToolResult: handleCopilotToolResult,
       onStreamEnd: handleCopilotStreamEnd,
@@ -526,7 +526,7 @@ export function CopilotTab({
         userId={session?.user?.id}
         chatId={copilotResolvedChatId}
         layout='copilot-view'
-        fixedSendOptions={{ workflowCopilotMode: 'content_canvas_v1' }}
+        fixedSendOptions={{ workflowCopilotMode: 'hermes_agent_v1' }}
         enableContentCanvasAgent
         autoSelectionCards={autoSelectionCards}
         skillActionCards={skillActionCards}

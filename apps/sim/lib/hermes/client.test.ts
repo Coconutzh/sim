@@ -25,6 +25,7 @@ import {
   callHermesResponse,
   checkHermesHealth,
   HermesClientError,
+  type HermesResponseInput,
 } from '@/lib/hermes/client'
 
 function resetEnv(values: Record<string, number | string | undefined> = {}) {
@@ -88,7 +89,14 @@ describe('Hermes client health probe', () => {
             enabled: true,
             tools: [
               'sim_canvas_agent_run',
+              'sim_canvas_query',
+              'sim_canvas_task_propose',
+              'sim_canvas_apply_pending',
+              'sim_canvas_preview_create',
+              'sim_canvas_preview_commit',
+              'sim_canvas_preview_discard',
               'sim_canvas_history_query',
+              'sim_canvas_media_prepare',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -119,6 +127,74 @@ describe('Hermes client health probe', () => {
     expect(result.toolsets?.enabledForbidden).toEqual([])
     expect(result.toolsets?.missingTools).toEqual({})
     expect(fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('requires SIM, web, and vision toolsets by default', async () => {
+    resetEnv({
+      HERMES_API_URL: 'http://hermes.local',
+      HERMES_API_KEY: 'test-key',
+    })
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/health')) return jsonResponse({ status: 'ok', version: '1.2.3' })
+      if (url.endsWith('/v1/capabilities')) {
+        return jsonResponse({
+          features: {
+            chat_completions: true,
+            responses_api: true,
+            skills_api: true,
+            session_key_header: 'X-Hermes-Session-Key',
+          },
+        })
+      }
+      return jsonResponse({
+        data: [
+          {
+            name: 'sim',
+            enabled: true,
+            tools: [
+              'sim_canvas_agent_run',
+              'sim_canvas_query',
+              'sim_canvas_task_propose',
+              'sim_canvas_apply_pending',
+              'sim_canvas_preview_create',
+              'sim_canvas_preview_commit',
+              'sim_canvas_preview_discard',
+              'sim_canvas_history_query',
+              'sim_canvas_media_prepare',
+              'sim_skill_proposal_run',
+              'sim_external_evidence_prepare',
+            ],
+          },
+          { name: 'web', enabled: true, tools: ['web_search', 'web_extract'] },
+          { name: 'vision', enabled: true, tools: ['vision_analyze'] },
+        ],
+      })
+    })
+
+    const result = await checkHermesHealth()
+
+    expect(result.ok).toBe(true)
+    expect(result.toolsets?.required).toEqual(['sim', 'web', 'vision'])
+    expect(result.toolsets?.requiredTools).toEqual({
+      sim: [
+        'sim_canvas_agent_run',
+        'sim_canvas_query',
+        'sim_canvas_task_propose',
+        'sim_canvas_apply_pending',
+        'sim_canvas_preview_create',
+        'sim_canvas_preview_commit',
+        'sim_canvas_preview_discard',
+        'sim_canvas_history_query',
+        'sim_canvas_media_prepare',
+        'sim_skill_proposal_run',
+        'sim_external_evidence_prepare',
+      ],
+      web: ['web_search', 'web_extract'],
+      vision: ['vision_analyze'],
+    })
+    expect(result.toolsets?.missing).toEqual([])
+    expect(result.toolsets?.missingTools).toEqual({})
   })
 
   it('marks the runtime degraded when a required toolset is missing', async () => {
@@ -190,16 +266,34 @@ describe('Hermes client health probe', () => {
     expect(result.toolsets?.requiredTools).toEqual({
       sim: [
         'sim_canvas_agent_run',
+        'sim_canvas_query',
+        'sim_canvas_task_propose',
+        'sim_canvas_apply_pending',
+        'sim_canvas_preview_create',
+        'sim_canvas_preview_commit',
+        'sim_canvas_preview_discard',
         'sim_canvas_history_query',
+        'sim_canvas_media_prepare',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
       ],
     })
     expect(result.toolsets?.missingTools).toEqual({
-      sim: ['sim_canvas_history_query', 'sim_skill_proposal_run', 'sim_external_evidence_prepare'],
+      sim: [
+        'sim_canvas_query',
+        'sim_canvas_task_propose',
+        'sim_canvas_apply_pending',
+        'sim_canvas_preview_create',
+        'sim_canvas_preview_commit',
+        'sim_canvas_preview_discard',
+        'sim_canvas_history_query',
+        'sim_canvas_media_prepare',
+        'sim_skill_proposal_run',
+        'sim_external_evidence_prepare',
+      ],
     })
     expect(result.error).toContain(
-      'required Hermes tools missing: sim(sim_canvas_history_query, sim_skill_proposal_run, sim_external_evidence_prepare)'
+      'required Hermes tools missing: sim(sim_canvas_query, sim_canvas_task_propose, sim_canvas_apply_pending, sim_canvas_preview_create, sim_canvas_preview_commit, sim_canvas_preview_discard, sim_canvas_history_query, sim_canvas_media_prepare, sim_skill_proposal_run, sim_external_evidence_prepare)'
     )
   })
 
@@ -231,6 +325,7 @@ describe('Hermes client health probe', () => {
             tools: [
               'sim_canvas_agent_run',
               'sim_canvas_history_query',
+              'sim_canvas_media_prepare',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -426,6 +521,58 @@ describe('callHermesResponse', () => {
       truncation: 'auto',
     })
     expect(body.previous_response_id).toBeUndefined()
+  })
+
+  it('passes explicit conversation history seed to the Responses API', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ id: 'resp-history', output: [] }), { status: 200 })
+    )
+
+    await callHermesResponse({
+      instructions: 'Use SIM tools.',
+      input: 'continue',
+      conversation: 'sim:chat:chat-1',
+      conversationHistory: [
+        { role: 'user', content: 'I uploaded a LEGO car image.' },
+        { role: 'assistant', content: 'It is a white futuristic LEGO vehicle.' },
+      ],
+      store: true,
+      truncation: 'auto',
+    })
+
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+    expect(body).toMatchObject({
+      conversation: 'sim:chat:chat-1',
+      conversation_history: [
+        { role: 'user', content: 'I uploaded a LEGO car image.' },
+        { role: 'assistant', content: 'It is a white futuristic LEGO vehicle.' },
+      ],
+      store: true,
+      truncation: 'auto',
+    })
+  })
+
+  it('posts structured multimodal Responses API input unchanged', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ id: 'resp-3', output: [] }), { status: 200 })
+    )
+    const input: HermesResponseInput = [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'Describe the attached image.' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+        ],
+      },
+    ]
+
+    await callHermesResponse({
+      instructions: 'Use visual input.',
+      input,
+    })
+
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+    expect(body.input).toEqual(input)
   })
 
   it('rejects mutually exclusive conversation chain inputs before calling Hermes', async () => {

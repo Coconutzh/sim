@@ -1,4 +1,6 @@
 export * from './hermes-canvas-agent'
+export * from './hermes-canvas-media'
+export * from './hermes-canvas-task'
 export * from './hermes-health'
 export * from './hermes-skill-proposals'
 export * from './hermes-user-memory'

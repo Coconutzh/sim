@@ -222,6 +222,7 @@ body: JSON.stringify({
   store: params.store ?? false,
   conversation: params.conversation,
   previous_response_id: params.previousResponseId,
+  conversation_history: params.conversationHistory,
   truncation: params.truncation,
 })
 ```
@@ -292,9 +293,15 @@ sim:conv:<sha256(scopeParts).slice(0, 48)>
 
 但日志和 `copilot_chats.config.hermes` 中仍应保存原始 scope 结构，便于排查。
 
-### 6.2 callHermesSimAgent 传 store + conversation
+### 6.2 callHermesSimAgent 传 store + conversation / previous_response_id
 
-`callHermesSimAgent()` 调用 `callHermesResponse()` 时传入：
+`callHermesSimAgent()` 调用 `callHermesResponse()` 时采用两段式续链：
+
+1. `copilot_chats.config.hermes.latestResponseId` 不存在时，使用 `conversation + store=true` 创建或重建 Hermes chain。
+2. `latestResponseId` 存在时，优先使用 `previous_response_id + store=true` 精确续链。
+3. 如果 Hermes 返回 `Previous response not found`，说明 `response_store.db` 中的链路缓存丢失或被淘汰；SIM 用 `copilot_chats.messages` 生成最近 N 轮 `conversation_history` seed，再用同一个 `conversation + store=true` 重建链路。
+
+首轮或重建链路请求示例：
 
 ```ts
 return callHermesResponse({
@@ -304,6 +311,7 @@ return callHermesResponse({
   sessionId: buildHermesSessionId(scopedParams),
   sessionKey: buildHermesSessionKey(scopedParams),
   conversation: buildHermesConversationKey(scopedParams),
+  conversationHistory: simHistorySeed,
   store: true,
   truncation: 'auto',
   metadata: buildSimMetadata(scopedParams),
@@ -311,11 +319,30 @@ return callHermesResponse({
 })
 ```
 
-`sessionId` 和 `conversation` 可以同时存在：
+正常续链请求示例：
 
-- `conversation` 用于 Responses response chain。
+```ts
+return callHermesResponse({
+  instructions: buildSimHermesSystemPrompt(),
+  input: params.message,
+  model: params.model,
+  sessionId: buildHermesSessionId(scopedParams),
+  sessionKey: buildHermesSessionKey(scopedParams),
+  previousResponseId: latestResponseId,
+  store: true,
+  truncation: 'auto',
+  metadata: buildSimMetadata(scopedParams),
+  signal: params.signal,
+})
+```
+
+`sessionId`、`conversation` 和 `previousResponseId` 的边界：
+
+- `conversation` 用于创建或重建 Responses response chain。
+- `previousResponseId` 用于正常续链，能在链路缓存丢失时显式得到 404，而不是静默从空链开始。
 - `sessionId` 用于 Hermes session grouping / logging / memory scope 辅助。
 - `sessionKey` 用于用户长期 memory scope。
+- `conversation` 与 `previousResponseId` 互斥，不能同一个请求同时传。
 
 ### 6.3 Feature Flag
 
@@ -327,20 +354,20 @@ HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED=true
 
 建议默认：
 
-- 本地和测试环境先开启。
-- 生产灰度开启。
+- SIM Hermes Agent 默认开启。
+- 如需快速回退，显式配置 `HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED=false`。
+- 生产仍可通过该开关灰度或临时关闭。
 - 出现 response_store 体积、隐私或续链异常时可快速回退。
 
 逻辑：
 
 ```ts
-const nativeChainEnabled = env.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED === 'true'
+const configured = env.HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED
+const nativeChainEnabled = configured === undefined ? true : isTruthy(configured)
 
 return callHermesResponse({
   ...
-  ...(nativeChainEnabled
-    ? { conversation: buildHermesConversationKey(scopedParams), store: true, truncation: 'auto' }
-    : { store: false }),
+  ...(nativeChainEnabled ? chainParams : { store: false }),
 })
 ```
 
@@ -439,13 +466,17 @@ apps/sim/lib/hermes/conversation-metadata.ts
 
 恢复策略：
 
-第一版可以接受“新一轮从空 Hermes chain 开始”。如果要增强，可以在 Hermes API 返回 previous response not found 时：
+已实现的第一版策略是在 Hermes API 返回 `Previous response not found` 时：
 
 1. 从 SIM `copilot_chats.messages` 构造最近 N 轮 `conversation_history`。
 2. 用同一个 `conversation` 重新 seed Hermes chain。
 3. 继续 `store=true`。
 
-这个 fallback 可以后续实现，不阻塞第一版。
+约束：
+
+- `conversation_history` seed 只包含受限的文本历史和附件资源索引，不复制图片/PDF本体。
+- 图片、PDF、画布资源的权威本体仍在 SIM 资源系统。
+- 重建后 Hermes 继续用新的 `latestResponseId` 续链。
 
 ## 9. 系统提示约束
 

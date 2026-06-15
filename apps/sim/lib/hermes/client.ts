@@ -29,7 +29,7 @@ export interface HermesChatCompletionParams {
 }
 
 export interface HermesResponseParams {
-  input: string
+  input: HermesResponseInput
   instructions: string
   model?: string
   sessionId?: string
@@ -39,7 +39,35 @@ export interface HermesResponseParams {
   store?: boolean
   conversation?: string
   previousResponseId?: string
+  conversationHistory?: HermesResponseConversationMessage[]
   truncation?: 'auto'
+}
+
+export interface HermesResponseInputTextPart {
+  type: 'input_text'
+  text: string
+}
+
+export interface HermesResponseInputImagePart {
+  type: 'input_image'
+  image_url: string
+  detail?: 'auto' | 'low' | 'high'
+}
+
+export type HermesResponseInputContentPart =
+  | HermesResponseInputTextPart
+  | HermesResponseInputImagePart
+
+export interface HermesResponseInputMessage {
+  role: 'user'
+  content: HermesResponseInputContentPart[]
+}
+
+export type HermesResponseInput = string | HermesResponseInputMessage[]
+
+export interface HermesResponseConversationMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
 }
 
 export interface HermesChatCompletionResult {
@@ -131,7 +159,7 @@ export function getHermesClientConfig(): HermesClientConfig | null {
 
 function getHermesRequiredToolsets(): string[] {
   const raw = env.HERMES_REQUIRED_TOOLSETS
-  if (raw === undefined) return ['sim']
+  if (raw === undefined) return ['sim', 'web', 'vision']
   return raw
     .split(',')
     .map((value) => value.trim())
@@ -154,10 +182,19 @@ function getHermesHealthTimeoutMs(): number {
 const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
   sim: [
     'sim_canvas_agent_run',
+    'sim_canvas_query',
+    'sim_canvas_task_propose',
+    'sim_canvas_apply_pending',
+    'sim_canvas_preview_create',
+    'sim_canvas_preview_commit',
+    'sim_canvas_preview_discard',
     'sim_canvas_history_query',
+    'sim_canvas_media_prepare',
     'sim_skill_proposal_run',
     'sim_external_evidence_prepare',
   ],
+  web: ['web_search', 'web_extract'],
+  vision: ['vision_analyze'],
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -536,6 +573,9 @@ export async function callHermesResponse(
         store: params.store ?? false,
         ...(params.conversation ? { conversation: params.conversation } : {}),
         ...(params.previousResponseId ? { previous_response_id: params.previousResponseId } : {}),
+        ...(params.conversationHistory?.length
+          ? { conversation_history: params.conversationHistory }
+          : {}),
         ...(params.truncation ? { truncation: params.truncation } : {}),
       }),
       signal: params.signal,

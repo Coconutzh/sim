@@ -701,7 +701,7 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
   })
 
-  it('rejects an unknown pending action id for apply-after-confirm', async () => {
+  it('rejects a superseded pending action id for apply-after-confirm without deleting the latest pending plan', async () => {
     const result = await runLocalCanvasAgentHeadless({
       userId: 'user-1',
       workspaceId: 'workspace-1',
@@ -714,8 +714,9 @@ describe('runLocalCanvasAgentHeadless', () => {
     })
 
     expect(result.success).toBe(false)
-    if (result.success) throw new Error('expected expired confirmation')
-    expect(result.errorCode).toBe('CONFIRMATION_EXPIRED')
+    if (result.success) throw new Error('expected superseded confirmation')
+    expect(result.errorCode).toBe('CONFIRMATION_SUPERSEDED')
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
   })
+
 })
