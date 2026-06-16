@@ -41,7 +41,7 @@ import type {
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import type { ExecutionContext, StreamingContext } from '@/lib/copilot/request/types'
 
-const CONTENT_NODE_KINDS = new Set(['text', 'image', 'video', 'audio'])
+const CONTENT_NODE_KINDS = new Set(['text', 'image', 'video', 'audio', 'presentation'])
 
 type TaskNode = HermesCanvasTaskPayload['nodes'][number]
 type TaskUpdate = HermesCanvasTaskPayload['updates'][number]
@@ -347,16 +347,20 @@ function isImageResource(resource: ExternalResourceRef): boolean {
   return resourceMediaType(resource).toLowerCase().startsWith('image/')
 }
 
+function isExternalResourceRef(value: unknown): value is ExternalResourceRef {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const type = (value as { type?: unknown }).type
+  return type === 'uploaded_attachment' || type === 'url' || type === 'pdf' || type === 'image'
+}
+
 function collectExternalResourceRefs(task: HermesCanvasTaskPayload): ExternalResourceRef[] {
   const resources: ExternalResourceRef[] = []
   const add = (resource: HermesCanvasResourceRef) => {
-    if (resource.type === 'node_output') return
+    if (!isExternalResourceRef(resource)) return
     resources.push(resource)
   }
   for (const reference of task.references) {
-    if (typeof reference.source === 'object' && 'type' in reference.source) {
-      add(reference.source as HermesCanvasResourceRef)
-    }
+    if (isExternalResourceRef(reference.source)) add(reference.source)
   }
   for (const reference of task.generation?.references ?? []) add(reference)
   for (const reference of task.resourceRefs) add(reference)
@@ -370,12 +374,15 @@ function collectExternalResourceRefs(task: HermesCanvasTaskPayload): ExternalRes
   })
 }
 
-function buildMaterializedResourceOperations(params: {
-  task: HermesCanvasTaskPayload
-}): { operations: LocalCanvasPatchOperation[]; resourceNodeIds: Map<string, string> } {
+function buildMaterializedResourceOperations(params: { task: HermesCanvasTaskPayload }): {
+  operations: LocalCanvasPatchOperation[]
+  resourceNodeIds: Map<string, string>
+} {
   const resourceNodeIds = new Map<string, string>()
   const operations = collectExternalResourceRefs(params.task).map((resource, index) => {
-    const safeResourceKey = resourceRefKey(resource).replace(/[^\w:-]/g, '_').slice(0, 80)
+    const safeResourceKey = resourceRefKey(resource)
+      .replace(/[^\w:-]/g, '_')
+      .slice(0, 80)
     const clientNodeId = `resource:${index + 1}:${safeResourceKey}`
     resourceNodeIds.set(resourceRefKey(resource), clientNodeId)
     const name = resourceName(resource, index)
@@ -396,14 +403,18 @@ function buildMaterializedResourceOperations(params: {
     const href = resource.type === 'url' ? resource.url : 'url' in resource ? resource.url : ''
     const body = [
       `<p>External resource supplied to Hermes/SIM: ${escapeHtml(name)}</p>`,
-      resource.type === 'url' ? `<p>URL: <a href="${escapeHtml(resource.url)}">${escapeHtml(resource.url)}</a></p>` : '',
+      resource.type === 'url'
+        ? `<p>URL: <a href="${escapeHtml(resource.url)}">${escapeHtml(resource.url)}</a></p>`
+        : '',
       href && resource.type !== 'url'
         ? `<p>Source URL: <a href="${escapeHtml(href)}">${escapeHtml(href)}</a></p>`
         : '',
       resource.type !== 'url'
         ? `<p>File id: ${escapeHtml(resource.type === 'uploaded_attachment' ? resource.attachmentId : resource.fileId)}</p>`
         : '',
-      resourceMediaType(resource) ? `<p>Media type: ${escapeHtml(resourceMediaType(resource))}</p>` : '',
+      resourceMediaType(resource)
+        ? `<p>Media type: ${escapeHtml(resourceMediaType(resource))}</p>`
+        : '',
     ]
       .filter(Boolean)
       .join('')
@@ -503,6 +514,39 @@ function mergeContentFields(params: {
     if (prompt) output.audioPrompt = prompt
     for (const key of ['audioModel', 'audioParameters']) {
       const value = (content as Record<string, unknown>)[key] ?? fields[key]
+      if (value !== undefined) output[key] = value
+    }
+    return output
+  }
+
+  if (params.kind === 'presentation') {
+    const contentRecord = content as Record<string, unknown>
+    const prompt =
+      contentString('presentationPrompt', 'prompt') || stringValue(direct('presentationPrompt'))
+    if (prompt) output.presentationPrompt = prompt
+
+    const rawSlideCount =
+      contentRecord.presentationSlideCount ??
+      contentRecord.slideCount ??
+      fields.presentationSlideCount
+    const slideCount =
+      typeof rawSlideCount === 'number'
+        ? rawSlideCount
+        : typeof rawSlideCount === 'string'
+          ? Number(rawSlideCount)
+          : null
+    if (typeof slideCount === 'number' && Number.isFinite(slideCount)) {
+      output.presentationSlideCount = Math.max(1, Math.min(200, Math.round(slideCount)))
+    }
+
+    for (const key of [
+      'presentationStatus',
+      'presentationError',
+      'presentationArtifact',
+      'file',
+      'contentReferences',
+    ]) {
+      const value = contentRecord[key] ?? fields[key]
       if (value !== undefined) output[key] = value
     }
   }
@@ -1063,8 +1107,12 @@ function schemaForKind(kind: LocalCanvasNodeKind) {
               ? ['videoPrompt', 'videoMedia', 'videoParameters']
               : kind === 'audio'
                 ? ['audioPrompt', 'audioParameters']
-                : [],
+                : kind === 'presentation'
+                  ? ['presentationPrompt', 'presentationSlideCount', 'contentReferences']
+                  : [],
       outputField: adapter.capabilities.canGenerate ? 'file' : null,
+      externalArtifactTool:
+        kind === 'presentation' ? 'codex-ppt-skill + sim_presentation_artifact_upload' : null,
     },
   }
 }
@@ -1081,6 +1129,7 @@ function buildCapabilityManifest() {
       .filter((adapter) => adapter.capabilities.canGenerate)
       .map((adapter) => adapter.kind),
     supportedOutputTypes: ['text', 'image', 'video', 'audio'],
+    externalArtifactOutputTypes: ['presentation'],
     supportedReferenceTypes: [
       'node_output',
       'uploaded_attachment',

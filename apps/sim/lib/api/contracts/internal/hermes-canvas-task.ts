@@ -121,7 +121,7 @@ const canvasOutputTypeSchema = z.enum([
 ])
 export type HermesCanvasOutputType = z.output<typeof canvasOutputTypeSchema>
 
-const canvasNodeKindSchema = z.enum(['text', 'image', 'video', 'audio'])
+const canvasNodeKindSchema = z.enum(['text', 'image', 'video', 'audio', 'presentation'])
 const canvasTargetSchema = z
   .object({
     mode: z.enum(['selected', 'node_ids', 'search', 'new']).optional().default('new'),
@@ -138,6 +138,8 @@ const canvasTaskContentSchema = z
     imagePrompt: z.string().max(12000).optional(),
     videoPrompt: z.string().max(12000).optional(),
     audioPrompt: z.string().max(12000).optional(),
+    presentationPrompt: z.string().max(20000).optional(),
+    presentationSlideCount: z.number().int().min(1).max(200).optional(),
     prompt: z.string().max(12000).optional(),
     aiPrompt: z.string().max(12000).optional(),
     aiModel: z.string().trim().max(200).optional(),
