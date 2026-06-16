@@ -40,6 +40,11 @@ export interface LoggerConfig {
 export type LoggerMetadata = Record<string, string | number | boolean | undefined>
 
 type TextFormatter = (text: string) => string
+type RuntimeProcessLike = {
+  stdout?: {
+    isTTY?: boolean
+  }
+}
 
 const ANSI_RESET = '\u001b[0m'
 const ANSI_COLORS = {
@@ -57,7 +62,7 @@ const shouldUseAnsiColors = (): boolean => {
     return false
   }
 
-  const stdout = typeof process !== 'undefined' ? process.stdout : undefined
+  const stdout = (globalThis as { process?: RuntimeProcessLike }).process?.stdout
   return Boolean(stdout?.isTTY)
 }
 
