@@ -13,6 +13,7 @@ const {
   mockReviewProductionTask,
   mockScanProductionTaskReminders,
   mockSubmitProductionTask,
+  mockUpdateProductionTask,
   mockVerifyCronAuth,
 } = vi.hoisted(() => {
   class MockProductionTaskServiceError extends Error {
@@ -33,6 +34,7 @@ const {
     mockReviewProductionTask: vi.fn(),
     mockScanProductionTaskReminders: vi.fn(),
     mockSubmitProductionTask: vi.fn(),
+    mockUpdateProductionTask: vi.fn(),
     mockVerifyCronAuth: vi.fn(),
   }
 })
@@ -49,6 +51,7 @@ vi.mock('@/lib/production-tasks/service', () => ({
   reviewProductionTask: mockReviewProductionTask,
   scanProductionTaskReminders: mockScanProductionTaskReminders,
   submitProductionTask: mockSubmitProductionTask,
+  updateProductionTask: mockUpdateProductionTask,
 }))
 
 vi.mock('@/lib/auth/internal', () => ({
@@ -56,6 +59,7 @@ vi.mock('@/lib/auth/internal', () => ({
 }))
 
 import { PATCH as REVIEW } from './[taskId]/review/route'
+import { PATCH as UPDATE } from './[taskId]/route'
 import { POST as SUBMIT } from './[taskId]/submit/route'
 import { GET as SCAN_REMINDERS } from './reminders/scan/route'
 import { POST as CREATE, GET } from './route'
@@ -69,6 +73,10 @@ describe('production task routes', () => {
     mockSubmitProductionTask.mockResolvedValue({
       id: 'task-1',
       status: 'submitted',
+    })
+    mockUpdateProductionTask.mockResolvedValue({
+      id: 'task-1',
+      delayReason: 'Need one more render pass',
     })
     mockReviewProductionTask.mockResolvedValue({
       id: 'task-1',
@@ -311,6 +319,32 @@ describe('production task routes', () => {
       taskId: 'task-1',
       action: 'approve',
       reviewNote: '通过，进入联排。',
+    })
+  })
+
+  it('updates an overdue task delay reason', async () => {
+    const response = await UPDATE(
+      createMockRequest('PATCH', {
+        delayReason: 'Need one more render pass',
+      }),
+      { params: Promise.resolve({ taskId: 'task-1' }) }
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      task: { id: 'task-1', delayReason: 'Need one more render pass' },
+    })
+    expect(mockUpdateProductionTask).toHaveBeenCalledWith({
+      userId: 'user-1',
+      taskId: 'task-1',
+      title: undefined,
+      description: undefined,
+      dueAt: undefined,
+      assigneeWorkgroupId: undefined,
+      status: undefined,
+      dependencyTaskIds: undefined,
+      attachments: undefined,
+      delayReason: 'Need one more render pass',
     })
   })
 

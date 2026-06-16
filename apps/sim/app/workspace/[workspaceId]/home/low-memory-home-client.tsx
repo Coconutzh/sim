@@ -1,18 +1,29 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent, PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowRight,
+  Bot,
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
   Circle,
   Clock3,
   Loader2,
+  LogOut,
+  MoveHorizontal,
   Plus,
+  Send,
+  Sparkles,
+  UserCircle,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -28,22 +39,26 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Textarea,
   toast,
 } from '@/components/emcn'
+import type { ProductionProgressAnalysisMessage } from '@/lib/api/contracts/production-progress-analysis'
 import type {
   ProductionProjectPhase,
   ProductionProjectPhaseInput,
 } from '@/lib/api/contracts/production-projects'
 import type { ProductionTask } from '@/lib/api/contracts/production-tasks'
-import { useSession } from '@/lib/auth/auth-client'
+import { signOut, useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { ProductionNotificationBell } from '@/app/workspace/[workspaceId]/components/production-notification-bell'
 import { useLiteCanvasNavigation } from '@/app/workspace/[workspaceId]/use-lite-canvas-navigation'
+import { useAnalyzeProductionProgress } from '@/hooks/queries/production-progress-analysis'
 import {
   useCreateProductionProject,
   useUpdateProductionProject,
 } from '@/hooks/queries/production-projects'
 import { useProductionTasksForWorkspaces } from '@/hooks/queries/production-tasks'
+import { clearUserData } from '@/stores'
 
 const HomeCopilot = dynamic(
   () =>
@@ -75,6 +90,37 @@ type TimelineTaskCluster = {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const TASK_CLUSTER_DISTANCE_PERCENT = 4.5
+const TIMELINE_TODAY_ANCHOR_PERCENT = 42
+const TIMELINE_ZOOM_DAY_OPTIONS = [7, 14, 30, 60, 120] as const
+const DEFAULT_TIMELINE_VISIBLE_DAYS = 30
+
+function getTickIntervalDays(visibleDays: number): number {
+  if (visibleDays <= 10) return 1
+  if (visibleDays <= 21) return 2
+  if (visibleDays <= 45) return 5
+  if (visibleDays <= 90) return 10
+  return 20
+}
+
+function startOfLocalDayMs(timestamp: number): number {
+  const date = new Date(timestamp)
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+function buildTimelineTicks(startMs: number, endMs: number, visibleDays: number) {
+  const intervalMs = getTickIntervalDays(visibleDays) * DAY_MS
+  const firstTickMs = startOfLocalDayMs(startMs) + intervalMs
+  const ticks: { timestamp: number; label: string; relativeLabel: string }[] = []
+  for (let timestamp = firstTickMs; timestamp <= endMs; timestamp += intervalMs) {
+    ticks.push({
+      timestamp,
+      label: formatDate(new Date(timestamp)),
+      relativeLabel: formatDaysUntilTimestamp(timestamp),
+    })
+  }
+  return ticks
+}
 
 function getTimestamp(value: string | null | undefined): number | null {
   if (!value) return null
@@ -196,6 +242,74 @@ function buildTaskClusters(
       }, 0) / current.tasks.length
   }
   return clusters
+}
+
+interface HomeAccountMenuProps {
+  session:
+    | {
+        user?: {
+          email?: string | null
+          image?: string | null
+          name?: string | null
+        } | null
+      }
+    | null
+    | undefined
+}
+
+function HomeAccountMenu({ session }: HomeAccountMenuProps) {
+  const router = useRouter()
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const userName = session?.user?.name?.trim() || session?.user?.email?.trim() || '当前账号'
+  const userEmail = session?.user?.email?.trim() || '未绑定邮箱'
+
+  const handleSignOut = async (switchAccount = false) => {
+    setIsSigningOut(true)
+    try {
+      await Promise.all([signOut(), clearUserData()])
+    } catch {
+      toast.error('退出登录失败，请刷新后重试')
+    } finally {
+      router.push(switchAccount ? '/login?switchAccount=true' : '/login?fromLogout=true')
+      setIsSigningOut(false)
+    }
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type='button'
+          variant='outline'
+          className='h-9 max-w-[220px] gap-2 rounded-full px-2.5'
+          disabled={isSigningOut}
+        >
+          {session?.user?.image ? (
+            <img src={session.user.image} alt='' className='h-5 w-5 rounded-full object-cover' />
+          ) : (
+            <UserCircle className='h-4 w-4 text-[var(--text-icon)]' />
+          )}
+          <span className='min-w-0 truncate text-[12px]'>{userName}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='end' className='w-[240px]'>
+        <DropdownMenuLabel>
+          <span className='block truncate text-[13px] text-[var(--text-primary)]'>{userName}</span>
+          <span className='mt-0.5 block truncate text-[11px] text-[var(--text-tertiary)]'>
+            {userEmail}
+          </span>
+        </DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => void handleSignOut(true)}>
+          <UserCircle className='mr-2 h-3.5 w-3.5' />
+          切换账号
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void handleSignOut(false)}>
+          <LogOut className='mr-2 h-3.5 w-3.5' />
+          退出登录
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function ProjectStatsOverview({ projects }: { projects: ProjectEntry[] }) {
@@ -575,14 +689,20 @@ function ProjectSettingsModal({
 }
 
 function getTaskNodeClassName(task: ProductionTask): string {
-  if (task.status === 'approved' || task.status === 'archived') {
-    return 'border-[var(--success)] bg-[var(--surface-3)] text-[var(--text-primary)]'
-  }
   if (getTimestamp(task.dueAt) !== null && getTimestamp(task.dueAt)! < Date.now()) {
-    return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--text-primary)]'
+    return 'border-red-300 bg-red-50 text-red-700'
+  }
+  if (task.status === 'approved' || task.status === 'archived') {
+    return 'border-emerald-300 bg-emerald-50 text-emerald-700'
   }
   if (task.status === 'submitted') {
-    return 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--text-primary)]'
+    return 'border-blue-300 bg-blue-50 text-blue-700'
+  }
+  if (task.status === 'changes_requested') {
+    return 'border-amber-300 bg-amber-50 text-amber-700'
+  }
+  if (task.status === 'in_progress') {
+    return 'border-cyan-300 bg-cyan-50 text-cyan-700'
   }
   return 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)]'
 }
@@ -594,28 +714,36 @@ function getTaskClusterClassName(tasks: ProductionTask[]): string {
       (task) => getTimestamp(task.dueAt) !== null && getTimestamp(task.dueAt)! < Date.now()
     )
   ) {
-    return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--text-primary)]'
+    return 'border-red-300 bg-red-50 text-red-700'
   }
   if (tasks.some((task) => task.status === 'submitted')) {
-    return 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--text-primary)]'
+    return 'border-blue-300 bg-blue-50 text-blue-700'
   }
   if (tasks.every((task) => task.status === 'approved' || task.status === 'archived')) {
-    return 'border-[var(--success)] bg-[var(--surface-3)] text-[var(--text-primary)]'
+    return 'border-emerald-300 bg-emerald-50 text-emerald-700'
+  }
+  if (tasks.some((task) => task.status === 'changes_requested')) {
+    return 'border-amber-300 bg-amber-50 text-amber-700'
+  }
+  if (tasks.some((task) => task.status === 'in_progress')) {
+    return 'border-cyan-300 bg-cyan-50 text-cyan-700'
   }
   return 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)]'
 }
 
 function TaskClusterMarker({
   cluster,
+  compact,
   onOpenTask,
   project,
 }: {
   cluster: TimelineTaskCluster
+  compact: boolean
   onOpenTask: (project: ProjectEntry, taskId: string) => void
   project: ProjectEntry
 }) {
   const className = cn(
-    'absolute bottom-5 h-7 -translate-x-1/2 rounded-full border px-2 text-[11px] shadow-subtle',
+    'absolute bottom-5 h-7 -translate-x-1/2 rounded-full border px-2 text-[11px] shadow-subtle transition-transform hover-hover:scale-[1.03]',
     getTaskClusterClassName(cluster.tasks)
   )
 
@@ -626,12 +754,13 @@ function TaskClusterMarker({
         type='button'
         size='sm'
         variant='ghost'
-        className={cn(className, 'w-7 px-0')}
+        className={cn(className, compact ? 'max-w-[180px] gap-1.5' : 'w-7 px-0')}
         style={{ left: `${cluster.leftPercent}%` }}
         title={`${task.title} / ${formatDaysUntil(task.dueAt)}`}
         onClick={() => onOpenTask(project, task.id)}
       >
         <span className='h-1.5 w-1.5 rounded-full bg-current' />
+        {compact ? <span className='truncate'>{task.title}</span> : null}
       </Button>
     )
   }
@@ -668,6 +797,337 @@ function TaskClusterMarker({
   )
 }
 
+function getProjectHealthClassName(health: 'attention' | 'blocked' | 'normal') {
+  if (health === 'blocked') {
+    return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'
+  }
+  if (health === 'attention') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300'
+  }
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300'
+}
+
+function getProjectHealthLabel(health: 'attention' | 'blocked' | 'normal') {
+  if (health === 'blocked') return '阻塞'
+  if (health === 'attention') return '关注'
+  return '正常'
+}
+
+function ProjectProgressAnalysisPanel({
+  onOpenTask,
+  projects,
+}: {
+  onOpenTask: (project: ProjectEntry, taskId: string) => void
+  projects: ProjectEntry[]
+}) {
+  const analyzeProgress = useAnalyzeProductionProgress()
+  const [messages, setMessages] = useState<ProductionProgressAnalysisMessage[]>([])
+  const [input, setInput] = useState('请分析当前所有项目的任务进度，指出异常拖延任务和原因。')
+  const analysis = analyzeProgress.data?.analysis
+  const projectInputs = useMemo(
+    () =>
+      projects
+        .filter((project) => Boolean(project.teamWorkspaceId))
+        .map((project) => ({
+          organizationId: project.id,
+          name: project.name,
+          teamWorkspaceId: project.teamWorkspaceId,
+          estimatedDueAt: project.estimatedDueAt,
+          status: project.projectStatus,
+          phases: project.phases,
+        })),
+    [projects]
+  )
+  const canAnalyze = projectInputs.length > 0
+
+  const submitQuestion = async (question: string) => {
+    const trimmed = question.trim()
+    if (!trimmed || !canAnalyze || analyzeProgress.isPending) return
+    const userMessage: ProductionProgressAnalysisMessage = { role: 'user', content: trimmed }
+    const nextMessages = [...messages, userMessage].slice(-12)
+    setMessages(nextMessages)
+    setInput('')
+
+    try {
+      const response = await analyzeProgress.mutateAsync({
+        projects: projectInputs,
+        question: trimmed,
+        history: messages.slice(-8),
+      })
+      setMessages((current) =>
+        [
+          ...current,
+          {
+            role: 'assistant',
+            content: response.analysis.answer,
+          } satisfies ProductionProgressAnalysisMessage,
+        ].slice(-12)
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '进度分析失败'
+      toast.error(message)
+      setMessages((current) =>
+        [
+          ...current,
+          {
+            role: 'assistant',
+            content: `分析失败：${message}`,
+          } satisfies ProductionProgressAnalysisMessage,
+        ].slice(-12)
+      )
+    }
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void submitQuestion(input)
+  }
+
+  const riskTasks = analysis?.riskTasks.slice(0, 12) ?? []
+  const blockedProjects = analysis?.projects.filter((project) => project.health === 'blocked') ?? []
+  const projectHighlights = analysis
+    ? blockedProjects.length > 0
+      ? blockedProjects
+      : analysis.projects
+    : []
+
+  return (
+    <div className='border-[var(--border)] border-b bg-[var(--surface-1)] px-4 py-3'>
+      <div className='flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
+        <div className='flex min-w-0 items-center gap-2'>
+          <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-2)]'>
+            <Bot className='h-4 w-4 text-[var(--text-icon)]' />
+          </div>
+          <div className='min-w-0'>
+            <div className='font-medium text-[14px] text-[var(--text-primary)]'>
+              项目进度分析助手
+            </div>
+            <div className='truncate text-[12px] text-[var(--text-tertiary)]'>
+              固定窗口内分析 DDL、提交状态、延期理由和审核积压，不再撑开页面。
+            </div>
+          </div>
+        </div>
+        <Button
+          type='button'
+          size='sm'
+          variant='primary'
+          className='w-fit'
+          disabled={!canAnalyze || analyzeProgress.isPending}
+          onClick={() =>
+            void submitQuestion('请分析当前所有项目的任务进度，指出异常拖延任务和原因。')
+          }
+        >
+          {analyzeProgress.isPending ? (
+            <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+          ) : (
+            <Sparkles className='mr-1.5 h-3.5 w-3.5' />
+          )}
+          分析当前进度
+        </Button>
+      </div>
+
+      <div className='mt-3 grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1fr)_420px]'>
+        <div className='min-h-0 space-y-3'>
+          {analysis ? (
+            <div className='grid gap-2 sm:grid-cols-4'>
+              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                <div className='text-[11px] text-[var(--text-tertiary)]'>超期任务</div>
+                <div className='mt-1 font-semibold text-[20px] text-[var(--text-primary)]'>
+                  {analysis.metrics.overdueTaskCount}
+                </div>
+              </div>
+              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                <div className='text-[11px] text-[var(--text-tertiary)]'>缺少延期理由</div>
+                <div className='mt-1 font-semibold text-[20px] text-[var(--text-primary)]'>
+                  {analysis.metrics.delayReasonMissingCount}
+                </div>
+              </div>
+              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                <div className='text-[11px] text-[var(--text-tertiary)]'>24h 内到期</div>
+                <div className='mt-1 font-semibold text-[20px] text-[var(--text-primary)]'>
+                  {analysis.metrics.dueWithin24hCount}
+                </div>
+              </div>
+              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+                <div className='text-[11px] text-[var(--text-tertiary)]'>待审核</div>
+                <div className='mt-1 font-semibold text-[20px] text-[var(--text-primary)]'>
+                  {analysis.metrics.submittedAwaitingReviewCount}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {analysis ? (
+            <div className='grid min-h-0 gap-3 md:grid-cols-2'>
+              <div className='flex h-[230px] min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
+                <div className='flex shrink-0 items-center justify-between gap-2 border-[var(--border)] border-b px-3 py-2'>
+                  <div className='flex items-center gap-1.5 font-medium text-[12px] text-[var(--text-primary)]'>
+                    <AlertTriangle className='h-3.5 w-3.5 text-[var(--text-icon)]' />
+                    异常任务
+                  </div>
+                  <span className='text-[10px] text-[var(--text-tertiary)]'>
+                    {analysis.riskTasks.length} 项
+                  </span>
+                </div>
+                <div className='min-h-0 flex-1 overflow-y-auto px-3 py-2 [scrollbar-gutter:stable]'>
+                  {riskTasks.length > 0 ? (
+                    <div className='space-y-2'>
+                      {riskTasks.map((task) => {
+                        const project = projects.find((item) => item.id === task.organizationId)
+                        return (
+                          <button
+                            key={task.taskId}
+                            type='button'
+                            className='block w-full rounded-[7px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-left transition-colors hover-hover:bg-[var(--surface-hover)]'
+                            onClick={() => project && onOpenTask(project, task.taskId)}
+                          >
+                            <div className='flex items-center justify-between gap-2'>
+                              <span className='min-w-0 truncate font-medium text-[12px] text-[var(--text-primary)]'>
+                                {task.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px]',
+                                  task.severity === 'critical'
+                                    ? 'border-red-200 text-red-600 dark:border-red-900/60 dark:text-red-300'
+                                    : task.severity === 'warning'
+                                      ? 'border-amber-200 text-amber-600 dark:border-amber-900/60 dark:text-amber-300'
+                                      : 'border-[var(--border)] text-[var(--text-tertiary)]'
+                                )}
+                              >
+                                {task.severity === 'critical'
+                                  ? '高风险'
+                                  : task.severity === 'warning'
+                                    ? '需关注'
+                                    : '提示'}
+                              </span>
+                            </div>
+                            <div className='mt-1 truncate text-[11px] text-[var(--text-tertiary)]'>
+                              {task.projectName} / {task.assigneeWorkgroupName}
+                            </div>
+                            <div className='mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]'>
+                              {task.reason}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className='rounded-[7px] border border-[var(--border)] border-dashed p-3 text-[12px] text-[var(--text-muted)]'>
+                      暂无明显异常任务。
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className='flex h-[230px] min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
+                <div className='flex shrink-0 items-center justify-between gap-2 border-[var(--border)] border-b px-3 py-2'>
+                  <div className='font-medium text-[12px] text-[var(--text-primary)]'>项目状态</div>
+                  <span className='text-[10px] text-[var(--text-tertiary)]'>
+                    {analysis.projects.length} 个项目
+                  </span>
+                </div>
+                <div className='min-h-0 flex-1 overflow-y-auto px-3 py-2 [scrollbar-gutter:stable]'>
+                  <div className='space-y-2'>
+                    {projectHighlights.map((project) => (
+                      <div
+                        key={project.organizationId}
+                        className='rounded-[7px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2'
+                      >
+                        <div className='flex items-center justify-between gap-2'>
+                          <span className='min-w-0 truncate font-medium text-[12px] text-[var(--text-primary)]'>
+                            {project.projectName}
+                          </span>
+                          <span
+                            className={cn(
+                              'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px]',
+                              getProjectHealthClassName(project.health)
+                            )}
+                          >
+                            {getProjectHealthLabel(project.health)}
+                          </span>
+                        </div>
+                        <div className='mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]'>
+                          {project.summary}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className='flex h-[230px] items-center justify-center rounded-[8px] border border-[var(--border)] border-dashed bg-[var(--surface-2)] px-4 text-center text-[12px] text-[var(--text-muted)] leading-5'>
+              点击“分析当前进度”后，这里会显示固定高度的风险摘要和项目状态。
+            </div>
+          )}
+        </div>
+
+        <div className='flex h-[420px] min-h-0 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
+          <div className='flex shrink-0 items-center justify-between gap-2 border-[var(--border)] border-b px-3 py-2'>
+            <div className='font-medium text-[12px] text-[var(--text-primary)]'>分析对话</div>
+            <span className='text-[10px] text-[var(--text-tertiary)]'>
+              {analysis?.generatedBy === 'hermes' ? 'Hermes' : analysis ? '规则' : '待分析'}
+            </span>
+          </div>
+          <div className='min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-gutter:stable]'>
+            {messages.length > 0 ? (
+              messages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
+                >
+                  <div
+                    className={cn(
+                      'max-w-full break-words whitespace-pre-wrap rounded-[8px] px-3 py-2 text-[12px] leading-5',
+                      message.role === 'user'
+                        ? 'max-w-[86%] bg-[var(--brand-accent)] text-white'
+                        : 'border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)]'
+                    )}
+                  >
+                    {message.content}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className='rounded-[8px] border border-[var(--border)] border-dashed p-3 text-[12px] text-[var(--text-muted)] leading-5'>
+                点击分析当前进度，或直接询问“哪些项目最危险”“延期原因是什么”。
+              </div>
+            )}
+          </div>
+          <form className='shrink-0 border-[var(--border)] border-t p-3' onSubmit={handleSubmit}>
+            <Textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              rows={2}
+              className='min-h-[58px] resize-none text-[12px]'
+              placeholder='追问项目进度、异常任务或延期原因'
+            />
+            <div className='mt-2 flex items-center justify-between gap-2'>
+              <span className='text-[10px] text-[var(--text-tertiary)]'>
+                长回复会在窗口内滚动，不影响下方排期
+              </span>
+              <Button
+                type='submit'
+                size='sm'
+                variant='primary'
+                disabled={!input.trim() || !canAnalyze || analyzeProgress.isPending}
+              >
+                {analyzeProgress.isPending ? (
+                  <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                ) : (
+                  <Send className='mr-1.5 h-3.5 w-3.5' />
+                )}
+                发送
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProjectScheduleOverview({
   onManageProject,
   onOpenTask,
@@ -685,6 +1145,16 @@ function ProjectScheduleOverview({
     scope: 'auto',
     limit: 100,
   })
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    pointerId: number
+    rangeMs: number
+    startOffsetMs: number
+    startX: number
+    width: number
+  } | null>(null)
+  const [visibleDays, setVisibleDays] = useState<number>(DEFAULT_TIMELINE_VISIBLE_DAYS)
+  const [panOffsetMs, setPanOffsetMs] = useState(0)
   const tasksByWorkspace = useMemo(() => {
     const next = new Map<string, ProductionTask[]>()
     workspaceIds.forEach((workspaceId, index) => {
@@ -695,40 +1165,61 @@ function ProjectScheduleOverview({
 
   const timeline = useMemo(() => {
     const now = Date.now()
-    const timestamps = [now]
-    for (const project of projects) {
-      const projectDueAt = getTimestamp(project.estimatedDueAt)
-      if (projectDueAt !== null) timestamps.push(projectDueAt)
-      for (const phase of project.phases) {
-        const phaseDueAt = getTimestamp(phase.dueAt)
-        if (phaseDueAt !== null) timestamps.push(phaseDueAt)
-      }
-      for (const task of tasksByWorkspace.get(project.teamWorkspaceId) ?? []) {
-        const taskDueAt = getTimestamp(task.dueAt)
-        if (taskDueAt !== null) timestamps.push(taskDueAt)
-      }
-    }
-    const min = Math.min(...timestamps)
-    const max = Math.max(...timestamps, now + 7 * DAY_MS)
-    const startMs = min < now ? min - DAY_MS : now
-    const endMs = max + DAY_MS
-    const ticks = Array.from({ length: 5 }, (_, index) => {
-      const timestamp = startMs + ((endMs - startMs) / 4) * index
-      return {
-        timestamp,
-        label: formatDate(new Date(timestamp)),
-        relativeLabel: formatDaysUntilTimestamp(timestamp),
-      }
-    })
+    const rangeMs = visibleDays * DAY_MS
+    const startMs = now + panOffsetMs - (TIMELINE_TODAY_ANCHOR_PERCENT / 100) * rangeMs
+    const endMs = startMs + rangeMs
+    const ticks = buildTimelineTicks(startMs, endMs, visibleDays)
     return {
       endMs,
-      nowPercent: Math.min(100, Math.max(0, ((now - startMs) / (endMs - startMs)) * 100)),
+      nowPercent: TIMELINE_TODAY_ANCHOR_PERCENT,
+      rangeMs,
       startMs,
       ticks,
     }
-  }, [projects, tasksByWorkspace])
+  }, [panOffsetMs, visibleDays])
 
   const isLoadingTasks = taskResults.some((result) => result.isLoading)
+  const currentZoomIndex = TIMELINE_ZOOM_DAY_OPTIONS.findIndex((days) => days === visibleDays)
+  const canZoomIn = currentZoomIndex > 0
+  const canZoomOut =
+    currentZoomIndex >= 0 && currentZoomIndex < TIMELINE_ZOOM_DAY_OPTIONS.length - 1
+
+  const zoomTimeline = (direction: 'in' | 'out') => {
+    const fallbackIndex = TIMELINE_ZOOM_DAY_OPTIONS.indexOf(DEFAULT_TIMELINE_VISIBLE_DAYS)
+    const index = currentZoomIndex >= 0 ? currentZoomIndex : fallbackIndex
+    const nextIndex =
+      direction === 'in'
+        ? Math.max(0, index - 1)
+        : Math.min(TIMELINE_ZOOM_DAY_OPTIONS.length - 1, index + 1)
+    setVisibleDays(TIMELINE_ZOOM_DAY_OPTIONS[nextIndex])
+  }
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button,a,[role="menuitem"]')) return
+    const rect = timelineRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return
+    dragRef.current = {
+      pointerId: event.pointerId,
+      rangeMs: timeline.rangeMs,
+      startOffsetMs: panOffsetMs,
+      startX: event.clientX,
+      width: rect.width,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - drag.startX
+    setPanOffsetMs(drag.startOffsetMs - (deltaX / drag.width) * drag.rangeMs)
+  }
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null
+    }
+  }
 
   if (projects.length === 0) {
     return (
@@ -743,17 +1234,55 @@ function ProjectScheduleOverview({
       <div className='flex flex-col gap-3 border-[var(--border)] border-b px-4 py-3 md:flex-row md:items-center md:justify-between'>
         <div>
           <div className='font-semibold text-[15px] text-[var(--text-primary)]'>项目总排期</div>
-          <div className='mt-1 text-[12px] text-[var(--text-tertiary)]'>
-            横轴为日期，阶段和任务节点会显示剩余天数。点击任务可进入项目总览继续提交和聊天。
+          <div className='mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--text-tertiary)]'>
+            <span>拖动时间轴查看前后任务，今天线保持固定。</span>
+            <span className='inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5'>
+              <MoveHorizontal className='h-3 w-3' />
+              当前视窗 {visibleDays} 天
+            </span>
           </div>
         </div>
-        <Badge variant='gray-secondary' size='sm' className='w-fit rounded-full px-2'>
-          {isLoadingTasks ? '任务加载中' : `${projects.length} 个项目`}
-        </Badge>
+        <div className='flex flex-wrap items-center gap-2'>
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            disabled={!canZoomIn}
+            onClick={() => zoomTimeline('in')}
+            title='放大时间轴'
+          >
+            <ZoomIn className='h-3.5 w-3.5' />
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            disabled={!canZoomOut}
+            onClick={() => zoomTimeline('out')}
+            title='缩小时间轴'
+          >
+            <ZoomOut className='h-3.5 w-3.5' />
+          </Button>
+          <Button type='button' size='sm' variant='outline' onClick={() => setPanOffsetMs(0)}>
+            今天
+          </Button>
+          <Badge variant='gray-secondary' size='sm' className='w-fit rounded-full px-2'>
+            {isLoadingTasks ? '任务加载中' : `${projects.length} 个项目`}
+          </Badge>
+        </div>
       </div>
 
+      <ProjectProgressAnalysisPanel projects={projects} onOpenTask={onOpenTask} />
+
       <div className='overflow-x-auto p-4'>
-        <div className='min-w-[980px] space-y-3'>
+        <div
+          ref={timelineRef}
+          className='min-w-[980px] touch-none space-y-3 cursor-grab active:cursor-grabbing'
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
           <div className='grid grid-cols-[220px_minmax(0,1fr)] gap-4 px-2 text-[11px] text-[var(--text-tertiary)]'>
             <div>项目</div>
             <div className='relative h-8'>
@@ -774,7 +1303,11 @@ function ProjectScheduleOverview({
               <div
                 className='absolute top-1 bottom-0 w-px bg-[var(--brand-accent)]'
                 style={{ left: `${timeline.nowPercent}%` }}
-              />
+              >
+                <span className='absolute -top-1 left-1 rounded-full bg-[var(--brand-accent)] px-1.5 py-0.5 text-[10px] text-white'>
+                  今天
+                </span>
+              </div>
             </div>
           </div>
 
@@ -850,7 +1383,9 @@ function ProjectScheduleOverview({
                     <div
                       className='absolute top-0 bottom-0 w-px bg-[var(--brand-accent)]'
                       style={{ left: `${timeline.nowPercent}%` }}
-                    />
+                    >
+                      <span className='sr-only'>今天</span>
+                    </div>
                   </div>
 
                   {!hasNodes ? (
@@ -902,6 +1437,7 @@ function ProjectScheduleOverview({
                         <TaskClusterMarker
                           key={cluster.id}
                           cluster={cluster}
+                          compact={visibleDays <= 21}
                           project={project}
                           onOpenTask={onOpenTask}
                         />
@@ -998,12 +1534,15 @@ export function LowMemoryHomeClient({ chatId, workspaceId }: LowMemoryHomeClient
               这里汇总你参与的所有团队项目。进入项目后，会自动打开你在该项目中被分配好的团队画布。
             </p>
           </div>
-          <ProductionNotificationBell
-            includeAllInvitations
-            workspaceId={workspaceId}
-            showLabel
-            buttonClassName='shadow-subtle'
-          />
+          <div className='flex shrink-0 items-center gap-2'>
+            <ProductionNotificationBell
+              includeAllInvitations
+              workspaceId={workspaceId}
+              showLabel
+              buttonClassName='shadow-subtle'
+            />
+            <HomeAccountMenu session={session} />
+          </div>
         </div>
 
         {hasProjectCards ? <ProjectStatsOverview projects={canvas.projectEntries} /> : null}

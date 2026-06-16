@@ -34,6 +34,18 @@ function getWorkspaceEditorHref(workspaceId?: string, workflows?: WorkflowMetada
     : `/workspace/${workspaceId}/home`
 }
 
+function isDirectorLikeProjectWorkgroup(workgroup: {
+  discipline: { agentCode?: string | null; code?: string | null }
+}) {
+  return (
+    workgroup.discipline.agentCode === 'chief_director' ||
+    workgroup.discipline.agentCode === 'show_director' ||
+    workgroup.discipline.code === 'chief_director' ||
+    workgroup.discipline.code === 'show_director' ||
+    workgroup.discipline.code === 'pmo'
+  )
+}
+
 interface UseLiteCanvasNavigationProps {
   workspaceId: string
 }
@@ -169,10 +181,21 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     for (const group of workgroups) {
       const existing = groups.get(group.organizationId)
       const isDefault = group.id === workgroupsData?.defaultWorkgroupId
+      const existingWorkgroup = existing
+        ? workgroups.find((workgroup) => workgroup.id === existing.primaryWorkgroupId)
+        : undefined
+      const existingIsDirectorLike = existingWorkgroup
+        ? isDirectorLikeProjectWorkgroup(existingWorkgroup)
+        : false
+      const candidateIsDirectorLike = isDirectorLikeProjectWorkgroup(group)
+      const shouldUseAsPrimary =
+        !existing ||
+        (existingIsDirectorLike && !candidateIsDirectorLike) ||
+        (isDefault && existingIsDirectorLike === candidateIsDirectorLike)
       const href = group.teamWorkspaceId
         ? `/workspace/${group.teamWorkspaceId}/w`
         : `/workspace/${workspaceId}/home`
-      if (!existing || isDefault) {
+      if (shouldUseAsPrimary) {
         groups.set(group.organizationId, {
           canManageProject: group.organization.canManageProject,
           estimatedDueAt: group.organization.estimatedDueAt,
@@ -186,7 +209,7 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
           role: group.role,
           teamWorkspaceId: group.teamWorkspaceId,
           teamCount: existing ? existing.teamCount + 1 : 1,
-          memberCount: group.memberCount,
+          memberCount: existing ? existing.memberCount + group.memberCount : group.memberCount,
           projectStatus: group.organization.projectStatus,
           taskStats: group.organization.taskStats,
           href,

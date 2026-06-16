@@ -127,6 +127,7 @@ export const AuditAction = {
   PRODUCTION_TASK_CHANGES_REQUESTED: 'production_task.changes_requested',
   PRODUCTION_TASK_MESSAGE_CREATED: 'production_task.message_created',
   PRODUCTION_TASK_DDL_REMINDER: 'production_task.ddl_reminder',
+  PRODUCTION_TASK_DELAY_REASON_REQUIRED: 'production_task.delay_reason_required',
   PRODUCTION_SHOWCASE_ITEM_CREATED: 'production_showcase_item.created',
   PRODUCTION_SHOWCASE_ITEM_WITHDRAWN: 'production_showcase_item.withdrawn',
 

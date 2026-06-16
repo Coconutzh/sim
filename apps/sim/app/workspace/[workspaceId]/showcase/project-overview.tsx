@@ -73,6 +73,7 @@ import {
   useProductionTasks,
   useReviewProductionTask,
   useSubmitProductionTask,
+  useUpdateProductionTask,
 } from '@/hooks/queries/production-tasks'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 
@@ -165,6 +166,14 @@ function fromDateTimeLocal(value: string): string | null {
   if (!value) return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function toDateTimeLocal(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000)
+  return local.toISOString().slice(0, 16)
 }
 
 function isOverdue(task: ProductionTask): boolean {
@@ -532,6 +541,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const withdrawShowcaseItem = useWithdrawProductionShowcaseItem()
   const createTask = useCreateProductionTask()
   const submitTask = useSubmitProductionTask()
+  const updateTask = useUpdateProductionTask()
   const reviewTask = useReviewProductionTask()
   const createMessage = useCreateProductionTaskMessage()
   const markRead = useMarkProductionTaskRead()
@@ -570,6 +580,12 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const [reviewNote, setReviewNote] = useState('')
   const [messageBody, setMessageBody] = useState('')
   const [isChatExpanded, setIsChatExpanded] = useState(false)
+  const [delayReasonDraft, setDelayReasonDraft] = useState('')
+  const [isEditTaskOpen, setIsEditTaskOpen] = useState(false)
+  const [editTaskTitle, setEditTaskTitle] = useState('')
+  const [editTaskDescription, setEditTaskDescription] = useState('')
+  const [editTaskDueAt, setEditTaskDueAt] = useState('')
+  const [editTaskAssigneeWorkgroupId, setEditTaskAssigneeWorkgroupId] = useState('')
 
   const tasks = taskData?.tasks ?? []
   const showcaseItems = showcaseData?.items ?? []
@@ -593,6 +609,11 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
       showcaseItems.find((item) => item.id === editingResultId) ??
       (routedShowcaseItemData?.item.id === editingResultId ? routedShowcaseItemData.item : null),
     [editingResultId, routedShowcaseItemData?.item, showcaseItems]
+  )
+  const canProvideDelayReason = Boolean(
+    selectedTask &&
+      selectedTask.permissions.canSubmit &&
+      agentProfile?.workgroup.id === selectedTask.assigneeWorkgroup.id
   )
   const { data: messagesData } = useProductionTaskMessages(selectedTask?.id)
   const messages = messagesData?.messages ?? []
@@ -688,6 +709,15 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
 
   useEffect(() => {
     setIsChatExpanded(false)
+  }, [selectedTask?.id])
+
+  useEffect(() => {
+    setDelayReasonDraft(selectedTask?.delayReason ?? '')
+    setIsEditTaskOpen(false)
+    setEditTaskTitle(selectedTask?.title ?? '')
+    setEditTaskDescription(selectedTask?.description ?? '')
+    setEditTaskDueAt(toDateTimeLocal(selectedTask?.dueAt ?? null))
+    setEditTaskAssigneeWorkgroupId(selectedTask?.assigneeWorkgroup.id ?? '')
   }, [selectedTask?.id])
 
   const uploadAttachmentDrafts = async (
@@ -975,6 +1005,65 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     }
   }
 
+  const handleUpdateDelayReason = async () => {
+    if (!selectedTask) return
+    if (!delayReasonDraft.trim()) {
+      toast({ message: '请填写延期理由', duration: 2200 })
+      return
+    }
+    try {
+      await updateTask.mutateAsync({
+        taskId: selectedTask.id,
+        body: { delayReason: delayReasonDraft.trim() },
+      })
+      toast({ message: '延期理由已提交', duration: 2200 })
+    } catch (error) {
+      toast({
+        message: error instanceof Error ? error.message : '提交延期理由失败',
+        duration: 2800,
+      })
+    }
+  }
+
+  const openEditTaskDialog = () => {
+    if (!selectedTask) return
+    setEditTaskTitle(selectedTask.title)
+    setEditTaskDescription(selectedTask.description ?? '')
+    setEditTaskDueAt(toDateTimeLocal(selectedTask.dueAt))
+    setEditTaskAssigneeWorkgroupId(selectedTask.assigneeWorkgroup.id)
+    setIsEditTaskOpen(true)
+  }
+
+  const handleUpdateTaskDetails = async () => {
+    if (!selectedTask) return
+    if (!editTaskTitle.trim()) {
+      toast({ message: '请填写任务标题', duration: 2200 })
+      return
+    }
+    if (!editTaskAssigneeWorkgroupId) {
+      toast({ message: '请选择负责工种', duration: 2200 })
+      return
+    }
+    try {
+      await updateTask.mutateAsync({
+        taskId: selectedTask.id,
+        body: {
+          title: editTaskTitle.trim(),
+          description: editTaskDescription.trim() || null,
+          dueAt: fromDateTimeLocal(editTaskDueAt),
+          assigneeWorkgroupId: editTaskAssigneeWorkgroupId,
+        },
+      })
+      setIsEditTaskOpen(false)
+      toast({ message: '任务信息已更新', duration: 2200 })
+    } catch (error) {
+      toast({
+        message: error instanceof Error ? error.message : '更新任务失败',
+        duration: 2800,
+      })
+    }
+  }
+
   const toggleGroup = (groupId: string) => {
     setCollapsedGroupIds((current) => {
       const next = new Set(current)
@@ -987,7 +1076,9 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
     })
   }
 
-  const renderTaskButton = (task: ProductionTask) => (
+  const renderTaskButton = (task: ProductionTask) => {
+    const overdue = isOverdue(task)
+    return (
     <button
       key={task.id}
       type='button'
@@ -999,6 +1090,8 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
         'grid w-full gap-3 rounded-[8px] border p-3 text-left transition-colors hover-hover:bg-[var(--surface-2)] md:grid-cols-[minmax(0,1fr)_150px]',
         selectedTaskId === task.id
           ? 'border-[var(--brand-accent)] bg-[var(--surface-3)]'
+          : overdue
+            ? 'border-red-200 bg-red-50/70'
           : 'border-[var(--border)] bg-[var(--surface-1)]',
         task.unreadMessageCount > 0 && 'ring-1 ring-[var(--badge-blue-text)]/25'
       )}
@@ -1024,6 +1117,11 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
           >
             {STATUS_LABELS[task.status]}
           </Badge>
+          {overdue ? (
+            <Badge variant='red' size='sm' className='h-5 rounded-full px-2 text-[10px]'>
+              已过期
+            </Badge>
+          ) : null}
           {task.submissions.length > 0 && (
             <Badge variant='gray-secondary' size='sm' className='h-5 rounded-full px-2 text-[10px]'>
               {task.submissions.length} 次提交
@@ -1060,7 +1158,8 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
         <ChevronRight className='h-4 w-4 shrink-0 text-[var(--text-tertiary)]' />
       </div>
     </button>
-  )
+    )
+  }
 
   const renderCreateTaskPanel = () => (
     <div className='flex h-full min-h-[560px] flex-col'>
@@ -1655,14 +1754,26 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                             {selectedTask.assigneeWorkgroup.name}
                           </div>
                         </div>
-                        <Badge
-                          variant={getStatusBadgeVariant(selectedTask.status)}
-                          size='sm'
-                          dot
-                          className='shrink-0 rounded-full px-2'
-                        >
-                          {STATUS_LABELS[selectedTask.status]}
-                        </Badge>
+                        <div className='flex shrink-0 items-center gap-2'>
+                          {selectedTask.permissions.canEdit ? (
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='ghost'
+                              onClick={openEditTaskDialog}
+                            >
+                              编辑
+                            </Button>
+                          ) : null}
+                          <Badge
+                            variant={isOverdue(selectedTask) ? 'red' : getStatusBadgeVariant(selectedTask.status)}
+                            size='sm'
+                            dot
+                            className='rounded-full px-2'
+                          >
+                            {isOverdue(selectedTask) ? '已过期' : STATUS_LABELS[selectedTask.status]}
+                          </Badge>
+                        </div>
                       </div>
                       <div className='mt-3 flex items-center gap-2 text-[12px] text-[var(--text-secondary)]'>
                         <CalendarClock className='h-3.5 w-3.5' />
@@ -1670,6 +1781,70 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                       </div>
                     </div>
                     <div className='min-h-0 flex-1 space-y-4 overflow-y-auto p-4'>
+                      {isOverdue(selectedTask) ? (
+                        <div className='space-y-3 rounded-[8px] border border-red-300 bg-red-50 p-3 shadow-subtle'>
+                          <div className='flex items-start justify-between gap-3'>
+                            <div>
+                              <div className='font-semibold text-[13px] text-red-800'>
+                                任务已过期，需要承接团队提交延期理由
+                              </div>
+                              {selectedTask.delayReasonUpdatedAt ? (
+                                <div className='mt-1 text-[11px] text-red-700'>
+                                  最近提交：{formatDateTime(selectedTask.delayReasonUpdatedAt)}
+                                  {selectedTask.delayReasonUpdatedBy?.name
+                                    ? ` / ${selectedTask.delayReasonUpdatedBy.name}`
+                                    : ''}
+                                </div>
+                              ) : (
+                                <div className='mt-1 text-[11px] text-red-700'>
+                                  系统会每天提醒一次，直到延期理由提交完成。
+                                </div>
+                              )}
+                            </div>
+                            {selectedTask.delayReason ? (
+                              <Badge variant='red' size='sm' className='rounded-full px-2'>
+                                已填写
+                              </Badge>
+                            ) : (
+                              <Badge variant='red' size='sm' className='rounded-full px-2'>
+                                待填写
+                              </Badge>
+                            )}
+                          </div>
+                          {canProvideDelayReason ? (
+                            <>
+                              <Textarea
+                                value={delayReasonDraft}
+                                onChange={(event) => setDelayReasonDraft(event.target.value)}
+                                placeholder='说明延期原因、预计补交时间、需要导演协调的事项'
+                                className='min-h-[88px] border-red-300 bg-white text-red-950 placeholder:text-red-400'
+                              />
+                              <div className='flex justify-end'>
+                                <Button
+                                  type='button'
+                                  size='sm'
+                                  disabled={updateTask.isPending || !delayReasonDraft.trim()}
+                                  onClick={() => void handleUpdateDelayReason()}
+                                >
+                                  提交延期理由
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className='rounded-[7px] border border-red-200 bg-white p-3'>
+                              {selectedTask.delayReason ? (
+                                <p className='whitespace-pre-wrap text-[12px] text-red-950 leading-5'>
+                                  {selectedTask.delayReason}
+                                </p>
+                              ) : (
+                                <p className='text-[12px] text-red-700 leading-5'>
+                                  承接团队尚未填写延期理由。
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                       {selectedTask.description ? (
                         <p className='whitespace-pre-wrap rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] text-[var(--text-secondary)] leading-5'>
                           {selectedTask.description}
@@ -1927,6 +2102,90 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                   onMessageBodyChange={setMessageBody}
                   onSend={() => void handleSendMessage()}
                 />
+              </div>
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+      ) : null}
+      {selectedTask ? (
+        <Modal open={isEditTaskOpen} onOpenChange={setIsEditTaskOpen}>
+          <ModalContent size='md'>
+            <ModalHeader>编辑任务信息</ModalHeader>
+            <ModalBody>
+              <div className='space-y-4'>
+                <div className='space-y-1.5'>
+                  <label
+                    htmlFor='edit-production-task-title'
+                    className='font-medium text-[12px] text-[var(--text-secondary)]'
+                  >
+                    任务标题
+                  </label>
+                  <Input
+                    id='edit-production-task-title'
+                    value={editTaskTitle}
+                    onChange={(event) => setEditTaskTitle(event.target.value)}
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <div className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                    负责工种
+                  </div>
+                  <Combobox
+                    value={editTaskAssigneeWorkgroupId}
+                    options={assigneeOptions}
+                    onChange={setEditTaskAssigneeWorkgroupId}
+                    placeholder='选择负责工种'
+                    searchable
+                    emptyMessage='暂无可选工种'
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <label
+                    htmlFor='edit-production-task-due-at'
+                    className='font-medium text-[12px] text-[var(--text-secondary)]'
+                  >
+                    DDL
+                  </label>
+                  <Input
+                    id='edit-production-task-due-at'
+                    type='datetime-local'
+                    value={editTaskDueAt}
+                    onChange={(event) => setEditTaskDueAt(event.target.value)}
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <label
+                    htmlFor='edit-production-task-description'
+                    className='font-medium text-[12px] text-[var(--text-secondary)]'
+                  >
+                    任务说明
+                  </label>
+                  <Textarea
+                    id='edit-production-task-description'
+                    value={editTaskDescription}
+                    onChange={(event) => setEditTaskDescription(event.target.value)}
+                    className='min-h-[120px]'
+                  />
+                </div>
+                <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[12px] text-[var(--text-muted)] leading-5'>
+                  这里只修改任务基础信息；历史提交版本、审核记录、聊天消息和成果发布记录都会保留。
+                </div>
+                <div className='flex justify-end gap-2'>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    onClick={() => setIsEditTaskOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type='button'
+                    disabled={updateTask.isPending || !editTaskTitle.trim()}
+                    onClick={() => void handleUpdateTaskDetails()}
+                  >
+                    保存修改
+                  </Button>
+                </div>
               </div>
             </ModalBody>
           </ModalContent>

@@ -93,6 +93,7 @@ export const updateProductionTaskBodySchema = z.object({
   status: productionTaskStatusSchema.optional(),
   dependencyTaskIds: z.array(z.string().trim().min(1)).max(50).optional(),
   attachments: z.array(productionTaskAttachmentBodySchema).max(20).optional(),
+  delayReason: z.string().trim().max(2000).nullable().optional(),
 })
 export type UpdateProductionTaskBody = z.input<typeof updateProductionTaskBodySchema>
 
@@ -227,6 +228,10 @@ export const productionTaskSchema = z.object({
   reviewedBy: productionTaskUserSchema.nullable(),
   reviewedAt: z.string().nullable(),
   reminderSentAt: z.string().nullable(),
+  delayReason: z.string().nullable(),
+  delayReasonUpdatedBy: productionTaskUserSchema.nullable(),
+  delayReasonUpdatedAt: z.string().nullable(),
+  delayReminderSentAt: z.string().nullable(),
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

@@ -17,6 +17,7 @@ export type ProductionTaskRealtimeEvent =
   | 'changes_requested'
   | 'message_created'
   | 'ddl_reminder'
+  | 'delay_reason_required'
 
 async function getRealtimeWorkflowIds(task: ProductionTaskRow): Promise<string[]> {
   const workflowIds = new Set<string>()

@@ -119,6 +119,7 @@ type ProductionTaskAuditAction =
   | typeof AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED
   | typeof AuditAction.PRODUCTION_TASK_MESSAGE_CREATED
   | typeof AuditAction.PRODUCTION_TASK_DDL_REMINDER
+  | typeof AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED
 
 type ProductionProjectStatus = 'active' | 'completed'
 type ProductionProjectPhaseStatus = 'active' | 'completed'
@@ -165,6 +166,7 @@ const PRODUCTION_TASK_AUDIT_ACTIONS = [
   AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED,
   AuditAction.PRODUCTION_TASK_MESSAGE_CREATED,
   AuditAction.PRODUCTION_TASK_DDL_REMINDER,
+  AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED,
 ] as const
 type MemberManagementAuditAction =
   | typeof AuditAction.MEMBER_INVITED
@@ -2600,6 +2602,8 @@ function getProductionTaskTitle(action: ProductionTaskAuditAction, resourceName:
       return name ? `任务有新消息：${name}` : '任务有新消息'
     case AuditAction.PRODUCTION_TASK_DDL_REMINDER:
       return name ? `DDL 即将到期：${name}` : 'DDL 即将到期'
+    case AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED:
+      return name ? `请提交延期理由：${name}` : '请提交延期理由'
   }
 }
 
@@ -2607,7 +2611,8 @@ function getProductionTaskSeverity(
   action: ProductionTaskAuditAction
 ): ProjectNotificationCenterEntry['severity'] {
   return action === AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED ||
-    action === AuditAction.PRODUCTION_TASK_DDL_REMINDER
+    action === AuditAction.PRODUCTION_TASK_DDL_REMINDER ||
+    action === AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED
     ? 'warning'
     : 'info'
 }

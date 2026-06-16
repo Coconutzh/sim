@@ -23,7 +23,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import type { SQL } from 'drizzle-orm'
-import { and, asc, desc, eq, gte, inArray, isNull, lte, not, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, not, or, sql } from 'drizzle-orm'
 import type {
   ProductionShowcaseCategory,
   ProductionShowcaseItem,
@@ -233,7 +233,7 @@ function computeTaskPermissions(
 
   return {
     canEdit: canOversee,
-    canSubmit: orgAdmin || Boolean(assigneeRole),
+    canSubmit: Boolean(assigneeRole),
     canReview: canOversee,
     canMessage: canView,
   }
@@ -844,7 +844,12 @@ async function enrichTasks(
       : []
   const users = await getUserSummaries(
     [
-      ...rows.flatMap((row) => [row.createdBy, row.submittedBy, row.reviewedBy]),
+      ...rows.flatMap((row) => [
+        row.createdBy,
+        row.submittedBy,
+        row.reviewedBy,
+        row.delayReasonUpdatedBy,
+      ]),
       ...submissionRows.flatMap((row) => [row.submittedBy, row.reviewedBy, row.adoptedBy]),
       ...attachmentRows.map((row) => row.createdBy),
       ...submissionAttachmentRows.map((row) => row.createdBy),
@@ -961,6 +966,12 @@ async function enrichTasks(
       reviewedBy: row.reviewedBy ? (users.get(row.reviewedBy) ?? null) : null,
       reviewedAt: toIso(row.reviewedAt),
       reminderSentAt: toIso(row.reminderSentAt),
+      delayReason: row.delayReason,
+      delayReasonUpdatedBy: row.delayReasonUpdatedBy
+        ? (users.get(row.delayReasonUpdatedBy) ?? null)
+        : null,
+      delayReasonUpdatedAt: toIso(row.delayReasonUpdatedAt),
+      delayReminderSentAt: toIso(row.delayReminderSentAt),
       archivedAt: toIso(row.archivedAt),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -994,6 +1005,7 @@ function recordProductionTaskAudit(params: {
     | typeof AuditAction.PRODUCTION_TASK_CHANGES_REQUESTED
     | typeof AuditAction.PRODUCTION_TASK_MESSAGE_CREATED
     | typeof AuditAction.PRODUCTION_TASK_DDL_REMINDER
+    | typeof AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED
   actorUserId: string
   task: ProductionTaskRow
   description: string
@@ -1623,21 +1635,33 @@ export async function updateProductionTask(params: {
   status?: ProductionTaskStatus
   dependencyTaskIds?: string[]
   attachments?: ProductionTaskAttachmentInput[]
+  delayReason?: string | null
 }): Promise<ProductionTask> {
   const existing = await getTaskRow(params.taskId)
   const context = await getActorTaskContext(params.userId, existing.organizationId)
   const permissions = computeTaskPermissions(existing, context)
+  const hasMetadataEdit =
+    params.title !== undefined ||
+    params.description !== undefined ||
+    params.dueAt !== undefined ||
+    params.assigneeWorkgroupId !== undefined ||
+    params.dependencyTaskIds !== undefined ||
+    params.attachments !== undefined
   const assigneeStatusUpdate =
     params.status === 'in_progress' &&
-    params.title === undefined &&
-    params.description === undefined &&
-    params.dueAt === undefined &&
-    params.assigneeWorkgroupId === undefined &&
-    params.dependencyTaskIds === undefined &&
-    params.attachments === undefined &&
+    !hasMetadataEdit &&
+    params.delayReason === undefined &&
     permissions.canSubmit &&
     (existing.status === 'todo' || existing.status === 'changes_requested')
-  assertAllowed(permissions.canEdit || assigneeStatusUpdate, 'Production task edit access required')
+  const assigneeDelayReasonUpdate =
+    params.delayReason !== undefined &&
+    !hasMetadataEdit &&
+    params.status === undefined &&
+    Boolean(getMembershipRole(context, existing.assigneeWorkgroupId))
+  assertAllowed(
+    permissions.canEdit || assigneeStatusUpdate || assigneeDelayReasonUpdate,
+    'Production task edit access required'
+  )
 
   if (params.status !== undefined) {
     assertValidUpdateStatusTransition(existing.status, params.status)
@@ -1664,6 +1688,8 @@ export async function updateProductionTask(params: {
 
   const now = new Date()
   const status = params.status
+  const delayReason =
+    params.delayReason === undefined ? undefined : params.delayReason?.trim() || null
   const [row] = await db
     .update(productionTask)
     .set({
@@ -1677,6 +1703,20 @@ export async function updateProductionTask(params: {
         : {}),
       ...(status !== undefined ? { status } : {}),
       ...(status === 'archived' ? { archivedAt: now } : {}),
+      ...(params.delayReason !== undefined
+        ? {
+            delayReason,
+            delayReasonUpdatedBy: params.userId,
+            delayReasonUpdatedAt: now,
+            delayReminderSentAt: null,
+          }
+        : {}),
+      ...(params.dueAt !== undefined
+        ? {
+            reminderSentAt: null,
+            delayReminderSentAt: null,
+          }
+        : {}),
       updatedAt: now,
     })
     .where(eq(productionTask.id, params.taskId))
@@ -2065,9 +2105,10 @@ export async function scanProductionTaskReminders(params?: {
 }): Promise<{ scannedAt: string; remindedCount: number; taskIds: string[] }> {
   const scannedAt = new Date()
   const horizon = new Date(scannedAt.getTime() + 24 * 60 * 60 * 1000)
+  const lastDailyReminderCutoff = new Date(scannedAt.getTime() - 24 * 60 * 60 * 1000)
   const limit = params?.limit ?? 100
 
-  const rows = await db.transaction(async (tx) => {
+  const upcomingRows = await db.transaction(async (tx) => {
     const candidates = await tx
       .select({ id: productionTask.id })
       .from(productionTask)
@@ -2096,7 +2137,39 @@ export async function scanProductionTaskReminders(params?: {
       .returning()
   })
 
-  for (const task of rows) {
+  const overdueRows = await db.transaction(async (tx) => {
+    const candidates = await tx
+      .select({ id: productionTask.id })
+      .from(productionTask)
+      .where(
+        and(
+          lt(productionTask.dueAt, scannedAt),
+          sql`(${productionTask.delayReason} is null or btrim(${productionTask.delayReason}) = '')`,
+          or(
+            isNull(productionTask.delayReminderSentAt),
+            lte(productionTask.delayReminderSentAt, lastDailyReminderCutoff)
+          ) as SQL,
+          not(inArray(productionTask.status, [...DONE_STATUSES]))
+        )
+      )
+      .for('update', { skipLocked: true })
+      .limit(limit)
+
+    if (candidates.length === 0) return []
+
+    return tx
+      .update(productionTask)
+      .set({ delayReminderSentAt: scannedAt, updatedAt: scannedAt })
+      .where(
+        inArray(
+          productionTask.id,
+          candidates.map((candidate) => candidate.id)
+        )
+      )
+      .returning()
+  })
+
+  for (const task of upcomingRows) {
     if (!task.createdBy) {
       logger.warn('Skipping production task reminder audit without actor', {
         taskId: task.id,
@@ -2113,6 +2186,28 @@ export async function scanProductionTaskReminders(params?: {
     await notifyProductionTaskRealtime({ task, event: 'ddl_reminder' })
   }
 
+  for (const task of overdueRows) {
+    if (!task.createdBy) {
+      logger.warn('Skipping production task delay reminder audit without actor', {
+        taskId: task.id,
+      })
+      continue
+    }
+    recordProductionTaskAudit({
+      action: AuditAction.PRODUCTION_TASK_DELAY_REASON_REQUIRED,
+      actorUserId: task.createdBy,
+      task,
+      description: `Production task "${task.title}" is overdue and needs a delay reason`,
+      metadata: {
+        productionTaskNotification: true,
+        delayReasonRequired: true,
+        overdueSince: task.dueAt?.toISOString() ?? null,
+      },
+    })
+    await notifyProductionTaskRealtime({ task, event: 'delay_reason_required' })
+  }
+
+  const rows = [...upcomingRows, ...overdueRows]
   return {
     scannedAt: scannedAt.toISOString(),
     remindedCount: rows.length,

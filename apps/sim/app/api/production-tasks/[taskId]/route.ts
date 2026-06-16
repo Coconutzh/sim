@@ -29,6 +29,7 @@ export const PATCH = withRouteHandler(async (request, context) => {
       status: parsed.data.body.status,
       dependencyTaskIds: parsed.data.body.dependencyTaskIds,
       attachments: parsed.data.body.attachments,
+      delayReason: parsed.data.body.delayReason,
     })
     return NextResponse.json({ task })
   } catch (error) {

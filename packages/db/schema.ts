@@ -1574,6 +1574,12 @@ export const productionTask = pgTable(
     }),
     reviewedAt: timestamp('reviewed_at'),
     reminderSentAt: timestamp('reminder_sent_at'),
+    delayReason: text('delay_reason'),
+    delayReasonUpdatedBy: text('delay_reason_updated_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    delayReasonUpdatedAt: timestamp('delay_reason_updated_at'),
+    delayReminderSentAt: timestamp('delay_reminder_sent_at'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1593,6 +1599,11 @@ export const productionTask = pgTable(
     resultWorkflowIdx: index('production_task_result_workflow_idx').on(table.resultWorkflowId),
     reminderDueIdx: index('production_task_reminder_due_idx').on(
       table.reminderSentAt,
+      table.dueAt,
+      table.status
+    ),
+    delayReminderDueIdx: index('production_task_delay_reminder_due_idx').on(
+      table.delayReminderSentAt,
       table.dueAt,
       table.status
     ),
