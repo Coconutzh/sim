@@ -60,16 +60,6 @@ async function createSolidPng({
     .toBuffer()
 }
 
-async function getRgbPixel(buffer: Buffer, x: number, y: number) {
-  const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true })
-  const offset = (y * info.width + x) * info.channels
-  return {
-    r: data[offset],
-    g: data[offset + 1],
-    b: data[offset + 2],
-  }
-}
-
 describe('resolveOutpaintAspectRatio', () => {
   it('returns fixed ratios unchanged', () => {
     expect(
@@ -729,84 +719,6 @@ describe('generateWorkspaceImageFromPrompt', () => {
       name: 'generated-image.png',
       key: 'workspace/ws-1/outpaint.png',
     })
-    expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
-      'ws-1',
-      'user-1',
-      expect.any(Buffer),
-      'generated-image.png',
-      'image/png'
-    )
-  })
-
-  it('composites the source image back into a non-centered placement before upload', async () => {
-    const sourcePng = await createSolidPng({
-      width: 8,
-      height: 8,
-      color: { r: 255, g: 0, b: 0 },
-    })
-    const generatedPng = await createSolidPng({
-      width: 32,
-      height: 32,
-      color: { r: 0, g: 0, b: 255 },
-    })
-    mockGetWorkspaceFile.mockResolvedValue({
-      id: 'source-1',
-      name: 'source.png',
-      key: 'workspace/source.png',
-      url: '',
-      size: 100,
-      type: 'image/png',
-      context: 'workspace',
-    })
-    mockFetchWorkspaceFileBuffer.mockResolvedValue(sourcePng)
-    mockGenerateImageWithProvider.mockResolvedValue({
-      buffer: generatedPng,
-      mimeType: 'image/png',
-      provider: 'gemini',
-      providerModel: 'gemini-3-pro-image',
-    })
-    mockUploadWorkspaceFile.mockResolvedValue({
-      id: 'wf_outpaint',
-      name: 'generated-image.png',
-      size: 16,
-      type: 'image/png',
-      key: 'workspace/ws-1/outpaint.png',
-      url: '/api/files/serve/workspace/ws-1/outpaint.png?context=workspace',
-      context: 'workspace',
-    })
-
-    await outpaintWorkspaceImage({
-      workspaceId: 'ws-1',
-      userId: 'user-1',
-      resolution: '1K',
-      sourceImage: {
-        id: 'source-1',
-        name: 'source.png',
-        url: '',
-        key: 'workspace/source.png',
-        size: 100,
-        type: 'image/png',
-      },
-      targetAspectRatio: '1:1',
-      placement: {
-        x: 0,
-        y: 50,
-        width: 50,
-        height: 50,
-        canvasWidth: 100,
-        canvasHeight: 100,
-      },
-      prompt: '',
-    })
-
-    const uploadedBuffer = mockUploadWorkspaceFile.mock.calls[0]?.[2] as Buffer
-    const uploadedMetadata = await sharp(uploadedBuffer).metadata()
-    const lowerLeftPixel = await getRgbPixel(uploadedBuffer, 16, 900)
-    const upperRightPixel = await getRgbPixel(uploadedBuffer, 900, 16)
-
-    expect(uploadedMetadata).toMatchObject({ width: 1024, height: 1024, format: 'png' })
-    expect(lowerLeftPixel).toEqual({ r: 255, g: 0, b: 0 })
-    expect(upperRightPixel).toEqual({ r: 0, g: 0, b: 255 })
     expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
       'ws-1',
       'user-1',

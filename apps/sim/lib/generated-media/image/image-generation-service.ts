@@ -464,39 +464,6 @@ async function buildOutpaintGuideImages({
   }
 }
 
-async function compositeOutpaintSourceRegion({
-  generatedBuffer,
-  sourceBuffer,
-  placement,
-  resolution,
-}: Pick<OutpaintWorkspaceImageInput, 'placement' | 'resolution'> & {
-  generatedBuffer: Buffer
-  sourceBuffer: Buffer
-}): Promise<Buffer> {
-  const { guideSize, sourceRegion } = getOutpaintGuideGeometry({ placement, resolution })
-  const normalizedGenerated = await sharp(generatedBuffer)
-    .rotate()
-    .resize(guideSize.width, guideSize.height, { fit: 'cover', position: 'center' })
-    .png()
-    .toBuffer()
-  const resizedSource = await sharp(sourceBuffer)
-    .rotate()
-    .resize(sourceRegion.width, sourceRegion.height, { fit: 'fill' })
-    .png()
-    .toBuffer()
-
-  return sharp(normalizedGenerated)
-    .composite([
-      {
-        input: resizedSource,
-        left: sourceRegion.left,
-        top: sourceRegion.top,
-      },
-    ])
-    .png()
-    .toBuffer()
-}
-
 export async function generateWorkspaceImageFromPrompt({
   workspaceId,
   userId,
@@ -767,23 +734,13 @@ export async function outpaintWorkspaceImage({
     },
     abortSignal,
   })
-  const sourceBuffer = getHydratedImageBuffer(hydratedSourceImage)
-  if (!sourceBuffer) {
-    throw new Error('Source image could not be loaded for outpainting.')
-  }
-  const compositedBuffer = await compositeOutpaintSourceRegion({
-    generatedBuffer: generatedImage.buffer,
-    sourceBuffer,
-    placement,
-    resolution,
-  })
 
   const file = await uploadWorkspaceFile(
     workspaceId,
     userId,
-    compositedBuffer,
-    'generated-image.png',
-    'image/png'
+    generatedImage.buffer,
+    getGeneratedFileName(generatedImage.mimeType),
+    generatedImage.mimeType
   )
 
   return {
