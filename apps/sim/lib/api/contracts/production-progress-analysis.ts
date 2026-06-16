@@ -39,6 +39,7 @@ export const analyzeProductionProgressBodySchema = z.object({
     .max(1000)
     .default('请分析当前所有项目的任务进度，指出异常拖延任务和原因。'),
   history: z.array(productionProgressAnalysisMessageSchema).max(12).optional(),
+  focusTaskId: nonEmptyIdSchema.optional(),
 })
 export type AnalyzeProductionProgressBody = z.input<typeof analyzeProductionProgressBodySchema>
 
@@ -91,6 +92,21 @@ export type ProductionProgressProjectAnalysis = z.output<
   typeof productionProgressProjectAnalysisSchema
 >
 
+export const productionProgressFocusedTaskSchema = z.object({
+  taskId: z.string(),
+  organizationId: z.string(),
+  projectName: z.string(),
+  title: z.string(),
+  assigneeWorkgroupName: z.string(),
+  status: productionTaskStatusSchema,
+  dueAt: z.string().nullable(),
+  submissionVersionCount: z.number().int().min(0),
+  messageCount: z.number().int().min(0),
+  includedMessageCount: z.number().int().min(0),
+  messageHistoryTruncated: z.boolean(),
+})
+export type ProductionProgressFocusedTask = z.output<typeof productionProgressFocusedTaskSchema>
+
 export const productionProgressAnalysisSchema = z.object({
   generatedAt: z.string(),
   generatedBy: z.enum(['hermes', 'rules']),
@@ -99,6 +115,7 @@ export const productionProgressAnalysisSchema = z.object({
   projects: z.array(productionProgressProjectAnalysisSchema),
   riskTasks: z.array(productionProgressRiskTaskSchema),
   recommendations: z.array(z.string()),
+  focusedTask: productionProgressFocusedTaskSchema.nullable(),
 })
 export type ProductionProgressAnalysis = z.output<typeof productionProgressAnalysisSchema>
 

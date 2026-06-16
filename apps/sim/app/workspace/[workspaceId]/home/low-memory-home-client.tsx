@@ -87,6 +87,12 @@ type TimelineTaskCluster = {
   leftPercent: number
   tasks: ProductionTask[]
 }
+type FocusedAnalysisTask = {
+  taskId: string
+  title: string
+  projectName: string
+  assigneeWorkgroupName: string
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const TASK_CLUSTER_DISTANCE_PERCENT = 4.5
@@ -823,6 +829,7 @@ function ProjectProgressAnalysisPanel({
   const analyzeProgress = useAnalyzeProductionProgress()
   const [messages, setMessages] = useState<ProductionProgressAnalysisMessage[]>([])
   const [input, setInput] = useState('请分析当前所有项目的任务进度，指出异常拖延任务和原因。')
+  const [focusedTask, setFocusedTask] = useState<FocusedAnalysisTask | null>(null)
   const analysis = analyzeProgress.data?.analysis
   const projectInputs = useMemo(
     () =>
@@ -840,9 +847,16 @@ function ProjectProgressAnalysisPanel({
   )
   const canAnalyze = projectInputs.length > 0
 
-  const submitQuestion = async (question: string) => {
+  const submitQuestion = async (
+    question: string,
+    options?: { focusTask?: FocusedAnalysisTask | null; clearFocus?: boolean }
+  ) => {
     const trimmed = question.trim()
     if (!trimmed || !canAnalyze || analyzeProgress.isPending) return
+    const nextFocusedTask = options?.clearFocus ? null : (options?.focusTask ?? focusedTask)
+    if (options?.clearFocus || options?.focusTask !== undefined) {
+      setFocusedTask(nextFocusedTask)
+    }
     const userMessage: ProductionProgressAnalysisMessage = { role: 'user', content: trimmed }
     const nextMessages = [...messages, userMessage].slice(-12)
     setMessages(nextMessages)
@@ -853,6 +867,7 @@ function ProjectProgressAnalysisPanel({
         projects: projectInputs,
         question: trimmed,
         history: messages.slice(-8),
+        focusTaskId: nextFocusedTask?.taskId,
       })
       setMessages((current) =>
         [
@@ -883,6 +898,13 @@ function ProjectProgressAnalysisPanel({
     void submitQuestion(input)
   }
 
+  const askAboutTask = (task: FocusedAnalysisTask) => {
+    void submitQuestion(
+      `请结合这个任务的所有提交版本和任务聊天记录，分析「${task.title}」当前状态、主要问题和下一步建议。`,
+      { focusTask: task }
+    )
+  }
+
   const riskTasks = analysis?.riskTasks.slice(0, 12) ?? []
   const blockedProjects = analysis?.projects.filter((project) => project.health === 'blocked') ?? []
   const projectHighlights = analysis
@@ -900,10 +922,10 @@ function ProjectProgressAnalysisPanel({
           </div>
           <div className='min-w-0'>
             <div className='font-medium text-[14px] text-[var(--text-primary)]'>
-              项目进度分析助手
+              项目生产助手
             </div>
             <div className='truncate text-[12px] text-[var(--text-tertiary)]'>
-              固定窗口内分析 DDL、提交状态、延期理由和审核积压，不再撑开页面。
+              可聊项目节奏、任务版本、聊天记录、DDL 与延期原因。
             </div>
           </div>
         </div>
@@ -914,7 +936,9 @@ function ProjectProgressAnalysisPanel({
           className='w-fit'
           disabled={!canAnalyze || analyzeProgress.isPending}
           onClick={() =>
-            void submitQuestion('请分析当前所有项目的任务进度，指出异常拖延任务和原因。')
+            void submitQuestion('请分析当前所有项目的任务进度，指出异常拖延任务和原因。', {
+              clearFocus: true,
+            })
           }
         >
           {analyzeProgress.isPending ? (
@@ -974,12 +998,16 @@ function ProjectProgressAnalysisPanel({
                     <div className='space-y-2'>
                       {riskTasks.map((task) => {
                         const project = projects.find((item) => item.id === task.organizationId)
+                        const focusedTaskPayload: FocusedAnalysisTask = {
+                          taskId: task.taskId,
+                          title: task.title,
+                          projectName: task.projectName,
+                          assigneeWorkgroupName: task.assigneeWorkgroupName,
+                        }
                         return (
-                          <button
+                          <div
                             key={task.taskId}
-                            type='button'
-                            className='block w-full rounded-[7px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-left transition-colors hover-hover:bg-[var(--surface-hover)]'
-                            onClick={() => project && onOpenTask(project, task.taskId)}
+                            className='rounded-[7px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2'
                           >
                             <div className='flex items-center justify-between gap-2'>
                               <span className='min-w-0 truncate font-medium text-[12px] text-[var(--text-primary)]'>
@@ -1008,7 +1036,30 @@ function ProjectProgressAnalysisPanel({
                             <div className='mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]'>
                               {task.reason}
                             </div>
-                          </button>
+                            <div className='mt-2 flex items-center justify-end gap-1.5'>
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='ghost'
+                                disabled={!project}
+                                className='h-6 px-2 text-[11px]'
+                                onClick={() => project && onOpenTask(project, task.taskId)}
+                              >
+                                打开任务
+                              </Button>
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='outline'
+                                className='h-6 px-2 text-[11px]'
+                                disabled={analyzeProgress.isPending}
+                                onClick={() => askAboutTask(focusedTaskPayload)}
+                              >
+                                <Bot className='mr-1 h-3 w-3' />
+                                问助手
+                              </Button>
+                            </div>
+                          </div>
                         )
                       })}
                     </div>
@@ -1065,11 +1116,28 @@ function ProjectProgressAnalysisPanel({
 
         <div className='flex h-[420px] min-h-0 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
           <div className='flex shrink-0 items-center justify-between gap-2 border-[var(--border)] border-b px-3 py-2'>
-            <div className='font-medium text-[12px] text-[var(--text-primary)]'>分析对话</div>
+            <div className='font-medium text-[12px] text-[var(--text-primary)]'>助手对话</div>
             <span className='text-[10px] text-[var(--text-tertiary)]'>
               {analysis?.generatedBy === 'hermes' ? 'Hermes' : analysis ? '规则' : '待分析'}
             </span>
           </div>
+          {focusedTask ? (
+            <div className='flex shrink-0 items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-1)] px-3 py-2'>
+              <div className='min-w-0 truncate text-[11px] text-[var(--text-tertiary)]'>
+                正在聚焦：
+                <span className='font-medium text-[var(--text-primary)]'>{focusedTask.title}</span>
+                <span className='ml-1'>/ {focusedTask.projectName}</span>
+              </div>
+              <button
+                type='button'
+                className='flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-primary)]'
+                onClick={() => setFocusedTask(null)}
+                aria-label='清除聚焦任务'
+              >
+                <X className='h-3 w-3' />
+              </button>
+            </div>
+          ) : null}
           <div className='min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-gutter:stable]'>
             {messages.length > 0 ? (
               messages.map((message, index) => (
@@ -1091,7 +1159,7 @@ function ProjectProgressAnalysisPanel({
               ))
             ) : (
               <div className='rounded-[8px] border border-[var(--border)] border-dashed p-3 text-[12px] text-[var(--text-muted)] leading-5'>
-                点击分析当前进度，或直接询问“哪些项目最危险”“延期原因是什么”。
+                可以问“哪些项目最危险”，也可以点异常任务的“问助手”追问版本和聊天记录。
               </div>
             )}
           </div>
@@ -1101,11 +1169,11 @@ function ProjectProgressAnalysisPanel({
               onChange={(event) => setInput(event.target.value)}
               rows={2}
               className='min-h-[58px] resize-none text-[12px]'
-              placeholder='追问项目进度、异常任务或延期原因'
+              placeholder='自由追问项目、任务版本、聊天记录或延期原因'
             />
             <div className='mt-2 flex items-center justify-between gap-2'>
               <span className='text-[10px] text-[var(--text-tertiary)]'>
-                长回复会在窗口内滚动，不影响下方排期
+                {focusedTask ? '后续追问会继续带上当前任务上下文' : '长回复会在窗口内滚动，不影响下方排期'}
               </span>
               <Button
                 type='submit'

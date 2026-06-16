@@ -23,6 +23,7 @@ export const POST = withRouteHandler(async (request) => {
       projects: parsed.data.body.projects,
       question: parsed.data.body.question,
       history: parsed.data.body.history,
+      focusTaskId: parsed.data.body.focusTaskId,
       signal: request.signal,
     })
     return NextResponse.json({ analysis })

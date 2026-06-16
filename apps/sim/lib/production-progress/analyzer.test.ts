@@ -5,8 +5,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProductionTask } from '@/lib/api/contracts/production-tasks'
 
-const { MockHermesClientError, mockCallHermesChatCompletion, mockListProductionTasks } = vi.hoisted(
-  () => {
+const {
+  MockHermesClientError,
+  mockCallHermesChatCompletion,
+  mockListProductionTaskMessages,
+  mockListProductionTasks,
+} = vi.hoisted(() => {
     class MockHermesClientError extends Error {
       constructor(
         message: string,
@@ -20,10 +24,10 @@ const { MockHermesClientError, mockCallHermesChatCompletion, mockListProductionT
     return {
       MockHermesClientError,
       mockCallHermesChatCompletion: vi.fn(),
+      mockListProductionTaskMessages: vi.fn(),
       mockListProductionTasks: vi.fn(),
     }
-  }
-)
+  })
 
 vi.mock('@/lib/hermes/client', () => ({
   HermesClientError: MockHermesClientError,
@@ -31,6 +35,7 @@ vi.mock('@/lib/hermes/client', () => ({
 }))
 
 vi.mock('@/lib/production-tasks/service', () => ({
+  listProductionTaskMessages: mockListProductionTaskMessages,
   listProductionTasks: mockListProductionTasks,
 }))
 
@@ -47,6 +52,10 @@ function createTask(overrides: Partial<ProductionTask>): ProductionTask {
     submittedAt: null,
     reviewNote: null,
     latestSubmission: null,
+    messageCount: 0,
+    attachments: [],
+    submissionAttachments: [],
+    submissions: [],
     sourceWorkgroup: { name: '导演组' },
     assigneeWorkgroup: { name: '灯光组' },
     ...overrides,
@@ -59,6 +68,7 @@ describe('analyzeProductionProgress', () => {
     vi.setSystemTime(new Date('2026-06-16T06:00:00.000Z'))
     vi.clearAllMocks()
     mockCallHermesChatCompletion.mockRejectedValue(new MockHermesClientError('unconfigured', 503))
+    mockListProductionTaskMessages.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -153,5 +163,130 @@ describe('analyzeProductionProgress', () => {
         }),
       })
     )
+  })
+
+  it('sends focused visible task submissions and messages to Hermes', async () => {
+    mockListProductionTasks.mockResolvedValueOnce([
+      createTask({
+        id: 'task-focused',
+        title: '首幕灯光 Cue 表',
+        status: 'changes_requested',
+        dueAt: '2026-06-17T06:00:00.000Z',
+        reviewNote: '第 12 段光强需要降低。',
+        submissions: [
+          {
+            id: 'submission-2',
+            taskId: 'task-focused',
+            versionNumber: 2,
+            workflowId: 'workflow-1',
+            nodeId: 'node-2',
+            note: '第二版已补充第 12 段调整。',
+            status: 'changes_requested',
+            submittedBy: { id: 'user-light', name: '灯光成员', email: null, avatarUrl: null },
+            submittedAt: '2026-06-16T04:00:00.000Z',
+            reviewedBy: { id: 'user-director', name: '导演', email: null, avatarUrl: null },
+            reviewedAt: '2026-06-16T05:00:00.000Z',
+            reviewNote: '第 12 段光强需要降低。',
+            adoptedBy: null,
+            adoptedAt: null,
+            createdAt: '2026-06-16T04:00:00.000Z',
+            updatedAt: '2026-06-16T05:00:00.000Z',
+            attachments: [
+              {
+                id: 'attachment-1',
+                name: 'cue-v2.xlsx',
+                url: 'https://example.test/cue-v2.xlsx',
+                downloadUrl: null,
+                source: 'url',
+                workspaceFileId: null,
+                key: null,
+                contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                size: 1200,
+                createdBy: null,
+                createdAt: '2026-06-16T04:00:00.000Z',
+              },
+            ],
+          },
+          {
+            id: 'submission-1',
+            taskId: 'task-focused',
+            versionNumber: 1,
+            workflowId: 'workflow-1',
+            nodeId: 'node-1',
+            note: '第一版 Cue 表草案。',
+            status: 'submitted',
+            submittedBy: { id: 'user-light', name: '灯光成员', email: null, avatarUrl: null },
+            submittedAt: '2026-06-15T04:00:00.000Z',
+            reviewedBy: null,
+            reviewedAt: null,
+            reviewNote: null,
+            adoptedBy: null,
+            adoptedAt: null,
+            createdAt: '2026-06-15T04:00:00.000Z',
+            updatedAt: '2026-06-15T04:00:00.000Z',
+            attachments: [],
+          },
+        ],
+      }),
+    ])
+    mockListProductionTaskMessages.mockResolvedValueOnce([
+      {
+        id: 'message-1',
+        taskId: 'task-focused',
+        senderUser: { id: 'user-light', name: '灯光成员', email: null, avatarUrl: null },
+        senderAgentCode: null,
+        body: '我们已经确认延期原因是场馆电力图纸晚到。',
+        createdAt: '2026-06-16T03:00:00.000Z',
+      },
+    ])
+    mockCallHermesChatCompletion.mockResolvedValueOnce({
+      content: '这个任务的主要问题是第 12 段光强仍需返修，并且延期原因来自场馆电力图纸晚到。',
+      raw: {},
+    })
+
+    const analysis = await analyzeProductionProgress({
+      userId: 'user-1',
+      projects: [{ organizationId: 'org-1', name: '巡演 A', teamWorkspaceId: 'ws-1' }],
+      question: '这个任务为什么拖住了？',
+      focusTaskId: 'task-focused',
+    })
+
+    expect(mockListProductionTaskMessages).toHaveBeenCalledWith({
+      userId: 'user-1',
+      taskId: 'task-focused',
+    })
+    expect(analysis.focusedTask).toMatchObject({
+      taskId: 'task-focused',
+      title: '首幕灯光 Cue 表',
+      submissionVersionCount: 2,
+      messageCount: 1,
+      includedMessageCount: 1,
+      messageHistoryTruncated: false,
+    })
+    const hermesCall = mockCallHermesChatCompletion.mock.calls[0]?.[0]
+    const userPrompt = hermesCall.messages.at(-1)?.content as string
+    expect(userPrompt).toContain('第二版已补充第 12 段调整')
+    expect(userPrompt).toContain('第一版 Cue 表草案')
+    expect(userPrompt).toContain('场馆电力图纸晚到')
+  })
+
+  it('does not load task messages when the focused task is not visible', async () => {
+    mockListProductionTasks.mockResolvedValueOnce([
+      createTask({
+        id: 'visible-task',
+        title: '可见任务',
+      }),
+    ])
+
+    const analysis = await analyzeProductionProgress({
+      userId: 'user-1',
+      projects: [{ organizationId: 'org-1', name: '巡演 A', teamWorkspaceId: 'ws-1' }],
+      question: '请分析这个任务',
+      focusTaskId: 'hidden-task',
+    })
+
+    expect(mockListProductionTaskMessages).not.toHaveBeenCalled()
+    expect(analysis.focusedTask).toBeNull()
+    expect(analysis.answer).toContain('没有找到你指定的任务')
   })
 })

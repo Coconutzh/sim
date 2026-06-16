@@ -61,6 +61,7 @@ const analysis = {
   ],
   riskTasks: [],
   recommendations: ['先要求超期任务补交延期理由。'],
+  focusedTask: null,
 } as const
 
 describe('/api/production-progress/analyze', () => {
@@ -109,6 +110,7 @@ describe('/api/production-progress/analyze', () => {
         projects: [project],
         question: '哪些任务拖延最严重？',
         history,
+        focusTaskId: 'task-1',
       })
     )
 
@@ -119,6 +121,7 @@ describe('/api/production-progress/analyze', () => {
       projects: [project],
       question: '哪些任务拖延最严重？',
       history,
+      focusTaskId: 'task-1',
       signal: expect.any(AbortSignal),
     })
   })
