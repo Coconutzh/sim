@@ -175,7 +175,10 @@ import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workfl
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBlockDimensions } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { getBlockConfigFromCatalog } from '@/blocks/catalog'
-import { useContentCanvasModelAvailability } from '@/hooks/queries/content-canvas'
+import {
+  useContentCanvasModelAvailability,
+  useGenerateContentCanvasPresentation,
+} from '@/hooks/queries/content-canvas'
 import { useCreateProductionShowcaseItem } from '@/hooks/queries/production-showcase-items'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
@@ -1378,9 +1381,11 @@ function PresentationContentCard({
   fallbackFile,
   contentReferences,
   referencedNodes,
+  isGeneratePending,
   onAddReference,
   onRemoveReference,
   onChangePrompt,
+  onGenerate,
 }: {
   canEdit: boolean
   isPreview: boolean
@@ -1394,9 +1399,11 @@ function PresentationContentCard({
   fallbackFile: UploadedFileValue | null
   contentReferences: ContentReferenceRecord[]
   referencedNodes: Record<string, PromptContextReferencedNode>
+  isGeneratePending: boolean
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
   onChangePrompt: (value: string) => void
+  onGenerate: () => void
 }) {
   const pptxFile = artifact?.pptxFile ?? fallbackFile
   const coverImageFile = artifact?.coverImageFile ?? null
@@ -1409,7 +1416,7 @@ function PresentationContentCard({
       ? manifestSlideCount
       : slideCount
   const selectedStyle = artifact?.manifest?.selectedStyle?.trim()
-  const isGenerating = status === 'pending'
+  const isGenerating = status === 'pending' || isGeneratePending
   const hasArtifact = Boolean(pptxUrl)
 
   return (
@@ -1493,6 +1500,29 @@ function PresentationContentCard({
               onClick={(event) => event.stopPropagation()}
             />
           ) : null}
+
+          {!isPreview && !isEmbedded ? (
+            <button
+              type='button'
+              disabled={!canEdit || isGenerating || !prompt.trim()}
+              className={cn(
+                'nodrag nopan inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[#F4B740] px-3 font-medium text-[#211506] text-xs shadow-sm transition-colors hover-hover:bg-[#F6C85A] disabled:cursor-not-allowed disabled:opacity-60'
+              )}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onGenerate()
+              }}
+            >
+              {isGenerating ? (
+                <Loader2 className='h-3.5 w-3.5 animate-spin' />
+              ) : (
+                <Sparkles className='h-3.5 w-3.5' />
+              )}
+              <span>{hasArtifact ? '重新生成 PPT' : '生成 PPT'}</span>
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1509,7 +1539,7 @@ function PresentationContentCard({
       {selected && canEdit && !isPreview && !isEmbedded && !hasArtifact ? (
         <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs shadow-sm'>
           <Sparkles className='h-3.5 w-3.5 text-[#F4B740]' />
-          <span>下一阶段接入 Hermes 生成</span>
+          <span>Hermes 调用 codex-ppt 生成最终 PPT</span>
         </div>
       ) : null}
     </div>
@@ -2679,6 +2709,7 @@ export const ContentBlock = memo(function ContentBlock({
   })
   const uploadWorkspaceFileMutation = useUploadWorkspaceFile()
   const createShowcaseItem = useCreateProductionShowcaseItem()
+  const generatePresentation = useGenerateContentCanvasPresentation()
   const variant = data.contentVariant as ContentVariant | undefined
 
   const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual({
@@ -2750,13 +2781,20 @@ export const ContentBlock = memo(function ContentBlock({
     id,
     'presentationPrompt'
   )
-  const [presentationSlideCountValue] = useSubBlockValue<number>(id, 'presentationSlideCount')
-  const [presentationStatusValue] = useSubBlockValue<string>(id, 'presentationStatus')
-  const [presentationErrorValue] = useSubBlockValue<string | null>(id, 'presentationError')
-  const [presentationArtifactValue] = useSubBlockValue<PresentationArtifactValue | null>(
+  const [presentationSlideCountValue, setPresentationSlideCountValue] = useSubBlockValue<number>(
     id,
-    'presentationArtifact'
+    'presentationSlideCount'
   )
+  const [presentationStatusValue, setPresentationStatusValue] = useSubBlockValue<string>(
+    id,
+    'presentationStatus'
+  )
+  const [presentationErrorValue, setPresentationErrorValue] = useSubBlockValue<string | null>(
+    id,
+    'presentationError'
+  )
+  const [presentationArtifactValue, setPresentationArtifactValue] =
+    useSubBlockValue<PresentationArtifactValue | null>(id, 'presentationArtifact')
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
   const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
     ContentReferenceRecord[]
@@ -3149,6 +3187,48 @@ export const ContentBlock = memo(function ContentBlock({
     !data.isPreview &&
     !data.isEmbedded &&
     (resolvedVariant === 'text' ? showcasePlainText.length > 0 : showcaseAttachments.length > 0)
+
+  const generatePresentationFromNode = async () => {
+    const sourceWorkflowId = activeWorkflowId || params.workflowId
+    const prompt = resolvedPresentationPrompt.trim()
+    if (!params.workspaceId || !sourceWorkflowId) {
+      toast({ message: '缺少项目或画布上下文，无法生成 PPT。', duration: 2600 })
+      return
+    }
+    if (!prompt) {
+      toast({ message: '请先填写 PPT 生成提示词。', duration: 2400 })
+      return
+    }
+
+    setPresentationStatusValue('pending')
+    setPresentationErrorValue(null)
+    setPresentationArtifactValue(null)
+    setFileValue(null)
+
+    try {
+      const result = await generatePresentation.mutateAsync({
+        workspaceId: params.workspaceId,
+        workflowId: sourceWorkflowId,
+        nodeId: id,
+        prompt,
+        slideCount: resolvedPresentationSlideCount,
+      })
+      setPresentationStatusValue(result.presentationStatus)
+      setPresentationErrorValue(null)
+      setPresentationArtifactValue(result.presentationArtifact)
+      setFileValue(result.file)
+      if (result.presentationArtifact.manifest.slideCount) {
+        setPresentationSlideCountValue(result.presentationArtifact.manifest.slideCount)
+      }
+      toast({ message: 'PPT 已生成并回写到当前节点。', duration: 2400 })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'PPT 生成失败'
+      setPresentationStatusValue('error')
+      setPresentationErrorValue(message)
+      toast({ message, duration: 3200 })
+    }
+  }
+
   const createMenuItems = useMemo(
     () =>
       CONTENT_NODE_MENU_ITEMS.filter((item) =>
@@ -5513,10 +5593,14 @@ export const ContentBlock = memo(function ContentBlock({
             fallbackFile={resolvedFile}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
+            isGeneratePending={generatePresentation.isPending}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onChangePrompt={(value) => {
               if (!data.isPreview) setPresentationPromptValue(value)
+            }}
+            onGenerate={() => {
+              void generatePresentationFromNode()
             }}
           />
         ) : resolvedVariant === 'image' ||

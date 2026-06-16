@@ -97,6 +97,7 @@ describe('Hermes client health probe', () => {
               'sim_canvas_preview_discard',
               'sim_canvas_history_query',
               'sim_canvas_media_prepare',
+              'sim_presentation_artifact_upload',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -162,6 +163,7 @@ describe('Hermes client health probe', () => {
               'sim_canvas_preview_discard',
               'sim_canvas_history_query',
               'sim_canvas_media_prepare',
+              'sim_presentation_artifact_upload',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
             ],
@@ -187,6 +189,7 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
       ],
@@ -274,6 +277,7 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
       ],
@@ -288,12 +292,13 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
       ],
     })
     expect(result.error).toContain(
-      'required Hermes tools missing: sim(sim_canvas_query, sim_canvas_task_propose, sim_canvas_apply_pending, sim_canvas_preview_create, sim_canvas_preview_commit, sim_canvas_preview_discard, sim_canvas_history_query, sim_canvas_media_prepare, sim_skill_proposal_run, sim_external_evidence_prepare)'
+      'required Hermes tools missing: sim(sim_canvas_query, sim_canvas_task_propose, sim_canvas_apply_pending, sim_canvas_preview_create, sim_canvas_preview_commit, sim_canvas_preview_discard, sim_canvas_history_query, sim_canvas_media_prepare, sim_presentation_artifact_upload, sim_skill_proposal_run, sim_external_evidence_prepare)'
     )
   })
 
