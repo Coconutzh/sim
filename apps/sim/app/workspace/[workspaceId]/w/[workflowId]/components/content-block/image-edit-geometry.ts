@@ -209,6 +209,22 @@ export function fitFrameToAspectRatio({
   )
 }
 
+export function fitFrameToAspectRatioFromStableBase({
+  baseFrame,
+  subject,
+  ratio,
+}: {
+  baseFrame: Rect
+  subject: Rect
+  ratio: number
+}): Rect {
+  return fitFrameToAspectRatio({
+    frame: baseFrame,
+    subject,
+    ratio,
+  })
+}
+
 export function getPlacementFromFrame({ frame, subject }: { frame: Rect; subject: Rect }): {
   x: number
   y: number

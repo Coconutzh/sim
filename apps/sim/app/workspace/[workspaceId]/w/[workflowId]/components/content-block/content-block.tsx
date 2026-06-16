@@ -144,6 +144,11 @@ import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflow
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
 import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-cutout-session'
+import {
+  buildImageOutpaintPendingSubBlockValues,
+  runImageOutpaintRequest,
+  type SubmitImageOutpaintParams,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
 import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
@@ -184,7 +189,7 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
-type ImageGenerationKind = 'cutout' | 'video_frame_capture'
+type ImageGenerationKind = 'cutout' | 'video_frame_capture' | 'image_outpaint'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
 type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -432,7 +437,9 @@ function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus |
 }
 
 function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
-  return value === 'cutout' || value === 'video_frame_capture' ? value : null
+  return value === 'cutout' || value === 'video_frame_capture' || value === 'image_outpaint'
+    ? value
+    : null
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -1388,7 +1395,7 @@ function MediaContentCard({
   onCreateImagePerspectiveVariant,
   onCreateImageRepaintVariant,
   onCreateImageEraseVariant,
-  onCreateImageOutpaintVariant,
+  onSubmitImageOutpaint,
   onRetryImageCutout,
   onRetryVideoFrameCapture,
   onChangeFile,
@@ -1467,10 +1474,7 @@ function MediaContentCard({
   }) => Promise<void> | void
   onCreateImageRepaintVariant: (file: UploadedFileValue) => Promise<void> | void
   onCreateImageEraseVariant: (file: UploadedFileValue) => Promise<void> | void
-  onCreateImageOutpaintVariant: (
-    file: UploadedFileValue,
-    targetAspectRatio: ImageOutpaintAspectRatio
-  ) => Promise<void> | void
+  onSubmitImageOutpaint: (params: SubmitImageOutpaintParams) => Promise<void> | void
   onRetryImageCutout: () => void
   onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
@@ -1802,6 +1806,9 @@ function MediaContentCard({
   const isVideoFrameCapturePending =
     isVideoFrameCaptureNode && generationStatus === 'pending' && !file
   const isVideoFrameCaptureError = isVideoFrameCaptureNode && generationStatus === 'error' && !file
+  const isImageOutpaintNode = variant === 'image' && generationKind === 'image_outpaint'
+  const isImageOutpaintPending = isImageOutpaintNode && generationStatus === 'pending' && !file
+  const isImageOutpaintError = isImageOutpaintNode && generationStatus === 'error' && !file
   const showUploadAction =
     selected &&
     canUpload &&
@@ -1810,6 +1817,8 @@ function MediaContentCard({
     !isImageCutoutError &&
     !isVideoFrameCapturePending &&
     !isVideoFrameCaptureError &&
+    !isImageOutpaintPending &&
+    !isImageOutpaintError &&
     !isVideoEnhanceNode
   const showImageCropAction =
     selected &&
@@ -1826,7 +1835,9 @@ function MediaContentCard({
     !isImageCutoutPending &&
     !isImageCutoutError &&
     !isVideoFrameCapturePending &&
-    !isVideoFrameCaptureError
+    !isVideoFrameCaptureError &&
+    !isImageOutpaintPending &&
+    !isImageOutpaintError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -2218,6 +2229,17 @@ function MediaContentCard({
               <span>重试</span>
             </button>
           </div>
+        ) : isImageOutpaintPending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>扩图中...</div>
+          </div>
+        ) : isImageOutpaintError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '扩图失败，请重试。'}
+            </div>
+          </div>
         ) : isVideoEnhancePendingConfig ? (
           <div className='nopan flex h-[240px] w-full items-center justify-center bg-[var(--surface-1)] px-6 text-center'>
             <div className='font-medium text-[#B8D7FF] text-sm'>配置参数生成高清视频</div>
@@ -2307,7 +2329,7 @@ function MediaContentCard({
           sourceFile={file}
           isProcessingNode={false}
           onCancel={onCancelImageOutpaint}
-          onCreateVariant={onCreateImageOutpaintVariant}
+          onSubmitOutpaint={onSubmitImageOutpaint}
         />
       ) : null}
 
@@ -3985,6 +4007,40 @@ export const ContentBlock = memo(function ContentBlock({
     ]
   )
 
+  const completeImageOutpaint = useCallback(
+    (targetBlockId: string, file: UploadedFileValue) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'image_outpaint')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failImageOutpaint = useCallback(
+    (targetBlockId: string, message: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'image_outpaint')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startImageOutpaintRequest = useCallback(
+    (
+      request: SubmitImageOutpaintParams & { targetBlockId: string; sourceFile: UploadedFileValue }
+    ) => {
+      void runImageOutpaintRequest({
+        ...request,
+        workspaceId: params.workspaceId,
+        onComplete: completeImageOutpaint,
+        onError: failImageOutpaint,
+      })
+    },
+    [completeImageOutpaint, failImageOutpaint, params.workspaceId]
+  )
+
   const createImagePerspectiveVariantNode = useCallback(
     async ({ file, model }: { file: UploadedFileValue; model: ImageGenerationModelId }) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
@@ -4228,9 +4284,12 @@ export const ContentBlock = memo(function ContentBlock({
   )
 
   const createImageOutpaintVariantNode = useCallback(
-    async (file: UploadedFileValue, targetAspectRatio: ImageOutpaintAspectRatio) => {
+    (outpaintRequest: SubmitImageOutpaintParams) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
         throw new Error('Image outpaint is not available for this workflow.')
+      }
+      if (resolvedVariant !== 'image' || !resolvedFile) {
+        throw new Error('Image outpaint requires a source image.')
       }
 
       const sourceBlock = workflowBlocks[id]
@@ -4274,28 +4333,33 @@ export const ContentBlock = memo(function ContentBlock({
         sourceVariant: 'image',
         role: referenceRole,
       }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
+      const edge = createImageOutpaintReferenceEdge({
+        edgeId: generateId(),
+        resultBlockId: targetBlockId,
+        sourceBlockId: id,
+        resultPosition: targetPosition,
+        sourcePosition,
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: mapOutpaintAspectRatioToImageAspectRatio(targetAspectRatio),
-          file,
-          contentReferences: [reference],
-        },
+        [targetBlockId]: buildImageOutpaintPendingSubBlockValues({
+          aiAspectRatio: mapOutpaintAspectRatioToImageAspectRatio(
+            outpaintRequest.targetAspectRatio
+          ),
+          reference,
+        }),
       }
 
       setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
       usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageOutpaintMode(false)
+      if (added) {
+        startImageOutpaintRequest({
+          ...outpaintRequest,
+          targetBlockId,
+          sourceFile: resolvedFile,
+        })
+      }
     },
     [
       canEditWorkflow,
@@ -4303,7 +4367,10 @@ export const ContentBlock = memo(function ContentBlock({
       data.isEmbedded,
       data.isPreview,
       id,
+      resolvedFile,
+      resolvedVariant,
       setPendingSelection,
+      startImageOutpaintRequest,
       workflowBlocks,
     ]
   )
@@ -5287,7 +5354,7 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
             onCreateImageEraseVariant={createImageEraseVariantNode}
-            onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
+            onSubmitImageOutpaint={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
             onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {

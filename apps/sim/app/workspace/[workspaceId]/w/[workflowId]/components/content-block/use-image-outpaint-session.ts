@@ -1,14 +1,16 @@
-'use client'
-
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import {
   type ImageGenerationResolution,
   type ImageOutpaintAspectRatio,
+  type OutpaintWorkspaceImageBody,
   outpaintWorkspaceImageContract,
 } from '@/lib/api/contracts/media-images'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
+import {
+  DEFAULT_IMAGE_REPAINT_MODEL,
+  type ImageAspectRatioValue,
+} from '@/lib/generated-media/image/image-generation-utils'
 import { resolveStorageKeyFromFileInput } from '@/lib/uploads/utils/file-utils'
 
 interface UploadedFileValue {
@@ -30,7 +32,13 @@ interface OutpaintPlacement {
   canvasHeight: number
 }
 
-interface SubmitOutpaintParams {
+interface ImageOutpaintReferenceValue {
+  sourceBlockId: string
+  sourceVariant: string
+  role: string
+}
+
+export interface SubmitImageOutpaintParams {
   placement: OutpaintPlacement
   resolution: ImageGenerationResolution
   targetAspectRatio: ImageOutpaintAspectRatio
@@ -41,13 +49,13 @@ interface SubmitOutpaintParams {
   prompt?: string
 }
 
-interface UseImageOutpaintSessionParams {
+interface RunImageOutpaintRequestParams extends SubmitImageOutpaintParams {
   workspaceId?: string
   sourceFile: UploadedFileValue
-  onCreateVariant: (
-    file: UploadedFileValue,
-    targetAspectRatio: ImageOutpaintAspectRatio
-  ) => Promise<void> | void
+  targetBlockId: string
+  requestOutpaint?: typeof requestWorkspaceImageOutpaint
+  onComplete: (targetBlockId: string, file: UploadedFileValue) => void
+  onError: (targetBlockId: string, message: string) => void
 }
 
 function getErrorMessage(error: unknown): string {
@@ -77,7 +85,7 @@ export function normalizeImageOutpaintFile(file: UploadedFileValue) {
   }
 }
 
-function mapGeneratedFile(file: {
+export function mapGeneratedImageOutpaintFile(file: {
   id: string
   name: string
   url: string
@@ -97,81 +105,68 @@ function mapGeneratedFile(file: {
   }
 }
 
-export function useImageOutpaintSession({
+export function buildImageOutpaintPendingSubBlockValues({
+  aiAspectRatio,
+  reference,
+}: {
+  aiAspectRatio: ImageAspectRatioValue
+  reference: ImageOutpaintReferenceValue
+}): Record<string, unknown> {
+  return {
+    contentVariant: 'image',
+    aiPrompt: '',
+    aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
+    aiAspectRatio,
+    file: null,
+    contentReferences: [reference],
+    generationKind: 'image_outpaint',
+    generationStatus: 'pending',
+    generationError: null,
+  }
+}
+
+export async function requestWorkspaceImageOutpaint(body: OutpaintWorkspaceImageBody) {
+  return requestJson(outpaintWorkspaceImageContract, { body })
+}
+
+export async function runImageOutpaintRequest({
   workspaceId,
   sourceFile,
-  onCreateVariant,
-}: UseImageOutpaintSessionParams) {
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  targetBlockId,
+  placement,
+  resolution,
+  targetAspectRatio,
+  customAspectRatio,
+  prompt,
+  requestOutpaint = requestWorkspaceImageOutpaint,
+  onComplete,
+  onError,
+}: RunImageOutpaintRequestParams): Promise<void> {
   const normalizedSourceFile = normalizeImageOutpaintFile(sourceFile)
-  const disabledReason = !workspaceId
-    ? '缺少工作区上下文。'
-    : !normalizedSourceFile.key
-      ? '源图片缺少文件信息。'
-      : null
 
-  const abort = useCallback(() => {
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = null
-  }, [])
+  if (!workspaceId) {
+    onError(targetBlockId, '缺少工作区上下文。')
+    return
+  }
 
-  useEffect(() => abort, [abort])
+  if (!normalizedSourceFile.key) {
+    onError(targetBlockId, '源图片缺少文件信息。')
+    return
+  }
 
-  const submit = useCallback(
-    async ({
-      placement,
+  try {
+    const response = await requestOutpaint({
+      workspaceId,
+      sourceImage: normalizedSourceFile,
       resolution,
       targetAspectRatio,
       customAspectRatio,
-      prompt,
-    }: SubmitOutpaintParams) => {
-      if (disabledReason || !workspaceId) {
-        setError(disabledReason ?? '无法提交扩图。')
-        return
-      }
+      placement,
+      prompt: prompt?.trim() ?? '',
+    })
 
-      abort()
-      const abortController = new AbortController()
-      abortControllerRef.current = abortController
-      setIsSubmitting(true)
-      setError(null)
-
-      try {
-        const response = await requestJson(outpaintWorkspaceImageContract, {
-          body: {
-            workspaceId,
-            sourceImage: normalizedSourceFile,
-            resolution,
-            targetAspectRatio,
-            customAspectRatio,
-            placement,
-            prompt: prompt?.trim() ?? '',
-          },
-          signal: abortController.signal,
-        })
-
-        await onCreateVariant(mapGeneratedFile(response.file), targetAspectRatio)
-      } catch (caughtError) {
-        if (abortController.signal.aborted) return
-        setError(getErrorMessage(caughtError))
-      } finally {
-        if (abortControllerRef.current === abortController) {
-          abortControllerRef.current = null
-        }
-        setIsSubmitting(false)
-      }
-    },
-    [abort, disabledReason, normalizedSourceFile, onCreateVariant, workspaceId]
-  )
-
-  return {
-    abort,
-    disabledReason,
-    error,
-    isSubmitting,
-    setError,
-    submit,
+    onComplete(targetBlockId, mapGeneratedImageOutpaintFile(response.file))
+  } catch (caughtError) {
+    onError(targetBlockId, getErrorMessage(caughtError))
   }
 }

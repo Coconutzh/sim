@@ -362,6 +362,44 @@ function getOutpaintGuideSize({
   }
 }
 
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getOutpaintGuideGeometry({
+  placement,
+  resolution,
+}: Pick<OutpaintWorkspaceImageInput, 'placement' | 'resolution'>): {
+  guideSize: { width: number; height: number; scale: number }
+  sourceRegion: { left: number; top: number; width: number; height: number }
+} {
+  const guideSize = getOutpaintGuideSize({
+    canvasWidth: placement.canvasWidth,
+    canvasHeight: placement.canvasHeight,
+    resolution,
+  })
+  const left = clampInteger(Math.round(placement.x * guideSize.scale), 0, guideSize.width - 1)
+  const top = clampInteger(Math.round(placement.y * guideSize.scale), 0, guideSize.height - 1)
+  const width = Math.max(
+    1,
+    Math.min(guideSize.width - left, Math.round(placement.width * guideSize.scale))
+  )
+  const height = Math.max(
+    1,
+    Math.min(guideSize.height - top, Math.round(placement.height * guideSize.scale))
+  )
+
+  return {
+    guideSize,
+    sourceRegion: {
+      left,
+      top,
+      width,
+      height,
+    },
+  }
+}
+
 async function buildOutpaintGuideImages({
   sourceImage,
   placement,
@@ -374,17 +412,7 @@ async function buildOutpaintGuideImages({
     throw new Error('Source image could not be loaded for outpainting.')
   }
 
-  const guideSize = getOutpaintGuideSize({
-    canvasWidth: placement.canvasWidth,
-    canvasHeight: placement.canvasHeight,
-    resolution,
-  })
-  const sourceRegion = {
-    left: Math.round(placement.x * guideSize.scale),
-    top: Math.round(placement.y * guideSize.scale),
-    width: Math.max(1, Math.round(placement.width * guideSize.scale)),
-    height: Math.max(1, Math.round(placement.height * guideSize.scale)),
-  }
+  const { guideSize, sourceRegion } = getOutpaintGuideGeometry({ placement, resolution })
   const resizedSource = await sharp(sourceBuffer)
     .resize(sourceRegion.width, sourceRegion.height, { fit: 'fill' })
     .png()
@@ -434,6 +462,39 @@ async function buildOutpaintGuideImages({
       base64: maskBuffer.toString('base64'),
     },
   }
+}
+
+async function compositeOutpaintSourceRegion({
+  generatedBuffer,
+  sourceBuffer,
+  placement,
+  resolution,
+}: Pick<OutpaintWorkspaceImageInput, 'placement' | 'resolution'> & {
+  generatedBuffer: Buffer
+  sourceBuffer: Buffer
+}): Promise<Buffer> {
+  const { guideSize, sourceRegion } = getOutpaintGuideGeometry({ placement, resolution })
+  const normalizedGenerated = await sharp(generatedBuffer)
+    .rotate()
+    .resize(guideSize.width, guideSize.height, { fit: 'cover', position: 'center' })
+    .png()
+    .toBuffer()
+  const resizedSource = await sharp(sourceBuffer)
+    .rotate()
+    .resize(sourceRegion.width, sourceRegion.height, { fit: 'fill' })
+    .png()
+    .toBuffer()
+
+  return sharp(normalizedGenerated)
+    .composite([
+      {
+        input: resizedSource,
+        left: sourceRegion.left,
+        top: sourceRegion.top,
+      },
+    ])
+    .png()
+    .toBuffer()
 }
 
 export async function generateWorkspaceImageFromPrompt({
@@ -494,15 +555,26 @@ export function buildWorkspaceImageRepaintPrompt({
 export function buildWorkspaceImageOutpaintPrompt({
   prompt,
   resolution,
+  placement,
 }: {
   prompt?: string
   resolution: ImageResolutionValue
+  placement: OutpaintWorkspaceImageInput['placement']
 }): string {
   const userPrompt = prompt?.trim()
+  const percent = (value: number, total: number) => `${((value / total) * 100).toFixed(2)}%`
+  const placementDescription = [
+    `left ${percent(placement.x, placement.canvasWidth)}`,
+    `top ${percent(placement.y, placement.canvasHeight)}`,
+    `width ${percent(placement.width, placement.canvasWidth)}`,
+    `height ${percent(placement.height, placement.canvasHeight)}`,
+  ].join(', ')
   return [
     'Outpaint the provided source image into the target canvas shown by the layout guide.',
     'The layout guide contains the original image region and transparent surrounding expansion area.',
     'The mask guide marks the original image region in black and the surrounding expanded areas in white.',
+    `The original image region is exactly positioned at ${placementDescription} of the target canvas.`,
+    'Preserve the original image at that exact normalized region; do not recenter, scale, or move it.',
     'The original image region must remain unchanged as much as possible.',
     'Fill only the surrounding expanded areas so the result looks like a natural continuation of the same scene, style, lighting, perspective, colors, and texture.',
     userPrompt ? `User request: ${userPrompt}.` : null,
@@ -686,7 +758,7 @@ export async function outpaintWorkspaceImage({
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
-    prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution }),
+    prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution, placement }),
     aspectRatio,
     resolution,
     referenceContext: {
@@ -695,13 +767,23 @@ export async function outpaintWorkspaceImage({
     },
     abortSignal,
   })
+  const sourceBuffer = getHydratedImageBuffer(hydratedSourceImage)
+  if (!sourceBuffer) {
+    throw new Error('Source image could not be loaded for outpainting.')
+  }
+  const compositedBuffer = await compositeOutpaintSourceRegion({
+    generatedBuffer: generatedImage.buffer,
+    sourceBuffer,
+    placement,
+    resolution,
+  })
 
   const file = await uploadWorkspaceFile(
     workspaceId,
     userId,
-    generatedImage.buffer,
-    getGeneratedFileName(generatedImage.mimeType),
-    generatedImage.mimeType
+    compositedBuffer,
+    'generated-image.png',
+    'image/png'
   )
 
   return {

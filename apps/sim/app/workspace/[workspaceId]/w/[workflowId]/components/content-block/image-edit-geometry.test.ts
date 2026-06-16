@@ -3,6 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  fitFrameToAspectRatio,
+  fitFrameToAspectRatioFromStableBase,
   type Rect,
   type ResizeHandle,
   resizeFrameToContainSubject,
@@ -100,4 +102,32 @@ describe('image edit geometry outpaint resize', () => {
       expectContainsSubject(result)
     }
   )
+})
+
+describe('image edit geometry outpaint preset ratios', () => {
+  it('recomputes preset ratios from a stable base without cumulative expansion', () => {
+    const baseFrame: Rect = { x: 0, y: 0, width: 100, height: 100 }
+    const ratios = [9 / 16, 16 / 9, 1, 4 / 3]
+
+    const stableFrames = ratios.map((ratio) =>
+      fitFrameToAspectRatioFromStableBase({ baseFrame, subject, ratio })
+    )
+    const accumulatedFrames = ratios.reduce<Rect[]>((frames, ratio) => {
+      const previous = frames.at(-1) ?? baseFrame
+      return [...frames, fitFrameToAspectRatio({ frame: previous, subject, ratio })]
+    }, [])
+
+    for (const result of stableFrames) {
+      expectContainsSubject(result)
+    }
+
+    const stableFinal = stableFrames.at(-1)
+    const accumulatedFinal = accumulatedFrames.at(-1)
+    expect(stableFinal).toBeDefined()
+    expect(accumulatedFinal).toBeDefined()
+    expect(stableFinal?.width).toBeLessThan(accumulatedFinal?.width ?? 0)
+    expect(stableFinal?.height).toBeLessThan(accumulatedFinal?.height ?? 0)
+    expect(stableFinal?.width).toBeCloseTo(400 / 3)
+    expect(stableFinal?.height).toBeCloseTo(100)
+  })
 })
