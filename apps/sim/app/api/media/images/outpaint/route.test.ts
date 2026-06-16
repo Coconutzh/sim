@@ -1,6 +1,8 @@
 /**
  * @vitest-environment node
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   createMockRequest,
   hybridAuthMock,
@@ -112,5 +114,14 @@ describe('POST /api/media/images/outpaint', () => {
         providerModel: 'gemini-3-pro-image',
       },
     })
+  })
+
+  it('uses the shared contract parser without route-local Zod', () => {
+    const routeSource = readFileSync(fileURLToPath(new URL('./route.ts', import.meta.url)), 'utf8')
+
+    expect(routeSource).toContain('outpaintWorkspaceImageContract')
+    expect(routeSource).toContain('parseRequest(outpaintWorkspaceImageContract')
+    expect(routeSource).not.toContain("from 'zod'")
+    expect(routeSource).not.toContain('from "zod"')
   })
 })

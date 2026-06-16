@@ -1,7 +1,7 @@
 'use client'
 
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Image as ImageIcon, Loader2, Proportions, Send, X } from 'lucide-react'
 import type {
   ImageGenerationResolution,
@@ -48,12 +48,14 @@ interface ImageOutpaintOverlayProps {
 type OutpaintInteraction =
   | {
       type: 'move'
+      pointerId: number
       pointer: { x: number; y: number }
       frame: Rect
     }
   | {
       type: 'resize'
       handle: ResizeHandle
+      pointerId: number
       pointer: { x: number; y: number }
       frame: Rect
     }
@@ -114,6 +116,7 @@ export function ImageOutpaintOverlay({
   const [resolution, setResolution] = useState<ImageGenerationResolution>('2K')
   const [isAspectMenuOpen, setIsAspectMenuOpen] = useState(false)
   const [interaction, setInteraction] = useState<OutpaintInteraction | null>(null)
+  const pointerCaptureRef = useRef<{ element: HTMLElement; pointerId: number } | null>(null)
   const selectedRatio = useMemo(() => {
     if (aspectRatio === 'original') {
       return subjectBounds ? subjectBounds.width / subjectBounds.height : null
@@ -168,7 +171,17 @@ export function ImageOutpaintOverlay({
   useEffect(() => {
     if (!interaction || !subjectBounds) return
 
+    const releasePointerCapture = () => {
+      const capture = pointerCaptureRef.current
+      if (!capture) return
+      if (capture.element.hasPointerCapture(capture.pointerId)) {
+        capture.element.releasePointerCapture(capture.pointerId)
+      }
+      pointerCaptureRef.current = null
+    }
+
     const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== interaction.pointerId) return
       event.preventDefault()
       event.stopPropagation()
       const root = rootRef.current
@@ -204,8 +217,10 @@ export function ImageOutpaintOverlay({
     }
 
     const clearInteraction = (event: PointerEvent) => {
+      if (event.pointerId !== interaction.pointerId) return
       event.preventDefault()
       event.stopPropagation()
+      releasePointerCapture()
       setInteraction(null)
     }
 
@@ -213,6 +228,7 @@ export function ImageOutpaintOverlay({
     window.addEventListener('pointerup', clearInteraction, true)
     window.addEventListener('pointercancel', clearInteraction, true)
     return () => {
+      releasePointerCapture()
       window.removeEventListener('pointermove', handlePointerMove, true)
       window.removeEventListener('pointerup', clearInteraction, true)
       window.removeEventListener('pointercancel', clearInteraction, true)
@@ -224,12 +240,18 @@ export function ImageOutpaintOverlay({
       event: ReactPointerEvent<HTMLElement>,
       nextInteraction: { type: 'move' } | { type: 'resize'; handle: ResizeHandle }
     ) => {
-      if (!frame || controlsDisabled) return
       event.preventDefault()
       event.stopPropagation()
+      if (!frame || controlsDisabled) return
+      event.currentTarget.setPointerCapture(event.pointerId)
+      pointerCaptureRef.current = {
+        element: event.currentTarget,
+        pointerId: event.pointerId,
+      }
       setError(null)
       setInteraction({
         ...nextInteraction,
+        pointerId: event.pointerId,
         pointer: { x: event.clientX, y: event.clientY },
         frame,
       })

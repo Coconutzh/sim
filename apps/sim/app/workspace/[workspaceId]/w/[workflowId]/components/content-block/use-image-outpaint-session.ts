@@ -9,6 +9,7 @@ import {
   outpaintWorkspaceImageContract,
 } from '@/lib/api/contracts/media-images'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
+import { resolveStorageKeyFromFileInput } from '@/lib/uploads/utils/file-utils'
 
 interface UploadedFileValue {
   id?: string
@@ -55,14 +56,20 @@ function getErrorMessage(error: unknown): string {
   return '扩图失败，请稍后重试。'
 }
 
-function normalizeFile(file: UploadedFileValue) {
-  const key = file.key?.trim() ?? ''
+export function normalizeImageOutpaintFile(file: UploadedFileValue) {
+  const url = resolveUserFileUrl(file)
+  const key =
+    resolveStorageKeyFromFileInput({
+      key: file.key,
+      path: file.path,
+      url,
+    }) ?? ''
   const name = file.name?.trim() || key || 'image.png'
 
   return {
     id: file.id ?? '',
     name,
-    url: resolveUserFileUrl(file),
+    url,
     key,
     size: file.size ?? 0,
     type: file.type ?? 'image/png',
@@ -98,7 +105,7 @@ export function useImageOutpaintSession({
   const abortControllerRef = useRef<AbortController | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const normalizedSourceFile = normalizeFile(sourceFile)
+  const normalizedSourceFile = normalizeImageOutpaintFile(sourceFile)
   const disabledReason = !workspaceId
     ? '缺少工作区上下文。'
     : !normalizedSourceFile.key

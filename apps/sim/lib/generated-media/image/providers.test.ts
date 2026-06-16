@@ -195,6 +195,76 @@ describe('generateImageWithProvider', () => {
     )
   })
 
+  it('sends concrete Gemini Pro aspect ratio size with image references and resolution quality', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('edited-image')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/generated.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    await generateImageWithProvider({
+      model: 'gemini-3-pro-image',
+      prompt: 'Outpaint the image',
+      aspectRatio: '16:9',
+      resolution: '2K',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'file-1',
+            name: 'source.png',
+            url: '',
+            base64: Buffer.from('source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'gemini-3-pro-image',
+      size: '16:9',
+      quality: '2K',
+      image_urls: ['https://files.example.com/source.png'],
+    })
+  })
+
   it('falls back to Gemini 3 Pro Image preview when Evolink has no stable service', async () => {
     process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
     const imageBytes = Buffer.from('preview-edited-image')

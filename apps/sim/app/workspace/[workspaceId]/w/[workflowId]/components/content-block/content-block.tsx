@@ -134,6 +134,7 @@ import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflow
 import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
+import { createImageOutpaintReferenceEdge } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-content-reference'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { ImageRepaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-repaint-overlay'
@@ -4031,12 +4032,12 @@ export const ContentBlock = memo(function ContentBlock({
         sourceVariant: 'image',
         role: referenceRole,
       }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
+      const edge = createImageOutpaintReferenceEdge({
+        edgeId: generateId(),
+        resultBlockId: targetBlockId,
+        sourceBlockId: id,
+        resultPosition: targetPosition,
+        sourcePosition,
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
         [targetBlockId]: {

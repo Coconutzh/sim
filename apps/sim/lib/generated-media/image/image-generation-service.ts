@@ -1,3 +1,4 @@
+import { generateShortId } from '@sim/utils/id'
 import sharp from 'sharp'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import type {
@@ -9,7 +10,9 @@ import {
   DEFAULT_IMAGE_CUTOUT_MODEL,
   DEFAULT_IMAGE_REPAINT_MODEL,
   DEFAULT_IMAGE_REPAINT_RESOLUTION,
+  getNearestSupportedImageAspectRatio,
 } from '@/lib/generated-media/image/image-generation-utils'
+import { resolveMediaEditWorkspaceFile } from '@/lib/generated-media/image/media-edit-files'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
 import {
   fetchWorkspaceFileBuffer,
@@ -113,6 +116,14 @@ const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, numbe
   '2K': 2048,
   '4K': 4096,
 }
+const OUTPAINT_FIXED_ASPECT_RATIOS = new Set<ImageAspectRatioValue>([
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '21:9',
+])
 
 function getGeneratedFileName(mimeType: string): string {
   if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'generated-image.jpg'
@@ -310,6 +321,29 @@ function getHydratedImageBuffer(image: UserFileLike): Buffer | null {
   return Buffer.from(image.base64, 'base64')
 }
 
+function getNearestOutpaintAspectRatio(width: number, height: number): ImageAspectRatioValue {
+  return getNearestSupportedImageAspectRatio(width, height) ?? '1:1'
+}
+
+export function resolveOutpaintAspectRatio({
+  targetAspectRatio,
+  customAspectRatio,
+  placement,
+}: Pick<
+  OutpaintWorkspaceImageInput,
+  'targetAspectRatio' | 'customAspectRatio' | 'placement'
+>): ImageAspectRatioValue {
+  if (OUTPAINT_FIXED_ASPECT_RATIOS.has(targetAspectRatio as ImageAspectRatioValue)) {
+    return targetAspectRatio as ImageAspectRatioValue
+  }
+
+  if (targetAspectRatio === 'custom' && customAspectRatio) {
+    return getNearestOutpaintAspectRatio(customAspectRatio.width, customAspectRatio.height)
+  }
+
+  return getNearestOutpaintAspectRatio(placement.canvasWidth, placement.canvasHeight)
+}
+
 function getOutpaintGuideSize({
   canvasWidth,
   canvasHeight,
@@ -376,22 +410,25 @@ async function buildOutpaintGuideImages({
     `<svg width="${guideSize.width}" height="${guideSize.height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="${sourceRegion.left}" y="${sourceRegion.top}" width="${sourceRegion.width}" height="${sourceRegion.height}" fill="black"/></svg>`
   )
   const maskBuffer = await sharp(maskSvg).png().toBuffer()
+  const requestId = generateShortId()
+  const layoutGuideName = `outpaint-layout-guide-${requestId}.png`
+  const maskGuideName = `outpaint-mask-guide-${requestId}.png`
 
   return {
     layoutGuide: {
       id: '',
-      name: 'outpaint-layout-guide.png',
+      name: layoutGuideName,
       url: '',
-      key: 'outpaint-layout-guide.png',
+      key: layoutGuideName,
       size: layoutBuffer.byteLength,
       type: 'image/png',
       base64: layoutBuffer.toString('base64'),
     },
     maskGuide: {
       id: '',
-      name: 'outpaint-mask-guide.png',
+      name: maskGuideName,
       url: '',
-      key: 'outpaint-mask-guide.png',
+      key: maskGuideName,
       size: maskBuffer.byteLength,
       type: 'image/png',
       base64: maskBuffer.toString('base64'),
@@ -622,18 +659,24 @@ export async function outpaintWorkspaceImage({
   userId,
   resolution,
   sourceImage,
+  targetAspectRatio,
+  customAspectRatio,
   placement,
   prompt,
   abortSignal,
 }: OutpaintWorkspaceImageInput): Promise<OutpaintWorkspaceImageResult> {
-  const sourceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
-  const hydratedSourceImage = sourceContext?.images[0]
   if (!hydratedSourceImage) {
     throw new Error('Source image could not be loaded for outpainting.')
   }
+  const aspectRatio = resolveOutpaintAspectRatio({
+    targetAspectRatio,
+    customAspectRatio,
+    placement,
+  })
 
   const { layoutGuide, maskGuide } = await buildOutpaintGuideImages({
     sourceImage: hydratedSourceImage,
@@ -644,7 +687,7 @@ export async function outpaintWorkspaceImage({
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
     prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution }),
-    aspectRatio: 'auto',
+    aspectRatio,
     resolution,
     referenceContext: {
       text: [],

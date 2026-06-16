@@ -7,6 +7,11 @@ export interface Rect {
 
 export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se'
 
+type FrameAnchor = {
+  x: 'left' | 'center' | 'right'
+  y: 'top' | 'center' | 'bottom'
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
@@ -133,19 +138,19 @@ function resizeLockedFrameToContainSubject({
     frame: freeFrame,
     subject,
     ratio,
-    center: {
+    anchor: {
       x:
         handle.includes('w') && !handle.includes('e')
-          ? freeFrame.x + freeFrame.width
+          ? 'right'
           : handle.includes('e') && !handle.includes('w')
-            ? freeFrame.x
-            : freeFrame.x + freeFrame.width / 2,
+            ? 'left'
+            : 'center',
       y:
         handle.includes('n') && !handle.includes('s')
-          ? freeFrame.y + freeFrame.height
+          ? 'bottom'
           : handle.includes('s') && !handle.includes('n')
-            ? freeFrame.y
-            : freeFrame.y + freeFrame.height / 2,
+            ? 'top'
+            : 'center',
     },
   })
 }
@@ -154,11 +159,13 @@ export function fitFrameToAspectRatio({
   frame,
   subject,
   ratio,
+  anchor,
   center,
 }: {
   frame: Rect
   subject: Rect
   ratio: number
+  anchor?: FrameAnchor
   center?: { x: number; y: number }
 }): Rect {
   const minWidth = Math.max(subject.width, subject.height * ratio)
@@ -172,14 +179,29 @@ export function fitFrameToAspectRatio({
     width = height * ratio
   }
 
-  const resolvedCenter = center ?? {
-    x: frame.x + frame.width / 2,
-    y: frame.y + frame.height / 2,
-  }
+  const resolvedAnchor = anchor ?? { x: 'center', y: 'center' }
+  const resolvedCenter = center
+  const x =
+    resolvedCenter && !anchor
+      ? resolvedCenter.x - width / 2
+      : resolvedAnchor.x === 'left'
+        ? frame.x
+        : resolvedAnchor.x === 'right'
+          ? frame.x + frame.width - width
+          : frame.x + frame.width / 2 - width / 2
+  const y =
+    resolvedCenter && !anchor
+      ? resolvedCenter.y - height / 2
+      : resolvedAnchor.y === 'top'
+        ? frame.y
+        : resolvedAnchor.y === 'bottom'
+          ? frame.y + frame.height - height
+          : frame.y + frame.height / 2 - height / 2
+
   return clampFrameToContainSubject(
     {
-      x: resolvedCenter.x - width / 2,
-      y: resolvedCenter.y - height / 2,
+      x,
+      y,
       width,
       height,
     },

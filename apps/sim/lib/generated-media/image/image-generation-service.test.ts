@@ -9,11 +9,13 @@ const {
   mockFetchWorkspaceFileBuffer,
   mockGenerateImageWithProvider,
   mockGetWorkspaceFile,
+  mockGetWorkspaceFileByKey,
   mockUploadWorkspaceFile,
 } = vi.hoisted(() => ({
   mockFetchWorkspaceFileBuffer: vi.fn(),
   mockGenerateImageWithProvider: vi.fn(),
   mockGetWorkspaceFile: vi.fn(),
+  mockGetWorkspaceFileByKey: vi.fn(),
   mockUploadWorkspaceFile: vi.fn(),
 }))
 
@@ -24,6 +26,7 @@ vi.mock('@/lib/generated-media/image/providers', () => ({
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
   fetchWorkspaceFileBuffer: (...args: unknown[]) => mockFetchWorkspaceFileBuffer(...args),
   getWorkspaceFile: (...args: unknown[]) => mockGetWorkspaceFile(...args),
+  getWorkspaceFileByKey: (...args: unknown[]) => mockGetWorkspaceFileByKey(...args),
   uploadWorkspaceFile: (...args: unknown[]) => mockUploadWorkspaceFile(...args),
 }))
 
@@ -33,7 +36,59 @@ import {
   generateWorkspaceImageFromPrompt,
   outpaintWorkspaceImage,
   repaintWorkspaceImage,
+  resolveOutpaintAspectRatio,
 } from '@/lib/generated-media/image/image-generation-service'
+
+describe('resolveOutpaintAspectRatio', () => {
+  it('returns fixed ratios unchanged', () => {
+    expect(
+      resolveOutpaintAspectRatio({
+        targetAspectRatio: '21:9',
+        placement: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          canvasWidth: 100,
+          canvasHeight: 100,
+        },
+      })
+    ).toBe('21:9')
+  })
+
+  it('maps custom ratios to the nearest supported provider ratio', () => {
+    expect(
+      resolveOutpaintAspectRatio({
+        targetAspectRatio: 'custom',
+        customAspectRatio: { width: 2, height: 1 },
+        placement: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          canvasWidth: 100,
+          canvasHeight: 100,
+        },
+      })
+    ).toBe('16:9')
+  })
+
+  it('maps original to the final outpaint canvas ratio', () => {
+    expect(
+      resolveOutpaintAspectRatio({
+        targetAspectRatio: 'original',
+        placement: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          canvasWidth: 900,
+          canvasHeight: 1600,
+        },
+      })
+    ).toBe('9:16')
+  })
+})
 
 describe('generateWorkspaceImageFromPrompt', () => {
   beforeEach(() => {
@@ -361,7 +416,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
       .png()
       .toBuffer()
 
-    mockGetWorkspaceFile.mockResolvedValue({
+    mockGetWorkspaceFileByKey.mockResolvedValue({
       id: 'source-1',
       name: 'source.png',
       key: 'workspace/source.png',
@@ -603,7 +658,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'gemini-3-pro-image',
-        aspectRatio: 'auto',
+        aspectRatio: '16:9',
         resolution: '2K',
         prompt: expect.stringContaining('User request: extend the city skyline.'),
         referenceContext: {
@@ -614,12 +669,12 @@ describe('generateWorkspaceImageFromPrompt', () => {
               base64: sourcePngBase64,
             }),
             expect.objectContaining({
-              name: 'outpaint-layout-guide.png',
+              name: expect.stringMatching(/^outpaint-layout-guide-.+\.png$/),
               type: 'image/png',
               base64: expect.any(String),
             }),
             expect.objectContaining({
-              name: 'outpaint-mask-guide.png',
+              name: expect.stringMatching(/^outpaint-mask-guide-.+\.png$/),
               type: 'image/png',
               base64: expect.any(String),
             }),
@@ -639,5 +694,68 @@ describe('generateWorkspaceImageFromPrompt', () => {
       'generated-image.png',
       'image/png'
     )
+  })
+
+  it('uses unique guide image names across consecutive outpaint requests', async () => {
+    const sourcePngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+    mockGetWorkspaceFileByKey.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from(sourcePngBase64, 'base64'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('outpainted-image'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_outpaint',
+      name: 'generated-image.png',
+      size: 16,
+      type: 'image/png',
+      key: 'workspace/ws-1/outpaint.png',
+      url: '/api/files/serve/workspace/ws-1/outpaint.png?context=workspace',
+      context: 'workspace',
+    })
+    const request = {
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      resolution: '2K' as const,
+      sourceImage: {
+        id: 'source-1',
+        name: 'source.png',
+        url: '',
+        key: 'workspace/source.png',
+        size: 100,
+        type: 'image/png',
+      },
+      targetAspectRatio: '16:9' as const,
+      placement: {
+        x: 120,
+        y: 80,
+        width: 320,
+        height: 180,
+        canvasWidth: 640,
+        canvasHeight: 360,
+      },
+    }
+
+    await outpaintWorkspaceImage(request)
+    await outpaintWorkspaceImage(request)
+
+    const firstImages = mockGenerateImageWithProvider.mock.calls[0]?.[0]?.referenceContext
+      ?.images as Array<{ name: string }>
+    const secondImages = mockGenerateImageWithProvider.mock.calls[1]?.[0]?.referenceContext
+      ?.images as Array<{ name: string }>
+
+    expect(firstImages[1].name).not.toBe(secondImages[1].name)
+    expect(firstImages[2].name).not.toBe(secondImages[2].name)
   })
 })
