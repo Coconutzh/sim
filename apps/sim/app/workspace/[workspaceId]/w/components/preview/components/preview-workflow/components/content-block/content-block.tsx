@@ -3,14 +3,20 @@
 import { createElement, memo, type ReactNode } from 'react'
 import type { NodeProps } from 'reactflow'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  normalizePresentationArtifact,
+  resolvePresentationArtifactFileUrl,
+} from '@/lib/presentation/presentation-artifacts'
 
-type ContentVariant = 'text' | 'image' | 'video' | 'audio'
+type ContentVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 
 interface UploadedFileValue {
   name?: string
+  url?: string
   path?: string
   key?: string
   type?: string
+  size?: number
 }
 
 interface PreviewContentBlockData {
@@ -108,7 +114,11 @@ function renderContentHtml(input: string | null | undefined, emptyStateText: str
 }
 
 function normalizeVariant(value: unknown): ContentVariant | null {
-  return value === 'image' || value === 'text' || value === 'video' || value === 'audio'
+  return value === 'image' ||
+    value === 'text' ||
+    value === 'video' ||
+    value === 'audio' ||
+    value === 'presentation'
     ? value
     : null
 }
@@ -117,8 +127,9 @@ function hasUploadedFileValue(value: unknown): boolean {
   return Boolean(
     value &&
       typeof value === 'object' &&
-      ('path' in value || 'key' in value || 'name' in value) &&
+      ('path' in value || 'url' in value || 'key' in value || 'name' in value) &&
       (typeof (value as UploadedFileValue).path === 'string' ||
+        typeof (value as UploadedFileValue).url === 'string' ||
         typeof (value as UploadedFileValue).key === 'string' ||
         typeof (value as UploadedFileValue).name === 'string')
   )
@@ -132,11 +143,15 @@ function inferVariantFromFile(value: unknown): ContentVariant | null {
   if (fileType?.startsWith('image/')) return 'image'
   if (fileType?.startsWith('video/')) return 'video'
   if (fileType?.startsWith('audio/')) return 'audio'
+  if (fileType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return 'presentation'
+  }
 
-  const fileName = `${file.name ?? ''} ${file.path ?? ''}`.toLowerCase()
+  const fileName = `${file.name ?? ''} ${file.path ?? ''} ${file.url ?? ''}`.toLowerCase()
   if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName)) return 'image'
   if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return 'video'
   if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return 'audio'
+  if (/\.pptx(\?|$)/.test(fileName)) return 'presentation'
 
   return null
 }
@@ -151,7 +166,13 @@ function resolveContentVariant(
   const storedVariant = normalizeVariant(extractStoredValue(sourceValues, 'contentVariant', null))
   if (storedVariant) return storedVariant
 
-  return inferVariantFromFile(extractStoredValue(sourceValues, 'file', null)) ?? 'text'
+  return (
+    inferVariantFromFile(extractStoredValue(sourceValues, 'file', null)) ??
+    (normalizePresentationArtifact(extractStoredValue(sourceValues, 'presentationArtifact', null))
+      ? 'presentation'
+      : null) ??
+    'text'
+  )
 }
 
 export const PreviewContentBlock = memo(function PreviewContentBlock({
@@ -170,6 +191,14 @@ export const PreviewContentBlock = memo(function PreviewContentBlock({
   const width = extractStoredValue<number>(data.subBlockValues, 'width', 320)
   const height = extractStoredValue<number>(data.subBlockValues, 'height', 160)
   const file = extractStoredValue<UploadedFileValue | null>(data.subBlockValues, 'file', null)
+  const presentationArtifact = normalizePresentationArtifact(
+    extractStoredValue(data.subBlockValues, 'presentationArtifact', null)
+  )
+  const presentationPptxFile = presentationArtifact?.pptxFile ?? file
+  const presentationCoverImageUrl = resolvePresentationArtifactFileUrl(
+    presentationArtifact?.coverImageFile
+  )
+  const presentationPptxUrl = resolvePresentationArtifactFileUrl(presentationPptxFile)
   const hasSuccess = data.executionStatus === 'success'
   const hasError = data.executionStatus === 'error'
 
@@ -188,7 +217,9 @@ export const PreviewContentBlock = memo(function PreviewContentBlock({
             ? { width: 360, minHeight: 240 }
             : variant === 'audio'
               ? { width: 360, minHeight: 132 }
-              : { width, minHeight: height }
+              : variant === 'presentation'
+                ? { width: 380, minHeight: 260 }
+                : { width, minHeight: height }
       }
     >
       {variant === 'image' ? (
@@ -235,6 +266,30 @@ export const PreviewContentBlock = memo(function PreviewContentBlock({
             No audio uploaded
           </div>
         )
+      ) : variant === 'presentation' ? (
+        <div className='w-[380px] overflow-hidden bg-[var(--surface-1)]'>
+          <div className='flex h-[198px] items-center justify-center'>
+            {presentationCoverImageUrl ? (
+              <img
+                src={presentationCoverImageUrl}
+                alt={presentationArtifact?.manifest?.title || presentationPptxFile?.name || 'PPT'}
+                className='h-full w-full object-cover'
+              />
+            ) : (
+              <div className='px-6 text-center text-[var(--text-tertiary)] text-sm'>
+                {presentationPptxUrl ? 'PPTX artifact ready' : 'No PPT generated'}
+              </div>
+            )}
+          </div>
+          <div className='border-[var(--border)] border-t px-4 py-3'>
+            <div className='truncate font-medium text-[var(--text-primary)] text-sm'>
+              {presentationArtifact?.manifest?.title || presentationPptxFile?.name || 'PPT'}
+            </div>
+            <div className='mt-1 text-[var(--text-tertiary)] text-xs'>
+              {presentationArtifact?.manifest?.slideCount ?? 8} pages
+            </div>
+          </div>
+        </div>
       ) : (
         <div
           className='min-h-[120px] px-4 py-3 text-[var(--text-primary)] [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'

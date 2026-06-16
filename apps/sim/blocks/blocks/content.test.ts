@@ -11,6 +11,9 @@ describe('ContentBlock', () => {
     const contentReferencesSubBlock = ContentBlock.subBlocks.find(
       (subBlock) => subBlock.id === 'contentReferences'
     )
+    const presentationArtifactSubBlock = ContentBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'presentationArtifact'
+    )
 
     expect(aiPromptSubBlock).toMatchObject({
       id: 'aiPrompt',
@@ -33,6 +36,12 @@ describe('ContentBlock', () => {
       hidden: true,
       paramVisibility: 'hidden',
       defaultValue: [],
+    })
+    expect(presentationArtifactSubBlock).toMatchObject({
+      id: 'presentationArtifact',
+      type: 'short-input',
+      hidden: true,
+      paramVisibility: 'hidden',
     })
   })
 })

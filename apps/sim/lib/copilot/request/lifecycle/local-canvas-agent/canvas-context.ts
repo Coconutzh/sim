@@ -55,7 +55,13 @@ function stableStringify(value: unknown): string {
 
 function inferContentKind(values: Record<string, unknown>): LocalCanvasNodeKind {
   const variant = getValue<string>(values, 'contentVariant', 'text')
-  if (variant === 'text' || variant === 'image' || variant === 'video' || variant === 'audio') {
+  if (
+    variant === 'text' ||
+    variant === 'image' ||
+    variant === 'video' ||
+    variant === 'audio' ||
+    variant === 'presentation'
+  ) {
     return variant
   }
   if (variant === 'document' || variant === 'table' || variant === 'image_editor') {

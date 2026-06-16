@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import { PenTool } from 'lucide-react'
 import { AgentIcon, DocumentIcon, ImageIcon, TableIcon, VideoIcon } from '@/components/icons'
-import { AudioIcon } from '@/components/icons/document-icons'
+import { AudioIcon, PptxIcon } from '@/components/icons/document-icons'
 
 const DEFAULT_TEXT_AI_MODEL = 'gemini-3.1-flash-lite-preview'
 const DEFAULT_IMAGE_AI_MODEL = 'jimeng-4.5'
@@ -14,11 +14,13 @@ export type ContentNodePresetId =
   | 'image'
   | 'video'
   | 'audio'
+  | 'presentation'
   | 'document'
   | 'table'
   | 'image_editor'
 
 export type ContentNodeVariant = 'text' | 'image' | 'video' | 'audio'
+export type ContentNodePresetVariant = ContentNodeVariant | 'presentation'
 
 /**
  * Product-layer preset that maps a user-facing content node to a pure canvas content block.
@@ -28,7 +30,7 @@ export interface ContentNodePreset {
   label: string
   description: string
   blockType: string | null
-  contentVariant?: ContentNodeVariant
+  contentVariant?: ContentNodePresetVariant
   icon: ComponentType<{ className?: string }>
   available: boolean
   inlineSubBlockIds: string[]
@@ -110,6 +112,26 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
       contentReferences: [],
     },
     advancedPanelLabel: 'Audio settings',
+  },
+  {
+    id: 'presentation',
+    label: 'PPT',
+    description: 'Generate and preview a final PPTX artifact from canvas references.',
+    blockType: 'content',
+    contentVariant: 'presentation',
+    icon: PptxIcon,
+    available: true,
+    inlineSubBlockIds: [],
+    presetSubBlockValues: {
+      contentVariant: 'presentation',
+      presentationPrompt: '',
+      presentationSlideCount: 8,
+      presentationStatus: 'idle',
+      presentationArtifact: null,
+      file: null,
+      contentReferences: [],
+    },
+    advancedPanelLabel: 'PPT settings',
   },
   {
     id: 'document',

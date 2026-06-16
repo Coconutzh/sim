@@ -23,8 +23,10 @@ import {
   Camera,
   Copy as CopyIcon,
   Crop as CropIcon,
+  Download,
   Eraser,
   Expand,
+  FileText,
   ImageIcon,
   List,
   Loader2,
@@ -92,6 +94,11 @@ import {
   type VideoMediaFileSlot,
   type VideoModelFamily,
 } from '@/lib/generated-media/video/video-generation-utils'
+import {
+  normalizePresentationArtifact,
+  type PresentationArtifactValue,
+  resolvePresentationArtifactFileUrl,
+} from '@/lib/presentation/presentation-artifacts'
 import { getContentNodePreset } from '@/lib/product/content-node-presets'
 import {
   CONTENT_REFERENCE_EDGE_KIND,
@@ -181,9 +188,10 @@ import { EMPTY_SUBBLOCK_VALUES, useSubBlockStore } from '@/stores/workflows/subb
 import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
-type ContentVariant = 'text' | 'image' | 'video' | 'audio'
+type ContentVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
 type ImageGenerationKind = 'cutout' | 'video_frame_capture'
+type PresentationGenerationStatus = 'idle' | 'pending' | 'complete' | 'error'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
 type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -193,6 +201,7 @@ interface ContentBlockNodeData extends WorkflowBlockProps {}
 interface UploadedFileValue {
   id?: string
   name?: string
+  url?: string
   path?: string
   key?: string
   size?: number
@@ -277,6 +286,8 @@ const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
 const AUDIO_CARD_HEIGHT = 132
+const PRESENTATION_CARD_WIDTH = 380
+const PRESENTATION_CARD_HEIGHT = 260
 const CONTENT_REFERENCE_CREATE_GAP = 80
 const CONTENT_REFERENCE_DRAG_THRESHOLD = 6
 const FONT_SIZE_OPTIONS = [14, 16, 18, 20, 24, 32] as const
@@ -291,9 +302,11 @@ const CONTENT_NODE_MENU_ITEMS: ReadonlyArray<{
   { variant: 'image', label: 'Image', icon: ImageIcon },
   { variant: 'video', label: 'Video', icon: Video },
   { variant: 'audio', label: 'Audio', icon: Music4 },
+  { variant: 'presentation', label: 'PPT', icon: FileText },
 ] as const
 
 function getContentCardWidth(variant: ContentVariant): number {
+  if (variant === 'presentation') return PRESENTATION_CARD_WIDTH
   if (variant === 'video') return VIDEO_CARD_WIDTH
   if (variant === 'audio') return AUDIO_CARD_WIDTH
   if (variant === 'image') return IMAGE_CARD_WIDTH
@@ -304,6 +317,7 @@ function getDefaultReferenceModelForVariant(variant: ContentVariant): string {
   if (variant === 'image') return DEFAULT_IMAGE_AI_MODEL
   if (variant === 'audio') return DEFAULT_AUDIO_MODEL
   if (variant === 'video') return 'wan2.6-i2v-flash'
+  if (variant === 'presentation') return 'codex-ppt-skill'
   return DEFAULT_TEXT_AI_MODEL
 }
 
@@ -421,7 +435,11 @@ function clampTextHeight(value: number): number {
 }
 
 function normalizeVariant(value: unknown): ContentVariant | null {
-  return value === 'image' || value === 'text' || value === 'video' || value === 'audio'
+  return value === 'image' ||
+    value === 'text' ||
+    value === 'video' ||
+    value === 'audio' ||
+    value === 'presentation'
     ? value
     : null
 }
@@ -434,12 +452,17 @@ function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | nul
   return value === 'cutout' || value === 'video_frame_capture' ? value : null
 }
 
+function normalizePresentationGenerationStatus(value: unknown): PresentationGenerationStatus {
+  return value === 'pending' || value === 'complete' || value === 'error' ? value : 'idle'
+}
+
 function hasUploadedFileValue(value: unknown): boolean {
   return Boolean(
     value &&
       typeof value === 'object' &&
-      ('path' in value || 'key' in value || 'name' in value) &&
+      ('path' in value || 'url' in value || 'key' in value || 'name' in value) &&
       (typeof (value as UploadedFileValue).path === 'string' ||
+        typeof (value as UploadedFileValue).url === 'string' ||
         typeof (value as UploadedFileValue).key === 'string' ||
         typeof (value as UploadedFileValue).name === 'string')
   )
@@ -453,11 +476,15 @@ function inferVariantFromFile(value: unknown): ContentVariant | null {
   if (fileType?.startsWith('image/')) return 'image'
   if (fileType?.startsWith('video/')) return 'video'
   if (fileType?.startsWith('audio/')) return 'audio'
+  if (fileType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return 'presentation'
+  }
 
-  const fileName = `${file.name ?? ''} ${file.path ?? ''}`.toLowerCase()
+  const fileName = `${file.name ?? ''} ${file.path ?? ''} ${file.url ?? ''}`.toLowerCase()
   if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName)) return 'image'
   if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return 'video'
   if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return 'audio'
+  if (/\.pptx(\?|$)/.test(fileName)) return 'presentation'
 
   return null
 }
@@ -476,7 +503,7 @@ function toTrimRequestFile(file: UploadedFileValue): TrimWorkspaceVideoBody['sou
   return {
     id: file.id ?? '',
     name: file.name ?? 'video',
-    url: file.path ?? '',
+    url: file.path ?? file.url ?? '',
     key: file.key,
     size: file.size ?? 0,
     type: file.type ?? 'video/mp4',
@@ -542,6 +569,9 @@ function resolveContentVariant(
   return (
     inferVariantFromFile(fileValue) ??
     inferVariantFromFile(extractStoredValue(sourceValues, 'file', null)) ??
+    (normalizePresentationArtifact(extractStoredValue(sourceValues, 'presentationArtifact', null))
+      ? 'presentation'
+      : null) ??
     'text'
   )
 }
@@ -705,13 +735,14 @@ function getShowcaseCategory(variant: ContentVariant): ProductionShowcaseCategor
   if (variant === 'image') return 'image'
   if (variant === 'video') return 'video'
   if (variant === 'audio') return 'sound'
+  if (variant === 'presentation') return 'document'
   return 'other'
 }
 
 function getShowcaseSourceNodeVariant(
   variant: ContentVariant
 ): ProductionShowcaseSourceNodeVariant {
-  return variant
+  return variant === 'presentation' ? 'document' : variant
 }
 
 function getShowcasePromptForVariant(params: {
@@ -719,7 +750,9 @@ function getShowcasePromptForVariant(params: {
   aiPrompt: string
   audioPrompt: string
   videoPrompt: string
+  presentationPrompt: string
 }): string {
+  if (params.variant === 'presentation') return params.presentationPrompt
   if (params.variant === 'audio') return params.audioPrompt
   if (params.variant === 'video') return params.videoPrompt
   return params.aiPrompt
@@ -781,6 +814,8 @@ function getReferenceChipPreview(node: PromptContextReferencedNode | undefined):
       <Video className={iconClassName} />
     ) : node?.variant === 'audio' ? (
       <Music4 className={iconClassName} />
+    ) : node?.variant === 'presentation' ? (
+      <FileText className={iconClassName} />
     ) : (
       <ImageIcon className={iconClassName} />
     )
@@ -1330,6 +1365,157 @@ function TextContentCard({
   )
 }
 
+function PresentationContentCard({
+  canEdit,
+  isPreview,
+  isEmbedded,
+  selected,
+  prompt,
+  slideCount,
+  status,
+  errorMessage,
+  artifact,
+  fallbackFile,
+  contentReferences,
+  referencedNodes,
+  onAddReference,
+  onRemoveReference,
+  onChangePrompt,
+}: {
+  canEdit: boolean
+  isPreview: boolean
+  isEmbedded: boolean
+  selected: boolean
+  prompt: string
+  slideCount: number
+  status: PresentationGenerationStatus
+  errorMessage: string | null
+  artifact: PresentationArtifactValue | null
+  fallbackFile: UploadedFileValue | null
+  contentReferences: ContentReferenceRecord[]
+  referencedNodes: Record<string, PromptContextReferencedNode>
+  onAddReference: () => void
+  onRemoveReference: (reference: ContentReferenceRecord) => void
+  onChangePrompt: (value: string) => void
+}) {
+  const pptxFile = artifact?.pptxFile ?? fallbackFile
+  const coverImageFile = artifact?.coverImageFile ?? null
+  const pptxUrl = resolvePresentationArtifactFileUrl(pptxFile)
+  const coverImageUrl = resolvePresentationArtifactFileUrl(coverImageFile)
+  const title = artifact?.manifest?.title?.trim() || pptxFile?.name?.trim() || 'PPT 生成节点'
+  const manifestSlideCount = artifact?.manifest?.slideCount
+  const resolvedSlideCount =
+    typeof manifestSlideCount === 'number' && manifestSlideCount > 0
+      ? manifestSlideCount
+      : slideCount
+  const selectedStyle = artifact?.manifest?.selectedStyle?.trim()
+  const isGenerating = status === 'pending'
+  const hasArtifact = Boolean(pptxUrl)
+
+  return (
+    <div className='relative'>
+      <div
+        className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
+        style={{ width: PRESENTATION_CARD_WIDTH, minHeight: PRESENTATION_CARD_HEIGHT }}
+      >
+        <div className='relative flex h-[198px] w-full items-center justify-center overflow-hidden bg-[var(--surface-1)]'>
+          {coverImageUrl ? (
+            <img
+              src={coverImageUrl}
+              alt={coverImageFile?.name || title}
+              className='h-full w-full object-cover'
+            />
+          ) : isGenerating ? (
+            <div className='flex flex-col items-center gap-3 text-[var(--text-secondary)]'>
+              <Loader2 className='h-7 w-7 animate-spin text-[var(--brand-secondary)]' />
+              <span className='font-medium text-sm'>正在生成 PPT...</span>
+            </div>
+          ) : status === 'error' ? (
+            <div className='max-w-[300px] px-6 text-center text-[var(--text-error)] text-xs'>
+              {errorMessage || 'PPT 生成失败，请调整提示词后重试。'}
+            </div>
+          ) : (
+            <div className='flex flex-col items-center gap-3 text-center text-[var(--text-secondary)]'>
+              <div className='flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F4B740]/15 text-[#F4B740]'>
+                <FileText className='h-7 w-7' />
+              </div>
+              <div>
+                <div className='font-medium text-[var(--text-primary)] text-sm'>
+                  {hasArtifact ? 'PPTX ready' : '等待生成 PPT'}
+                </div>
+                <div className='mt-1 text-[var(--text-tertiary)] text-xs'>
+                  仅展示最终 PPT 产物，不展开中间页图
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hasArtifact ? (
+            <div className='absolute right-3 bottom-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-white text-xs backdrop-blur'>
+              <FileText className='h-3.5 w-3.5' />
+              <span>{resolvedSlideCount} 页</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className='space-y-3 px-4 py-3'>
+          <div className='flex items-start justify-between gap-3'>
+            <div className='min-w-0'>
+              <div className='truncate font-medium text-[var(--text-primary)] text-sm'>{title}</div>
+              <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)]'>
+                <span>{resolvedSlideCount} 页</span>
+                <span>{selectedStyle || 'Hermes 自动选风格'}</span>
+              </div>
+            </div>
+            {pptxUrl ? (
+              <a
+                href={pptxUrl}
+                target='_blank'
+                rel='noreferrer'
+                className='nodrag nopan inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <Download className='h-3.5 w-3.5' />
+                <span>下载</span>
+              </a>
+            ) : null}
+          </div>
+
+          {!isPreview && !isEmbedded ? (
+            <textarea
+              value={prompt}
+              disabled={!canEdit || isGenerating}
+              placeholder='描述 PPT 目标、受众、页数、必须引用的画布内容；风格可留给 Hermes 自动判断。'
+              className='nodrag nopan min-h-[68px] w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-primary)] text-xs outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-secondary)] disabled:cursor-not-allowed disabled:opacity-70'
+              onChange={(event) => onChangePrompt(event.target.value)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {!isPreview && !isEmbedded ? (
+        <ReferenceComposerHeader
+          canEdit={canEdit}
+          references={contentReferences}
+          referencedNodes={referencedNodes}
+          onAddReference={onAddReference}
+          onRemoveReference={onRemoveReference}
+        />
+      ) : null}
+
+      {selected && canEdit && !isPreview && !isEmbedded && !hasArtifact ? (
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs shadow-sm'>
+          <Sparkles className='h-3.5 w-3.5 text-[#F4B740]' />
+          <span>下一阶段接入 Hermes 生成</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function MediaContentCard({
   blockId,
   variant,
@@ -1506,10 +1692,10 @@ function MediaContentCard({
     'auto'
   > | null>(null)
 
-  const mediaPath = file?.path ?? ''
+  const mediaPath = resolveUserFileUrl(file)
   const trimSourceFile = useMemo(
     () => (file ? toTrimRequestFile(file) : null),
-    [file?.context, file?.id, file?.key, file?.name, file?.path, file?.size, file?.type]
+    [file?.context, file?.id, file?.key, file?.name, file?.path, file?.size, file?.type, file?.url]
   )
   const isVideoEnhanceNode = variant === 'video' && generationKind === 'video_enhance'
   const isVideoEnhancePendingConfig =
@@ -1778,6 +1964,7 @@ function MediaContentCard({
         onChangeFile({
           id: result.file.id,
           name: result.file.name,
+          url: result.file.url,
           path: result.file.url,
           key: result.file.key,
           size: result.file.size,
@@ -2559,6 +2746,17 @@ export const ContentBlock = memo(function ContentBlock({
     id,
     'videoFrameCaptureTimeSeconds'
   )
+  const [presentationPromptValue, setPresentationPromptValue] = useSubBlockValue<string>(
+    id,
+    'presentationPrompt'
+  )
+  const [presentationSlideCountValue] = useSubBlockValue<number>(id, 'presentationSlideCount')
+  const [presentationStatusValue] = useSubBlockValue<string>(id, 'presentationStatus')
+  const [presentationErrorValue] = useSubBlockValue<string | null>(id, 'presentationError')
+  const [presentationArtifactValue] = useSubBlockValue<PresentationArtifactValue | null>(
+    id,
+    'presentationArtifact'
+  )
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
   const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
     ContentReferenceRecord[]
@@ -2780,6 +2978,48 @@ export const ContentBlock = memo(function ContentBlock({
     'videoFrameCaptureTimeSeconds',
     null
   )
+  const resolvedPresentationPrompt = extractStoredValue<string>(
+    data.isPreview
+      ? sourceValues
+      : ({ presentationPrompt: presentationPromptValue } as StoredValueRecord),
+    'presentationPrompt',
+    ''
+  )
+  const resolvedPresentationSlideCount = coerceNumber(
+    extractStoredValue<number | string>(
+      data.isPreview
+        ? sourceValues
+        : ({ presentationSlideCount: presentationSlideCountValue } as StoredValueRecord),
+      'presentationSlideCount',
+      8
+    ),
+    8
+  )
+  const resolvedPresentationStatus = normalizePresentationGenerationStatus(
+    extractStoredValue<string | null>(
+      data.isPreview
+        ? sourceValues
+        : ({ presentationStatus: presentationStatusValue } as StoredValueRecord),
+      'presentationStatus',
+      'idle'
+    )
+  )
+  const resolvedPresentationError = extractStoredValue<string | null>(
+    data.isPreview
+      ? sourceValues
+      : ({ presentationError: presentationErrorValue } as StoredValueRecord),
+    'presentationError',
+    null
+  )
+  const resolvedPresentationArtifact = normalizePresentationArtifact(
+    extractStoredValue<unknown>(
+      data.isPreview
+        ? sourceValues
+        : ({ presentationArtifact: presentationArtifactValue } as StoredValueRecord),
+      'presentationArtifact',
+      null
+    )
+  )
   const resolvedVideoFrameAspectRatioPreset = isVideoFrameAspectRatioPreset(
     extractStoredValue<string>(
       data.isPreview
@@ -2863,7 +3103,9 @@ export const ContentBlock = memo(function ContentBlock({
         ? effectiveImageModel
         : resolvedVariant === 'audio'
           ? effectiveAudioModel
-          : videoReferenceModelId
+          : resolvedVariant === 'presentation'
+            ? 'codex-ppt-skill'
+            : videoReferenceModelId
   const showcasePlainText = useMemo(
     () => (resolvedVariant === 'text' ? getPlainTextFromHtml(resolvedHtml) : ''),
     [resolvedHtml, resolvedVariant]
@@ -2875,15 +3117,31 @@ export const ContentBlock = memo(function ContentBlock({
         aiPrompt: resolvedAiPrompt,
         audioPrompt: resolvedAudioPrompt,
         videoPrompt: resolvedVideoPrompt,
+        presentationPrompt: resolvedPresentationPrompt,
       }),
-    [resolvedAiPrompt, resolvedAudioPrompt, resolvedVariant, resolvedVideoPrompt]
+    [
+      resolvedAiPrompt,
+      resolvedAudioPrompt,
+      resolvedPresentationPrompt,
+      resolvedVariant,
+      resolvedVideoPrompt,
+    ]
   )
+  const resolvedPresentationFile = resolvedPresentationArtifact?.pptxFile ?? resolvedFile
   const showcaseAttachments = useMemo(
     () =>
       resolvedVariant === 'text'
         ? []
-        : getShowcaseAttachmentsFromFile(resolveUserFileUrl(resolvedFile) ? resolvedFile : null),
-    [resolvedFile, resolvedVariant]
+        : getShowcaseAttachmentsFromFile(
+            resolveUserFileUrl(
+              resolvedVariant === 'presentation' ? resolvedPresentationFile : resolvedFile
+            )
+              ? resolvedVariant === 'presentation'
+                ? resolvedPresentationFile
+                : resolvedFile
+              : null
+          ),
+    [resolvedFile, resolvedPresentationFile, resolvedVariant]
   )
   const canSubmitToShowcase =
     selected &&
@@ -3546,6 +3804,7 @@ export const ContentBlock = memo(function ContentBlock({
       const uploadedFile: UploadedFileValue = {
         id: uploadResult.file.id,
         name: uploadResult.file.name,
+        url: uploadResult.file.url,
         path: uploadResult.file.url,
         key: uploadResult.file.key,
         size: uploadResult.file.size,
@@ -3660,6 +3919,7 @@ export const ContentBlock = memo(function ContentBlock({
         const uploadedFile: UploadedFileValue = {
           id: trimResult.file.id,
           name: trimResult.file.name,
+          url: trimResult.file.url,
           path: trimResult.file.url,
           key: trimResult.file.key,
           size: trimResult.file.size,
@@ -3768,6 +4028,7 @@ export const ContentBlock = memo(function ContentBlock({
       const uploadedFile: UploadedFileValue = {
         id: enhanceResult.file.id,
         name: enhanceResult.file.name,
+        url: enhanceResult.file.url,
         path: enhanceResult.file.url,
         key: enhanceResult.file.key,
         size: enhanceResult.file.size,
@@ -3848,6 +4109,7 @@ export const ContentBlock = memo(function ContentBlock({
         const uploadedFile: UploadedFileValue = {
           id: captureResult.file.id,
           name: captureResult.file.name,
+          url: captureResult.file.url,
           path: captureResult.file.url,
           key: captureResult.file.key,
           size: captureResult.file.size,
@@ -4428,6 +4690,10 @@ export const ContentBlock = memo(function ContentBlock({
         return family === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
       }
 
+      if (blockVariant === 'presentation') {
+        return 'codex-ppt-skill'
+      }
+
       return extractStoredValue<string>(source, 'aiModel', DEFAULT_TEXT_AI_MODEL)
     },
     [resolveBlockSourceValues]
@@ -4725,7 +4991,13 @@ export const ContentBlock = memo(function ContentBlock({
           variant === 'text'
             ? null
             : (() => {
-                const file = extractStoredValue<UploadedFileValue | null>(source, 'file', null)
+                const file =
+                  variant === 'presentation'
+                    ? (normalizePresentationArtifact(
+                        extractStoredValue<unknown>(source, 'presentationArtifact', null)
+                      )?.pptxFile ??
+                      extractStoredValue<UploadedFileValue | null>(source, 'file', null))
+                    : extractStoredValue<UploadedFileValue | null>(source, 'file', null)
                 if (!file?.key) return null
                 return {
                   id: file.id ?? '',
@@ -4923,7 +5195,9 @@ export const ContentBlock = memo(function ContentBlock({
           ? { width: VIDEO_CARD_WIDTH, height: VIDEO_CARD_HEIGHT }
           : resolvedVariant === 'audio'
             ? { width: AUDIO_CARD_WIDTH, height: AUDIO_CARD_HEIGHT }
-            : { width: resolvedWidth, height: resolvedHeight }
+            : resolvedVariant === 'presentation'
+              ? { width: PRESENTATION_CARD_WIDTH, height: PRESENTATION_CARD_HEIGHT }
+              : { width: resolvedWidth, height: resolvedHeight }
     },
     dependencies: [
       resolvedVariant,
@@ -4948,6 +5222,10 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedVideoParameters.resolution,
       resolvedVideoParameters.duration,
       resolvedVideoFrameAspectRatioPreset,
+      resolvedPresentationPrompt,
+      resolvedPresentationSlideCount,
+      resolvedPresentationStatus,
+      resolvedPresentationArtifact,
       getVideoMediaFileForType(resolvedVideoMedia, 'first_frame')?.path,
       getVideoMediaFileForType(resolvedVideoMedia, 'last_frame')?.path,
       resolvedFile?.path,
@@ -5214,15 +5492,36 @@ export const ContentBlock = memo(function ContentBlock({
         {!data.isPreview &&
           !data.isEmbedded &&
           !(resolvedVariant === 'image' && resolvedFile) &&
-          !(resolvedVariant === 'video' && resolvedFile) && (
+          !(resolvedVariant === 'video' && resolvedFile) &&
+          !(resolvedVariant === 'presentation' && resolvedPresentationFile) && (
             <div className='nodrag nopan'>
               <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
             </div>
           )}
 
-        {resolvedVariant === 'image' ||
-        resolvedVariant === 'video' ||
-        resolvedVariant === 'audio' ? (
+        {resolvedVariant === 'presentation' ? (
+          <PresentationContentCard
+            canEdit={canEditWorkflow}
+            isPreview={Boolean(data.isPreview)}
+            isEmbedded={Boolean(data.isEmbedded)}
+            selected={selected}
+            prompt={resolvedPresentationPrompt}
+            slideCount={resolvedPresentationSlideCount}
+            status={resolvedPresentationStatus}
+            errorMessage={resolvedPresentationError}
+            artifact={resolvedPresentationArtifact}
+            fallbackFile={resolvedFile}
+            contentReferences={resolvedContentReferences}
+            referencedNodes={referencedNodes}
+            onAddReference={() => startExistingReferenceSelection()}
+            onRemoveReference={removeReferenceAndEdges}
+            onChangePrompt={(value) => {
+              if (!data.isPreview) setPresentationPromptValue(value)
+            }}
+          />
+        ) : resolvedVariant === 'image' ||
+          resolvedVariant === 'video' ||
+          resolvedVariant === 'audio' ? (
           <MediaContentCard
             blockId={id}
             variant={resolvedVariant}

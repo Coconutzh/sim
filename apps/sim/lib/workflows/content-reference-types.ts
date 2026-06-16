@@ -1,4 +1,4 @@
-export type ContentNodeVariant = 'text' | 'image' | 'video' | 'audio'
+export type ContentNodeVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 export type ContentReferenceSelectionMode = 'multi' | 'slot'
 export type ContentReferenceRole =
   | 'text_context'

@@ -81,7 +81,13 @@ function resolveNodeId(rawId: string, idMap: Map<string, string>): string {
 }
 
 function isContentVariant(kind: string): kind is ContentNodeVariant {
-  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+  return (
+    kind === 'text' ||
+    kind === 'image' ||
+    kind === 'video' ||
+    kind === 'audio' ||
+    kind === 'presentation'
+  )
 }
 
 function isContentReferenceRole(value: unknown): value is ContentReferenceRole {

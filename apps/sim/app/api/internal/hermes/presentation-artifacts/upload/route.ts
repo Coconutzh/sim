@@ -160,9 +160,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         answer: `Presentation artifact "${stored.pptxFile.name}" was uploaded to SIM workspace storage.`,
         auditId,
         traceId,
-        pptxFile: stored.pptxFile,
-        coverImageFile: stored.coverImageFile,
-        manifestFile: stored.manifestFile,
+        pptxFile: { ...stored.pptxFile },
+        coverImageFile: stored.coverImageFile ? { ...stored.coverImageFile } : undefined,
+        manifestFile: { ...stored.manifestFile },
         manifest: stored.manifest,
       } satisfies HermesPresentationArtifactUploadResponse,
       { status: 200 }

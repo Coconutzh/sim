@@ -3,7 +3,7 @@ import type {
   ContentReferenceCapability,
 } from '@/lib/workflows/content-reference-types'
 
-export type ContentCapability = ContentNodeVariant
+export type ContentCapability = Extract<ContentNodeVariant, 'text' | 'image' | 'audio' | 'video'>
 
 export type ContentServiceKind =
   | 'openai-compatible'
@@ -109,6 +109,15 @@ const VIDEO_FIRST_AND_LAST_CAPABILITY: Omit<ContentReferenceCapability, 'model'>
     { role: 'video_first_frame', sourceVariants: ['image'], maxCount: 1 },
     { role: 'video_last_frame', sourceVariants: ['image'], maxCount: 1 },
   ],
+}
+
+const PRESENTATION_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
+  authMode: 'api_key_only',
+  targetVariant: 'presentation',
+  selectionMode: 'multi',
+  allowedSourceVariants: ['text', 'image', 'video', 'audio'],
+  supportedRoles: ['text_context', 'image_reference', 'audio_reference'],
+  slots: [],
 }
 
 export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition[] = [
@@ -355,6 +364,9 @@ export function getContentReferenceCapability(params: {
     }
     if (params.targetVariant === 'audio') {
       return { ...AUDIO_MULTI_CAPABILITY, model: params.model }
+    }
+    if (params.targetVariant === 'presentation') {
+      return { ...PRESENTATION_MULTI_CAPABILITY, model: params.model }
     }
     return { ...VIDEO_TEXT_ONLY_CAPABILITY, model: params.model }
   }
