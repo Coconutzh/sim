@@ -70,6 +70,7 @@ import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
 import type { SubflowNodeData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/subflow-node'
+import { CanvasThemeToggle } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/theme-toggle/canvas-theme-toggle'
 import {
   useAutoLayout,
   useCanvasContextMenu,
@@ -301,6 +302,14 @@ const LazyWorkflowControls = lazy(() =>
     '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-controls/workflow-controls'
   ).then((mod) => ({
     default: mod.WorkflowControls,
+  }))
+)
+
+const LazyWorkflowMinimap = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-minimap/workflow-minimap'
+  ).then((mod) => ({
+    default: mod.WorkflowMinimap,
   }))
 )
 
@@ -5587,12 +5596,12 @@ const WorkflowContent = React.memo(
                 />
 
                 {(contentReferenceSelection || frameSelection) && !embedded && (
-                  <div className='pointer-events-none fixed top-5 left-1/2 z-[1150] -translate-x-1/2'>
-                    <div className='rounded-2xl border border-white/10 bg-[#11161F]/95 px-4 py-3 text-white shadow-2xl backdrop-blur'>
+                  <div className='-translate-x-1/2 pointer-events-none fixed top-5 left-1/2 z-[1150]'>
+                    <div className='rounded-2xl border border-[var(--border)] bg-[var(--surface-1)]/95 px-4 py-3 text-[var(--text-primary)] shadow-2xl backdrop-blur'>
                       <div className='font-medium text-sm'>
                         {frameSelection ? '正在选择视频参考帧' : '正在选择引用节点'}
                       </div>
-                      <div className='mt-1 text-[12px] text-white/75'>
+                      <div className='mt-1 text-[12px] text-[var(--text-muted)]'>
                         {frameSelection
                           ? `请点击一张图片作为${frameSelection.slot === 'first' ? '首帧' : '尾帧'}，按 Esc 取消。`
                           : '请点击画布上可引用的节点完成添加，按 Esc 取消。'}
@@ -5632,9 +5641,14 @@ const WorkflowContent = React.memo(
                     )}
 
                     {!IS_LOW_MEMORY_DEV && (
-                      <Suspense fallback={null}>
-                        <LazyWorkflowControls />
-                      </Suspense>
+                      <>
+                        <Suspense fallback={null}>
+                          <LazyWorkflowMinimap nodes={nodesForRender} />
+                        </Suspense>
+                        <Suspense fallback={null}>
+                          <LazyWorkflowControls />
+                        </Suspense>
+                      </>
                     )}
                     {shouldRenderAuxiliaryEditorChrome && (
                       <Suspense fallback={null}>
@@ -5724,6 +5738,11 @@ const WorkflowContent = React.memo(
             )}
 
             <Notifications embedded={embedded} />
+            {!embedded && !sandbox && (
+              <CanvasThemeToggle
+                avoidTopRightChrome={IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded}
+              />
+            )}
             {!embedded && isWorkflowSearchReplaceOpen && (
               <Suspense fallback={null}>
                 <LazyWorkflowSearchReplace />
@@ -5746,7 +5765,6 @@ const WorkflowContent = React.memo(
               </Suspense>
             )}
           </div>
-
         </div>
 
         {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (

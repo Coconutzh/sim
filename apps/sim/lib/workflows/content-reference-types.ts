@@ -3,6 +3,7 @@ export type ContentReferenceSelectionMode = 'multi' | 'slot'
 export type ContentReferenceRole =
   | 'text_context'
   | 'image_reference'
+  | 'video_frame_capture'
   | 'video_first_frame'
   | 'video_last_frame'
   | 'audio_reference'

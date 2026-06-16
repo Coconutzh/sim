@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+﻿#!/usr/bin/env bun
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -9,8 +9,8 @@ const QUERY_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/queries')
 const SELECTOR_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/selectors')
 
 const BASELINE = {
-  totalRoutes: 469,
-  zodRoutes: 444,
+  totalRoutes: 473,
+  zodRoutes: 448,
   nonZodRoutes: 25,
 } as const
 

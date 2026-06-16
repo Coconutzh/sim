@@ -1,6 +1,11 @@
 ﻿'use client'
 
-import type { ChangeEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
+import type {
+  ChangeEvent,
+  ReactNode,
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from 'react'
 import {
   createElement,
   Fragment,
@@ -15,6 +20,7 @@ import { generateId } from '@sim/utils/id'
 import {
   Box as BoxIcon,
   Brush,
+  Camera,
   Copy as CopyIcon,
   Crop as CropIcon,
   Eraser,
@@ -26,16 +32,26 @@ import {
   Pilcrow,
   Plus,
   Scissors,
+  Sparkles,
   Type,
   Upload,
   UploadCloud,
   Video,
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
+import { Handle, type NodeProps, Position, useReactFlow, useViewport } from 'reactflow'
 import { toast } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
+import {
+  type CaptureWorkspaceVideoFrameBody,
+  captureWorkspaceVideoFrameContract,
+  type EnhanceWorkspaceVideoBody,
+  enhanceWorkspaceVideoContract,
+  type TrimWorkspaceVideoBody,
+  trimWorkspaceVideoContract,
+} from '@/lib/api/contracts/media-videos'
 import type {
   ProductionShowcaseCategory,
   ProductionShowcaseSourceNodeVariant,
@@ -115,11 +131,13 @@ import {
   type VideoParametersValue,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
+import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { ImageRepaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-repaint-overlay'
+import { ImageToolbarActions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-toolbar-actions'
 import { MediaContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/media-content-ai-composer'
 import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
@@ -128,6 +146,23 @@ import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflow
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
 import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
+import { VideoEnhancePanel } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-enhance-panel'
+import {
+  DEFAULT_VIDEO_ENHANCE_PARAMETERS,
+  normalizeVideoEnhanceGenerationKind,
+  normalizeVideoEnhanceGenerationStatus,
+  normalizeVideoEnhanceParameters,
+  type VideoEnhanceGenerationKind,
+  type VideoEnhanceGenerationStatus,
+  type VideoEnhanceParametersValue,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-enhance-utils'
+import { VideoFrameCaptureMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-frame-capture-menu'
+import {
+  resolveVideoFrameCaptureTime,
+  type VideoFrameCaptureMode,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-frame-capture-utils'
+import { VideoTrimOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-overlay'
+import type { VideoTrimRange } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-trim-utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WorkflowBlockProps } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/types'
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
@@ -148,7 +183,9 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
-type ImageGenerationKind = 'cutout'
+type ImageGenerationKind = 'cutout' | 'video_frame_capture'
+type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
+type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
 
 interface ContentBlockNodeData extends WorkflowBlockProps {}
@@ -235,6 +272,7 @@ const DEFAULT_BACKGROUND_COLOR = '#FFF8C5'
 const DEFAULT_FONT_SIZE = 16
 const IMAGE_CARD_WIDTH = 320
 const IMAGE_CARD_HEIGHT = 240
+const SCROLLBAR_HIT_TARGET_SIZE = 18
 const VIDEO_CARD_WIDTH = 360
 const VIDEO_CARD_HEIGHT = 240
 const AUDIO_CARD_WIDTH = 360
@@ -393,7 +431,7 @@ function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus |
 }
 
 function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
-  return value === 'cutout' ? value : null
+  return value === 'cutout' || value === 'video_frame_capture' ? value : null
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -430,6 +468,34 @@ function matchesVariantFile(value: unknown, variant: ContentVariant): boolean {
 
 function isUploadedFileValue(value: unknown): value is UploadedFileValue {
   return hasUploadedFileValue(value)
+}
+
+function toTrimRequestFile(file: UploadedFileValue): TrimWorkspaceVideoBody['sourceFile'] | null {
+  if (!file.key) return null
+
+  return {
+    id: file.id ?? '',
+    name: file.name ?? 'video',
+    url: file.path ?? '',
+    key: file.key,
+    size: file.size ?? 0,
+    type: file.type ?? 'video/mp4',
+    context: file.context,
+  }
+}
+
+function toEnhanceRequestFile(
+  file: UploadedFileValue
+): EnhanceWorkspaceVideoBody['sourceFile'] | null {
+  const sourceFile = toTrimRequestFile(file)
+  return sourceFile ? { ...sourceFile } : null
+}
+
+function toFrameCaptureRequestFile(
+  file: UploadedFileValue
+): CaptureWorkspaceVideoFrameBody['sourceFile'] | null {
+  const sourceFile = toTrimRequestFile(file)
+  return sourceFile ? { ...sourceFile } : null
 }
 
 function normalizeVideoModelFamily(value: unknown, legacyModelValue?: unknown): VideoModelFamily {
@@ -720,7 +786,7 @@ function getReferenceChipPreview(node: PromptContextReferencedNode | undefined):
     )
 
   return (
-    <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-white/8 text-[#D6DBE5]'>
+    <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-4)] text-[var(--text-secondary)]'>
       {icon}
     </span>
   )
@@ -754,8 +820,8 @@ function ReferenceComposerHeader({
           onAddReference()
         }}
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#F5F7FA] transition-colors',
-          canEdit ? 'hover-hover:bg-white/10' : 'cursor-not-allowed opacity-60'
+          'flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] transition-colors',
+          canEdit ? 'hover-hover:bg-[var(--surface-3)]' : 'cursor-not-allowed opacity-60'
         )}
         aria-label='Add canvas reference'
       >
@@ -767,7 +833,7 @@ function ReferenceComposerHeader({
         return (
           <div
             key={`${reference.sourceBlockId}:${reference.role}`}
-            className='flex max-w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[#D6DBE5] text-[11px]'
+            className='flex max-w-full items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)]'
           >
             {getReferenceChipPreview(node)}
             <span className='truncate'>{getReferenceChipLabel(reference, node)}</span>
@@ -784,8 +850,8 @@ function ReferenceComposerHeader({
                 onRemoveReference(reference)
               }}
               className={cn(
-                'text-[#9FA5B2] transition-colors',
-                canEdit ? 'hover-hover:text-white' : 'cursor-not-allowed opacity-60'
+                'text-[var(--text-muted)] transition-colors',
+                canEdit ? 'hover-hover:text-[var(--text-primary)]' : 'cursor-not-allowed opacity-60'
               )}
               aria-label='Remove reference'
             >
@@ -835,6 +901,23 @@ function TextToolbarButton({
       {children ?? label}
     </button>
   )
+}
+
+function isPointerOnScrollableScrollbar(
+  element: HTMLElement,
+  event: ReactPointerEvent<HTMLElement>
+): boolean {
+  const hasVerticalScrollbar = element.scrollHeight > element.clientHeight
+  const hasHorizontalScrollbar = element.scrollWidth > element.clientWidth
+  if (!hasVerticalScrollbar && !hasHorizontalScrollbar) return false
+
+  const rect = element.getBoundingClientRect()
+  const isOnVerticalScrollbar =
+    hasVerticalScrollbar && event.clientX >= rect.right - SCROLLBAR_HIT_TARGET_SIZE
+  const isOnHorizontalScrollbar =
+    hasHorizontalScrollbar && event.clientY >= rect.bottom - SCROLLBAR_HIT_TARGET_SIZE
+
+  return isOnVerticalScrollbar || isOnHorizontalScrollbar
 }
 
 function TextContentCard({
@@ -1049,18 +1132,34 @@ function TextContentCard({
     submitPrompt()
   }, [currentModelDisabledReason, submitPrompt])
 
+  const handleTextContentWheelCapture = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!selected && !isEditing) return
+      event.stopPropagation()
+    },
+    [isEditing, selected]
+  )
+
+  const handleTextContentPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isPointerOnScrollableScrollbar(event.currentTarget, event)) return
+      event.stopPropagation()
+    },
+    []
+  )
+
   const editingContentClassName =
-    'nodrag nopan px-4 py-3 text-[var(--text-primary)] outline-none [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const displayContentClassName =
-    'nopan px-4 py-3 text-[var(--text-primary)] [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
-  const cardMinHeight = clampTextHeight(height)
+    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+  const cardHeight = clampTextHeight(height)
 
   const showToolbar = selected && !isPreview
   const normalizedHtml = normalizeContentHtml(isEditing ? draftHtml : html)
   const isEmpty = !isMeaningfulHtml(normalizedHtml)
 
   return (
-    <div className='relative' style={{ width, minHeight: cardMinHeight }}>
+    <div className='relative' style={{ width }}>
       {showToolbar && (
         <div
           className='nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
@@ -1136,7 +1235,7 @@ function TextContentCard({
 
       <div
         className='relative rounded-2xl border border-[var(--border)] shadow-sm transition-shadow'
-        style={{ backgroundColor, minHeight: cardMinHeight }}
+        style={{ backgroundColor, height: cardHeight }}
       >
         {isEditing ? (
           <div
@@ -1154,14 +1253,18 @@ function TextContentCard({
               syncDraftFromEditor()
               setIsEditing(false)
             }}
+            onPointerDownCapture={handleTextContentPointerDownCapture}
+            onWheelCapture={handleTextContentWheelCapture}
             className={editingContentClassName}
-            style={{ fontSize, minHeight: cardMinHeight }}
+            style={{ fontSize }}
           />
         ) : (
           <div
             key='display'
-            className={displayContentClassName}
-            style={{ fontSize, minHeight: cardMinHeight }}
+            className={cn(displayContentClassName, selected && 'allow-scroll')}
+            style={{ fontSize }}
+            onPointerDownCapture={handleTextContentPointerDownCapture}
+            onWheelCapture={handleTextContentWheelCapture}
             onDoubleClickCapture={(event) => {
               event.stopPropagation()
               enterEditing()
@@ -1247,16 +1350,22 @@ function MediaContentCard({
   videoMedia,
   videoParameters,
   videoFrameAspectRatioPreset,
+  videoEnhanceSourceFile,
+  videoEnhanceParameters,
   contentReferences,
   referencedNodes,
   generationStatus,
   generationKind,
   generationErrorMessage,
+  nodeName,
   isImageCropMode,
   isImageRepaintMode,
   isImageEraseMode,
   isImageOutpaintMode,
+  isVideoTrimMode,
   isImageCropProcessing,
+  isVideoTrimProcessing,
+  videoTrimError,
   onAddReference,
   onRemoveReference,
   onStartImageCrop,
@@ -1264,16 +1373,23 @@ function MediaContentCard({
   onStartImageErase,
   onStartImageOutpaint,
   onStartImageCutout,
+  onStartVideoTrim,
+  onStartVideoEnhance,
+  onCaptureVideoFrame,
   onCancelImageCrop,
   onCancelImageRepaint,
   onCancelImageErase,
   onCancelImageOutpaint,
+  onCancelVideoTrim,
   onConfirmImageCrop,
+  onConfirmVideoTrim,
+  onConfirmVideoEnhance,
   onCreateImagePerspectiveVariant,
   onCreateImageRepaintVariant,
   onCreateImageEraseVariant,
   onCreateImageOutpaintVariant,
   onRetryImageCutout,
+  onRetryVideoFrameCapture,
   onChangeFile,
   onChangeAiPrompt,
   onChangeAiModel,
@@ -1286,6 +1402,7 @@ function MediaContentCard({
   onChangeVideoMedia,
   onChangeVideoParameters,
   onChangeVideoFrameAspectRatioPreset,
+  onChangeVideoEnhanceParameters,
 }: {
   blockId: string
   variant: Extract<ContentVariant, 'image' | 'video' | 'audio'>
@@ -1306,16 +1423,22 @@ function MediaContentCard({
   videoMedia: Array<VideoMediaFileSlot<UploadedFileValue>>
   videoParameters: VideoParametersValue
   videoFrameAspectRatioPreset: VideoFrameAspectRatioPreset
+  videoEnhanceSourceFile: EnhanceWorkspaceVideoBody['sourceFile'] | null
+  videoEnhanceParameters: VideoEnhanceParametersValue
   contentReferences: ContentReferenceRecord[]
   referencedNodes: Record<string, PromptContextReferencedNode>
-  generationStatus: ImageGenerationStatus | null
-  generationKind: ImageGenerationKind | null
+  generationStatus: ContentGenerationStatus | null
+  generationKind: ContentGenerationKind | null
   generationErrorMessage: string | null
+  nodeName?: string
   isImageCropMode: boolean
   isImageRepaintMode: boolean
   isImageEraseMode: boolean
   isImageOutpaintMode: boolean
+  isVideoTrimMode: boolean
   isImageCropProcessing: boolean
+  isVideoTrimProcessing: boolean
+  videoTrimError: string | null
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
   onStartImageCrop: () => void
@@ -1323,11 +1446,20 @@ function MediaContentCard({
   onStartImageErase: () => void
   onStartImageOutpaint: () => void
   onStartImageCutout: () => void
+  onStartVideoTrim: () => void
+  onStartVideoEnhance: () => void
+  onCaptureVideoFrame: (params: {
+    mode: VideoFrameCaptureMode
+    timeSeconds: number
+  }) => Promise<void> | void
   onCancelImageCrop: () => void
   onCancelImageRepaint: () => void
   onCancelImageErase: () => void
   onCancelImageOutpaint: () => void
+  onCancelVideoTrim: () => void
   onConfirmImageCrop: (file: File) => Promise<void>
+  onConfirmVideoTrim: (range: VideoTrimRange) => Promise<void>
+  onConfirmVideoEnhance: () => Promise<void>
   onCreateImagePerspectiveVariant: (params: {
     file: UploadedFileValue
     model: ImageGenerationModelId
@@ -1339,6 +1471,7 @@ function MediaContentCard({
     targetAspectRatio: ImageOutpaintAspectRatio
   ) => Promise<void> | void
   onRetryImageCutout: () => void
+  onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
   onChangeAiModel: (value: ImageGenerationModelId) => void
@@ -1351,15 +1484,18 @@ function MediaContentCard({
   onChangeVideoMedia: (value: Array<VideoMediaFileSlot<UploadedFileValue>>) => void
   onChangeVideoParameters: (value: VideoParametersValue) => void
   onChangeVideoFrameAspectRatioPreset: (value: VideoFrameAspectRatioPreset) => void
+  onChangeVideoEnhanceParameters: (value: VideoEnhanceParametersValue) => void
 }) {
   const params = useParams<{ workspaceId: string }>()
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const uploadFileMutation = useUploadWorkspaceFile()
   const [error, setError] = useState<string | null>(null)
   const [isBroken, setIsBroken] = useState(false)
   const [isPerspectiveMenuOpen, setIsPerspectiveMenuOpen] = useState(false)
+  const [isFrameCaptureMenuOpen, setIsFrameCaptureMenuOpen] = useState(false)
   const frameSelection = useVideoFrameSelectionStore((state) => state.selection)
   const beginFrameSelection = useVideoFrameSelectionStore((state) => state.beginSelection)
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
@@ -1371,13 +1507,26 @@ function MediaContentCard({
   > | null>(null)
 
   const mediaPath = file?.path ?? ''
+  const trimSourceFile = useMemo(
+    () => (file ? toTrimRequestFile(file) : null),
+    [file?.context, file?.id, file?.key, file?.name, file?.path, file?.size, file?.type]
+  )
+  const isVideoEnhanceNode = variant === 'video' && generationKind === 'video_enhance'
+  const isVideoEnhancePendingConfig =
+    isVideoEnhanceNode && generationStatus === 'pending_config' && !file
+  const isVideoEnhanceProcessing = isVideoEnhanceNode && generationStatus === 'pending' && !file
+  const isVideoEnhanceError = isVideoEnhanceNode && generationStatus === 'error' && !file
+  const videoEnhancePanelSourceFile = videoEnhanceSourceFile ?? trimSourceFile
+  const videoEnhancePanelSourceUrl = videoEnhancePanelSourceFile?.url || mediaPath
   const canUpload = canEdit && !isPreview
   const accept = variant === 'image' ? 'image/*' : variant === 'video' ? 'video/*' : 'audio/*'
   const cardWidth =
     variant === 'image'
       ? IMAGE_CARD_WIDTH
       : variant === 'video'
-        ? VIDEO_CARD_WIDTH
+        ? isVideoTrimMode
+          ? 720
+          : VIDEO_CARD_WIDTH
         : AUDIO_CARD_WIDTH
   const cardHeight =
     variant === 'image'
@@ -1648,12 +1797,19 @@ function MediaContentCard({
   const isImageCutoutNode = variant === 'image' && generationKind === 'cutout'
   const isImageCutoutPending = isImageCutoutNode && generationStatus === 'pending' && !file
   const isImageCutoutError = isImageCutoutNode && generationStatus === 'error' && !file
+  const isVideoFrameCaptureNode = variant === 'image' && generationKind === 'video_frame_capture'
+  const isVideoFrameCapturePending =
+    isVideoFrameCaptureNode && generationStatus === 'pending' && !file
+  const isVideoFrameCaptureError = isVideoFrameCaptureNode && generationStatus === 'error' && !file
   const showUploadAction =
     selected &&
     canUpload &&
-    (variant !== 'image' || !hasMedia) &&
+    ((variant !== 'image' && variant !== 'video') || !hasMedia) &&
     !isImageCutoutPending &&
-    !isImageCutoutError
+    !isImageCutoutError &&
+    !isVideoFrameCapturePending &&
+    !isVideoFrameCaptureError &&
+    !isVideoEnhanceNode
   const showImageCropAction =
     selected &&
     canUpload &&
@@ -1664,7 +1820,12 @@ function MediaContentCard({
     !isImageEraseMode &&
     !isImageOutpaintMode
   const showImageComposer =
-    variant === 'image' && !hasMedia && !isImageCutoutPending && !isImageCutoutError
+    variant === 'image' &&
+    !hasMedia &&
+    !isImageCutoutPending &&
+    !isImageCutoutError &&
+    !isVideoFrameCapturePending &&
+    !isVideoFrameCaptureError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -1674,12 +1835,49 @@ function MediaContentCard({
     !isImageRepaintMode &&
     !isImageEraseMode &&
     !isImageOutpaintMode
+  const showVideoToolbar =
+    selected && canUpload && variant === 'video' && hasMedia && !isVideoTrimMode
+  const isTrimDerivedVideo =
+    variant === 'video' &&
+    contentReferences.some(
+      (reference) => reference.sourceVariant === 'video' && reference.role === 'text_context'
+    )
+  const showVideoComposer =
+    variant === 'video' &&
+    !isVideoTrimMode &&
+    !isVideoEnhanceNode &&
+    (!hasMedia || !isTrimDerivedVideo)
+  const showVideoEnhancePanel = isVideoEnhanceNode && !hasMedia && !isPreview && !isEmbedded
 
   useEffect(() => {
     if (!showImageToolbar) {
       setIsPerspectiveMenuOpen(false)
     }
   }, [showImageToolbar])
+
+  useEffect(() => {
+    if (!showVideoToolbar) {
+      setIsFrameCaptureMenuOpen(false)
+    }
+  }, [showVideoToolbar])
+
+  const handleSelectVideoFrameCapture = useCallback(
+    (mode: VideoFrameCaptureMode) => {
+      setIsFrameCaptureMenuOpen(false)
+      setError(null)
+      const captureTime = resolveVideoFrameCaptureTime(videoRef.current, mode)
+      if (!captureTime.ok) {
+        setError(captureTime.error)
+        return
+      }
+
+      void onCaptureVideoFrame({
+        mode,
+        timeSeconds: captureTime.timeSeconds,
+      })
+    },
+    [onCaptureVideoFrame]
+  )
 
   return (
     <div ref={rootRef} className='relative'>
@@ -1804,11 +2002,85 @@ function MediaContentCard({
           >
             <Expand className='h-3.5 w-3.5' />
           </button>
+          {file ? (
+            <ImageToolbarActions
+              file={file}
+              imageSrc={mediaPath}
+              nodeName={nodeName}
+              isReplacing={uploadFileMutation.isPending}
+              onReplace={() => {
+                setIsPerspectiveMenuOpen(false)
+                openFileDialog()
+              }}
+              onError={setError}
+            />
+          ) : null}
+        </div>
+      )}
+
+      {showVideoToolbar && (
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5'>
+          <button
+            type='button'
+            aria-label='剪辑视频'
+            title='剪辑视频'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              onStartVideoTrim()
+            }}
+            className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            <Scissors className='h-3.5 w-3.5' />
+          </button>
+          <button
+            type='button'
+            aria-label='视频增强'
+            title='视频增强'
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              onStartVideoEnhance()
+            }}
+            className='inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]'
+          >
+            <Sparkles className='h-3.5 w-3.5' />
+          </button>
+          <div className='nodrag nopan relative'>
+            <button
+              type='button'
+              aria-label='截帧'
+              title='截帧'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                setIsFrameCaptureMenuOpen((current) => !current)
+              }}
+              className={cn(
+                'nodrag nopan inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm hover-hover:bg-[var(--surface-3)]',
+                isFrameCaptureMenuOpen && 'bg-[var(--surface-3)]'
+              )}
+            >
+              <Camera className='h-3.5 w-3.5' />
+            </button>
+            {isFrameCaptureMenuOpen ? (
+              <VideoFrameCaptureMenu onSelect={handleSelectVideoFrameCapture} />
+            ) : null}
+          </div>
         </div>
       )}
 
       <div
-        className='relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]'
+        className={cn(
+          'relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] transition-[width,min-height]',
+          isVideoTrimMode && variant === 'video' && 'shadow-[0_0_0_1px_rgba(255,255,255,0.08)]'
+        )}
         style={{ width: cardWidth, minHeight: cardHeight }}
       >
         <input
@@ -1851,15 +2123,24 @@ function MediaContentCard({
               )}
             </div>
           ) : variant === 'video' ? (
-            <div className='flex w-[360px] flex-col gap-3 bg-[var(--surface-1)] px-3 py-3'>
+            <div
+              className={cn(
+                'flex flex-col gap-3 bg-[var(--surface-1)] px-3 py-3',
+                isVideoTrimMode ? 'w-[720px]' : 'w-[360px]'
+              )}
+            >
               {/* biome-ignore lint/a11y/useMediaCaption: uploaded local video cards do not have a caption track in this iteration. */}
               <video
+                ref={videoRef}
                 src={mediaPath}
                 controls
                 preload='metadata'
-                className='nodrag nopan aspect-video w-full rounded-xl bg-black object-contain'
+                className={cn(
+                  'nopan aspect-video w-full rounded-xl bg-black object-contain',
+                  isVideoTrimMode && 'nodrag rounded-[18px]'
+                )}
                 onPointerDown={(event) => {
-                  event.stopPropagation()
+                  if (isVideoTrimMode) event.stopPropagation()
                 }}
                 onError={() => setIsBroken(true)}
               />
@@ -1908,6 +2189,48 @@ function MediaContentCard({
               <Scissors className='h-3.5 w-3.5' />
               <span>重试</span>
             </button>
+          </div>
+        ) : isVideoFrameCapturePending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>截帧中...</div>
+          </div>
+        ) : isVideoFrameCaptureError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '截帧失败，请重试。'}
+            </div>
+            <button
+              type='button'
+              aria-label='重试截帧'
+              title='重试截帧'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryVideoFrameCapture()
+              }}
+            >
+              <Camera className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
+          </div>
+        ) : isVideoEnhancePendingConfig ? (
+          <div className='nopan flex h-[240px] w-full items-center justify-center bg-[var(--surface-1)] px-6 text-center'>
+            <div className='font-medium text-[#B8D7FF] text-sm'>配置参数生成高清视频</div>
+          </div>
+        ) : isVideoEnhanceProcessing ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>正在生成高清视频...</div>
+          </div>
+        ) : isVideoEnhanceError ? (
+          <div className='nopan flex h-[240px] w-full items-center justify-center bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[260px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '视频增强失败，请重试。'}
+            </div>
           </div>
         ) : (
           <div
@@ -1997,6 +2320,19 @@ function MediaContentCard({
         />
       ) : null}
 
+      {variant === 'video' && hasMedia && isVideoTrimMode && file ? (
+        <VideoTrimOverlay
+          videoRef={videoRef}
+          videoSrc={mediaPath}
+          workspaceId={params.workspaceId}
+          sourceFile={trimSourceFile}
+          isProcessing={isVideoTrimProcessing}
+          error={videoTrimError}
+          onCancel={onCancelVideoTrim}
+          onConfirm={onConfirmVideoTrim}
+        />
+      ) : null}
+
       {showImageComposer && !isPreview && !isEmbedded && (
         <MediaContentAiComposer
           canEdit={canEdit}
@@ -2024,7 +2360,23 @@ function MediaContentCard({
         />
       )}
 
-      {variant === 'video' && !isPreview && !isEmbedded && (
+      {showVideoEnhancePanel && (
+        <VideoEnhancePanel
+          workspaceId={params.workspaceId}
+          sourceFile={videoEnhancePanelSourceFile}
+          sourceVideoUrl={videoEnhancePanelSourceUrl}
+          canEdit={canEdit}
+          isProcessing={isVideoEnhanceProcessing}
+          error={isVideoEnhanceError ? generationErrorMessage : null}
+          parameters={videoEnhanceParameters}
+          onChangeParameters={onChangeVideoEnhanceParameters}
+          onSubmit={() => {
+            void onConfirmVideoEnhance()
+          }}
+        />
+      )}
+
+      {showVideoComposer && !isPreview && !isEmbedded && (
         <div className='mt-3 flex flex-col gap-3'>
           <ReferenceComposerHeader
             canEdit={canEdit}
@@ -2134,6 +2486,7 @@ export const ContentBlock = memo(function ContentBlock({
   const params = useParams<{ workspaceId: string; workflowId: string }>()
   const router = useRouter()
   const reactFlowInstance = useReactFlow()
+  const viewport = useViewport()
   const { fitViewToBounds } = useCanvasViewport(reactFlowInstance, {
     embedded: Boolean(data.isEmbedded),
   })
@@ -2190,6 +2543,22 @@ export const ContentBlock = memo(function ContentBlock({
   )
   const [videoFrameAspectRatioPresetValue, setVideoFrameAspectRatioPresetValue] =
     useSubBlockValue<string>(id, 'videoFrameAspectRatioPreset')
+  const [videoEnhanceSourceFileValue] = useSubBlockValue<
+    EnhanceWorkspaceVideoBody['sourceFile'] | null
+  >(id, 'videoEnhanceSourceFile')
+  const [videoEnhanceParametersValue, setVideoEnhanceParametersValue] =
+    useSubBlockValue<VideoEnhanceParametersValue>(id, 'videoEnhanceParameters')
+  const [videoFrameCaptureSourceFileValue] = useSubBlockValue<
+    CaptureWorkspaceVideoFrameBody['sourceFile'] | null
+  >(id, 'videoFrameCaptureSourceFile')
+  const [videoFrameCaptureModeValue] = useSubBlockValue<VideoFrameCaptureMode | null>(
+    id,
+    'videoFrameCaptureMode'
+  )
+  const [videoFrameCaptureTimeSecondsValue] = useSubBlockValue<number | null>(
+    id,
+    'videoFrameCaptureTimeSeconds'
+  )
   const [fileValue, setFileValue] = useSubBlockValue<UploadedFileValue | null>(id, 'file')
   const [contentReferencesValue, setContentReferencesValue] = useSubBlockValue<
     ContentReferenceRecord[]
@@ -2221,6 +2590,7 @@ export const ContentBlock = memo(function ContentBlock({
     collaborativeBatchRemoveEdges,
     collaborativeBatchAddEdges,
     collaborativeSetSubblockValue,
+    collaborativeUpdateBlockName,
   } = useCollaborativeWorkflow()
   const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
@@ -2228,6 +2598,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [isImageRepaintMode, setIsImageRepaintMode] = useState(false)
   const [isImageEraseMode, setIsImageEraseMode] = useState(false)
   const [isImageOutpaintMode, setIsImageOutpaintMode] = useState(false)
+  const [isVideoTrimMode, setIsVideoTrimMode] = useState(false)
+  const [isVideoTrimProcessing, setIsVideoTrimProcessing] = useState(false)
+  const [videoTrimError, setVideoTrimError] = useState<string | null>(null)
   const [referenceDragState, setReferenceDragState] = useState<ContentReferenceDragState | null>(
     null
   )
@@ -2362,6 +2735,51 @@ export const ContentBlock = memo(function ContentBlock({
       DEFAULT_VIDEO_PARAMETERS
     )
   )
+  const resolvedVideoEnhanceSourceFile = extractStoredValue<
+    EnhanceWorkspaceVideoBody['sourceFile'] | null
+  >(
+    data.isPreview
+      ? sourceValues
+      : ({ videoEnhanceSourceFile: videoEnhanceSourceFileValue } as StoredValueRecord),
+    'videoEnhanceSourceFile',
+    null
+  )
+  const resolvedVideoEnhanceParameters = normalizeVideoEnhanceParameters(
+    extractStoredValue<unknown>(
+      data.isPreview
+        ? sourceValues
+        : ({
+            videoEnhanceParameters: videoEnhanceParametersValue,
+          } as StoredValueRecord),
+      'videoEnhanceParameters',
+      DEFAULT_VIDEO_ENHANCE_PARAMETERS
+    )
+  )
+  const resolvedVideoFrameCaptureSourceFile = extractStoredValue<
+    CaptureWorkspaceVideoFrameBody['sourceFile'] | null
+  >(
+    data.isPreview
+      ? sourceValues
+      : ({ videoFrameCaptureSourceFile: videoFrameCaptureSourceFileValue } as StoredValueRecord),
+    'videoFrameCaptureSourceFile',
+    null
+  )
+  const resolvedVideoFrameCaptureMode = extractStoredValue<VideoFrameCaptureMode | null>(
+    data.isPreview
+      ? sourceValues
+      : ({ videoFrameCaptureMode: videoFrameCaptureModeValue } as StoredValueRecord),
+    'videoFrameCaptureMode',
+    null
+  )
+  const resolvedVideoFrameCaptureTimeSeconds = extractStoredValue<number | null>(
+    data.isPreview
+      ? sourceValues
+      : ({
+          videoFrameCaptureTimeSeconds: videoFrameCaptureTimeSecondsValue,
+        } as StoredValueRecord),
+    'videoFrameCaptureTimeSeconds',
+    null
+  )
   const resolvedVideoFrameAspectRatioPreset = isVideoFrameAspectRatioPreset(
     extractStoredValue<string>(
       data.isPreview
@@ -2419,6 +2837,11 @@ export const ContentBlock = memo(function ContentBlock({
   })
   const effectiveImageModel = getEffectiveContentModelId({
     requestedModelId: resolvedAiModel,
+    availability: modelAvailability?.image ?? null,
+    fallbackModelId: DEFAULT_IMAGE_AI_MODEL,
+  })
+  const effectiveDefaultImageModel = getEffectiveContentModelId({
+    requestedModelId: DEFAULT_IMAGE_AI_MODEL,
     availability: modelAvailability?.image ?? null,
     fallbackModelId: DEFAULT_IMAGE_AI_MODEL,
   })
@@ -2799,6 +3222,153 @@ export const ContentBlock = memo(function ContentBlock({
     setIsImageOutpaintMode(false)
   }, [])
 
+  const startVideoTrimMode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'video' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    setIsImageCropMode(false)
+    setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
+    setIsImageOutpaintMode(false)
+    setVideoTrimError(null)
+    setIsVideoTrimMode(true)
+    requestAnimationFrame(() => {
+      const node = reactFlowInstance.getNodes().find((candidate) => candidate.id === id)
+      if (!node) return
+      fitViewToBounds({
+        nodes: [node],
+        padding: 0.04,
+        maxZoom: 1.2,
+        duration: 300,
+      })
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    fitViewToBounds,
+    id,
+    reactFlowInstance,
+    resolvedFile,
+    resolvedVariant,
+  ])
+
+  const cancelVideoTrimMode = useCallback(() => {
+    if (isVideoTrimProcessing) return
+    setVideoTrimError(null)
+    setIsVideoTrimMode(false)
+  }, [isVideoTrimProcessing])
+
+  const createVideoEnhanceNode = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'video' ||
+      !resolvedFile
+    ) {
+      return
+    }
+
+    const sourceFile = toEnhanceRequestFile(resolvedFile)
+    if (!sourceFile) {
+      return
+    }
+
+    const sourceBlock = workflowBlocks[id]
+    if (!sourceBlock) {
+      return
+    }
+
+    const blockConfig = getBlockConfigFromCatalog('content')
+    if (!blockConfig) {
+      return
+    }
+
+    const targetBlockId = generateId()
+    const parentId = sourceBlock.data?.parentId
+    const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+    const targetPosition = {
+      x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+      y: sourcePosition.y,
+    }
+    const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+    const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+    const newBlock = prepareBlockState({
+      id: targetBlockId,
+      type: 'content',
+      name: getUniqueBlockName('视频增强', workflowBlocks),
+      position: targetPosition,
+      data: {
+        contentVariant: 'video',
+        ...(parentId ? { parentId, extent: 'parent' } : {}),
+      },
+      parentId,
+      extent: parentId ? 'parent' : undefined,
+      blockConfig,
+    })
+    const reference: ContentReferenceRecord = {
+      sourceBlockId: id,
+      sourceVariant: 'video',
+      role: 'text_context',
+    }
+    const edge = createContentReferenceEdge({
+      id: generateId(),
+      source: id,
+      target: targetBlockId,
+      sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+      targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+    })
+    const subBlockValues: Record<string, Record<string, unknown>> = {
+      [targetBlockId]: {
+        contentVariant: 'video',
+        videoPrompt: '',
+        videoModel: DEFAULT_VIDEO_MODEL,
+        videoModelFamily: effectiveVideoModelFamily,
+        videoFrameAspectRatioPreset: resolvedVideoFrameAspectRatioPreset,
+        videoParameters: resolvedVideoParameters,
+        videoMedia: [],
+        file: null,
+        contentReferences: [reference],
+        generationKind: 'video_enhance',
+        generationStatus: 'pending_config',
+        generationError: null,
+        videoEnhanceSourceFile: sourceFile,
+        videoEnhanceParameters: DEFAULT_VIDEO_ENHANCE_PARAMETERS,
+      },
+    }
+
+    setIsImageCropMode(false)
+    setIsImageRepaintMode(false)
+    setIsImageEraseMode(false)
+    setIsImageOutpaintMode(false)
+    setIsVideoTrimMode(false)
+    setVideoTrimError(null)
+    setPendingSelection([targetBlockId])
+    collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+    usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+  }, [
+    canEditWorkflow,
+    collaborativeBatchAddBlocks,
+    data.isEmbedded,
+    data.isPreview,
+    effectiveVideoModelFamily,
+    id,
+    resolvedFile,
+    resolvedVariant,
+    resolvedVideoFrameAspectRatioPreset,
+    resolvedVideoParameters,
+    setPendingSelection,
+    workflowBlocks,
+  ])
+
   const markImageCutoutPending = useCallback(
     (targetBlockId: string) => {
       collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'cutout')
@@ -3034,6 +3604,382 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedAiModel,
       setPendingSelection,
       uploadWorkspaceFileMutation,
+      workflowBlocks,
+    ]
+  )
+
+  const confirmVideoTrim = useCallback(
+    async ({ startSeconds, endSeconds }: VideoTrimRange) => {
+      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+        throw new Error('Video trimming is not available for this workflow.')
+      }
+      if (!params.workspaceId) {
+        throw new Error('Missing workspace context for video trimming.')
+      }
+      if (resolvedVariant !== 'video' || !resolvedFile) {
+        throw new Error('Source video node no longer has a video file.')
+      }
+
+      const sourceFile = toTrimRequestFile(resolvedFile)
+      if (!sourceFile) {
+        throw new Error('Source video file is missing a storage key.')
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        throw new Error('Source video node no longer exists.')
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        throw new Error('Unable to create a video content node.')
+      }
+
+      setIsVideoTrimProcessing(true)
+      setVideoTrimError(null)
+
+      try {
+        const trimResult = await requestJson(trimWorkspaceVideoContract, {
+          body: {
+            workspaceId: params.workspaceId,
+            sourceFile,
+            startSeconds,
+            endSeconds,
+          },
+        })
+
+        const targetBlockId = generateId()
+        const parentId = sourceBlock.data?.parentId
+        const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+        const targetPosition = {
+          x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+          y: sourcePosition.y,
+        }
+        const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+        const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+        const uploadedFile: UploadedFileValue = {
+          id: trimResult.file.id,
+          name: trimResult.file.name,
+          path: trimResult.file.url,
+          key: trimResult.file.key,
+          size: trimResult.file.size,
+          type: trimResult.file.type,
+          context: trimResult.file.context,
+        }
+        const newBlock = prepareBlockState({
+          id: targetBlockId,
+          type: 'content',
+          name: getUniqueBlockName('Video', workflowBlocks),
+          position: targetPosition,
+          data: {
+            contentVariant: 'video',
+            ...(parentId ? { parentId, extent: 'parent' } : {}),
+          },
+          parentId,
+          extent: parentId ? 'parent' : undefined,
+          blockConfig,
+        })
+        const reference: ContentReferenceRecord = {
+          sourceBlockId: id,
+          sourceVariant: 'video',
+          role: 'text_context',
+        }
+        const edge = createContentReferenceEdge({
+          id: generateId(),
+          source: id,
+          target: targetBlockId,
+          sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+          targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        })
+        const subBlockValues: Record<string, Record<string, unknown>> = {
+          [targetBlockId]: {
+            contentVariant: 'video',
+            videoPrompt: '',
+            videoModel: DEFAULT_VIDEO_MODEL,
+            videoModelFamily: effectiveVideoModelFamily,
+            videoFrameAspectRatioPreset: resolvedVideoFrameAspectRatioPreset,
+            videoParameters: resolvedVideoParameters,
+            videoMedia: [],
+            file: uploadedFile,
+            contentReferences: [reference],
+          },
+        }
+
+        setPendingSelection([targetBlockId])
+        collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+        usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+        setIsVideoTrimMode(false)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Video trim failed.'
+        setVideoTrimError(message)
+      } finally {
+        setIsVideoTrimProcessing(false)
+      }
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      effectiveVideoModelFamily,
+      id,
+      params.workspaceId,
+      resolvedFile,
+      resolvedVariant,
+      resolvedVideoFrameAspectRatioPreset,
+      resolvedVideoParameters,
+      setPendingSelection,
+      workflowBlocks,
+    ]
+  )
+
+  const confirmVideoEnhance = useCallback(async () => {
+    if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
+      throw new Error('Video enhancement is not available for this workflow.')
+    }
+    if (!params.workspaceId) {
+      throw new Error('Missing workspace context for video enhancement.')
+    }
+    if (resolvedVariant !== 'video') {
+      throw new Error('Video enhancement is only available for video nodes.')
+    }
+    if (!resolvedVideoEnhanceSourceFile?.key) {
+      collaborativeSetSubblockValue(id, 'generationKind', 'video_enhance')
+      collaborativeSetSubblockValue(id, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(id, 'generationError', 'Source video file is missing.')
+      return
+    }
+
+    collaborativeSetSubblockValue(id, 'generationKind', 'video_enhance')
+    collaborativeSetSubblockValue(id, 'generationStatus', 'pending')
+    collaborativeSetSubblockValue(id, 'generationError', null)
+    collaborativeSetSubblockValue(id, 'videoEnhanceParameters', resolvedVideoEnhanceParameters)
+
+    try {
+      const enhanceResult = await requestJson(enhanceWorkspaceVideoContract, {
+        body: {
+          workspaceId: params.workspaceId,
+          sourceFile: resolvedVideoEnhanceSourceFile,
+          resolution: resolvedVideoEnhanceParameters.resolution,
+          frameRate: resolvedVideoEnhanceParameters.frameRate,
+          slowMotion: resolvedVideoEnhanceParameters.slowMotion,
+        },
+      })
+      const uploadedFile: UploadedFileValue = {
+        id: enhanceResult.file.id,
+        name: enhanceResult.file.name,
+        path: enhanceResult.file.url,
+        key: enhanceResult.file.key,
+        size: enhanceResult.file.size,
+        type: enhanceResult.file.type,
+        context: enhanceResult.file.context,
+      }
+
+      collaborativeSetSubblockValue(id, 'file', uploadedFile)
+      collaborativeSetSubblockValue(id, 'generationKind', 'video_enhance')
+      collaborativeSetSubblockValue(id, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(id, 'generationError', null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Video enhancement failed.'
+      collaborativeSetSubblockValue(id, 'generationKind', 'video_enhance')
+      collaborativeSetSubblockValue(id, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(id, 'generationError', message)
+    }
+  }, [
+    canEditWorkflow,
+    collaborativeSetSubblockValue,
+    data.isEmbedded,
+    data.isPreview,
+    id,
+    params.workspaceId,
+    resolvedVariant,
+    resolvedVideoEnhanceParameters,
+    resolvedVideoEnhanceSourceFile,
+  ])
+
+  const markVideoFrameCapturePending = useCallback(
+    (targetBlockId: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'pending')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const completeVideoFrameCapture = useCallback(
+    (targetBlockId: string, file: UploadedFileValue) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failVideoFrameCapture = useCallback(
+    (targetBlockId: string, message: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'video_frame_capture')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startVideoFrameCaptureRequest = useCallback(
+    async (request: {
+      targetBlockId: string
+      sourceFile: CaptureWorkspaceVideoFrameBody['sourceFile']
+      mode: VideoFrameCaptureMode
+      timeSeconds: number
+    }) => {
+      markVideoFrameCapturePending(request.targetBlockId)
+
+      try {
+        const captureResult = await requestJson(captureWorkspaceVideoFrameContract, {
+          body: {
+            workspaceId: params.workspaceId,
+            sourceFile: request.sourceFile,
+            timeSeconds: request.timeSeconds,
+            mode: request.mode,
+          },
+        })
+        const uploadedFile: UploadedFileValue = {
+          id: captureResult.file.id,
+          name: captureResult.file.name,
+          path: captureResult.file.url,
+          key: captureResult.file.key,
+          size: captureResult.file.size,
+          type: captureResult.file.type,
+          context: captureResult.file.context,
+        }
+
+        completeVideoFrameCapture(request.targetBlockId, uploadedFile)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Video frame capture failed.'
+        failVideoFrameCapture(request.targetBlockId, message)
+      }
+    },
+    [
+      completeVideoFrameCapture,
+      failVideoFrameCapture,
+      markVideoFrameCapturePending,
+      params.workspaceId,
+    ]
+  )
+
+  const createVideoFrameCaptureNode = useCallback(
+    ({ mode, timeSeconds }: { mode: VideoFrameCaptureMode; timeSeconds: number }) => {
+      if (
+        !canEditWorkflow ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'video' ||
+        !resolvedFile
+      ) {
+        return
+      }
+      if (!params.workspaceId) {
+        return
+      }
+
+      const sourceFile = toFrameCaptureRequestFile(resolvedFile)
+      if (!sourceFile) {
+        return
+      }
+
+      const sourceBlock = workflowBlocks[id]
+      if (!sourceBlock) {
+        return
+      }
+
+      const blockConfig = getBlockConfigFromCatalog('content')
+      if (!blockConfig) {
+        return
+      }
+
+      const targetBlockId = generateId()
+      const parentId = sourceBlock.data?.parentId
+      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
+      const targetPosition = {
+        x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
+        y: sourcePosition.y,
+      }
+      const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
+      const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
+      const newBlock = prepareBlockState({
+        id: targetBlockId,
+        type: 'content',
+        name: getUniqueBlockName('Image', workflowBlocks),
+        position: targetPosition,
+        data: {
+          contentVariant: 'image',
+          ...(parentId ? { parentId, extent: 'parent' } : {}),
+        },
+        parentId,
+        extent: parentId ? 'parent' : undefined,
+        blockConfig,
+      })
+      const reference: ContentReferenceRecord = {
+        sourceBlockId: id,
+        sourceVariant: 'video',
+        role: 'video_frame_capture',
+      }
+      const edge = createContentReferenceEdge({
+        id: generateId(),
+        source: id,
+        target: targetBlockId,
+        sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
+        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+      })
+      const subBlockValues: Record<string, Record<string, unknown>> = {
+        [targetBlockId]: {
+          contentVariant: 'image',
+          aiPrompt: '',
+          aiModel: effectiveDefaultImageModel,
+          aiAspectRatio: 'auto',
+          file: null,
+          contentReferences: [reference],
+          generationKind: 'video_frame_capture',
+          generationStatus: 'pending',
+          generationError: null,
+          videoFrameCaptureSourceFile: sourceFile,
+          videoFrameCaptureMode: mode,
+          videoFrameCaptureTimeSeconds: timeSeconds,
+        },
+      }
+
+      setIsImageCropMode(false)
+      setIsImageRepaintMode(false)
+      setIsImageEraseMode(false)
+      setIsImageOutpaintMode(false)
+      setIsVideoTrimMode(false)
+      setVideoTrimError(null)
+      setPendingSelection([targetBlockId])
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      if (added) {
+        void startVideoFrameCaptureRequest({
+          targetBlockId,
+          sourceFile,
+          mode,
+          timeSeconds,
+        })
+      }
+    },
+    [
+      canEditWorkflow,
+      collaborativeBatchAddBlocks,
+      data.isEmbedded,
+      data.isPreview,
+      effectiveDefaultImageModel,
+      id,
+      params.workspaceId,
+      resolvedFile,
+      resolvedVariant,
+      setPendingSelection,
+      startVideoFrameCaptureRequest,
       workflowBlocks,
     ]
   )
@@ -3420,6 +4366,20 @@ export const ContentBlock = memo(function ContentBlock({
     selected,
   ])
 
+  useEffect(() => {
+    if (
+      isVideoTrimMode &&
+      (!selected ||
+        data.isPreview ||
+        data.isEmbedded ||
+        resolvedVariant !== 'video' ||
+        !resolvedFile)
+    ) {
+      setIsVideoTrimMode(false)
+      setVideoTrimError(null)
+    }
+  }, [data.isEmbedded, data.isPreview, isVideoTrimMode, resolvedFile, resolvedVariant, selected])
+
   const resolveBlockSourceValues = useCallback(
     (blockId: string): StoredValueRecord => {
       const liveValues = workflowValues[blockId]
@@ -3523,6 +4483,60 @@ export const ContentBlock = memo(function ContentBlock({
     resolvedVariant,
     resolveBlockSourceValues,
     startImageCutoutRequest,
+  ])
+
+  const retryVideoFrameCapture = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      resolvedGenerationKind !== 'video_frame_capture'
+    ) {
+      return
+    }
+
+    if (!resolvedVideoFrameCaptureSourceFile?.key) {
+      failVideoFrameCapture(id, '源视频缺少文件信息。')
+      return
+    }
+
+    if (
+      resolvedVideoFrameCaptureMode !== 'current' &&
+      resolvedVideoFrameCaptureMode !== 'first' &&
+      resolvedVideoFrameCaptureMode !== 'last'
+    ) {
+      failVideoFrameCapture(id, '缺少截帧模式，无法重试。')
+      return
+    }
+
+    const timeSeconds =
+      typeof resolvedVideoFrameCaptureTimeSeconds === 'number'
+        ? resolvedVideoFrameCaptureTimeSeconds
+        : Number(resolvedVideoFrameCaptureTimeSeconds)
+    if (!Number.isFinite(timeSeconds) || timeSeconds < 0) {
+      failVideoFrameCapture(id, '缺少截帧时间，无法重试。')
+      return
+    }
+
+    void startVideoFrameCaptureRequest({
+      targetBlockId: id,
+      sourceFile: resolvedVideoFrameCaptureSourceFile,
+      mode: resolvedVideoFrameCaptureMode,
+      timeSeconds,
+    })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    failVideoFrameCapture,
+    id,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolvedVideoFrameCaptureMode,
+    resolvedVideoFrameCaptureSourceFile,
+    resolvedVideoFrameCaptureTimeSeconds,
+    startVideoFrameCaptureRequest,
   ])
   const getContentNodeIdAtPoint = useCallback(
     (clientX: number, clientY: number): string | null => {
@@ -3991,10 +5005,12 @@ export const ContentBlock = memo(function ContentBlock({
         return []
       }
 
-      const isVideoRole =
-        reference.role === 'video_first_frame' || reference.role === 'video_last_frame'
-      const sourceBlockId = isVideoRole ? reference.sourceBlockId : id
-      const targetBlockId = isVideoRole ? id : reference.sourceBlockId
+      const isSourceToTargetRole =
+        reference.role === 'video_first_frame' ||
+        reference.role === 'video_last_frame' ||
+        reference.role === 'video_frame_capture'
+      const sourceBlockId = isSourceToTargetRole ? reference.sourceBlockId : id
+      const targetBlockId = isSourceToTargetRole ? id : reference.sourceBlockId
       const sourceX = workflowBlocks[sourceBlockId]?.position.x ?? 0
       const targetX = workflowBlocks[targetBlockId]?.position.x ?? 0
 
@@ -4158,6 +5174,15 @@ export const ContentBlock = memo(function ContentBlock({
           }
         }}
       >
+        <ContentNodeTitleBar
+          blockId={id}
+          name={data.name}
+          variant={resolvedVariant}
+          canEdit={canEditWorkflow && !data.isPreview && !data.isEmbedded}
+          zoom={viewport.zoom}
+          onRename={(nextName) => collaborativeUpdateBlockName(id, nextName).success}
+        />
+
         {canSubmitToShowcase && (
           <button
             type='button'
@@ -4186,11 +5211,14 @@ export const ContentBlock = memo(function ContentBlock({
           </button>
         )}
 
-        {!data.isPreview && !data.isEmbedded && !(resolvedVariant === 'image' && resolvedFile) && (
-          <div className='nodrag nopan'>
-            <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
-          </div>
-        )}
+        {!data.isPreview &&
+          !data.isEmbedded &&
+          !(resolvedVariant === 'image' && resolvedFile) &&
+          !(resolvedVariant === 'video' && resolvedFile) && (
+            <div className='nodrag nopan'>
+              <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
+            </div>
+          )}
 
         {resolvedVariant === 'image' ||
         resolvedVariant === 'video' ||
@@ -4215,16 +5243,28 @@ export const ContentBlock = memo(function ContentBlock({
             videoMedia={resolvedVideoMedia}
             videoParameters={resolvedVideoParameters}
             videoFrameAspectRatioPreset={resolvedVideoFrameAspectRatioPreset}
+            videoEnhanceSourceFile={resolvedVideoEnhanceSourceFile}
+            videoEnhanceParameters={resolvedVideoEnhanceParameters}
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
-            generationStatus={normalizeImageGenerationStatus(resolvedGenerationStatus)}
-            generationKind={normalizeImageGenerationKind(resolvedGenerationKind)}
+            generationStatus={
+              normalizeImageGenerationStatus(resolvedGenerationStatus) ??
+              normalizeVideoEnhanceGenerationStatus(resolvedGenerationStatus)
+            }
+            generationKind={
+              normalizeImageGenerationKind(resolvedGenerationKind) ??
+              normalizeVideoEnhanceGenerationKind(resolvedGenerationKind)
+            }
             generationErrorMessage={resolvedGenerationError}
+            nodeName={data.name}
             isImageCropMode={isImageCropMode}
             isImageRepaintMode={isImageRepaintMode}
             isImageEraseMode={isImageEraseMode}
             isImageOutpaintMode={isImageOutpaintMode}
+            isVideoTrimMode={isVideoTrimMode}
             isImageCropProcessing={uploadWorkspaceFileMutation.isPending}
+            isVideoTrimProcessing={isVideoTrimProcessing}
+            videoTrimError={videoTrimError}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onStartImageCrop={startImageCropMode}
@@ -4232,16 +5272,23 @@ export const ContentBlock = memo(function ContentBlock({
             onStartImageErase={startImageEraseMode}
             onStartImageOutpaint={startImageOutpaintMode}
             onStartImageCutout={startImageCutoutMode}
+            onStartVideoTrim={startVideoTrimMode}
+            onStartVideoEnhance={createVideoEnhanceNode}
+            onCaptureVideoFrame={createVideoFrameCaptureNode}
             onCancelImageCrop={cancelImageCropMode}
             onCancelImageRepaint={cancelImageRepaintMode}
             onCancelImageErase={cancelImageEraseMode}
             onCancelImageOutpaint={cancelImageOutpaintMode}
+            onCancelVideoTrim={cancelVideoTrimMode}
             onConfirmImageCrop={confirmImageCrop}
+            onConfirmVideoTrim={confirmVideoTrim}
+            onConfirmVideoEnhance={confirmVideoEnhance}
             onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
             onCreateImageEraseVariant={createImageEraseVariantNode}
             onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
+            onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)
             }}
@@ -4277,6 +5324,9 @@ export const ContentBlock = memo(function ContentBlock({
             }}
             onChangeVideoFrameAspectRatioPreset={(value) => {
               if (!data.isPreview) setVideoFrameAspectRatioPresetValue(value)
+            }}
+            onChangeVideoEnhanceParameters={(value) => {
+              if (!data.isPreview) setVideoEnhanceParametersValue(value)
             }}
           />
         ) : (

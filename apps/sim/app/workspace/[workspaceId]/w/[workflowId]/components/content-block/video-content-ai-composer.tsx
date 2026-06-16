@@ -99,8 +99,8 @@ function SegmentButton({
       className={cn(
         'flex min-w-0 items-center justify-center gap-1 rounded-[14px] px-3 py-2 text-xs transition-colors',
         active
-          ? 'bg-[#515157] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-          : 'text-[#8D939F] hover-hover:bg-white/5',
+          ? 'bg-[var(--surface-5)] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+          : 'text-[var(--text-muted)] hover-hover:bg-[var(--surface-3)]',
         disabled && 'cursor-not-allowed opacity-60'
       )}
     >
@@ -127,13 +127,13 @@ function SegmentedControl({
 }) {
   return (
     <div className='flex flex-col gap-2'>
-      <div className='flex items-center gap-1 text-[#9EA4B1] text-xs'>
+      <div className='flex items-center gap-1 text-[var(--text-secondary)] text-xs'>
         {icon}
         <span>{label}</span>
       </div>
       <div
         className={cn(
-          'grid rounded-[18px] bg-[#2F3136] p-1',
+          'grid rounded-[18px] bg-[var(--surface-1)] p-1',
           options.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
         )}
       >
@@ -185,23 +185,23 @@ function FrameSlotChip({
         'relative flex min-w-[88px] items-center gap-2 rounded-[14px] border px-2.5 py-2 text-left transition-colors',
         active
           ? 'border-[#F4B740] bg-[#2A2417]'
-          : 'border-white/10 bg-white/[0.03] hover-hover:bg-white/[0.06]',
+          : 'border-[var(--border)] bg-[var(--surface-1)] hover-hover:bg-[var(--surface-3)]',
         disabled && 'cursor-not-allowed opacity-60'
       )}
     >
       {previewPath ? (
-        <div className='h-9 w-9 overflow-hidden rounded-[10px] border border-white/10 bg-black/30'>
+        <div className='h-9 w-9 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)]'>
           <img src={previewPath} alt={file?.name || label} className='h-full w-full object-cover' />
         </div>
       ) : (
-        <div className='flex h-9 w-9 items-center justify-center rounded-[10px] border border-dashed border-white/15 bg-black/20 text-[11px] text-white'>
+        <div className='flex h-9 w-9 items-center justify-center rounded-[10px] border border-[var(--border)] border-dashed bg-[var(--surface-2)] text-[11px] text-[var(--text-primary)]'>
           +
         </div>
       )}
 
       <div className='min-w-0'>
-        <div className='text-[11px] text-[#9EA4B1]'>{label}</div>
-        <div className='max-w-[88px] truncate text-[12px] text-[#F5F7FA]'>
+        <div className='text-[11px] text-[var(--text-muted)]'>{label}</div>
+        <div className='max-w-[88px] truncate text-[12px] text-[var(--text-primary)]'>
           {file?.name || '从画布选择'}
         </div>
       </div>
@@ -219,7 +219,7 @@ function FrameSlotChip({
             event.preventDefault()
             event.stopPropagation()
           }}
-          className='absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white'
+          className='absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-5)] text-[var(--text-primary)]'
         >
           <X className='h-3 w-3' />
         </span>
@@ -238,19 +238,21 @@ function LockedToggle({
   description: string
 }) {
   return (
-    <div className='flex items-center justify-between rounded-[18px] bg-[#2F3136] px-3 py-2.5'>
+    <div className='flex items-center justify-between rounded-[18px] bg-[var(--surface-1)] px-3 py-2.5'>
       <div>
-        <div className='flex items-center gap-1 text-[#F5F7FA] text-xs'>
-          <Volume2 className='h-3.5 w-3.5 text-[#9EA4B1]' />
+        <div className='flex items-center gap-1 text-[var(--text-primary)] text-xs'>
+          <Volume2 className='h-3.5 w-3.5 text-[var(--text-secondary)]' />
           <span>{label}</span>
         </div>
-        <div className='mt-1 text-[#8D939F] text-[11px]'>{description}</div>
+        <div className='mt-1 text-[11px] text-[var(--text-muted)]'>{description}</div>
       </div>
-      <div className='rounded-full bg-[#3A3C41] p-1'>
+      <div className='rounded-full bg-[var(--surface-2)] p-1'>
         <div
           className={cn(
             'flex min-w-[72px] items-center justify-center rounded-full px-3 py-1.5 text-xs',
-            enabled ? 'bg-[#515157] text-white' : 'text-[#8D939F]'
+            enabled
+              ? 'bg-[var(--surface-5)] text-[var(--text-primary)]'
+              : 'text-[var(--text-muted)]'
           )}
         >
           {enabled ? '开启' : '关闭'}
@@ -357,7 +359,7 @@ export function VideoContentAiComposer({
           </div>
 
           {isSelectingFrame ? (
-            <div className='rounded-full border border-[#5F4720] bg-[#2D2418] px-2.5 py-1 text-[11px] text-[#F4C86A]'>
+            <div className='rounded-full border border-[#5F4720] bg-[#2D2418] px-2.5 py-1 text-[#F4C86A] text-[11px]'>
               {selectedFrameSlot === 'last' ? '选择尾帧中' : '选择首帧中'}
             </div>
           ) : null}
@@ -365,14 +367,14 @@ export function VideoContentAiComposer({
       }
       afterFooter={
         settingsOpen ? (
-          <div className='border-white/5 border-t bg-[#1B1D21] px-4 py-4'>
+          <div className='border-[var(--border)] border-t bg-[var(--surface-1)] px-4 py-4'>
             <div className='flex flex-col gap-4'>
               <div className='flex items-center justify-between gap-3'>
                 <div>
-                  <div className='font-medium text-[#F5F7FA] text-sm'>
+                  <div className='font-medium text-[var(--text-primary)] text-sm'>
                     {isWan26 ? 'Wan 2.6 参数' : 'Wan 2.7 参数'}
                   </div>
-                  <div className='mt-1 text-[#8D939F] text-[11px]'>
+                  <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
                     {isWan26
                       ? hasFirstFrame
                         ? '当前将使用首帧参考模式。'
@@ -390,8 +392,10 @@ export function VideoContentAiComposer({
                   }}
                   disabled={isSelectingFrame}
                   className={cn(
-                    'rounded-full border border-white/10 px-2 py-1 text-[11px]',
-                    isSelectingFrame ? 'cursor-not-allowed text-[#6F7582]' : 'text-[#B9C0CC]'
+                    'rounded-full border border-[var(--border)] px-2 py-1 text-[11px] transition-colors',
+                    isSelectingFrame
+                      ? 'cursor-not-allowed text-[var(--text-muted)]'
+                      : 'text-[var(--text-secondary)] hover-hover:bg-[var(--surface-3)]'
                   )}
                 >
                   收起
@@ -442,18 +446,18 @@ export function VideoContentAiComposer({
                 />
 
                 <div className='flex flex-col gap-2'>
-                  <div className='flex items-center gap-1 text-[#9EA4B1] text-xs'>
+                  <div className='flex items-center gap-1 text-[var(--text-secondary)] text-xs'>
                     <Clock3 className='h-3.5 w-3.5' />
                     <span>生成时长</span>
                   </div>
-                  <label className='rounded-[18px] bg-[#2F3136] px-3 py-2'>
+                  <label className='rounded-[18px] bg-[var(--surface-1)] px-3 py-2'>
                     <select
                       value={durationSeconds}
                       onChange={(event) => onChangeDurationSeconds(Number(event.target.value))}
                       onPointerDown={stopEvent}
                       onClick={stopEvent}
                       disabled={!canEdit || isGenerating}
-                      className='w-full bg-transparent text-sm text-[#F5F7FA] outline-none disabled:cursor-not-allowed disabled:opacity-60'
+                      className='w-full bg-transparent text-[var(--text-primary)] text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60'
                     >
                       {compactDurationOptions.map((option) => (
                         <option key={option.id} value={option.id}>
@@ -489,7 +493,7 @@ export function VideoContentAiComposer({
       footer={
         <div className='flex items-center justify-between gap-3'>
           <div className='flex min-w-0 items-center gap-2'>
-            <label className='flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#E3E7EF] text-xs'>
+            <label className='flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs'>
               <Sparkles className='h-3.5 w-3.5 shrink-0 text-[#F4B740]' />
               <select
                 value={modelFamily}
@@ -526,10 +530,10 @@ export function VideoContentAiComposer({
                 setSettingsOpen((current) => !current)
               }}
               className={cn(
-                'flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs transition-colors',
+                'flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-xs transition-colors',
                 !canEdit || isGenerating
-                  ? 'cursor-not-allowed text-[#7B8190]'
-                  : 'text-[#F5F7FA] hover-hover:bg-white/10'
+                  ? 'cursor-not-allowed text-[var(--text-muted)]'
+                  : 'text-[var(--text-secondary)] hover-hover:bg-[var(--surface-3)] hover-hover:text-[var(--text-primary)]'
               )}
             >
               <Settings2 className='h-3.5 w-3.5 text-[#8DD8FF]' />

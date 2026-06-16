@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Scan } from 'lucide-react'
+import { Grid2x2, Grid2x2Check, Scan } from 'lucide-react'
 import { useReactFlow } from 'reactflow'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -22,7 +22,11 @@ import {
 import { useSession } from '@/lib/auth/auth-client'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { createCommand } from '@/app/workspace/[workspaceId]/utils/commands-utils'
-import { useShowActionBar, useUpdateGeneralSetting } from '@/hooks/queries/general-settings'
+import {
+  useShowActionBar,
+  useSnapToGridSize,
+  useUpdateGeneralSetting,
+} from '@/hooks/queries/general-settings'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useCanvasModeStore } from '@/stores/canvas-mode'
@@ -30,6 +34,7 @@ import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const logger = createLogger('WorkflowControls')
+const DEFAULT_SNAP_GRID_SIZE = 20
 
 /**
  * Floating controls for canvas mode, undo/redo, and fit-to-view.
@@ -42,6 +47,7 @@ export const WorkflowControls = memo(function WorkflowControls() {
   )
   const { undo, redo } = useCollaborativeWorkflow()
   const showWorkflowControls = useShowActionBar()
+  const snapToGridSize = useSnapToGridSize()
   const updateSetting = useUpdateGeneralSetting()
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const { data: session } = useSession()
@@ -51,10 +57,24 @@ export const WorkflowControls = memo(function WorkflowControls() {
   const stack = (key && stacks[key]) || { undo: [], redo: [] }
   const canUndo = stack.undo.length > 0
   const canRedo = stack.redo.length > 0
+  const isSnapToGridEnabled = snapToGridSize > 0
 
   const handleFitToView = useCallback(() => {
     fitViewToBounds({ padding: 0.1, duration: 300 })
   }, [fitViewToBounds])
+
+  const handleToggleSnapToGrid = async () => {
+    if (updateSetting.isPending) return
+
+    try {
+      await updateSetting.mutateAsync({
+        key: 'snapToGridSize',
+        value: isSnapToGridEnabled ? 0 : DEFAULT_SNAP_GRID_SIZE,
+      })
+    } catch (error) {
+      logger.error('Failed to update snap to grid setting', error)
+    }
+  }
 
   useRegisterGlobalCommands([
     createCommand({
@@ -178,6 +198,33 @@ export const WorkflowControls = memo(function WorkflowControls() {
         </Tooltip.Root>
 
         <div className='mx-1 h-[20px] w-[1px] bg-[var(--border)]' />
+
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Button
+              variant={isSnapToGridEnabled ? 'active' : 'ghost'}
+              className='h-[28px] w-[28px] rounded-md p-0 hover-hover:bg-[var(--surface-5)]'
+              onClick={handleToggleSnapToGrid}
+              disabled={updateSetting.isPending}
+            >
+              {isSnapToGridEnabled ? (
+                <Grid2x2Check className='h-[16px] w-[16px]' />
+              ) : (
+                <Grid2x2 className='h-[16px] w-[16px]' />
+              )}
+            </Button>
+          </Tooltip.Trigger>
+          <Tooltip.Content side='top'>
+            <div className='flex flex-col items-center gap-1'>
+              <span>{isSnapToGridEnabled ? 'Disable snap to grid' : 'Enable snap to grid'}</span>
+              {isSnapToGridEnabled && (
+                <span className='text-[var(--text-muted)] text-xs'>
+                  Snap to grid: {snapToGridSize}px
+                </span>
+              )}
+            </div>
+          </Tooltip.Content>
+        </Tooltip.Root>
 
         <Tooltip.Root>
           <Tooltip.Trigger asChild>

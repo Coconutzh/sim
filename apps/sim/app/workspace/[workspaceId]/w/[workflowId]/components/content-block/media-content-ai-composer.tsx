@@ -67,7 +67,7 @@ export function MediaContentAiComposer({
       footer={
         <div className='flex items-center justify-between gap-3'>
           <div className='flex min-w-0 items-center gap-2'>
-            <label className='flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#E3E7EF] text-xs'>
+            <label className='flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs'>
               <Sparkles className='h-3.5 w-3.5 shrink-0 text-[#F4B740]' />
               <select
                 value={model}
@@ -79,7 +79,11 @@ export function MediaContentAiComposer({
                 onFocus={(event) => event.stopPropagation()}
               >
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)}>
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    disabled={Boolean(option.disabledReason)}
+                  >
                     {option.label} - {option.description}
                     {option.disabledReason ? ' (Unavailable)' : ''}
                   </option>
@@ -87,7 +91,7 @@ export function MediaContentAiComposer({
               </select>
             </label>
 
-            <label className='flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[#E3E7EF] text-xs'>
+            <label className='flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs'>
               <ImageIcon className='h-3.5 w-3.5 shrink-0 text-[#8DD8FF]' />
               <select
                 value={aspectRatio}

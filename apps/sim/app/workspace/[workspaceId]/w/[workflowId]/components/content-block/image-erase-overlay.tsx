@@ -69,17 +69,17 @@ export function ImageEraseOverlay({
 
         return (
           <div
-            className='nodrag nopan relative mt-3 flex items-center gap-2 rounded-full border border-white/10 bg-[#101010]/95 p-2 text-white shadow-2xl backdrop-blur'
+            className='nodrag nopan relative mt-3 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)]/95 p-2 text-[var(--text-primary)] shadow-2xl backdrop-blur'
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className='min-w-0 flex-1 truncate px-2 text-white/35 text-xs'>
+            <div className='min-w-0 flex-1 truncate px-2 text-[var(--text-muted)] text-xs'>
               Draw a mask to erase
             </div>
             <select
               value={resolution}
               disabled={isProcessing}
-              className='h-8 rounded-full border border-white/10 bg-[#171717] px-2 text-white/70 text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50'
+              className='h-8 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 text-[var(--text-secondary)] text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50'
               onChange={(event) =>
                 setResolution(event.currentTarget.value as ImageGenerationResolution)
               }
@@ -91,7 +91,7 @@ export function ImageEraseOverlay({
                 </option>
               ))}
             </select>
-            <span className='rounded-full border border-white/10 bg-white/5 px-2 py-1 font-semibold text-[10px] text-white/75'>
+            <span className='rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 font-semibold text-[10px] text-[var(--text-muted)]'>
               PRO
             </span>
             <button
@@ -99,7 +99,7 @@ export function ImageEraseOverlay({
               aria-label='Submit erase'
               title={hasMask ? 'Submit erase' : 'Draw a mask before erasing'}
               disabled={isProcessing || Boolean(disabledReason) || !hasMask}
-              className='flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#111111] transition-opacity disabled:cursor-not-allowed disabled:opacity-45'
+              className='flex h-8 w-8 items-center justify-center rounded-full bg-[var(--text-primary)] text-[var(--text-inverse)] transition-opacity disabled:cursor-not-allowed disabled:opacity-45'
               onClick={submitErase}
             >
               {isSubmitting ? (
@@ -109,7 +109,7 @@ export function ImageEraseOverlay({
               )}
             </button>
             {error || disabledReason ? (
-              <div className='absolute top-full right-0 mt-2 rounded-[6px] border border-white/10 bg-[#171717] px-2 py-1.5 text-[11px] text-red-300 shadow-xl'>
+              <div className='absolute top-full right-0 mt-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-[11px] text-[var(--text-error)] shadow-xl'>
                 {error ?? disabledReason}
               </div>
             ) : null}
