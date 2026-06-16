@@ -77,7 +77,9 @@ describe('local canvas intent policy', () => {
       requiresUserConfirmation: false,
     })
     expect(decision.confidence).toBeGreaterThan(0.8)
-    expect(decision.evidence).toEqual(expect.arrayContaining(['consult_signal']))
+    expect(decision.evidence).toEqual(
+      expect.arrayContaining(['consult_signal', 'explicit_read_only_signal'])
+    )
   })
 
   it('allows explicit canvas content-chain creation even when the subject is exam-related', () => {
@@ -93,6 +95,19 @@ describe('local canvas intent policy', () => {
     expect(decision.evidence).toEqual(
       expect.arrayContaining(['mutation_signal', 'non_canvas_topic_used_as_canvas_subject'])
     )
+  })
+
+  it('does not treat text-to-image workflow wording as an explicit read-only boundary', () => {
+    const decision = classifyLocalCanvasUserIntent(
+      buildContext({
+        message:
+          '生成一个文生图工作流，首先生成舞台灯光效果的设计文案，然后用这个设计文案生成效果图',
+      })
+    )
+
+    expect(decision.requiresUserConfirmation).toBe(false)
+    expect(decision.evidence).not.toContain('explicit_read_only_signal')
+    expect(decision.evidence).not.toContain('propose_only_signal')
   })
 
   it('allows selected node prompt edits when the user only forbids generation', () => {

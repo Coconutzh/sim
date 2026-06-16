@@ -30,6 +30,14 @@ function resetEnv(): void {
   process.env.CONTENT_CANVAS_ACTOR_PROVIDER = undefined
   process.env.CONTENT_CANVAS_ACTOR_MODEL = undefined
   process.env.CONTENT_CANVAS_ACTOR_MODE = undefined
+  process.env.CONTENT_CANVAS_AUX_PROVIDER = undefined
+  process.env.CONTENT_CANVAS_AUX_MODEL = undefined
+  process.env.CONTENT_CANVAS_AUX_MODE = undefined
+  process.env.CONTENT_CANVAS_AUX_API_KEY = undefined
+  process.env.LOCAL_CANVAS_AUX_PROVIDER = undefined
+  process.env.LOCAL_CANVAS_AUX_MODEL = undefined
+  process.env.LOCAL_CANVAS_AUX_MODE = undefined
+  process.env.LOCAL_CANVAS_AUX_API_KEY = undefined
   process.env.LOCAL_COPILOT_PROVIDER = undefined
   process.env.LOCAL_COPILOT_MODEL = undefined
   process.env.LOCAL_COPILOT_API_KEY = undefined
@@ -155,5 +163,39 @@ describe('local canvas agent model config', () => {
         ],
       })
     )
+  })
+
+  it('resolves an auxiliary model when explicitly configured', async () => {
+    process.env.CONTENT_CANVAS_AUX_PROVIDER = 'openai'
+    process.env.CONTENT_CANVAS_AUX_MODEL = 'gpt-4.1-mini'
+    process.env.CONTENT_CANVAS_AUX_MODE = 'structured'
+    process.env.LOCAL_CANVAS_AUX_API_KEY = 'aux-key'
+    const { resolveLocalAgentAuxiliaryModelConfig } = await import(
+      '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
+    )
+
+    expect(
+      resolveLocalAgentAuxiliaryModelConfig({
+        fallback: { provider: 'deepseek', model: 'deepseek-chat', mode: 'structured' },
+      })
+    ).toEqual({
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      mode: 'structured',
+      apiKey: 'aux-key',
+    })
+  })
+
+  it('falls back to the primary local agent model when auxiliary config is absent', async () => {
+    const { resolveLocalAgentAuxiliaryModelConfig } = await import(
+      '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
+    )
+    const fallback = {
+      provider: 'deepseek' as const,
+      model: 'deepseek-chat',
+      mode: 'structured' as const,
+    }
+
+    expect(resolveLocalAgentAuxiliaryModelConfig({ fallback })).toBe(fallback)
   })
 })

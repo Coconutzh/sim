@@ -433,7 +433,7 @@ export function buildStructuredContentReferenceContext(params: {
     if (node.variant === 'image' && node.file?.key) {
       images.push({
         id: node.file.id ?? '',
-        name: node.name?.trim() || node.file.name || node.file.key,
+        name: node.file.name?.trim() || node.name?.trim() || node.file.key,
         url: node.file.url ?? '',
         key: node.file.key,
         size: node.file.size ?? 0,

@@ -929,7 +929,10 @@ export function LowMemoryHomeClient({ chatId, workspaceId }: LowMemoryHomeClient
   const [newProjectDueAt, setNewProjectDueAt] = useState('')
   const [newProjectPhases, setNewProjectPhases] = useState<DraftProjectPhase[]>([])
   const [projectToManage, setProjectToManage] = useState<ProjectEntry | null>(null)
-  const canCreateProject = session?.user?.role === 'admin'
+  const canCreateProject =
+    session?.user?.role === 'admin' ||
+    canvas.isProjectAdmin ||
+    canvas.projectEntries.some((project) => project.canManageProject)
   const hasProjectCards = canvas.projectEntries.length > 0
   const isProjectMutationPending = createProject.isPending || updateProject.isPending
 

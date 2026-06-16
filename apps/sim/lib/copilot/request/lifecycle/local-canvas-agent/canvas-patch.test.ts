@@ -252,4 +252,62 @@ describe('local canvas patch validation', () => {
       },
     })
   })
+
+  it('compiles delete_node into a workflow delete operation and rejects later references', () => {
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'image-1',
+          name: 'Image 1',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 360, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [{ source: 'text-1', target: 'image-1' }],
+    }
+
+    const invalid = validateLocalCanvasPatch(
+      {
+        operations: [
+          { type: 'delete_node', nodeId: 'text-1' },
+          { type: 'connect', sourceNodeId: 'text-1', targetNodeId: 'image-1' },
+        ],
+      },
+      snapshot
+    )
+    expect(invalid).toEqual({
+      valid: false,
+      errors: ['Source node "text-1" was not found'],
+    })
+
+    const valid = validateLocalCanvasPatch(
+      {
+        operations: [{ type: 'delete_node', nodeId: 'text-1' }],
+      },
+      snapshot
+    )
+    expect(valid).toEqual({ valid: true, errors: [] })
+
+    const { operations } = buildEditWorkflowOperationsFromPatch({
+      snapshot,
+      patch: {
+        operations: [{ type: 'delete_node', nodeId: 'text-1' }],
+      },
+    })
+    expect(operations).toEqual([{ operation_type: 'delete', block_id: 'text-1' }])
+  })
 })

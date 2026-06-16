@@ -11,6 +11,8 @@ const {
   mockLoadWorkflowFromNormalizedTables,
   mockSetTerminalToolCallState,
   mockCreateLogger,
+  mockExecuteContentCanvasTextRequest,
+  mockGenerateContentCanvasText,
   mockGenerateWorkspaceImageFromPrompt,
   mockGenerateWorkspaceAudioFromPrompt,
   mockGenerateWorkspaceVideoFromPrompt,
@@ -26,6 +28,8 @@ const {
     error: vi.fn(),
     debug: vi.fn(),
   })),
+  mockExecuteContentCanvasTextRequest: vi.fn(),
+  mockGenerateContentCanvasText: vi.fn(),
   mockGenerateWorkspaceImageFromPrompt: vi.fn(),
   mockGenerateWorkspaceAudioFromPrompt: vi.fn(),
   mockGenerateWorkspaceVideoFromPrompt: vi.fn(),
@@ -42,6 +46,11 @@ vi.mock('@sim/logger', () => ({
 vi.mock('@/providers', () => ({
   executeProviderRequest: mockExecuteProviderRequest,
   executeStructuredActorRequest: mockExecuteProviderRequest,
+}))
+
+vi.mock('@/lib/content-canvas/text-executor', () => ({
+  executeContentCanvasTextRequest: mockExecuteContentCanvasTextRequest,
+  generateContentCanvasText: mockGenerateContentCanvasText,
 }))
 
 vi.mock('@/lib/copilot/tools/server/workflow/edit-workflow', () => ({
@@ -73,6 +82,37 @@ vi.mock('@/lib/core/config/env', async (importOriginal) => {
     },
   }
 })
+
+const CONTENT_CANVAS_TEXT_ENV_KEYS = [
+  'CONTENT_TEXT_GEMINI_API_KEY',
+  'CONTENT_TEXT_GEMINI_BASE_URL',
+  'CONTENT_TEXT_GEMINI_ENABLED_MODELS',
+  'CONTENT_TEXT_GEMINI_DEFAULT_MODEL',
+  'CONTENT_TEXT_GLM_API_KEY',
+  'CONTENT_TEXT_GLM_BASE_URL',
+  'CONTENT_TEXT_GLM_ENABLED_MODELS',
+  'CONTENT_TEXT_GLM_DEFAULT_MODEL',
+  'GEMINI_API_KEY',
+  'GEMINI_API_KEY_1',
+  'GEMINI_API_KEY_2',
+  'GEMINI_API_KEY_3',
+  'ZHIPU_API_KEY',
+] as const
+
+const originalProcessEnv = { ...process.env }
+
+function resetContentCanvasAgentTestEnv() {
+  process.env = { ...originalProcessEnv }
+  for (const key of CONTENT_CANVAS_TEXT_ENV_KEYS) {
+    delete process.env[key]
+  }
+  process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
+  process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
+  process.env.CONTENT_CANVAS_ACTOR_MODE = 'structured'
+  process.env.LOCAL_COPILOT_PROVIDER = 'deepseek'
+  process.env.LOCAL_COPILOT_MODEL = 'deepseek-chat'
+  process.env.DEEPSEEK_API_KEY = 'test-key'
+}
 
 describe.skip('generic goal fallback legacy', () => {
   beforeEach(() => {
@@ -386,8 +426,17 @@ describe.skip('generic goal fallback legacy', () => {
 describe('generic goal fallback', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    resetContentCanvasAgentTestEnv()
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
     mockEditWorkflowExecute.mockResolvedValue({ success: true })
+    mockGenerateContentCanvasText.mockResolvedValue('生成的文本内容')
+    mockExecuteContentCanvasTextRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        shouldContinue: false,
+        actions: [],
+      }),
+    })
     mockGenerateWorkspaceImageFromPrompt.mockResolvedValue({
       file: {
         id: 'generated-image-1',
@@ -790,17 +839,23 @@ function createContentCanvasWorkflowState() {
 }
 
 describe('content canvas agent', () => {
-  const originalEnv = { ...process.env }
-
   beforeEach(() => {
     vi.resetAllMocks()
-    process.env = { ...originalEnv }
+    resetContentCanvasAgentTestEnv()
     mockGenerateId
       .mockReturnValueOnce('pending-plan-1')
       .mockReturnValueOnce('new-block-1')
       .mockReturnValueOnce('tool-call-1')
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
     mockEditWorkflowExecute.mockResolvedValue({ success: true })
+    mockGenerateContentCanvasText.mockResolvedValue('生成的文本内容')
+    mockExecuteContentCanvasTextRequest.mockResolvedValue({
+      content: JSON.stringify({
+        assistantText: '',
+        shouldContinue: false,
+        actions: [],
+      }),
+    })
     mockGenerateWorkspaceImageFromPrompt.mockResolvedValue({
       file: {
         id: 'generated-image-1',
@@ -1339,7 +1394,9 @@ describe('content canvas agent', () => {
     })
 
     expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
-    expect(mockEditWorkflowExecute.mock.calls.flatMap((call) => call[0]?.operations ?? [])).not.toEqual(
+    expect(
+      mockEditWorkflowExecute.mock.calls.flatMap((call) => call[0]?.operations ?? [])
+    ).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           operation_type: 'add',
@@ -1901,7 +1958,8 @@ describe('content canvas agent', () => {
 
     await runContentCanvasAgent({
       requestPayload: {
-        message: '帮我做一个三节点内容流：先写一句夏日饮品文案，再生成配图，最后生成配图对应的短视频。',
+        message:
+          '帮我做一个三节点内容流：先写一句夏日饮品文案，再生成配图，最后生成配图对应的短视频。',
         workflowId: 'workflow-1',
         workspaceId: 'workspace-1',
         confirmationMode: 'auto',
@@ -2361,9 +2419,9 @@ describe('content canvas agent', () => {
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
     process.env.CONTENT_CANVAS_ACTOR_MODE = 'structured'
-    delete process.env.LOCAL_COPILOT_PROVIDER
-    delete process.env.LOCAL_COPILOT_MODEL
-    delete process.env.DEEPSEEK_API_KEY
+    Reflect.deleteProperty(process.env, 'LOCAL_COPILOT_PROVIDER')
+    Reflect.deleteProperty(process.env, 'LOCAL_COPILOT_MODEL')
+    Reflect.deleteProperty(process.env, 'DEEPSEEK_API_KEY')
 
     expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).toEqual({
       provider: 'openai',
@@ -2834,8 +2892,7 @@ describe('content canvas agent', () => {
     expect(mockEditWorkflowExecute).toHaveBeenCalledTimes(2)
     expect(
       context.contentBlocks.some(
-        (block) =>
-          block.type === 'action_event' && block.actionEvent?.name === 'repaired_step'
+        (block) => block.type === 'action_event' && block.actionEvent?.name === 'repaired_step'
       )
     ).toBe(true)
   })

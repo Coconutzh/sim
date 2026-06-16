@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { executeLocalAgentModelRequest } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
+import {
+  executeLocalAgentModelRequest,
+  resolveLocalAgentAuxiliaryModelConfig,
+} from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/config'
 import { buildLocalAgentRoleSystemPrompt } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/prompts'
 import type {
   LocalAgentContext,
@@ -307,7 +310,10 @@ export async function summarizeLocalAgentRun(params: {
 }): Promise<LocalAgentMemoryData> {
   const fallback = buildDeterministicSummary(params)
   try {
-    const response = await executeLocalAgentModelRequest(params.context.model, {
+    const summaryModel = resolveLocalAgentAuxiliaryModelConfig({
+      fallback: params.context.model,
+    })
+    const response = await executeLocalAgentModelRequest(summaryModel, {
       role: 'summarizer',
       workspaceId: params.context.workspaceId,
       systemPrompt: buildLocalAgentRoleSystemPrompt({

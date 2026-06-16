@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { summarizeLocalAgentRun } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/summarizer'
 import type {
   LocalAgentContext,
@@ -9,12 +9,18 @@ import type {
   LocalAgentPlan,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
-const { mockExecuteLocalAgentModelRequest } = vi.hoisted(() => ({
-  mockExecuteLocalAgentModelRequest: vi.fn(),
-}))
+const { mockExecuteLocalAgentModelRequest, mockResolveLocalAgentAuxiliaryModelConfig } = vi.hoisted(
+  () => ({
+    mockExecuteLocalAgentModelRequest: vi.fn(),
+    mockResolveLocalAgentAuxiliaryModelConfig: vi.fn(
+      ({ fallback }: { fallback: LocalAgentContext['model'] }) => fallback
+    ),
+  })
+)
 
 vi.mock('@/lib/copilot/request/lifecycle/local-canvas-agent/models/config', () => ({
   executeLocalAgentModelRequest: mockExecuteLocalAgentModelRequest,
+  resolveLocalAgentAuxiliaryModelConfig: mockResolveLocalAgentAuxiliaryModelConfig,
 }))
 
 function buildContext(): LocalAgentContext {
@@ -65,6 +71,14 @@ function buildMemory(): LocalAgentMemoryData {
 }
 
 describe('local canvas summarizer', () => {
+  beforeEach(() => {
+    mockExecuteLocalAgentModelRequest.mockReset()
+    mockResolveLocalAgentAuxiliaryModelConfig.mockReset()
+    mockResolveLocalAgentAuxiliaryModelConfig.mockImplementation(
+      ({ fallback }: { fallback: LocalAgentContext['model'] }) => fallback
+    )
+  })
+
   it('stores canvas summary text from read_summary observations', async () => {
     mockExecuteLocalAgentModelRequest.mockRejectedValue(new Error('model unavailable'))
     const plan: LocalAgentPlan = {
@@ -234,6 +248,44 @@ describe('local canvas summarizer', () => {
     expect(summary.taskState.completedSteps).not.toContain('已创建四节点内容链并验证连接')
     expect(summary.taskState.openQuestions).toContain('是否继续生成各节点输出？')
     expect(mockExecuteLocalAgentModelRequest.mock.calls[0]?.[1]?.responseFormat).toBeDefined()
+  })
+
+  it('uses the auxiliary model resolver for model-based summaries', async () => {
+    mockResolveLocalAgentAuxiliaryModelConfig.mockReturnValue({
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      mode: 'structured',
+      apiKey: 'aux-key',
+    })
+    mockExecuteLocalAgentModelRequest.mockResolvedValue({
+      content: JSON.stringify({
+        conversationSummary: '辅助模型总结。',
+        canvasSummary: '辅助模型画布总结。',
+        taskState: { openQuestions: [] },
+      }),
+    })
+    const plan: LocalAgentPlan = {
+      goal: '总结',
+      risk: 'low',
+      requiresClarification: false,
+      steps: [],
+      successCriteria: ['summary'],
+    }
+
+    await summarizeLocalAgentRun({
+      context: buildContext(),
+      memory: buildMemory(),
+      plan,
+      observations: [],
+    })
+
+    expect(mockResolveLocalAgentAuxiliaryModelConfig).toHaveBeenCalledWith({
+      fallback: buildContext().model,
+    })
+    expect(mockExecuteLocalAgentModelRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gpt-4.1-mini', apiKey: 'aux-key' }),
+      expect.objectContaining({ role: 'summarizer' })
+    )
   })
 
   it('does not mark failed, aborted, or unverified canvas writes as completed steps', async () => {

@@ -467,7 +467,11 @@ async function hasProjectAdminWorkgroupMembership(
         eq(workgroupMember.organizationId, organizationId),
         eq(workgroupMember.role, 'admin'),
         isNull(workgroup.archivedAt),
-        or(eq(discipline.agentCode, 'chief_director'), eq(discipline.code, 'pmo'))
+        or(
+          eq(discipline.agentCode, 'chief_director'),
+          eq(discipline.agentCode, 'show_director'),
+          eq(discipline.code, 'pmo')
+        )
       )
     )
     .limit(1)
@@ -479,6 +483,38 @@ async function canOverrideWorkgroupAdmin(userId: string, organizationId: string)
   if (await isPlatformAdmin(userId)) return true
   const orgRole = await getOrganizationRole(userId, organizationId)
   return orgRole === 'owner' || orgRole === 'admin'
+}
+
+async function canCreateProductionProject(actorUserId: string): Promise<boolean> {
+  if (await isPlatformAdmin(actorUserId)) return true
+
+  const [organizationAdminRow] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.userId, actorUserId), inArray(member.role, ['owner', 'admin'])))
+    .limit(1)
+  if (organizationAdminRow) return true
+
+  const [projectAdminRow] = await db
+    .select({ id: workgroupMember.id })
+    .from(workgroupMember)
+    .innerJoin(workgroup, eq(workgroupMember.workgroupId, workgroup.id))
+    .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+    .where(
+      and(
+        eq(workgroupMember.userId, actorUserId),
+        eq(workgroupMember.role, 'admin'),
+        isNull(workgroup.archivedAt),
+        or(
+          eq(discipline.agentCode, 'chief_director'),
+          eq(discipline.agentCode, 'show_director'),
+          eq(discipline.code, 'pmo')
+        )
+      )
+    )
+    .limit(1)
+
+  return Boolean(projectAdminRow)
 }
 
 export async function assertOrganizationAdmin(
@@ -1184,8 +1220,8 @@ export async function createProductionProject(params: {
   phases?: ProductionProjectPhaseInput[]
   name: string
 }) {
-  if (!(await isPlatformAdmin(params.actorUserId))) {
-    throw new Error('Platform admin access required')
+  if (!(await canCreateProductionProject(params.actorUserId))) {
+    throw new Error('Project creation admin access required')
   }
 
   const now = new Date()

@@ -189,6 +189,10 @@ function normalizeLegacyFields(patch: Record<string, unknown>): Record<string, u
 function normalizeDirectCanvasPatchOperation(
   patch: Record<string, unknown>
 ): LocalCanvasPatch | null {
+  if (patch.type === 'delete_node') {
+    const nodeId = typeof patch.nodeId === 'string' ? patch.nodeId : ''
+    return nodeId ? { operations: [{ type: 'delete_node', nodeId }] } : null
+  }
   if (patch.type === 'update_node') {
     const nodeId = typeof patch.nodeId === 'string' ? patch.nodeId : ''
     if (!nodeId) return null
@@ -612,6 +616,7 @@ function buildPatchMachineSummary(params: {
   const createdNodeMap: Record<string, string> = {}
   const writeBackFields: Array<Record<string, unknown>> = []
   const referenceChanges: Array<Record<string, unknown>> = []
+  const deletedNodeIds: string[] = []
   params.patch.operations.forEach((operation, index) => {
     const operationId = getPatchOperationId(operation, index)
     const result = operationResults.find((item) => item.operationId === operationId)
@@ -637,6 +642,9 @@ function buildPatchMachineSummary(params: {
             : 'pending_or_failed',
         })
       }
+    }
+    if (operation.type === 'delete_node') {
+      deletedNodeIds.push(operation.nodeId)
     }
     if (
       operation.type === 'add_content_reference' ||
@@ -678,6 +686,7 @@ function buildPatchMachineSummary(params: {
     success: params.verification.success === true,
     createdNodeMap,
     writeBackFields,
+    deletedNodeIds,
     referenceChanges,
     generationCandidates: generatedCandidates,
     fieldChecks,

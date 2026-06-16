@@ -24,8 +24,16 @@ function matchesAny(message: string, patterns: readonly RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(message))
 }
 
+const EXPLICIT_READ_ONLY_PATTERNS = [
+  /(?:^|[，。,.、\s])先(?!生成|创建|新建|新增|搭建|制作).{0,10}(?:告诉|说|讲|聊|讨论|分析|解释)/,
+  /(?:只|仅).{0,8}(?:讨论|聊|分析|给我思路|给我建议|给方案)/,
+  /(?:^|[，。,.、\s])(?:讨论一下|讨论下|聊聊|商量一下|商量下)(?:$|[，。,.、\s])/,
+  /(?:^|[，。,.、\s])给我(?:一些|点|个|一个|一版)?.{0,4}(?:思路|建议)(?:$|[，。,.、\s])/,
+  /(?:先别|不要|暂时别|不需要|不用).{0,12}(?:创建|修改|执行|改画布|动画布|生成节点|写回|应用)/,
+] as const
+
 const CONSULT_PATTERNS = [
-  /先.{0,10}(?:告诉|说|讲|聊|讨论|规划|设计|分析)/,
+  /(?:^|[，。,.、\s])先(?!生成|创建|新建|新增|搭建|制作).{0,10}(?:告诉|说|讲|聊|讨论|规划|设计|分析)/,
   /(?:如何|怎么|怎样).{0,12}(?:设计|搭建|规划|构建|安排)/,
   /(?:讨论|聊聊|商量|给我思路|给我建议|设计思路|工作流如何设计)/,
   /(?:先别|不要|暂时别).{0,12}(?:创建|修改|执行|改画布|动画布|生成节点)/,
@@ -218,6 +226,10 @@ function hasConsultSignal(message: string): boolean {
   return matchesAny(message, CONSULT_PATTERNS)
 }
 
+function hasExplicitReadOnlySignal(message: string): boolean {
+  return matchesAny(message, EXPLICIT_READ_ONLY_PATTERNS)
+}
+
 function hasProposeOnlySignal(message: string): boolean {
   return matchesAny(message, PROPOSE_ONLY_PATTERNS)
 }
@@ -315,6 +327,7 @@ export function classifyLocalCanvasUserIntent(
   }
 
   const consult = hasConsultSignal(message)
+  const explicitReadOnly = hasExplicitReadOnlySignal(message)
   const proposeOnly = hasProposeOnlySignal(message)
   const mutate = hasMutationSignal(message)
   const strongCanvasMutation = hasStrongCanvasMutationSignal(message)
@@ -347,7 +360,11 @@ export function classifyLocalCanvasUserIntent(
       canvasReadPolicy: currentCanvas ? 'optional' : 'none',
       reason: 'user follow-up continues an open design discussion',
       confidence: 0.78,
-      evidence: ['task_memory_signal', 'discussion_follow_up_signal'],
+      evidence: [
+        'task_memory_signal',
+        'discussion_follow_up_signal',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
+      ],
     })
   }
 
@@ -406,7 +423,11 @@ export function classifyLocalCanvasUserIntent(
       canvasReadPolicy: currentCanvas ? 'optional' : 'none',
       reason: 'user follow-up continues an open design discussion',
       confidence: 0.78,
-      evidence: ['task_memory_signal', 'discussion_follow_up_signal'],
+      evidence: [
+        'task_memory_signal',
+        'discussion_follow_up_signal',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
+      ],
     })
   }
 
@@ -417,7 +438,12 @@ export function classifyLocalCanvasUserIntent(
       canvasReadPolicy: currentCanvas ? 'optional' : 'none',
       reason: 'user asks to discuss or design before canvas changes',
       confidence: 0.88,
-      evidence: ['consult_signal', 'canvas_topic_signal', 'no_strong_mutation_signal'],
+      evidence: [
+        'consult_signal',
+        'canvas_topic_signal',
+        'no_strong_mutation_signal',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
+      ],
     })
   }
 
@@ -430,6 +456,7 @@ export function classifyLocalCanvasUserIntent(
       confidence: 0.82,
       evidence: [
         'consult_signal',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
         currentCanvas ? 'current_canvas_reference' : 'no_mutation_signal',
       ],
     })
@@ -472,6 +499,7 @@ export function classifyLocalCanvasUserIntent(
         inspect ? 'inspection_signal' : '',
         canvas ? 'canvas_topic_signal' : '',
         currentCanvas ? 'current_canvas_reference' : '',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
       ],
     })
   }
@@ -483,7 +511,11 @@ export function classifyLocalCanvasUserIntent(
       canvasReadPolicy: 'none',
       reason: 'user follow-up belongs to an open local agent task',
       confidence: 0.66,
-      evidence: ['task_memory_signal', 'ambiguous_follow_up'],
+      evidence: [
+        'task_memory_signal',
+        'ambiguous_follow_up',
+        explicitReadOnly ? 'explicit_read_only_signal' : '',
+      ],
     })
   }
 
