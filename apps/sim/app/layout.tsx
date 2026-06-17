@@ -111,16 +111,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     var panelParsed = JSON.parse(panelStored);
                     var panelState = panelParsed && panelParsed.state;
                     var panelWidth = panelState && panelState.panelWidth;
+                    var panelCollapsed = panelState && panelState.isCollapsed;
                     var maxPanelWidth = window.innerWidth * 0.4;
 
-                    if (panelWidth >= 290 && panelWidth <= maxPanelWidth) {
+                    if (panelCollapsed) {
+                      document.documentElement.style.setProperty('--panel-width', '48px');
+                    } else if (panelWidth >= 290 && panelWidth <= maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
                     } else if (panelWidth > maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', maxPanelWidth + 'px');
                     }
 
                     var activeTab = panelState && panelState.activeTab;
-                    if (activeTab) {
+                    if (activeTab === 'copilot') {
                       document.documentElement.setAttribute('data-panel-active-tab', activeTab);
                     }
                   }

@@ -149,7 +149,6 @@ import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
-import { usePanelStore } from '@/stores/panel/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -517,7 +516,6 @@ const WorkflowContent = React.memo(
     const [contentReferenceEdgeMenu, setContentReferenceEdgeMenu] =
       useState<ContentReferenceEdgeMenuState | null>(null)
     const [isErrorConnectionDrag, setIsErrorConnectionDrag] = useState(false)
-    const [isHeavyEditorChromeLoaded, setIsHeavyEditorChromeLoaded] = useState(!IS_LOW_MEMORY_DEV)
     const [nodeTypesForRender, setNodeTypesForRender] = useState<NodeTypes>(liteNodeTypes)
     const [edgeTypesForRender, setEdgeTypesForRender] = useState<EdgeTypes>(liteEdgeTypes)
     const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -542,7 +540,6 @@ const WorkflowContent = React.memo(
       embedded,
     })
     const { emitCursorUpdate, joinWorkflow, leaveWorkflow } = useSocket()
-    const activePanelTab = usePanelStore((state) => state.activeTab)
     const shouldUseFullNodeTypes = !IS_LOW_MEMORY_DEV || embedded || sandbox
     const contentReferenceSelection = useContentReferenceSelectionStore((state) => state.selection)
     const clearContentReferenceSelection = useContentReferenceSelectionStore(
@@ -5465,7 +5462,6 @@ const WorkflowContent = React.memo(
       scheduleEmbeddedFit()
     }, [blocksStructureHash, embedded, isWorkflowReady, scheduleEmbeddedFit])
 
-    const shouldRenderEditorPanel = embedded || sandbox || isHeavyEditorChromeLoaded
     const shouldRenderAuxiliaryEditorChrome = !IS_LOW_MEMORY_DEV || embedded || sandbox
 
     return (
@@ -5738,11 +5734,7 @@ const WorkflowContent = React.memo(
             )}
 
             <Notifications embedded={embedded} />
-            {!embedded && !sandbox && (
-              <CanvasThemeToggle
-                avoidTopRightChrome={IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded}
-              />
-            )}
+            {!embedded && !sandbox && <CanvasThemeToggle />}
             {!embedded && isWorkflowSearchReplaceOpen && (
               <Suspense fallback={null}>
                 <LazyWorkflowSearchReplace />
@@ -5767,20 +5759,7 @@ const WorkflowContent = React.memo(
           </div>
         </div>
 
-        {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (
-          <button
-            type='button'
-            className='absolute top-3 right-3 z-20 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-sm'
-            onClick={() => {
-              usePanelStore.getState().setActiveTab('toolbar')
-              setIsHeavyEditorChromeLoaded(true)
-            }}
-          >
-            Load editor panels
-          </button>
-        )}
-
-        {(!embedded || sandbox) && shouldRenderEditorPanel && (
+        {(!embedded || sandbox) && (
           <Suspense fallback={null}>
             <LazyPanel workspaceId={sandbox ? workspaceId : undefined} />
           </Suspense>
