@@ -12,6 +12,7 @@ interface ContentAiComposerShellProps {
   isGenerating: boolean
   loadingLabel: string
   error: string | null
+  widthClassName?: string
   header?: ReactNode
   footer: ReactNode
   afterFooter?: ReactNode
@@ -35,6 +36,7 @@ export function ContentAiComposerShell({
   isGenerating,
   loadingLabel,
   error,
+  widthClassName = 'w-[420px]',
   header,
   footer,
   afterFooter,
@@ -47,7 +49,10 @@ export function ContentAiComposerShell({
 
   return (
     <div
-      className='nodrag nopan mt-3 w-full'
+      className={cn(
+        'nodrag nopan fade-in-0 zoom-in-95 slide-in-from-top-2 -translate-x-1/2 pointer-events-auto absolute top-full left-1/2 z-[80] mt-3 origin-top animate-in duration-150 motion-reduce:animate-none',
+        widthClassName
+      )}
       onPointerDownCapture={stopCanvasInteraction}
       onClick={stopCanvasClick}
       onDoubleClick={stopCanvasClick}

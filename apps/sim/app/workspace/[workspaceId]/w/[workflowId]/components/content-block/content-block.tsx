@@ -1167,7 +1167,7 @@ function TextContentCard({
   const isEmpty = !isMeaningfulHtml(normalizedHtml)
 
   return (
-    <div className='relative' style={{ width }}>
+    <div className='relative overflow-visible' style={{ width }}>
       {showToolbar && (
         <div
           className='nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
@@ -1892,7 +1892,7 @@ function MediaContentCard({
   )
 
   return (
-    <div ref={rootRef} className='relative'>
+    <div ref={rootRef} className='relative overflow-visible'>
       {showUploadAction && (
         <button
           type='button'
@@ -2400,76 +2400,74 @@ function MediaContentCard({
       )}
 
       {showVideoComposer && !isPreview && !isEmbedded && (
-        <div className='mt-3 flex flex-col gap-3'>
-          <ReferenceComposerHeader
-            canEdit={canEdit}
-            references={contentReferences}
-            referencedNodes={referencedNodes}
-            onAddReference={onAddReference}
-            onRemoveReference={onRemoveReference}
-          />
-          <VideoContentAiComposer
-            canEdit={canEdit}
-            selected={selected}
-            prompt={videoPrompt}
-            modelFamily={videoModelFamily}
-            aspectRatioPreset={videoFrameAspectRatioPreset}
-            resolution={videoParameters.resolution}
-            durationSeconds={videoParameters.duration}
-            firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
-            lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
-            isGenerating={isVideoGenerating}
-            error={videoGenerationError ?? currentVideoModelFamilyDisabledReason}
-            isSelectingFrame={frameSelection?.targetBlockId === blockId}
-            selectedFrameSlot={
-              frameSelection?.targetBlockId === blockId ? frameSelection.slot : null
-            }
-            modelOptions={videoModelOptionsWithDisabledReason}
-            aspectRatioOptions={videoAspectRatioOptions}
-            resolutionOptions={videoResolutionOptions}
-            durationOptions={videoDurationOptions}
-            onChangePrompt={onChangeVideoPrompt}
-            onChangeModelFamily={onChangeVideoModelFamily}
-            onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
-            onChangeResolution={(value) =>
-              onChangeVideoParameters({
-                ...videoParameters,
-                resolution: value,
-                promptExtend: true,
-                watermark: false,
+        <VideoContentAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={videoPrompt}
+          modelFamily={videoModelFamily}
+          aspectRatioPreset={videoFrameAspectRatioPreset}
+          resolution={videoParameters.resolution}
+          durationSeconds={videoParameters.duration}
+          firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
+          lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
+          isGenerating={isVideoGenerating}
+          error={videoGenerationError ?? currentVideoModelFamilyDisabledReason}
+          isSelectingFrame={frameSelection?.targetBlockId === blockId}
+          selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
+          modelOptions={videoModelOptionsWithDisabledReason}
+          aspectRatioOptions={videoAspectRatioOptions}
+          resolutionOptions={videoResolutionOptions}
+          durationOptions={videoDurationOptions}
+          onChangePrompt={onChangeVideoPrompt}
+          onChangeModelFamily={onChangeVideoModelFamily}
+          onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
+          onChangeResolution={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              resolution: value,
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onChangeDurationSeconds={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              duration: normalizeVideoDuration(value),
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onSelectFrame={(slot) =>
+            beginFrameSelection({
+              targetBlockId: blockId,
+              slot,
+              modelFamily: videoModelFamily,
+              requiredAspectRatioPreset: videoFrameAspectRatioPreset,
+            })
+          }
+          onClearFrame={(slot) => {
+            const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
+            onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
+            window.dispatchEvent(
+              new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
+                detail: {
+                  blockId,
+                  autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
+                },
               })
-            }
-            onChangeDurationSeconds={(value) =>
-              onChangeVideoParameters({
-                ...videoParameters,
-                duration: normalizeVideoDuration(value),
-                promptExtend: true,
-                watermark: false,
-              })
-            }
-            onSelectFrame={(slot) =>
-              beginFrameSelection({
-                targetBlockId: blockId,
-                slot,
-                modelFamily: videoModelFamily,
-                requiredAspectRatioPreset: videoFrameAspectRatioPreset,
-              })
-            }
-            onClearFrame={(slot) => {
-              const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
-              onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
-              window.dispatchEvent(
-                new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
-                  detail: {
-                    blockId,
-                    autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
-                  },
-                })
-              )
-            }}
-            onSubmit={handleSubmitVideoPrompt}
-          />
-        </div>
+            )
+          }}
+          onSubmit={handleSubmitVideoPrompt}
+        />
       )}
 
       {variant === 'audio' && !isPreview && !isEmbedded && (
@@ -5228,7 +5226,7 @@ export const ContentBlock = memo(function ContentBlock({
         role='button'
         tabIndex={0}
         className={cn(
-          'relative z-[20] cursor-grab select-none transition-opacity content-drag-handle [&:active]:cursor-grabbing',
+          'relative z-[20] cursor-grab select-none overflow-visible transition-opacity content-drag-handle [&:active]:cursor-grabbing',
           (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
         )}
         onClick={handleClick}

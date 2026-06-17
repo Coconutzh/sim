@@ -27,6 +27,7 @@ interface UploadedFileValue {
 interface VideoContentAiComposerProps {
   canEdit: boolean
   selected: boolean
+  header?: ReactNode
   prompt: string
   modelFamily: VideoModelFamily
   aspectRatioPreset: VideoFrameAspectRatioPreset
@@ -265,6 +266,7 @@ function LockedToggle({
 export function VideoContentAiComposer({
   canEdit,
   selected,
+  header,
   prompt,
   modelFamily,
   aspectRatioPreset,
@@ -342,27 +344,31 @@ export function VideoContentAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成视频...'
       error={error}
+      widthClassName='w-[520px]'
       header={
-        <div className='flex items-start justify-between gap-3'>
-          <div className='flex flex-wrap items-center gap-2'>
-            {frameSlots.map((frameSlot) => (
-              <FrameSlotChip
-                key={frameSlot.slot}
-                label={frameSlot.label}
-                file={frameSlot.file}
-                active={selectedFrameSlot === frameSlot.slot}
-                disabled={!canEdit || isGenerating}
-                onSelect={() => handleSelectFrame(frameSlot.slot)}
-                onClear={() => onClearFrame(frameSlot.slot)}
-              />
-            ))}
-          </div>
-
-          {isSelectingFrame ? (
-            <div className='rounded-full border border-[#5F4720] bg-[#2D2418] px-2.5 py-1 text-[#F4C86A] text-[11px]'>
-              {selectedFrameSlot === 'last' ? '选择尾帧中' : '选择首帧中'}
+        <div className='flex flex-col gap-3'>
+          {header}
+          <div className='flex items-start justify-between gap-3'>
+            <div className='flex flex-wrap items-center gap-2'>
+              {frameSlots.map((frameSlot) => (
+                <FrameSlotChip
+                  key={frameSlot.slot}
+                  label={frameSlot.label}
+                  file={frameSlot.file}
+                  active={selectedFrameSlot === frameSlot.slot}
+                  disabled={!canEdit || isGenerating}
+                  onSelect={() => handleSelectFrame(frameSlot.slot)}
+                  onClear={() => onClearFrame(frameSlot.slot)}
+                />
+              ))}
             </div>
-          ) : null}
+
+            {isSelectingFrame ? (
+              <div className='rounded-full border border-[#5F4720] bg-[#2D2418] px-2.5 py-1 text-[#F4C86A] text-[11px]'>
+                {selectedFrameSlot === 'last' ? '选择尾帧中' : '选择首帧中'}
+              </div>
+            ) : null}
+          </div>
         </div>
       }
       afterFooter={
