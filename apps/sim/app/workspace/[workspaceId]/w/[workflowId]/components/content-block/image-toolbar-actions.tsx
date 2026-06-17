@@ -60,12 +60,22 @@ function sanitizeDownloadName(value: string): string {
     .trim()
 }
 
-function inferImageFileName(file: UploadedFileValue, nodeName?: string): string {
-  const rawName = file.name?.trim() || getKeyFileName(file.key) || nodeName?.trim() || 'image'
-  const safeName = sanitizeDownloadName(rawName) || 'image'
-  if (/\.[a-z0-9]{2,5}$/i.test(safeName)) return safeName
+function getFileExtension(fileName: string): string {
+  const match = fileName.match(/\.([a-z0-9]{2,5})$/i)
+  return match?.[1]?.toLowerCase() ?? ''
+}
 
-  const extension = IMAGE_EXTENSION_BY_MIME[file.type?.toLowerCase() ?? ''] ?? 'png'
+export function inferImageFileName(file: UploadedFileValue, nodeName?: string): string {
+  const keyFileName = getKeyFileName(file.key)
+  const rawName = nodeName?.trim() || file.name?.trim() || keyFileName || 'image'
+  const safeName = sanitizeDownloadName(rawName) || 'image'
+  if (getFileExtension(safeName)) return safeName
+
+  const extension =
+    getFileExtension(file.name?.trim() ?? '') ||
+    getFileExtension(keyFileName) ||
+    IMAGE_EXTENSION_BY_MIME[file.type?.toLowerCase() ?? ''] ||
+    'png'
   return `${safeName}.${extension}`
 }
 
