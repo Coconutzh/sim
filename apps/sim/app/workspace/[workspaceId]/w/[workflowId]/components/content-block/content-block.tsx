@@ -1155,9 +1155,9 @@ function TextContentCard({
   )
 
   const editingContentClassName =
-    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[#111827] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const displayContentClassName =
-    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[#111827] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const cardHeight = clampTextHeight(height)
 
   const showToolbar = selected && !isPreview
@@ -1168,7 +1168,7 @@ function TextContentCard({
     <div className='relative overflow-visible' style={{ width }}>
       {showToolbar && (
         <div
-          className='nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
+          className='nodrag nopan -translate-x-1/2 absolute top-[-92px] left-1/2 z-[70] inline-flex w-max flex-nowrap items-center gap-2 whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
           onPointerDownCapture={(event) => {
             event.stopPropagation()
           }}
