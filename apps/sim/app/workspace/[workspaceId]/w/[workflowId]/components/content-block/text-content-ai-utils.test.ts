@@ -35,22 +35,85 @@ describe('text-content-ai-utils', () => {
     )
   })
 
-  it('converts markdown-like headings, paragraphs, and bullet lists into supported HTML', () => {
+  it('converts markdown headings, paragraphs, emphasis, and lists into supported HTML', () => {
     const html = convertGeneratedTextToContentHtml(`
 # Launch plan
 
-Intro paragraph line one.
-Intro paragraph line two.
+Intro paragraph line one with **bold** and *italic*.
+Intro paragraph line two with __strong__ and _emphasis_.
 
 - First task
-- Second task
+* Second task
+
+1. Confirm requirements
+2. Ship implementation
 
 ## Wrap up
 Final note.
 		`)
 
     expect(html).toBe(
-      '<h1>Launch plan</h1><p>Intro paragraph line one. Intro paragraph line two.</p><ul><li>First task</li><li>Second task</li></ul><h2>Wrap up</h2><p>Final note.</p>'
+      '<h1>Launch plan</h1><p>Intro paragraph line one with <strong>bold</strong> and <em>italic</em>.<br>Intro paragraph line two with <strong>strong</strong> and <em>emphasis</em>.</p><ul><li>First task</li><li>Second task</li></ul><ol><li>Confirm requirements</li><li>Ship implementation</li></ol><h2>Wrap up</h2><p>Final note.</p>'
+    )
+  })
+
+  it('preserves fenced code block content without rendering markdown syntax inside it', () => {
+    const html = convertGeneratedTextToContentHtml(`
+Here is code:
+
+\`\`\`ts
+const title = "# Not a heading"
+const value = "**not bold**"
+\`\`\`
+		`)
+
+    expect(html).toBe(
+      '<p>Here is code:</p><p>const title = &quot;# Not a heading&quot;<br>const value = &quot;**not bold**&quot;</p>'
+    )
+  })
+
+  it('unwraps an explicit markdown fence around the full generated response', () => {
+    const html = convertGeneratedTextToContentHtml(`\`\`\`md
+# Wrapped
+
+- Item
+\`\`\``)
+
+    expect(html).toBe('<h1>Wrapped</h1><ul><li>Item</li></ul>')
+  })
+
+  it('treats an unlabeled full-response fence as code content', () => {
+    const html = convertGeneratedTextToContentHtml(`\`\`\`
+# Not a heading
+**not bold**
+\`\`\``)
+
+    expect(html).toBe('<p># Not a heading<br>**not bold**</p>')
+  })
+
+  it('safely degrades blockquotes and GFM tables without losing content', () => {
+    const html = convertGeneratedTextToContentHtml(`
+> Important note
+> with **emphasis**
+
+| Area | Status |
+| --- | --- |
+| Design | **Done** |
+| Build | In progress |
+		`)
+
+    expect(html).toBe(
+      '<p>Important note<br>with <strong>emphasis</strong></p><ul><li><strong>Area:</strong> Design; <strong>Status:</strong> <strong>Done</strong></li><li><strong>Area:</strong> Build; <strong>Status:</strong> In progress</li></ul>'
+    )
+  })
+
+  it('escapes raw HTML from generated markdown output', () => {
+    const html = convertGeneratedTextToContentHtml(
+      '# Safe\n\n<script>alert("x")</script>\n\n- <img src=x onerror=alert(1)>'
+    )
+
+    expect(html).toBe(
+      '<h1>Safe</h1><p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;</p><ul><li>&lt;img src=x onerror=alert(1)&gt;</li></ul>'
     )
   })
 

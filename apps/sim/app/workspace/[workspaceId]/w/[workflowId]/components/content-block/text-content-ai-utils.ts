@@ -35,21 +35,157 @@ function isMeaningfulHtml(input: string | null | undefined): boolean {
 }
 
 function normalizeGeneratedSource(input: string): string {
-  return input
-    .replaceAll('\r\n', '\n')
-    .replace(/^```[^\n]*\n?/gm, '')
-    .replace(/^```$/gm, '')
-    .trim()
+  const source = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim()
+  const wrapperMatch = source.match(/^```([A-Za-z0-9_-]*)[^\n]*\n([\s\S]*)\n```$/)
+  if (!wrapperMatch) return source
+
+  const language = wrapperMatch[1].toLowerCase()
+  if (language !== 'md' && language !== 'markdown' && language !== 'text') {
+    return source
+  }
+
+  return wrapperMatch[2].trim()
 }
 
-function joinParagraphLines(lines: string[]): string {
-  return lines
+function renderInlineMarkdown(input: string): string {
+  let output = ''
+  let index = 0
+
+  while (index < input.length) {
+    const current = input[index]
+    const next = input[index + 1]
+    const pair = input.slice(index, index + 2)
+
+    if (current === '\\' && next) {
+      output += escapeHtml(next)
+      index += 2
+      continue
+    }
+
+    if (current === '`') {
+      const closingIndex = input.indexOf('`', index + 1)
+      if (closingIndex > index + 1) {
+        output += escapeHtml(input.slice(index + 1, closingIndex))
+        index = closingIndex + 1
+        continue
+      }
+    }
+
+    if ((pair === '**' || pair === '__') && !/\s/.test(input[index + 2] ?? '')) {
+      const closingIndex = input.indexOf(pair, index + 2)
+      if (closingIndex > index + 2) {
+        const inner = input.slice(index + 2, closingIndex)
+        if (inner.trim()) {
+          output += `<strong>${renderInlineMarkdown(inner)}</strong>`
+          index = closingIndex + 2
+          continue
+        }
+      }
+    }
+
+    if ((current === '*' || current === '_') && next && !/\s/.test(next)) {
+      const previous = input[index - 1]
+      const isWordInternalUnderscore =
+        current === '_' && /[A-Za-z0-9]/.test(previous ?? '') && /[A-Za-z0-9]/.test(next)
+
+      if (!isWordInternalUnderscore) {
+        const closingIndex = input.indexOf(current, index + 1)
+        if (closingIndex > index + 1) {
+          const inner = input.slice(index + 1, closingIndex)
+          if (inner.trim()) {
+            output += `<em>${renderInlineMarkdown(inner)}</em>`
+            index = closingIndex + 1
+            continue
+          }
+        }
+      }
+    }
+
+    output += escapeHtml(current)
+    index += 1
+  }
+
+  return output
+}
+
+function renderParagraphLines(lines: string[]): string {
+  const content = lines
     .map((line) => line.trim())
     .filter(Boolean)
-    .join(' ')
+    .map(renderInlineMarkdown)
+    .join('<br>')
+
+  return content ? `<p>${content}</p>` : ''
 }
 
-export function getTextAiModelOptions(enabledModelIds?: readonly string[]): readonly TextAiModelOption[] {
+function renderCodeBlock(lines: string[]): string {
+  const content = lines.map(escapeHtml).join('<br>').trim()
+  return content ? `<p>${content}</p>` : ''
+}
+
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  const cells: string[] = []
+  let current = ''
+  let escaped = false
+
+  for (const char of trimmed) {
+    if (char === '|' && !escaped) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+
+    if (escaped) {
+      current += char
+      escaped = false
+      continue
+    }
+
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+
+    current += char
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = splitTableRow(line)
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')))
+}
+
+function renderTableAsList(headers: string[], rows: string[][]): string {
+  const items = rows
+    .map((row) =>
+      row
+        .map((cell, index) => {
+          if (!cell.trim()) return ''
+          const header = headers[index]?.trim()
+          const renderedCell = renderInlineMarkdown(cell)
+          return header
+            ? `<strong>${renderInlineMarkdown(header)}:</strong> ${renderedCell}`
+            : renderedCell
+        })
+        .filter(Boolean)
+        .join('; ')
+    )
+    .filter(Boolean)
+
+  if (items.length > 0) {
+    return `<ul>${items.map((item) => `<li>${item}</li>`).join('')}</ul>`
+  }
+
+  return renderParagraphLines(headers)
+}
+
+export function getTextAiModelOptions(
+  enabledModelIds?: readonly string[]
+): readonly TextAiModelOption[] {
   const options = getContentCanvasModelOptions('text') as readonly TextAiModelOption[]
   if (!enabledModelIds) return options
 
@@ -74,53 +210,142 @@ export function convertGeneratedTextToContentHtml(input: string): string {
 
   const blocks: string[] = []
   const paragraphLines: string[] = []
-  const bulletLines: string[] = []
+  const codeLines: string[] = []
+  let listKind: 'ul' | 'ol' | null = null
+  let listItems: string[] = []
+  let insideCodeBlock = false
 
   const flushParagraph = () => {
     if (paragraphLines.length === 0) return
-    const paragraph = joinParagraphLines(paragraphLines)
+    const paragraph = renderParagraphLines(paragraphLines)
     paragraphLines.length = 0
-    if (!paragraph) return
-    blocks.push(`<p>${escapeHtml(paragraph)}</p>`)
+    if (paragraph) blocks.push(paragraph)
   }
 
-  const flushBulletList = () => {
-    if (bulletLines.length === 0) return
-    const items = bulletLines.map((line) => `<li>${escapeHtml(line.trim())}</li>`).join('')
-    bulletLines.length = 0
-    blocks.push(`<ul>${items}</ul>`)
+  const flushList = () => {
+    if (!listKind || listItems.length === 0) return
+    const items = listItems.map((line) => `<li>${renderInlineMarkdown(line.trim())}</li>`).join('')
+    blocks.push(`<${listKind}>${items}</${listKind}>`)
+    listKind = null
+    listItems = []
   }
 
-  for (const rawLine of source.split('\n')) {
+  const flushCodeBlock = () => {
+    if (codeLines.length === 0) return
+    const codeBlock = renderCodeBlock(codeLines)
+    codeLines.length = 0
+    if (codeBlock) blocks.push(codeBlock)
+  }
+
+  const lines = source.split('\n')
+  let lineIndex = 0
+
+  while (lineIndex < lines.length) {
+    const rawLine = lines[lineIndex]
     const line = rawLine.trim()
+
+    if (insideCodeBlock) {
+      if (/^```\s*$/.test(line)) {
+        flushCodeBlock()
+        insideCodeBlock = false
+      } else {
+        codeLines.push(rawLine)
+      }
+      lineIndex += 1
+      continue
+    }
+
+    if (/^```/.test(line)) {
+      flushParagraph()
+      flushList()
+      insideCodeBlock = true
+      lineIndex += 1
+      continue
+    }
+
     if (!line) {
       flushParagraph()
-      flushBulletList()
+      flushList()
+      lineIndex += 1
+      continue
+    }
+
+    if (line.includes('|') && isTableSeparator(lines[lineIndex + 1] ?? '')) {
+      flushParagraph()
+      flushList()
+      const headers = splitTableRow(line)
+      const rows: string[][] = []
+      lineIndex += 2
+
+      while (lineIndex < lines.length) {
+        const tableLine = lines[lineIndex].trim()
+        if (!tableLine || !tableLine.includes('|') || isTableSeparator(tableLine)) break
+        rows.push(splitTableRow(tableLine))
+        lineIndex += 1
+      }
+
+      const table = renderTableAsList(headers, rows)
+      if (table) blocks.push(table)
       continue
     }
 
     const headingMatch = line.match(/^(#{1,3})\s+(.+)$/)
     if (headingMatch) {
       flushParagraph()
-      flushBulletList()
+      flushList()
       const level = headingMatch[1].length
-      blocks.push(`<h${level}>${escapeHtml(headingMatch[2].trim())}</h${level}>`)
+      blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2].trim())}</h${level}>`)
+      lineIndex += 1
       continue
     }
 
-    const bulletMatch = line.match(/^[-*•]\s+(.+)$/)
+    const orderedListMatch = line.match(/^\d+[.)]\s+(.+)$/)
+    if (orderedListMatch) {
+      flushParagraph()
+      if (listKind !== 'ol') flushList()
+      listKind = 'ol'
+      listItems.push(orderedListMatch[1])
+      lineIndex += 1
+      continue
+    }
+
+    const bulletMatch = line.match(/^[-*+\u2022]\s+(.+)$/)
     if (bulletMatch) {
       flushParagraph()
-      bulletLines.push(bulletMatch[1])
+      if (listKind !== 'ul') flushList()
+      listKind = 'ul'
+      listItems.push(bulletMatch[1])
+      lineIndex += 1
       continue
     }
 
-    flushBulletList()
+    const quoteMatch = line.match(/^>\s?(.*)$/)
+    if (quoteMatch) {
+      flushParagraph()
+      flushList()
+      const quoteLines: string[] = []
+
+      while (lineIndex < lines.length) {
+        const quotedLine = lines[lineIndex].trim()
+        const currentQuoteMatch = quotedLine.match(/^>\s?(.*)$/)
+        if (!currentQuoteMatch) break
+        quoteLines.push(currentQuoteMatch[1])
+        lineIndex += 1
+      }
+
+      const quote = renderParagraphLines(quoteLines)
+      if (quote) blocks.push(quote)
+      continue
+    }
+
+    flushList()
     paragraphLines.push(line)
+    lineIndex += 1
   }
 
   flushParagraph()
-  flushBulletList()
+  flushList()
+  flushCodeBlock()
 
   return blocks.join('') || EMPTY_TEXT_HTML
 }
