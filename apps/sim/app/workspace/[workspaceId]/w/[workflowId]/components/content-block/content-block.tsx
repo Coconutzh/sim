@@ -133,6 +133,24 @@ import {
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
+import {
+  buildImageErasePendingSubBlockValues,
+  buildImagePerspectivePendingSubBlockValues,
+  buildImageRepaintPendingSubBlockValues,
+  createMaskImageFile,
+  type DerivedImageGenerationKind,
+  getImageEraseRequestMetadata,
+  getImagePerspectiveRequestMetadata,
+  getImageRepaintRequestMetadata,
+  type ImageEraseGenerationRequest,
+  type ImagePerspectiveGenerationRequest,
+  type ImageRepaintGenerationRequest,
+  runImageEraseRequest,
+  runImagePerspectiveRequest,
+  runImageRepaintRequest,
+  type SubmitImageEraseParams,
+  type SubmitImageRepaintParams,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-derived-generation-utils'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
 import {
   normalizeImageGenerationKind,
@@ -1395,6 +1413,7 @@ function MediaContentCard({
   onCreateImageEraseVariant,
   onSubmitImageOutpaint,
   onRetryImageCutout,
+  onRetryDerivedImageGeneration,
   onRetryVideoFrameCapture,
   onChangeFile,
   onChangeAiPrompt,
@@ -1466,14 +1485,14 @@ function MediaContentCard({
   onConfirmImageCrop: (file: File) => Promise<void>
   onConfirmVideoTrim: (range: VideoTrimRange) => Promise<void>
   onConfirmVideoEnhance: () => Promise<void>
-  onCreateImagePerspectiveVariant: (params: {
-    file: UploadedFileValue
-    model: ImageGenerationModelId
-  }) => Promise<void> | void
-  onCreateImageRepaintVariant: (file: UploadedFileValue) => Promise<void> | void
-  onCreateImageEraseVariant: (file: UploadedFileValue) => Promise<void> | void
+  onCreateImagePerspectiveVariant: (
+    params: ImagePerspectiveGenerationRequest
+  ) => Promise<void> | void
+  onCreateImageRepaintVariant: (params: SubmitImageRepaintParams) => Promise<void> | void
+  onCreateImageEraseVariant: (params: SubmitImageEraseParams) => Promise<void> | void
   onSubmitImageOutpaint: (params: SubmitImageOutpaintParams) => Promise<void> | void
   onRetryImageCutout: () => void
+  onRetryDerivedImageGeneration: () => void
   onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
@@ -1807,6 +1826,30 @@ function MediaContentCard({
   const isImageOutpaintNode = variant === 'image' && generationKind === 'image_outpaint'
   const isImageOutpaintPending = isImageOutpaintNode && generationStatus === 'pending' && !file
   const isImageOutpaintError = isImageOutpaintNode && generationStatus === 'error' && !file
+  const isImagePerspectiveNode = variant === 'image' && generationKind === 'image_perspective'
+  const isImageRepaintNode = variant === 'image' && generationKind === 'image_repaint'
+  const isImageEraseNode = variant === 'image' && generationKind === 'image_erase'
+  const isDerivedImageGenerationNode =
+    isImagePerspectiveNode || isImageRepaintNode || isImageEraseNode
+  const isDerivedImageGenerationPending =
+    isDerivedImageGenerationNode && generationStatus === 'pending' && !file
+  const isDerivedImageGenerationError =
+    isDerivedImageGenerationNode && generationStatus === 'error' && !file
+  const derivedImageGenerationLabel = isImagePerspectiveNode
+    ? '多角度生成中...'
+    : isImageRepaintNode
+      ? '重绘中...'
+      : '擦除中...'
+  const derivedImageGenerationFallbackError = isImagePerspectiveNode
+    ? '多角度生成失败，请重试。'
+    : isImageRepaintNode
+      ? '重绘失败，请重试。'
+      : '擦除失败，请重试。'
+  const DerivedImageGenerationRetryIcon = isImagePerspectiveNode
+    ? BoxIcon
+    : isImageRepaintNode
+      ? Brush
+      : Eraser
   const isImageToolActive =
     isImageCropMode ||
     isImageRepaintMode ||
@@ -1832,6 +1875,8 @@ function MediaContentCard({
     !isVideoFrameCaptureError &&
     !isImageOutpaintPending &&
     !isImageOutpaintError &&
+    !isDerivedImageGenerationPending &&
+    !isDerivedImageGenerationError &&
     !isVideoEnhanceNode
   const showImageCropAction =
     selected &&
@@ -1854,7 +1899,9 @@ function MediaContentCard({
     !isVideoFrameCapturePending &&
     !isVideoFrameCaptureError &&
     !isImageOutpaintPending &&
-    !isImageOutpaintError
+    !isImageOutpaintError &&
+    !isDerivedImageGenerationPending &&
+    !isDerivedImageGenerationError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -2256,6 +2303,33 @@ function MediaContentCard({
             <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
               {generationErrorMessage || '扩图失败，请重试。'}
             </div>
+          </div>
+        ) : isDerivedImageGenerationPending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>{derivedImageGenerationLabel}</div>
+          </div>
+        ) : isDerivedImageGenerationError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || derivedImageGenerationFallbackError}
+            </div>
+            <button
+              type='button'
+              aria-label='重试图片生成'
+              title='重试'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryDerivedImageGeneration()
+              }}
+            >
+              <DerivedImageGenerationRetryIcon className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
           </div>
         ) : isVideoEnhancePendingConfig ? (
           <div className='nopan flex h-[240px] w-full items-center justify-center bg-[var(--surface-1)] px-6 text-center'>
@@ -4072,10 +4146,115 @@ export const ContentBlock = memo(function ContentBlock({
     [completeImageOutpaint, failImageOutpaint, params.workspaceId]
   )
 
-  const createImagePerspectiveVariantNode = useCallback(
-    async ({ file, model }: { file: UploadedFileValue; model: ImageGenerationModelId }) => {
+  const completeDerivedImageGeneration = useCallback(
+    (
+      targetBlockId: string,
+      file: UploadedFileValue,
+      generationKind: DerivedImageGenerationKind
+    ) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failDerivedImageGeneration = useCallback(
+    (targetBlockId: string, message: string, generationKind: DerivedImageGenerationKind) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const markDerivedImageGenerationPending = useCallback(
+    (targetBlockId: string, generationKind: DerivedImageGenerationKind) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'pending')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startImagePerspectiveRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImagePerspectiveGenerationRequest
+    }) => {
+      void runImagePerspectiveRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_perspective'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_perspective'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const startImageRepaintRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImageRepaintGenerationRequest
+    }) => {
+      void runImageRepaintRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_repaint'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_repaint'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const startImageEraseRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImageEraseGenerationRequest
+    }) => {
+      void runImageEraseRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_erase'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_erase'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const createDerivedImagePendingNode = useCallback(
+    ({
+      model,
+      buildSubBlockValues,
+      unavailableMessage,
+    }: {
+      model: ImageGenerationModelId
+      buildSubBlockValues: (reference: ContentReferenceRecord) => Record<string, unknown>
+      unavailableMessage: string
+    }) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Multi-angle image creation is not available for this workflow.')
+        throw new Error(unavailableMessage)
+      }
+      if (resolvedVariant !== 'image' || !resolvedFile) {
+        throw new Error('Derived image generation requires a source image.')
       }
 
       const sourceBlock = workflowBlocks[id]
@@ -4127,20 +4306,17 @@ export const ContentBlock = memo(function ContentBlock({
         sourcePosition,
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: model,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-          generationKind: 'image_perspective',
-        },
+        [targetBlockId]: buildSubBlockValues(reference),
       }
 
       setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
       usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      return {
+        added,
+        sourceFile: resolvedFile,
+        targetBlockId,
+      }
     },
     [
       canEditWorkflow,
@@ -4148,173 +4324,80 @@ export const ContentBlock = memo(function ContentBlock({
       data.isEmbedded,
       data.isPreview,
       id,
+      resolvedFile,
+      resolvedVariant,
       setPendingSelection,
       workflowBlocks,
     ]
+  )
+
+  const createImagePerspectiveVariantNode = useCallback(
+    async (request: ImagePerspectiveGenerationRequest) => {
+      const result = createDerivedImagePendingNode({
+        model: request.model,
+        unavailableMessage: 'Multi-angle image creation is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImagePerspectivePendingSubBlockValues({ reference, request }),
+      })
+      if (result.added) {
+        startImagePerspectiveRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
+    },
+    [createDerivedImagePendingNode, startImagePerspectiveRequest]
   )
 
   const createImageRepaintVariantNode = useCallback(
-    async (file: UploadedFileValue) => {
-      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Image repaint is not available for this workflow.')
+    async ({ prompt, resolution, mask, referenceImages }: SubmitImageRepaintParams) => {
+      const request: ImageRepaintGenerationRequest = {
+        prompt,
+        resolution,
+        maskImage: createMaskImageFile('repaint-mask.png', mask),
+        referenceImages,
       }
-
-      const sourceBlock = workflowBlocks[id]
-      if (!sourceBlock) {
-        throw new Error('Source image node no longer exists.')
-      }
-
-      const blockConfig = getBlockConfigFromCatalog('content')
-      if (!blockConfig) {
-        throw new Error('Unable to create an image content node.')
-      }
-
-      const targetBlockId = generateId()
-      const parentId = sourceBlock.data?.parentId
-      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
-      const targetPosition = {
-        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
-        y: sourcePosition.y,
-      }
-      const referenceRole =
-        getDefaultReferenceRole({
-          targetVariant: 'image',
-          model: DEFAULT_IMAGE_REPAINT_MODEL,
-          sourceVariant: 'image',
-        }) ?? ('image_reference' satisfies ContentReferenceRole)
-      const newBlock = prepareBlockState({
-        id: targetBlockId,
-        type: 'content',
-        name: getUniqueBlockName('Image', workflowBlocks),
-        position: targetPosition,
-        data: {
-          contentVariant: 'image',
-          ...(parentId ? { parentId, extent: 'parent' } : {}),
-        },
-        parentId,
-        extent: parentId ? 'parent' : undefined,
-        blockConfig,
+      const result = createDerivedImagePendingNode({
+        model: DEFAULT_IMAGE_REPAINT_MODEL,
+        unavailableMessage: 'Image repaint is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImageRepaintPendingSubBlockValues({ reference, request }),
       })
-      const reference: ContentReferenceRecord = {
-        sourceBlockId: id,
-        sourceVariant: 'image',
-        role: referenceRole,
-      }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
-      })
-      const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-          generationKind: 'image_repaint',
-        },
-      }
-
-      setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
-      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageRepaintMode(false)
+      if (result.added) {
+        startImageRepaintRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
     },
-    [
-      canEditWorkflow,
-      collaborativeBatchAddBlocks,
-      data.isEmbedded,
-      data.isPreview,
-      id,
-      setPendingSelection,
-      workflowBlocks,
-    ]
+    [createDerivedImagePendingNode, startImageRepaintRequest]
   )
 
   const createImageEraseVariantNode = useCallback(
-    async (file: UploadedFileValue) => {
-      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Image erase is not available for this workflow.')
+    async ({ mask, resolution }: SubmitImageEraseParams) => {
+      const request: ImageEraseGenerationRequest = {
+        resolution,
+        maskImage: createMaskImageFile('erase-mask.png', mask),
       }
-
-      const sourceBlock = workflowBlocks[id]
-      if (!sourceBlock) {
-        throw new Error('Source image node no longer exists.')
-      }
-
-      const blockConfig = getBlockConfigFromCatalog('content')
-      if (!blockConfig) {
-        throw new Error('Unable to create an image content node.')
-      }
-
-      const targetBlockId = generateId()
-      const parentId = sourceBlock.data?.parentId
-      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
-      const targetPosition = {
-        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
-        y: sourcePosition.y,
-      }
-      const referenceRole =
-        getDefaultReferenceRole({
-          targetVariant: 'image',
-          model: DEFAULT_IMAGE_REPAINT_MODEL,
-          sourceVariant: 'image',
-        }) ?? ('image_reference' satisfies ContentReferenceRole)
-      const newBlock = prepareBlockState({
-        id: targetBlockId,
-        type: 'content',
-        name: getUniqueBlockName('Image', workflowBlocks),
-        position: targetPosition,
-        data: {
-          contentVariant: 'image',
-          ...(parentId ? { parentId, extent: 'parent' } : {}),
-        },
-        parentId,
-        extent: parentId ? 'parent' : undefined,
-        blockConfig,
+      const result = createDerivedImagePendingNode({
+        model: DEFAULT_IMAGE_REPAINT_MODEL,
+        unavailableMessage: 'Image erase is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImageErasePendingSubBlockValues({ reference, request }),
       })
-      const reference: ContentReferenceRecord = {
-        sourceBlockId: id,
-        sourceVariant: 'image',
-        role: referenceRole,
-      }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
-      })
-      const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-          generationKind: 'image_erase',
-        },
-      }
-
-      setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
-      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageEraseMode(false)
+      if (result.added) {
+        startImageEraseRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
     },
-    [
-      canEditWorkflow,
-      collaborativeBatchAddBlocks,
-      data.isEmbedded,
-      data.isPreview,
-      id,
-      setPendingSelection,
-      workflowBlocks,
-    ]
+    [createDerivedImagePendingNode, startImageEraseRequest]
   )
 
   const createImageOutpaintVariantNode = useCallback(
@@ -4585,6 +4668,89 @@ export const ContentBlock = memo(function ContentBlock({
     resolvedVariant,
     resolveBlockSourceValues,
     startImageCutoutRequest,
+  ])
+
+  const retryDerivedImageGeneration = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      (resolvedGenerationKind !== 'image_perspective' &&
+        resolvedGenerationKind !== 'image_repaint' &&
+        resolvedGenerationKind !== 'image_erase')
+    ) {
+      return
+    }
+
+    const sourceReference = resolvedContentReferences.find(
+      (reference) => reference.sourceVariant === 'image'
+    )
+    if (!sourceReference) {
+      failDerivedImageGeneration(id, '缺少源图片引用，无法重试。', resolvedGenerationKind)
+      return
+    }
+
+    const sourceFile = extractStoredValue<UploadedFileValue | null>(
+      resolveBlockSourceValues(sourceReference.sourceBlockId),
+      'file',
+      null
+    )
+    if (!sourceFile?.key) {
+      failDerivedImageGeneration(id, '源图片缺少文件信息。', resolvedGenerationKind)
+      return
+    }
+
+    const currentValues = resolveBlockSourceValues(id)
+    if (resolvedGenerationKind === 'image_perspective') {
+      const request = getImagePerspectiveRequestMetadata(
+        extractStoredValue<unknown>(currentValues, 'imagePerspectiveRequest', null)
+      )
+      if (!request) {
+        failDerivedImageGeneration(id, '缺少多角度生成参数，无法重试。', resolvedGenerationKind)
+        return
+      }
+      markDerivedImageGenerationPending(id, resolvedGenerationKind)
+      startImagePerspectiveRequest({ targetBlockId: id, sourceFile, metadata: request })
+      return
+    }
+
+    if (resolvedGenerationKind === 'image_repaint') {
+      const request = getImageRepaintRequestMetadata(
+        extractStoredValue<unknown>(currentValues, 'imageRepaintRequest', null)
+      )
+      if (!request) {
+        failDerivedImageGeneration(id, '缺少重绘参数，无法重试。', resolvedGenerationKind)
+        return
+      }
+      markDerivedImageGenerationPending(id, resolvedGenerationKind)
+      startImageRepaintRequest({ targetBlockId: id, sourceFile, metadata: request })
+      return
+    }
+
+    const request = getImageEraseRequestMetadata(
+      extractStoredValue<unknown>(currentValues, 'imageEraseRequest', null)
+    )
+    if (!request) {
+      failDerivedImageGeneration(id, '缺少擦除参数，无法重试。', resolvedGenerationKind)
+      return
+    }
+    markDerivedImageGenerationPending(id, resolvedGenerationKind)
+    startImageEraseRequest({ targetBlockId: id, sourceFile, metadata: request })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    failDerivedImageGeneration,
+    id,
+    markDerivedImageGenerationPending,
+    resolvedContentReferences,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolveBlockSourceValues,
+    startImageEraseRequest,
+    startImagePerspectiveRequest,
+    startImageRepaintRequest,
   ])
 
   const retryVideoFrameCapture = useCallback(() => {
@@ -5390,6 +5556,7 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImageEraseVariant={createImageEraseVariantNode}
             onSubmitImageOutpaint={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
+            onRetryDerivedImageGeneration={retryDerivedImageGeneration}
             onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)

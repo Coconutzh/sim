@@ -3,17 +3,14 @@
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ImageIcon, Loader2, RotateCcw, X } from 'lucide-react'
-import { ApiClientError } from '@/lib/api/client/errors'
-import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
-import { generateWorkspaceImageContract } from '@/lib/api/contracts/media-images'
-import { getContentCanvasModel } from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
 import {
   DEFAULT_IMAGE_PERSPECTIVE_MODEL,
   type ImageGenerationModelId,
 } from '@/lib/generated-media/image/image-generation-utils'
+import type { ImagePerspectiveGenerationRequest } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-derived-generation-utils'
 
 const ROTATION_MIN = -60
 const ROTATION_MAX = 60
@@ -43,10 +40,7 @@ interface ImagePerspectiveMenuProps {
   workspaceId?: string
   sourceFile: UploadedFileValue
   availability?: ContentCanvasModelAvailabilitySnapshot | null
-  onCreateVariant: (params: {
-    file: UploadedFileValue
-    model: ImageGenerationModelId
-  }) => Promise<void> | void
+  onCreateVariant: (params: ImagePerspectiveGenerationRequest) => Promise<void> | void
   onClose: () => void
 }
 
@@ -61,19 +55,8 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiClientError) return error.message
   if (error instanceof Error && error.message) return error.message
   return 'Failed to create image variant.'
-}
-
-function supportsImageReference(modelId: string): modelId is ImageGenerationModelId {
-  const model = getContentCanvasModel(modelId)
-  return Boolean(
-    model &&
-      model.capability === 'image' &&
-      model.referenceCapability.allowedSourceVariants.includes('image') &&
-      model.referenceCapability.supportedRoles.includes('image_reference')
-  )
 }
 
 export function getImagePerspectiveModel(
@@ -87,14 +70,9 @@ export function getImagePerspectiveModel(
     return { model: DEFAULT_IMAGE_PERSPECTIVE_MODEL, disabledReason: null }
   }
 
-  const fallbackModel = availability.image.enabledModelIds.find(supportsImageReference)
-  if (fallbackModel) {
-    return { model: fallbackModel, disabledReason: null }
-  }
-
   return {
     model: null,
-    disabledReason: 'No available image model supports image reference editing.',
+    disabledReason: 'The multi-angle image model is not available in this workspace.',
   }
 }
 
@@ -139,26 +117,6 @@ function normalizeSourceFile(file: UploadedFileValue) {
     key,
     size: file.size ?? 0,
     type: file.type ?? 'image/png',
-    context: file.context,
-  }
-}
-
-function mapGeneratedFile(file: {
-  id: string
-  name: string
-  url: string
-  key: string
-  size: number
-  type: string
-  context?: string
-}): UploadedFileValue {
-  return {
-    id: file.id,
-    name: file.name,
-    path: file.url,
-    key: file.key,
-    size: file.size,
-    type: file.type,
     context: file.context,
   }
 }
@@ -214,8 +172,6 @@ export function ImagePerspectiveMenu({
   const [error, setError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const dragStartRef = useRef<PointerDragStart | null>(null)
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const requestSequenceRef = useRef(0)
   const { model, disabledReason: modelDisabledReason } = useMemo(
     () => getImagePerspectiveModel(availability),
     [availability]
@@ -232,21 +188,9 @@ export function ImagePerspectiveMenu({
     1 + values.zoom / 200
   })`
 
-  const abortCurrentRequest = useCallback(() => {
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = null
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      abortCurrentRequest()
-    }
-  }, [abortCurrentRequest])
-
   useEffect(() => {
     setError(null)
-    abortCurrentRequest()
-  }, [abortCurrentRequest, normalizedSourceFile.key])
+  }, [normalizedSourceFile.key])
 
   const resetValues = useCallback(() => {
     setValues({ rotation: 0, tilt: 0, zoom: 0, wideAngle: false })
@@ -254,9 +198,8 @@ export function ImagePerspectiveMenu({
   }, [])
 
   const handleClose = useCallback(() => {
-    abortCurrentRequest()
     onClose()
-  }, [abortCurrentRequest, onClose])
+  }, [onClose])
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -305,55 +248,22 @@ export function ImagePerspectiveMenu({
       return
     }
 
-    const requestId = requestSequenceRef.current + 1
-    requestSequenceRef.current = requestId
-    abortCurrentRequest()
-    const controller = new AbortController()
-    abortControllerRef.current = controller
-
     setIsGenerating(true)
     setError(null)
 
     try {
-      const response = await requestJson(generateWorkspaceImageContract, {
-        body: {
-          workspaceId,
-          model,
-          prompt: buildImagePerspectivePrompt(values),
-          aspectRatio: 'auto',
-          referenceContext: {
-            text: [],
-            images: [normalizedSourceFile],
-          },
-        },
-        signal: controller.signal,
-      })
-
-      if (requestSequenceRef.current !== requestId) return
       await onCreateVariant({
-        file: mapGeneratedFile(response.file),
         model,
+        prompt: buildImagePerspectivePrompt(values),
+        values,
       })
       onClose()
     } catch (caughtError) {
-      if (controller.signal.aborted || requestSequenceRef.current !== requestId) return
       setError(getErrorMessage(caughtError))
     } finally {
-      if (requestSequenceRef.current === requestId) {
-        setIsGenerating(false)
-        abortControllerRef.current = null
-      }
+      setIsGenerating(false)
     }
-  }, [
-    abortCurrentRequest,
-    disabledReason,
-    model,
-    normalizedSourceFile,
-    onClose,
-    onCreateVariant,
-    values,
-    workspaceId,
-  ])
+  }, [disabledReason, model, onClose, onCreateVariant, values, workspaceId])
 
   return (
     <div

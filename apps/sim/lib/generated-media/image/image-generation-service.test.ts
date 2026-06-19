@@ -491,8 +491,11 @@ describe('generateWorkspaceImageFromPrompt', () => {
           text: [],
           images: [
             expect.objectContaining({
-              id: 'source-1',
-              base64: sourcePng.toString('base64'),
+              id: '',
+              name: 'source.jpg',
+              key: expect.stringMatching(/^cutout-source-.+\.jpg$/),
+              type: 'image/jpeg',
+              base64: expect.any(String),
             }),
           ],
         },
@@ -590,9 +593,11 @@ describe('generateWorkspaceImageFromPrompt', () => {
           text: [],
           images: [
             expect.objectContaining({
-              id: 'displayed-source',
-              key: 'workspace/displayed.png',
-              base64: displayedSourcePng.toString('base64'),
+              id: '',
+              name: 'displayed.jpg',
+              key: expect.stringMatching(/^cutout-source-.+\.jpg$/),
+              type: 'image/jpeg',
+              base64: expect.any(String),
             }),
           ],
         },
@@ -628,7 +633,13 @@ describe('generateWorkspaceImageFromPrompt', () => {
       type: 'image/png',
       context: 'workspace',
     })
-    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(
+      await createSolidPng({
+        width: 8,
+        height: 8,
+        color: { r: 255, g: 0, b: 0 },
+      })
+    )
     mockGenerateImageWithProvider.mockResolvedValue({
       buffer: opaqueWhiteBackgroundPng,
       mimeType: 'image/png',
@@ -688,7 +699,13 @@ describe('generateWorkspaceImageFromPrompt', () => {
       type: 'image/png',
       context: 'workspace',
     })
-    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(
+      await createSolidPng({
+        width: 4,
+        height: 4,
+        color: { r: 255, g: 0, b: 0 },
+      })
+    )
     mockGenerateImageWithProvider.mockResolvedValue({
       buffer: solidOpaquePng,
       mimeType: 'image/png',

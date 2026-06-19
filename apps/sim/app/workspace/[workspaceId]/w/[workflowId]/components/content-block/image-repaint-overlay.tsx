@@ -3,13 +3,9 @@
 import type { ChangeEvent, RefObject } from 'react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Loader2, Paperclip, Send } from 'lucide-react'
-import { ApiClientError } from '@/lib/api/client/errors'
-import { requestJson } from '@/lib/api/client/request'
-import {
-  type ImageGenerationResolution,
-  repaintWorkspaceImageContract,
-} from '@/lib/api/contracts/media-images'
+import type { ImageGenerationResolution } from '@/lib/api/contracts/media-images'
 import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
+import type { SubmitImageRepaintParams } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-derived-generation-utils'
 import { ImageMaskEditorOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-mask-editor-overlay'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 
@@ -30,13 +26,12 @@ interface ImageRepaintOverlayProps {
   sourceFile: UploadedFileValue
   isProcessingNode: boolean
   onCancel: () => void
-  onCreateVariant: (file: UploadedFileValue) => Promise<void> | void
+  onCreateVariant: (params: SubmitImageRepaintParams) => Promise<void> | void
 }
 
 const REPAINT_RESOLUTION_OPTIONS: ImageGenerationResolution[] = ['1K', '2K', '4K']
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiClientError) return error.message
   if (error instanceof Error && error.message) return error.message
   return 'Repaint failed. Please try again.'
 }
@@ -52,26 +47,6 @@ function normalizeFile(file: UploadedFileValue) {
     key,
     size: file.size ?? 0,
     type: file.type ?? 'image/png',
-    context: file.context,
-  }
-}
-
-function mapGeneratedFile(file: {
-  id: string
-  name: string
-  url: string
-  key: string
-  size: number
-  type: string
-  context?: string
-}): UploadedFileValue {
-  return {
-    id: file.id,
-    name: file.name,
-    path: file.url,
-    key: file.key,
-    size: file.size,
-    type: file.type,
     context: file.context,
   }
 }
@@ -165,26 +140,12 @@ export function ImageRepaintOverlay({
               return
             }
 
-            const response = await requestJson(repaintWorkspaceImageContract, {
-              body: {
-                workspaceId,
-                prompt: trimmedPrompt,
-                resolution,
-                sourceImage: normalizedSourceFile,
-                maskImage: {
-                  id: '',
-                  name: 'repaint-mask.png',
-                  url: '',
-                  key: 'repaint-mask.png',
-                  size: mask.size,
-                  type: 'image/png',
-                  base64: mask.base64,
-                },
-                referenceImages: referenceImages.map(normalizeFile),
-              },
+            await onCreateVariant({
+              prompt: trimmedPrompt,
+              resolution,
+              mask,
+              referenceImages,
             })
-
-            await onCreateVariant(mapGeneratedFile(response.file))
           } catch (caughtError) {
             setError(getErrorMessage(caughtError))
           } finally {

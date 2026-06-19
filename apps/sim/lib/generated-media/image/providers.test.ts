@@ -375,10 +375,10 @@ describe('generateImageWithProvider', () => {
     expect(result.buffer.toString()).toBe('preview-edited-image')
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'Falling back to Gemini 3 Pro Image preview model',
-      {
+      expect.objectContaining({
         model: 'gemini-3-pro-image',
         fallbackModel: 'gemini-3-pro-image-preview',
-      }
+      })
     )
 
     const stableRequestInit = vi.mocked(global.fetch).mock.calls[2]?.[1] as RequestInit
@@ -406,6 +406,115 @@ describe('generateImageWithProvider', () => {
       'https://files.example.com/preview-source.png',
       'https://files.example.com/preview-mask.png',
     ])
+  })
+
+  it('falls back to Gemini 3 Pro Image preview when Evolink stable task reports invalid parameters', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('preview-after-invalid-params')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/stable-source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-invalid',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'failed',
+          message:
+            'Invalid parameters.\nPlease check that resolution, duration, prompt length, and other parameters are within the model supported range.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/preview-source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-preview',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/preview-generated.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    const result = await generateImageWithProvider({
+      model: 'gemini-3-pro-image',
+      prompt: 'Cut out the subject',
+      aspectRatio: '1:1',
+      resolution: '2K',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: '',
+            name: 'source.jpg',
+            url: '',
+            base64: Buffer.from('normalized-source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/jpeg',
+          },
+        ],
+      },
+    })
+
+    expect(result).toMatchObject({
+      provider: 'gemini-compatible',
+      providerModel: 'gemini-3-pro-image-preview',
+      mimeType: 'image/png',
+    })
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Gemini compatible image task failed',
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        taskId: 'task-invalid',
+        status: 'failed',
+        error: expect.stringContaining('Invalid parameters'),
+        size: '1:1',
+        quality: '2K',
+      })
+    )
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Falling back to Gemini 3 Pro Image preview model',
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        fallbackModel: 'gemini-3-pro-image-preview',
+        reason: expect.stringContaining('Invalid parameters'),
+      })
+    )
   })
 
   it('allows Pro Image compatible tasks to poll for five minutes before timing out', async () => {

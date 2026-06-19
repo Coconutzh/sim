@@ -110,6 +110,8 @@ type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 const CUTOUT_PROMPT =
   'Cut out the main foreground subject from the provided image. Preserve the subject exactly, including fine edges such as hair, fabric, transparent materials, and shadows where appropriate. Remove the background completely. Return a clean PNG asset suitable for compositing. Do not add a checkerboard, white background, border, text, watermark, or extra objects.'
 const CUTOUT_BACKGROUND_COLOR_DISTANCE_THRESHOLD = 34
+const PROVIDER_REFERENCE_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+const CUTOUT_SOURCE_NORMALIZE_MAX_EDGES = [4096, 3072, 2048] as const
 
 const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, number> = {
   '1K': 1024,
@@ -334,6 +336,85 @@ async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<Imag
     return getNearestSupportedImageAspectRatio(metadata.width ?? 0, metadata.height ?? 0) ?? '1:1'
   } catch {
     return '1:1'
+  }
+}
+
+async function normalizeCutoutSourceImageForProvider(
+  sourceImage: UserFileLike
+): Promise<UserFileLike> {
+  const sourceBuffer = getHydratedImageBuffer(sourceImage)
+  if (!sourceBuffer) {
+    throw new Error('Source image could not be loaded for cutout.')
+  }
+
+  let metadata: sharp.Metadata
+  try {
+    metadata = await sharp(sourceBuffer).metadata()
+  } catch {
+    throw new Error('Source image format is not supported for cutout.')
+  }
+
+  const hasAlpha = Boolean(metadata.hasAlpha)
+  let normalizedBuffer: Buffer | null = null
+  let normalizedType = hasAlpha ? 'image/png' : 'image/jpeg'
+  let normalizedExtension = hasAlpha ? 'png' : 'jpg'
+
+  for (const maxEdge of CUTOUT_SOURCE_NORMALIZE_MAX_EDGES) {
+    const pipeline = sharp(sourceBuffer, { limitInputPixels: false }).rotate().resize({
+      width: maxEdge,
+      height: maxEdge,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+
+    normalizedBuffer = hasAlpha
+      ? await pipeline.png({ compressionLevel: 9 }).toBuffer()
+      : await pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer()
+
+    if (
+      normalizedBuffer.byteLength <= PROVIDER_REFERENCE_IMAGE_MAX_BYTES ||
+      maxEdge === CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1]
+    ) {
+      break
+    }
+  }
+
+  if (!normalizedBuffer) {
+    throw new Error('Source image could not be normalized for cutout.')
+  }
+
+  if (normalizedBuffer.byteLength > PROVIDER_REFERENCE_IMAGE_MAX_BYTES) {
+    if (hasAlpha) {
+      normalizedBuffer = await sharp(sourceBuffer, { limitInputPixels: false })
+        .rotate()
+        .resize({
+          width: CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1],
+          height: CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1],
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: 88, mozjpeg: true })
+        .toBuffer()
+      normalizedType = 'image/jpeg'
+      normalizedExtension = 'jpg'
+    }
+
+    if (normalizedBuffer.byteLength > PROVIDER_REFERENCE_IMAGE_MAX_BYTES) {
+      throw new Error('Source image is too large for cutout. Please use an image under 20MB.')
+    }
+  }
+
+  const baseName = sourceImage.name?.replace(/\.[^.]+$/, '').trim() || 'cutout-source'
+  return {
+    ...sourceImage,
+    id: '',
+    name: `${baseName}.${normalizedExtension}`,
+    url: '',
+    key: `cutout-source-${generateShortId()}.${normalizedExtension}`,
+    size: normalizedBuffer.byteLength,
+    type: normalizedType,
+    base64: normalizedBuffer.toString('base64'),
   }
 }
 
@@ -677,7 +758,8 @@ export async function cutoutWorkspaceImage({
   if (!hydratedSourceImage) {
     throw new Error('Source image could not be loaded for cutout.')
   }
-  const aspectRatio = await resolveCutoutAspectRatio(hydratedSourceImage)
+  const normalizedSourceImage = await normalizeCutoutSourceImageForProvider(hydratedSourceImage)
+  const aspectRatio = await resolveCutoutAspectRatio(normalizedSourceImage)
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_CUTOUT_MODEL,
@@ -686,7 +768,7 @@ export async function cutoutWorkspaceImage({
     resolution: DEFAULT_IMAGE_REPAINT_RESOLUTION,
     referenceContext: {
       text: [],
-      images: [hydratedSourceImage],
+      images: [normalizedSourceImage],
     },
     abortSignal,
   })

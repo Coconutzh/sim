@@ -384,6 +384,10 @@ function isFailedTaskStatus(status: string | null): boolean {
   return status === 'failed' || status === 'failure' || status === 'error' || status === 'cancelled'
 }
 
+function isProviderInvalidParametersError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes('invalid parameters')
+}
+
 function isModelFallbackError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const message = error.message.toLowerCase()
@@ -567,6 +571,18 @@ async function generateImageWithGeminiCompatible({
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
   if (!response.ok) {
+    const errorMessage = getProviderErrorMessage(
+      payload,
+      `Gemini compatible image request failed (${response.status})`
+    )
+    logger.error('Gemini compatible image request failed', {
+      model,
+      status: response.status,
+      error: errorMessage,
+      imageUrlCount: imageUrls.length,
+      size: isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
+      quality: isGeminiProImageModel(model) && resolution ? resolution : undefined,
+    })
     throw new Error(
       getProviderErrorMessage(
         payload,
@@ -624,7 +640,21 @@ async function generateImageWithGeminiCompatible({
       break
     }
     if (isFailedTaskStatus(status)) {
-      throw new Error(getProviderErrorMessage(taskPayload, 'Gemini compatible image task failed'))
+      const errorMessage = getProviderErrorMessage(
+        taskPayload,
+        'Gemini compatible image task failed'
+      )
+      logger.error('Gemini compatible image task failed', {
+        model,
+        taskId,
+        status,
+        error: errorMessage,
+        imageUrlCount: imageUrls.length,
+        size:
+          isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
+        quality: isGeminiProImageModel(model) && resolution ? resolution : undefined,
+      })
+      throw new Error(errorMessage)
     }
   }
 
@@ -769,12 +799,16 @@ export async function generateImageWithProvider(
       }
       return await generateImageWithGeminiNative(params)
     } catch (error) {
-      if (params.model !== GEMINI_PRO_IMAGE_MODEL || !isModelFallbackError(error)) {
+      if (
+        params.model !== GEMINI_PRO_IMAGE_MODEL ||
+        (!isModelFallbackError(error) && !isProviderInvalidParametersError(error))
+      ) {
         throw error
       }
       logger.warn('Falling back to Gemini 3 Pro Image preview model', {
         model: params.model,
         fallbackModel: GEMINI_PRO_IMAGE_PREVIEW_MODEL,
+        reason: error instanceof Error ? error.message : 'Unknown error',
       })
       const fallbackParams: GenerateImageWithProviderInput = {
         ...params,
