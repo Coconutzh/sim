@@ -31,6 +31,11 @@ const retryTimeouts = new Map<string, NodeJS.Timeout>()
 const operationTimeouts = new Map<string, NodeJS.Timeout>()
 const DEFAULT_WORKFLOW_DRAIN_TIMEOUT_MS = 20000
 const OPERATION_QUEUE_STORAGE_KEY = 'sim:operation-queue:v1'
+const OPERATION_QUEUE_PERSIST_DELAY_MS = 250
+const BATCH_UPDATE_POSITIONS_OPERATION = 'batch-update-positions'
+const BLOCKS_TARGET = 'blocks'
+let pendingPersistOperations: QueuedOperation[] | null = null
+let persistOperationsTimeout: ReturnType<typeof setTimeout> | null = null
 
 let emitWorkflowOperation:
   | ((
@@ -112,14 +117,93 @@ function persistOperations(operations: QueuedOperation[]): void {
   if (!storage) return
 
   try {
-    if (operations.length === 0) {
+    const recoverableOperations = operations.filter(
+      (operation) => operation.status === 'pending' || operation.status === 'processing'
+    )
+
+    if (recoverableOperations.length === 0) {
       storage.removeItem(OPERATION_QUEUE_STORAGE_KEY)
       return
     }
 
-    storage.setItem(OPERATION_QUEUE_STORAGE_KEY, JSON.stringify({ operations }))
+    storage.setItem(
+      OPERATION_QUEUE_STORAGE_KEY,
+      JSON.stringify({ operations: recoverableOperations })
+    )
   } catch (error) {
     logger.warn('Failed to persist operation queue', { error, operationCount: operations.length })
+  }
+}
+
+function flushPendingPersistOperations(): void {
+  const pendingOperations = pendingPersistOperations
+  pendingPersistOperations = null
+  if (persistOperationsTimeout) {
+    clearTimeout(persistOperationsTimeout)
+    persistOperationsTimeout = null
+  }
+  if (!pendingOperations) return
+
+  persistOperations(pendingOperations)
+}
+
+function schedulePersistOperations(operations: QueuedOperation[]): void {
+  pendingPersistOperations = operations
+  if (persistOperationsTimeout) return
+
+  const timeout = setTimeout(flushPendingPersistOperations, OPERATION_QUEUE_PERSIST_DELAY_MS)
+  if (typeof timeout === 'object' && 'unref' in timeout && typeof timeout.unref === 'function') {
+    timeout.unref()
+  }
+  persistOperationsTimeout = timeout
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingPersistOperations)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushPendingPersistOperations()
+    }
+  })
+}
+
+function getBatchPositionUpdateIds(operation: QueuedOperation['operation']): string[] | null {
+  if (
+    operation.operation !== BATCH_UPDATE_POSITIONS_OPERATION ||
+    operation.target !== BLOCKS_TARGET ||
+    !Array.isArray(operation.payload?.updates)
+  ) {
+    return null
+  }
+
+  const ids = operation.payload.updates
+    .map((update: unknown) =>
+      update && typeof update === 'object' && typeof (update as { id?: unknown }).id === 'string'
+        ? (update as { id: string }).id
+        : null
+    )
+    .filter((id: string | null): id is string => Boolean(id))
+
+  if (ids.length !== operation.payload.updates.length) return null
+
+  return ids.sort()
+}
+
+function hasSameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function clearOperationTimers(operationId: string): void {
+  const retryTimeout = retryTimeouts.get(operationId)
+  if (retryTimeout) {
+    clearTimeout(retryTimeout)
+    retryTimeouts.delete(operationId)
+  }
+
+  const operationTimeout = operationTimeouts.get(operationId)
+  if (operationTimeout) {
+    clearTimeout(operationTimeout)
+    operationTimeouts.delete(operationId)
   }
 }
 
@@ -129,13 +213,18 @@ export function rehydratePersistedOperationQueue(): void {
 
   const state = useOperationQueueStore.getState()
   const existingIds = new Set(state.operations.map((operation) => operation.id))
-  const restoredOperations = persistedOperations.filter((operation) => !existingIds.has(operation.id))
+  const restoredOperations = persistedOperations.filter(
+    (operation) => !existingIds.has(operation.id)
+  )
   if (restoredOperations.length === 0) return
 
-  const workflowVersionBumps = restoredOperations.reduce<Record<string, number>>((acc, operation) => {
-    acc[operation.workflowId] = (acc[operation.workflowId] ?? 0) + 1
-    return acc
-  }, {})
+  const workflowVersionBumps = restoredOperations.reduce<Record<string, number>>(
+    (acc, operation) => {
+      acc[operation.workflowId] = (acc[operation.workflowId] ?? 0) + 1
+      return acc
+    },
+    {}
+  )
 
   useOperationQueueStore.setState((currentState) => ({
     operations: [...currentState.operations, ...restoredOperations],
@@ -233,6 +322,23 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
         op.operation.payload?.field === field
     }
 
+    const batchPositionIds = getBatchPositionUpdateIds(operation.operation)
+    if (batchPositionIds) {
+      shouldDropPendingOperation = (op) => {
+        if (
+          op.status !== 'pending' ||
+          op.workflowId !== operation.workflowId ||
+          op.operation.operation !== BATCH_UPDATE_POSITIONS_OPERATION ||
+          op.operation.target !== BLOCKS_TARGET
+        ) {
+          return false
+        }
+
+        const existingIds = getBatchPositionUpdateIds(op.operation)
+        return Boolean(existingIds && hasSameIds(existingIds, batchPositionIds))
+      }
+    }
+
     const state = get()
 
     const existingOp = state.operations.find((op) => op.id === operation.id)
@@ -244,6 +350,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
       return
     }
 
+    const operationPayloadJson =
+      operation.operation.target === 'block' ? null : JSON.stringify(operation.operation.payload)
+
     const duplicateContent = state.operations.find(
       (op) =>
         !shouldDropPendingOperation(op) &&
@@ -253,7 +362,7 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
         ((operation.operation.target === 'block' &&
           op.operation.payload?.id === operation.operation.payload?.id) ||
           (operation.operation.target !== 'block' &&
-            JSON.stringify(op.operation.payload) === JSON.stringify(operation.operation.payload)))
+            JSON.stringify(op.operation.payload) === operationPayloadJson))
     )
 
     const isReplaceStateWorkflowOp =
@@ -285,6 +394,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
       operationId: queuedOp.id,
       operation: queuedOp.operation,
     })
+
+    const droppedOperations = state.operations.filter((op) => shouldDropPendingOperation(op))
+    droppedOperations.forEach((op) => clearOperationTimers(op.id))
 
     set((state) => ({
       operations: [...state.operations.filter((op) => !shouldDropPendingOperation(op)), queuedOp],
@@ -705,8 +817,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
   },
 }))
 
-useOperationQueueStore.subscribe((state) => {
-  persistOperations(state.operations)
+useOperationQueueStore.subscribe((state, previousState) => {
+  if (state.operations === previousState.operations) return
+  schedulePersistOperations(state.operations)
 })
 
 /**

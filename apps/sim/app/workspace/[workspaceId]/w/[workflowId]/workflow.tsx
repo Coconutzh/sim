@@ -4276,6 +4276,15 @@ const WorkflowContent = React.memo(
       [blocks, setDragStartPosition, getNodes, setPotentialParentId]
     )
 
+    const getChangedPositionUpdates = useCallback(
+      (updates: Array<{ id: string; position: { x: number; y: number } }>) =>
+        updates.filter((update) => {
+          const previous = multiNodeDragStartRef.current.get(update.id)
+          return !previous || previous.x !== update.position.x || previous.y !== update.position.y
+        }),
+      []
+    )
+
     /** Handles node drag stop to establish parent-child relationships. */
     const onNodeDragStop = useCallback(
       (_event: React.MouseEvent, node: any) => {
@@ -4288,9 +4297,13 @@ const WorkflowContent = React.memo(
         // If multiple nodes are selected, update all their positions
         if (selectedNodes.length > 1) {
           const positionUpdates = computeClampedPositionUpdates(selectedNodes, blocks, allNodes)
-          collaborativeBatchUpdatePositions(positionUpdates, {
-            previousPositions: multiNodeDragStartRef.current,
-          })
+          const changedPositionUpdates = getChangedPositionUpdates(positionUpdates)
+
+          if (changedPositionUpdates.length > 0) {
+            collaborativeBatchUpdatePositions(changedPositionUpdates, {
+              previousPositions: multiNodeDragStartRef.current,
+            })
+          }
 
           // Only reparent when an actual drag changed the target container.
           // onNodeDragStart sets both potentialParentId and dragStartParentId to the
@@ -4313,20 +4326,36 @@ const WorkflowContent = React.memo(
 
         // Single node drag - original logic
         const finalPosition = getClampedPositionForNode(node.id, node.position, blocks, allNodes)
+        const start = getDragStartPosition()
+        const before =
+          start && start.id === node.id
+            ? { x: start.x, y: start.y, parentId: start.parentId ?? null }
+            : null
+        const after = {
+          x: finalPosition.x,
+          y: finalPosition.y,
+          parentId: node.parentId || blocks[node.id]?.data?.parentId || null,
+        }
+        const currentBlockPosition = blocks[node.id]?.position
+        const moved = before
+          ? before.x !== after.x || before.y !== after.y || before.parentId !== after.parentId
+          : !currentBlockPosition ||
+            currentBlockPosition.x !== finalPosition.x ||
+            currentBlockPosition.y !== finalPosition.y
+        const parentChanged = potentialParentId !== dragStartParentId
+
+        if (!moved && !parentChanged) {
+          if (before) {
+            setDragStartPosition(null)
+          }
+          setPotentialParentId(null)
+          return
+        }
 
         updateBlockPosition(node.id, finalPosition)
 
         // Record single move entry on drag end to avoid micro-moves
-        const start = getDragStartPosition()
-        if (start && start.id === node.id) {
-          const before = { x: start.x, y: start.y, parentId: start.parentId }
-          const after = {
-            x: finalPosition.x,
-            y: finalPosition.y,
-            parentId: node.parentId || blocks[node.id]?.data?.parentId,
-          }
-          const moved =
-            before.x !== after.x || before.y !== after.y || before.parentId !== after.parentId
+        if (before) {
           if (moved) {
             window.dispatchEvent(
               new CustomEvent('workflow-record-move', {
@@ -4524,6 +4553,7 @@ const WorkflowContent = React.memo(
         activeWorkflowId,
         collaborativeBatchUpdatePositions,
         executeBatchParentUpdate,
+        getChangedPositionUpdates,
         resetDragHighlights,
       ]
     )
@@ -4683,9 +4713,12 @@ const WorkflowContent = React.memo(
 
         const allNodes = getNodes()
         const positionUpdates = computeClampedPositionUpdates(nodes, blocks, allNodes)
-        collaborativeBatchUpdatePositions(positionUpdates, {
-          previousPositions: multiNodeDragStartRef.current,
-        })
+        const changedPositionUpdates = getChangedPositionUpdates(positionUpdates)
+        if (changedPositionUpdates.length > 0) {
+          collaborativeBatchUpdatePositions(changedPositionUpdates, {
+            previousPositions: multiNodeDragStartRef.current,
+          })
+        }
 
         // Process parent updates using shared helper
         executeBatchParentUpdate(nodes, potentialParentId, 'Batch moved selection to new parent')
@@ -4699,6 +4732,7 @@ const WorkflowContent = React.memo(
         blocks,
         getNodes,
         collaborativeBatchUpdatePositions,
+        getChangedPositionUpdates,
         potentialParentId,
         executeBatchParentUpdate,
         resetDragHighlights,

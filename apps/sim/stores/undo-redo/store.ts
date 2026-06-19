@@ -2,7 +2,8 @@ import { createLogger } from '@sim/logger'
 import { UNDO_REDO_OPERATIONS } from '@sim/realtime-protocol/constants'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
+import type { PersistStorage, StorageValue } from 'zustand/middleware'
+import { persist } from 'zustand/middleware'
 import type {
   BatchAddBlocksOperation,
   BatchAddEdgesOperation,
@@ -19,8 +20,12 @@ import type { BlockState } from '@/stores/workflows/workflow/types'
 const logger = createLogger('UndoRedoStore')
 const DEFAULT_CAPACITY = 100
 const MAX_STACKS = 5
+const PERSIST_WRITE_DELAY_MS = 250
+type PersistedUndoRedoState = Pick<UndoRedoState, 'stacks' | 'capacity'>
 
 let recordingSuspendDepth = 0
+let pendingPersistWrite: { name: string; value: StorageValue<PersistedUndoRedoState> } | null = null
+let persistWriteTimeout: ReturnType<typeof setTimeout> | null = null
 
 function isRecordingSuspended(): boolean {
   return recordingSuspendDepth > 0
@@ -79,6 +84,70 @@ const safeStorageAdapter = {
     } catch (e) {
       logger.warn('Failed to remove from localStorage', e)
     }
+  },
+}
+
+function flushPendingPersistWrite(): void {
+  if (persistWriteTimeout) {
+    clearTimeout(persistWriteTimeout)
+    persistWriteTimeout = null
+  }
+  const pendingWrite = pendingPersistWrite
+  pendingPersistWrite = null
+  if (!pendingWrite || typeof localStorage === 'undefined') return
+
+  try {
+    localStorage.setItem(pendingWrite.name, JSON.stringify(pendingWrite.value))
+  } catch (e) {
+    logger.warn('Failed to save to localStorage', e)
+  }
+}
+
+function schedulePersistWrite(name: string, value: StorageValue<PersistedUndoRedoState>): void {
+  pendingPersistWrite = { name, value }
+  if (persistWriteTimeout) return
+
+  const timeout = setTimeout(flushPendingPersistWrite, PERSIST_WRITE_DELAY_MS)
+  if (typeof timeout === 'object' && 'unref' in timeout && typeof timeout.unref === 'function') {
+    timeout.unref()
+  }
+  persistWriteTimeout = timeout
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingPersistWrite)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushPendingPersistWrite()
+    }
+  })
+}
+
+const undoRedoStorage: PersistStorage<PersistedUndoRedoState> = {
+  getItem: (name) => {
+    if (pendingPersistWrite?.name === name) {
+      return pendingPersistWrite.value
+    }
+
+    const raw = safeStorageAdapter.getItem(name)
+    if (!raw) return null
+
+    try {
+      return JSON.parse(raw) as StorageValue<PersistedUndoRedoState>
+    } catch (e) {
+      logger.warn('Failed to parse undo/redo localStorage state', e)
+      return null
+    }
+  },
+  setItem: (name, value) => {
+    if (typeof localStorage === 'undefined') return
+    schedulePersistWrite(name, value)
+  },
+  removeItem: (name) => {
+    if (pendingPersistWrite?.name === name) {
+      pendingPersistWrite = null
+    }
+    safeStorageAdapter.removeItem(name)
   },
 }
 
@@ -501,7 +570,7 @@ export const useUndoRedoStore = create<UndoRedoState>()(
     }),
     {
       name: 'workflow-undo-redo',
-      storage: createJSONStorage(() => safeStorageAdapter),
+      storage: undoRedoStorage,
       partialize: (state) => ({
         stacks: state.stacks,
         capacity: state.capacity,

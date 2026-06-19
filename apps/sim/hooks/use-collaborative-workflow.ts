@@ -30,8 +30,8 @@ import { invalidateDeploymentQueries } from '@/hooks/queries/deployments'
 import { useUndoRedo } from '@/hooks/use-undo-redo'
 import { useNotificationStore } from '@/stores/notifications'
 import {
-  rehydratePersistedOperationQueue,
   registerEmitFunctions,
+  rehydratePersistedOperationQueue,
   useOperationQueue,
   useOperationQueueStore,
 } from '@/stores/operation-queue/store'
@@ -65,15 +65,20 @@ const logger = createLogger('CollaborativeWorkflow')
 export function useCollaborativeWorkflow() {
   const queryClient = useQueryClient()
   const undoRedo = useUndoRedo()
+  const undoRedoRef = useRef(undoRedo)
   const isUndoRedoInProgress = useRef(false)
   const lastDiffOperationId = useRef<string | null>(null)
+
+  useEffect(() => {
+    undoRedoRef.current = undoRedo
+  }, [undoRedo])
 
   useEffect(() => {
     const moveHandler = (e: any) => {
       const { blockId, before, after } = e.detail || {}
       if (!blockId || !before || !after) return
       if (isUndoRedoInProgress.current) return
-      undoRedo.recordBatchMoveBlocks([{ blockId, before, after }])
+      undoRedoRef.current.recordBatchMoveBlocks([{ blockId, before, after }])
     }
 
     const parentUpdateHandler = (e: any) => {
@@ -81,7 +86,7 @@ export function useCollaborativeWorkflow() {
         e.detail || {}
       if (!blockId) return
       if (isUndoRedoInProgress.current) return
-      undoRedo.recordUpdateParent(
+      undoRedoRef.current.recordUpdateParent(
         blockId,
         oldParentId,
         newParentId,
@@ -126,11 +131,21 @@ export function useCollaborativeWorkflow() {
       lastDiffOperationId.current = operationId
 
       if (type === 'apply-diff' && baselineSnapshot && proposedState) {
-        undoRedo.recordApplyDiff(baselineSnapshot, proposedState, diffAnalysis)
+        undoRedoRef.current.recordApplyDiff(baselineSnapshot, proposedState, diffAnalysis)
       } else if (type === 'accept-diff' && beforeAccept && afterAccept) {
-        undoRedo.recordAcceptDiff(beforeAccept, afterAccept, diffAnalysis, baselineSnapshot)
+        undoRedoRef.current.recordAcceptDiff(
+          beforeAccept,
+          afterAccept,
+          diffAnalysis,
+          baselineSnapshot
+        )
       } else if (type === 'reject-diff' && beforeReject && afterReject) {
-        undoRedo.recordRejectDiff(beforeReject, afterReject, diffAnalysis, baselineSnapshot)
+        undoRedoRef.current.recordRejectDiff(
+          beforeReject,
+          afterReject,
+          diffAnalysis,
+          baselineSnapshot
+        )
       }
     }
 
@@ -142,7 +157,7 @@ export function useCollaborativeWorkflow() {
       window.removeEventListener('workflow-record-parent-update', parentUpdateHandler)
       window.removeEventListener('record-diff-operation', diffOperationHandler)
     }
-  }, [undoRedo])
+  }, [])
   const {
     isConnected,
     currentWorkflowId,
