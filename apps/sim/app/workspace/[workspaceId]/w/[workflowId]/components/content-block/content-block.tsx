@@ -134,6 +134,11 @@ import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflow
 import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
+import {
+  normalizeImageGenerationKind,
+  shouldShowImageComposer,
+  type ToolbarDerivedImageGenerationKind,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-generation-kind-utils'
 import { createImageOutpaintReferenceEdge } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-content-reference'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
@@ -189,9 +194,8 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
-type ImageGenerationKind = 'cutout' | 'video_frame_capture' | 'image_outpaint'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
-type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
+type ContentGenerationKind = ToolbarDerivedImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
 
 interface ContentBlockNodeData extends WorkflowBlockProps {}
@@ -434,12 +438,6 @@ function normalizeVariant(value: unknown): ContentVariant | null {
 
 function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus | null {
   return value === 'pending' || value === 'complete' || value === 'error' ? value : null
-}
-
-function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
-  return value === 'cutout' || value === 'video_frame_capture' || value === 'image_outpaint'
-    ? value
-    : null
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -1809,6 +1807,21 @@ function MediaContentCard({
   const isImageOutpaintNode = variant === 'image' && generationKind === 'image_outpaint'
   const isImageOutpaintPending = isImageOutpaintNode && generationStatus === 'pending' && !file
   const isImageOutpaintError = isImageOutpaintNode && generationStatus === 'error' && !file
+  const isImageToolActive =
+    isImageCropMode ||
+    isImageRepaintMode ||
+    isImageEraseMode ||
+    isImageOutpaintMode ||
+    isPerspectiveMenuOpen
+  const hasLegacyToolbarDerivedReference =
+    variant === 'image' &&
+    contentReferences.length > 0 &&
+    aiPrompt.trim().length === 0 &&
+    (hasMedia ||
+      contentReferences.some(
+        (reference) =>
+          reference.sourceVariant === 'video' && reference.role === 'video_frame_capture'
+      ))
   const showUploadAction =
     selected &&
     canUpload &&
@@ -1830,8 +1843,12 @@ function MediaContentCard({
     !isImageEraseMode &&
     !isImageOutpaintMode
   const showImageComposer =
-    variant === 'image' &&
-    !hasMedia &&
+    shouldShowImageComposer({
+      variant,
+      generationKind,
+      isImageToolActive,
+      hasLegacyToolbarDerivedReference,
+    }) &&
     !isImageCutoutPending &&
     !isImageCutoutError &&
     !isVideoFrameCapturePending &&
@@ -1913,7 +1930,7 @@ function MediaContentCard({
       )}
 
       {showImageToolbar && (
-        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5'>
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-56px] left-1/2 z-40 inline-flex items-center gap-1.5'>
           {showImageCropAction && (
             <button
               type='button'
@@ -2613,6 +2630,7 @@ export const ContentBlock = memo(function ContentBlock({
     collaborativeSetSubblockValue,
     collaborativeUpdateBlockName,
   } = useCollaborativeWorkflow()
+  const blockStoredValues = (workflowBlocks[id]?.subBlocks as StoredValueRecord) ?? undefined
   const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
   const [isImageCropMode, setIsImageCropMode] = useState(false)
@@ -2834,19 +2852,33 @@ export const ContentBlock = memo(function ContentBlock({
   const resolvedGenerationStatus = extractStoredValue<string | null>(
     data.isPreview
       ? sourceValues
-      : ({ generationStatus: generationStatusValue } as StoredValueRecord),
+      : ({
+          generationStatus:
+            generationStatusValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationStatus', null),
+        } as StoredValueRecord),
     'generationStatus',
     null
   )
   const resolvedGenerationKind = extractStoredValue<string | null>(
-    data.isPreview ? sourceValues : ({ generationKind: generationKindValue } as StoredValueRecord),
+    data.isPreview
+      ? sourceValues
+      : ({
+          generationKind:
+            generationKindValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationKind', null),
+        } as StoredValueRecord),
     'generationKind',
     null
   )
   const resolvedGenerationError = extractStoredValue<string | null>(
     data.isPreview
       ? sourceValues
-      : ({ generationError: generationErrorValue } as StoredValueRecord),
+      : ({
+          generationError:
+            generationErrorValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationError', null),
+        } as StoredValueRecord),
     'generationError',
     null
   )
@@ -3606,6 +3638,7 @@ export const ContentBlock = memo(function ContentBlock({
           aiAspectRatio: 'auto',
           file: uploadedFile,
           contentReferences: [reference],
+          generationKind: 'image_crop',
         },
       }
 
@@ -4101,6 +4134,7 @@ export const ContentBlock = memo(function ContentBlock({
           aiAspectRatio: 'auto',
           file,
           contentReferences: [reference],
+          generationKind: 'image_perspective',
         },
       }
 
@@ -4181,6 +4215,7 @@ export const ContentBlock = memo(function ContentBlock({
           aiAspectRatio: 'auto',
           file,
           contentReferences: [reference],
+          generationKind: 'image_repaint',
         },
       }
 
@@ -4262,6 +4297,7 @@ export const ContentBlock = memo(function ContentBlock({
           aiAspectRatio: 'auto',
           file,
           contentReferences: [reference],
+          generationKind: 'image_erase',
         },
       }
 

@@ -325,6 +325,18 @@ function getNearestOutpaintAspectRatio(width: number, height: number): ImageAspe
   return getNearestSupportedImageAspectRatio(width, height) ?? '1:1'
 }
 
+async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<ImageAspectRatioValue> {
+  const sourceBuffer = getHydratedImageBuffer(sourceImage)
+  if (!sourceBuffer) return '1:1'
+
+  try {
+    const metadata = await sharp(sourceBuffer).metadata()
+    return getNearestSupportedImageAspectRatio(metadata.width ?? 0, metadata.height ?? 0) ?? '1:1'
+  } catch {
+    return '1:1'
+  }
+}
+
 export function resolveOutpaintAspectRatio({
   targetAspectRatio,
   customAspectRatio,
@@ -658,17 +670,24 @@ export async function cutoutWorkspaceImage({
   sourceImage,
   abortSignal,
 }: CutoutWorkspaceImageInput): Promise<CutoutWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for cutout.')
+  }
+  const aspectRatio = await resolveCutoutAspectRatio(hydratedSourceImage)
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_CUTOUT_MODEL,
     prompt: buildWorkspaceImageCutoutPrompt(),
-    aspectRatio: 'auto',
+    aspectRatio,
     resolution: DEFAULT_IMAGE_REPAINT_RESOLUTION,
-    referenceContext,
+    referenceContext: {
+      text: [],
+      images: [hydratedSourceImage],
+    },
     abortSignal,
   })
   const transparentPng = await ensureTransparentPng(generatedImage.buffer)

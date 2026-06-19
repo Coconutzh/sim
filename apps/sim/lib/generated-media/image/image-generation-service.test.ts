@@ -419,6 +419,11 @@ describe('generateWorkspaceImageFromPrompt', () => {
   })
 
   it('cuts out with fixed Nano Banana Pro model and preserves a real transparent PNG', async () => {
+    const sourcePng = await createSolidPng({
+      width: 2,
+      height: 2,
+      color: { r: 255, g: 0, b: 0 },
+    })
     const transparentPng = await sharp({
       create: {
         width: 2,
@@ -437,7 +442,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
       .png()
       .toBuffer()
 
-    mockGetWorkspaceFileByKey.mockResolvedValue({
+    mockGetWorkspaceFileByKey.mockResolvedValueOnce({
       id: 'source-1',
       name: 'source.png',
       key: 'workspace/source.png',
@@ -446,7 +451,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
       type: 'image/png',
       context: 'workspace',
     })
-    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('source-binary'))
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(sourcePng)
     mockGenerateImageWithProvider.mockResolvedValue({
       buffer: transparentPng,
       mimeType: 'image/png',
@@ -479,7 +484,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'gemini-3-pro-image',
-        aspectRatio: 'auto',
+        aspectRatio: '1:1',
         resolution: '2K',
         prompt: expect.stringContaining('Cut out the main foreground subject'),
         referenceContext: {
@@ -487,7 +492,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
           images: [
             expect.objectContaining({
               id: 'source-1',
-              base64: Buffer.from('source-binary').toString('base64'),
+              base64: sourcePng.toString('base64'),
             }),
           ],
         },
@@ -507,6 +512,92 @@ describe('generateWorkspaceImageFromPrompt', () => {
         postProcessed: false,
       },
     })
+  })
+
+  it('resolves cutout source images by displayed key before legacy id fallback', async () => {
+    const displayedSourcePng = await createSolidPng({
+      width: 16,
+      height: 9,
+      color: { r: 255, g: 0, b: 0 },
+    })
+    const transparentPng = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer()
+
+    mockGetWorkspaceFileByKey.mockResolvedValueOnce({
+      id: 'displayed-source',
+      name: 'displayed.png',
+      key: 'workspace/displayed.png',
+      url: '/api/files/serve/workspace/displayed.png?context=workspace',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockGetWorkspaceFile.mockResolvedValueOnce({
+      id: 'legacy-source',
+      name: 'legacy.png',
+      key: 'workspace/legacy.png',
+      url: '/api/files/serve/workspace/legacy.png?context=workspace',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(displayedSourcePng)
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: transparentPng,
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_cutout',
+      name: 'generated-cutout.png',
+      size: transparentPng.byteLength,
+      type: 'image/png',
+      key: 'workspace/ws-1/generated-cutout.png',
+      url: '/api/files/serve/workspace/ws-1/generated-cutout.png?context=workspace',
+      context: 'workspace',
+    })
+
+    await cutoutWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      sourceImage: {
+        id: 'legacy-source',
+        name: 'stale-display.png',
+        url: '/api/files/serve/workspace/displayed.png?context=workspace',
+        key: 'workspace/displayed.png',
+        size: 100,
+        type: 'image/png',
+      },
+    })
+
+    expect(mockGetWorkspaceFileByKey).toHaveBeenCalledWith('ws-1', 'workspace/displayed.png')
+    expect(mockFetchWorkspaceFileBuffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'displayed-source' })
+    )
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aspectRatio: '16:9',
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'displayed-source',
+              key: 'workspace/displayed.png',
+              base64: displayedSourcePng.toString('base64'),
+            }),
+          ],
+        },
+      })
+    )
   })
 
   it('post-processes an opaque flat-background cutout into a transparent PNG', async () => {
