@@ -31,6 +31,18 @@ interface GenerateImageWithProviderInput {
     text: string[]
     images: UserFileLike[]
   }
+  logContext?: {
+    tool?: string
+    sourceBytes?: number
+    maskBytes?: number
+    referenceBytes?: number
+    sourceWidth?: number
+    sourceHeight?: number
+    maskWidth?: number
+    maskHeight?: number
+    normalizedMaskWidth?: number
+    normalizedMaskHeight?: number
+  }
   abortSignal?: AbortSignal
 }
 
@@ -170,6 +182,50 @@ function getProviderErrorMessage(payload: Record<string, unknown>, fallback: str
     (typeof payload.message === 'string' ? payload.message : undefined) ||
     fallback
   )
+}
+
+function getProviderErrorCategory(errorMessage: string): string {
+  const normalizedMessage = errorMessage.toLowerCase()
+  if (normalizedMessage.includes('invalid parameters')) return 'invalid_parameters'
+  if (normalizedMessage.includes('no available service')) return 'model_unavailable'
+  if (normalizedMessage.includes('timed out') || normalizedMessage.includes('did not complete')) {
+    return 'timeout'
+  }
+  if (normalizedMessage.includes('cancelled') || normalizedMessage.includes('aborted')) {
+    return 'cancelled'
+  }
+  return 'provider_error'
+}
+
+function getGeminiCompatibleImageRequestLogContext({
+  model,
+  aspectRatio,
+  resolution,
+  imageUrlCount,
+  error,
+  logContext,
+}: Pick<GenerateImageWithProviderInput, 'model' | 'aspectRatio' | 'resolution' | 'logContext'> & {
+  imageUrlCount: number
+  error: string
+}) {
+  return {
+    tool: logContext?.tool ?? 'image_generation',
+    model,
+    size: isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
+    quality: isGeminiProImageModel(model) && resolution ? resolution : null,
+    imageUrlCount,
+    sourceBytes: logContext?.sourceBytes ?? null,
+    maskBytes: logContext?.maskBytes ?? null,
+    referenceBytes: logContext?.referenceBytes ?? null,
+    sourceWidth: logContext?.sourceWidth ?? null,
+    sourceHeight: logContext?.sourceHeight ?? null,
+    maskWidth: logContext?.maskWidth ?? null,
+    maskHeight: logContext?.maskHeight ?? null,
+    normalizedMaskWidth: logContext?.normalizedMaskWidth ?? null,
+    normalizedMaskHeight: logContext?.normalizedMaskHeight ?? null,
+    errorCategory: getProviderErrorCategory(error),
+    error,
+  }
 }
 
 function getEvolinkFileUploadErrorMessage(
@@ -528,6 +584,7 @@ async function generateImageWithGeminiCompatible({
   aspectRatio,
   resolution,
   referenceContext,
+  logContext,
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
@@ -576,12 +633,15 @@ async function generateImageWithGeminiCompatible({
       `Gemini compatible image request failed (${response.status})`
     )
     logger.error('Gemini compatible image request failed', {
-      model,
       status: response.status,
-      error: errorMessage,
-      imageUrlCount: imageUrls.length,
-      size: isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
-      quality: isGeminiProImageModel(model) && resolution ? resolution : undefined,
+      ...getGeminiCompatibleImageRequestLogContext({
+        model,
+        aspectRatio,
+        resolution,
+        imageUrlCount: imageUrls.length,
+        error: errorMessage,
+        logContext,
+      }),
     })
     throw new Error(
       getProviderErrorMessage(
@@ -645,14 +705,16 @@ async function generateImageWithGeminiCompatible({
         'Gemini compatible image task failed'
       )
       logger.error('Gemini compatible image task failed', {
-        model,
         taskId,
         status,
-        error: errorMessage,
-        imageUrlCount: imageUrls.length,
-        size:
-          isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
-        quality: isGeminiProImageModel(model) && resolution ? resolution : undefined,
+        ...getGeminiCompatibleImageRequestLogContext({
+          model,
+          aspectRatio,
+          resolution,
+          imageUrlCount: imageUrls.length,
+          error: errorMessage,
+          logContext,
+        }),
       })
       throw new Error(errorMessage)
     }

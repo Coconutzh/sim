@@ -8,6 +8,7 @@ import type {
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
   DEFAULT_IMAGE_CUTOUT_MODEL,
+  DEFAULT_IMAGE_PERSPECTIVE_MODEL,
   DEFAULT_IMAGE_REPAINT_MODEL,
   DEFAULT_IMAGE_REPAINT_RESOLUTION,
   getNearestSupportedImageAspectRatio,
@@ -106,6 +107,19 @@ interface CutoutWorkspaceImageResult {
 type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type EraseWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
+
+interface ImageDimensions {
+  width: number
+  height: number
+}
+
+interface PreparedRepaintReferenceContext {
+  referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
+  aspectRatio: ImageAspectRatioValue
+  sourceDimensions: ImageDimensions
+  maskDimensions: ImageDimensions
+  normalizedMaskDimensions: ImageDimensions
+}
 
 const CUTOUT_PROMPT =
   'Cut out the main foreground subject from the provided image. Preserve the subject exactly, including fine edges such as hair, fabric, transparent materials, and shadows where appropriate. Remove the background completely. Return a clean PNG asset suitable for compositing. Do not add a checkerboard, white background, border, text, watermark, or extra objects.'
@@ -323,12 +337,79 @@ function getHydratedImageBuffer(image: UserFileLike): Buffer | null {
   return Buffer.from(image.base64, 'base64')
 }
 
+function getUserFileByteSize(image?: UserFileLike): number | undefined {
+  if (!image) return undefined
+  if (typeof image.size === 'number' && Number.isFinite(image.size) && image.size >= 0) {
+    return image.size
+  }
+  if (image.base64) {
+    return Buffer.byteLength(image.base64, 'base64')
+  }
+  return undefined
+}
+
+function sumUserFileByteSizes(images: UserFileLike[]): number | undefined {
+  let total = 0
+  let hasSize = false
+  for (const image of images) {
+    const size = getUserFileByteSize(image)
+    if (size === undefined) continue
+    total += size
+    hasSize = true
+  }
+  return hasSize ? total : undefined
+}
+
+function getPromptImageTool({
+  model,
+  referenceContext,
+}: {
+  model: ImageGenerationModelId
+  referenceContext?: GenerateWorkspaceImageFromPromptInput['referenceContext']
+}): string {
+  if (model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && (referenceContext?.images?.length ?? 0) > 0) {
+    return 'image_perspective'
+  }
+  return 'image_generate'
+}
+
 function getNearestOutpaintAspectRatio(width: number, height: number): ImageAspectRatioValue {
   return getNearestSupportedImageAspectRatio(width, height) ?? '1:1'
 }
 
-async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<ImageAspectRatioValue> {
-  const sourceBuffer = getHydratedImageBuffer(sourceImage)
+function getNearestHydratedImageAspectRatio(dimensions: ImageDimensions): ImageAspectRatioValue {
+  return getNearestSupportedImageAspectRatio(dimensions.width, dimensions.height) ?? '1:1'
+}
+
+async function getHydratedImageDimensions(
+  image: UserFileLike | undefined,
+  label: string
+): Promise<ImageDimensions> {
+  const imageBuffer = image ? getHydratedImageBuffer(image) : null
+  if (!imageBuffer) {
+    throw new Error(`${label} could not be loaded.`)
+  }
+
+  let metadata: sharp.Metadata
+  try {
+    metadata = await sharp(imageBuffer).metadata()
+  } catch {
+    throw new Error(`${label} format is not supported.`)
+  }
+
+  const width = metadata.width ?? 0
+  const height = metadata.height ?? 0
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new Error(`${label} dimensions could not be read.`)
+  }
+
+  return { width, height }
+}
+
+async function resolveHydratedImageAspectRatio(
+  sourceImage: UserFileLike | undefined
+): Promise<ImageAspectRatioValue> {
+  const sourceBuffer = sourceImage ? getHydratedImageBuffer(sourceImage) : null
   if (!sourceBuffer) return '1:1'
 
   try {
@@ -336,6 +417,80 @@ async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<Imag
     return getNearestSupportedImageAspectRatio(metadata.width ?? 0, metadata.height ?? 0) ?? '1:1'
   } catch {
     return '1:1'
+  }
+}
+
+async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<ImageAspectRatioValue> {
+  return resolveHydratedImageAspectRatio(sourceImage)
+}
+
+async function normalizeRepaintMaskToSource({
+  maskImage,
+  sourceDimensions,
+  maskDimensions,
+}: {
+  maskImage: UserFileLike
+  sourceDimensions: ImageDimensions
+  maskDimensions: ImageDimensions
+}): Promise<UserFileLike> {
+  if (
+    sourceDimensions.width === maskDimensions.width &&
+    sourceDimensions.height === maskDimensions.height
+  ) {
+    return maskImage
+  }
+
+  const maskBuffer = getHydratedImageBuffer(maskImage)
+  if (!maskBuffer) {
+    throw new Error('Repaint mask image could not be loaded.')
+  }
+
+  const normalizedMaskBuffer = await sharp(maskBuffer, { limitInputPixels: false })
+    .resize(sourceDimensions.width, sourceDimensions.height, {
+      fit: 'fill',
+      kernel: sharp.kernel.nearest,
+    })
+    .png()
+    .toBuffer()
+
+  return {
+    ...maskImage,
+    id: '',
+    name: maskImage.name?.trim() || 'repaint-mask.png',
+    url: '',
+    key: `repaint-mask-${generateShortId()}.png`,
+    size: normalizedMaskBuffer.byteLength,
+    type: 'image/png',
+    base64: normalizedMaskBuffer.toString('base64'),
+  }
+}
+
+async function prepareRepaintReferenceContext(
+  referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
+): Promise<PreparedRepaintReferenceContext> {
+  const sourceImage = referenceContext.images[0]
+  const maskImage = referenceContext.images[1]
+  const sourceDimensions = await getHydratedImageDimensions(sourceImage, 'Repaint source image')
+  const maskDimensions = await getHydratedImageDimensions(maskImage, 'Repaint mask image')
+  const normalizedMaskImage = await normalizeRepaintMaskToSource({
+    maskImage,
+    sourceDimensions,
+    maskDimensions,
+  })
+  const normalizedMaskDimensions =
+    normalizedMaskImage === maskImage
+      ? maskDimensions
+      : await getHydratedImageDimensions(normalizedMaskImage, 'Normalized repaint mask image')
+
+  return {
+    referenceContext: {
+      ...referenceContext,
+      images: [sourceImage, normalizedMaskImage, ...referenceContext.images.slice(2)],
+    },
+    aspectRatio: getNearestHydratedImageAspectRatio(sourceDimensions),
+    sourceDimensions,
+    maskDimensions,
+    normalizedMaskDimensions,
   }
 }
 
@@ -567,12 +722,21 @@ export async function generateWorkspaceImageFromPrompt({
   abortSignal,
 }: GenerateWorkspaceImageFromPromptInput): Promise<GenerateWorkspaceImageFromPromptResult> {
   const hydratedReferenceContext = await hydrateImageReferenceContext(workspaceId, referenceContext)
+  const resolvedAspectRatio =
+    model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && aspectRatio === 'auto'
+      ? await resolveHydratedImageAspectRatio(hydratedReferenceContext?.images?.[0])
+      : aspectRatio
 
   const generatedImage = await generateImageWithProvider({
     model,
     prompt,
-    aspectRatio,
+    aspectRatio: resolvedAspectRatio,
     referenceContext: hydratedReferenceContext,
+    logContext: {
+      tool: getPromptImageTool({ model, referenceContext: hydratedReferenceContext }),
+      sourceBytes: getUserFileByteSize(hydratedReferenceContext?.images?.[0]),
+      referenceBytes: sumUserFileByteSizes(hydratedReferenceContext?.images?.slice(1) ?? []),
+    },
     abortSignal,
   })
 
@@ -673,17 +837,32 @@ export async function repaintWorkspaceImage({
   referenceImages,
   abortSignal,
 }: RepaintWorkspaceImageInput): Promise<RepaintWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
+  const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
     text: [],
     images: [sourceImage, maskImage, ...referenceImages],
-  })
+  })) ?? { text: [], images: [] }
+  const preparedReferenceContext = await prepareRepaintReferenceContext(referenceContext)
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
     prompt: buildWorkspaceImageRepaintPrompt({ prompt, resolution }),
-    aspectRatio: 'auto',
+    aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext,
+    referenceContext: preparedReferenceContext.referenceContext,
+    logContext: {
+      tool: 'image_repaint',
+      sourceBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[0]),
+      maskBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[1]),
+      referenceBytes: sumUserFileByteSizes(
+        preparedReferenceContext.referenceContext.images.slice(2)
+      ),
+      sourceWidth: preparedReferenceContext.sourceDimensions.width,
+      sourceHeight: preparedReferenceContext.sourceDimensions.height,
+      maskWidth: preparedReferenceContext.maskDimensions.width,
+      maskHeight: preparedReferenceContext.maskDimensions.height,
+      normalizedMaskWidth: preparedReferenceContext.normalizedMaskDimensions.width,
+      normalizedMaskHeight: preparedReferenceContext.normalizedMaskDimensions.height,
+    },
     abortSignal,
   })
 
@@ -713,10 +892,10 @@ export async function eraseWorkspaceImage({
   maskImage,
   abortSignal,
 }: EraseWorkspaceImageInput): Promise<EraseWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
+  const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
     text: [],
     images: [sourceImage, maskImage],
-  })
+  })) ?? { text: [], images: [] }
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
@@ -724,6 +903,12 @@ export async function eraseWorkspaceImage({
     aspectRatio: 'auto',
     resolution,
     referenceContext,
+    logContext: {
+      tool: 'image_erase',
+      sourceBytes: getUserFileByteSize(referenceContext.images[0]),
+      maskBytes: getUserFileByteSize(referenceContext.images[1]),
+      referenceBytes: sumUserFileByteSizes(referenceContext.images.slice(2)),
+    },
     abortSignal,
   })
 
@@ -769,6 +954,10 @@ export async function cutoutWorkspaceImage({
     referenceContext: {
       text: [],
       images: [normalizedSourceImage],
+    },
+    logContext: {
+      tool: 'cutout',
+      sourceBytes: getUserFileByteSize(normalizedSourceImage),
     },
     abortSignal,
   })
@@ -832,6 +1021,12 @@ export async function outpaintWorkspaceImage({
     referenceContext: {
       text: [],
       images: [hydratedSourceImage, layoutGuide, maskGuide],
+    },
+    logContext: {
+      tool: 'image_outpaint',
+      sourceBytes: getUserFileByteSize(hydratedSourceImage),
+      maskBytes: getUserFileByteSize(maskGuide),
+      referenceBytes: getUserFileByteSize(layoutGuide),
     },
     abortSignal,
   })

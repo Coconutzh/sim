@@ -238,19 +238,95 @@ describe('generateWorkspaceImageFromPrompt', () => {
     )
   })
 
+  it('resolves multi-angle auto aspect ratio from the source image dimensions', async () => {
+    const sourcePng = await createSolidPng({
+      width: 1600,
+      height: 900,
+      color: { r: 255, g: 255, b: 255 },
+    })
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'source-1',
+      name: 'source.png',
+      key: 'workspace/source.png',
+      url: '',
+      size: sourcePng.byteLength,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(sourcePng)
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('image-binary'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image-preview',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_perspective',
+      name: 'generated-image.png',
+      size: 12,
+      type: 'image/png',
+      key: 'workspace/ws-1/generated-image.png',
+      url: '/api/files/serve/workspace/ws-1/generated-image.png?context=workspace',
+      context: 'workspace',
+    })
+
+    await generateWorkspaceImageFromPrompt({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      model: 'gemini-3-pro-image-preview',
+      prompt: 'Create a different camera angle.',
+      aspectRatio: 'auto',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'source-1',
+            name: 'source.png',
+            url: '',
+            key: 'workspace/source.png',
+            size: sourcePng.byteLength,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3-pro-image-preview',
+        aspectRatio: '16:9',
+        logContext: expect.objectContaining({
+          tool: 'image_perspective',
+          sourceBytes: sourcePng.byteLength,
+        }),
+      })
+    )
+  })
+
   it('repaints with fixed Nano Banana Pro model, resolution, mask, and references', async () => {
+    const sourcePng = await createSolidPng({
+      width: 1600,
+      height: 1200,
+      color: { r: 255, g: 255, b: 255 },
+    })
+    const maskPng = await createSolidPng({
+      width: 400,
+      height: 300,
+      color: { r: 255, g: 255, b: 255 },
+    })
     mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
       id: fileId,
       name: `${fileId}.png`,
       key: `workspace/${fileId}.png`,
       url: '',
-      size: 99,
+      size: fileId === 'source-1' ? sourcePng.byteLength : 80,
       type: 'image/png',
       context: 'workspace',
     }))
-    mockFetchWorkspaceFileBuffer.mockImplementation(async (fileRecord: { id: string }) =>
-      Buffer.from(`${fileRecord.id}-binary`)
-    )
+    mockFetchWorkspaceFileBuffer.mockImplementation(async (fileRecord: { id: string }) => {
+      if (fileRecord.id === 'source-1') return sourcePng
+      return Buffer.from(`${fileRecord.id}-binary`)
+    })
     mockGenerateImageWithProvider.mockResolvedValue({
       buffer: Buffer.from('repainted-image'),
       mimeType: 'image/png',
@@ -277,7 +353,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
         name: 'source.png',
         url: '',
         key: 'workspace/source.png',
-        size: 100,
+        size: sourcePng.byteLength,
         type: 'image/png',
       },
       maskImage: {
@@ -285,9 +361,9 @@ describe('generateWorkspaceImageFromPrompt', () => {
         name: 'mask.png',
         url: '',
         key: 'mask.png',
-        size: 50,
+        size: maskPng.byteLength,
         type: 'image/png',
-        base64: Buffer.from('mask-binary').toString('base64'),
+        base64: maskPng.toString('base64'),
       },
       referenceImages: [
         {
@@ -304,19 +380,33 @@ describe('generateWorkspaceImageFromPrompt', () => {
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'gemini-3-pro-image',
-        aspectRatio: 'auto',
+        aspectRatio: '4:3',
         resolution: '4K',
         prompt: expect.stringContaining('User request: replace the logo with a blue mark.'),
+        logContext: {
+          tool: 'image_repaint',
+          sourceBytes: sourcePng.byteLength,
+          maskBytes: expect.any(Number),
+          referenceBytes: 80,
+          sourceWidth: 1600,
+          sourceHeight: 1200,
+          maskWidth: 400,
+          maskHeight: 300,
+          normalizedMaskWidth: 1600,
+          normalizedMaskHeight: 1200,
+        },
         referenceContext: {
           text: [],
           images: [
             expect.objectContaining({
               id: 'source-1',
-              base64: Buffer.from('source-1-binary').toString('base64'),
+              base64: sourcePng.toString('base64'),
             }),
             expect.objectContaining({
-              key: 'mask.png',
-              base64: Buffer.from('mask-binary').toString('base64'),
+              key: expect.stringMatching(/^repaint-mask-.+\.png$/),
+              size: expect.any(Number),
+              type: 'image/png',
+              base64: expect.any(String),
             }),
             expect.objectContaining({
               id: 'ref-1',
@@ -326,6 +416,17 @@ describe('generateWorkspaceImageFromPrompt', () => {
         },
       })
     )
+    const providerInput = mockGenerateImageWithProvider.mock.calls[0]?.[0] as {
+      referenceContext: { images: Array<{ base64?: string }> }
+    }
+    const normalizedMaskBase64 = providerInput.referenceContext.images[1]?.base64
+    expect(normalizedMaskBase64).toEqual(expect.any(String))
+    await expect(
+      sharp(Buffer.from(normalizedMaskBase64 ?? '', 'base64')).metadata()
+    ).resolves.toMatchObject({
+      width: 1600,
+      height: 1200,
+    })
     expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
       'ws-1',
       'user-1',
@@ -393,6 +494,12 @@ describe('generateWorkspaceImageFromPrompt', () => {
         aspectRatio: 'auto',
         resolution: '2K',
         prompt: expect.stringContaining('white/visible painted areas should be removed'),
+        logContext: {
+          tool: 'image_erase',
+          sourceBytes: 100,
+          maskBytes: 50,
+          referenceBytes: undefined,
+        },
         referenceContext: {
           text: [],
           images: [
@@ -799,6 +906,12 @@ describe('generateWorkspaceImageFromPrompt', () => {
         aspectRatio: '16:9',
         resolution: '2K',
         prompt: expect.stringContaining('left 18.75%, top 22.22%, width 50.00%, height 50.00%'),
+        logContext: expect.objectContaining({
+          tool: 'image_outpaint',
+          sourceBytes: 100,
+          maskBytes: expect.any(Number),
+          referenceBytes: expect.any(Number),
+        }),
         referenceContext: {
           text: [],
           images: [
