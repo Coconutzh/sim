@@ -354,6 +354,119 @@ describe('generateImageWithProvider', () => {
     })
   })
 
+  it('sends GPT Image 2 mask edits with alpha mask_url and image quality', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('edited-mask-image')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/alpha-mask.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-mask',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/mask-edited.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    const result = await generateImageWithProvider({
+      model: 'gpt-image-2',
+      prompt: 'Replace the masked area with a blue sign',
+      aspectRatio: '16:9',
+      resolution: '2K',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'source-1',
+            name: 'source.png',
+            url: '',
+            base64: Buffer.from('source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+      maskImage: {
+        id: '',
+        name: 'alpha-mask.png',
+        url: '',
+        base64: Buffer.from('alpha-mask').toString('base64'),
+        key: 'alpha-mask-key',
+        size: 512,
+        type: 'image/png',
+      },
+      maskEditQuality: 'medium',
+    })
+
+    expect(result).toMatchObject({
+      provider: 'gemini-compatible',
+      providerModel: 'gpt-image-2',
+      mimeType: 'image/png',
+    })
+    expect(result.buffer.toString()).toBe('edited-mask-image')
+
+    const sourceUploadInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(sourceUploadInit.body))).toMatchObject({
+      base64_data: `data:image/png;base64,${Buffer.from('source-image').toString('base64')}`,
+      file_name: 'source.png',
+      upload_path: 'sim-content-canvas',
+    })
+    const maskUploadInit = vi.mocked(global.fetch).mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(maskUploadInit.body))).toMatchObject({
+      base64_data: `data:image/png;base64,${Buffer.from('alpha-mask').toString('base64')}`,
+      file_name: 'alpha-mask.png',
+      upload_path: 'sim-content-canvas',
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[2]?.[1] as RequestInit
+    const body = JSON.parse(String(requestInit.body)) as Record<string, unknown>
+    expect(body).toMatchObject({
+      model: 'gpt-image-2',
+      prompt: expect.stringContaining('Replace the masked area with a blue sign'),
+      size: '16:9',
+      resolution: '2K',
+      quality: 'medium',
+      image_urls: ['https://files.example.com/source.png'],
+      mask_url: 'https://files.example.com/alpha-mask.png',
+    })
+    expect(body.quality).not.toBe('2K')
+  })
+
   it('falls back to Gemini 3 Pro Image preview when Evolink has no stable service', async () => {
     process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
     const imageBytes = Buffer.from('preview-edited-image')

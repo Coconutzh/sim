@@ -8,6 +8,7 @@ import type {
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
   DEFAULT_IMAGE_CUTOUT_MODEL,
+  DEFAULT_IMAGE_MASK_EDIT_MODEL,
   DEFAULT_IMAGE_PERSPECTIVE_MODEL,
   DEFAULT_IMAGE_REPAINT_MODEL,
   DEFAULT_IMAGE_REPAINT_RESOLUTION,
@@ -469,6 +470,58 @@ async function normalizeMaskToSource({
   }
 }
 
+async function convertWhiteEditMaskToAlphaMask({
+  maskImage,
+  maskNamePrefix,
+  maskLabel,
+}: {
+  maskImage: UserFileLike
+  maskNamePrefix: string
+  maskLabel: string
+}): Promise<UserFileLike> {
+  const maskBuffer = getHydratedImageBuffer(maskImage)
+  if (!maskBuffer) {
+    throw new Error(`${maskLabel} mask image could not be loaded.`)
+  }
+
+  const { data, info } = await sharp(maskBuffer, { limitInputPixels: false })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  const alphaMask = Buffer.alloc(info.width * info.height * 4)
+
+  for (let pixel = 0; pixel < info.width * info.height; pixel++) {
+    const sourceOffset = pixel * info.channels
+    const targetOffset = pixel * 4
+    const isEditable =
+      data[sourceOffset + 3] > 0 &&
+      data[sourceOffset] + data[sourceOffset + 1] + data[sourceOffset + 2] > 384
+
+    alphaMask[targetOffset] = 0
+    alphaMask[targetOffset + 1] = 0
+    alphaMask[targetOffset + 2] = 0
+    alphaMask[targetOffset + 3] = isEditable ? 0 : 255
+  }
+
+  const alphaMaskBuffer = await sharp(alphaMask, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+    limitInputPixels: false,
+  })
+    .png()
+    .toBuffer()
+
+  return {
+    ...maskImage,
+    id: '',
+    name: `${maskNamePrefix}.png`,
+    url: '',
+    key: `${maskNamePrefix}-${generateShortId()}.png`,
+    size: alphaMaskBuffer.byteLength,
+    type: 'image/png',
+    base64: alphaMaskBuffer.toString('base64'),
+  }
+}
+
 async function prepareMaskedEditReferenceContext({
   referenceContext,
   maskNamePrefix,
@@ -780,9 +833,8 @@ export function buildWorkspaceImageRepaintPrompt({
   resolution: ImageResolutionValue
 }): string {
   return [
-    'Edit the provided source image using the mask image.',
-    'The mask image marks the areas to repaint: white/visible painted areas are editable, black/transparent areas must remain unchanged.',
-    'Preserve the original image outside the mask exactly as much as possible.',
+    'Edit the provided source image using the mask.',
+    'Only the masked area is editable; preserve everything outside the mask exactly as much as possible.',
     `User request: ${prompt}.`,
     'Use the additional reference images only for visual guidance.',
     `Output at ${resolution} resolution.`,
@@ -829,8 +881,8 @@ export function buildWorkspaceImageErasePrompt({
   resolution: ImageResolutionValue
 }): string {
   return [
-    'Edit the provided source image using the mask image.',
-    'The mask marks the exact areas to erase: white/visible painted areas should be removed and naturally filled in; black/transparent areas must remain unchanged as much as possible.',
+    'Edit the provided source image using the mask.',
+    'Only the masked area should be erased and naturally filled in; preserve everything outside the mask as much as possible.',
     'Reconstruct the erased region using surrounding background, texture, lighting, perspective, and style.',
     'Do not add watermark, UI, text, border, frame, or unrelated objects.',
     `Output at ${resolution} resolution.`,
@@ -868,20 +920,32 @@ export async function repaintWorkspaceImage({
     sourceLabel: 'Repaint source image',
     maskLabel: 'Repaint',
   })
+  const alphaMaskImage = await convertWhiteEditMaskToAlphaMask({
+    maskImage: preparedReferenceContext.referenceContext.images[1],
+    maskNamePrefix: 'repaint-alpha-mask',
+    maskLabel: 'Repaint',
+  })
+  const providerReferenceContext = {
+    ...preparedReferenceContext.referenceContext,
+    images: [
+      preparedReferenceContext.referenceContext.images[0],
+      ...preparedReferenceContext.referenceContext.images.slice(2),
+    ],
+  }
 
   const generatedImage = await generateImageWithProvider({
-    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    model: DEFAULT_IMAGE_MASK_EDIT_MODEL,
     prompt: buildWorkspaceImageRepaintPrompt({ prompt, resolution }),
     aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext: preparedReferenceContext.referenceContext,
+    referenceContext: providerReferenceContext,
+    maskImage: alphaMaskImage,
+    maskEditQuality: 'medium',
     logContext: {
       tool: 'image_repaint',
-      sourceBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[0]),
-      maskBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[1]),
-      referenceBytes: sumUserFileByteSizes(
-        preparedReferenceContext.referenceContext.images.slice(2)
-      ),
+      sourceBytes: getUserFileByteSize(providerReferenceContext.images[0]),
+      maskBytes: getUserFileByteSize(alphaMaskImage),
+      referenceBytes: sumUserFileByteSizes(providerReferenceContext.images.slice(1)),
       sourceWidth: preparedReferenceContext.sourceDimensions.width,
       sourceHeight: preparedReferenceContext.sourceDimensions.height,
       maskWidth: preparedReferenceContext.maskDimensions.width,
@@ -935,20 +999,28 @@ export async function eraseWorkspaceImage({
     sourceLabel: 'Erase source image',
     maskLabel: 'Erase',
   })
+  const alphaMaskImage = await convertWhiteEditMaskToAlphaMask({
+    maskImage: preparedReferenceContext.referenceContext.images[1],
+    maskNamePrefix: 'erase-alpha-mask',
+    maskLabel: 'Erase',
+  })
+  const providerReferenceContext = {
+    ...preparedReferenceContext.referenceContext,
+    images: [preparedReferenceContext.referenceContext.images[0]],
+  }
 
   const generatedImage = await generateImageWithProvider({
-    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    model: DEFAULT_IMAGE_MASK_EDIT_MODEL,
     prompt: buildWorkspaceImageErasePrompt({ resolution }),
     aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext: preparedReferenceContext.referenceContext,
+    referenceContext: providerReferenceContext,
+    maskImage: alphaMaskImage,
+    maskEditQuality: 'medium',
     logContext: {
       tool: 'image_erase',
-      sourceBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[0]),
-      maskBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[1]),
-      referenceBytes: sumUserFileByteSizes(
-        preparedReferenceContext.referenceContext.images.slice(2)
-      ),
+      sourceBytes: getUserFileByteSize(providerReferenceContext.images[0]),
+      maskBytes: getUserFileByteSize(alphaMaskImage),
       sourceWidth: preparedReferenceContext.sourceDimensions.width,
       sourceHeight: preparedReferenceContext.sourceDimensions.height,
       maskWidth: preparedReferenceContext.maskDimensions.width,

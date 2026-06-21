@@ -5,6 +5,7 @@ import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
   type ImageAspectRatioValue,
   type ImageGenerationModelId,
+  type ImageMaskEditModelId,
   type ImageResolutionValue,
   mapImageAspectRatioToProviderSize,
 } from '@/lib/generated-media/image/image-generation-utils'
@@ -16,6 +17,10 @@ const EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS = 301
 const EVOLINK_FILE_UPLOAD_BASE_URL = 'https://files-api.evolink.ai/api/v1'
 const GEMINI_PRO_IMAGE_MODEL = 'gemini-3-pro-image' as const
 const GEMINI_PRO_IMAGE_PREVIEW_MODEL = 'gemini-3-pro-image-preview' as const
+const GPT_IMAGE_2_MODEL = 'gpt-image-2' as const
+
+type ImageMaskEditQuality = 'low' | 'medium' | 'high'
+type ProviderImageModelId = ImageGenerationModelId | ImageMaskEditModelId
 
 const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>> = {
   'jimeng-4.0': 'doubao-seedream-4-0-250828',
@@ -23,7 +28,7 @@ const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>>
 }
 
 interface GenerateImageWithProviderInput {
-  model: ImageGenerationModelId
+  model: ProviderImageModelId
   prompt: string
   aspectRatio: ImageAspectRatioValue
   resolution?: ImageResolutionValue
@@ -31,6 +36,8 @@ interface GenerateImageWithProviderInput {
     text: string[]
     images: UserFileLike[]
   }
+  maskImage?: UserFileLike
+  maskEditQuality?: ImageMaskEditQuality
   logContext?: {
     tool?: string
     sourceBytes?: number
@@ -202,18 +209,21 @@ function getGeminiCompatibleImageRequestLogContext({
   aspectRatio,
   resolution,
   imageUrlCount,
+  hasMaskUrl,
   error,
   logContext,
 }: Pick<GenerateImageWithProviderInput, 'model' | 'aspectRatio' | 'resolution' | 'logContext'> & {
   imageUrlCount: number
+  hasMaskUrl?: boolean
   error: string
 }) {
   return {
     tool: logContext?.tool ?? 'image_generation',
     model,
-    size: isGeminiProImageModel(model) && resolution ? aspectRatio : (resolution ?? aspectRatio),
+    size: isGeminiProImageModel(model) || isGptImage2Model(model) ? aspectRatio : resolution,
     quality: isGeminiProImageModel(model) && resolution ? resolution : null,
     imageUrlCount,
+    hasMaskUrl: hasMaskUrl ?? null,
     sourceBytes: logContext?.sourceBytes ?? null,
     maskBytes: logContext?.maskBytes ?? null,
     referenceBytes: logContext?.referenceBytes ?? null,
@@ -488,14 +498,22 @@ function isModelFallbackError(error: unknown): boolean {
   )
 }
 
-function isGeminiProImageModel(model: ImageGenerationModelId): boolean {
+function isGeminiProImageModel(model: ProviderImageModelId): boolean {
   return model === GEMINI_PRO_IMAGE_MODEL || model === GEMINI_PRO_IMAGE_PREVIEW_MODEL
 }
 
-function getEvolinkImageTaskMaxAttempts(model: ImageGenerationModelId): number {
-  return isGeminiProImageModel(model)
+function isGptImage2Model(model: ProviderImageModelId): model is ImageMaskEditModelId {
+  return model === GPT_IMAGE_2_MODEL
+}
+
+function getEvolinkImageTaskMaxAttempts(model: ProviderImageModelId): number {
+  return isGeminiProImageModel(model) || isGptImage2Model(model)
     ? EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS
     : EVOLINK_IMAGE_TASK_DEFAULT_MAX_ATTEMPTS
+}
+
+function resolveGeminiCompatibleServiceModel(model: ProviderImageModelId): ImageGenerationModelId {
+  return isGptImage2Model(model) ? GEMINI_PRO_IMAGE_PREVIEW_MODEL : model
 }
 
 function buildGeminiCompatibleImageRequestBody({
@@ -505,18 +523,26 @@ function buildGeminiCompatibleImageRequestBody({
   resolution,
   referenceContext,
   imageUrls,
+  maskUrl,
+  maskEditQuality,
 }: Pick<
   GenerateImageWithProviderInput,
-  'model' | 'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext'
+  'model' | 'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext' | 'maskEditQuality'
 > & {
   imageUrls: string[]
+  maskUrl?: string
 }): Record<string, unknown> {
   const requestBody: Record<string, unknown> = {
     model,
     prompt: buildImagePrompt({ prompt, aspectRatio, resolution, referenceContext }),
   }
 
-  if (isGeminiProImageModel(model) && resolution) {
+  if (isGptImage2Model(model)) {
+    requestBody.size = aspectRatio
+    if (resolution) requestBody.resolution = resolution
+    requestBody.quality = maskEditQuality ?? 'medium'
+    if (maskUrl) requestBody.mask_url = maskUrl
+  } else if (isGeminiProImageModel(model) && resolution) {
     requestBody.size = aspectRatio
     requestBody.quality = resolution
   } else {
@@ -616,11 +642,16 @@ async function generateImageWithGeminiCompatible({
   aspectRatio,
   resolution,
   referenceContext,
+  maskImage,
+  maskEditQuality,
   logContext,
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'image', modelId: model })
+  const service = resolveContentService({
+    capability: 'image',
+    modelId: resolveGeminiCompatibleServiceModel(model),
+  })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
@@ -639,6 +670,14 @@ async function generateImageWithGeminiCompatible({
       )
     )
   ).filter((value): value is string => Boolean(value))
+  const maskUrl = maskImage
+    ? await toCompatibleImageUrl({
+        image: maskImage,
+        baseUrl,
+        apiKey,
+        abortSignal,
+      })
+    : undefined
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
     signal: abortSignal,
@@ -654,6 +693,8 @@ async function generateImageWithGeminiCompatible({
         resolution,
         referenceContext,
         imageUrls,
+        maskUrl: maskUrl ?? undefined,
+        maskEditQuality,
       })
     ),
   })
@@ -671,6 +712,7 @@ async function generateImageWithGeminiCompatible({
         aspectRatio,
         resolution,
         imageUrlCount: imageUrls.length,
+        hasMaskUrl: Boolean(maskUrl),
         error: errorMessage,
         logContext,
       }),
@@ -744,6 +786,7 @@ async function generateImageWithGeminiCompatible({
           aspectRatio,
           resolution,
           imageUrlCount: imageUrls.length,
+          hasMaskUrl: Boolean(maskUrl),
           error: errorMessage,
           logContext,
         }),
@@ -788,7 +831,7 @@ async function generateImageWithArk({
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
 
-  const providerModel = JIMENG_PROVIDER_MODEL_MAP[model]
+  const providerModel = isGptImage2Model(model) ? undefined : JIMENG_PROVIDER_MODEL_MAP[model]
   if (!providerModel) {
     throw new Error(`Unsupported image model: ${model}`)
   }
@@ -885,6 +928,10 @@ async function generateImageWithArk({
 export async function generateImageWithProvider(
   params: GenerateImageWithProviderInput
 ): Promise<GeneratedImageProviderResult> {
+  if (isGptImage2Model(params.model)) {
+    return generateImageWithGeminiCompatible(params)
+  }
+
   const service = resolveContentService({ capability: 'image', modelId: params.model })
 
   if (

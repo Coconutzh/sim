@@ -60,6 +60,34 @@ async function createSolidPng({
     .toBuffer()
 }
 
+async function createWhiteRectMaskPng({
+  width,
+  height,
+  rect,
+}: {
+  width: number
+  height: number
+  rect: { x: number; y: number; width: number; height: number }
+}): Promise<Buffer> {
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: 0, g: 0, b: 0 },
+    },
+  })
+    .composite([
+      {
+        input: Buffer.from(
+          `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="white"/></svg>`
+        ),
+      },
+    ])
+    .png()
+    .toBuffer()
+}
+
 describe('resolveOutpaintAspectRatio', () => {
   it('returns fixed ratios unchanged', () => {
     expect(
@@ -307,16 +335,16 @@ describe('generateWorkspaceImageFromPrompt', () => {
     )
   })
 
-  it('repaints with fixed Nano Banana Pro model, resolution, mask, and references', async () => {
+  it('repaints with GPT Image 2, alpha mask_url input, concrete aspect ratio, and references', async () => {
     const sourcePng = await createSolidPng({
       width: 1600,
       height: 1200,
       color: { r: 255, g: 255, b: 255 },
     })
-    const maskPng = await createSolidPng({
+    const maskPng = await createWhiteRectMaskPng({
       width: 400,
       height: 300,
-      color: { r: 255, g: 255, b: 255 },
+      rect: { x: 100, y: 75, width: 80, height: 60 },
     })
     mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
       id: fileId,
@@ -335,7 +363,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
       buffer: Buffer.from('repainted-image'),
       mimeType: 'image/png',
       provider: 'gemini',
-      providerModel: 'gemini-3-pro-image',
+      providerModel: 'gpt-image-2',
     })
     mockUploadWorkspaceFile.mockResolvedValue({
       id: 'wf_repaint',
@@ -383,9 +411,17 @@ describe('generateWorkspaceImageFromPrompt', () => {
 
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'gemini-3-pro-image',
+        model: 'gpt-image-2',
         aspectRatio: '4:3',
         resolution: '4K',
+        maskImage: expect.objectContaining({
+          key: expect.stringMatching(/^repaint-alpha-mask-.+\.png$/),
+          name: 'repaint-alpha-mask.png',
+          size: expect.any(Number),
+          type: 'image/png',
+          base64: expect.any(String),
+        }),
+        maskEditQuality: 'medium',
         prompt: expect.stringContaining('User request: replace the logo with a blue mark.'),
         logContext: {
           tool: 'image_repaint',
@@ -407,12 +443,6 @@ describe('generateWorkspaceImageFromPrompt', () => {
               base64: sourcePng.toString('base64'),
             }),
             expect.objectContaining({
-              key: expect.stringMatching(/^repaint-mask-.+\.png$/),
-              size: expect.any(Number),
-              type: 'image/png',
-              base64: expect.any(String),
-            }),
-            expect.objectContaining({
               id: 'ref-1',
               base64: Buffer.from('ref-1-binary').toString('base64'),
             }),
@@ -422,15 +452,27 @@ describe('generateWorkspaceImageFromPrompt', () => {
     )
     const providerInput = mockGenerateImageWithProvider.mock.calls[0]?.[0] as {
       referenceContext: { images: Array<{ base64?: string }> }
+      maskImage?: { base64?: string }
     }
-    const normalizedMaskBase64 = providerInput.referenceContext.images[1]?.base64
-    expect(normalizedMaskBase64).toEqual(expect.any(String))
+    expect(providerInput.referenceContext.images).toHaveLength(2)
+    const alphaMaskBase64 = providerInput.maskImage?.base64
+    expect(alphaMaskBase64).toEqual(expect.any(String))
     await expect(
-      sharp(Buffer.from(normalizedMaskBase64 ?? '', 'base64')).metadata()
+      sharp(Buffer.from(alphaMaskBase64 ?? '', 'base64')).metadata()
     ).resolves.toMatchObject({
       width: 1600,
       height: 1200,
+      hasAlpha: true,
     })
+    const { data: alphaData, info: alphaInfo } = await sharp(
+      Buffer.from(alphaMaskBase64 ?? '', 'base64')
+    )
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    expect(alphaInfo.channels).toBe(4)
+    expect(alphaData[(400 * alphaInfo.width + 400) * alphaInfo.channels + 3]).toBe(0)
+    expect(alphaData[(10 * alphaInfo.width + 10) * alphaInfo.channels + 3]).toBe(255)
     expect(mockUploadWorkspaceFile).toHaveBeenCalledWith(
       'ws-1',
       'user-1',
@@ -440,16 +482,16 @@ describe('generateWorkspaceImageFromPrompt', () => {
     )
   })
 
-  it('erases with fixed Nano Banana Pro model, resolution, source image, and mask', async () => {
+  it('erases with GPT Image 2, alpha mask_url input, concrete aspect ratio, and source image', async () => {
     const sourcePng = await createSolidPng({
       width: 1600,
       height: 1200,
       color: { r: 255, g: 255, b: 255 },
     })
-    const maskPng = await createSolidPng({
+    const maskPng = await createWhiteRectMaskPng({
       width: 400,
       height: 300,
-      color: { r: 255, g: 255, b: 255 },
+      rect: { x: 100, y: 75, width: 80, height: 60 },
     })
     mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
       id: fileId,
@@ -465,7 +507,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
       buffer: Buffer.from('erased-image'),
       mimeType: 'image/png',
       provider: 'gemini',
-      providerModel: 'gemini-3-pro-image',
+      providerModel: 'gpt-image-2',
     })
     mockUploadWorkspaceFile.mockResolvedValue({
       id: 'wf_erase',
@@ -502,15 +544,21 @@ describe('generateWorkspaceImageFromPrompt', () => {
 
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'gemini-3-pro-image',
+        model: 'gpt-image-2',
         aspectRatio: '4:3',
         resolution: '2K',
-        prompt: expect.stringContaining('white/visible painted areas should be removed'),
+        maskImage: expect.objectContaining({
+          key: expect.stringMatching(/^erase-alpha-mask-.+\.png$/),
+          name: 'erase-alpha-mask.png',
+          type: 'image/png',
+          base64: expect.any(String),
+        }),
+        maskEditQuality: 'medium',
+        prompt: expect.stringContaining('Only the masked area should be erased'),
         logContext: {
           tool: 'image_erase',
           sourceBytes: sourcePng.byteLength,
           maskBytes: expect.any(Number),
-          referenceBytes: undefined,
           sourceWidth: 1600,
           sourceHeight: 1200,
           maskWidth: 400,
@@ -525,31 +573,39 @@ describe('generateWorkspaceImageFromPrompt', () => {
               id: 'source-1',
               base64: sourcePng.toString('base64'),
             }),
-            expect.objectContaining({
-              key: expect.stringMatching(/^erase-mask-.+\.png$/),
-              base64: expect.any(String),
-            }),
           ],
         },
       })
     )
     const providerInput = mockGenerateImageWithProvider.mock.calls[0]?.[0] as {
       referenceContext: { images: Array<{ base64?: string }> }
+      maskImage?: { base64?: string }
     }
-    const normalizedMaskBase64 = providerInput.referenceContext.images[1]?.base64
-    expect(normalizedMaskBase64).toEqual(expect.any(String))
+    expect(providerInput.referenceContext.images).toHaveLength(1)
+    const alphaMaskBase64 = providerInput.maskImage?.base64
+    expect(alphaMaskBase64).toEqual(expect.any(String))
     await expect(
-      sharp(Buffer.from(normalizedMaskBase64 ?? '', 'base64')).metadata()
+      sharp(Buffer.from(alphaMaskBase64 ?? '', 'base64')).metadata()
     ).resolves.toMatchObject({
       width: 1600,
       height: 1200,
+      hasAlpha: true,
     })
+    const { data: alphaData, info: alphaInfo } = await sharp(
+      Buffer.from(alphaMaskBase64 ?? '', 'base64')
+    )
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    expect(alphaInfo.channels).toBe(4)
+    expect(alphaData[(400 * alphaInfo.width + 400) * alphaInfo.channels + 3]).toBe(0)
+    expect(alphaData[(10 * alphaInfo.width + 10) * alphaInfo.channels + 3]).toBe(255)
     expect(result).toMatchObject({
       file: {
         id: 'wf_erase',
       },
       metadata: {
-        providerModel: 'gemini-3-pro-image',
+        providerModel: 'gpt-image-2',
       },
     })
   })
