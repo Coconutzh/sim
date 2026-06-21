@@ -90,6 +90,9 @@ function legacyBlockTypeToKind(blockType: unknown): LocalCanvasNodeKind {
   if (blockType === 'image_generation' || blockType === 'image') return 'image'
   if (blockType === 'video_generation' || blockType === 'video') return 'video'
   if (blockType === 'audio_generation' || blockType === 'audio') return 'audio'
+  if (blockType === 'presentation' || blockType === 'ppt' || blockType === 'pptx') {
+    return 'presentation'
+  }
   if (blockType === 'document') return 'document'
   if (blockType === 'table') return 'table'
   if (blockType === 'image_editor') return 'image_editor'
@@ -257,6 +260,9 @@ function inferKindFromTitle(title: string): LocalCanvasNodeKind {
   if (/主视觉|视觉|图片|image|key visual/.test(normalized)) return 'image'
   if (/视频|video|影片|短片/.test(normalized)) return 'video'
   if (/配乐|音频|音乐|soundtrack|audio|music/.test(normalized)) return 'audio'
+  if (/ppt|pptx|presentation|slides|deck|演示|答辩|汇报/.test(normalized)) {
+    return 'presentation'
+  }
   return 'text'
 }
 
@@ -274,6 +280,7 @@ function defaultFieldsForInstructionNode(
   if (kind === 'image') return { aiPrompt: prompt }
   if (kind === 'video') return { videoPrompt: prompt }
   if (kind === 'audio') return { audioPrompt: prompt }
+  if (kind === 'presentation') return { presentationPrompt: prompt }
   return {}
 }
 
@@ -727,6 +734,16 @@ function getReadableFieldsForKind(kind: Parameters<typeof getCanvasNodeAdapter>[
     ]
   }
   if (kind === 'audio') return ['file', 'audioPrompt', 'audioModel', 'audioParameters']
+  if (kind === 'presentation') {
+    return [
+      'presentationPrompt',
+      'presentationSlideCount',
+      'presentationStatus',
+      'presentationArtifact',
+      'file',
+      'contentReferences',
+    ]
+  }
   if (kind === 'document') return ['title', 'description', 'file']
   if (kind === 'table') return ['columns', 'rowCount', 'sampleRows']
   if (kind === 'image_editor') return ['sourceImage', 'editPrompt', 'outputFile']
@@ -784,7 +801,13 @@ function toUserFileLike(value: unknown, fallbackName: string): UserFileLike | nu
 }
 
 function isContentVariant(kind: string): kind is ContentNodeVariant {
-  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+  return (
+    kind === 'text' ||
+    kind === 'image' ||
+    kind === 'video' ||
+    kind === 'audio' ||
+    kind === 'presentation'
+  )
 }
 
 function toPromptContextFile(node: CanvasNodeRecord): PromptContextReferencedNode['file'] {

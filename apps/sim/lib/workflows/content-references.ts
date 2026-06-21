@@ -16,16 +16,17 @@ import type {
   ContentReferenceRole,
 } from '@/lib/workflows/content-reference-types'
 
-const CONTENT_NODE_VARIANTS = ['text', 'image', 'video', 'audio'] as const
+const CONTENT_NODE_VARIANTS = ['text', 'image', 'video', 'audio', 'presentation'] as const
 
 const REFERENCE_TARGET_VARIANTS_BY_SOURCE: Record<
   ContentNodeVariant,
   readonly ContentNodeVariant[]
 > = {
-  text: ['text', 'image', 'video', 'audio'],
-  image: ['text', 'image', 'video'],
-  video: ['text'],
-  audio: ['video'],
+  text: ['text', 'image', 'video', 'audio', 'presentation'],
+  image: ['text', 'image', 'video', 'presentation'],
+  video: ['text', 'presentation'],
+  audio: ['video', 'presentation'],
+  presentation: ['text'],
 } as const
 
 export interface ContentReferenceRecord {
@@ -133,6 +134,15 @@ const VIDEO_FIRST_AND_LAST_CAPABILITY: Omit<ContentReferenceCapability, 'model'>
   ],
 }
 
+const PRESENTATION_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> = {
+  authMode: 'api_key_only',
+  targetVariant: 'presentation',
+  selectionMode: 'multi',
+  allowedSourceVariants: ['text', 'image', 'video', 'audio'],
+  supportedRoles: ['text_context', 'image_reference', 'audio_reference'],
+  slots: [],
+}
+
 function capabilityKey(targetVariant: ContentNodeVariant, model: string): string {
   return `${targetVariant}:${model}`
 }
@@ -174,6 +184,9 @@ function defaultCapabilityForVariant(
   }
   if (targetVariant === 'audio') {
     return { ...AUDIO_MULTI_CAPABILITY, model }
+  }
+  if (targetVariant === 'presentation') {
+    return { ...PRESENTATION_MULTI_CAPABILITY, model }
   }
   return { ...VIDEO_TEXT_ONLY_CAPABILITY, model }
 }

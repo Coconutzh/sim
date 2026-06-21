@@ -5,10 +5,10 @@ import {
 } from '@/lib/product/content-node-presets'
 
 describe('content-node-presets', () => {
-  it('creates text, image, video, and audio content nodes from addable presets', () => {
+  it('creates text, image, video, audio, and PPT content nodes from addable presets', () => {
     const presetIds = getAddableContentNodePresets().map((preset) => preset.id)
 
-    expect(presetIds).toEqual(['text', 'image', 'video', 'audio'])
+    expect(presetIds).toEqual(['text', 'image', 'video', 'audio', 'presentation'])
   })
 
   it('maps the text preset to a pure canvas content block', () => {
@@ -66,6 +66,23 @@ describe('content-node-presets', () => {
     expect(preset?.presetSubBlockValues).toMatchObject({
       contentVariant: 'audio',
       file: null,
+    })
+  })
+
+  it('maps the PPT preset to a pure canvas content block', () => {
+    const preset = getContentNodePreset('presentation')
+
+    expect(preset).toBeDefined()
+    expect(preset?.blockType).toBe('content')
+    expect(preset?.contentVariant).toBe('presentation')
+    expect(preset?.presetSubBlockValues).toMatchObject({
+      contentVariant: 'presentation',
+      presentationPrompt: '',
+      presentationSlideCount: 8,
+      presentationStatus: 'idle',
+      presentationArtifact: null,
+      file: null,
+      contentReferences: [],
     })
   })
 })

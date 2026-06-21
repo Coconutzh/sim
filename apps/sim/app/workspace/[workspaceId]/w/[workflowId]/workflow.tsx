@@ -183,11 +183,12 @@ const LazyCommandList = lazy(() =>
   )
 )
 
-type ContentVariant = 'text' | 'image' | 'video' | 'audio'
+type ContentVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 
 interface UploadedFileSnapshot {
   id?: string
   name?: string
+  url?: string
   path?: string
   key?: string
   size?: number
@@ -201,8 +202,9 @@ function hasUploadedFileSnapshot(value: unknown): value is UploadedFileSnapshot 
   return Boolean(
     value &&
       typeof value === 'object' &&
-      ('path' in value || 'key' in value || 'name' in value) &&
+      ('path' in value || 'url' in value || 'key' in value || 'name' in value) &&
       (typeof (value as UploadedFileSnapshot).path === 'string' ||
+        typeof (value as UploadedFileSnapshot).url === 'string' ||
         typeof (value as UploadedFileSnapshot).key === 'string' ||
         typeof (value as UploadedFileSnapshot).name === 'string')
   )
@@ -216,17 +218,25 @@ function inferContentVariantFromSnapshot(value: unknown): ContentVariant | null 
   if (fileType?.startsWith('image/')) return 'image'
   if (fileType?.startsWith('video/')) return 'video'
   if (fileType?.startsWith('audio/')) return 'audio'
+  if (fileType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return 'presentation'
+  }
 
-  const fileName = `${file.name ?? ''} ${file.path ?? ''}`.toLowerCase()
+  const fileName = `${file.name ?? ''} ${file.path ?? ''} ${file.url ?? ''}`.toLowerCase()
   if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|$)/.test(fileName)) return 'image'
   if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)(\?|$)/.test(fileName)) return 'video'
   if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?|$)/.test(fileName)) return 'audio'
+  if (/\.pptx(\?|$)/.test(fileName)) return 'presentation'
 
   return null
 }
 
 function normalizeContentVariant(value: unknown): ContentVariant | null {
-  return value === 'text' || value === 'image' || value === 'video' || value === 'audio'
+  return value === 'text' ||
+    value === 'image' ||
+    value === 'video' ||
+    value === 'audio' ||
+    value === 'presentation'
     ? value
     : null
 }
@@ -426,7 +436,13 @@ interface CanvasConnection {
 }
 
 function isContentNodeVariantValue(value: unknown): value is ContentNodeVariant {
-  return value === 'text' || value === 'image' || value === 'video' || value === 'audio'
+  return (
+    value === 'text' ||
+    value === 'image' ||
+    value === 'video' ||
+    value === 'audio' ||
+    value === 'presentation'
+  )
 }
 
 function isContentReferenceSourceHandle(handleId: string | null | undefined): boolean {
@@ -484,6 +500,10 @@ function resolveContentBlockReferenceModel(params: {
   if (params.variant === 'video') {
     const modelFamily = getLiveContentSubblockValue({ ...params, key: 'videoModelFamily' })
     return modelFamily === 'wan2.7' ? 'wan2.7-i2v' : 'wan2.6-i2v-flash'
+  }
+
+  if (params.variant === 'presentation') {
+    return 'codex-ppt-skill'
   }
 
   const model = getLiveContentSubblockValue({ ...params, key: 'aiModel' })

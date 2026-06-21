@@ -22,16 +22,23 @@ describe('content reference capabilities', () => {
       'image',
       'video',
       'audio',
+      'presentation',
     ])
-    expect(getAllowedReferencingContentNodeVariants('image')).toEqual(['text', 'image', 'video'])
-    expect(getAllowedReferencingContentNodeVariants('video')).toEqual(['text'])
-    expect(getAllowedReferencingContentNodeVariants('audio')).toEqual(['video'])
+    expect(getAllowedReferencingContentNodeVariants('image')).toEqual([
+      'text',
+      'image',
+      'video',
+      'presentation',
+    ])
+    expect(getAllowedReferencingContentNodeVariants('video')).toEqual(['text', 'presentation'])
+    expect(getAllowedReferencingContentNodeVariants('audio')).toEqual(['video', 'presentation'])
 
     expect(
       getAllowedReferenceSourceVariants('image', 'gemini-3.1-flash-image-preview')
     ).not.toContain('video')
     expect(canContentNodeVariantReferenceSource('audio', 'image')).toBe(false)
     expect(canContentNodeVariantReferenceSource('video', 'audio')).toBe(true)
+    expect(canContentNodeVariantReferenceSource('presentation', 'image')).toBe(true)
   })
 
   it('allows Gemini image models to reference both text and image nodes', () => {
@@ -114,6 +121,13 @@ describe('content reference capabilities', () => {
         sourceVariant: 'image',
       })
     ).toBeNull()
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'presentation',
+        model: 'codex-ppt-skill',
+        sourceVariant: 'image',
+      })
+    ).toBe('image_reference')
   })
 
   it('returns slot-based video capabilities for the supported Wan models', () => {

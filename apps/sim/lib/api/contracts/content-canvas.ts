@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import { hermesPresentationArtifactManifestSchema } from '@/lib/api/contracts/internal/hermes-presentation-artifacts'
+import { nonEmptyIdSchema, userFileSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 export const contentCanvasCapabilityAvailabilitySchema = z.object({
@@ -68,5 +69,52 @@ export const generateContentCanvasTextContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: generateContentCanvasTextResponseSchema,
+  },
+})
+
+export const generateContentCanvasPresentationBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  workflowId: nonEmptyIdSchema,
+  nodeId: nonEmptyIdSchema,
+  prompt: z.string().max(20_000).optional(),
+  slideCount: z.number().int().min(1).max(200).optional(),
+})
+export type GenerateContentCanvasPresentationBody = z.input<
+  typeof generateContentCanvasPresentationBodySchema
+>
+
+export const contentCanvasPresentationArtifactSchema = z.object({
+  pptxFile: userFileSchema,
+  coverImageFile: userFileSchema.optional(),
+  manifestFile: userFileSchema,
+  manifest: hermesPresentationArtifactManifestSchema,
+  auditId: z.string(),
+  traceId: z.string().optional(),
+})
+export type ContentCanvasPresentationArtifact = z.output<
+  typeof contentCanvasPresentationArtifactSchema
+>
+
+export const generateContentCanvasPresentationResponseSchema = z.object({
+  success: z.literal(true),
+  answer: z.string(),
+  nodeId: z.string(),
+  presentationStatus: z.literal('complete'),
+  presentationArtifact: contentCanvasPresentationArtifactSchema,
+  file: userFileSchema,
+  hermesResponseId: z.string().optional(),
+})
+export type GenerateContentCanvasPresentationResponse = z.output<
+  typeof generateContentCanvasPresentationResponseSchema
+>
+
+export const generateContentCanvasPresentationContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/content-canvas/presentations/generate',
+  body: generateContentCanvasPresentationBodySchema,
+  response: {
+    mode: 'json',
+    schema: generateContentCanvasPresentationResponseSchema,
+    status: [200, 400, 401, 403, 404, 500, 503],
   },
 })

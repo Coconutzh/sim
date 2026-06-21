@@ -48,6 +48,11 @@ const DEFAULT_HERMES_API_URL = 'http://127.0.0.1:8642'
 const DEFAULT_SIM_INTERNAL_API_URL = 'http://127.0.0.1:3000'
 const DEFAULT_SIM_ENV_FILE = path.join('apps', 'sim', '.env')
 const MIN_TOKEN_LENGTH = 32
+const PPT_EVOLINK_API_KEY_CANDIDATES = [
+  'SIM_PPT_EVOLINK_API_KEY',
+  'EVOLINK_API_KEY',
+  'CONTENT_IMAGE_GEMINI_API_KEY',
+] as const
 const HERMES_LLM_ENV_KEYS = [
   'OPENROUTER_API_KEY',
   'OPENAI_API_KEY',
@@ -134,6 +139,10 @@ function defaultHermesRepoPath(cwd: string): string {
 
 function defaultHermesHome(cwd: string): string {
   return path.resolve(path.dirname(cwd), '.hermes-sim-local')
+}
+
+function defaultCodexPptSkillRoot(cwd: string): string {
+  return path.resolve(path.dirname(cwd), 'codex-ppt-skill', 'skills', 'codex-ppt')
 }
 
 export function parseArgs(argv: string[], cwd = process.cwd()): SetupOptions {
@@ -318,6 +327,33 @@ function simAppUrl(simEnv: Record<string, string>): string | undefined {
     envValue(simEnv, 'NEXT_PUBLIC_APP_URL') ??
     envValue(simEnv, 'BETTER_AUTH_URL')
   )
+}
+
+function selectPptEvolinkApiKey(
+  simEnv: Record<string, string>,
+  hermesEnv: Record<string, string>
+): string | undefined {
+  return (
+    envValue(hermesEnv, 'SIM_PPT_EVOLINK_API_KEY') ??
+    PPT_EVOLINK_API_KEY_CANDIDATES.map((key) => envValue(simEnv, key)).find(Boolean) ??
+    envValue(hermesEnv, 'EVOLINK_API_KEY') ??
+    envValue(hermesEnv, 'CONTENT_IMAGE_GEMINI_API_KEY')
+  )
+}
+
+function buildHermesPptEnvValues(
+  simEnv: Record<string, string>,
+  hermesEnv: Record<string, string>,
+  cwd: string
+): Record<string, string> {
+  const evolinkApiKey = selectPptEvolinkApiKey(simEnv, hermesEnv)
+  return {
+    SIM_PPT_CODEX_SKILL_ROOT:
+      envValue(hermesEnv, 'SIM_PPT_CODEX_SKILL_ROOT') ??
+      envValue(simEnv, 'SIM_PPT_CODEX_SKILL_ROOT') ??
+      defaultCodexPptSkillRoot(cwd),
+    ...(evolinkApiKey ? { SIM_PPT_EVOLINK_API_KEY: evolinkApiKey } : {}),
+  }
 }
 
 function appendMissingEnvValues(
@@ -507,6 +543,7 @@ export async function runHermesLocalEnvSetup(
       ...(shouldCopyLlmKey && modelPreference?.envKey && modelPreference.envValue
         ? { [modelPreference.envKey]: modelPreference.envValue }
         : {}),
+      ...buildHermesPptEnvValues(simEnv, hermesEnv, cwd),
     })
 
     const configFile = path.join(options.hermesHome, 'config.yaml')

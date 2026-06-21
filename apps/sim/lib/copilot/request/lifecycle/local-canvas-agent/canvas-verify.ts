@@ -104,7 +104,13 @@ function fieldMatches(actual: unknown, expected: unknown, field?: string): boole
 }
 
 function isContentVariant(kind: string): kind is ContentNodeVariant {
-  return kind === 'text' || kind === 'image' || kind === 'video' || kind === 'audio'
+  return (
+    kind === 'text' ||
+    kind === 'image' ||
+    kind === 'video' ||
+    kind === 'audio' ||
+    kind === 'presentation'
+  )
 }
 
 function videoMediaTypeForRole(role: ContentReferenceRole): 'first_frame' | 'last_frame' | null {

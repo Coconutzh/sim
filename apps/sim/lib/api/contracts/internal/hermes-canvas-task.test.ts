@@ -86,6 +86,51 @@ describe('hermes canvas task contract', () => {
     })
   })
 
+  it('accepts presentation node creation and reference attachment tasks', () => {
+    const parsed = hermesCanvasTaskRunBodySchema.parse({
+      operation: 'propose',
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      message: 'Create a 10-slide defense deck from the selected copy.',
+      selectedNodeIds: ['text-node-1'],
+      task: {
+        taskType: 'create_nodes',
+        nodes: [
+          {
+            clientNodeId: 'defense-deck',
+            kind: 'presentation',
+            title: 'Research Defense Deck',
+            content: {
+              presentationPrompt: 'Generate a research defense deck from the selected copy.',
+              presentationSlideCount: 10,
+            },
+          },
+        ],
+        references: [
+          {
+            consumer: { type: 'created_node', clientNodeId: 'defense-deck' },
+            source: { type: 'selected_node', index: 0 },
+            role: 'text_context',
+          },
+        ],
+      },
+    })
+
+    expect(parsed.task?.nodes[0]).toMatchObject({
+      clientNodeId: 'defense-deck',
+      kind: 'presentation',
+      content: {
+        presentationPrompt: 'Generate a research defense deck from the selected copy.',
+        presentationSlideCount: 10,
+      },
+    })
+    expect(parsed.task?.references[0]?.consumer).toEqual({
+      type: 'created_node',
+      clientNodeId: 'defense-deck',
+    })
+  })
+
   it('accepts capability discovery queries', () => {
     const parsed = hermesCanvasTaskRunBodySchema.parse({
       operation: 'query',

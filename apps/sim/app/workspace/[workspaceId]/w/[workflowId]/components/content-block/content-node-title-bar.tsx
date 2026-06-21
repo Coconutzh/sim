@@ -3,10 +3,10 @@
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ImageIcon, Music4, Type, Video } from 'lucide-react'
+import { FileText, ImageIcon, Music4, Type, Video } from 'lucide-react'
 import { cn } from '@/lib/core/utils/cn'
 
-type ContentNodeTitleVariant = 'text' | 'image' | 'video' | 'audio'
+type ContentNodeTitleVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 
 interface ContentNodeTitleBarProps {
   blockId: string
@@ -22,6 +22,7 @@ const CONTENT_NODE_TITLE_ICONS: Record<ContentNodeTitleVariant, LucideIcon> = {
   image: ImageIcon,
   video: Video,
   audio: Music4,
+  presentation: FileText,
 }
 
 const BASE_TITLE_FONT_SIZE = 13

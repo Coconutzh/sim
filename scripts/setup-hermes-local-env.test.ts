@@ -75,10 +75,51 @@ describe('Hermes local env setup', () => {
     expect(simValues.HERMES_SERVICE_TOKEN).toBe(hermesValues.SIM_SERVICE_TOKEN)
     expect(hermesValues.SIM_INTERNAL_API_URL).toBe('http://127.0.0.1:3000')
     expect(hermesValues.HERMES_HOME).toBe(hermesHome)
+    expect(hermesValues.SIM_PPT_CODEX_SKILL_ROOT).toBe(
+      path.resolve(path.dirname(cwd), 'codex-ppt-skill', 'skills', 'codex-ppt')
+    )
     expect(config).toContain('provider: sim')
     expect(config).toContain('    - sim')
     expect(stdout).not.toContain(simValues.HERMES_API_KEY)
     expect(stdout).not.toContain(simValues.HERMES_SERVICE_TOKEN)
+  })
+
+  it('copies the SIM Evolink key for codex-ppt subprocesses without printing it', async () => {
+    const { cwd, hermesRepo, simEnv } = await tempWorkspace()
+    const evolinkKey = 'sk-evolink-local-key-that-is-not-printed'
+    await writeFile(
+      simEnv,
+      [
+        'DATABASE_URL=postgres://local',
+        'INTERNAL_API_SECRET=internal-secret',
+        'BETTER_AUTH_URL=http://127.0.0.1:3000',
+        `EVOLINK_API_KEY=${evolinkKey}`,
+      ].join('\n'),
+      'utf8'
+    )
+    let stdout = ''
+
+    const exitCode = await runHermesLocalEnvSetup(['--hermes-repo', hermesRepo], cwd, {
+      mkdirp: async (dirPath) => {
+        await mkdir(dirPath, { recursive: true })
+      },
+      readText: async (filePath) => readFile(filePath, 'utf8').catch(() => null),
+      stderr: () => undefined,
+      stdout: (message) => {
+        stdout += message
+      },
+      writeText: async (filePath, content) => {
+        await mkdir(path.dirname(filePath), { recursive: true })
+        await writeFile(filePath, content, 'utf8')
+      },
+    })
+
+    const hermesValues = parseDotEnv(await readFile(path.join(hermesRepo, '.env'), 'utf8'))
+
+    expect(exitCode).toBe(0)
+    expect(hermesValues.SIM_PPT_EVOLINK_API_KEY).toBe(evolinkKey)
+    expect(stdout).toContain('SIM_PPT_EVOLINK_API_KEY')
+    expect(stdout).not.toContain(evolinkKey)
   })
 
   it('copies a compatible local SIM LLM key and creates Hermes model config without printing it', async () => {

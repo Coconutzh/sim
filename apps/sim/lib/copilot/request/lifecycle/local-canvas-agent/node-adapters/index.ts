@@ -2,6 +2,7 @@ import { audioNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-a
 import { documentNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/document'
 import { imageNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/image'
 import { imageEditorNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/image-editor'
+import { presentationNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/presentation'
 import { createReadonlyAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/shared'
 import { tableNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/table'
 import { textNodeAdapter } from '@/lib/copilot/request/lifecycle/local-canvas-agent/node-adapters/text'
@@ -18,6 +19,7 @@ const ADAPTERS: Record<LocalCanvasNodeKind, CanvasNodeAdapter> = {
   image: imageNodeAdapter,
   video: videoNodeAdapter,
   audio: audioNodeAdapter,
+  presentation: presentationNodeAdapter,
   document: documentNodeAdapter,
   table: tableNodeAdapter,
   image_editor: imageEditorNodeAdapter,

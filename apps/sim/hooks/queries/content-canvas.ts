@@ -1,8 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  getContentCanvasModelsContract,
   type ContentCanvasModelAvailabilitySnapshot,
+  type GenerateContentCanvasPresentationBody,
+  type GenerateContentCanvasPresentationResponse,
+  generateContentCanvasPresentationContract,
+  getContentCanvasModelsContract,
 } from '@/lib/api/contracts/content-canvas'
 
 const CONTENT_CANVAS_MODEL_AVAILABILITY_STALE_TIME = 60 * 1000
@@ -34,4 +37,21 @@ export function useContentCanvasModelAvailability(workspaceId?: string) {
   })
 
   return query.data ?? null
+}
+
+async function generateContentCanvasPresentation(
+  body: GenerateContentCanvasPresentationBody,
+  signal?: AbortSignal
+): Promise<GenerateContentCanvasPresentationResponse> {
+  return requestJson(generateContentCanvasPresentationContract, {
+    body,
+    signal,
+  })
+}
+
+export function useGenerateContentCanvasPresentation() {
+  return useMutation({
+    mutationFn: (body: GenerateContentCanvasPresentationBody) =>
+      generateContentCanvasPresentation(body),
+  })
 }

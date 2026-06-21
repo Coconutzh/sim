@@ -145,6 +145,36 @@ describe('callHermesSimAgent', () => {
         instructions: expect.stringContaining('sim_canvas_apply_pending'),
       })
     )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('kind=presentation'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('codex-ppt'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_presentation_generate_slide_images'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_presentation_assemble_deck'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_presentation_artifact_upload'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('Do not ask the user for a fixed stylePreset'),
+      })
+    )
   })
 
   it('passes explicit structured Responses input when provided', async () => {
