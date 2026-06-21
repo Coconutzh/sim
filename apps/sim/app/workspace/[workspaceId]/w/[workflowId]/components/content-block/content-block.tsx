@@ -107,17 +107,14 @@ import {
   buildStructuredContentReferenceContext,
   type ContentReferenceRecord,
   type ContentReferenceRole,
-  canContentNodeVariantReferenceSource,
   findMatchingContentReferenceEdgeIds,
   getAllowedReferenceSourceVariants,
-  getAllowedReferencingContentNodeVariants,
   getDefaultReferenceRole,
   getModelDisabledReason,
   inferContentReferencesFromCanvas,
   normalizeContentReferences,
   type PromptContextReferencedNode,
   removeContentReference,
-  upsertContentReference,
 } from '@/lib/workflows/content-references'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
@@ -132,6 +129,11 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
+import {
+  getContentReferenceCreateTargetVariants,
+  getContentReferenceRoleForTarget,
+  getNextContentReferencesForSource,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-reference-flow-utils'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
 import {
   buildImageErasePendingSubBlockValues,
@@ -434,6 +436,29 @@ function extractStoredValue<T>(source: StoredValueRecord, key: string, fallback:
     return ((rawValue as { value?: T }).value ?? fallback) as T
   }
   return (rawValue ?? fallback) as T
+}
+
+function getNodeSubBlockValues(data: unknown): StoredValueRecord {
+  if (!data || typeof data !== 'object' || !('subBlockValues' in data)) {
+    return undefined
+  }
+
+  const subBlockValues = (data as { subBlockValues?: unknown }).subBlockValues
+  return subBlockValues && typeof subBlockValues === 'object'
+    ? (subBlockValues as StoredValueRecord)
+    : undefined
+}
+
+function mergeStoredValueRecords(...sources: StoredValueRecord[]): StoredValueRecord {
+  const merged = sources.reduce<Record<string, { value?: unknown } | unknown>>((result, source) => {
+    if (!source) return result
+    return {
+      ...result,
+      ...source,
+    }
+  }, {})
+
+  return Object.keys(merged).length > 0 ? merged : undefined
 }
 
 function coerceNumber(value: unknown, fallback: number): number {
@@ -3040,7 +3065,7 @@ export const ContentBlock = memo(function ContentBlock({
   const createMenuItems = useMemo(
     () =>
       CONTENT_NODE_MENU_ITEMS.filter((item) =>
-        getAllowedReferencingContentNodeVariants(resolvedVariant).includes(item.variant)
+        getContentReferenceCreateTargetVariants(resolvedVariant).includes(item.variant)
       ),
     [resolvedVariant]
   )
@@ -3091,7 +3116,6 @@ export const ContentBlock = memo(function ContentBlock({
   const createReferencedContentNode = useCallback(
     (targetVariant: ContentVariant, anchor: 'left' | 'right') => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return
 
       const preset = getContentNodePreset(targetVariant)
       if (!preset?.available || !preset.blockType || !preset.contentVariant) return
@@ -3100,9 +3124,9 @@ export const ContentBlock = memo(function ContentBlock({
       if (!blockConfig) return
 
       const targetModel = getDefaultReferenceModelForVariant(targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const referenceRole = getContentReferenceRoleForTarget({
         targetVariant,
-        model: targetModel,
+        targetModel,
         sourceVariant: resolvedVariant,
       })
       if (!referenceRole) return
@@ -4588,13 +4612,15 @@ export const ContentBlock = memo(function ContentBlock({
   const resolveBlockSourceValues = useCallback(
     (blockId: string): StoredValueRecord => {
       const liveValues = workflowValues[blockId]
-      if (liveValues) {
-        return liveValues as StoredValueRecord
-      }
       const block = workflowBlocks[blockId]
-      return (block?.subBlocks as StoredValueRecord) ?? undefined
+      const liveNode = reactFlowInstance.getNode(blockId)
+      return mergeStoredValueRecords(
+        (block?.subBlocks as StoredValueRecord) ?? undefined,
+        getNodeSubBlockValues(liveNode?.data),
+        liveValues as StoredValueRecord
+      )
     },
-    [workflowBlocks, workflowValues]
+    [reactFlowInstance, workflowBlocks, workflowValues]
   )
   const resolveBlockVariant = useCallback(
     (blockId: string): ContentVariant | null => {
@@ -4895,6 +4921,33 @@ export const ContentBlock = memo(function ContentBlock({
         if (!nodeId || nodeId === id) continue
         if (workflowBlocks[nodeId]?.type === 'content') return nodeId
       }
+
+      const nodeElements = Array.from(
+        document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')
+      )
+      const matchingNodes = nodeElements
+        .map((nodeElement) => {
+          const nodeId = nodeElement.getAttribute('data-id')
+          if (!nodeId || nodeId === id || workflowBlocks[nodeId]?.type !== 'content') return null
+
+          const rect = nodeElement.getBoundingClientRect()
+          const containsPoint =
+            clientX >= rect.left &&
+            clientX <= rect.right &&
+            clientY >= rect.top &&
+            clientY <= rect.bottom
+          if (!containsPoint) return null
+
+          return {
+            nodeId,
+            area: rect.width * rect.height,
+          }
+        })
+        .filter((candidate): candidate is { nodeId: string; area: number } => Boolean(candidate))
+        .sort((left, right) => left.area - right.area)
+
+      if (matchingNodes[0]) return matchingNodes[0].nodeId
+
       return null
     },
     [id, workflowBlocks]
@@ -4903,30 +4956,17 @@ export const ContentBlock = memo(function ContentBlock({
     (targetBlockId: string): boolean => {
       const targetVariant = resolveBlockVariant(targetBlockId)
       if (!targetVariant) return false
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
 
       const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const { referenceRole, disabledReason } = getNextContentReferencesForSource({
         targetVariant,
-        model: targetModel,
+        targetModel,
+        targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
+        sourceBlockId: id,
         sourceVariant: resolvedVariant,
       })
-      if (!referenceRole) return false
 
-      const nextReferences = upsertContentReference(
-        getCurrentContentReferencesForBlock(targetBlockId),
-        {
-          sourceBlockId: id,
-          sourceVariant: resolvedVariant,
-          role: referenceRole,
-        }
-      )
-
-      return !getModelDisabledReason({
-        targetVariant,
-        model: targetModel,
-        references: nextReferences,
-      })
+      return Boolean(referenceRole && !disabledReason)
     },
     [
       getCurrentContentReferencesForBlock,
@@ -4940,30 +4980,16 @@ export const ContentBlock = memo(function ContentBlock({
     (targetBlockId: string, sourceAnchor: 'left' | 'right'): boolean => {
       const targetVariant = resolveBlockVariant(targetBlockId)
       if (!targetVariant) return false
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
 
       const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const { referenceRole, nextReferences, disabledReason } = getNextContentReferencesForSource({
         targetVariant,
-        model: targetModel,
+        targetModel,
+        targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
+        sourceBlockId: id,
         sourceVariant: resolvedVariant,
       })
-      if (!referenceRole) return false
-
-      const nextReferences = upsertContentReference(
-        getCurrentContentReferencesForBlock(targetBlockId),
-        {
-          sourceBlockId: id,
-          sourceVariant: resolvedVariant,
-          role: referenceRole,
-        }
-      )
-      const disabledReason = getModelDisabledReason({
-        targetVariant,
-        model: targetModel,
-        references: nextReferences,
-      })
-      if (disabledReason) return false
+      if (!referenceRole || disabledReason) return false
 
       const isVideoFrameReference =
         referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'

@@ -78,6 +78,95 @@ describe('generateImageWithProvider', () => {
       size: '2560x1440',
       response_format: 'b64_json',
     })
+    expect(JSON.parse(String(requestInit.body))).not.toHaveProperty('image')
+  })
+
+  it('sends a single Ark image reference in the Seedream image field', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+      }),
+    }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    await generateImageWithProvider({
+      model: 'jimeng-4.5',
+      prompt: 'Use this product as reference',
+      aspectRatio: '1:1',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'file-1',
+            name: 'product.png',
+            url: 'https://cdn.example.com/product.png',
+            key: 'product-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'doubao-seedream-4-5-251128',
+      prompt: 'Use this product as reference',
+      size: '2048x2048',
+      response_format: 'b64_json',
+      image: 'https://cdn.example.com/product.png',
+    })
+  })
+
+  it('sends multiple Ark image references in the Seedream image field', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+      }),
+    }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+    const base64Reference = Buffer.from('source-image').toString('base64')
+
+    await generateImageWithProvider({
+      model: 'jimeng-4.0',
+      prompt: 'Blend both references',
+      aspectRatio: '4:3',
+      referenceContext: {
+        text: ['Keep the same palette'],
+        images: [
+          {
+            id: 'file-1',
+            name: 'source.png',
+            url: '',
+            base64: base64Reference,
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+          {
+            id: 'file-2',
+            name: 'style.jpg',
+            url: 'https://cdn.example.com/style.jpg',
+            key: 'style-key',
+            size: 2048,
+            type: 'image/jpeg',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'doubao-seedream-4-0-250828',
+      prompt: 'Blend both references\n\nKeep the same palette',
+      size: '2304x1728',
+      response_format: 'b64_json',
+      image: [`data:image/png;base64,${base64Reference}`, 'https://cdn.example.com/style.jpg'],
+    })
   })
 
   it('creates and polls an Evolink image task with Gemini image references', async () => {

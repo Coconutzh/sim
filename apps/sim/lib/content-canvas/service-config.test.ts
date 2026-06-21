@@ -100,6 +100,17 @@ describe('content-canvas service config', () => {
       targetVariant: 'text',
       allowedSourceVariants: ['text', 'video'],
     })
+
+    expect(
+      getContentReferenceCapability({
+        targetVariant: 'image',
+        model: 'jimeng-4.5',
+      })
+    ).toMatchObject({
+      targetVariant: 'image',
+      allowedSourceVariants: ['text', 'image'],
+      supportedRoles: ['text_context', 'image_reference'],
+    })
   })
 
   it('uses built-in family defaults when enabled/default env values are empty or invalid', async () => {

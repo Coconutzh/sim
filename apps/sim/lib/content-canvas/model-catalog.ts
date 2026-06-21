@@ -191,7 +191,7 @@ export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition
     serviceKind: 'ark-image',
     label: '即梦 4.5',
     description: '画质更高，适合成片感更强的图片',
-    referenceCapability: IMAGE_TEXT_ONLY_CAPABILITY,
+    referenceCapability: IMAGE_TEXT_AND_IMAGE_CAPABILITY,
   },
   {
     id: 'jimeng-4.0',
@@ -200,7 +200,7 @@ export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition
     serviceKind: 'ark-image',
     label: '即梦 4.0',
     description: '速度更稳，适合快速探索方向',
-    referenceCapability: IMAGE_TEXT_ONLY_CAPABILITY,
+    referenceCapability: IMAGE_TEXT_AND_IMAGE_CAPABILITY,
   },
   {
     id: 'gemini-3.1-flash-image-preview',

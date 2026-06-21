@@ -66,6 +66,7 @@ import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/block-menu'
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
+import { getNextContentReferencesForSource } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-reference-flow-utils'
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
@@ -5120,23 +5121,20 @@ const WorkflowContent = React.memo(
             return
           }
 
-          const referenceRole = getDefaultReferenceRole({
-            targetVariant: contentReferenceSelection.sourceVariant,
-            model: contentReferenceSelection.sourceModel,
-            sourceVariant: targetVariant,
-          })
-          if (!referenceRole) {
+          const { referenceRole, nextReferences, disabledReason } =
+            getNextContentReferencesForSource({
+              targetVariant: contentReferenceSelection.sourceVariant,
+              targetModel: contentReferenceSelection.sourceModel,
+              targetReferences: getCurrentContentReferences(
+                contentReferenceSelection.sourceBlockId
+              ),
+              sourceBlockId: node.id,
+              sourceVariant: targetVariant,
+            })
+          if (!referenceRole || disabledReason) {
             return
           }
 
-          const nextReferences = upsertContentReference(
-            getCurrentContentReferences(contentReferenceSelection.sourceBlockId),
-            {
-              sourceBlockId: node.id,
-              sourceVariant: targetVariant,
-              role: referenceRole,
-            }
-          )
           setContentReferencesForBlock(contentReferenceSelection.sourceBlockId, nextReferences)
 
           const alreadyLinked = edges.some(

@@ -343,6 +343,38 @@ async function toCompatibleImageUrl({
   return url && url.length > 0 ? url : null
 }
 
+function toArkImageInput(image: UserFileLike): string | null {
+  const dataUrl = getCompatibleImageDataUrl(image)
+  if (dataUrl) return dataUrl
+
+  const url = image.url?.trim()
+  return url && url.length > 0 ? url : null
+}
+
+function buildArkImageRequestBody({
+  providerModel,
+  prompt,
+  aspectRatio,
+  referenceImages,
+}: {
+  providerModel: string
+  prompt: string
+  aspectRatio: ImageAspectRatioValue
+  referenceImages: string[]
+}): Record<string, unknown> {
+  return {
+    model: providerModel,
+    prompt,
+    size: mapImageAspectRatioToProviderSize(aspectRatio),
+    response_format: 'b64_json',
+    ...(referenceImages.length === 1
+      ? { image: referenceImages[0] }
+      : referenceImages.length > 1
+        ? { image: referenceImages }
+        : {}),
+  }
+}
+
 function extractTaskId(payload: Record<string, unknown>): string | null {
   const data = payload.data
   if (typeof payload.task_id === 'string') return payload.task_id
@@ -767,6 +799,9 @@ async function generateImageWithArk({
   ]
     .filter(Boolean)
     .join('\n\n')
+  const referenceImages = (referenceContext?.images ?? [])
+    .map((image) => toArkImageInput(image))
+    .filter((value): value is string => Boolean(value))
 
   const endpoint = `${service.baseUrl.replace(/\/$/, '')}/images/generations`
   const response = await fetch(endpoint, {
@@ -776,12 +811,14 @@ async function generateImageWithArk({
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: providerModel,
-      prompt: promptWithReferenceText,
-      size: mapImageAspectRatioToProviderSize(aspectRatio),
-      response_format: 'b64_json',
-    }),
+    body: JSON.stringify(
+      buildArkImageRequestBody({
+        providerModel,
+        prompt: promptWithReferenceText,
+        aspectRatio,
+        referenceImages,
+      })
+    ),
   })
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>

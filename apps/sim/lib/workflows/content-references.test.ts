@@ -41,8 +41,16 @@ describe('content reference capabilities', () => {
     ])
   })
 
-  it('restricts Jimeng image models to text references only', () => {
-    expect(getAllowedReferenceSourceVariants('image', 'jimeng-4.5')).toEqual(['text'])
+  it('allows Jimeng image models to reference both text and image nodes', () => {
+    expect(getAllowedReferenceSourceVariants('image', 'jimeng-4.5')).toEqual(['text', 'image'])
+    expect(getAllowedReferenceSourceVariants('image', 'jimeng-4.0')).toEqual(['text', 'image'])
+    expect(
+      getDefaultReferenceRole({
+        targetVariant: 'image',
+        model: 'jimeng-4.5',
+        sourceVariant: 'image',
+      })
+    ).toBe('image_reference')
   })
 
   it('lets Gemini text models keep image references but blocks switching to text-only models', () => {
@@ -148,10 +156,18 @@ describe('content reference capabilities', () => {
     expect(
       getModelDisabledReason({
         targetVariant: 'image',
-        model: 'jimeng-4.5',
+        model: 'legacy-image-model',
         references,
       })
     ).toContain('image')
+
+    expect(
+      getModelDisabledReason({
+        targetVariant: 'image',
+        model: 'jimeng-4.5',
+        references,
+      })
+    ).toBeNull()
 
     expect(
       getModelDisabledReason({
