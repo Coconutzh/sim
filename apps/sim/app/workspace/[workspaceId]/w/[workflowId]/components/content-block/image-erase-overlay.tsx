@@ -1,11 +1,11 @@
 'use client'
 
 import type { RefObject } from 'react'
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { ArrowUp, Loader2 } from 'lucide-react'
 import type { ImageGenerationResolution } from '@/lib/api/contracts/media-images'
+import type { SubmitImageEraseParams } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-derived-generation-utils'
 import { ImageMaskEditorOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-mask-editor-overlay'
-import { useImageEraseSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-erase-session'
 
 interface UploadedFileValue {
   id?: string
@@ -24,7 +24,7 @@ interface ImageEraseOverlayProps {
   sourceFile: UploadedFileValue
   isProcessingNode: boolean
   onCancel: () => void
-  onCreateVariant: (file: UploadedFileValue) => Promise<void> | void
+  onCreateVariant: (params: SubmitImageEraseParams) => Promise<void> | void
 }
 
 const ERASE_RESOLUTION_OPTIONS: ImageGenerationResolution[] = ['1K', '2K', '4K']
@@ -39,32 +39,43 @@ export function ImageEraseOverlay({
   onCreateVariant,
 }: ImageEraseOverlayProps) {
   const [resolution, setResolution] = useState<ImageGenerationResolution>('2K')
-  const { abort, disabledReason, error, isSubmitting, setError, submit } = useImageEraseSession({
-    workspaceId,
-    sourceFile,
-    onCreateVariant,
-  })
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const disabledReason = !workspaceId
+    ? 'Missing workspace context.'
+    : !sourceFile.key?.trim()
+      ? 'Source image is missing file information.'
+      : null
   const isProcessing = isProcessingNode || isSubmitting
-
-  const cancel = useCallback(() => {
-    abort()
-    onCancel()
-  }, [abort, onCancel])
 
   return (
     <ImageMaskEditorOverlay
       rootRef={rootRef}
       imageRef={imageRef}
       isProcessing={isProcessing}
-      onCancel={cancel}
+      onCancel={onCancel}
       renderFooter={({ buildMaskImage, hasMask }) => {
         const submitErase = async () => {
-          const mask = await buildMaskImage()
-          if (!mask) {
-            setError('Draw a mask before erasing.')
+          if (disabledReason || !workspaceId) {
+            setError(disabledReason ?? 'Unable to submit erase.')
             return
           }
-          await submit({ mask, resolution })
+
+          setIsSubmitting(true)
+          setError(null)
+
+          try {
+            const mask = await buildMaskImage()
+            if (!mask) {
+              setError('Draw a mask before erasing.')
+              return
+            }
+            await onCreateVariant({ mask, resolution })
+          } catch (caughtError) {
+            setError(caughtError instanceof Error ? caughtError.message : 'Erase failed.')
+          } finally {
+            setIsSubmitting(false)
+          }
         }
 
         return (

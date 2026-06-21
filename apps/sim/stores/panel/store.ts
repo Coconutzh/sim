@@ -8,26 +8,43 @@ import type { PanelState, PanelTab } from '@/stores/panel/types'
  */
 const DEFAULT_TAB: PanelTab = 'copilot'
 
+function syncPanelWidth(width: number, isCollapsed: boolean) {
+  if (typeof window === 'undefined') return
+  const effectiveWidth = isCollapsed ? PANEL_WIDTH.COLLAPSED : width
+  document.documentElement.style.setProperty('--panel-width', `${effectiveWidth}px`)
+}
+
 export const usePanelStore = create<PanelState>()(
   persist(
     (set) => ({
       panelWidth: PANEL_WIDTH.DEFAULT,
       setPanelWidth: (width) => {
-        // Only enforce minimum - maximum is enforced dynamically by the resize hook
         const clampedWidth = Math.max(PANEL_WIDTH.MIN, width)
-        set({ panelWidth: clampedWidth })
-        // Update CSS variable for immediate visual feedback
-        if (typeof window !== 'undefined') {
-          document.documentElement.style.setProperty('--panel-width', `${clampedWidth}px`)
-        }
+        set((state) => {
+          syncPanelWidth(clampedWidth, state.isCollapsed)
+          return { panelWidth: clampedWidth }
+        })
       },
       activeTab: DEFAULT_TAB,
       setActiveTab: (tab) => {
         set({ activeTab: tab })
-        // Remove data attribute once React takes control
         if (typeof document !== 'undefined') {
           document.documentElement.removeAttribute('data-panel-active-tab')
         }
+      },
+      isCollapsed: false,
+      setCollapsed: (isCollapsed) => {
+        set((state) => {
+          syncPanelWidth(state.panelWidth, isCollapsed)
+          return { isCollapsed }
+        })
+      },
+      toggleCollapsed: () => {
+        set((state) => {
+          const isCollapsed = !state.isCollapsed
+          syncPanelWidth(state.panelWidth, isCollapsed)
+          return { isCollapsed }
+        })
       },
       isResizing: false,
       setIsResizing: (isResizing) => {
@@ -40,11 +57,28 @@ export const usePanelStore = create<PanelState>()(
     }),
     {
       name: 'panel-state',
+      partialize: (state) => ({
+        panelWidth: state.panelWidth,
+        activeTab: state.activeTab,
+        isCollapsed: state.isCollapsed,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted =
+          persistedState && typeof persistedState === 'object'
+            ? (persistedState as Partial<PanelState>)
+            : {}
+        return {
+          ...currentState,
+          ...persisted,
+          activeTab: DEFAULT_TAB,
+          isCollapsed: persisted.isCollapsed ?? false,
+          isResizing: false,
+          _hasHydrated: false,
+        }
+      },
       onRehydrateStorage: () => (state) => {
-        // Sync CSS variables with stored state after rehydration
         if (state && typeof window !== 'undefined') {
-          document.documentElement.style.setProperty('--panel-width', `${state.panelWidth}px`)
-          // Remove the data attribute so CSS rules stop interfering
+          syncPanelWidth(state.panelWidth, state.isCollapsed)
           document.documentElement.removeAttribute('data-panel-active-tab')
         }
       },

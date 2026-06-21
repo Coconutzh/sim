@@ -114,17 +114,14 @@ import {
   buildStructuredContentReferenceContext,
   type ContentReferenceRecord,
   type ContentReferenceRole,
-  canContentNodeVariantReferenceSource,
   findMatchingContentReferenceEdgeIds,
   getAllowedReferenceSourceVariants,
-  getAllowedReferencingContentNodeVariants,
   getDefaultReferenceRole,
   getModelDisabledReason,
   inferContentReferencesFromCanvas,
   normalizeContentReferences,
   type PromptContextReferencedNode,
   removeContentReference,
-  upsertContentReference,
 } from '@/lib/workflows/content-references'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
@@ -139,8 +136,37 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-generation-parameters'
 import { ContentNodeAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-ai-composer'
 import { ContentNodeTitleBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-node-title-bar'
+import {
+  getContentReferenceCreateTargetVariants,
+  getContentReferenceRoleForTarget,
+  getNextContentReferencesForSource,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-reference-flow-utils'
 import { ImageCropOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-crop-overlay'
+import {
+  buildImageErasePendingSubBlockValues,
+  buildImagePerspectivePendingSubBlockValues,
+  buildImageRepaintPendingSubBlockValues,
+  createMaskImageFile,
+  type DerivedImageGenerationKind,
+  getImageEraseRequestMetadata,
+  getImagePerspectiveRequestMetadata,
+  getImageRepaintRequestMetadata,
+  type ImageEraseGenerationRequest,
+  type ImagePerspectiveGenerationRequest,
+  type ImageRepaintGenerationRequest,
+  runImageEraseRequest,
+  runImagePerspectiveRequest,
+  runImageRepaintRequest,
+  type SubmitImageEraseParams,
+  type SubmitImageRepaintParams,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-derived-generation-utils'
 import { ImageEraseOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-erase-overlay'
+import {
+  normalizeImageGenerationKind,
+  shouldShowImageComposer,
+  type ToolbarDerivedImageGenerationKind,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-generation-kind-utils'
+import { createImageOutpaintReferenceEdge } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-content-reference'
 import { ImageOutpaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-outpaint-overlay'
 import { ImagePerspectiveMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
 import { ImageRepaintOverlay } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-repaint-overlay'
@@ -150,6 +176,12 @@ import { DEFAULT_TEXT_AI_MODEL } from '@/app/workspace/[workspaceId]/w/[workflow
 import { useAudioContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-audio-content-ai-session'
 import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-content-ai-session'
 import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-cutout-session'
+import {
+  buildImageOutpaintPendingSubBlockValues,
+  getImageOutpaintRequestMetadata,
+  runImageOutpaintRequest,
+  type SubmitImageOutpaintParams,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
 import { useTextContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-text-content-ai-session'
 import { useVideoContentAiSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-video-content-ai-session'
 import { VideoContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/video-content-ai-composer'
@@ -193,10 +225,9 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 type ContentVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
-type ImageGenerationKind = 'cutout' | 'video_frame_capture'
 type PresentationGenerationStatus = 'idle' | 'pending' | 'complete' | 'error'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
-type ContentGenerationKind = ImageGenerationKind | VideoEnhanceGenerationKind
+type ContentGenerationKind = ToolbarDerivedImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
 
 interface ContentBlockNodeData extends WorkflowBlockProps {}
@@ -424,6 +455,29 @@ function extractStoredValue<T>(source: StoredValueRecord, key: string, fallback:
   return (rawValue ?? fallback) as T
 }
 
+function getNodeSubBlockValues(data: unknown): StoredValueRecord {
+  if (!data || typeof data !== 'object' || !('subBlockValues' in data)) {
+    return undefined
+  }
+
+  const subBlockValues = (data as { subBlockValues?: unknown }).subBlockValues
+  return subBlockValues && typeof subBlockValues === 'object'
+    ? (subBlockValues as StoredValueRecord)
+    : undefined
+}
+
+function mergeStoredValueRecords(...sources: StoredValueRecord[]): StoredValueRecord {
+  const merged = sources.reduce<Record<string, { value?: unknown } | unknown>>((result, source) => {
+    if (!source) return result
+    return {
+      ...result,
+      ...source,
+    }
+  }, {})
+
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
 function coerceNumber(value: unknown, fallback: number): number {
   const numericValue = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(numericValue) ? numericValue : fallback
@@ -449,10 +503,6 @@ function normalizeVariant(value: unknown): ContentVariant | null {
 
 function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus | null {
   return value === 'pending' || value === 'complete' || value === 'error' ? value : null
-}
-
-function normalizeImageGenerationKind(value: unknown): ImageGenerationKind | null {
-  return value === 'cutout' || value === 'video_frame_capture' ? value : null
 }
 
 function normalizePresentationGenerationStatus(value: unknown): PresentationGenerationStatus {
@@ -1187,9 +1237,9 @@ function TextContentCard({
   )
 
   const editingContentClassName =
-    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nodrag nopan allow-scroll h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[#111827] outline-none overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const displayContentClassName =
-    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[var(--text-primary)] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
+    'nopan h-full min-h-0 overflow-y-auto break-words px-4 py-3 text-[#111827] overscroll-contain [&_h1]:mb-2 [&_h1]:font-semibold [&_h1]:text-[2em] [&_h2]:mb-2 [&_h2]:font-semibold [&_h2]:text-[1.6em] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[1.3em] [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:min-h-[1.5em] [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1'
   const cardHeight = clampTextHeight(height)
 
   const showToolbar = selected && !isPreview
@@ -1197,10 +1247,10 @@ function TextContentCard({
   const isEmpty = !isMeaningfulHtml(normalizedHtml)
 
   return (
-    <div className='relative' style={{ width }}>
+    <div className='relative overflow-visible' style={{ width }}>
       {showToolbar && (
         <div
-          className='nodrag nopan absolute top-[-92px] right-0 z-50 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
+          className='nodrag nopan -translate-x-1/2 absolute top-[-92px] left-1/2 z-[70] inline-flex w-max flex-nowrap items-center gap-2 whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2 shadow-lg'
           onPointerDownCapture={(event) => {
             event.stopPropagation()
           }}
@@ -1603,8 +1653,10 @@ function MediaContentCard({
   onCreateImagePerspectiveVariant,
   onCreateImageRepaintVariant,
   onCreateImageEraseVariant,
-  onCreateImageOutpaintVariant,
+  onSubmitImageOutpaint,
   onRetryImageCutout,
+  onRetryImageOutpaint,
+  onRetryDerivedImageGeneration,
   onRetryVideoFrameCapture,
   onChangeFile,
   onChangeAiPrompt,
@@ -1676,17 +1728,15 @@ function MediaContentCard({
   onConfirmImageCrop: (file: File) => Promise<void>
   onConfirmVideoTrim: (range: VideoTrimRange) => Promise<void>
   onConfirmVideoEnhance: () => Promise<void>
-  onCreateImagePerspectiveVariant: (params: {
-    file: UploadedFileValue
-    model: ImageGenerationModelId
-  }) => Promise<void> | void
-  onCreateImageRepaintVariant: (file: UploadedFileValue) => Promise<void> | void
-  onCreateImageEraseVariant: (file: UploadedFileValue) => Promise<void> | void
-  onCreateImageOutpaintVariant: (
-    file: UploadedFileValue,
-    targetAspectRatio: ImageOutpaintAspectRatio
+  onCreateImagePerspectiveVariant: (
+    params: ImagePerspectiveGenerationRequest
   ) => Promise<void> | void
+  onCreateImageRepaintVariant: (params: SubmitImageRepaintParams) => Promise<void> | void
+  onCreateImageEraseVariant: (params: SubmitImageEraseParams) => Promise<void> | void
+  onSubmitImageOutpaint: (params: SubmitImageOutpaintParams) => Promise<void> | void
   onRetryImageCutout: () => void
+  onRetryImageOutpaint: () => void
+  onRetryDerivedImageGeneration: () => void
   onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
   onChangeAiPrompt: (value: string) => void
@@ -2018,6 +2068,48 @@ function MediaContentCard({
   const isVideoFrameCapturePending =
     isVideoFrameCaptureNode && generationStatus === 'pending' && !file
   const isVideoFrameCaptureError = isVideoFrameCaptureNode && generationStatus === 'error' && !file
+  const isImageOutpaintNode = variant === 'image' && generationKind === 'image_outpaint'
+  const isImageOutpaintPending = isImageOutpaintNode && generationStatus === 'pending' && !file
+  const isImageOutpaintError = isImageOutpaintNode && generationStatus === 'error' && !file
+  const isImagePerspectiveNode = variant === 'image' && generationKind === 'image_perspective'
+  const isImageRepaintNode = variant === 'image' && generationKind === 'image_repaint'
+  const isImageEraseNode = variant === 'image' && generationKind === 'image_erase'
+  const isDerivedImageGenerationNode =
+    isImagePerspectiveNode || isImageRepaintNode || isImageEraseNode
+  const isDerivedImageGenerationPending =
+    isDerivedImageGenerationNode && generationStatus === 'pending' && !file
+  const isDerivedImageGenerationError =
+    isDerivedImageGenerationNode && generationStatus === 'error' && !file
+  const derivedImageGenerationLabel = isImagePerspectiveNode
+    ? '多角度生成中...'
+    : isImageRepaintNode
+      ? '重绘中...'
+      : '擦除中...'
+  const derivedImageGenerationFallbackError = isImagePerspectiveNode
+    ? '多角度生成失败，请重试。'
+    : isImageRepaintNode
+      ? '重绘失败，请重试。'
+      : '擦除失败，请重试。'
+  const DerivedImageGenerationRetryIcon = isImagePerspectiveNode
+    ? BoxIcon
+    : isImageRepaintNode
+      ? Brush
+      : Eraser
+  const isImageToolActive =
+    isImageCropMode ||
+    isImageRepaintMode ||
+    isImageEraseMode ||
+    isImageOutpaintMode ||
+    isPerspectiveMenuOpen
+  const hasLegacyToolbarDerivedReference =
+    variant === 'image' &&
+    contentReferences.length > 0 &&
+    aiPrompt.trim().length === 0 &&
+    (hasMedia ||
+      contentReferences.some(
+        (reference) =>
+          reference.sourceVariant === 'video' && reference.role === 'video_frame_capture'
+      ))
   const showUploadAction =
     selected &&
     canUpload &&
@@ -2026,6 +2118,10 @@ function MediaContentCard({
     !isImageCutoutError &&
     !isVideoFrameCapturePending &&
     !isVideoFrameCaptureError &&
+    !isImageOutpaintPending &&
+    !isImageOutpaintError &&
+    !isDerivedImageGenerationPending &&
+    !isDerivedImageGenerationError &&
     !isVideoEnhanceNode
   const showImageCropAction =
     selected &&
@@ -2037,12 +2133,20 @@ function MediaContentCard({
     !isImageEraseMode &&
     !isImageOutpaintMode
   const showImageComposer =
-    variant === 'image' &&
-    !hasMedia &&
+    shouldShowImageComposer({
+      variant,
+      generationKind,
+      isImageToolActive,
+      hasLegacyToolbarDerivedReference,
+    }) &&
     !isImageCutoutPending &&
     !isImageCutoutError &&
     !isVideoFrameCapturePending &&
-    !isVideoFrameCaptureError
+    !isVideoFrameCaptureError &&
+    !isImageOutpaintPending &&
+    !isImageOutpaintError &&
+    !isDerivedImageGenerationPending &&
+    !isDerivedImageGenerationError
   const showImageToolbar =
     selected &&
     canUpload &&
@@ -2097,7 +2201,7 @@ function MediaContentCard({
   )
 
   return (
-    <div ref={rootRef} className='relative'>
+    <div ref={rootRef} className='relative overflow-visible'>
       {showUploadAction && (
         <button
           type='button'
@@ -2118,7 +2222,7 @@ function MediaContentCard({
       )}
 
       {showImageToolbar && (
-        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5'>
+        <div className='nodrag nopan -translate-x-1/2 absolute top-[-56px] left-1/2 z-40 inline-flex items-center gap-1.5'>
           {showImageCropAction && (
             <button
               type='button'
@@ -2434,6 +2538,60 @@ function MediaContentCard({
               <span>重试</span>
             </button>
           </div>
+        ) : isImageOutpaintPending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>扩图中...</div>
+          </div>
+        ) : isImageOutpaintError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || '扩图失败，请重试。'}
+            </div>
+            <button
+              type='button'
+              aria-label='重试扩图'
+              title='重试扩图'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryImageOutpaint()
+              }}
+            >
+              <Expand className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
+          </div>
+        ) : isDerivedImageGenerationPending ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
+            <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+            <div className='font-medium text-sm'>{derivedImageGenerationLabel}</div>
+          </div>
+        ) : isDerivedImageGenerationError ? (
+          <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center'>
+            <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
+              {generationErrorMessage || derivedImageGenerationFallbackError}
+            </div>
+            <button
+              type='button'
+              aria-label='重试图片生成'
+              title='重试'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryDerivedImageGeneration()
+              }}
+            >
+              <DerivedImageGenerationRetryIcon className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
+          </div>
         ) : isVideoEnhancePendingConfig ? (
           <div className='nopan flex h-[240px] w-full items-center justify-center bg-[var(--surface-1)] px-6 text-center'>
             <div className='font-medium text-[#B8D7FF] text-sm'>配置参数生成高清视频</div>
@@ -2523,7 +2681,7 @@ function MediaContentCard({
           sourceFile={file}
           isProcessingNode={false}
           onCancel={onCancelImageOutpaint}
-          onCreateVariant={onCreateImageOutpaintVariant}
+          onSubmitOutpaint={onSubmitImageOutpaint}
         />
       ) : null}
 
@@ -2594,76 +2752,74 @@ function MediaContentCard({
       )}
 
       {showVideoComposer && !isPreview && !isEmbedded && (
-        <div className='mt-3 flex flex-col gap-3'>
-          <ReferenceComposerHeader
-            canEdit={canEdit}
-            references={contentReferences}
-            referencedNodes={referencedNodes}
-            onAddReference={onAddReference}
-            onRemoveReference={onRemoveReference}
-          />
-          <VideoContentAiComposer
-            canEdit={canEdit}
-            selected={selected}
-            prompt={videoPrompt}
-            modelFamily={videoModelFamily}
-            aspectRatioPreset={videoFrameAspectRatioPreset}
-            resolution={videoParameters.resolution}
-            durationSeconds={videoParameters.duration}
-            firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
-            lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
-            isGenerating={isVideoGenerating}
-            error={videoGenerationError ?? currentVideoModelFamilyDisabledReason}
-            isSelectingFrame={frameSelection?.targetBlockId === blockId}
-            selectedFrameSlot={
-              frameSelection?.targetBlockId === blockId ? frameSelection.slot : null
-            }
-            modelOptions={videoModelOptionsWithDisabledReason}
-            aspectRatioOptions={videoAspectRatioOptions}
-            resolutionOptions={videoResolutionOptions}
-            durationOptions={videoDurationOptions}
-            onChangePrompt={onChangeVideoPrompt}
-            onChangeModelFamily={onChangeVideoModelFamily}
-            onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
-            onChangeResolution={(value) =>
-              onChangeVideoParameters({
-                ...videoParameters,
-                resolution: value,
-                promptExtend: true,
-                watermark: false,
+        <VideoContentAiComposer
+          canEdit={canEdit}
+          selected={selected}
+          prompt={videoPrompt}
+          modelFamily={videoModelFamily}
+          aspectRatioPreset={videoFrameAspectRatioPreset}
+          resolution={videoParameters.resolution}
+          durationSeconds={videoParameters.duration}
+          firstFrameFile={getVideoMediaFileForType(videoMedia, 'first_frame')}
+          lastFrameFile={getVideoMediaFileForType(videoMedia, 'last_frame')}
+          isGenerating={isVideoGenerating}
+          error={videoGenerationError ?? currentVideoModelFamilyDisabledReason}
+          isSelectingFrame={frameSelection?.targetBlockId === blockId}
+          selectedFrameSlot={frameSelection?.targetBlockId === blockId ? frameSelection.slot : null}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
+          modelOptions={videoModelOptionsWithDisabledReason}
+          aspectRatioOptions={videoAspectRatioOptions}
+          resolutionOptions={videoResolutionOptions}
+          durationOptions={videoDurationOptions}
+          onChangePrompt={onChangeVideoPrompt}
+          onChangeModelFamily={onChangeVideoModelFamily}
+          onChangeAspectRatioPreset={onChangeVideoFrameAspectRatioPreset}
+          onChangeResolution={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              resolution: value,
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onChangeDurationSeconds={(value) =>
+            onChangeVideoParameters({
+              ...videoParameters,
+              duration: normalizeVideoDuration(value),
+              promptExtend: true,
+              watermark: false,
+            })
+          }
+          onSelectFrame={(slot) =>
+            beginFrameSelection({
+              targetBlockId: blockId,
+              slot,
+              modelFamily: videoModelFamily,
+              requiredAspectRatioPreset: videoFrameAspectRatioPreset,
+            })
+          }
+          onClearFrame={(slot) => {
+            const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
+            onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
+            window.dispatchEvent(
+              new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
+                detail: {
+                  blockId,
+                  autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
+                },
               })
-            }
-            onChangeDurationSeconds={(value) =>
-              onChangeVideoParameters({
-                ...videoParameters,
-                duration: normalizeVideoDuration(value),
-                promptExtend: true,
-                watermark: false,
-              })
-            }
-            onSelectFrame={(slot) =>
-              beginFrameSelection({
-                targetBlockId: blockId,
-                slot,
-                modelFamily: videoModelFamily,
-                requiredAspectRatioPreset: videoFrameAspectRatioPreset,
-              })
-            }
-            onClearFrame={(slot) => {
-              const mediaType = slot === 'first' ? 'first_frame' : 'last_frame'
-              onChangeVideoMedia(removeVideoMediaFileForType(videoMedia, mediaType))
-              window.dispatchEvent(
-                new CustomEvent(CLEAR_VIDEO_FRAME_AUTO_LINK_EVENT, {
-                  detail: {
-                    blockId,
-                    autoLinkType: slot === 'first' ? 'video_first_frame' : 'video_last_frame',
-                  },
-                })
-              )
-            }}
-            onSubmit={handleSubmitVideoPrompt}
-          />
-        </div>
+            )
+          }}
+          onSubmit={handleSubmitVideoPrompt}
+        />
       )}
 
       {variant === 'audio' && !isPreview && !isEmbedded && (
@@ -2828,6 +2984,7 @@ export const ContentBlock = memo(function ContentBlock({
     collaborativeSetSubblockValue,
     collaborativeUpdateBlockName,
   } = useCollaborativeWorkflow()
+  const blockStoredValues = (workflowBlocks[id]?.subBlocks as StoredValueRecord) ?? undefined
   const setPendingSelection = useWorkflowRegistry((state) => state.setPendingSelection)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<'left' | 'right' | null>(null)
   const [isImageCropMode, setIsImageCropMode] = useState(false)
@@ -3091,19 +3248,33 @@ export const ContentBlock = memo(function ContentBlock({
   const resolvedGenerationStatus = extractStoredValue<string | null>(
     data.isPreview
       ? sourceValues
-      : ({ generationStatus: generationStatusValue } as StoredValueRecord),
+      : ({
+          generationStatus:
+            generationStatusValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationStatus', null),
+        } as StoredValueRecord),
     'generationStatus',
     null
   )
   const resolvedGenerationKind = extractStoredValue<string | null>(
-    data.isPreview ? sourceValues : ({ generationKind: generationKindValue } as StoredValueRecord),
+    data.isPreview
+      ? sourceValues
+      : ({
+          generationKind:
+            generationKindValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationKind', null),
+        } as StoredValueRecord),
     'generationKind',
     null
   )
   const resolvedGenerationError = extractStoredValue<string | null>(
     data.isPreview
       ? sourceValues
-      : ({ generationError: generationErrorValue } as StoredValueRecord),
+      : ({
+          generationError:
+            generationErrorValue ??
+            extractStoredValue<string | null>(blockStoredValues, 'generationError', null),
+        } as StoredValueRecord),
     'generationError',
     null
   )
@@ -3232,7 +3403,7 @@ export const ContentBlock = memo(function ContentBlock({
   const createMenuItems = useMemo(
     () =>
       CONTENT_NODE_MENU_ITEMS.filter((item) =>
-        getAllowedReferencingContentNodeVariants(resolvedVariant).includes(item.variant)
+        getContentReferenceCreateTargetVariants(resolvedVariant).includes(item.variant)
       ),
     [resolvedVariant]
   )
@@ -3283,7 +3454,6 @@ export const ContentBlock = memo(function ContentBlock({
   const createReferencedContentNode = useCallback(
     (targetVariant: ContentVariant, anchor: 'left' | 'right') => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) return
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return
 
       const preset = getContentNodePreset(targetVariant)
       if (!preset?.available || !preset.blockType || !preset.contentVariant) return
@@ -3292,9 +3462,9 @@ export const ContentBlock = memo(function ContentBlock({
       if (!blockConfig) return
 
       const targetModel = getDefaultReferenceModelForVariant(targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const referenceRole = getContentReferenceRoleForTarget({
         targetVariant,
-        model: targetModel,
+        targetModel,
         sourceVariant: resolvedVariant,
       })
       if (!referenceRole) return
@@ -3924,6 +4094,7 @@ export const ContentBlock = memo(function ContentBlock({
           aiAspectRatio: 'auto',
           file: uploadedFile,
           contentReferences: [reference],
+          generationKind: 'image_crop',
         },
       }
 
@@ -4326,10 +4497,149 @@ export const ContentBlock = memo(function ContentBlock({
     ]
   )
 
-  const createImagePerspectiveVariantNode = useCallback(
-    async ({ file, model }: { file: UploadedFileValue; model: ImageGenerationModelId }) => {
+  const completeImageOutpaint = useCallback(
+    (targetBlockId: string, file: UploadedFileValue) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'image_outpaint')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failImageOutpaint = useCallback(
+    (targetBlockId: string, message: string) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', 'image_outpaint')
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startImageOutpaintRequest = useCallback(
+    (
+      request: SubmitImageOutpaintParams & { targetBlockId: string; sourceFile: UploadedFileValue }
+    ) => {
+      void runImageOutpaintRequest({
+        ...request,
+        workspaceId: params.workspaceId,
+        onComplete: completeImageOutpaint,
+        onError: failImageOutpaint,
+      })
+    },
+    [completeImageOutpaint, failImageOutpaint, params.workspaceId]
+  )
+
+  const completeDerivedImageGeneration = useCallback(
+    (
+      targetBlockId: string,
+      file: UploadedFileValue,
+      generationKind: DerivedImageGenerationKind
+    ) => {
+      collaborativeSetSubblockValue(targetBlockId, 'file', file)
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'complete')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const failDerivedImageGeneration = useCallback(
+    (targetBlockId: string, message: string, generationKind: DerivedImageGenerationKind) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'error')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', message)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const markDerivedImageGenerationPending = useCallback(
+    (targetBlockId: string, generationKind: DerivedImageGenerationKind) => {
+      collaborativeSetSubblockValue(targetBlockId, 'generationKind', generationKind)
+      collaborativeSetSubblockValue(targetBlockId, 'generationStatus', 'pending')
+      collaborativeSetSubblockValue(targetBlockId, 'generationError', null)
+      collaborativeSetSubblockValue(targetBlockId, 'file', null)
+    },
+    [collaborativeSetSubblockValue]
+  )
+
+  const startImagePerspectiveRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImagePerspectiveGenerationRequest
+    }) => {
+      void runImagePerspectiveRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_perspective'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_perspective'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const startImageRepaintRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImageRepaintGenerationRequest
+    }) => {
+      void runImageRepaintRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_repaint'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_repaint'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const startImageEraseRequest = useCallback(
+    (request: {
+      targetBlockId: string
+      sourceFile: UploadedFileValue
+      metadata: ImageEraseGenerationRequest
+    }) => {
+      void runImageEraseRequest({
+        workspaceId: params.workspaceId,
+        sourceFile: request.sourceFile,
+        targetBlockId: request.targetBlockId,
+        request: request.metadata,
+        onComplete: (targetBlockId, file) =>
+          completeDerivedImageGeneration(targetBlockId, file, 'image_erase'),
+        onError: (targetBlockId, message) =>
+          failDerivedImageGeneration(targetBlockId, message, 'image_erase'),
+      })
+    },
+    [completeDerivedImageGeneration, failDerivedImageGeneration, params.workspaceId]
+  )
+
+  const createDerivedImagePendingNode = useCallback(
+    ({
+      model,
+      buildSubBlockValues,
+      unavailableMessage,
+    }: {
+      model: ImageGenerationModelId
+      buildSubBlockValues: (reference: ContentReferenceRecord) => Record<string, unknown>
+      unavailableMessage: string
+    }) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Multi-angle image creation is not available for this workflow.')
+        throw new Error(unavailableMessage)
+      }
+      if (resolvedVariant !== 'image' || !resolvedFile) {
+        throw new Error('Derived image generation requires a source image.')
       }
 
       const sourceBlock = workflowBlocks[id]
@@ -4373,27 +4683,25 @@ export const ContentBlock = memo(function ContentBlock({
         sourceVariant: 'image',
         role: referenceRole,
       }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
+      const edge = createImageOutpaintReferenceEdge({
+        edgeId: generateId(),
+        resultBlockId: targetBlockId,
+        sourceBlockId: id,
+        resultPosition: targetPosition,
+        sourcePosition,
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: model,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-        },
+        [targetBlockId]: buildSubBlockValues(reference),
       }
 
       setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
       usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
+      return {
+        added,
+        sourceFile: resolvedFile,
+        targetBlockId,
+      }
     },
     [
       canEditWorkflow,
@@ -4401,177 +4709,89 @@ export const ContentBlock = memo(function ContentBlock({
       data.isEmbedded,
       data.isPreview,
       id,
+      resolvedFile,
+      resolvedVariant,
       setPendingSelection,
       workflowBlocks,
     ]
+  )
+
+  const createImagePerspectiveVariantNode = useCallback(
+    async (request: ImagePerspectiveGenerationRequest) => {
+      const result = createDerivedImagePendingNode({
+        model: request.model,
+        unavailableMessage: 'Multi-angle image creation is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImagePerspectivePendingSubBlockValues({ reference, request }),
+      })
+      if (result.added) {
+        startImagePerspectiveRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
+    },
+    [createDerivedImagePendingNode, startImagePerspectiveRequest]
   )
 
   const createImageRepaintVariantNode = useCallback(
-    async (file: UploadedFileValue) => {
-      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Image repaint is not available for this workflow.')
+    async ({ prompt, resolution, mask, referenceImages }: SubmitImageRepaintParams) => {
+      const request: ImageRepaintGenerationRequest = {
+        prompt,
+        resolution,
+        maskImage: createMaskImageFile('repaint-mask.png', mask),
+        referenceImages,
       }
-
-      const sourceBlock = workflowBlocks[id]
-      if (!sourceBlock) {
-        throw new Error('Source image node no longer exists.')
-      }
-
-      const blockConfig = getBlockConfigFromCatalog('content')
-      if (!blockConfig) {
-        throw new Error('Unable to create an image content node.')
-      }
-
-      const targetBlockId = generateId()
-      const parentId = sourceBlock.data?.parentId
-      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
-      const targetPosition = {
-        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
-        y: sourcePosition.y,
-      }
-      const referenceRole =
-        getDefaultReferenceRole({
-          targetVariant: 'image',
-          model: DEFAULT_IMAGE_REPAINT_MODEL,
-          sourceVariant: 'image',
-        }) ?? ('image_reference' satisfies ContentReferenceRole)
-      const newBlock = prepareBlockState({
-        id: targetBlockId,
-        type: 'content',
-        name: getUniqueBlockName('Image', workflowBlocks),
-        position: targetPosition,
-        data: {
-          contentVariant: 'image',
-          ...(parentId ? { parentId, extent: 'parent' } : {}),
-        },
-        parentId,
-        extent: parentId ? 'parent' : undefined,
-        blockConfig,
+      const result = createDerivedImagePendingNode({
+        model: DEFAULT_IMAGE_REPAINT_MODEL,
+        unavailableMessage: 'Image repaint is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImageRepaintPendingSubBlockValues({ reference, request }),
       })
-      const reference: ContentReferenceRecord = {
-        sourceBlockId: id,
-        sourceVariant: 'image',
-        role: referenceRole,
-      }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
-      })
-      const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-        },
-      }
-
-      setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
-      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageRepaintMode(false)
+      if (result.added) {
+        startImageRepaintRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
     },
-    [
-      canEditWorkflow,
-      collaborativeBatchAddBlocks,
-      data.isEmbedded,
-      data.isPreview,
-      id,
-      setPendingSelection,
-      workflowBlocks,
-    ]
+    [createDerivedImagePendingNode, startImageRepaintRequest]
   )
 
   const createImageEraseVariantNode = useCallback(
-    async (file: UploadedFileValue) => {
-      if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
-        throw new Error('Image erase is not available for this workflow.')
+    async ({ mask, resolution }: SubmitImageEraseParams) => {
+      const request: ImageEraseGenerationRequest = {
+        resolution,
+        maskImage: createMaskImageFile('erase-mask.png', mask),
       }
-
-      const sourceBlock = workflowBlocks[id]
-      if (!sourceBlock) {
-        throw new Error('Source image node no longer exists.')
-      }
-
-      const blockConfig = getBlockConfigFromCatalog('content')
-      if (!blockConfig) {
-        throw new Error('Unable to create an image content node.')
-      }
-
-      const targetBlockId = generateId()
-      const parentId = sourceBlock.data?.parentId
-      const sourcePosition = sourceBlock.position ?? { x: 0, y: 0 }
-      const targetPosition = {
-        x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
-        y: sourcePosition.y,
-      }
-      const referenceRole =
-        getDefaultReferenceRole({
-          targetVariant: 'image',
-          model: DEFAULT_IMAGE_REPAINT_MODEL,
-          sourceVariant: 'image',
-        }) ?? ('image_reference' satisfies ContentReferenceRole)
-      const newBlock = prepareBlockState({
-        id: targetBlockId,
-        type: 'content',
-        name: getUniqueBlockName('Image', workflowBlocks),
-        position: targetPosition,
-        data: {
-          contentVariant: 'image',
-          ...(parentId ? { parentId, extent: 'parent' } : {}),
-        },
-        parentId,
-        extent: parentId ? 'parent' : undefined,
-        blockConfig,
+      const result = createDerivedImagePendingNode({
+        model: DEFAULT_IMAGE_REPAINT_MODEL,
+        unavailableMessage: 'Image erase is not available for this workflow.',
+        buildSubBlockValues: (reference) =>
+          buildImageErasePendingSubBlockValues({ reference, request }),
       })
-      const reference: ContentReferenceRecord = {
-        sourceBlockId: id,
-        sourceVariant: 'image',
-        role: referenceRole,
-      }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
-      })
-      const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: 'auto',
-          file,
-          contentReferences: [reference],
-        },
-      }
-
-      setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
-      usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageEraseMode(false)
+      if (result.added) {
+        startImageEraseRequest({
+          targetBlockId: result.targetBlockId,
+          sourceFile: result.sourceFile,
+          metadata: request,
+        })
+      }
     },
-    [
-      canEditWorkflow,
-      collaborativeBatchAddBlocks,
-      data.isEmbedded,
-      data.isPreview,
-      id,
-      setPendingSelection,
-      workflowBlocks,
-    ]
+    [createDerivedImagePendingNode, startImageEraseRequest]
   )
 
   const createImageOutpaintVariantNode = useCallback(
-    async (file: UploadedFileValue, targetAspectRatio: ImageOutpaintAspectRatio) => {
+    (outpaintRequest: SubmitImageOutpaintParams) => {
       if (!canEditWorkflow || data.isPreview || data.isEmbedded) {
         throw new Error('Image outpaint is not available for this workflow.')
+      }
+      if (resolvedVariant !== 'image' || !resolvedFile) {
+        throw new Error('Image outpaint requires a source image.')
       }
 
       const sourceBlock = workflowBlocks[id]
@@ -4615,28 +4835,34 @@ export const ContentBlock = memo(function ContentBlock({
         sourceVariant: 'image',
         role: referenceRole,
       }
-      const edge = createContentReferenceEdge({
-        id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId('right'),
-        targetHandle: getContentReferenceTargetHandleId('left'),
+      const edge = createImageOutpaintReferenceEdge({
+        edgeId: generateId(),
+        resultBlockId: targetBlockId,
+        sourceBlockId: id,
+        resultPosition: targetPosition,
+        sourcePosition,
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
-        [targetBlockId]: {
-          contentVariant: 'image',
-          aiPrompt: '',
-          aiModel: DEFAULT_IMAGE_REPAINT_MODEL,
-          aiAspectRatio: mapOutpaintAspectRatioToImageAspectRatio(targetAspectRatio),
-          file,
-          contentReferences: [reference],
-        },
+        [targetBlockId]: buildImageOutpaintPendingSubBlockValues({
+          aiAspectRatio: mapOutpaintAspectRatioToImageAspectRatio(
+            outpaintRequest.targetAspectRatio
+          ),
+          reference,
+          request: outpaintRequest,
+        }),
       }
 
       setPendingSelection([targetBlockId])
-      collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
+      const added = collaborativeBatchAddBlocks([newBlock], [edge], {}, {}, subBlockValues)
       usePanelEditorStore.getState().setCurrentBlockId(targetBlockId)
       setIsImageOutpaintMode(false)
+      if (added) {
+        startImageOutpaintRequest({
+          ...outpaintRequest,
+          targetBlockId,
+          sourceFile: resolvedFile,
+        })
+      }
     },
     [
       canEditWorkflow,
@@ -4644,7 +4870,10 @@ export const ContentBlock = memo(function ContentBlock({
       data.isEmbedded,
       data.isPreview,
       id,
+      resolvedFile,
+      resolvedVariant,
       setPendingSelection,
+      startImageOutpaintRequest,
       workflowBlocks,
     ]
   )
@@ -4725,13 +4954,15 @@ export const ContentBlock = memo(function ContentBlock({
   const resolveBlockSourceValues = useCallback(
     (blockId: string): StoredValueRecord => {
       const liveValues = workflowValues[blockId]
-      if (liveValues) {
-        return liveValues as StoredValueRecord
-      }
       const block = workflowBlocks[blockId]
-      return (block?.subBlocks as StoredValueRecord) ?? undefined
+      const liveNode = reactFlowInstance.getNode(blockId)
+      return mergeStoredValueRecords(
+        (block?.subBlocks as StoredValueRecord) ?? undefined,
+        getNodeSubBlockValues(liveNode?.data),
+        liveValues as StoredValueRecord
+      )
     },
-    [workflowBlocks, workflowValues]
+    [reactFlowInstance, workflowBlocks, workflowValues]
   )
   const resolveBlockVariant = useCallback(
     (blockId: string): ContentVariant | null => {
@@ -4831,6 +5062,149 @@ export const ContentBlock = memo(function ContentBlock({
     startImageCutoutRequest,
   ])
 
+  const retryImageOutpaint = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      resolvedGenerationKind !== 'image_outpaint'
+    ) {
+      return
+    }
+
+    const sourceReference = resolvedContentReferences.find(
+      (reference) => reference.sourceVariant === 'image'
+    )
+    if (!sourceReference) {
+      failImageOutpaint(id, '缺少源图片引用，无法重试扩图。')
+      return
+    }
+
+    const sourceFile = extractStoredValue<UploadedFileValue | null>(
+      resolveBlockSourceValues(sourceReference.sourceBlockId),
+      'file',
+      null
+    )
+    if (!sourceFile?.key) {
+      failImageOutpaint(id, '源图片缺少文件信息。')
+      return
+    }
+
+    const request = getImageOutpaintRequestMetadata(
+      extractStoredValue<unknown>(resolveBlockSourceValues(id), 'imageOutpaintRequest', null)
+    )
+    if (!request) {
+      failImageOutpaint(id, '缺少扩图参数，无法重试。')
+      return
+    }
+
+    collaborativeSetSubblockValue(id, 'generationKind', 'image_outpaint')
+    collaborativeSetSubblockValue(id, 'generationStatus', 'pending')
+    collaborativeSetSubblockValue(id, 'generationError', null)
+    collaborativeSetSubblockValue(id, 'file', null)
+    startImageOutpaintRequest({
+      ...request,
+      targetBlockId: id,
+      sourceFile,
+    })
+  }, [
+    canEditWorkflow,
+    collaborativeSetSubblockValue,
+    data.isEmbedded,
+    data.isPreview,
+    failImageOutpaint,
+    id,
+    resolvedContentReferences,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolveBlockSourceValues,
+    startImageOutpaintRequest,
+  ])
+
+  const retryDerivedImageGeneration = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      (resolvedGenerationKind !== 'image_perspective' &&
+        resolvedGenerationKind !== 'image_repaint' &&
+        resolvedGenerationKind !== 'image_erase')
+    ) {
+      return
+    }
+
+    const sourceReference = resolvedContentReferences.find(
+      (reference) => reference.sourceVariant === 'image'
+    )
+    if (!sourceReference) {
+      failDerivedImageGeneration(id, '缺少源图片引用，无法重试。', resolvedGenerationKind)
+      return
+    }
+
+    const sourceFile = extractStoredValue<UploadedFileValue | null>(
+      resolveBlockSourceValues(sourceReference.sourceBlockId),
+      'file',
+      null
+    )
+    if (!sourceFile?.key) {
+      failDerivedImageGeneration(id, '源图片缺少文件信息。', resolvedGenerationKind)
+      return
+    }
+
+    const currentValues = resolveBlockSourceValues(id)
+    if (resolvedGenerationKind === 'image_perspective') {
+      const request = getImagePerspectiveRequestMetadata(
+        extractStoredValue<unknown>(currentValues, 'imagePerspectiveRequest', null)
+      )
+      if (!request) {
+        failDerivedImageGeneration(id, '缺少多角度生成参数，无法重试。', resolvedGenerationKind)
+        return
+      }
+      markDerivedImageGenerationPending(id, resolvedGenerationKind)
+      startImagePerspectiveRequest({ targetBlockId: id, sourceFile, metadata: request })
+      return
+    }
+
+    if (resolvedGenerationKind === 'image_repaint') {
+      const request = getImageRepaintRequestMetadata(
+        extractStoredValue<unknown>(currentValues, 'imageRepaintRequest', null)
+      )
+      if (!request) {
+        failDerivedImageGeneration(id, '缺少重绘参数，无法重试。', resolvedGenerationKind)
+        return
+      }
+      markDerivedImageGenerationPending(id, resolvedGenerationKind)
+      startImageRepaintRequest({ targetBlockId: id, sourceFile, metadata: request })
+      return
+    }
+
+    const request = getImageEraseRequestMetadata(
+      extractStoredValue<unknown>(currentValues, 'imageEraseRequest', null)
+    )
+    if (!request) {
+      failDerivedImageGeneration(id, '缺少擦除参数，无法重试。', resolvedGenerationKind)
+      return
+    }
+    markDerivedImageGenerationPending(id, resolvedGenerationKind)
+    startImageEraseRequest({ targetBlockId: id, sourceFile, metadata: request })
+  }, [
+    canEditWorkflow,
+    data.isEmbedded,
+    data.isPreview,
+    failDerivedImageGeneration,
+    id,
+    markDerivedImageGenerationPending,
+    resolvedContentReferences,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolveBlockSourceValues,
+    startImageEraseRequest,
+    startImagePerspectiveRequest,
+    startImageRepaintRequest,
+  ])
+
   const retryVideoFrameCapture = useCallback(() => {
     if (
       !canEditWorkflow ||
@@ -4893,6 +5267,33 @@ export const ContentBlock = memo(function ContentBlock({
         if (!nodeId || nodeId === id) continue
         if (workflowBlocks[nodeId]?.type === 'content') return nodeId
       }
+
+      const nodeElements = Array.from(
+        document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]')
+      )
+      const matchingNodes = nodeElements
+        .map((nodeElement) => {
+          const nodeId = nodeElement.getAttribute('data-id')
+          if (!nodeId || nodeId === id || workflowBlocks[nodeId]?.type !== 'content') return null
+
+          const rect = nodeElement.getBoundingClientRect()
+          const containsPoint =
+            clientX >= rect.left &&
+            clientX <= rect.right &&
+            clientY >= rect.top &&
+            clientY <= rect.bottom
+          if (!containsPoint) return null
+
+          return {
+            nodeId,
+            area: rect.width * rect.height,
+          }
+        })
+        .filter((candidate): candidate is { nodeId: string; area: number } => Boolean(candidate))
+        .sort((left, right) => left.area - right.area)
+
+      if (matchingNodes[0]) return matchingNodes[0].nodeId
+
       return null
     },
     [id, workflowBlocks]
@@ -4901,30 +5302,17 @@ export const ContentBlock = memo(function ContentBlock({
     (targetBlockId: string): boolean => {
       const targetVariant = resolveBlockVariant(targetBlockId)
       if (!targetVariant) return false
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
 
       const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const { referenceRole, disabledReason } = getNextContentReferencesForSource({
         targetVariant,
-        model: targetModel,
+        targetModel,
+        targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
+        sourceBlockId: id,
         sourceVariant: resolvedVariant,
       })
-      if (!referenceRole) return false
 
-      const nextReferences = upsertContentReference(
-        getCurrentContentReferencesForBlock(targetBlockId),
-        {
-          sourceBlockId: id,
-          sourceVariant: resolvedVariant,
-          role: referenceRole,
-        }
-      )
-
-      return !getModelDisabledReason({
-        targetVariant,
-        model: targetModel,
-        references: nextReferences,
-      })
+      return Boolean(referenceRole && !disabledReason)
     },
     [
       getCurrentContentReferencesForBlock,
@@ -4938,30 +5326,16 @@ export const ContentBlock = memo(function ContentBlock({
     (targetBlockId: string, sourceAnchor: 'left' | 'right'): boolean => {
       const targetVariant = resolveBlockVariant(targetBlockId)
       if (!targetVariant) return false
-      if (!canContentNodeVariantReferenceSource(targetVariant, resolvedVariant)) return false
 
       const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const referenceRole = getDefaultReferenceRole({
+      const { referenceRole, nextReferences, disabledReason } = getNextContentReferencesForSource({
         targetVariant,
-        model: targetModel,
+        targetModel,
+        targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
+        sourceBlockId: id,
         sourceVariant: resolvedVariant,
       })
-      if (!referenceRole) return false
-
-      const nextReferences = upsertContentReference(
-        getCurrentContentReferencesForBlock(targetBlockId),
-        {
-          sourceBlockId: id,
-          sourceVariant: resolvedVariant,
-          role: referenceRole,
-        }
-      )
-      const disabledReason = getModelDisabledReason({
-        targetVariant,
-        model: targetModel,
-        references: nextReferences,
-      })
-      if (disabledReason) return false
+      if (!referenceRole || disabledReason) return false
 
       const isVideoFrameReference =
         referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
@@ -5518,7 +5892,7 @@ export const ContentBlock = memo(function ContentBlock({
         role='button'
         tabIndex={0}
         className={cn(
-          'relative z-[20] cursor-grab select-none transition-opacity content-drag-handle [&:active]:cursor-grabbing',
+          'relative z-[20] cursor-grab select-none overflow-visible transition-opacity content-drag-handle [&:active]:cursor-grabbing',
           (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
         )}
         onClick={handleClick}
@@ -5669,8 +6043,10 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImagePerspectiveVariant={createImagePerspectiveVariantNode}
             onCreateImageRepaintVariant={createImageRepaintVariantNode}
             onCreateImageEraseVariant={createImageEraseVariantNode}
-            onCreateImageOutpaintVariant={createImageOutpaintVariantNode}
+            onSubmitImageOutpaint={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
+            onRetryImageOutpaint={retryImageOutpaint}
+            onRetryDerivedImageGeneration={retryDerivedImageGeneration}
             onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {
               if (!data.isPreview) setFileValue(value)

@@ -5,6 +5,8 @@ export interface ImageMaskBounds {
   top: number
   width: number
   height: number
+  sourceWidth: number
+  sourceHeight: number
 }
 
 export interface ImageMaskPoint {
@@ -21,18 +23,61 @@ export interface ImageMaskAction {
 
 export const IMAGE_MASK_COLOR = 'rgba(85, 190, 255, 0.42)'
 
+export function getImageMaskCanvasGeometry({
+  bounds,
+  mode,
+  devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1,
+}: {
+  bounds: ImageMaskBounds
+  mode: 'display' | 'export'
+  devicePixelRatio?: number
+}): { width: number; height: number; scaleX: number; scaleY: number } {
+  if (mode === 'export') {
+    return {
+      width: Math.max(1, Math.round(bounds.sourceWidth)),
+      height: Math.max(1, Math.round(bounds.sourceHeight)),
+      scaleX: bounds.sourceWidth / bounds.width,
+      scaleY: bounds.sourceHeight / bounds.height,
+    }
+  }
+
+  return {
+    width: Math.max(1, Math.round(bounds.width * devicePixelRatio)),
+    height: Math.max(1, Math.round(bounds.height * devicePixelRatio)),
+    scaleX: devicePixelRatio,
+    scaleY: devicePixelRatio,
+  }
+}
+
+export function getSourceImageMaskRect({
+  bounds,
+  rect,
+}: {
+  bounds: ImageMaskBounds
+  rect: NonNullable<ImageMaskAction['rect']>
+}): NonNullable<ImageMaskAction['rect']> {
+  const geometry = getImageMaskCanvasGeometry({ bounds, mode: 'export' })
+  return {
+    x: rect.x * geometry.scaleX,
+    y: rect.y * geometry.scaleY,
+    width: rect.width * geometry.scaleX,
+    height: rect.height * geometry.scaleY,
+  }
+}
+
 export function resizeMaskCanvas(
   canvas: HTMLCanvasElement,
-  bounds: ImageMaskBounds
+  bounds: ImageMaskBounds,
+  mode: 'display' | 'export' = 'display'
 ): CanvasRenderingContext2D | null {
-  const ratio = window.devicePixelRatio || 1
-  canvas.width = Math.max(1, Math.round(bounds.width * ratio))
-  canvas.height = Math.max(1, Math.round(bounds.height * ratio))
+  const geometry = getImageMaskCanvasGeometry({ bounds, mode })
+  canvas.width = geometry.width
+  canvas.height = geometry.height
   canvas.style.width = `${bounds.width}px`
   canvas.style.height = `${bounds.height}px`
   const context = canvas.getContext('2d')
   if (!context) return null
-  context.setTransform(ratio, 0, 0, ratio, 0, 0)
+  context.setTransform(geometry.scaleX, 0, 0, geometry.scaleY, 0, 0)
   context.lineCap = 'round'
   context.lineJoin = 'round'
   return context
@@ -116,11 +161,19 @@ export function getRelativeImageMaskBounds({
   if (imageRect.width <= 0 || imageRect.height <= 0) return null
   const scaleX = root.offsetWidth > 0 ? rootRect.width / root.offsetWidth : 1
   const scaleY = root.offsetHeight > 0 ? rootRect.height / root.offsetHeight : 1
+  const width = imageRect.width / scaleX
+  const height = imageRect.height / scaleY
+  const isImageElement =
+    typeof HTMLImageElement !== 'undefined' && image instanceof HTMLImageElement
+  const naturalWidth = isImageElement && image.naturalWidth > 0 ? image.naturalWidth : width
+  const naturalHeight = isImageElement && image.naturalHeight > 0 ? image.naturalHeight : height
 
   return {
     left: (imageRect.left - rootRect.left) / scaleX,
     top: (imageRect.top - rootRect.top) / scaleY,
-    width: imageRect.width / scaleX,
-    height: imageRect.height / scaleY,
+    width,
+    height,
+    sourceWidth: naturalWidth,
+    sourceHeight: naturalHeight,
   }
 }

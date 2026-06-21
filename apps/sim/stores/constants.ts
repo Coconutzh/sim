@@ -32,6 +32,7 @@ export const SIDEBAR_WIDTH = {
 export const PANEL_WIDTH = {
   DEFAULT: 320,
   MIN: 290,
+  COLLAPSED: 48,
   /** Maximum is 40% of viewport, enforced dynamically */
   MAX_PERCENTAGE: 0.4,
 } as const

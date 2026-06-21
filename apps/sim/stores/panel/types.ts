@@ -11,6 +11,12 @@ export interface PanelState {
   setPanelWidth: (width: number) => void
   activeTab: PanelTab
   setActiveTab: (tab: PanelTab) => void
+  /** Whether the Agent panel is collapsed to its edge rail */
+  isCollapsed: boolean
+  /** Updates the Agent panel collapsed state */
+  setCollapsed: (isCollapsed: boolean) => void
+  /** Toggles the Agent panel collapsed state */
+  toggleCollapsed: () => void
   /** Whether the panel is currently being resized */
   isResizing: boolean
   /** Updates the panel resize state */

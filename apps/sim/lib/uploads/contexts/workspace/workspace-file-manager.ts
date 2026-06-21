@@ -569,6 +569,50 @@ export async function getWorkspaceFileByName(
 }
 
 /**
+ * Look up a single active workspace file by storage key.
+ */
+export async function getWorkspaceFileByKey(
+  workspaceId: string,
+  key: string
+): Promise<WorkspaceFileRecord | null> {
+  try {
+    const files = await db
+      .select()
+      .from(workspaceFiles)
+      .where(
+        and(
+          eq(workspaceFiles.workspaceId, workspaceId),
+          eq(workspaceFiles.key, key),
+          eq(workspaceFiles.context, 'workspace'),
+          isNull(workspaceFiles.deletedAt)
+        )
+      )
+      .limit(1)
+
+    if (files.length === 0) return null
+
+    const pathPrefix = getServePathPrefix()
+    const file = files[0]
+    return {
+      id: file.id,
+      workspaceId: file.workspaceId || workspaceId,
+      name: file.originalName,
+      key: file.key,
+      path: `${pathPrefix}${encodeURIComponent(file.key)}?context=workspace`,
+      size: file.size,
+      type: file.contentType,
+      uploadedBy: file.userId,
+      deletedAt: file.deletedAt,
+      uploadedAt: file.uploadedAt,
+      updatedAt: file.updatedAt,
+    }
+  } catch (error) {
+    logger.error(`Failed to get workspace file by key ${key}:`, error)
+    return null
+  }
+}
+
+/**
  * List all files for a workspace
  */
 export async function listWorkspaceFiles(

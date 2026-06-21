@@ -78,6 +78,95 @@ describe('generateImageWithProvider', () => {
       size: '2560x1440',
       response_format: 'b64_json',
     })
+    expect(JSON.parse(String(requestInit.body))).not.toHaveProperty('image')
+  })
+
+  it('sends a single Ark image reference in the Seedream image field', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+      }),
+    }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    await generateImageWithProvider({
+      model: 'jimeng-4.5',
+      prompt: 'Use this product as reference',
+      aspectRatio: '1:1',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'file-1',
+            name: 'product.png',
+            url: 'https://cdn.example.com/product.png',
+            key: 'product-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'doubao-seedream-4-5-251128',
+      prompt: 'Use this product as reference',
+      size: '2048x2048',
+      response_format: 'b64_json',
+      image: 'https://cdn.example.com/product.png',
+    })
+  })
+
+  it('sends multiple Ark image references in the Seedream image field', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+      }),
+    }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+    const base64Reference = Buffer.from('source-image').toString('base64')
+
+    await generateImageWithProvider({
+      model: 'jimeng-4.0',
+      prompt: 'Blend both references',
+      aspectRatio: '4:3',
+      referenceContext: {
+        text: ['Keep the same palette'],
+        images: [
+          {
+            id: 'file-1',
+            name: 'source.png',
+            url: '',
+            base64: base64Reference,
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+          {
+            id: 'file-2',
+            name: 'style.jpg',
+            url: 'https://cdn.example.com/style.jpg',
+            key: 'style-key',
+            size: 2048,
+            type: 'image/jpeg',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'doubao-seedream-4-0-250828',
+      prompt: 'Blend both references\n\nKeep the same palette',
+      size: '2304x1728',
+      response_format: 'b64_json',
+      image: [`data:image/png;base64,${base64Reference}`, 'https://cdn.example.com/style.jpg'],
+    })
   })
 
   it('creates and polls an Evolink image task with Gemini image references', async () => {
@@ -169,7 +258,7 @@ describe('generateImageWithProvider', () => {
     const uploadRequestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
     expect(JSON.parse(String(uploadRequestInit.body))).toMatchObject({
       base64_data: `data:image/png;base64,${Buffer.from('source-image').toString('base64')}`,
-      file_name: 'source.png',
+      file_name: expect.stringMatching(/^source-[A-Za-z0-9_-]+\.png$/),
       upload_path: 'sim-content-canvas',
     })
 
@@ -193,6 +282,189 @@ describe('generateImageWithProvider', () => {
       'https://cdn.example.com/generated.png',
       expect.objectContaining({})
     )
+  })
+
+  it('sends concrete Gemini Pro aspect ratio size with image references and resolution quality', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('edited-image')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/generated.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    await generateImageWithProvider({
+      model: 'gemini-3-pro-image',
+      prompt: 'Outpaint the image',
+      aspectRatio: '16:9',
+      resolution: '2K',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'file-1',
+            name: 'source.png',
+            url: '',
+            base64: Buffer.from('source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'gemini-3-pro-image',
+      size: '16:9',
+      quality: '2K',
+      image_urls: ['https://files.example.com/source.png'],
+    })
+  })
+
+  it('sends GPT Image 2 mask edits with alpha mask_url and image quality', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('edited-mask-image')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/alpha-mask.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-mask',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/mask-edited.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    const result = await generateImageWithProvider({
+      model: 'gpt-image-2',
+      prompt: 'Replace the masked area with a blue sign',
+      aspectRatio: '16:9',
+      resolution: '2K',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: 'source-1',
+            name: 'source.png',
+            url: '',
+            base64: Buffer.from('source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/png',
+          },
+        ],
+      },
+      maskImage: {
+        id: '',
+        name: 'alpha-mask.png',
+        url: '',
+        base64: Buffer.from('alpha-mask').toString('base64'),
+        key: 'alpha-mask-key',
+        size: 512,
+        type: 'image/png',
+      },
+      maskEditQuality: 'medium',
+    })
+
+    expect(result).toMatchObject({
+      provider: 'gemini-compatible',
+      providerModel: 'gpt-image-2',
+      mimeType: 'image/png',
+    })
+    expect(result.buffer.toString()).toBe('edited-mask-image')
+
+    const sourceUploadInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(sourceUploadInit.body))).toMatchObject({
+      base64_data: `data:image/png;base64,${Buffer.from('source-image').toString('base64')}`,
+      file_name: expect.stringMatching(/^source-[A-Za-z0-9_-]+\.png$/),
+      upload_path: 'sim-content-canvas',
+    })
+    const maskUploadInit = vi.mocked(global.fetch).mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(maskUploadInit.body))).toMatchObject({
+      base64_data: `data:image/png;base64,${Buffer.from('alpha-mask').toString('base64')}`,
+      file_name: expect.stringMatching(/^alpha-mask-[A-Za-z0-9_-]+\.png$/),
+      upload_path: 'sim-content-canvas',
+    })
+
+    const requestInit = vi.mocked(global.fetch).mock.calls[2]?.[1] as RequestInit
+    const body = JSON.parse(String(requestInit.body)) as Record<string, unknown>
+    expect(body).toMatchObject({
+      model: 'gpt-image-2',
+      prompt: expect.stringContaining('Replace the masked area with a blue sign'),
+      size: '16:9',
+      resolution: '2K',
+      quality: 'medium',
+      image_urls: ['https://files.example.com/source.png'],
+      mask_url: 'https://files.example.com/alpha-mask.png',
+    })
+    expect(body.quality).not.toBe('2K')
   })
 
   it('falls back to Gemini 3 Pro Image preview when Evolink has no stable service', async () => {
@@ -305,10 +577,10 @@ describe('generateImageWithProvider', () => {
     expect(result.buffer.toString()).toBe('preview-edited-image')
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'Falling back to Gemini 3 Pro Image preview model',
-      {
+      expect.objectContaining({
         model: 'gemini-3-pro-image',
         fallbackModel: 'gemini-3-pro-image-preview',
-      }
+      })
     )
 
     const stableRequestInit = vi.mocked(global.fetch).mock.calls[2]?.[1] as RequestInit
@@ -336,6 +608,127 @@ describe('generateImageWithProvider', () => {
       'https://files.example.com/preview-source.png',
       'https://files.example.com/preview-mask.png',
     ])
+  })
+
+  it('falls back to Gemini 3 Pro Image preview when Evolink stable task reports invalid parameters', async () => {
+    process.env.CONTENT_IMAGE_GEMINI_API_KEY = 'test-evolink-image-key'
+    const imageBytes = Buffer.from('preview-after-invalid-params')
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/stable-source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-invalid',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'failed',
+          message:
+            'Invalid parameters.\nPlease check that resolution, duration, prompt length, and other parameters are within the model supported range.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            file_url: 'https://files.example.com/preview-source.png',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task-preview',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 'succeeded',
+          data: {
+            images: [{ url: 'https://cdn.example.com/preview-generated.png' }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () =>
+          imageBytes.buffer.slice(
+            imageBytes.byteOffset,
+            imageBytes.byteOffset + imageBytes.byteLength
+          ),
+      }) as typeof fetch
+
+    const { generateImageWithProvider } = await import('@/lib/generated-media/image/providers')
+
+    const result = await generateImageWithProvider({
+      model: 'gemini-3-pro-image',
+      prompt: 'Cut out the subject',
+      aspectRatio: '1:1',
+      resolution: '2K',
+      logContext: {
+        tool: 'cutout',
+        sourceBytes: 1024,
+        maskBytes: 0,
+        referenceBytes: 0,
+      },
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: '',
+            name: 'source.jpg',
+            url: '',
+            base64: Buffer.from('normalized-source-image').toString('base64'),
+            key: 'source-key',
+            size: 1024,
+            type: 'image/jpeg',
+          },
+        ],
+      },
+    })
+
+    expect(result).toMatchObject({
+      provider: 'gemini-compatible',
+      providerModel: 'gemini-3-pro-image-preview',
+      mimeType: 'image/png',
+    })
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Gemini compatible image task failed',
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        taskId: 'task-invalid',
+        status: 'failed',
+        error: expect.stringContaining('Invalid parameters'),
+        errorCategory: 'invalid_parameters',
+        tool: 'cutout',
+        size: '1:1',
+        quality: '2K',
+        imageUrlCount: 1,
+        sourceBytes: 1024,
+        maskBytes: 0,
+        referenceBytes: 0,
+      })
+    )
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Falling back to Gemini 3 Pro Image preview model',
+      expect.objectContaining({
+        model: 'gemini-3-pro-image',
+        fallbackModel: 'gemini-3-pro-image-preview',
+        reason: expect.stringContaining('Invalid parameters'),
+      })
+    )
   })
 
   it('allows Pro Image compatible tasks to poll for five minutes before timing out', async () => {

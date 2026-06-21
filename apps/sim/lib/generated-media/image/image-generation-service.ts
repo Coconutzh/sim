@@ -1,3 +1,4 @@
+import { generateShortId } from '@sim/utils/id'
 import sharp from 'sharp'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import type {
@@ -7,9 +8,13 @@ import type {
 } from '@/lib/generated-media/image/image-generation-utils'
 import {
   DEFAULT_IMAGE_CUTOUT_MODEL,
+  DEFAULT_IMAGE_MASK_EDIT_MODEL,
+  DEFAULT_IMAGE_PERSPECTIVE_MODEL,
   DEFAULT_IMAGE_REPAINT_MODEL,
   DEFAULT_IMAGE_REPAINT_RESOLUTION,
+  getNearestSupportedImageAspectRatio,
 } from '@/lib/generated-media/image/image-generation-utils'
+import { resolveMediaEditWorkspaceFile } from '@/lib/generated-media/image/media-edit-files'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
 import {
   fetchWorkspaceFileBuffer,
@@ -104,15 +109,38 @@ type RepaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type EraseWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 type OutpaintWorkspaceImageResult = GenerateWorkspaceImageFromPromptResult
 
+interface ImageDimensions {
+  width: number
+  height: number
+}
+
+interface PreparedMaskedEditReferenceContext {
+  referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
+  aspectRatio: ImageAspectRatioValue
+  sourceDimensions: ImageDimensions
+  maskDimensions: ImageDimensions
+  normalizedMaskDimensions: ImageDimensions
+}
+
 const CUTOUT_PROMPT =
   'Cut out the main foreground subject from the provided image. Preserve the subject exactly, including fine edges such as hair, fabric, transparent materials, and shadows where appropriate. Remove the background completely. Return a clean PNG asset suitable for compositing. Do not add a checkerboard, white background, border, text, watermark, or extra objects.'
 const CUTOUT_BACKGROUND_COLOR_DISTANCE_THRESHOLD = 34
+const PROVIDER_REFERENCE_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+const CUTOUT_SOURCE_NORMALIZE_MAX_EDGES = [4096, 3072, 2048] as const
 
 const OUTPAINT_GUIDE_LONG_EDGE_BY_RESOLUTION: Record<ImageResolutionValue, number> = {
   '1K': 1024,
   '2K': 2048,
   '4K': 4096,
 }
+const OUTPAINT_FIXED_ASPECT_RATIOS = new Set<ImageAspectRatioValue>([
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '21:9',
+])
 
 function getGeneratedFileName(mimeType: string): string {
   if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'generated-image.jpg'
@@ -310,6 +338,327 @@ function getHydratedImageBuffer(image: UserFileLike): Buffer | null {
   return Buffer.from(image.base64, 'base64')
 }
 
+function getUserFileByteSize(image?: UserFileLike): number | undefined {
+  if (!image) return undefined
+  if (typeof image.size === 'number' && Number.isFinite(image.size) && image.size >= 0) {
+    return image.size
+  }
+  if (image.base64) {
+    return Buffer.byteLength(image.base64, 'base64')
+  }
+  return undefined
+}
+
+function sumUserFileByteSizes(images: UserFileLike[]): number | undefined {
+  let total = 0
+  let hasSize = false
+  for (const image of images) {
+    const size = getUserFileByteSize(image)
+    if (size === undefined) continue
+    total += size
+    hasSize = true
+  }
+  return hasSize ? total : undefined
+}
+
+function getPromptImageTool({
+  model,
+  referenceContext,
+}: {
+  model: ImageGenerationModelId
+  referenceContext?: GenerateWorkspaceImageFromPromptInput['referenceContext']
+}): string {
+  if (model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && (referenceContext?.images?.length ?? 0) > 0) {
+    return 'image_perspective'
+  }
+  return 'image_generate'
+}
+
+function getNearestOutpaintAspectRatio(width: number, height: number): ImageAspectRatioValue {
+  return getNearestSupportedImageAspectRatio(width, height) ?? '1:1'
+}
+
+function getNearestHydratedImageAspectRatio(dimensions: ImageDimensions): ImageAspectRatioValue {
+  return getNearestSupportedImageAspectRatio(dimensions.width, dimensions.height) ?? '1:1'
+}
+
+async function getHydratedImageDimensions(
+  image: UserFileLike | undefined,
+  label: string
+): Promise<ImageDimensions> {
+  const imageBuffer = image ? getHydratedImageBuffer(image) : null
+  if (!imageBuffer) {
+    throw new Error(`${label} could not be loaded.`)
+  }
+
+  let metadata: sharp.Metadata
+  try {
+    metadata = await sharp(imageBuffer).metadata()
+  } catch {
+    throw new Error(`${label} format is not supported.`)
+  }
+
+  const width = metadata.width ?? 0
+  const height = metadata.height ?? 0
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new Error(`${label} dimensions could not be read.`)
+  }
+
+  return { width, height }
+}
+
+async function resolveHydratedImageAspectRatio(
+  sourceImage: UserFileLike | undefined
+): Promise<ImageAspectRatioValue> {
+  const sourceBuffer = sourceImage ? getHydratedImageBuffer(sourceImage) : null
+  if (!sourceBuffer) return '1:1'
+
+  try {
+    const metadata = await sharp(sourceBuffer).metadata()
+    return getNearestSupportedImageAspectRatio(metadata.width ?? 0, metadata.height ?? 0) ?? '1:1'
+  } catch {
+    return '1:1'
+  }
+}
+
+async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<ImageAspectRatioValue> {
+  return resolveHydratedImageAspectRatio(sourceImage)
+}
+
+async function normalizeMaskToSource({
+  maskImage,
+  sourceDimensions,
+  maskDimensions,
+  maskNamePrefix,
+  maskLabel,
+}: {
+  maskImage: UserFileLike
+  sourceDimensions: ImageDimensions
+  maskDimensions: ImageDimensions
+  maskNamePrefix: string
+  maskLabel: string
+}): Promise<UserFileLike> {
+  if (
+    sourceDimensions.width === maskDimensions.width &&
+    sourceDimensions.height === maskDimensions.height
+  ) {
+    return maskImage
+  }
+
+  const maskBuffer = getHydratedImageBuffer(maskImage)
+  if (!maskBuffer) {
+    throw new Error(`${maskLabel} mask image could not be loaded.`)
+  }
+
+  const normalizedMaskBuffer = await sharp(maskBuffer, { limitInputPixels: false })
+    .resize(sourceDimensions.width, sourceDimensions.height, {
+      fit: 'fill',
+      kernel: sharp.kernel.nearest,
+    })
+    .png()
+    .toBuffer()
+
+  return {
+    ...maskImage,
+    id: '',
+    name: maskImage.name?.trim() || `${maskNamePrefix}.png`,
+    url: '',
+    key: `${maskNamePrefix}-${generateShortId()}.png`,
+    size: normalizedMaskBuffer.byteLength,
+    type: 'image/png',
+    base64: normalizedMaskBuffer.toString('base64'),
+  }
+}
+
+async function convertWhiteEditMaskToAlphaMask({
+  maskImage,
+  maskNamePrefix,
+  maskLabel,
+}: {
+  maskImage: UserFileLike
+  maskNamePrefix: string
+  maskLabel: string
+}): Promise<UserFileLike> {
+  const maskBuffer = getHydratedImageBuffer(maskImage)
+  if (!maskBuffer) {
+    throw new Error(`${maskLabel} mask image could not be loaded.`)
+  }
+
+  const { data, info } = await sharp(maskBuffer, { limitInputPixels: false })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  const alphaMask = Buffer.alloc(info.width * info.height * 4)
+
+  for (let pixel = 0; pixel < info.width * info.height; pixel++) {
+    const sourceOffset = pixel * info.channels
+    const targetOffset = pixel * 4
+    const isEditable =
+      data[sourceOffset + 3] > 0 &&
+      data[sourceOffset] + data[sourceOffset + 1] + data[sourceOffset + 2] > 384
+
+    alphaMask[targetOffset] = 0
+    alphaMask[targetOffset + 1] = 0
+    alphaMask[targetOffset + 2] = 0
+    alphaMask[targetOffset + 3] = isEditable ? 0 : 255
+  }
+
+  const alphaMaskBuffer = await sharp(alphaMask, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+    limitInputPixels: false,
+  })
+    .png()
+    .toBuffer()
+
+  return {
+    ...maskImage,
+    id: '',
+    name: `${maskNamePrefix}.png`,
+    url: '',
+    key: `${maskNamePrefix}-${generateShortId()}.png`,
+    size: alphaMaskBuffer.byteLength,
+    type: 'image/png',
+    base64: alphaMaskBuffer.toString('base64'),
+  }
+}
+
+async function prepareMaskedEditReferenceContext({
+  referenceContext,
+  maskNamePrefix,
+  sourceLabel,
+  maskLabel,
+}: {
+  referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
+  maskNamePrefix: string
+  sourceLabel: string
+  maskLabel: string
+}): Promise<PreparedMaskedEditReferenceContext> {
+  const sourceImage = referenceContext.images[0]
+  const maskImage = referenceContext.images[1]
+  const sourceDimensions = await getHydratedImageDimensions(sourceImage, sourceLabel)
+  const maskDimensions = await getHydratedImageDimensions(maskImage, `${maskLabel} mask image`)
+  const normalizedMaskImage = await normalizeMaskToSource({
+    maskImage,
+    sourceDimensions,
+    maskDimensions,
+    maskNamePrefix,
+    maskLabel,
+  })
+  const normalizedMaskDimensions =
+    normalizedMaskImage === maskImage
+      ? maskDimensions
+      : await getHydratedImageDimensions(normalizedMaskImage, `Normalized ${maskLabel} mask image`)
+
+  return {
+    referenceContext: {
+      ...referenceContext,
+      images: [sourceImage, normalizedMaskImage, ...referenceContext.images.slice(2)],
+    },
+    aspectRatio: getNearestHydratedImageAspectRatio(sourceDimensions),
+    sourceDimensions,
+    maskDimensions,
+    normalizedMaskDimensions,
+  }
+}
+
+async function normalizeCutoutSourceImageForProvider(
+  sourceImage: UserFileLike
+): Promise<UserFileLike> {
+  const sourceBuffer = getHydratedImageBuffer(sourceImage)
+  if (!sourceBuffer) {
+    throw new Error('Source image could not be loaded for cutout.')
+  }
+
+  let metadata: sharp.Metadata
+  try {
+    metadata = await sharp(sourceBuffer).metadata()
+  } catch {
+    throw new Error('Source image format is not supported for cutout.')
+  }
+
+  const hasAlpha = Boolean(metadata.hasAlpha)
+  let normalizedBuffer: Buffer | null = null
+  let normalizedType = hasAlpha ? 'image/png' : 'image/jpeg'
+  let normalizedExtension = hasAlpha ? 'png' : 'jpg'
+
+  for (const maxEdge of CUTOUT_SOURCE_NORMALIZE_MAX_EDGES) {
+    const pipeline = sharp(sourceBuffer, { limitInputPixels: false }).rotate().resize({
+      width: maxEdge,
+      height: maxEdge,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+
+    normalizedBuffer = hasAlpha
+      ? await pipeline.png({ compressionLevel: 9 }).toBuffer()
+      : await pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer()
+
+    if (
+      normalizedBuffer.byteLength <= PROVIDER_REFERENCE_IMAGE_MAX_BYTES ||
+      maxEdge === CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1]
+    ) {
+      break
+    }
+  }
+
+  if (!normalizedBuffer) {
+    throw new Error('Source image could not be normalized for cutout.')
+  }
+
+  if (normalizedBuffer.byteLength > PROVIDER_REFERENCE_IMAGE_MAX_BYTES) {
+    if (hasAlpha) {
+      normalizedBuffer = await sharp(sourceBuffer, { limitInputPixels: false })
+        .rotate()
+        .resize({
+          width: CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1],
+          height: CUTOUT_SOURCE_NORMALIZE_MAX_EDGES[CUTOUT_SOURCE_NORMALIZE_MAX_EDGES.length - 1],
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: 88, mozjpeg: true })
+        .toBuffer()
+      normalizedType = 'image/jpeg'
+      normalizedExtension = 'jpg'
+    }
+
+    if (normalizedBuffer.byteLength > PROVIDER_REFERENCE_IMAGE_MAX_BYTES) {
+      throw new Error('Source image is too large for cutout. Please use an image under 20MB.')
+    }
+  }
+
+  const baseName = sourceImage.name?.replace(/\.[^.]+$/, '').trim() || 'cutout-source'
+  return {
+    ...sourceImage,
+    id: '',
+    name: `${baseName}.${normalizedExtension}`,
+    url: '',
+    key: `cutout-source-${generateShortId()}.${normalizedExtension}`,
+    size: normalizedBuffer.byteLength,
+    type: normalizedType,
+    base64: normalizedBuffer.toString('base64'),
+  }
+}
+
+export function resolveOutpaintAspectRatio({
+  targetAspectRatio,
+  customAspectRatio,
+  placement,
+}: Pick<
+  OutpaintWorkspaceImageInput,
+  'targetAspectRatio' | 'customAspectRatio' | 'placement'
+>): ImageAspectRatioValue {
+  if (OUTPAINT_FIXED_ASPECT_RATIOS.has(targetAspectRatio as ImageAspectRatioValue)) {
+    return targetAspectRatio as ImageAspectRatioValue
+  }
+
+  if (targetAspectRatio === 'custom' && customAspectRatio) {
+    return getNearestOutpaintAspectRatio(customAspectRatio.width, customAspectRatio.height)
+  }
+
+  return getNearestOutpaintAspectRatio(placement.canvasWidth, placement.canvasHeight)
+}
+
 function getOutpaintGuideSize({
   canvasWidth,
   canvasHeight,
@@ -328,6 +677,44 @@ function getOutpaintGuideSize({
   }
 }
 
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getOutpaintGuideGeometry({
+  placement,
+  resolution,
+}: Pick<OutpaintWorkspaceImageInput, 'placement' | 'resolution'>): {
+  guideSize: { width: number; height: number; scale: number }
+  sourceRegion: { left: number; top: number; width: number; height: number }
+} {
+  const guideSize = getOutpaintGuideSize({
+    canvasWidth: placement.canvasWidth,
+    canvasHeight: placement.canvasHeight,
+    resolution,
+  })
+  const left = clampInteger(Math.round(placement.x * guideSize.scale), 0, guideSize.width - 1)
+  const top = clampInteger(Math.round(placement.y * guideSize.scale), 0, guideSize.height - 1)
+  const width = Math.max(
+    1,
+    Math.min(guideSize.width - left, Math.round(placement.width * guideSize.scale))
+  )
+  const height = Math.max(
+    1,
+    Math.min(guideSize.height - top, Math.round(placement.height * guideSize.scale))
+  )
+
+  return {
+    guideSize,
+    sourceRegion: {
+      left,
+      top,
+      width,
+      height,
+    },
+  }
+}
+
 async function buildOutpaintGuideImages({
   sourceImage,
   placement,
@@ -340,17 +727,7 @@ async function buildOutpaintGuideImages({
     throw new Error('Source image could not be loaded for outpainting.')
   }
 
-  const guideSize = getOutpaintGuideSize({
-    canvasWidth: placement.canvasWidth,
-    canvasHeight: placement.canvasHeight,
-    resolution,
-  })
-  const sourceRegion = {
-    left: Math.round(placement.x * guideSize.scale),
-    top: Math.round(placement.y * guideSize.scale),
-    width: Math.max(1, Math.round(placement.width * guideSize.scale)),
-    height: Math.max(1, Math.round(placement.height * guideSize.scale)),
-  }
+  const { guideSize, sourceRegion } = getOutpaintGuideGeometry({ placement, resolution })
   const resizedSource = await sharp(sourceBuffer)
     .resize(sourceRegion.width, sourceRegion.height, { fit: 'fill' })
     .png()
@@ -376,22 +753,25 @@ async function buildOutpaintGuideImages({
     `<svg width="${guideSize.width}" height="${guideSize.height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="${sourceRegion.left}" y="${sourceRegion.top}" width="${sourceRegion.width}" height="${sourceRegion.height}" fill="black"/></svg>`
   )
   const maskBuffer = await sharp(maskSvg).png().toBuffer()
+  const requestId = generateShortId()
+  const layoutGuideName = `outpaint-layout-guide-${requestId}.png`
+  const maskGuideName = `outpaint-mask-guide-${requestId}.png`
 
   return {
     layoutGuide: {
       id: '',
-      name: 'outpaint-layout-guide.png',
+      name: layoutGuideName,
       url: '',
-      key: 'outpaint-layout-guide.png',
+      key: layoutGuideName,
       size: layoutBuffer.byteLength,
       type: 'image/png',
       base64: layoutBuffer.toString('base64'),
     },
     maskGuide: {
       id: '',
-      name: 'outpaint-mask-guide.png',
+      name: maskGuideName,
       url: '',
-      key: 'outpaint-mask-guide.png',
+      key: maskGuideName,
       size: maskBuffer.byteLength,
       type: 'image/png',
       base64: maskBuffer.toString('base64'),
@@ -409,12 +789,21 @@ export async function generateWorkspaceImageFromPrompt({
   abortSignal,
 }: GenerateWorkspaceImageFromPromptInput): Promise<GenerateWorkspaceImageFromPromptResult> {
   const hydratedReferenceContext = await hydrateImageReferenceContext(workspaceId, referenceContext)
+  const resolvedAspectRatio =
+    model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && aspectRatio === 'auto'
+      ? await resolveHydratedImageAspectRatio(hydratedReferenceContext?.images?.[0])
+      : aspectRatio
 
   const generatedImage = await generateImageWithProvider({
     model,
     prompt,
-    aspectRatio,
+    aspectRatio: resolvedAspectRatio,
     referenceContext: hydratedReferenceContext,
+    logContext: {
+      tool: getPromptImageTool({ model, referenceContext: hydratedReferenceContext }),
+      sourceBytes: getUserFileByteSize(hydratedReferenceContext?.images?.[0]),
+      referenceBytes: sumUserFileByteSizes(hydratedReferenceContext?.images?.slice(1) ?? []),
+    },
     abortSignal,
   })
 
@@ -444,9 +833,8 @@ export function buildWorkspaceImageRepaintPrompt({
   resolution: ImageResolutionValue
 }): string {
   return [
-    'Edit the provided source image using the mask image.',
-    'The mask image marks the areas to repaint: white/visible painted areas are editable, black/transparent areas must remain unchanged.',
-    'Preserve the original image outside the mask exactly as much as possible.',
+    'Edit the provided source image using the mask.',
+    'Only the masked area is editable; preserve everything outside the mask exactly as much as possible.',
     `User request: ${prompt}.`,
     'Use the additional reference images only for visual guidance.',
     `Output at ${resolution} resolution.`,
@@ -457,15 +845,26 @@ export function buildWorkspaceImageRepaintPrompt({
 export function buildWorkspaceImageOutpaintPrompt({
   prompt,
   resolution,
+  placement,
 }: {
   prompt?: string
   resolution: ImageResolutionValue
+  placement: OutpaintWorkspaceImageInput['placement']
 }): string {
   const userPrompt = prompt?.trim()
+  const percent = (value: number, total: number) => `${((value / total) * 100).toFixed(2)}%`
+  const placementDescription = [
+    `left ${percent(placement.x, placement.canvasWidth)}`,
+    `top ${percent(placement.y, placement.canvasHeight)}`,
+    `width ${percent(placement.width, placement.canvasWidth)}`,
+    `height ${percent(placement.height, placement.canvasHeight)}`,
+  ].join(', ')
   return [
     'Outpaint the provided source image into the target canvas shown by the layout guide.',
     'The layout guide contains the original image region and transparent surrounding expansion area.',
     'The mask guide marks the original image region in black and the surrounding expanded areas in white.',
+    `The original image region is exactly positioned at ${placementDescription} of the target canvas.`,
+    'Preserve the original image at that exact normalized region; do not recenter, scale, or move it.',
     'The original image region must remain unchanged as much as possible.',
     'Fill only the surrounding expanded areas so the result looks like a natural continuation of the same scene, style, lighting, perspective, colors, and texture.',
     userPrompt ? `User request: ${userPrompt}.` : null,
@@ -482,8 +881,8 @@ export function buildWorkspaceImageErasePrompt({
   resolution: ImageResolutionValue
 }): string {
   return [
-    'Edit the provided source image using the mask image.',
-    'The mask marks the exact areas to erase: white/visible painted areas should be removed and naturally filled in; black/transparent areas must remain unchanged as much as possible.',
+    'Edit the provided source image using the mask.',
+    'Only the masked area should be erased and naturally filled in; preserve everything outside the mask as much as possible.',
     'Reconstruct the erased region using surrounding background, texture, lighting, perspective, and style.',
     'Do not add watermark, UI, text, border, frame, or unrelated objects.',
     `Output at ${resolution} resolution.`,
@@ -504,17 +903,56 @@ export async function repaintWorkspaceImage({
   referenceImages,
   abortSignal,
 }: RepaintWorkspaceImageInput): Promise<RepaintWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage, maskImage, ...referenceImages],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for repainting.')
+  }
+  const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [hydratedSourceImage, maskImage, ...referenceImages],
+  })) ?? { text: [], images: [] }
+  const preparedReferenceContext = await prepareMaskedEditReferenceContext({
+    referenceContext,
+    maskNamePrefix: 'repaint-mask',
+    sourceLabel: 'Repaint source image',
+    maskLabel: 'Repaint',
+  })
+  const alphaMaskImage = await convertWhiteEditMaskToAlphaMask({
+    maskImage: preparedReferenceContext.referenceContext.images[1],
+    maskNamePrefix: 'repaint-alpha-mask',
+    maskLabel: 'Repaint',
+  })
+  const providerReferenceContext = {
+    ...preparedReferenceContext.referenceContext,
+    images: [
+      preparedReferenceContext.referenceContext.images[0],
+      ...preparedReferenceContext.referenceContext.images.slice(2),
+    ],
+  }
 
   const generatedImage = await generateImageWithProvider({
-    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    model: DEFAULT_IMAGE_MASK_EDIT_MODEL,
     prompt: buildWorkspaceImageRepaintPrompt({ prompt, resolution }),
-    aspectRatio: 'auto',
+    aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext,
+    referenceContext: providerReferenceContext,
+    maskImage: alphaMaskImage,
+    maskEditQuality: 'medium',
+    logContext: {
+      tool: 'image_repaint',
+      sourceBytes: getUserFileByteSize(providerReferenceContext.images[0]),
+      maskBytes: getUserFileByteSize(alphaMaskImage),
+      referenceBytes: sumUserFileByteSizes(providerReferenceContext.images.slice(1)),
+      sourceWidth: preparedReferenceContext.sourceDimensions.width,
+      sourceHeight: preparedReferenceContext.sourceDimensions.height,
+      maskWidth: preparedReferenceContext.maskDimensions.width,
+      maskHeight: preparedReferenceContext.maskDimensions.height,
+      normalizedMaskWidth: preparedReferenceContext.normalizedMaskDimensions.width,
+      normalizedMaskHeight: preparedReferenceContext.normalizedMaskDimensions.height,
+    },
     abortSignal,
   })
 
@@ -544,17 +982,52 @@ export async function eraseWorkspaceImage({
   maskImage,
   abortSignal,
 }: EraseWorkspaceImageInput): Promise<EraseWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage, maskImage],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for erasing.')
+  }
+  const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
+    text: [],
+    images: [hydratedSourceImage, maskImage],
+  })) ?? { text: [], images: [] }
+  const preparedReferenceContext = await prepareMaskedEditReferenceContext({
+    referenceContext,
+    maskNamePrefix: 'erase-mask',
+    sourceLabel: 'Erase source image',
+    maskLabel: 'Erase',
+  })
+  const alphaMaskImage = await convertWhiteEditMaskToAlphaMask({
+    maskImage: preparedReferenceContext.referenceContext.images[1],
+    maskNamePrefix: 'erase-alpha-mask',
+    maskLabel: 'Erase',
+  })
+  const providerReferenceContext = {
+    ...preparedReferenceContext.referenceContext,
+    images: [preparedReferenceContext.referenceContext.images[0]],
+  }
 
   const generatedImage = await generateImageWithProvider({
-    model: DEFAULT_IMAGE_REPAINT_MODEL,
+    model: DEFAULT_IMAGE_MASK_EDIT_MODEL,
     prompt: buildWorkspaceImageErasePrompt({ resolution }),
-    aspectRatio: 'auto',
+    aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext,
+    referenceContext: providerReferenceContext,
+    maskImage: alphaMaskImage,
+    maskEditQuality: 'medium',
+    logContext: {
+      tool: 'image_erase',
+      sourceBytes: getUserFileByteSize(providerReferenceContext.images[0]),
+      maskBytes: getUserFileByteSize(alphaMaskImage),
+      sourceWidth: preparedReferenceContext.sourceDimensions.width,
+      sourceHeight: preparedReferenceContext.sourceDimensions.height,
+      maskWidth: preparedReferenceContext.maskDimensions.width,
+      maskHeight: preparedReferenceContext.maskDimensions.height,
+      normalizedMaskWidth: preparedReferenceContext.normalizedMaskDimensions.width,
+      normalizedMaskHeight: preparedReferenceContext.normalizedMaskDimensions.height,
+    },
     abortSignal,
   })
 
@@ -582,17 +1055,29 @@ export async function cutoutWorkspaceImage({
   sourceImage,
   abortSignal,
 }: CutoutWorkspaceImageInput): Promise<CutoutWorkspaceImageResult> {
-  const referenceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for cutout.')
+  }
+  const normalizedSourceImage = await normalizeCutoutSourceImageForProvider(hydratedSourceImage)
+  const aspectRatio = await resolveCutoutAspectRatio(normalizedSourceImage)
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_CUTOUT_MODEL,
     prompt: buildWorkspaceImageCutoutPrompt(),
-    aspectRatio: 'auto',
+    aspectRatio,
     resolution: DEFAULT_IMAGE_REPAINT_RESOLUTION,
-    referenceContext,
+    referenceContext: {
+      text: [],
+      images: [normalizedSourceImage],
+    },
+    logContext: {
+      tool: 'cutout',
+      sourceBytes: getUserFileByteSize(normalizedSourceImage),
+    },
     abortSignal,
   })
   const transparentPng = await ensureTransparentPng(generatedImage.buffer)
@@ -622,18 +1107,24 @@ export async function outpaintWorkspaceImage({
   userId,
   resolution,
   sourceImage,
+  targetAspectRatio,
+  customAspectRatio,
   placement,
   prompt,
   abortSignal,
 }: OutpaintWorkspaceImageInput): Promise<OutpaintWorkspaceImageResult> {
-  const sourceContext = await hydrateImageReferenceContext(workspaceId, {
-    text: [],
-    images: [sourceImage],
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
   })
-  const hydratedSourceImage = sourceContext?.images[0]
   if (!hydratedSourceImage) {
     throw new Error('Source image could not be loaded for outpainting.')
   }
+  const aspectRatio = resolveOutpaintAspectRatio({
+    targetAspectRatio,
+    customAspectRatio,
+    placement,
+  })
 
   const { layoutGuide, maskGuide } = await buildOutpaintGuideImages({
     sourceImage: hydratedSourceImage,
@@ -643,12 +1134,18 @@ export async function outpaintWorkspaceImage({
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
-    prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution }),
-    aspectRatio: 'auto',
+    prompt: buildWorkspaceImageOutpaintPrompt({ prompt, resolution, placement }),
+    aspectRatio,
     resolution,
     referenceContext: {
       text: [],
       images: [hydratedSourceImage, layoutGuide, maskGuide],
+    },
+    logContext: {
+      tool: 'image_outpaint',
+      sourceBytes: getUserFileByteSize(hydratedSourceImage),
+      maskBytes: getUserFileByteSize(maskGuide),
+      referenceBytes: getUserFileByteSize(layoutGuide),
     },
     abortSignal,
   })

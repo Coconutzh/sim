@@ -61,6 +61,7 @@ export function MediaContentAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成图片...'
       error={error}
+      widthClassName='w-[520px]'
       header={header}
       onChangePrompt={onChangePrompt}
       onSubmit={onSubmit}

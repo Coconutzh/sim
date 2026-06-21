@@ -30,10 +30,14 @@ describe('image perspective menu helpers', () => {
     })
   })
 
-  it('disables creation when no enabled image model supports image references', () => {
-    expect(getImagePerspectiveModel(availability(['jimeng-4.5', 'jimeng-4.0']))).toMatchObject({
+  it('does not fallback to another image-reference model when the multi-angle model is unavailable', () => {
+    expect(
+      getImagePerspectiveModel(
+        availability(['gemini-3-pro-image', 'gemini-3.1-flash-image-preview'])
+      )
+    ).toEqual({
       model: null,
-      disabledReason: expect.stringContaining('image reference'),
+      disabledReason: 'The multi-angle image model is not available in this workspace.',
     })
   })
 

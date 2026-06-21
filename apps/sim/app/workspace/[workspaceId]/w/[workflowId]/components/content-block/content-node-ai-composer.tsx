@@ -51,6 +51,7 @@ export function ContentNodeAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成内容...'
       error={error}
+      widthClassName='w-[420px]'
       header={header}
       onChangePrompt={onChangePrompt}
       onSubmit={onSubmit}

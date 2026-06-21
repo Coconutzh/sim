@@ -634,20 +634,24 @@ export function resolveHttpsUrlFromFileInput(fileInput: unknown): string | null 
   return url
 }
 
-function resolveStorageKeyFromRawFile(file: RawFileInput): string | null {
+export function resolveStorageKeyFromFileInput(
+  file: Pick<RawFileInput, 'key' | 'path' | 'url'>
+): string | null {
   if (file.key) {
-    return file.key
+    return file.key.trim() || null
   }
 
   if (file.path) {
-    if (isUrlLike(file.path)) {
-      return isInternalFileUrl(file.path) ? extractStorageKey(file.path) : null
+    const path = file.path.trim()
+    if (isUrlLike(path)) {
+      return isInternalFileUrl(path) ? extractStorageKey(path) : null
     }
-    return file.path
+    return path || null
   }
 
   if (file.url) {
-    return isInternalFileUrl(file.url) ? extractStorageKey(file.url) : null
+    const url = file.url.trim()
+    return isInternalFileUrl(url) ? extractStorageKey(url) : null
   }
 
   return null
@@ -674,7 +678,7 @@ function convertToUserFile(file: RawFileInput, requestId: string, logger: Logger
     }
   }
 
-  const storageKey = resolveStorageKeyFromRawFile(file)
+  const storageKey = resolveStorageKeyFromFileInput(file)
   if (!storageKey) {
     return null
   }

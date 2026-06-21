@@ -3,8 +3,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  rehydratePersistedOperationQueue,
   registerEmitFunctions,
+  rehydratePersistedOperationQueue,
   useOperationQueueStore,
 } from '@/stores/operation-queue/store'
 
@@ -309,6 +309,79 @@ describe('operation queue room gating', () => {
         id: 'op-2',
         workflowId: 'workflow-b',
       }),
+    ])
+  })
+
+  it('coalesces pending batch position updates for the same block set', () => {
+    useOperationQueueStore.getState().addToQueue({
+      id: 'op-1',
+      workflowId: 'workflow-a',
+      userId: 'user-1',
+      operation: {
+        operation: 'batch-update-positions',
+        target: 'blocks',
+        payload: {
+          updates: [{ id: 'block-1', position: { x: 10, y: 20 } }],
+        },
+      },
+    })
+    useOperationQueueStore.getState().addToQueue({
+      id: 'op-2',
+      workflowId: 'workflow-a',
+      userId: 'user-1',
+      operation: {
+        operation: 'batch-update-positions',
+        target: 'blocks',
+        payload: {
+          updates: [{ id: 'block-1', position: { x: 30, y: 40 } }],
+        },
+      },
+    })
+
+    expect(useOperationQueueStore.getState().operations).toEqual([
+      expect.objectContaining({
+        id: 'op-2',
+        operation: expect.objectContaining({
+          payload: {
+            updates: [{ id: 'block-1', position: { x: 30, y: 40 } }],
+          },
+        }),
+      }),
+    ])
+  })
+
+  it('does not coalesce batch position updates that are already processing', () => {
+    const workflowEmit = vi.fn()
+    registerEmitFunctions(workflowEmit, vi.fn(), vi.fn(), 'workflow-a')
+
+    useOperationQueueStore.getState().addToQueue({
+      id: 'op-1',
+      workflowId: 'workflow-a',
+      userId: 'user-1',
+      operation: {
+        operation: 'batch-update-positions',
+        target: 'blocks',
+        payload: {
+          updates: [{ id: 'block-1', position: { x: 10, y: 20 } }],
+        },
+      },
+    })
+    useOperationQueueStore.getState().addToQueue({
+      id: 'op-2',
+      workflowId: 'workflow-a',
+      userId: 'user-1',
+      operation: {
+        operation: 'batch-update-positions',
+        target: 'blocks',
+        payload: {
+          updates: [{ id: 'block-1', position: { x: 30, y: 40 } }],
+        },
+      },
+    })
+
+    expect(useOperationQueueStore.getState().operations).toEqual([
+      expect.objectContaining({ id: 'op-1', status: 'processing' }),
+      expect.objectContaining({ id: 'op-2', status: 'pending' }),
     ])
   })
 

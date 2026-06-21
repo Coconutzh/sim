@@ -41,7 +41,12 @@ function WorkflowMinimapComponent({ nodes }: WorkflowMinimapProps) {
       isCollapsed: state.isCollapsed,
     }))
   )
-  usePanelStore((state) => state.panelWidth)
+  usePanelStore(
+    useShallow((state) => ({
+      panelWidth: state.panelWidth,
+      isCollapsed: state.isCollapsed,
+    }))
+  )
   useTerminalStore((state) => state.terminalHeight)
 
   useEffect(() => {

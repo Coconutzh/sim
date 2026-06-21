@@ -188,6 +188,7 @@ export function AudioContentAiComposer({
       isGenerating={isGenerating}
       loadingLabel='AI 正在生成音频...'
       error={error}
+      widthClassName='w-[480px]'
       header={header}
       afterFooter={
         settingsOpen ? (

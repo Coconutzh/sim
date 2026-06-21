@@ -66,6 +66,7 @@ import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/block-menu'
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
+import { getNextContentReferencesForSource } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-reference-flow-utils'
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
 import { ErrorBoundary } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/error/index'
 import { Notifications } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/notifications/notifications'
@@ -149,7 +150,6 @@ import { useContentCanvasSelectionStore } from '@/stores/copilot/content-canvas-
 import { defaultWorkflowExecutionState, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
 import { usePanelEditorStore } from '@/stores/panel'
-import { usePanelStore } from '@/stores/panel/store'
 import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -537,7 +537,6 @@ const WorkflowContent = React.memo(
     const [contentReferenceEdgeMenu, setContentReferenceEdgeMenu] =
       useState<ContentReferenceEdgeMenuState | null>(null)
     const [isErrorConnectionDrag, setIsErrorConnectionDrag] = useState(false)
-    const [isHeavyEditorChromeLoaded, setIsHeavyEditorChromeLoaded] = useState(!IS_LOW_MEMORY_DEV)
     const [nodeTypesForRender, setNodeTypesForRender] = useState<NodeTypes>(liteNodeTypes)
     const [edgeTypesForRender, setEdgeTypesForRender] = useState<EdgeTypes>(liteEdgeTypes)
     const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -562,7 +561,6 @@ const WorkflowContent = React.memo(
       embedded,
     })
     const { emitCursorUpdate, joinWorkflow, leaveWorkflow } = useSocket()
-    const activePanelTab = usePanelStore((state) => state.activeTab)
     const shouldUseFullNodeTypes = !IS_LOW_MEMORY_DEV || embedded || sandbox
     const contentReferenceSelection = useContentReferenceSelectionStore((state) => state.selection)
     const clearContentReferenceSelection = useContentReferenceSelectionStore(
@@ -4299,6 +4297,15 @@ const WorkflowContent = React.memo(
       [blocks, setDragStartPosition, getNodes, setPotentialParentId]
     )
 
+    const getChangedPositionUpdates = useCallback(
+      (updates: Array<{ id: string; position: { x: number; y: number } }>) =>
+        updates.filter((update) => {
+          const previous = multiNodeDragStartRef.current.get(update.id)
+          return !previous || previous.x !== update.position.x || previous.y !== update.position.y
+        }),
+      []
+    )
+
     /** Handles node drag stop to establish parent-child relationships. */
     const onNodeDragStop = useCallback(
       (_event: React.MouseEvent, node: any) => {
@@ -4311,9 +4318,13 @@ const WorkflowContent = React.memo(
         // If multiple nodes are selected, update all their positions
         if (selectedNodes.length > 1) {
           const positionUpdates = computeClampedPositionUpdates(selectedNodes, blocks, allNodes)
-          collaborativeBatchUpdatePositions(positionUpdates, {
-            previousPositions: multiNodeDragStartRef.current,
-          })
+          const changedPositionUpdates = getChangedPositionUpdates(positionUpdates)
+
+          if (changedPositionUpdates.length > 0) {
+            collaborativeBatchUpdatePositions(changedPositionUpdates, {
+              previousPositions: multiNodeDragStartRef.current,
+            })
+          }
 
           // Only reparent when an actual drag changed the target container.
           // onNodeDragStart sets both potentialParentId and dragStartParentId to the
@@ -4336,20 +4347,36 @@ const WorkflowContent = React.memo(
 
         // Single node drag - original logic
         const finalPosition = getClampedPositionForNode(node.id, node.position, blocks, allNodes)
+        const start = getDragStartPosition()
+        const before =
+          start && start.id === node.id
+            ? { x: start.x, y: start.y, parentId: start.parentId ?? null }
+            : null
+        const after = {
+          x: finalPosition.x,
+          y: finalPosition.y,
+          parentId: node.parentId || blocks[node.id]?.data?.parentId || null,
+        }
+        const currentBlockPosition = blocks[node.id]?.position
+        const moved = before
+          ? before.x !== after.x || before.y !== after.y || before.parentId !== after.parentId
+          : !currentBlockPosition ||
+            currentBlockPosition.x !== finalPosition.x ||
+            currentBlockPosition.y !== finalPosition.y
+        const parentChanged = potentialParentId !== dragStartParentId
+
+        if (!moved && !parentChanged) {
+          if (before) {
+            setDragStartPosition(null)
+          }
+          setPotentialParentId(null)
+          return
+        }
 
         updateBlockPosition(node.id, finalPosition)
 
         // Record single move entry on drag end to avoid micro-moves
-        const start = getDragStartPosition()
-        if (start && start.id === node.id) {
-          const before = { x: start.x, y: start.y, parentId: start.parentId }
-          const after = {
-            x: finalPosition.x,
-            y: finalPosition.y,
-            parentId: node.parentId || blocks[node.id]?.data?.parentId,
-          }
-          const moved =
-            before.x !== after.x || before.y !== after.y || before.parentId !== after.parentId
+        if (before) {
           if (moved) {
             window.dispatchEvent(
               new CustomEvent('workflow-record-move', {
@@ -4547,6 +4574,7 @@ const WorkflowContent = React.memo(
         activeWorkflowId,
         collaborativeBatchUpdatePositions,
         executeBatchParentUpdate,
+        getChangedPositionUpdates,
         resetDragHighlights,
       ]
     )
@@ -4706,9 +4734,12 @@ const WorkflowContent = React.memo(
 
         const allNodes = getNodes()
         const positionUpdates = computeClampedPositionUpdates(nodes, blocks, allNodes)
-        collaborativeBatchUpdatePositions(positionUpdates, {
-          previousPositions: multiNodeDragStartRef.current,
-        })
+        const changedPositionUpdates = getChangedPositionUpdates(positionUpdates)
+        if (changedPositionUpdates.length > 0) {
+          collaborativeBatchUpdatePositions(changedPositionUpdates, {
+            previousPositions: multiNodeDragStartRef.current,
+          })
+        }
 
         // Process parent updates using shared helper
         executeBatchParentUpdate(nodes, potentialParentId, 'Batch moved selection to new parent')
@@ -4722,6 +4753,7 @@ const WorkflowContent = React.memo(
         blocks,
         getNodes,
         collaborativeBatchUpdatePositions,
+        getChangedPositionUpdates,
         potentialParentId,
         executeBatchParentUpdate,
         resetDragHighlights,
@@ -5109,23 +5141,20 @@ const WorkflowContent = React.memo(
             return
           }
 
-          const referenceRole = getDefaultReferenceRole({
-            targetVariant: contentReferenceSelection.sourceVariant,
-            model: contentReferenceSelection.sourceModel,
-            sourceVariant: targetVariant,
-          })
-          if (!referenceRole) {
+          const { referenceRole, nextReferences, disabledReason } =
+            getNextContentReferencesForSource({
+              targetVariant: contentReferenceSelection.sourceVariant,
+              targetModel: contentReferenceSelection.sourceModel,
+              targetReferences: getCurrentContentReferences(
+                contentReferenceSelection.sourceBlockId
+              ),
+              sourceBlockId: node.id,
+              sourceVariant: targetVariant,
+            })
+          if (!referenceRole || disabledReason) {
             return
           }
 
-          const nextReferences = upsertContentReference(
-            getCurrentContentReferences(contentReferenceSelection.sourceBlockId),
-            {
-              sourceBlockId: node.id,
-              sourceVariant: targetVariant,
-              role: referenceRole,
-            }
-          )
           setContentReferencesForBlock(contentReferenceSelection.sourceBlockId, nextReferences)
 
           const alreadyLinked = edges.some(
@@ -5485,7 +5514,6 @@ const WorkflowContent = React.memo(
       scheduleEmbeddedFit()
     }, [blocksStructureHash, embedded, isWorkflowReady, scheduleEmbeddedFit])
 
-    const shouldRenderEditorPanel = embedded || sandbox || isHeavyEditorChromeLoaded
     const shouldRenderAuxiliaryEditorChrome = !IS_LOW_MEMORY_DEV || embedded || sandbox
 
     return (
@@ -5758,11 +5786,7 @@ const WorkflowContent = React.memo(
             )}
 
             <Notifications embedded={embedded} />
-            {!embedded && !sandbox && (
-              <CanvasThemeToggle
-                avoidTopRightChrome={IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded}
-              />
-            )}
+            {!embedded && !sandbox && <CanvasThemeToggle />}
             {!embedded && isWorkflowSearchReplaceOpen && (
               <Suspense fallback={null}>
                 <LazyWorkflowSearchReplace />
@@ -5787,20 +5811,7 @@ const WorkflowContent = React.memo(
           </div>
         </div>
 
-        {!embedded && IS_LOW_MEMORY_DEV && !isHeavyEditorChromeLoaded && (
-          <button
-            type='button'
-            className='absolute top-3 right-3 z-20 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-sm'
-            onClick={() => {
-              usePanelStore.getState().setActiveTab('toolbar')
-              setIsHeavyEditorChromeLoaded(true)
-            }}
-          >
-            Load editor panels
-          </button>
-        )}
-
-        {(!embedded || sandbox) && shouldRenderEditorPanel && (
+        {(!embedded || sandbox) && (
           <Suspense fallback={null}>
             <LazyPanel workspaceId={sandbox ? workspaceId : undefined} />
           </Suspense>

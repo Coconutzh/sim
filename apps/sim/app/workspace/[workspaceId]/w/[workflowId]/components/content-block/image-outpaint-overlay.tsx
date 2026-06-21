@@ -1,7 +1,7 @@
 'use client'
 
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Image as ImageIcon, Loader2, Proportions, Send, X } from 'lucide-react'
 import type {
   ImageGenerationResolution,
@@ -12,7 +12,7 @@ import {
   clamp,
   clampFrameToContainSubject,
   createInitialContainingFrame,
-  fitFrameToAspectRatio,
+  fitFrameToAspectRatioFromStableBase,
   getElementScale,
   getPlacementFromFrame,
   getRelativeElementRect,
@@ -20,7 +20,10 @@ import {
   type ResizeHandle,
   resizeFrameToContainSubject,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-edit-geometry'
-import { useImageOutpaintSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
+import {
+  normalizeImageOutpaintFile,
+  type SubmitImageOutpaintParams,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
 
 interface UploadedFileValue {
   id?: string
@@ -39,21 +42,20 @@ interface ImageOutpaintOverlayProps {
   sourceFile: UploadedFileValue
   isProcessingNode: boolean
   onCancel: () => void
-  onCreateVariant: (
-    file: UploadedFileValue,
-    targetAspectRatio: ImageOutpaintAspectRatio
-  ) => Promise<void> | void
+  onSubmitOutpaint: (params: SubmitImageOutpaintParams) => Promise<void> | void
 }
 
 type OutpaintInteraction =
   | {
       type: 'move'
+      pointerId: number
       pointer: { x: number; y: number }
       frame: Rect
     }
   | {
       type: 'resize'
       handle: ResizeHandle
+      pointerId: number
       pointer: { x: number; y: number }
       frame: Rect
     }
@@ -105,7 +107,7 @@ export function ImageOutpaintOverlay({
   sourceFile,
   isProcessingNode,
   onCancel,
-  onCreateVariant,
+  onSubmitOutpaint,
 }: ImageOutpaintOverlayProps) {
   const [subjectBounds, setSubjectBounds] = useState<Rect | null>(null)
   const [frame, setFrame] = useState<Rect | null>(null)
@@ -114,6 +116,10 @@ export function ImageOutpaintOverlay({
   const [resolution, setResolution] = useState<ImageGenerationResolution>('2K')
   const [isAspectMenuOpen, setIsAspectMenuOpen] = useState(false)
   const [interaction, setInteraction] = useState<OutpaintInteraction | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const pointerCaptureRef = useRef<{ element: HTMLElement; pointerId: number } | null>(null)
+  const manualFrameRef = useRef<Rect | null>(null)
   const selectedRatio = useMemo(() => {
     if (aspectRatio === 'original') {
       return subjectBounds ? subjectBounds.width / subjectBounds.height : null
@@ -122,11 +128,12 @@ export function ImageOutpaintOverlay({
     return RATIO_VALUES[aspectRatio] ?? null
   }, [aspectRatio, customRatio, subjectBounds])
   const isProcessing = isProcessingNode
-  const { abort, disabledReason, error, isSubmitting, setError, submit } = useImageOutpaintSession({
-    workspaceId,
-    sourceFile,
-    onCreateVariant,
-  })
+  const normalizedSourceFile = normalizeImageOutpaintFile(sourceFile)
+  const disabledReason = !workspaceId
+    ? '缺少工作区上下文。'
+    : !normalizedSourceFile.key
+      ? '源图片缺少文件信息。'
+      : null
   const controlsDisabled = isProcessing || isSubmitting
 
   const updateBounds = useCallback(() => {
@@ -137,11 +144,15 @@ export function ImageOutpaintOverlay({
     if (nextSubjectBounds.width <= 0 || nextSubjectBounds.height <= 0) return
 
     setSubjectBounds(nextSubjectBounds)
-    setFrame((current) =>
-      current
+    setFrame((current) => {
+      const nextFrame = current
         ? clampFrameToContainSubject(current, nextSubjectBounds)
         : createInitialContainingFrame(nextSubjectBounds)
-    )
+      manualFrameRef.current = manualFrameRef.current
+        ? clampFrameToContainSubject(manualFrameRef.current, nextSubjectBounds)
+        : nextFrame
+      return nextFrame
+    })
   }, [imageRef, rootRef])
 
   useEffect(() => {
@@ -161,14 +172,32 @@ export function ImageOutpaintOverlay({
   }, [imageRef, rootRef, updateBounds])
 
   useEffect(() => {
-    if (!subjectBounds || !frame || !selectedRatio) return
-    setFrame(fitFrameToAspectRatio({ frame, subject: subjectBounds, ratio: selectedRatio }))
-  }, [aspectRatio, customRatio.height, customRatio.width, selectedRatio])
+    if (!subjectBounds || !selectedRatio) return
+    const baseFrame = manualFrameRef.current ?? frame
+    if (!baseFrame) return
+    setFrame(
+      fitFrameToAspectRatioFromStableBase({
+        baseFrame,
+        subject: subjectBounds,
+        ratio: selectedRatio,
+      })
+    )
+  }, [aspectRatio, customRatio.height, customRatio.width, selectedRatio, subjectBounds])
 
   useEffect(() => {
     if (!interaction || !subjectBounds) return
 
+    const releasePointerCapture = () => {
+      const capture = pointerCaptureRef.current
+      if (!capture) return
+      if (capture.element.hasPointerCapture(capture.pointerId)) {
+        capture.element.releasePointerCapture(capture.pointerId)
+      }
+      pointerCaptureRef.current = null
+    }
+
     const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== interaction.pointerId) return
       event.preventDefault()
       event.stopPropagation()
       const root = rootRef.current
@@ -179,33 +208,35 @@ export function ImageOutpaintOverlay({
       }
 
       if (interaction.type === 'move') {
-        setFrame(
-          clampFrameToContainSubject(
-            {
-              ...interaction.frame,
-              x: interaction.frame.x + delta.x,
-              y: interaction.frame.y + delta.y,
-            },
-            subjectBounds
-          )
+        const nextFrame = clampFrameToContainSubject(
+          {
+            ...interaction.frame,
+            x: interaction.frame.x + delta.x,
+            y: interaction.frame.y + delta.y,
+          },
+          subjectBounds
         )
+        manualFrameRef.current = nextFrame
+        setFrame(nextFrame)
         return
       }
 
-      setFrame(
-        resizeFrameToContainSubject({
-          frame: interaction.frame,
-          handle: interaction.handle,
-          delta,
-          subject: subjectBounds,
-          ratio: selectedRatio,
-        })
-      )
+      const nextFrame = resizeFrameToContainSubject({
+        frame: interaction.frame,
+        handle: interaction.handle,
+        delta,
+        subject: subjectBounds,
+        ratio: selectedRatio,
+      })
+      manualFrameRef.current = nextFrame
+      setFrame(nextFrame)
     }
 
     const clearInteraction = (event: PointerEvent) => {
+      if (event.pointerId !== interaction.pointerId) return
       event.preventDefault()
       event.stopPropagation()
+      releasePointerCapture()
       setInteraction(null)
     }
 
@@ -213,6 +244,7 @@ export function ImageOutpaintOverlay({
     window.addEventListener('pointerup', clearInteraction, true)
     window.addEventListener('pointercancel', clearInteraction, true)
     return () => {
+      releasePointerCapture()
       window.removeEventListener('pointermove', handlePointerMove, true)
       window.removeEventListener('pointerup', clearInteraction, true)
       window.removeEventListener('pointercancel', clearInteraction, true)
@@ -224,12 +256,18 @@ export function ImageOutpaintOverlay({
       event: ReactPointerEvent<HTMLElement>,
       nextInteraction: { type: 'move' } | { type: 'resize'; handle: ResizeHandle }
     ) => {
-      if (!frame || controlsDisabled) return
       event.preventDefault()
       event.stopPropagation()
+      if (!frame || controlsDisabled) return
+      event.currentTarget.setPointerCapture(event.pointerId)
+      pointerCaptureRef.current = {
+        element: event.currentTarget,
+        pointerId: event.pointerId,
+      }
       setError(null)
       setInteraction({
         ...nextInteraction,
+        pointerId: event.pointerId,
         pointer: { x: event.clientX, y: event.clientY },
         frame,
       })
@@ -244,13 +282,12 @@ export function ImageOutpaintOverlay({
     }
   }, [])
 
-  const cancel = useCallback(() => {
-    abort()
-    onCancel()
-  }, [abort, onCancel])
-
   const handleSubmit = useCallback(async () => {
     if (!frame || !subjectBounds) return
+    if (disabledReason) {
+      setError(disabledReason)
+      return
+    }
     if (aspectRatio === 'custom') {
       const width = Number(customRatio.width)
       const height = Number(customRatio.height)
@@ -260,27 +297,35 @@ export function ImageOutpaintOverlay({
       }
     }
 
-    await submit({
-      placement: getPlacementFromFrame({ frame, subject: subjectBounds }),
-      resolution,
-      targetAspectRatio: aspectRatio,
-      customAspectRatio:
-        aspectRatio === 'custom'
-          ? {
-              width: Number(customRatio.width),
-              height: Number(customRatio.height),
-            }
-          : undefined,
-    })
+    setIsSubmitting(true)
+    setError(null)
+    try {
+      await onSubmitOutpaint({
+        placement: getPlacementFromFrame({ frame, subject: subjectBounds }),
+        resolution,
+        targetAspectRatio: aspectRatio,
+        customAspectRatio:
+          aspectRatio === 'custom'
+            ? {
+                width: Number(customRatio.width),
+                height: Number(customRatio.height),
+              }
+            : undefined,
+      })
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : '扩图提交失败。')
+    } finally {
+      setIsSubmitting(false)
+    }
   }, [
     aspectRatio,
     customRatio.height,
     customRatio.width,
+    disabledReason,
     frame,
+    onSubmitOutpaint,
     resolution,
-    setError,
     subjectBounds,
-    submit,
   ])
 
   const currentAspectLabel =
@@ -344,7 +389,7 @@ export function ImageOutpaintOverlay({
           title='退出扩图'
           disabled={controlsDisabled}
           className='flex h-8 w-8 items-center justify-center rounded-full text-white/65 transition-colors hover-hover:bg-white/10 hover-hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
-          onClick={cancel}
+          onClick={onCancel}
         >
           <X className='h-4 w-4' />
         </button>

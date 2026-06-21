@@ -229,7 +229,7 @@ export function ImageMaskEditorOverlay({
   const buildMaskImage = useCallback(async (): Promise<ExportedMaskImage | null> => {
     if (!bounds) return null
     const canvas = document.createElement('canvas')
-    const context = resizeMaskCanvas(canvas, bounds)
+    const context = resizeMaskCanvas(canvas, bounds, 'export')
     if (!context) return null
     renderMaskActions({
       context,

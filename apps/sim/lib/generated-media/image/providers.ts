@@ -1,10 +1,12 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
+import { generateShortId } from '@sim/utils/id'
 import { resolveContentService } from '@/lib/content-canvas/service-config'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
   type ImageAspectRatioValue,
   type ImageGenerationModelId,
+  type ImageMaskEditModelId,
   type ImageResolutionValue,
   mapImageAspectRatioToProviderSize,
 } from '@/lib/generated-media/image/image-generation-utils'
@@ -16,6 +18,10 @@ const EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS = 301
 const EVOLINK_FILE_UPLOAD_BASE_URL = 'https://files-api.evolink.ai/api/v1'
 const GEMINI_PRO_IMAGE_MODEL = 'gemini-3-pro-image' as const
 const GEMINI_PRO_IMAGE_PREVIEW_MODEL = 'gemini-3-pro-image-preview' as const
+const GPT_IMAGE_2_MODEL = 'gpt-image-2' as const
+
+type ImageMaskEditQuality = 'low' | 'medium' | 'high'
+type ProviderImageModelId = ImageGenerationModelId | ImageMaskEditModelId
 
 const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>> = {
   'jimeng-4.0': 'doubao-seedream-4-0-250828',
@@ -23,13 +29,27 @@ const JIMENG_PROVIDER_MODEL_MAP: Partial<Record<ImageGenerationModelId, string>>
 }
 
 interface GenerateImageWithProviderInput {
-  model: ImageGenerationModelId
+  model: ProviderImageModelId
   prompt: string
   aspectRatio: ImageAspectRatioValue
   resolution?: ImageResolutionValue
   referenceContext?: {
     text: string[]
     images: UserFileLike[]
+  }
+  maskImage?: UserFileLike
+  maskEditQuality?: ImageMaskEditQuality
+  logContext?: {
+    tool?: string
+    sourceBytes?: number
+    maskBytes?: number
+    referenceBytes?: number
+    sourceWidth?: number
+    sourceHeight?: number
+    maskWidth?: number
+    maskHeight?: number
+    normalizedMaskWidth?: number
+    normalizedMaskHeight?: number
   }
   abortSignal?: AbortSignal
 }
@@ -172,6 +192,53 @@ function getProviderErrorMessage(payload: Record<string, unknown>, fallback: str
   )
 }
 
+function getProviderErrorCategory(errorMessage: string): string {
+  const normalizedMessage = errorMessage.toLowerCase()
+  if (normalizedMessage.includes('invalid parameters')) return 'invalid_parameters'
+  if (normalizedMessage.includes('no available service')) return 'model_unavailable'
+  if (normalizedMessage.includes('timed out') || normalizedMessage.includes('did not complete')) {
+    return 'timeout'
+  }
+  if (normalizedMessage.includes('cancelled') || normalizedMessage.includes('aborted')) {
+    return 'cancelled'
+  }
+  return 'provider_error'
+}
+
+function getGeminiCompatibleImageRequestLogContext({
+  model,
+  aspectRatio,
+  resolution,
+  imageUrlCount,
+  hasMaskUrl,
+  error,
+  logContext,
+}: Pick<GenerateImageWithProviderInput, 'model' | 'aspectRatio' | 'resolution' | 'logContext'> & {
+  imageUrlCount: number
+  hasMaskUrl?: boolean
+  error: string
+}) {
+  return {
+    tool: logContext?.tool ?? 'image_generation',
+    model,
+    size: isGeminiProImageModel(model) || isGptImage2Model(model) ? aspectRatio : resolution,
+    quality: isGeminiProImageModel(model) && resolution ? resolution : null,
+    imageUrlCount,
+    hasMaskUrl: hasMaskUrl ?? null,
+    sourceBytes: logContext?.sourceBytes ?? null,
+    maskBytes: logContext?.maskBytes ?? null,
+    referenceBytes: logContext?.referenceBytes ?? null,
+    sourceWidth: logContext?.sourceWidth ?? null,
+    sourceHeight: logContext?.sourceHeight ?? null,
+    maskWidth: logContext?.maskWidth ?? null,
+    maskHeight: logContext?.maskHeight ?? null,
+    normalizedMaskWidth: logContext?.normalizedMaskWidth ?? null,
+    normalizedMaskHeight: logContext?.normalizedMaskHeight ?? null,
+    errorCategory: getProviderErrorCategory(error),
+    error,
+  }
+}
+
 function getEvolinkFileUploadErrorMessage(
   payload: Record<string, unknown>,
   fallback: string
@@ -217,6 +284,24 @@ function getCompatibleImageFileName(image: UserFileLike): string | undefined {
   return 'reference.png'
 }
 
+function getEvolinkUploadFileName(image: UserFileLike): string {
+  const fileName = getCompatibleImageFileName(image) ?? 'reference.png'
+  const lastDot = fileName.lastIndexOf('.')
+  const hasExtension = lastDot > 0 && lastDot < fileName.length - 1
+  const rawStem = hasExtension ? fileName.slice(0, lastDot) : fileName
+  const extension = hasExtension
+    ? fileName.slice(lastDot)
+    : image.type?.includes('jpeg') || image.type?.includes('jpg')
+      ? '.jpg'
+      : image.type?.includes('webp')
+        ? '.webp'
+        : image.type?.includes('gif')
+          ? '.gif'
+          : '.png'
+  const stem = rawStem.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'reference'
+  return `${stem.slice(0, 80)}-${generateShortId()}${extension}`
+}
+
 function getUploadedEvolinkFileUrl(payload: Record<string, unknown>): string | null {
   const data = payload.data
   if (!data || typeof data !== 'object') return null
@@ -244,7 +329,7 @@ async function uploadEvolinkBase64Image({
     },
     body: JSON.stringify({
       base64_data: dataUrl,
-      file_name: getCompatibleImageFileName(image),
+      file_name: getEvolinkUploadFileName(image),
       upload_path: 'sim-content-canvas',
     }),
   })
@@ -285,6 +370,38 @@ async function toCompatibleImageUrl({
 
   const url = image.url?.trim()
   return url && url.length > 0 ? url : null
+}
+
+function toArkImageInput(image: UserFileLike): string | null {
+  const dataUrl = getCompatibleImageDataUrl(image)
+  if (dataUrl) return dataUrl
+
+  const url = image.url?.trim()
+  return url && url.length > 0 ? url : null
+}
+
+function buildArkImageRequestBody({
+  providerModel,
+  prompt,
+  aspectRatio,
+  referenceImages,
+}: {
+  providerModel: string
+  prompt: string
+  aspectRatio: ImageAspectRatioValue
+  referenceImages: string[]
+}): Record<string, unknown> {
+  return {
+    model: providerModel,
+    prompt,
+    size: mapImageAspectRatioToProviderSize(aspectRatio),
+    response_format: 'b64_json',
+    ...(referenceImages.length === 1
+      ? { image: referenceImages[0] }
+      : referenceImages.length > 1
+        ? { image: referenceImages }
+        : {}),
+  }
 }
 
 function extractTaskId(payload: Record<string, unknown>): string | null {
@@ -384,6 +501,10 @@ function isFailedTaskStatus(status: string | null): boolean {
   return status === 'failed' || status === 'failure' || status === 'error' || status === 'cancelled'
 }
 
+function isProviderInvalidParametersError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes('invalid parameters')
+}
+
 function isModelFallbackError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const message = error.message.toLowerCase()
@@ -396,14 +517,22 @@ function isModelFallbackError(error: unknown): boolean {
   )
 }
 
-function isGeminiProImageModel(model: ImageGenerationModelId): boolean {
+function isGeminiProImageModel(model: ProviderImageModelId): boolean {
   return model === GEMINI_PRO_IMAGE_MODEL || model === GEMINI_PRO_IMAGE_PREVIEW_MODEL
 }
 
-function getEvolinkImageTaskMaxAttempts(model: ImageGenerationModelId): number {
-  return isGeminiProImageModel(model)
+function isGptImage2Model(model: ProviderImageModelId): model is ImageMaskEditModelId {
+  return model === GPT_IMAGE_2_MODEL
+}
+
+function getEvolinkImageTaskMaxAttempts(model: ProviderImageModelId): number {
+  return isGeminiProImageModel(model) || isGptImage2Model(model)
     ? EVOLINK_PRO_IMAGE_TASK_MAX_ATTEMPTS
     : EVOLINK_IMAGE_TASK_DEFAULT_MAX_ATTEMPTS
+}
+
+function resolveGeminiCompatibleServiceModel(model: ProviderImageModelId): ImageGenerationModelId {
+  return isGptImage2Model(model) ? GEMINI_PRO_IMAGE_PREVIEW_MODEL : model
 }
 
 function buildGeminiCompatibleImageRequestBody({
@@ -413,18 +542,26 @@ function buildGeminiCompatibleImageRequestBody({
   resolution,
   referenceContext,
   imageUrls,
+  maskUrl,
+  maskEditQuality,
 }: Pick<
   GenerateImageWithProviderInput,
-  'model' | 'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext'
+  'model' | 'prompt' | 'aspectRatio' | 'resolution' | 'referenceContext' | 'maskEditQuality'
 > & {
   imageUrls: string[]
+  maskUrl?: string
 }): Record<string, unknown> {
   const requestBody: Record<string, unknown> = {
     model,
     prompt: buildImagePrompt({ prompt, aspectRatio, resolution, referenceContext }),
   }
 
-  if (isGeminiProImageModel(model) && resolution) {
+  if (isGptImage2Model(model)) {
+    requestBody.size = aspectRatio
+    if (resolution) requestBody.resolution = resolution
+    requestBody.quality = maskEditQuality ?? 'medium'
+    if (maskUrl) requestBody.mask_url = maskUrl
+  } else if (isGeminiProImageModel(model) && resolution) {
     requestBody.size = aspectRatio
     requestBody.quality = resolution
   } else {
@@ -524,10 +661,16 @@ async function generateImageWithGeminiCompatible({
   aspectRatio,
   resolution,
   referenceContext,
+  maskImage,
+  maskEditQuality,
+  logContext,
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'image', modelId: model })
+  const service = resolveContentService({
+    capability: 'image',
+    modelId: resolveGeminiCompatibleServiceModel(model),
+  })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
@@ -546,6 +689,14 @@ async function generateImageWithGeminiCompatible({
       )
     )
   ).filter((value): value is string => Boolean(value))
+  const maskUrl = maskImage
+    ? await toCompatibleImageUrl({
+        image: maskImage,
+        baseUrl,
+        apiKey,
+        abortSignal,
+      })
+    : undefined
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
     signal: abortSignal,
@@ -561,12 +712,30 @@ async function generateImageWithGeminiCompatible({
         resolution,
         referenceContext,
         imageUrls,
+        maskUrl: maskUrl ?? undefined,
+        maskEditQuality,
       })
     ),
   })
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
   if (!response.ok) {
+    const errorMessage = getProviderErrorMessage(
+      payload,
+      `Gemini compatible image request failed (${response.status})`
+    )
+    logger.error('Gemini compatible image request failed', {
+      status: response.status,
+      ...getGeminiCompatibleImageRequestLogContext({
+        model,
+        aspectRatio,
+        resolution,
+        imageUrlCount: imageUrls.length,
+        hasMaskUrl: Boolean(maskUrl),
+        error: errorMessage,
+        logContext,
+      }),
+    })
     throw new Error(
       getProviderErrorMessage(
         payload,
@@ -624,7 +793,24 @@ async function generateImageWithGeminiCompatible({
       break
     }
     if (isFailedTaskStatus(status)) {
-      throw new Error(getProviderErrorMessage(taskPayload, 'Gemini compatible image task failed'))
+      const errorMessage = getProviderErrorMessage(
+        taskPayload,
+        'Gemini compatible image task failed'
+      )
+      logger.error('Gemini compatible image task failed', {
+        taskId,
+        status,
+        ...getGeminiCompatibleImageRequestLogContext({
+          model,
+          aspectRatio,
+          resolution,
+          imageUrlCount: imageUrls.length,
+          hasMaskUrl: Boolean(maskUrl),
+          error: errorMessage,
+          logContext,
+        }),
+      })
+      throw new Error(errorMessage)
     }
   }
 
@@ -664,7 +850,7 @@ async function generateImageWithArk({
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
 
-  const providerModel = JIMENG_PROVIDER_MODEL_MAP[model]
+  const providerModel = isGptImage2Model(model) ? undefined : JIMENG_PROVIDER_MODEL_MAP[model]
   if (!providerModel) {
     throw new Error(`Unsupported image model: ${model}`)
   }
@@ -675,6 +861,9 @@ async function generateImageWithArk({
   ]
     .filter(Boolean)
     .join('\n\n')
+  const referenceImages = (referenceContext?.images ?? [])
+    .map((image) => toArkImageInput(image))
+    .filter((value): value is string => Boolean(value))
 
   const endpoint = `${service.baseUrl.replace(/\/$/, '')}/images/generations`
   const response = await fetch(endpoint, {
@@ -684,12 +873,14 @@ async function generateImageWithArk({
       Authorization: `Bearer ${service.apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: providerModel,
-      prompt: promptWithReferenceText,
-      size: mapImageAspectRatioToProviderSize(aspectRatio),
-      response_format: 'b64_json',
-    }),
+    body: JSON.stringify(
+      buildArkImageRequestBody({
+        providerModel,
+        prompt: promptWithReferenceText,
+        aspectRatio,
+        referenceImages,
+      })
+    ),
   })
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
@@ -756,6 +947,10 @@ async function generateImageWithArk({
 export async function generateImageWithProvider(
   params: GenerateImageWithProviderInput
 ): Promise<GeneratedImageProviderResult> {
+  if (isGptImage2Model(params.model)) {
+    return generateImageWithGeminiCompatible(params)
+  }
+
   const service = resolveContentService({ capability: 'image', modelId: params.model })
 
   if (
@@ -769,12 +964,16 @@ export async function generateImageWithProvider(
       }
       return await generateImageWithGeminiNative(params)
     } catch (error) {
-      if (params.model !== GEMINI_PRO_IMAGE_MODEL || !isModelFallbackError(error)) {
+      if (
+        params.model !== GEMINI_PRO_IMAGE_MODEL ||
+        (!isModelFallbackError(error) && !isProviderInvalidParametersError(error))
+      ) {
         throw error
       }
       logger.warn('Falling back to Gemini 3 Pro Image preview model', {
         model: params.model,
         fallbackModel: GEMINI_PRO_IMAGE_PREVIEW_MODEL,
+        reason: error instanceof Error ? error.message : 'Unknown error',
       })
       const fallbackParams: GenerateImageWithProviderInput = {
         ...params,
