@@ -49,6 +49,8 @@ export interface SubmitImageOutpaintParams {
   prompt?: string
 }
 
+export type ImageOutpaintRequestMetadata = SubmitImageOutpaintParams
+
 interface RunImageOutpaintRequestParams extends SubmitImageOutpaintParams {
   workspaceId?: string
   sourceFile: UploadedFileValue
@@ -108,9 +110,11 @@ export function mapGeneratedImageOutpaintFile(file: {
 export function buildImageOutpaintPendingSubBlockValues({
   aiAspectRatio,
   reference,
+  request,
 }: {
   aiAspectRatio: ImageAspectRatioValue
   reference: ImageOutpaintReferenceValue
+  request: ImageOutpaintRequestMetadata
 }): Record<string, unknown> {
   return {
     contentVariant: 'image',
@@ -122,6 +126,88 @@ export function buildImageOutpaintPendingSubBlockValues({
     generationKind: 'image_outpaint',
     generationStatus: 'pending',
     generationError: null,
+    imageOutpaintRequest: request,
+  }
+}
+
+function isFinitePositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+function isFiniteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function isOutpaintPlacement(value: unknown): value is OutpaintPlacement {
+  if (!value || typeof value !== 'object') return false
+  const placement = value as Record<string, unknown>
+  return (
+    isFiniteNonNegativeNumber(placement.x) &&
+    isFiniteNonNegativeNumber(placement.y) &&
+    isFinitePositiveNumber(placement.width) &&
+    isFinitePositiveNumber(placement.height) &&
+    isFinitePositiveNumber(placement.canvasWidth) &&
+    isFinitePositiveNumber(placement.canvasHeight)
+  )
+}
+
+function isImageGenerationResolution(value: unknown): value is ImageGenerationResolution {
+  return value === '1K' || value === '2K' || value === '4K'
+}
+
+function isImageOutpaintAspectRatio(value: unknown): value is ImageOutpaintAspectRatio {
+  return (
+    value === 'original' ||
+    value === '1:1' ||
+    value === '4:3' ||
+    value === '3:4' ||
+    value === '16:9' ||
+    value === '9:16' ||
+    value === '21:9' ||
+    value === 'custom'
+  )
+}
+
+function isOutpaintCustomAspectRatio(
+  value: unknown
+): value is NonNullable<ImageOutpaintRequestMetadata['customAspectRatio']> {
+  if (!value || typeof value !== 'object') return false
+  const customAspectRatio = value as Record<string, unknown>
+  return (
+    isFinitePositiveNumber(customAspectRatio.width) &&
+    isFinitePositiveNumber(customAspectRatio.height)
+  )
+}
+
+export function getImageOutpaintRequestMetadata(
+  value: unknown
+): ImageOutpaintRequestMetadata | null {
+  if (!value || typeof value !== 'object') return null
+  const request = value as Record<string, unknown>
+
+  if (
+    !isOutpaintPlacement(request.placement) ||
+    !isImageGenerationResolution(request.resolution) ||
+    !isImageOutpaintAspectRatio(request.targetAspectRatio)
+  ) {
+    return null
+  }
+
+  const customAspectRatio = isOutpaintCustomAspectRatio(request.customAspectRatio)
+    ? request.customAspectRatio
+    : undefined
+  if (request.targetAspectRatio === 'custom' && !customAspectRatio) {
+    return null
+  }
+
+  const prompt = typeof request.prompt === 'string' ? request.prompt : undefined
+
+  return {
+    placement: request.placement,
+    resolution: request.resolution,
+    targetAspectRatio: request.targetAspectRatio,
+    ...(customAspectRatio ? { customAspectRatio } : {}),
+    ...(prompt !== undefined ? { prompt } : {}),
   }
 }
 

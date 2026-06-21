@@ -169,6 +169,7 @@ import { useImageContentAiSession } from '@/app/workspace/[workspaceId]/w/[workf
 import { useImageCutoutSession } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-cutout-session'
 import {
   buildImageOutpaintPendingSubBlockValues,
+  getImageOutpaintRequestMetadata,
   runImageOutpaintRequest,
   type SubmitImageOutpaintParams,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
@@ -1413,6 +1414,7 @@ function MediaContentCard({
   onCreateImageEraseVariant,
   onSubmitImageOutpaint,
   onRetryImageCutout,
+  onRetryImageOutpaint,
   onRetryDerivedImageGeneration,
   onRetryVideoFrameCapture,
   onChangeFile,
@@ -1492,6 +1494,7 @@ function MediaContentCard({
   onCreateImageEraseVariant: (params: SubmitImageEraseParams) => Promise<void> | void
   onSubmitImageOutpaint: (params: SubmitImageOutpaintParams) => Promise<void> | void
   onRetryImageCutout: () => void
+  onRetryImageOutpaint: () => void
   onRetryDerivedImageGeneration: () => void
   onRetryVideoFrameCapture: () => void
   onChangeFile: (value: UploadedFileValue | null) => void
@@ -2303,6 +2306,22 @@ function MediaContentCard({
             <div className='max-w-[240px] text-[var(--text-error)] text-xs'>
               {generationErrorMessage || '扩图失败，请重试。'}
             </div>
+            <button
+              type='button'
+              aria-label='重试扩图'
+              title='重试扩图'
+              className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRetryImageOutpaint()
+              }}
+            >
+              <Expand className='h-3.5 w-3.5' />
+              <span>重试</span>
+            </button>
           </div>
         ) : isDerivedImageGenerationPending ? (
           <div className='nopan flex h-[240px] w-full flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]'>
@@ -4463,6 +4482,7 @@ export const ContentBlock = memo(function ContentBlock({
             outpaintRequest.targetAspectRatio
           ),
           reference,
+          request: outpaintRequest,
         }),
       }
 
@@ -4668,6 +4688,66 @@ export const ContentBlock = memo(function ContentBlock({
     resolvedVariant,
     resolveBlockSourceValues,
     startImageCutoutRequest,
+  ])
+
+  const retryImageOutpaint = useCallback(() => {
+    if (
+      !canEditWorkflow ||
+      data.isPreview ||
+      data.isEmbedded ||
+      resolvedVariant !== 'image' ||
+      resolvedGenerationKind !== 'image_outpaint'
+    ) {
+      return
+    }
+
+    const sourceReference = resolvedContentReferences.find(
+      (reference) => reference.sourceVariant === 'image'
+    )
+    if (!sourceReference) {
+      failImageOutpaint(id, '缺少源图片引用，无法重试扩图。')
+      return
+    }
+
+    const sourceFile = extractStoredValue<UploadedFileValue | null>(
+      resolveBlockSourceValues(sourceReference.sourceBlockId),
+      'file',
+      null
+    )
+    if (!sourceFile?.key) {
+      failImageOutpaint(id, '源图片缺少文件信息。')
+      return
+    }
+
+    const request = getImageOutpaintRequestMetadata(
+      extractStoredValue<unknown>(resolveBlockSourceValues(id), 'imageOutpaintRequest', null)
+    )
+    if (!request) {
+      failImageOutpaint(id, '缺少扩图参数，无法重试。')
+      return
+    }
+
+    collaborativeSetSubblockValue(id, 'generationKind', 'image_outpaint')
+    collaborativeSetSubblockValue(id, 'generationStatus', 'pending')
+    collaborativeSetSubblockValue(id, 'generationError', null)
+    collaborativeSetSubblockValue(id, 'file', null)
+    startImageOutpaintRequest({
+      ...request,
+      targetBlockId: id,
+      sourceFile,
+    })
+  }, [
+    canEditWorkflow,
+    collaborativeSetSubblockValue,
+    data.isEmbedded,
+    data.isPreview,
+    failImageOutpaint,
+    id,
+    resolvedContentReferences,
+    resolvedGenerationKind,
+    resolvedVariant,
+    resolveBlockSourceValues,
+    startImageOutpaintRequest,
   ])
 
   const retryDerivedImageGeneration = useCallback(() => {
@@ -5556,6 +5636,7 @@ export const ContentBlock = memo(function ContentBlock({
             onCreateImageEraseVariant={createImageEraseVariantNode}
             onSubmitImageOutpaint={createImageOutpaintVariantNode}
             onRetryImageCutout={retryImageCutout}
+            onRetryImageOutpaint={retryImageOutpaint}
             onRetryDerivedImageGeneration={retryDerivedImageGeneration}
             onRetryVideoFrameCapture={retryVideoFrameCapture}
             onChangeFile={(value) => {

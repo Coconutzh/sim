@@ -7,6 +7,7 @@ import {
   cutoutWorkspaceImageContract,
   eraseWorkspaceImageBodySchema,
   outpaintWorkspaceImageBodySchema,
+  repaintWorkspaceImageBodySchema,
 } from '@/lib/api/contracts/media-images'
 
 const sourceImage = {
@@ -73,6 +74,38 @@ describe('media image contracts', () => {
       maskImage: {
         name: 'erase-mask.png',
       },
+    })
+  })
+
+  it('validates repaint source image, mask image, references, prompt, and resolution', () => {
+    const parsed = repaintWorkspaceImageBodySchema.parse({
+      workspaceId: 'ws-1',
+      prompt: 'Replace the sign',
+      sourceImage,
+      maskImage: {
+        id: '',
+        name: 'repaint-mask.png',
+        url: '',
+        key: 'repaint-mask.png',
+        size: 32,
+        type: 'image/png',
+        base64: Buffer.from('mask').toString('base64'),
+      },
+      referenceImages: [],
+      resolution: '4K',
+    })
+
+    expect(parsed).toMatchObject({
+      workspaceId: 'ws-1',
+      prompt: 'Replace the sign',
+      resolution: '4K',
+      sourceImage: {
+        id: 'source-1',
+      },
+      maskImage: {
+        name: 'repaint-mask.png',
+      },
+      referenceImages: [],
     })
   })
 

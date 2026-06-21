@@ -113,7 +113,7 @@ interface ImageDimensions {
   height: number
 }
 
-interface PreparedRepaintReferenceContext {
+interface PreparedMaskedEditReferenceContext {
   referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
   aspectRatio: ImageAspectRatioValue
   sourceDimensions: ImageDimensions
@@ -424,14 +424,18 @@ async function resolveCutoutAspectRatio(sourceImage: UserFileLike): Promise<Imag
   return resolveHydratedImageAspectRatio(sourceImage)
 }
 
-async function normalizeRepaintMaskToSource({
+async function normalizeMaskToSource({
   maskImage,
   sourceDimensions,
   maskDimensions,
+  maskNamePrefix,
+  maskLabel,
 }: {
   maskImage: UserFileLike
   sourceDimensions: ImageDimensions
   maskDimensions: ImageDimensions
+  maskNamePrefix: string
+  maskLabel: string
 }): Promise<UserFileLike> {
   if (
     sourceDimensions.width === maskDimensions.width &&
@@ -442,7 +446,7 @@ async function normalizeRepaintMaskToSource({
 
   const maskBuffer = getHydratedImageBuffer(maskImage)
   if (!maskBuffer) {
-    throw new Error('Repaint mask image could not be loaded.')
+    throw new Error(`${maskLabel} mask image could not be loaded.`)
   }
 
   const normalizedMaskBuffer = await sharp(maskBuffer, { limitInputPixels: false })
@@ -456,31 +460,41 @@ async function normalizeRepaintMaskToSource({
   return {
     ...maskImage,
     id: '',
-    name: maskImage.name?.trim() || 'repaint-mask.png',
+    name: maskImage.name?.trim() || `${maskNamePrefix}.png`,
     url: '',
-    key: `repaint-mask-${generateShortId()}.png`,
+    key: `${maskNamePrefix}-${generateShortId()}.png`,
     size: normalizedMaskBuffer.byteLength,
     type: 'image/png',
     base64: normalizedMaskBuffer.toString('base64'),
   }
 }
 
-async function prepareRepaintReferenceContext(
+async function prepareMaskedEditReferenceContext({
+  referenceContext,
+  maskNamePrefix,
+  sourceLabel,
+  maskLabel,
+}: {
   referenceContext: NonNullable<GenerateWorkspaceImageFromPromptInput['referenceContext']>
-): Promise<PreparedRepaintReferenceContext> {
+  maskNamePrefix: string
+  sourceLabel: string
+  maskLabel: string
+}): Promise<PreparedMaskedEditReferenceContext> {
   const sourceImage = referenceContext.images[0]
   const maskImage = referenceContext.images[1]
-  const sourceDimensions = await getHydratedImageDimensions(sourceImage, 'Repaint source image')
-  const maskDimensions = await getHydratedImageDimensions(maskImage, 'Repaint mask image')
-  const normalizedMaskImage = await normalizeRepaintMaskToSource({
+  const sourceDimensions = await getHydratedImageDimensions(sourceImage, sourceLabel)
+  const maskDimensions = await getHydratedImageDimensions(maskImage, `${maskLabel} mask image`)
+  const normalizedMaskImage = await normalizeMaskToSource({
     maskImage,
     sourceDimensions,
     maskDimensions,
+    maskNamePrefix,
+    maskLabel,
   })
   const normalizedMaskDimensions =
     normalizedMaskImage === maskImage
       ? maskDimensions
-      : await getHydratedImageDimensions(normalizedMaskImage, 'Normalized repaint mask image')
+      : await getHydratedImageDimensions(normalizedMaskImage, `Normalized ${maskLabel} mask image`)
 
   return {
     referenceContext: {
@@ -837,11 +851,23 @@ export async function repaintWorkspaceImage({
   referenceImages,
   abortSignal,
 }: RepaintWorkspaceImageInput): Promise<RepaintWorkspaceImageResult> {
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
+  })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for repainting.')
+  }
   const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
     text: [],
-    images: [sourceImage, maskImage, ...referenceImages],
+    images: [hydratedSourceImage, maskImage, ...referenceImages],
   })) ?? { text: [], images: [] }
-  const preparedReferenceContext = await prepareRepaintReferenceContext(referenceContext)
+  const preparedReferenceContext = await prepareMaskedEditReferenceContext({
+    referenceContext,
+    maskNamePrefix: 'repaint-mask',
+    sourceLabel: 'Repaint source image',
+    maskLabel: 'Repaint',
+  })
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
@@ -892,22 +918,43 @@ export async function eraseWorkspaceImage({
   maskImage,
   abortSignal,
 }: EraseWorkspaceImageInput): Promise<EraseWorkspaceImageResult> {
+  const hydratedSourceImage = await resolveMediaEditWorkspaceFile({
+    workspaceId,
+    file: sourceImage,
+  })
+  if (!hydratedSourceImage) {
+    throw new Error('Source image could not be loaded for erasing.')
+  }
   const referenceContext = (await hydrateImageReferenceContext(workspaceId, {
     text: [],
-    images: [sourceImage, maskImage],
+    images: [hydratedSourceImage, maskImage],
   })) ?? { text: [], images: [] }
+  const preparedReferenceContext = await prepareMaskedEditReferenceContext({
+    referenceContext,
+    maskNamePrefix: 'erase-mask',
+    sourceLabel: 'Erase source image',
+    maskLabel: 'Erase',
+  })
 
   const generatedImage = await generateImageWithProvider({
     model: DEFAULT_IMAGE_REPAINT_MODEL,
     prompt: buildWorkspaceImageErasePrompt({ resolution }),
-    aspectRatio: 'auto',
+    aspectRatio: preparedReferenceContext.aspectRatio,
     resolution,
-    referenceContext,
+    referenceContext: preparedReferenceContext.referenceContext,
     logContext: {
       tool: 'image_erase',
-      sourceBytes: getUserFileByteSize(referenceContext.images[0]),
-      maskBytes: getUserFileByteSize(referenceContext.images[1]),
-      referenceBytes: sumUserFileByteSizes(referenceContext.images.slice(2)),
+      sourceBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[0]),
+      maskBytes: getUserFileByteSize(preparedReferenceContext.referenceContext.images[1]),
+      referenceBytes: sumUserFileByteSizes(
+        preparedReferenceContext.referenceContext.images.slice(2)
+      ),
+      sourceWidth: preparedReferenceContext.sourceDimensions.width,
+      sourceHeight: preparedReferenceContext.sourceDimensions.height,
+      maskWidth: preparedReferenceContext.maskDimensions.width,
+      maskHeight: preparedReferenceContext.maskDimensions.height,
+      normalizedMaskWidth: preparedReferenceContext.normalizedMaskDimensions.width,
+      normalizedMaskHeight: preparedReferenceContext.normalizedMaskDimensions.height,
     },
     abortSignal,
   })

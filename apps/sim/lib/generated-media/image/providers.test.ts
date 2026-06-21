@@ -475,6 +475,12 @@ describe('generateImageWithProvider', () => {
       prompt: 'Cut out the subject',
       aspectRatio: '1:1',
       resolution: '2K',
+      logContext: {
+        tool: 'cutout',
+        sourceBytes: 1024,
+        maskBytes: 0,
+        referenceBytes: 0,
+      },
       referenceContext: {
         text: [],
         images: [
@@ -503,8 +509,14 @@ describe('generateImageWithProvider', () => {
         taskId: 'task-invalid',
         status: 'failed',
         error: expect.stringContaining('Invalid parameters'),
+        errorCategory: 'invalid_parameters',
+        tool: 'cutout',
         size: '1:1',
         quality: '2K',
+        imageUrlCount: 1,
+        sourceBytes: 1024,
+        maskBytes: 0,
+        referenceBytes: 0,
       })
     )
     expect(loggerMock.warn).toHaveBeenCalledWith(

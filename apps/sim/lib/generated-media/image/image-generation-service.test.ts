@@ -113,7 +113,11 @@ describe('resolveOutpaintAspectRatio', () => {
 
 describe('generateWorkspaceImageFromPrompt', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    mockFetchWorkspaceFileBuffer.mockReset()
+    mockGenerateImageWithProvider.mockReset()
+    mockGetWorkspaceFile.mockReset()
+    mockGetWorkspaceFileByKey.mockReset()
+    mockUploadWorkspaceFile.mockReset()
   })
 
   it('generates a single image, saves it as a workspace file, and returns the file result', async () => {
@@ -437,18 +441,26 @@ describe('generateWorkspaceImageFromPrompt', () => {
   })
 
   it('erases with fixed Nano Banana Pro model, resolution, source image, and mask', async () => {
+    const sourcePng = await createSolidPng({
+      width: 1600,
+      height: 1200,
+      color: { r: 255, g: 255, b: 255 },
+    })
+    const maskPng = await createSolidPng({
+      width: 400,
+      height: 300,
+      color: { r: 255, g: 255, b: 255 },
+    })
     mockGetWorkspaceFile.mockImplementation(async (_workspaceId: string, fileId: string) => ({
       id: fileId,
       name: `${fileId}.png`,
       key: `workspace/${fileId}.png`,
       url: '',
-      size: 99,
+      size: sourcePng.byteLength,
       type: 'image/png',
       context: 'workspace',
     }))
-    mockFetchWorkspaceFileBuffer.mockImplementation(async (fileRecord: { id: string }) =>
-      Buffer.from(`${fileRecord.id}-binary`)
-    )
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(sourcePng)
     mockGenerateImageWithProvider.mockResolvedValue({
       buffer: Buffer.from('erased-image'),
       mimeType: 'image/png',
@@ -474,7 +486,7 @@ describe('generateWorkspaceImageFromPrompt', () => {
         name: 'source.png',
         url: '',
         key: 'workspace/source.png',
-        size: 100,
+        size: sourcePng.byteLength,
         type: 'image/png',
       },
       maskImage: {
@@ -482,39 +494,56 @@ describe('generateWorkspaceImageFromPrompt', () => {
         name: 'mask.png',
         url: '',
         key: 'mask.png',
-        size: 50,
+        size: maskPng.byteLength,
         type: 'image/png',
-        base64: Buffer.from('mask-binary').toString('base64'),
+        base64: maskPng.toString('base64'),
       },
     })
 
     expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'gemini-3-pro-image',
-        aspectRatio: 'auto',
+        aspectRatio: '4:3',
         resolution: '2K',
         prompt: expect.stringContaining('white/visible painted areas should be removed'),
         logContext: {
           tool: 'image_erase',
-          sourceBytes: 100,
-          maskBytes: 50,
+          sourceBytes: sourcePng.byteLength,
+          maskBytes: expect.any(Number),
           referenceBytes: undefined,
+          sourceWidth: 1600,
+          sourceHeight: 1200,
+          maskWidth: 400,
+          maskHeight: 300,
+          normalizedMaskWidth: 1600,
+          normalizedMaskHeight: 1200,
         },
         referenceContext: {
           text: [],
           images: [
             expect.objectContaining({
               id: 'source-1',
-              base64: Buffer.from('source-1-binary').toString('base64'),
+              base64: sourcePng.toString('base64'),
             }),
             expect.objectContaining({
-              key: 'mask.png',
-              base64: Buffer.from('mask-binary').toString('base64'),
+              key: expect.stringMatching(/^erase-mask-.+\.png$/),
+              base64: expect.any(String),
             }),
           ],
         },
       })
     )
+    const providerInput = mockGenerateImageWithProvider.mock.calls[0]?.[0] as {
+      referenceContext: { images: Array<{ base64?: string }> }
+    }
+    const normalizedMaskBase64 = providerInput.referenceContext.images[1]?.base64
+    expect(normalizedMaskBase64).toEqual(expect.any(String))
+    await expect(
+      sharp(Buffer.from(normalizedMaskBase64 ?? '', 'base64')).metadata()
+    ).resolves.toMatchObject({
+      width: 1600,
+      height: 1200,
+    })
     expect(result).toMatchObject({
       file: {
         id: 'wf_erase',
@@ -523,6 +552,122 @@ describe('generateWorkspaceImageFromPrompt', () => {
         providerModel: 'gemini-3-pro-image',
       },
     })
+  })
+
+  it('resolves repaint and erase source images by displayed key before legacy id fallback', async () => {
+    const displayedSourcePng = await createSolidPng({
+      width: 1600,
+      height: 900,
+      color: { r: 255, g: 255, b: 255 },
+    })
+    const maskPng = await createSolidPng({
+      width: 800,
+      height: 450,
+      color: { r: 255, g: 255, b: 255 },
+    })
+    mockGetWorkspaceFileByKey.mockResolvedValue({
+      id: 'displayed-source',
+      name: 'displayed.png',
+      key: 'workspace/displayed.png',
+      url: '/api/files/serve/workspace/displayed.png?context=workspace',
+      size: displayedSourcePng.byteLength,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockGetWorkspaceFile.mockResolvedValue({
+      id: 'legacy-source',
+      name: 'legacy.png',
+      key: 'workspace/legacy.png',
+      url: '/api/files/serve/workspace/legacy.png?context=workspace',
+      size: 100,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(displayedSourcePng)
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('edited-image'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3-pro-image',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_edit',
+      name: 'generated-image.png',
+      size: 16,
+      type: 'image/png',
+      key: 'workspace/ws-1/edit.png',
+      url: '/api/files/serve/workspace/ws-1/edit.png?context=workspace',
+      context: 'workspace',
+    })
+    const sourceImage = {
+      id: 'legacy-source',
+      name: 'stale.png',
+      url: '/api/files/serve/workspace/displayed.png?context=workspace',
+      key: 'workspace/displayed.png',
+      size: 100,
+      type: 'image/png',
+    }
+    const maskImage = {
+      id: '',
+      name: 'mask.png',
+      url: '',
+      key: 'mask.png',
+      size: maskPng.byteLength,
+      type: 'image/png',
+      base64: maskPng.toString('base64'),
+    }
+
+    await repaintWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      prompt: 'replace the logo',
+      resolution: '2K',
+      sourceImage,
+      maskImage,
+      referenceImages: [],
+    })
+    await eraseWorkspaceImage({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      resolution: '2K',
+      sourceImage,
+      maskImage,
+    })
+
+    expect(mockGetWorkspaceFileByKey).toHaveBeenCalledWith('ws-1', 'workspace/displayed.png')
+    expect(mockFetchWorkspaceFileBuffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'displayed-source' })
+    )
+    expect(mockGenerateImageWithProvider).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        aspectRatio: '16:9',
+        referenceContext: expect.objectContaining({
+          images: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'displayed-source',
+              key: 'workspace/displayed.png',
+              base64: displayedSourcePng.toString('base64'),
+            }),
+          ]),
+        }),
+      })
+    )
+    expect(mockGenerateImageWithProvider).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        aspectRatio: '16:9',
+        referenceContext: expect.objectContaining({
+          images: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'displayed-source',
+              key: 'workspace/displayed.png',
+              base64: displayedSourcePng.toString('base64'),
+            }),
+          ]),
+        }),
+      })
+    )
   })
 
   it('cuts out with fixed Nano Banana Pro model and preserves a real transparent PNG', async () => {

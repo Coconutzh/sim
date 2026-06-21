@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildImageOutpaintPendingSubBlockValues,
+  getImageOutpaintRequestMetadata,
   normalizeImageOutpaintFile,
   runImageOutpaintRequest,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/use-image-outpaint-session'
@@ -116,19 +117,34 @@ describe('runImageOutpaintRequest', () => {
 })
 
 describe('buildImageOutpaintPendingSubBlockValues', () => {
-  it('creates the pending result node values with source content references', () => {
+  it('creates the pending result node values with retry metadata', () => {
     const reference = {
       sourceBlockId: 'source-node',
       sourceVariant: 'image' as const,
       role: 'image_reference',
     }
+    const outpaintRequest = {
+      placement: {
+        x: 12,
+        y: 24,
+        width: 320,
+        height: 180,
+        canvasWidth: 640,
+        canvasHeight: 360,
+      },
+      resolution: '2K' as const,
+      targetAspectRatio: 'custom' as const,
+      customAspectRatio: { width: 16, height: 9 },
+      prompt: 'extend the skyline',
+    }
 
-    expect(
-      buildImageOutpaintPendingSubBlockValues({
-        aiAspectRatio: '16:9',
-        reference,
-      })
-    ).toEqual({
+    const values = buildImageOutpaintPendingSubBlockValues({
+      aiAspectRatio: '16:9',
+      reference,
+      request: outpaintRequest,
+    })
+
+    expect(values).toEqual({
       contentVariant: 'image',
       aiPrompt: '',
       aiModel: 'gemini-3-pro-image',
@@ -138,6 +154,51 @@ describe('buildImageOutpaintPendingSubBlockValues', () => {
       generationKind: 'image_outpaint',
       generationStatus: 'pending',
       generationError: null,
+      imageOutpaintRequest: outpaintRequest,
+    })
+    expect(getImageOutpaintRequestMetadata(values.imageOutpaintRequest)).toEqual(outpaintRequest)
+  })
+
+  it('rejects incomplete retry metadata', () => {
+    expect(
+      getImageOutpaintRequestMetadata({
+        placement: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          canvasWidth: 200,
+          canvasHeight: 200,
+        },
+        resolution: '2K',
+        targetAspectRatio: 'custom',
+      })
+    ).toBeNull()
+
+    expect(
+      getImageOutpaintRequestMetadata({
+        placement: {
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          canvasWidth: 200,
+          canvasHeight: 200,
+        },
+        resolution: '2K',
+        targetAspectRatio: '1:1',
+      })
+    ).toEqual({
+      placement: {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        canvasWidth: 200,
+        canvasHeight: 200,
+      },
+      resolution: '2K',
+      targetAspectRatio: '1:1',
     })
   })
 })
