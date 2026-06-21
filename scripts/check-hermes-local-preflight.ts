@@ -19,6 +19,7 @@ interface PreflightOptions {
   hermesRepoPath: string
   json: boolean
   requireLlm: boolean
+  requirePpt: boolean
   requireServices: boolean
   simEnvFile: string
   timeoutMs: number
@@ -31,6 +32,7 @@ interface PreflightSummary {
   hermesRepoPath: string
   ok: boolean
   requireLlm: boolean
+  requirePpt: boolean
   requireServices: boolean
   simEnvFile: string
 }
@@ -58,6 +60,11 @@ const REQUIRED_HERMES_ENV = [
   'SIM_INTERNAL_API_URL',
   'SIM_SERVICE_TOKEN',
   'HERMES_HOME',
+] as const
+const PPT_EVOLINK_API_KEY_ENV = [
+  'SIM_PPT_EVOLINK_API_KEY',
+  'EVOLINK_API_KEY',
+  'CONTENT_IMAGE_GEMINI_API_KEY',
 ] as const
 const LLM_PROVIDER_ENV = [
   'OPENROUTER_API_KEY',
@@ -99,6 +106,7 @@ function usage(): string {
     '  --hermes-env <path>     Hermes env file, defaults to <hermes-repo>/.env.',
     '  --hermes-config <path>  Hermes config.yaml; defaults to HERMES_HOME/config.yaml.',
     '  --require-llm           Fail when no known Hermes LLM provider API key is configured.',
+    '  --require-ppt           Fail when codex-ppt path or Evolink PPT key is missing.',
     '  --require-services      Fail when SIM or Hermes local listeners are not reachable.',
     '  --timeout-ms <ms>       Listener timeout, defaults to 2000.',
     '  --json                  Print structured preflight output.',
@@ -152,6 +160,7 @@ export function parseArgs(
     hermesRepoPath,
     json: false,
     requireLlm: false,
+    requirePpt: false,
     requireServices: false,
     simEnvFile,
     timeoutMs: parsePositiveInt(env.HERMES_PREFLIGHT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
@@ -187,6 +196,9 @@ export function parseArgs(
         break
       case '--require-llm':
         options.requireLlm = true
+        break
+      case '--require-ppt':
+        options.requirePpt = true
         break
       case '--require-services':
         options.requireServices = true
@@ -327,6 +339,74 @@ function addLlmProviderCheck(
         : requireLlm
           ? `missing one of ${LLM_PROVIDER_ENV.join(', ')}`
           : 'no common provider key found; use --require-llm for full chat/tool E2E readiness',
+  })
+}
+
+function resolveCandidatePath(rawPath: string, cwd: string): string {
+  return path.isAbsolute(rawPath) ? path.normalize(rawPath) : path.resolve(cwd, rawPath)
+}
+
+function codexPptSkillRootCandidates(params: {
+  cwd: string
+  hermesEnv: Record<string, string | undefined>
+  hermesRepoPath: string
+}): string[] {
+  const configured = valueFor(params.hermesEnv, 'SIM_PPT_CODEX_SKILL_ROOT')
+  const candidates = [
+    configured ? resolveCandidatePath(configured, params.cwd) : undefined,
+    path.join(params.hermesRepoPath, 'vendor', 'codex-ppt-skill', 'skills', 'codex-ppt'),
+    path.join(path.dirname(params.hermesRepoPath), 'codex-ppt-skill', 'skills', 'codex-ppt'),
+  ].filter((candidate): candidate is string => Boolean(candidate))
+  return [...new Set(candidates.map((candidate) => path.normalize(candidate)))]
+}
+
+async function addPptReadinessChecks(params: {
+  checks: PreflightCheck[]
+  cwd: string
+  hermesEnv: Record<string, string | undefined>
+  hermesRepoPath: string
+  io: PreflightIo
+  requirePpt: boolean
+}): Promise<void> {
+  const key = PPT_EVOLINK_API_KEY_ENV.find((candidate) =>
+    Boolean(valueFor(params.hermesEnv, candidate))
+  )
+  params.checks.push({
+    name: 'hermes.ppt-evolink-key',
+    status: key ? 'pass' : params.requirePpt ? 'fail' : 'skip',
+    detail: key
+      ? `found ${key}`
+      : params.requirePpt
+        ? `missing one of ${PPT_EVOLINK_API_KEY_ENV.join(', ')}`
+        : 'no PPT image key found; use --require-ppt for PPT E2E readiness',
+  })
+
+  const configuredRoot = valueFor(params.hermesEnv, 'SIM_PPT_CODEX_SKILL_ROOT')
+  const candidates = codexPptSkillRootCandidates({
+    cwd: params.cwd,
+    hermesEnv: params.hermesEnv,
+    hermesRepoPath: params.hermesRepoPath,
+  })
+  for (const candidate of candidates) {
+    const imageGen = path.join(candidate, 'scripts', 'image_gen.py')
+    const assemblePpt = path.join(candidate, 'scripts', 'assemble_ppt.py')
+    if ((await params.io.exists(imageGen)) && (await params.io.exists(assemblePpt))) {
+      params.checks.push({
+        name: 'hermes.ppt-codex-skill-root',
+        status: 'pass',
+        detail: `${candidate} contains scripts/image_gen.py and scripts/assemble_ppt.py`,
+      })
+      return
+    }
+  }
+
+  const shouldFail = params.requirePpt || Boolean(configuredRoot)
+  params.checks.push({
+    name: 'hermes.ppt-codex-skill-root',
+    status: shouldFail ? 'fail' : 'skip',
+    detail: shouldFail
+      ? `codex-ppt scripts not found; searched ${candidates.join(', ')}`
+      : 'codex-ppt scripts not found; use --require-ppt for PPT E2E readiness',
   })
 }
 
@@ -730,6 +810,14 @@ export async function runHermesLocalPreflight(
   addTruthyEnvCheck(checks, 'hermes.api-server-enabled', hermesEnv, 'API_SERVER_ENABLED')
   addTokenLengthCheck(checks, 'hermes.service-token-strength', hermesEnv, 'SIM_SERVICE_TOKEN')
   addLlmProviderCheck(checks, hermesEnv, options.requireLlm)
+  await addPptReadinessChecks({
+    checks,
+    cwd,
+    hermesEnv,
+    hermesRepoPath: options.hermesRepoPath,
+    io,
+    requirePpt: options.requirePpt,
+  })
   await addHermesConfigChecks({
     checks,
     configFile: hermesConfigFile,
@@ -779,6 +867,7 @@ export async function runHermesLocalPreflight(
     hermesRepoPath: options.hermesRepoPath,
     ok: checks.every((check) => check.status !== 'fail'),
     requireLlm: options.requireLlm,
+    requirePpt: options.requirePpt,
     requireServices: options.requireServices,
     simEnvFile: options.simEnvFile,
   }

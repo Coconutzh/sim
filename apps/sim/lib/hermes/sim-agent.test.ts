@@ -157,6 +157,16 @@ describe('callHermesSimAgent', () => {
     )
     expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
+        instructions: expect.stringContaining('sim_presentation_generate_slide_images'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('sim_presentation_assemble_deck'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
         instructions: expect.stringContaining('sim_presentation_artifact_upload'),
       })
     )

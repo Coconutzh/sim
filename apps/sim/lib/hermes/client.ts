@@ -1,9 +1,13 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { Agent, type Dispatcher } from 'undici'
 import { env, envNumber } from '@/lib/core/config/env'
 
 const logger = createLogger('HermesClient')
 const DEFAULT_HEALTH_TIMEOUT_MS = 5000
+const DEFAULT_API_TIMEOUT_MS = 30 * 60 * 1000
+const MIN_API_TIMEOUT_MS = 60 * 1000
+const CONNECT_TIMEOUT_MS = 30 * 1000
 const DEFAULT_FORBIDDEN_TOOLSETS = [
   'browser',
   'code_execution',
@@ -145,6 +149,11 @@ export class HermesClientError extends Error {
   }
 }
 
+type HermesFetchInit = RequestInit & { dispatcher?: Dispatcher }
+
+let apiDispatcher: Dispatcher | undefined
+let apiDispatcherTimeoutMs: number | undefined
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value
 }
@@ -179,6 +188,90 @@ function getHermesHealthTimeoutMs(): number {
   return envNumber(env.HERMES_HEALTH_TIMEOUT_MS, DEFAULT_HEALTH_TIMEOUT_MS, { min: 1000 })
 }
 
+function getHermesApiTimeoutMs(): number {
+  return envNumber(env.HERMES_API_TIMEOUT_MS, DEFAULT_API_TIMEOUT_MS, {
+    min: MIN_API_TIMEOUT_MS,
+  })
+}
+
+function getHermesApiDispatcher(): Dispatcher {
+  const timeoutMs = getHermesApiTimeoutMs()
+  if (!apiDispatcher || apiDispatcherTimeoutMs !== timeoutMs) {
+    apiDispatcher = new Agent({
+      headersTimeout: timeoutMs,
+      bodyTimeout: timeoutMs,
+      connect: { timeout: Math.min(CONNECT_TIMEOUT_MS, timeoutMs) },
+    })
+    apiDispatcherTimeoutMs = timeoutMs
+  }
+  return apiDispatcher
+}
+
+function formatDurationMs(value: number): string {
+  if (value >= 60_000 && value % 60_000 === 0) return `${value / 60_000}m`
+  if (value >= 1000 && value % 1000 === 0) return `${value / 1000}s`
+  return `${value}ms`
+}
+
+function getErrorCauseDetails(error: unknown): {
+  name?: string
+  code?: string
+  message?: string
+} {
+  const cause = asRecord((error as { cause?: unknown } | null)?.cause)
+  return {
+    name: readString(cause, 'name'),
+    code: readString(cause, 'code'),
+    message: readString(cause, 'message'),
+  }
+}
+
+function formatHermesFetchError(endpointLabel: string, error: unknown, timeoutMs: number): string {
+  const err = toError(error)
+  const cause = getErrorCauseDetails(error)
+  if (cause.code === 'UND_ERR_HEADERS_TIMEOUT') {
+    return `${endpointLabel} timed out after ${formatDurationMs(timeoutMs)} waiting for Hermes to return a response. The PPT job is long-running; retry after checking Hermes status, or increase HERMES_API_TIMEOUT_MS.`
+  }
+  if (err.name === 'AbortError') {
+    return `${endpointLabel} was aborted before Hermes returned a response`
+  }
+
+  const suffix = cause.code ? ` (${cause.code})` : ''
+  return `${endpointLabel} request failed: ${err.message}${suffix}`
+}
+
+async function fetchHermesApi(
+  config: HermesClientConfig,
+  path: string,
+  init: RequestInit,
+  endpointLabel: string
+): Promise<Response> {
+  const timeoutMs = getHermesApiTimeoutMs()
+  const startedAt = Date.now()
+  const fetchInit: HermesFetchInit = {
+    ...init,
+    dispatcher: getHermesApiDispatcher(),
+  }
+
+  try {
+    return await fetch(`${config.baseUrl}${path}`, fetchInit)
+  } catch (error) {
+    const err = toError(error)
+    const cause = getErrorCauseDetails(error)
+    logger.error(`${endpointLabel} request failed`, {
+      baseUrl: config.baseUrl,
+      path,
+      durationMs: Date.now() - startedAt,
+      timeoutMs,
+      error: err.message,
+      causeName: cause.name,
+      causeCode: cause.code,
+      causeMessage: cause.message,
+    })
+    throw new HermesClientError(formatHermesFetchError(endpointLabel, error, timeoutMs))
+  }
+}
+
 const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
   sim: [
     'sim_canvas_agent_run',
@@ -190,6 +283,8 @@ const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
     'sim_canvas_preview_discard',
     'sim_canvas_history_query',
     'sim_canvas_media_prepare',
+    'sim_presentation_generate_slide_images',
+    'sim_presentation_assemble_deck',
     'sim_presentation_artifact_upload',
     'sim_skill_proposal_run',
     'sim_external_evidence_prepare',
@@ -499,21 +594,26 @@ export async function callHermesChatCompletion(
   }
 
   try {
-    const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${config.apiKey}`,
-        'content-type': 'application/json',
-        ...(params.sessionId ? { 'x-hermes-session-id': params.sessionId } : {}),
-        ...(params.sessionKey ? { 'x-hermes-session-key': params.sessionKey } : {}),
+    const response = await fetchHermesApi(
+      config,
+      '/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.apiKey}`,
+          'content-type': 'application/json',
+          ...(params.sessionId ? { 'x-hermes-session-id': params.sessionId } : {}),
+          ...(params.sessionKey ? { 'x-hermes-session-key': params.sessionKey } : {}),
+        },
+        body: JSON.stringify({
+          model: params.model,
+          messages: params.messages,
+          metadata: params.metadata,
+        }),
+        signal: params.signal,
       },
-      body: JSON.stringify({
-        model: params.model,
-        messages: params.messages,
-        metadata: params.metadata,
-      }),
-      signal: params.signal,
-    })
+      'Hermes Chat Completions API'
+    )
 
     const raw = (await response.json().catch(() => ({}))) as unknown
     if (!response.ok) {
@@ -558,29 +658,34 @@ export async function callHermesResponse(
   }
 
   try {
-    const response = await fetch(`${config.baseUrl}/v1/responses`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${config.apiKey}`,
-        'content-type': 'application/json',
-        ...(params.sessionId ? { 'x-hermes-session-id': params.sessionId } : {}),
-        ...(params.sessionKey ? { 'x-hermes-session-key': params.sessionKey } : {}),
+    const response = await fetchHermesApi(
+      config,
+      '/v1/responses',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.apiKey}`,
+          'content-type': 'application/json',
+          ...(params.sessionId ? { 'x-hermes-session-id': params.sessionId } : {}),
+          ...(params.sessionKey ? { 'x-hermes-session-key': params.sessionKey } : {}),
+        },
+        body: JSON.stringify({
+          model: params.model,
+          instructions: params.instructions,
+          input: params.input,
+          metadata: params.metadata,
+          store: params.store ?? false,
+          ...(params.conversation ? { conversation: params.conversation } : {}),
+          ...(params.previousResponseId ? { previous_response_id: params.previousResponseId } : {}),
+          ...(params.conversationHistory?.length
+            ? { conversation_history: params.conversationHistory }
+            : {}),
+          ...(params.truncation ? { truncation: params.truncation } : {}),
+        }),
+        signal: params.signal,
       },
-      body: JSON.stringify({
-        model: params.model,
-        instructions: params.instructions,
-        input: params.input,
-        metadata: params.metadata,
-        store: params.store ?? false,
-        ...(params.conversation ? { conversation: params.conversation } : {}),
-        ...(params.previousResponseId ? { previous_response_id: params.previousResponseId } : {}),
-        ...(params.conversationHistory?.length
-          ? { conversation_history: params.conversationHistory }
-          : {}),
-        ...(params.truncation ? { truncation: params.truncation } : {}),
-      }),
-      signal: params.signal,
-    })
+      'Hermes Responses API'
+    )
 
     const raw = (await response.json().catch(() => ({}))) as unknown
     if (!response.ok) {

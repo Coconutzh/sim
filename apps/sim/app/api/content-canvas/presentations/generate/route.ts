@@ -73,7 +73,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       prompt,
       slideCount,
       traceId: request.headers.get('x-trace-id') ?? `presentation:${workflowId}:${nodeId}`,
-      signal: request.signal,
     })
 
     return NextResponse.json(

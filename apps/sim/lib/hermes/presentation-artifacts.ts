@@ -39,6 +39,10 @@ export interface StoredHermesPresentationArtifact {
     slideCount?: number
     selectedStyle?: string
     styleBrief?: string
+    imageBackend?: string
+    imageProvider?: string
+    imageModel?: string
+    imageBaseUrl?: string
     outlineMarkdown?: string
     speechMarkdown?: string
     targetNodeId?: string
@@ -124,6 +128,10 @@ function buildManifest(params: {
     ...(params.body.slideCount ? { slideCount: params.body.slideCount } : {}),
     ...(params.body.selectedStyle ? { selectedStyle: params.body.selectedStyle } : {}),
     ...(params.body.styleBrief ? { styleBrief: params.body.styleBrief } : {}),
+    ...(params.body.imageBackend ? { imageBackend: params.body.imageBackend } : {}),
+    ...(params.body.imageProvider ? { imageProvider: params.body.imageProvider } : {}),
+    ...(params.body.imageModel ? { imageModel: params.body.imageModel } : {}),
+    ...(params.body.imageBaseUrl ? { imageBaseUrl: params.body.imageBaseUrl } : {}),
     ...(params.body.outlineMarkdown ? { outlineMarkdown: params.body.outlineMarkdown } : {}),
     ...(params.body.speechMarkdown ? { speechMarkdown: params.body.speechMarkdown } : {}),
     ...(params.body.targetNodeId ? { targetNodeId: params.body.targetNodeId } : {}),

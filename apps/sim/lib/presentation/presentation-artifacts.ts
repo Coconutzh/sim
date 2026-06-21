@@ -18,6 +18,10 @@ export interface PresentationArtifactManifestValue {
   slideCount?: number
   selectedStyle?: string
   styleBrief?: string
+  imageBackend?: string
+  imageProvider?: string
+  imageModel?: string
+  imageBaseUrl?: string
   outlineMarkdown?: string
   speechMarkdown?: string
   targetNodeId?: string
@@ -69,6 +73,10 @@ function normalizeManifest(value: unknown): PresentationArtifactManifestValue | 
     ...(typeof record.slideCount === 'number' ? { slideCount: record.slideCount } : {}),
     ...(typeof record.selectedStyle === 'string' ? { selectedStyle: record.selectedStyle } : {}),
     ...(typeof record.styleBrief === 'string' ? { styleBrief: record.styleBrief } : {}),
+    ...(typeof record.imageBackend === 'string' ? { imageBackend: record.imageBackend } : {}),
+    ...(typeof record.imageProvider === 'string' ? { imageProvider: record.imageProvider } : {}),
+    ...(typeof record.imageModel === 'string' ? { imageModel: record.imageModel } : {}),
+    ...(typeof record.imageBaseUrl === 'string' ? { imageBaseUrl: record.imageBaseUrl } : {}),
     ...(typeof record.outlineMarkdown === 'string'
       ? { outlineMarkdown: record.outlineMarkdown }
       : {}),

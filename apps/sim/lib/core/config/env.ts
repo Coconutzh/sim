@@ -42,6 +42,7 @@ export const env = createEnv({
     HERMES_API_KEY:                        z.string().min(1).optional(),           // API key used by SIM when calling Hermes API Server
     HERMES_SERVICE_TOKEN:                  z.string().min(32).optional(),          // Service token Hermes uses when calling SIM internal APIs
     HERMES_HEALTH_TIMEOUT_MS:              z.number().optional(),                  // Timeout for SIM health probes against Hermes API Server
+    HERMES_API_TIMEOUT_MS:                 z.number().optional(),                  // Timeout for long-running SIM requests against Hermes API Server
     HERMES_REQUIRED_TOOLSETS:              z.string().optional(),                  // Comma-separated Hermes toolsets required by this SIM deployment (default: sim)
     HERMES_FORBIDDEN_TOOLSETS:             z.string().optional(),                  // Comma-separated Hermes toolsets that must not be enabled for SIM production traffic
     HERMES_NATIVE_CONVERSATION_CHAIN_ENABLED: z.boolean().optional(),              // Enable Hermes Responses API conversation/store=true chaining for SIM copilot chats

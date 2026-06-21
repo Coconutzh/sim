@@ -97,6 +97,8 @@ describe('Hermes client health probe', () => {
               'sim_canvas_preview_discard',
               'sim_canvas_history_query',
               'sim_canvas_media_prepare',
+              'sim_presentation_generate_slide_images',
+              'sim_presentation_assemble_deck',
               'sim_presentation_artifact_upload',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
@@ -163,6 +165,8 @@ describe('Hermes client health probe', () => {
               'sim_canvas_preview_discard',
               'sim_canvas_history_query',
               'sim_canvas_media_prepare',
+              'sim_presentation_generate_slide_images',
+              'sim_presentation_assemble_deck',
               'sim_presentation_artifact_upload',
               'sim_skill_proposal_run',
               'sim_external_evidence_prepare',
@@ -189,6 +193,8 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_generate_slide_images',
+        'sim_presentation_assemble_deck',
         'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
@@ -277,6 +283,8 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_generate_slide_images',
+        'sim_presentation_assemble_deck',
         'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
@@ -292,13 +300,15 @@ describe('Hermes client health probe', () => {
         'sim_canvas_preview_discard',
         'sim_canvas_history_query',
         'sim_canvas_media_prepare',
+        'sim_presentation_generate_slide_images',
+        'sim_presentation_assemble_deck',
         'sim_presentation_artifact_upload',
         'sim_skill_proposal_run',
         'sim_external_evidence_prepare',
       ],
     })
     expect(result.error).toContain(
-      'required Hermes tools missing: sim(sim_canvas_query, sim_canvas_task_propose, sim_canvas_apply_pending, sim_canvas_preview_create, sim_canvas_preview_commit, sim_canvas_preview_discard, sim_canvas_history_query, sim_canvas_media_prepare, sim_presentation_artifact_upload, sim_skill_proposal_run, sim_external_evidence_prepare)'
+      'required Hermes tools missing: sim(sim_canvas_query, sim_canvas_task_propose, sim_canvas_apply_pending, sim_canvas_preview_create, sim_canvas_preview_commit, sim_canvas_preview_discard, sim_canvas_history_query, sim_canvas_media_prepare, sim_presentation_generate_slide_images, sim_presentation_assemble_deck, sim_presentation_artifact_upload, sim_skill_proposal_run, sim_external_evidence_prepare)'
     )
   })
 
@@ -590,5 +600,20 @@ describe('callHermesResponse', () => {
       })
     ).rejects.toThrow('mutually exclusive')
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('surfaces long-running Hermes header timeouts with an actionable message', async () => {
+    const cause = Object.assign(new Error('Headers Timeout Error'), {
+      code: 'UND_ERR_HEADERS_TIMEOUT',
+      name: 'HeadersTimeoutError',
+    })
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed', { cause }))
+
+    await expect(
+      callHermesResponse({
+        instructions: 'Use SIM tools.',
+        input: 'generate a PPT',
+      })
+    ).rejects.toThrow('Hermes Responses API timed out after 30m')
   })
 })

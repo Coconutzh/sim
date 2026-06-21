@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseArgs, parseDotEnv, runHermesLocalPreflight } from './check-hermes-local-preflight'
 
@@ -215,6 +216,80 @@ describe('check-hermes-local-preflight', () => {
 
     expect(exitCode).toBe(1)
     expect(stdout.join('')).toContain('missing one of OPENROUTER_API_KEY')
+  })
+
+  it('can require codex-ppt readiness for presentation generation', async () => {
+    const cwd = 'E:\\project\\sim'
+    const simEnv = 'E:\\project\\sim\\apps\\sim\\.env'
+    const hermesEnv = 'E:\\project\\hermes-agent-sim\\.env'
+    const codexPptRoot = 'E:\\project\\codex-ppt-skill\\skills\\codex-ppt'
+    const token = 's'.repeat(32)
+    const { io, stdout } = makeIo({
+      existing: [
+        'E:\\project\\hermes-agent-sim\\plugins\\sim\\tools.py',
+        path.join(codexPptRoot, 'scripts', 'image_gen.py'),
+        path.join(codexPptRoot, 'scripts', 'assemble_ppt.py'),
+      ],
+      files: {
+        [simEnv]: [
+          'DATABASE_URL=postgres://local',
+          'INTERNAL_API_SECRET=internal',
+          'NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000',
+          'HERMES_API_URL=http://127.0.0.1:8642',
+          'HERMES_API_KEY=api-key',
+          `HERMES_SERVICE_TOKEN=${token}`,
+        ].join('\n'),
+        [hermesEnv]: [
+          'API_SERVER_ENABLED=true',
+          'API_SERVER_KEY=api-key',
+          'SIM_INTERNAL_API_URL=http://127.0.0.1:3000',
+          `SIM_SERVICE_TOKEN=${token}`,
+          `HERMES_HOME=${HERMES_HOME}`,
+          `SIM_PPT_CODEX_SKILL_ROOT=${codexPptRoot}`,
+          'SIM_PPT_EVOLINK_API_KEY=provider-key',
+        ].join('\n'),
+        [HERMES_CONFIG]: SAFE_HERMES_CONFIG,
+      },
+    })
+
+    const exitCode = await runHermesLocalPreflight(['--require-ppt'], {}, cwd, io)
+    const output = stdout.join('')
+
+    expect(exitCode).toBe(0)
+    expect(output).toContain('found SIM_PPT_EVOLINK_API_KEY')
+    expect(output).toContain('contains scripts/image_gen.py and scripts/assemble_ppt.py')
+  })
+
+  it('fails PPT readiness only when explicitly required or misconfigured', async () => {
+    const cwd = 'E:\\project\\sim'
+    const simEnv = 'E:\\project\\sim\\apps\\sim\\.env'
+    const hermesEnv = 'E:\\project\\hermes-agent-sim\\.env'
+    const token = 's'.repeat(32)
+    const { io, stdout } = makeIo({
+      existing: ['E:\\project\\hermes-agent-sim\\plugins\\sim\\tools.py'],
+      files: {
+        [simEnv]: [
+          'DATABASE_URL=postgres://local',
+          'INTERNAL_API_SECRET=internal',
+          'NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000',
+          'HERMES_API_URL=http://127.0.0.1:8642',
+          'HERMES_API_KEY=api-key',
+          `HERMES_SERVICE_TOKEN=${token}`,
+        ].join('\n'),
+        [hermesEnv]: [
+          'API_SERVER_ENABLED=true',
+          'API_SERVER_KEY=api-key',
+          'SIM_INTERNAL_API_URL=http://127.0.0.1:3000',
+          `SIM_SERVICE_TOKEN=${token}`,
+          `HERMES_HOME=${HERMES_HOME}`,
+        ].join('\n'),
+        [HERMES_CONFIG]: SAFE_HERMES_CONFIG,
+      },
+    })
+
+    await expect(runHermesLocalPreflight([], {}, cwd, io)).resolves.toBe(0)
+    await expect(runHermesLocalPreflight(['--require-ppt'], {}, cwd, io)).resolves.toBe(1)
+    expect(stdout.join('')).toContain('missing one of SIM_PPT_EVOLINK_API_KEY')
   })
 
   it('accepts direct-provider Hermes LLM keys for local E2E readiness', async () => {
