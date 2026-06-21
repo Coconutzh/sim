@@ -258,7 +258,7 @@ describe('generateImageWithProvider', () => {
     const uploadRequestInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
     expect(JSON.parse(String(uploadRequestInit.body))).toMatchObject({
       base64_data: `data:image/png;base64,${Buffer.from('source-image').toString('base64')}`,
-      file_name: 'source.png',
+      file_name: expect.stringMatching(/^source-[A-Za-z0-9_-]+\.png$/),
       upload_path: 'sim-content-canvas',
     })
 
@@ -443,13 +443,13 @@ describe('generateImageWithProvider', () => {
     const sourceUploadInit = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit
     expect(JSON.parse(String(sourceUploadInit.body))).toMatchObject({
       base64_data: `data:image/png;base64,${Buffer.from('source-image').toString('base64')}`,
-      file_name: 'source.png',
+      file_name: expect.stringMatching(/^source-[A-Za-z0-9_-]+\.png$/),
       upload_path: 'sim-content-canvas',
     })
     const maskUploadInit = vi.mocked(global.fetch).mock.calls[1]?.[1] as RequestInit
     expect(JSON.parse(String(maskUploadInit.body))).toMatchObject({
       base64_data: `data:image/png;base64,${Buffer.from('alpha-mask').toString('base64')}`,
-      file_name: 'alpha-mask.png',
+      file_name: expect.stringMatching(/^alpha-mask-[A-Za-z0-9_-]+\.png$/),
       upload_path: 'sim-content-canvas',
     })
 

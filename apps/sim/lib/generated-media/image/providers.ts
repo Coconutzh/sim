@@ -1,5 +1,6 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
+import { generateShortId } from '@sim/utils/id'
 import { resolveContentService } from '@/lib/content-canvas/service-config'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
@@ -283,6 +284,24 @@ function getCompatibleImageFileName(image: UserFileLike): string | undefined {
   return 'reference.png'
 }
 
+function getEvolinkUploadFileName(image: UserFileLike): string {
+  const fileName = getCompatibleImageFileName(image) ?? 'reference.png'
+  const lastDot = fileName.lastIndexOf('.')
+  const hasExtension = lastDot > 0 && lastDot < fileName.length - 1
+  const rawStem = hasExtension ? fileName.slice(0, lastDot) : fileName
+  const extension = hasExtension
+    ? fileName.slice(lastDot)
+    : image.type?.includes('jpeg') || image.type?.includes('jpg')
+      ? '.jpg'
+      : image.type?.includes('webp')
+        ? '.webp'
+        : image.type?.includes('gif')
+          ? '.gif'
+          : '.png'
+  const stem = rawStem.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'reference'
+  return `${stem.slice(0, 80)}-${generateShortId()}${extension}`
+}
+
 function getUploadedEvolinkFileUrl(payload: Record<string, unknown>): string | null {
   const data = payload.data
   if (!data || typeof data !== 'object') return null
@@ -310,7 +329,7 @@ async function uploadEvolinkBase64Image({
     },
     body: JSON.stringify({
       base64_data: dataUrl,
-      file_name: getCompatibleImageFileName(image),
+      file_name: getEvolinkUploadFileName(image),
       upload_path: 'sim-content-canvas',
     }),
   })
