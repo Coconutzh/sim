@@ -411,6 +411,7 @@ describe('local canvas agent decision', () => {
     expect(prompt).toContain('Runtime constraints')
     expect(prompt).toContain('Include intent and confidence in every AgentDecision')
     expect(prompt).not.toContain('Runtime intent hint')
-    expect(prompt).toContain('If confirmation mode is manual')
+    expect(prompt).toContain('Confirmation mode is not blanket confirmation')
+    expect(prompt).toContain('Use ask_confirmation only for delete_node or clear_canvas')
   })
 })

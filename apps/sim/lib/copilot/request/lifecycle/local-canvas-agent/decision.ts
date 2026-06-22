@@ -393,7 +393,8 @@ function buildRuntimeConstraintsContext(context: LocalAgentContext): string {
       ? `writeBlockedReason: ${context.permissions.readonlyReason}`
       : '',
     'confidenceThresholds: read=0.45, ordinary_canvas_mutation=0.68, structural_canvas_mutation=0.72, generation=0.72, complex_chain_generation=0.76',
-    'destructive canvas changes require ask_confirmation regardless of confidence',
+    'confirmation buttons are only for delete_node or clear_canvas',
+    'non-delete writes execute directly; ambiguity uses ask_clarification',
     'if confidence is below the threshold for the intended action, return ask_clarification instead of calling tools',
   ]
     .filter(Boolean)
@@ -408,7 +409,8 @@ function buildRawPatchProtocolContext(): string {
     '- Supported operation types: create_node, update_node, delete_node, connect, add_content_reference, remove_content_reference, layout_nodes.',
     '- create_node requires kind and title; use clientNodeId for nodes created in the same patch.',
     '- update_node requires an existing nodeId and fields.',
-    '- delete_node requires an existing nodeId. It is destructive: return ask_confirmation with a pending canvas.apply_patch call instead of calling canvas.apply_patch directly.',
+    '- delete_node needs nodeId; delete_node/clear_canvas use ask_confirmation with pending canvas.apply_patch.',
+    '- Non-delete patch/generation ops execute when clear; ask_clarification when unclear.',
     '- connect can reference clientNodeId values from create_node operations.',
     '- add_content_reference uses consumerNodeId, sourceNodeId, and role. It means the consumer node will use the source node as generation context/material.',
     '- Reference roles: text_context, image_reference, video_first_frame, video_last_frame, audio_reference.',
@@ -552,13 +554,14 @@ export function buildLocalAgentDecisionPrompt(params: {
       'Determine intent and confidence yourself from the latest request, conversation history, selected nodes, canvas context, tool observations, and available tools.',
       'Include intent and confidence in every AgentDecision. Use intentReason for a concise reason when useful.',
       'Use tools to read canvas state instead of guessing from memory.',
-      'If a user asks to discuss, plan, or wait for confirmation, do not call mutation tools.',
-      'If confirmation mode is manual and a canvas write is needed, return ask_confirmation with pendingToolCall instead of applying the patch.',
+      'Discuss/plan requests: do not call mutation tools.',
+      'Confirmation mode is not blanket confirmation; clear non-delete writes execute and verify.',
+      'Ambiguous intent uses ask_clarification, not ask_confirmation.',
       'For ask_confirmation pendingToolCall, pendingToolCall.input.patch.operations must be an array of operation objects, not strings.',
-      'If a user asks for a destructive action, ask for confirmation first.',
+      'Use ask_confirmation only for delete_node or clear_canvas.',
       'Use type=tool_calls only for independent read-only concurrency-safe tools; never include mutation, generation, verification, or destructive tools in tool_calls.',
       'Never invent generated file outputs. Use canvas.generate_node_output for real generation.',
-      'After canvas.apply_patch or canvas.generate_node_output succeeds, verify with canvas.verify_patch before final_answer.',
+      'After apply/generate succeeds, verify before final_answer; never ask confirmation after verified mutation.',
     ].join('\n'),
   ].join('\n\n')
 }

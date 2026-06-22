@@ -1854,7 +1854,7 @@ describe('local canvas tool loop', () => {
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
     expect(result.plan).toMatchObject({
       mutationPolicy: 'propose_only',
-      requiresUserConfirmation: true,
+      requiresUserConfirmation: false,
     })
     expect(result.observations).toEqual(
       expect.arrayContaining([
@@ -1906,7 +1906,7 @@ describe('local canvas tool loop', () => {
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
     expect(result.plan).toMatchObject({
       mutationPolicy: 'propose_only',
-      requiresUserConfirmation: true,
+      requiresUserConfirmation: false,
     })
     expect(result.observations).toEqual(
       expect.arrayContaining([
@@ -1920,7 +1920,7 @@ describe('local canvas tool loop', () => {
     expect(result.answer).toBe('需要你确认后我再执行。')
   })
 
-  it('treats manual confirmation mode as propose-only in the model loop', async () => {
+  it('executes clear non-delete mutations in manual confirmation mode', async () => {
     mockRequestLocalAgentDecision
       .mockResolvedValueOnce({
         type: 'tool_call',
@@ -1933,7 +1933,20 @@ describe('local canvas tool loop', () => {
       })
       .mockResolvedValueOnce({
         type: 'final_answer',
-        answer: '需要先确认，我不会直接修改画布。',
+        answer: '已重新整理当前画布。',
+      })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        output: {},
+        summary: 'Patch applied',
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        output: {},
+        summary: 'Patch verified',
       })
 
     const result = await runLocalAgentToolLoop(
@@ -1944,24 +1957,22 @@ describe('local canvas tool loop', () => {
       })
     )
 
-    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
-    expect(result.plan).toMatchObject({
-      mutationPolicy: 'propose_only',
-      requiresUserConfirmation: true,
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
     })
-    expect(result.observations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          toolName: 'decision',
-          success: false,
-          summary: expect.stringContaining('proposal or confirmation first'),
-        }),
-      ])
-    )
-    expect(result.answer).toBe('需要先确认，我不会直接修改画布。')
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
+      name: 'canvas.verify_patch',
+      input: { patch: { operations: [{ type: 'layout_nodes', direction: 'horizontal' }] } },
+    })
+    expect(result.plan).toMatchObject({
+      mutationPolicy: 'allow_mutation',
+      requiresUserConfirmation: false,
+    })
+    expect(result.answer).toBe('已完成画布修改，并完成验证。')
   })
 
-  it('keeps model confirmation patch available for runtime Confirm execution', async () => {
+  it('keeps non-delete model confirmation as clarification instead of runtime Confirm execution', async () => {
     const patch = {
       operations: [{ type: 'layout_nodes' as const, direction: 'horizontal' as const }],
     }
@@ -1984,7 +1995,7 @@ describe('local canvas tool loop', () => {
 
     expect(result.plan).toMatchObject({
       requiresClarification: true,
-      requiresUserConfirmation: true,
+      requiresUserConfirmation: false,
       patch,
     })
     expect(result.answer).toBe('这个操作会重新布局画布，确认执行吗？')

@@ -102,6 +102,16 @@ const patchPlan: LocalAgentPlan = {
   },
 }
 
+const deletePlan: LocalAgentPlan = {
+  ...patchPlan,
+  risk: 'high',
+  requiresUserConfirmation: true,
+  clarificationQuestion: '这个操作会删除节点，确认执行吗？',
+  patch: {
+    operations: [{ type: 'delete_node', nodeId: 'node-to-delete' }],
+  },
+}
+
 function buildStreamContext() {
   return {
     accumulatedContent: '',
@@ -187,10 +197,15 @@ describe('local canvas runtime manual confirmation', () => {
     vi.useRealTimers()
   })
 
-  it('shows Confirm and Revise options without applying a manual patch immediately', async () => {
+  it('shows delete confirmation options without applying a destructive manual patch immediately', async () => {
     const streamContext = buildStreamContext()
     const events: StreamEvent[] = []
     mockResolveLocalAgentContext.mockResolvedValue(buildLocalContext({ streamContext }))
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: deletePlan,
+      observations: [],
+      answer: '确认后删除。',
+    })
 
     await runLocalCanvasAgent({
       requestPayload: {},
@@ -228,8 +243,8 @@ describe('local canvas runtime manual confirmation', () => {
         expect.objectContaining({
           type: ContentBlockType.options,
           options: expect.arrayContaining([
-            expect.objectContaining({ label: 'Confirm' }),
-            expect.objectContaining({ label: 'Revise' }),
+            expect.objectContaining({ label: '确认删除' }),
+            expect.objectContaining({ label: '调整方案' }),
           ]),
         }),
       ])
@@ -309,7 +324,7 @@ describe('local canvas runtime manual confirmation', () => {
     expect(streamContext.streamComplete).toBe(true)
   })
 
-  it('turns manual model-loop confirmation plans into Confirm and Revise options', async () => {
+  it('turns destructive manual model-loop confirmation plans into delete confirmation options', async () => {
     const streamContext = buildStreamContext()
     mockResolveLocalAgentContext.mockResolvedValue(
       buildLocalContext({
@@ -319,13 +334,13 @@ describe('local canvas runtime manual confirmation', () => {
     )
     mockRunLocalAgentToolLoop.mockResolvedValueOnce({
       plan: {
-        ...patchPlan,
+        ...deletePlan,
         requiresClarification: true,
         requiresUserConfirmation: true,
-        clarificationQuestion: '确认后我再应用这个画布修改。',
+        clarificationQuestion: '确认后我再删除这个节点。',
       },
       observations: [],
-      answer: '确认后我再应用这个画布修改。',
+      answer: '确认后我再删除这个节点。',
     })
 
     await runLocalCanvasAgent({
@@ -346,13 +361,13 @@ describe('local canvas runtime manual confirmation', () => {
         expect.objectContaining({
           type: ContentBlockType.options,
           options: expect.arrayContaining([
-            expect.objectContaining({ label: 'Confirm' }),
-            expect.objectContaining({ label: 'Revise' }),
+            expect.objectContaining({ label: '确认删除' }),
+            expect.objectContaining({ label: '调整方案' }),
           ]),
         }),
       ])
     )
-    expect(streamContext.accumulatedContent).toContain('确认后我再应用这个画布修改')
+    expect(streamContext.accumulatedContent).toContain('确认后我再删除这个节点')
   })
 
   it('passes loaded memory into the tool loop context', async () => {
@@ -388,13 +403,13 @@ describe('local canvas runtime manual confirmation', () => {
     )
   })
 
-  it('turns model-loop confirmation plans into Confirm and Revise options', async () => {
+  it('turns destructive model-loop confirmation plans into delete confirmation options', async () => {
     const streamContext = buildStreamContext()
     const confirmPlan: LocalAgentPlan = {
-      ...patchPlan,
+      ...deletePlan,
       requiresClarification: true,
       requiresUserConfirmation: true,
-      clarificationQuestion: '这个操作会重新布局画布，确认执行吗？',
+      clarificationQuestion: '这个操作会删除节点，确认执行吗？',
     }
     mockResolveLocalAgentContext.mockResolvedValue(
       buildLocalContext({
@@ -427,14 +442,101 @@ describe('local canvas runtime manual confirmation', () => {
         expect.objectContaining({
           type: ContentBlockType.options,
           options: expect.arrayContaining([
-            expect.objectContaining({ label: 'Confirm' }),
-            expect.objectContaining({ label: 'Revise' }),
+            expect.objectContaining({ label: '确认删除' }),
+            expect.objectContaining({ label: '调整方案' }),
           ]),
         }),
       ])
     )
-    expect(streamContext.accumulatedContent).toContain('这个操作会重新布局画布，确认执行吗？')
+    expect(streamContext.accumulatedContent).toContain('这个操作会删除节点，确认执行吗？')
     expect(streamContext.accumulatedContent).toContain('__local_canvas_confirm__')
+  })
+
+  it('turns non-delete confirmation plans into clarification text without action buttons', async () => {
+    const streamContext = buildStreamContext()
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'auto',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: {
+        ...patchPlan,
+        requiresClarification: true,
+        requiresUserConfirmation: true,
+        clarificationQuestion: '你是要我现在重新布局，还是只讨论布局方案？',
+      },
+      observations: [],
+      answer: '你是要我现在重新布局，还是只讨论布局方案？',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+    expect(streamContext.contentBlocks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentBlockType.options })])
+    )
+    expect(streamContext.accumulatedContent).toBe('你是要我现在重新布局，还是只讨论布局方案？')
+  })
+
+  it('does not ask for confirmation after a mutation has already been verified', async () => {
+    const streamContext = buildStreamContext()
+    mockResolveLocalAgentContext.mockResolvedValue(
+      buildLocalContext({
+        confirmationMode: 'auto',
+        streamContext,
+      })
+    )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: {
+        ...deletePlan,
+        requiresClarification: true,
+        requiresUserConfirmation: true,
+      },
+      observations: [
+        {
+          toolName: 'canvas.apply_patch',
+          success: true,
+          summary: 'Patch applied',
+          timestamp: '2026-06-08T00:00:00.000Z',
+        },
+        {
+          toolName: 'canvas.verify_patch',
+          success: true,
+          summary: 'Patch verified',
+          timestamp: '2026-06-08T00:00:00.000Z',
+        },
+      ],
+      answer: '已完成画布修改，并完成验证。',
+    })
+
+    await runLocalCanvasAgent({
+      requestPayload: {},
+      context: streamContext,
+      execContext: {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        chatId: 'chat-1',
+      },
+      options: {},
+    })
+
+    expect(streamContext.contentBlocks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentBlockType.options })])
+    )
+    expect(streamContext.accumulatedContent).toBe('已完成画布修改，并完成验证。')
   })
 
   it('answers clearly non-canvas requests without planning or reading the canvas', async () => {
@@ -590,6 +692,11 @@ describe('local canvas runtime manual confirmation', () => {
     mockResolveLocalAgentContext.mockResolvedValueOnce(
       buildLocalContext({ streamContext: firstStream })
     )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: deletePlan,
+      observations: [],
+      answer: '确认后删除。',
+    })
     await runLocalCanvasAgent({
       requestPayload: {},
       context: firstStream,
@@ -637,11 +744,11 @@ describe('local canvas runtime manual confirmation', () => {
 
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.apply_patch',
-      input: { patch: patchPlan.patch },
+      input: { patch: deletePlan.patch },
     })
     expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(expect.anything(), {
       name: 'canvas.verify_patch',
-      input: { patch: patchPlan.patch },
+      input: { patch: deletePlan.patch },
     })
     expect(mockVerifyLocalAgentFinalAnswer).not.toHaveBeenCalled()
     expect(confirmStream.accumulatedContent).toBe('已完成画布修改，并完成验证。')
@@ -652,6 +759,11 @@ describe('local canvas runtime manual confirmation', () => {
     mockResolveLocalAgentContext.mockResolvedValueOnce(
       buildLocalContext({ chatId: 'chat-revise', streamContext: firstStream })
     )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: deletePlan,
+      observations: [],
+      answer: '确认后删除。',
+    })
     await runLocalCanvasAgent({
       requestPayload: {},
       context: firstStream,
@@ -667,7 +779,7 @@ describe('local canvas runtime manual confirmation', () => {
     const reviseId = (
       firstStream.contentBlocks.find((block) => block.type === ContentBlockType.options)?.options ??
       []
-    ).find((option) => option.label === 'Revise')?.value
+    ).find((option) => option.label === '调整方案')?.value
     expect(reviseId).toBeDefined()
 
     const reviseStream = buildStreamContext()
@@ -701,6 +813,11 @@ describe('local canvas runtime manual confirmation', () => {
     mockResolveLocalAgentContext.mockResolvedValueOnce(
       buildLocalContext({ chatId: 'chat-expire', streamContext: firstStream })
     )
+    mockRunLocalAgentToolLoop.mockResolvedValueOnce({
+      plan: deletePlan,
+      observations: [],
+      answer: '确认后删除。',
+    })
     await runLocalCanvasAgent({
       requestPayload: {},
       context: firstStream,
@@ -715,7 +832,7 @@ describe('local canvas runtime manual confirmation', () => {
     const confirmId = (
       firstStream.contentBlocks.find((block) => block.type === ContentBlockType.options)?.options ??
       []
-    ).find((option) => option.label === 'Confirm')?.value
+    ).find((option) => option.label === '确认删除')?.value
     expect(confirmId).toBeDefined()
 
     vi.setSystemTime(new Date('2026-06-06T00:31:00.000Z'))

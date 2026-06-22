@@ -24,6 +24,7 @@ import {
   putLocalAgentPendingPlan,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/pending-plan'
 import { classifyLocalCanvasAgentRouting } from '@/lib/copilot/request/lifecycle/local-canvas-agent/routing'
+import { planRequiresDeleteConfirmation } from '@/lib/copilot/request/lifecycle/local-canvas-agent/safety'
 import { persistLocalAgentSessionMetadata } from '@/lib/copilot/request/lifecycle/local-canvas-agent/session'
 import {
   emitLocalAgentOptions,
@@ -273,19 +274,42 @@ function buildPlanPreview(plan: LocalAgentPlan): string {
     .join('\n')
 }
 
-function hasManualMutation(plan: LocalAgentPlan): boolean {
-  return (
-    Boolean(plan.patch && plan.patch.operations.length > 0) ||
-    Boolean(plan.generateNodeIds && plan.generateNodeIds.length > 0) ||
-    Boolean(plan.generationTargets && plan.generationTargets.length > 0)
-  )
-}
-
 function buildNonCanvasResponse(): string {
   return [
     '这条请求看起来不是当前画布相关任务，我不会读取或修改画布。',
     '如果你希望把这个主题用于当前画布，请说明要创建、更新、连接或生成的节点内容。',
   ].join('\n')
+}
+
+async function emitDeleteConfirmationOptions(params: {
+  context: LocalAgentContext
+  streamContext: StreamingContext
+  options: Pick<OrchestratorOptions, 'abortSignal' | 'onEvent'>
+  plan: LocalAgentPlan
+}): Promise<void> {
+  const pending = putLocalAgentPendingPlan({
+    context: params.context,
+    plan: params.plan,
+    source: 'sim_ui',
+  })
+  await emitLocalAgentOptions({
+    context: params.streamContext,
+    options: params.options,
+    text: buildPlanPreview(params.plan),
+    optionItems: [
+      {
+        id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+        label: '确认删除',
+        value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+      },
+      {
+        id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+        label: '调整方案',
+        value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+      },
+    ],
+  })
+  params.streamContext.streamComplete = true
 }
 
 export async function runLocalCanvasAgent(params: {
@@ -351,30 +375,26 @@ export async function runLocalCanvasAgent(params: {
     if (!manualLoopResult) return
     const { plan, observations, answer } = manualLoopResult
 
-    if (hasManualMutation(plan)) {
-      const pending = putLocalAgentPendingPlan({
-        context: localContext,
-        plan,
-        source: 'sim_ui',
-      })
-      await emitLocalAgentOptions({
-        context: params.context,
+    if (hasSuccessfulVerifiedMutation(observations)) {
+      await finalizeLocalAgentRun({
+        context: manualLoopContext,
+        streamContext: params.context,
         options: params.options,
-        text: buildPlanPreview(plan),
-        optionItems: [
-          {
-            id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
-            label: 'Confirm',
-            value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
-          },
-          {
-            id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
-            label: 'Revise',
-            value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
-          },
-        ],
+        memory,
+        plan,
+        observations,
+        answer,
       })
-      params.context.streamComplete = true
+      return
+    }
+
+    if (planRequiresDeleteConfirmation(plan)) {
+      await emitDeleteConfirmationOptions({
+        context: localContext,
+        streamContext: params.context,
+        options: params.options,
+        plan,
+      })
       return
     }
 
@@ -421,30 +441,26 @@ export async function runLocalCanvasAgent(params: {
   if (!loopResult) return
   const { plan, observations, answer } = loopResult
 
-  if (plan.requiresUserConfirmation && hasManualMutation(plan)) {
-    const pending = putLocalAgentPendingPlan({
-      context: localContext,
-      plan,
-      source: 'sim_ui',
-    })
-    await emitLocalAgentOptions({
-      context: params.context,
+  if (hasSuccessfulVerifiedMutation(observations)) {
+    await finalizeLocalAgentRun({
+      context: contextWithMemory,
+      streamContext: params.context,
       options: params.options,
-      text: buildPlanPreview(plan),
-      optionItems: [
-        {
-          id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
-          label: 'Confirm',
-          value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
-        },
-        {
-          id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
-          label: 'Revise',
-          value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
-        },
-      ],
+      memory,
+      plan,
+      observations,
+      answer,
     })
-    params.context.streamComplete = true
+    return
+  }
+
+  if (planRequiresDeleteConfirmation(plan)) {
+    await emitDeleteConfirmationOptions({
+      context: localContext,
+      streamContext: params.context,
+      options: params.options,
+      plan,
+    })
     return
   }
 

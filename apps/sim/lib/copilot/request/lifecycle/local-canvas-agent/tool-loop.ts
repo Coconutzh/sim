@@ -10,6 +10,7 @@ import {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/models/actor'
 import { observationFromToolResult } from '@/lib/copilot/request/lifecycle/local-canvas-agent/observation'
 import { buildLocalAgentPlan } from '@/lib/copilot/request/lifecycle/local-canvas-agent/planner'
+import { patchRequiresDeleteConfirmation } from '@/lib/copilot/request/lifecycle/local-canvas-agent/safety'
 import { parseLocalAgentToolInputWithRepair } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-call-repair'
 import { getLocalAgentToolDescriptor } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-descriptor'
 import { executeLocalAgentTool } from '@/lib/copilot/request/lifecycle/local-canvas-agent/tool-executor-bridge'
@@ -99,17 +100,15 @@ function buildInitialDecisionPlan(
   context: LocalAgentContext,
   policy: ReturnType<typeof classifyLocalCanvasUserIntent>
 ): LocalAgentPlan {
-  const manualMutation =
-    context.confirmationMode === 'manual' && policy.mutationPolicy === 'allow_mutation'
   return {
     goal: context.message,
-    risk: policy.requiresUserConfirmation || manualMutation ? 'medium' : 'low',
+    risk: policy.requiresUserConfirmation ? 'medium' : 'low',
     userIntent: policy.userIntent,
-    mutationPolicy: manualMutation ? 'propose_only' : policy.mutationPolicy,
+    mutationPolicy: policy.mutationPolicy,
     canvasReadPolicy: policy.canvasReadPolicy,
     intentConfidence: policy.confidence,
     intentEvidence: policy.evidence,
-    requiresUserConfirmation: policy.requiresUserConfirmation || manualMutation,
+    requiresUserConfirmation: policy.requiresUserConfirmation,
     requiresClarification: false,
     steps: [],
     successCriteria: ['The model decision loop reaches a verified final answer or safe stop.'],
@@ -518,7 +517,6 @@ function isMutationToolCallName(toolName: LocalAgentToolCall['name']): boolean {
 function hasHardMutationSafetyBoundary(plan: LocalAgentPlan, evidence: Set<string>): boolean {
   return (
     plan.mutationPolicy === 'propose_only' ||
-    plan.requiresUserConfirmation === true ||
     evidence.has('explicit_read_only_signal') ||
     evidence.has('propose_only_signal') ||
     evidence.has('destructive_canvas_request') ||
@@ -1404,11 +1402,12 @@ async function runModelDrivenLocalAgentToolLoop(
             input: decision.pendingToolCall.input,
           })
         : undefined
+      const deleteConfirmationRequired = patchRequiresDeleteConfirmation(pendingPatch)
       state.plan = {
         ...applyPendingPatchToPlan(state.plan, pendingPatch),
         requiresClarification: true,
         clarificationQuestion: decision.question,
-        requiresUserConfirmation: true,
+        requiresUserConfirmation: deleteConfirmationRequired,
         risk: decision.risk,
       }
       return { plan: state.plan, observations: state.observations, answer: decision.question }

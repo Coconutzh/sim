@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { patchRequiresDeleteConfirmation } from '@/lib/copilot/request/lifecycle/local-canvas-agent/safety'
 import type {
   LocalAgentContext,
   LocalAgentObservation,
   LocalAgentToolName,
   LocalAgentToolResult,
+  LocalCanvasPatch,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 
 export interface LocalAgentToolDescriptor<
@@ -193,12 +195,9 @@ function patchContainsDestructiveOperation(input: Record<string, unknown>): bool
   const patch = input.patch
   if (!patch || typeof patch !== 'object') return false
   const operations = (patch as { operations?: unknown }).operations
-  if (!Array.isArray(operations)) return false
-  return operations.some((operation) => {
-    if (!operation || typeof operation !== 'object') return false
-    const type = (operation as { type?: unknown }).type
-    return type === 'delete_node' || type === 'clear_canvas'
-  })
+  return Array.isArray(operations)
+    ? patchRequiresDeleteConfirmation(patch as LocalCanvasPatch)
+    : false
 }
 
 function descriptor<Input extends Record<string, unknown>>(params: {

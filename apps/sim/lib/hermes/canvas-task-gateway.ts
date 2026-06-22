@@ -26,6 +26,7 @@ import {
   putLocalAgentPendingPlan,
   putLocalAgentPreviewPlan,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/pending-plan'
+import { patchRequiresDeleteConfirmation } from '@/lib/copilot/request/lifecycle/local-canvas-agent/safety'
 import type {
   CanvasNodeDetail,
   CanvasSnapshot,
@@ -1067,14 +1068,15 @@ function buildPlan(params: {
       expectedObservation: 'SIM verifies the canvas writeback before final response.',
     },
   ]
+  const requiresDeleteConfirmation = patchRequiresDeleteConfirmation(params.compiled.patch)
 
   return {
     goal: params.task.goal || 'Apply the SIM canvas task requested by Hermes.',
-    risk: params.task.risk,
+    risk: requiresDeleteConfirmation ? 'high' : params.task.risk,
     userIntent: hasGeneration ? 'generate_output' : 'mutate_canvas',
-    mutationPolicy: 'propose_only',
+    mutationPolicy: requiresDeleteConfirmation ? 'propose_only' : 'allow_mutation',
     canvasReadPolicy: 'required',
-    requiresUserConfirmation: true,
+    requiresUserConfirmation: requiresDeleteConfirmation,
     requiresClarification: false,
     steps,
     successCriteria: params.task.expectedChanges.length
@@ -1181,7 +1183,7 @@ function buildCapabilityManifest() {
       currentBehavior:
         'preview_create stores a previewActionId for the current canvas session; preview_commit executes the validated SIM plan after user approval; preview_discard expires the stored preview.',
     },
-    confirmationRequiredFor: ['mutate_canvas', 'run_generation', 'delete_node'],
+    confirmationRequiredFor: ['delete_node', 'clear_canvas'],
   }
 }
 
@@ -1300,6 +1302,68 @@ async function runPropose(params: {
   const prepared = await preparePlanFromTask(params)
   if (!prepared.success) return prepared.response
   const { compiled, plan } = prepared
+
+  if (!plan.requiresUserConfirmation) {
+    if (!params.context.permissions.canWrite) {
+      return {
+        success: false,
+        operation: 'propose',
+        answer: '',
+        auditId: params.auditId,
+        traceId: params.body.traceId,
+        errorCode: 'USER_PERMISSION_DENIED',
+        error: params.context.permissions.readonlyReason ?? 'Canvas write access denied',
+      }
+    }
+
+    const observations = await executeConfirmedLocalAgentPlan(params.context, plan)
+    const failedObservation = observations.find((observation) => !observation.success)
+    const changedNodeIds = collectChangedNodeIds(observations)
+    const generatedNodeIds = collectGeneratedNodeIds(observations)
+    const verificationSummary = buildVerificationSummary(observations)
+    const createdNodeMap = collectCreatedNodeMap(observations)
+    const generatedOutputs = collectGeneratedOutputs(observations)
+
+    if (failedObservation) {
+      return {
+        success: false,
+        operation: 'propose',
+        answer: `SIM 画布任务执行失败：${failedObservation.summary}`,
+        risk: plan.risk,
+        requiresConfirmation: false,
+        proposedPatchSummary: compiled.proposedPatchSummary,
+        changedNodeIds,
+        generatedNodeIds,
+        createdNodeMap,
+        generatedOutputs,
+        verificationSummary,
+        auditId: params.auditId,
+        traceId: params.body.traceId,
+        errorCode: 'TOOL_EXECUTION_FAILED',
+        error: failedObservation.summary,
+      }
+    }
+
+    return {
+      success: true,
+      operation: 'propose',
+      answer: [
+        '已执行 Hermes 编译的 SIM 画布任务，并完成写入验证。',
+        `执行摘要：\n${compiled.proposedPatchSummary}`,
+      ].join('\n\n'),
+      risk: plan.risk,
+      requiresConfirmation: false,
+      proposedPatchSummary: compiled.proposedPatchSummary,
+      changedNodeIds,
+      generatedNodeIds,
+      createdNodeMap,
+      generatedOutputs,
+      verificationSummary,
+      auditId: params.auditId,
+      traceId: params.body.traceId,
+    }
+  }
+
   const pending = putLocalAgentPendingPlan({
     context: params.context,
     plan,
@@ -1310,7 +1374,7 @@ async function runPropose(params: {
     success: true,
     operation: 'propose',
     answer: [
-      '已将 Hermes 画布任务编译为 SIM 可执行方案，等待用户确认后执行。',
+      '已将 Hermes 删除/清空类画布任务编译为 SIM 可执行方案，等待用户确认后执行。',
       `建议摘要：\n${compiled.proposedPatchSummary}`,
       '当前没有执行任何画布写入。',
     ].join('\n\n'),

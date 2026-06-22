@@ -373,13 +373,12 @@ export function classifyLocalCanvasUserIntent(
       userIntent: 'propose_plan',
       mutationPolicy: 'propose_only',
       canvasReadPolicy: currentCanvas ? 'required' : 'optional',
-      reason: 'user asked for a plan or confirmation before changes',
+      reason: 'user asked for a plan or discussion before changes',
       confidence: 0.9,
       evidence: [
         'propose_only_signal',
         currentCanvas ? 'current_canvas_reference' : 'no_current_canvas_reference',
       ],
-      requiresUserConfirmation: true,
     })
   }
 
