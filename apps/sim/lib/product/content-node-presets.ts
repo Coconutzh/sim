@@ -125,6 +125,7 @@ const CONTENT_NODE_PRESETS: readonly ContentNodePreset[] = [
     presetSubBlockValues: {
       contentVariant: 'presentation',
       presentationPrompt: '',
+      presentationSlideCountMode: 'auto',
       presentationSlideCount: 8,
       presentationStatus: 'idle',
       presentationArtifact: null,

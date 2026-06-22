@@ -121,6 +121,14 @@ export const ContentBlock: BlockConfig = {
       paramVisibility: 'hidden',
     },
     {
+      id: 'presentationSlideCountMode',
+      title: 'PPT Slide Mode',
+      type: 'short-input',
+      defaultValue: 'auto',
+      hidden: true,
+      paramVisibility: 'hidden',
+    },
+    {
       id: 'presentationStatus',
       title: 'PPT Status',
       type: 'short-input',

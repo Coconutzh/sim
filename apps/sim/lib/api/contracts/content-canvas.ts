@@ -77,6 +77,7 @@ export const generateContentCanvasPresentationBodySchema = z.object({
   workflowId: nonEmptyIdSchema,
   nodeId: nonEmptyIdSchema,
   prompt: z.string().max(20_000).optional(),
+  slideCountMode: z.enum(['auto', 'manual']).optional(),
   slideCount: z.number().int().min(1).max(200).optional(),
 })
 export type GenerateContentCanvasPresentationBody = z.input<

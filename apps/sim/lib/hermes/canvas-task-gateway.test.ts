@@ -135,6 +135,7 @@ describe('runHermesCanvasTaskGateway', () => {
               title: 'Defense Deck',
               content: {
                 presentationPrompt: 'Use the selected car as the visual case study.',
+                presentationSlideCountMode: 'manual',
                 presentationSlideCount: 10,
               },
             },
@@ -172,6 +173,7 @@ describe('runHermesCanvasTaskGateway', () => {
           kind: 'presentation',
           fields: expect.objectContaining({
             presentationPrompt: 'Use the selected car as the visual case study.',
+            presentationSlideCountMode: 'manual',
             presentationSlideCount: 10,
           }),
         }),

@@ -42,7 +42,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const parsed = await parseRequest(generateContentCanvasPresentationContract, request, {})
   if (!parsed.success) return parsed.response
 
-  const { workspaceId, workflowId, nodeId, prompt, slideCount } = parsed.data.body
+  const { workspaceId, workflowId, nodeId, prompt, slideCount, slideCountMode } = parsed.data.body
 
   const authorization = await authorizeWorkflowByWorkspacePermission({
     workflowId,
@@ -72,6 +72,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       nodeId,
       prompt,
       slideCount,
+      slideCountMode,
       traceId: request.headers.get('x-trace-id') ?? `presentation:${workflowId}:${nodeId}`,
     })
 

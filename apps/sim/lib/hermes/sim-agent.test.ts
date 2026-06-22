@@ -172,7 +172,22 @@ describe('callHermesSimAgent', () => {
     )
     expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
-        instructions: expect.stringContaining('Do not ask the user for a fixed stylePreset'),
+        instructions: expect.stringContaining('Do not require the user to choose a stylePreset'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('referenced text node is provided'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('codex-ppt style reference summary'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('choose 6-8 pages'),
       })
     )
   })

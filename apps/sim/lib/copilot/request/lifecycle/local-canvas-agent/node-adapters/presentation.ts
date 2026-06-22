@@ -12,6 +12,7 @@ import type { CanvasNodeAdapter } from '@/lib/copilot/request/lifecycle/local-ca
 
 const WRITABLE_FIELDS = [
   'presentationPrompt',
+  'presentationSlideCountMode',
   'presentationSlideCount',
   'presentationStatus',
   'presentationError',
@@ -65,6 +66,7 @@ export const presentationNodeAdapter: CanvasNodeAdapter = {
         'PPT node without a generated artifact',
       fields: {
         presentationPrompt: getValue(node.values, 'presentationPrompt', ''),
+        presentationSlideCountMode: getValue(node.values, 'presentationSlideCountMode', 'auto'),
         presentationSlideCount: getValue(node.values, 'presentationSlideCount', 8),
         presentationStatus: getValue(node.values, 'presentationStatus', 'idle'),
         presentationError: getValue(node.values, 'presentationError', null),
@@ -78,6 +80,7 @@ export const presentationNodeAdapter: CanvasNodeAdapter = {
   getEditableFields() {
     return [
       { id: 'presentationPrompt', type: 'string' },
+      { id: 'presentationSlideCountMode', type: 'string' },
       { id: 'presentationSlideCount', type: 'number' },
       { id: 'presentationStatus', type: 'string' },
       { id: 'presentationError', type: 'string' },
@@ -90,6 +93,7 @@ export const presentationNodeAdapter: CanvasNodeAdapter = {
     return buildContentCreateOperation(input, {
       contentVariant: 'presentation',
       presentationPrompt: '',
+      presentationSlideCountMode: 'auto',
       presentationSlideCount: 8,
       presentationStatus: 'idle',
       presentationArtifact: null,

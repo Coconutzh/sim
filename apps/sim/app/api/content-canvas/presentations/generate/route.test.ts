@@ -53,6 +53,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
     workflowId: 'workflow-1',
     nodeId: 'ppt-node-1',
     prompt: '根据引用节点生成科研答辩 PPT',
+    slideCountMode: 'manual',
     slideCount: 8,
     ...overrides,
   }
@@ -136,6 +137,7 @@ describe('POST /api/content-canvas/presentations/generate', () => {
         workflowId: 'workflow-1',
         nodeId: 'ppt-node-1',
         prompt: '根据引用节点生成科研答辩 PPT',
+        slideCountMode: 'manual',
         slideCount: 8,
         traceId: 'trace-1',
       })

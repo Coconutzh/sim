@@ -538,6 +538,13 @@ function mergeContentFields(params: {
     if (typeof slideCount === 'number' && Number.isFinite(slideCount)) {
       output.presentationSlideCount = Math.max(1, Math.min(200, Math.round(slideCount)))
     }
+    const rawSlideCountMode =
+      contentRecord.presentationSlideCountMode ??
+      contentRecord.slideCountMode ??
+      fields.presentationSlideCountMode
+    if (rawSlideCountMode === 'auto' || rawSlideCountMode === 'manual') {
+      output.presentationSlideCountMode = rawSlideCountMode
+    }
 
     for (const key of [
       'presentationStatus',
@@ -1108,7 +1115,12 @@ function schemaForKind(kind: LocalCanvasNodeKind) {
               : kind === 'audio'
                 ? ['audioPrompt', 'audioParameters']
                 : kind === 'presentation'
-                  ? ['presentationPrompt', 'presentationSlideCount', 'contentReferences']
+                  ? [
+                      'presentationPrompt',
+                      'presentationSlideCountMode',
+                      'presentationSlideCount',
+                      'contentReferences',
+                    ]
                   : [],
       outputField: adapter.capabilities.canGenerate ? 'file' : null,
       externalArtifactTool:

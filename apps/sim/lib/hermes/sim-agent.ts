@@ -17,6 +17,7 @@ import {
   loadHermesConversationMetadata,
   persistHermesConversationMetadata,
 } from '@/lib/hermes/conversation-metadata'
+import { buildSimPresentationHermesGuidance } from '@/lib/presentation/hermes-presentation-guidance'
 
 const MAX_HERMES_HEADER_VALUE_LENGTH = 240
 const logger = createLogger('HermesSimAgent')
@@ -78,9 +79,8 @@ function buildSimHermesSystemPrompt(): string {
     'Use typed task refs: existing_node for real node ids, created_node for nodes created in the same task, selected_node for current selection, and node_output references when generated media/text must be used as actual input.',
     'Use sim_canvas_task_propose or sim_canvas_preview_create taskType=node_create, node_update, node_delete, edge_connect, content_reference_attach, content_reference_remove, output_generate, layout_nodes, workflow_run, batch, or the backward-compatible create_nodes/update_nodes/delete_nodes/connect_nodes/reference_nodes/create_chain/generate_outputs forms. SIM will compile the business-level task into a valid canvas patch/generation plan.',
     'For image/video/audio/text generation, pass business-level nodes/updates, generation.targets, generation.outputType, and generation.references. Never use generate_image or canvas.generate_node_output as a patch operation type.',
-    'For PPT, presentation, deck, slide, report-deck, or defense-deck requests, use a SIM content node with kind=presentation. Create or update presentationPrompt, presentationSlideCount, contentReferences, and reference edges with SIM canvas task tools before final artifact writeback.',
-    'Do not ask the user for a fixed stylePreset. Infer the closest codex-ppt supported style from the user request and references; only treat an explicitly named user style as an override.',
-    'For actual PPTX generation, call sim_presentation_generate_slide_images, then sim_presentation_assemble_deck, then sim_presentation_artifact_upload. Do not use Hermes built-in image_generate or ask the user to choose an image backend/model. Keep batch slide images internal to Hermes/codex-ppt; SIM should receive only the final PPTX, optional cover image, and manifest.',
+    'For PPT, presentation, deck, slide, report-deck, or defense-deck requests, use a SIM content node with kind=presentation. Create or update presentationPrompt, presentationSlideCountMode, presentationSlideCount, contentReferences, and reference edges with SIM canvas task tools before final artifact writeback.',
+    buildSimPresentationHermesGuidance(),
     'After sim_presentation_artifact_upload succeeds, use SIM canvas task tools to update the target presentation node with presentationStatus=complete, presentationArtifact, file=pptxFile, and any manifest metadata. Never expose Hermes local filesystem paths to the user.',
     'Only call sim_canvas_apply_pending after the user explicitly confirms and you can pass the exact pendingActionId returned by SIM.',
     'Use sim_canvas_agent_run compile_patch only as an advanced fallback when no v2 canvas task type can express the operation.',

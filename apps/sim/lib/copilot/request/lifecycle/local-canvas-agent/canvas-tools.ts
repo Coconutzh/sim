@@ -280,7 +280,9 @@ function defaultFieldsForInstructionNode(
   if (kind === 'image') return { aiPrompt: prompt }
   if (kind === 'video') return { videoPrompt: prompt }
   if (kind === 'audio') return { audioPrompt: prompt }
-  if (kind === 'presentation') return { presentationPrompt: prompt }
+  if (kind === 'presentation') {
+    return { presentationPrompt: prompt, presentationSlideCountMode: 'auto' }
+  }
   return {}
 }
 
@@ -737,6 +739,7 @@ function getReadableFieldsForKind(kind: Parameters<typeof getCanvasNodeAdapter>[
   if (kind === 'presentation') {
     return [
       'presentationPrompt',
+      'presentationSlideCountMode',
       'presentationSlideCount',
       'presentationStatus',
       'presentationArtifact',

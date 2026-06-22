@@ -103,6 +103,7 @@ describe('hermes canvas task contract', () => {
             title: 'Research Defense Deck',
             content: {
               presentationPrompt: 'Generate a research defense deck from the selected copy.',
+              presentationSlideCountMode: 'manual',
               presentationSlideCount: 10,
             },
           },
@@ -122,6 +123,7 @@ describe('hermes canvas task contract', () => {
       kind: 'presentation',
       content: {
         presentationPrompt: 'Generate a research defense deck from the selected copy.',
+        presentationSlideCountMode: 'manual',
         presentationSlideCount: 10,
       },
     })

@@ -139,6 +139,7 @@ const canvasTaskContentSchema = z
     videoPrompt: z.string().max(12000).optional(),
     audioPrompt: z.string().max(12000).optional(),
     presentationPrompt: z.string().max(20000).optional(),
+    presentationSlideCountMode: z.enum(['auto', 'manual']).optional(),
     presentationSlideCount: z.number().int().min(1).max(200).optional(),
     prompt: z.string().max(12000).optional(),
     aiPrompt: z.string().max(12000).optional(),

@@ -78,6 +78,7 @@ describe('content-node-presets', () => {
     expect(preset?.presetSubBlockValues).toMatchObject({
       contentVariant: 'presentation',
       presentationPrompt: '',
+      presentationSlideCountMode: 'auto',
       presentationSlideCount: 8,
       presentationStatus: 'idle',
       presentationArtifact: null,

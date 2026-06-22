@@ -12,6 +12,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -21,6 +22,7 @@ import {
   Box as BoxIcon,
   Brush,
   Camera,
+  Check,
   Copy as CopyIcon,
   Crop as CropIcon,
   Download,
@@ -34,6 +36,7 @@ import {
   Pilcrow,
   Plus,
   Scissors,
+  Settings2,
   Sparkles,
   Type,
   Upload,
@@ -42,7 +45,7 @@ import {
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Handle, type NodeProps, Position, useReactFlow, useViewport } from 'reactflow'
-import { toast } from '@/components/emcn'
+import { Button, Input, toast } from '@/components/emcn'
 import { requestJson } from '@/lib/api/client/request'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import type { ImageOutpaintAspectRatio } from '@/lib/api/contracts/media-images'
@@ -126,6 +129,10 @@ import {
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
 import { AudioContentAiComposer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/audio-content-ai-composer'
+import {
+  ComposerSendButton,
+  ContentAiComposerShell,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/content-ai-composer-shell'
 import {
   DEFAULT_VIDEO_PARAMETERS,
   normalizeAudioModel,
@@ -226,6 +233,7 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 type ContentVariant = 'text' | 'image' | 'video' | 'audio' | 'presentation'
 type ImageGenerationStatus = 'pending' | 'complete' | 'error'
 type PresentationGenerationStatus = 'idle' | 'pending' | 'complete' | 'error'
+type PresentationSlideCountMode = 'auto' | 'manual'
 type ContentGenerationStatus = ImageGenerationStatus | VideoEnhanceGenerationStatus
 type ContentGenerationKind = ToolbarDerivedImageGenerationKind | VideoEnhanceGenerationKind
 type StoredValueRecord = Record<string, { value?: unknown } | unknown> | undefined
@@ -507,6 +515,10 @@ function normalizeImageGenerationStatus(value: unknown): ImageGenerationStatus |
 
 function normalizePresentationGenerationStatus(value: unknown): PresentationGenerationStatus {
   return value === 'pending' || value === 'complete' || value === 'error' ? value : 'idle'
+}
+
+function normalizePresentationSlideCountMode(value: unknown): PresentationSlideCountMode {
+  return value === 'manual' ? 'manual' : 'auto'
 }
 
 function hasUploadedFileValue(value: unknown): boolean {
@@ -1418,12 +1430,194 @@ function TextContentCard({
   )
 }
 
+function PresentationContentAiComposer({
+  canEdit,
+  selected,
+  prompt,
+  slideCountMode,
+  slideCount,
+  isGenerating,
+  error,
+  header,
+  hasReferences,
+  onChangePrompt,
+  onChangeSlideCountMode,
+  onChangeSlideCount,
+  onSubmit,
+}: {
+  canEdit: boolean
+  selected: boolean
+  prompt: string
+  slideCountMode: PresentationSlideCountMode
+  slideCount: number
+  isGenerating: boolean
+  error: string | null
+  header?: ReactNode
+  hasReferences: boolean
+  onChangePrompt: (value: string) => void
+  onChangeSlideCountMode: (value: PresentationSlideCountMode) => void
+  onChangeSlideCount: (value: number) => void
+  onSubmit: () => void
+}) {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const slideCountInputId = useId()
+  const isManual = slideCountMode === 'manual'
+  const summary = isManual ? `${slideCount} pages` : 'Auto pages'
+
+  return (
+    <ContentAiComposerShell
+      canEdit={canEdit}
+      selected={selected}
+      prompt={prompt}
+      placeholder='描述 PPT 目标、受众、内容来源、页数和风格。风格或页数不填时，Hermes 会自动规划。'
+      isGenerating={isGenerating}
+      loadingLabel='Hermes is generating the PPT...'
+      error={error}
+      widthClassName='w-[520px]'
+      header={
+        <div className='flex flex-col gap-3'>
+          {header}
+          <div className='flex items-start gap-2 rounded-[18px] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-secondary)] text-xs'>
+            <FileText className='mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--brand-secondary)]' />
+            <span>
+              {hasReferences
+                ? '引用的文本会作为 PPT 主要内容。图片和媒体用于指导视觉设计。'
+                : '可以引用画布内容，或直接描述要生成的 PPT。'}
+            </span>
+          </div>
+        </div>
+      }
+      onChangePrompt={onChangePrompt}
+      onSubmit={onSubmit}
+      footer={
+        <div className='flex items-center justify-between gap-3'>
+          <Button
+            type='button'
+            variant='default'
+            size='md'
+            disabled={!canEdit || isGenerating}
+            onMouseDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setSettingsOpen((current) => !current)
+            }}
+            className={cn(
+              'flex min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-xs transition-colors',
+              !canEdit || isGenerating
+                ? 'cursor-not-allowed text-[var(--text-muted)]'
+                : 'text-[var(--text-secondary)] hover-hover:bg-[var(--surface-3)] hover-hover:text-[var(--text-primary)]'
+            )}
+          >
+            <Settings2 className='h-3.5 w-3.5 shrink-0 text-[var(--brand-secondary)]' />
+            <span className='truncate'>{summary}</span>
+            {settingsOpen ? (
+              <Check className='h-3.5 w-3.5 shrink-0 text-[var(--brand-accent)]' />
+            ) : null}
+          </Button>
+
+          <ComposerSendButton
+            canEdit={canEdit}
+            isGenerating={isGenerating}
+            onSubmit={onSubmit}
+            ariaLabel='Generate PPT with Hermes'
+          />
+        </div>
+      }
+      afterFooter={
+        settingsOpen ? (
+          <div className='border-[var(--border)] border-t bg-[var(--surface-1)] px-4 py-4'>
+            <div className='flex flex-col gap-4'>
+              <div className='flex items-center justify-between gap-3'>
+                <div>
+                  <div className='font-medium text-[var(--text-primary)] text-sm'>
+                    PPT generation settings
+                  </div>
+                  <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
+                    Auto lets Hermes infer page count from prompt and referenced content.
+                  </div>
+                </div>
+                <Button
+                  type='button'
+                  variant='default'
+                  size='sm'
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setSettingsOpen(false)
+                  }}
+                  className='rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-3)]'
+                >
+                  Close
+                </Button>
+              </div>
+
+              <div className='grid grid-cols-2 rounded-[18px] bg-[var(--surface-2)] p-1'>
+                {(['auto', 'manual'] as const).map((mode) => (
+                  <Button
+                    key={mode}
+                    type='button'
+                    variant={slideCountMode === mode ? 'active' : 'ghost-secondary'}
+                    size='md'
+                    disabled={!canEdit || isGenerating}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onChangeSlideCountMode(mode)
+                    }}
+                    className={cn(
+                      'rounded-[14px] px-3 py-2 text-xs capitalize transition-colors',
+                      slideCountMode === mode
+                        ? 'bg-[var(--surface-5)] text-[var(--text-primary)]'
+                        : 'text-[var(--text-muted)] hover-hover:bg-[var(--surface-3)]',
+                      (!canEdit || isGenerating) && 'cursor-not-allowed opacity-60'
+                    )}
+                  >
+                    {mode}
+                  </Button>
+                ))}
+              </div>
+
+              {isManual ? (
+                <label htmlFor={slideCountInputId} className='flex flex-col gap-2'>
+                  <span className='text-[var(--text-secondary)] text-xs'>Slides</span>
+                  <Input
+                    id={slideCountInputId}
+                    type='number'
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={slideCount}
+                    disabled={!canEdit || isGenerating}
+                    onChange={(event) => onChangeSlideCount(Number(event.target.value))}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    className='rounded-[14px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60'
+                  />
+                </label>
+              ) : null}
+            </div>
+          </div>
+        ) : null
+      }
+    />
+  )
+}
+
 function PresentationContentCard({
   canEdit,
   isPreview,
   isEmbedded,
   selected,
   prompt,
+  slideCountMode,
   slideCount,
   status,
   errorMessage,
@@ -1435,6 +1629,8 @@ function PresentationContentCard({
   onAddReference,
   onRemoveReference,
   onChangePrompt,
+  onChangeSlideCountMode,
+  onChangeSlideCount,
   onGenerate,
 }: {
   canEdit: boolean
@@ -1442,6 +1638,7 @@ function PresentationContentCard({
   isEmbedded: boolean
   selected: boolean
   prompt: string
+  slideCountMode: PresentationSlideCountMode
   slideCount: number
   status: PresentationGenerationStatus
   errorMessage: string | null
@@ -1453,6 +1650,8 @@ function PresentationContentCard({
   onAddReference: () => void
   onRemoveReference: (reference: ContentReferenceRecord) => void
   onChangePrompt: (value: string) => void
+  onChangeSlideCountMode: (value: PresentationSlideCountMode) => void
+  onChangeSlideCount: (value: number) => void
   onGenerate: () => void
 }) {
   const pptxFile = artifact?.pptxFile ?? fallbackFile
@@ -1468,6 +1667,11 @@ function PresentationContentCard({
   const selectedStyle = artifact?.manifest?.selectedStyle?.trim()
   const isGenerating = status === 'pending' || isGeneratePending
   const hasArtifact = Boolean(pptxUrl)
+  const slideCountSummary = hasArtifact
+    ? `${resolvedSlideCount} pages`
+    : slideCountMode === 'manual'
+      ? `${slideCount} pages`
+      : 'Auto pages'
 
   return (
     <div className='relative'>
@@ -1493,7 +1697,7 @@ function PresentationContentCard({
             </div>
           ) : (
             <div className='flex flex-col items-center gap-3 text-center text-[var(--text-secondary)]'>
-              <div className='flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F4B740]/15 text-[#F4B740]'>
+              <div className='flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--surface-5)] text-[var(--brand-secondary)]'>
                 <FileText className='h-7 w-7' />
               </div>
               <div>
@@ -1508,7 +1712,7 @@ function PresentationContentCard({
           )}
 
           {hasArtifact ? (
-            <div className='absolute right-3 bottom-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-white text-xs backdrop-blur'>
+            <div className='absolute right-3 bottom-3 flex items-center gap-2 rounded-full bg-[var(--surface-inverted)] px-3 py-1.5 text-[var(--text-inverse)] text-xs backdrop-blur'>
               <FileText className='h-3.5 w-3.5' />
               <span>{resolvedSlideCount} 页</span>
             </div>
@@ -1520,7 +1724,7 @@ function PresentationContentCard({
             <div className='min-w-0'>
               <div className='truncate font-medium text-[var(--text-primary)] text-sm'>{title}</div>
               <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-tertiary)]'>
-                <span>{resolvedSlideCount} 页</span>
+                <span>{slideCountSummary}</span>
                 <span>{selectedStyle || 'Hermes 自动选风格'}</span>
               </div>
             </div>
@@ -1539,58 +1743,38 @@ function PresentationContentCard({
             ) : null}
           </div>
 
-          {!isPreview && !isEmbedded ? (
-            <textarea
-              value={prompt}
-              disabled={!canEdit || isGenerating}
-              placeholder='描述 PPT 目标、受众、页数、必须引用的画布内容；风格可留给 Hermes 自动判断。'
-              className='nodrag nopan min-h-[68px] w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-primary)] text-xs outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-secondary)] disabled:cursor-not-allowed disabled:opacity-70'
-              onChange={(event) => onChangePrompt(event.target.value)}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ) : null}
-
-          {!isPreview && !isEmbedded ? (
-            <button
-              type='button'
-              disabled={!canEdit || isGenerating || !prompt.trim()}
-              className={cn(
-                'nodrag nopan inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[#F4B740] px-3 font-medium text-[#211506] text-xs shadow-sm transition-colors hover-hover:bg-[#F6C85A] disabled:cursor-not-allowed disabled:opacity-60'
-              )}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onGenerate()
-              }}
-            >
-              {isGenerating ? (
-                <Loader2 className='h-3.5 w-3.5 animate-spin' />
-              ) : (
-                <Sparkles className='h-3.5 w-3.5' />
-              )}
-              <span>{hasArtifact ? '重新生成 PPT' : '生成 PPT'}</span>
-            </button>
+          {!isPreview && !isEmbedded && !hasArtifact ? (
+            <div className='rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-secondary)] text-xs'>
+              Select this node to write a prompt, attach references, and generate the PPT.
+            </div>
           ) : null}
         </div>
       </div>
 
       {!isPreview && !isEmbedded ? (
-        <ReferenceComposerHeader
+        <PresentationContentAiComposer
           canEdit={canEdit}
-          references={contentReferences}
-          referencedNodes={referencedNodes}
-          onAddReference={onAddReference}
-          onRemoveReference={onRemoveReference}
+          selected={selected}
+          prompt={prompt}
+          slideCountMode={slideCountMode}
+          slideCount={slideCount}
+          isGenerating={isGenerating}
+          error={errorMessage}
+          hasReferences={contentReferences.length > 0}
+          header={
+            <ReferenceComposerHeader
+              canEdit={canEdit}
+              references={contentReferences}
+              referencedNodes={referencedNodes}
+              onAddReference={onAddReference}
+              onRemoveReference={onRemoveReference}
+            />
+          }
+          onChangePrompt={onChangePrompt}
+          onChangeSlideCountMode={onChangeSlideCountMode}
+          onChangeSlideCount={onChangeSlideCount}
+          onSubmit={onGenerate}
         />
-      ) : null}
-
-      {selected && canEdit && !isPreview && !isEmbedded && !hasArtifact ? (
-        <div className='nodrag nopan -translate-x-1/2 absolute top-[-38px] left-1/2 z-40 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[var(--text-secondary)] text-xs shadow-sm'>
-          <Sparkles className='h-3.5 w-3.5 text-[#F4B740]' />
-          <span>Hermes 调用 codex-ppt 生成最终 PPT</span>
-        </div>
       ) : null}
     </div>
   )
@@ -2937,6 +3121,8 @@ export const ContentBlock = memo(function ContentBlock({
     id,
     'presentationPrompt'
   )
+  const [presentationSlideCountModeValue, setPresentationSlideCountModeValue] =
+    useSubBlockValue<string>(id, 'presentationSlideCountMode')
   const [presentationSlideCountValue, setPresentationSlideCountValue] = useSubBlockValue<number>(
     id,
     'presentationSlideCount'
@@ -3180,6 +3366,15 @@ export const ContentBlock = memo(function ContentBlock({
     'presentationPrompt',
     ''
   )
+  const resolvedPresentationSlideCountMode = normalizePresentationSlideCountMode(
+    extractStoredValue<string>(
+      data.isPreview
+        ? sourceValues
+        : ({ presentationSlideCountMode: presentationSlideCountModeValue } as StoredValueRecord),
+      'presentationSlideCountMode',
+      'auto'
+    )
+  )
   const resolvedPresentationSlideCount = coerceNumber(
     extractStoredValue<number | string>(
       data.isPreview
@@ -3366,12 +3561,13 @@ export const ContentBlock = memo(function ContentBlock({
       toast({ message: '缺少项目或画布上下文，无法生成 PPT。', duration: 2600 })
       return
     }
-    if (!prompt) {
-      toast({ message: '请先填写 PPT 生成提示词。', duration: 2400 })
+    if (!prompt && resolvedContentReferences.length === 0) {
+      toast({ message: '请填写 PPT 提示词，或先引用一个内容节点。', duration: 2400 })
       return
     }
 
     setPresentationStatusValue('pending')
+    setPresentationSlideCountModeValue(resolvedPresentationSlideCountMode)
     setPresentationErrorValue(null)
     setPresentationArtifactValue(null)
     setFileValue(null)
@@ -3382,13 +3578,19 @@ export const ContentBlock = memo(function ContentBlock({
         workflowId: sourceWorkflowId,
         nodeId: id,
         prompt,
-        slideCount: resolvedPresentationSlideCount,
+        slideCountMode: resolvedPresentationSlideCountMode,
+        ...(resolvedPresentationSlideCountMode === 'manual'
+          ? { slideCount: resolvedPresentationSlideCount }
+          : {}),
       })
       setPresentationStatusValue(result.presentationStatus)
       setPresentationErrorValue(null)
       setPresentationArtifactValue(result.presentationArtifact)
       setFileValue(result.file)
-      if (result.presentationArtifact.manifest.slideCount) {
+      if (
+        resolvedPresentationSlideCountMode === 'manual' &&
+        result.presentationArtifact.manifest.slideCount
+      ) {
         setPresentationSlideCountValue(result.presentationArtifact.manifest.slideCount)
       }
       toast({ message: 'PPT 已生成并回写到当前节点。', duration: 2400 })
@@ -5960,6 +6162,7 @@ export const ContentBlock = memo(function ContentBlock({
             isEmbedded={Boolean(data.isEmbedded)}
             selected={selected}
             prompt={resolvedPresentationPrompt}
+            slideCountMode={resolvedPresentationSlideCountMode}
             slideCount={resolvedPresentationSlideCount}
             status={resolvedPresentationStatus}
             errorMessage={resolvedPresentationError}
@@ -5972,6 +6175,14 @@ export const ContentBlock = memo(function ContentBlock({
             onRemoveReference={removeReferenceAndEdges}
             onChangePrompt={(value) => {
               if (!data.isPreview) setPresentationPromptValue(value)
+            }}
+            onChangeSlideCountMode={(value) => {
+              if (!data.isPreview) setPresentationSlideCountModeValue(value)
+            }}
+            onChangeSlideCount={(value) => {
+              if (!data.isPreview && Number.isFinite(value)) {
+                setPresentationSlideCountValue(Math.max(1, Math.min(30, Math.round(value))))
+              }
             }}
             onGenerate={() => {
               void generatePresentationFromNode()
