@@ -94,3 +94,5 @@ tmp-smoke/
 tmp-local-canvas-agent-*
 temp-agent-logs/
 imgs
+logs/
+tmp-*
