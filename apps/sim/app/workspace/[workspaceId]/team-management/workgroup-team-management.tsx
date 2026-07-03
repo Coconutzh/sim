@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { Button, Input, Loader, Switch } from '@/components/emcn'
+import { Button, Input, Loader, Switch, Textarea } from '@/components/emcn'
 import { isApiClientError } from '@/lib/api/client/errors'
 import type {
   PublicationReviewState,
@@ -87,11 +87,11 @@ const INVITATION_RESULT_STATUSES: OrganizationInvitationResultStatus[] = [
 ]
 
 const INVITATION_RESULT_LABELS: Record<OrganizationInvitationResultStatus, string> = {
-  sent: 'Created',
-  existing_member: 'Already member',
-  pending_invitation: 'Pending invite',
-  invalid_email: 'Invalid email',
-  failed: 'Failed',
+  sent: '已创建',
+  existing_member: '已是成员',
+  pending_invitation: '已有邀请',
+  invalid_email: '邮箱无效',
+  failed: '失败',
 }
 
 const TEAM_MANAGEMENT_TABS: {
@@ -101,28 +101,28 @@ const TEAM_MANAGEMENT_TABS: {
 }[] = [
   {
     id: 'members',
-    label: 'Members',
-    description: 'Canvas access and roles',
+    label: '成员',
+    description: '权限与角色',
   },
   {
     id: 'invites',
-    label: 'Invites',
-    description: 'In-app invites and pending',
+    label: '邀请',
+    description: '待处理邀请',
   },
   {
     id: 'publications',
-    label: 'Publications',
-    description: 'Showcase publishing',
+    label: '发布',
+    description: '成果展示',
   },
   {
     id: 'agent',
-    label: 'Agent Skill',
-    description: 'Team Copilot tools',
+    label: 'Agent 技能',
+    description: '团队助手',
   },
   {
     id: 'activity',
-    label: 'Activity',
-    description: 'Recent admin changes',
+    label: '动态',
+    description: '最近变更',
   },
 ]
 
@@ -137,7 +137,7 @@ interface PublicationReviewDraft {
 }
 
 function roleLabel(role: WorkgroupRole) {
-  return role === 'admin' ? 'Admin' : 'Member'
+  return role === 'admin' ? '管理员' : '成员'
 }
 
 function formatPublicationDate(value: string) {
@@ -153,13 +153,13 @@ function formatPublicationDate(value: string) {
 function formatPublicationStatus(status: string) {
   switch (status) {
     case 'published':
-      return 'Published'
+      return '已发布'
     case 'superseded':
-      return 'Superseded'
+      return '已替换'
     case 'archived':
-      return 'Archived'
+      return '已归档'
     case 'retracted':
-      return 'Retracted'
+      return '已撤回'
     default:
       return status
   }
@@ -168,32 +168,32 @@ function formatPublicationStatus(status: string) {
 function formatPublicationReviewState(reviewState: string | null) {
   switch (reviewState) {
     case 'pending':
-      return 'Pending review'
+      return '待审核'
     case 'in_review':
-      return 'In review'
+      return '审核中'
     case 'approved':
-      return 'Approved'
+      return '已通过'
     case 'changes_requested':
-      return 'Changes requested'
+      return '需修改'
     case 'rejected':
-      return 'Rejected'
+      return '已拒绝'
     default:
-      return 'Unreviewed'
+      return '未审核'
   }
 }
 
 function formatPublicationRiskLevel(riskLevel: string | null) {
   switch (riskLevel) {
     case 'low':
-      return 'Low risk'
+      return '低风险'
     case 'medium':
-      return 'Medium risk'
+      return '中风险'
     case 'high':
-      return 'High risk'
+      return '高风险'
     case 'critical':
-      return 'Critical risk'
+      return '严重风险'
     default:
-      return 'Risk unset'
+      return '未设置风险'
   }
 }
 
@@ -275,45 +275,45 @@ function summarizeInvitationResults(results: OrganizationInvitationResult[]) {
   ).length
   const failedCount = results.filter((result) => result.status === 'failed').length
   const parts = [
-    sentCount > 0 ? `${sentCount} created` : null,
-    skippedCount > 0 ? `${skippedCount} skipped` : null,
-    failedCount > 0 ? `${failedCount} failed` : null,
+    sentCount > 0 ? `已创建 ${sentCount} 个` : null,
+    skippedCount > 0 ? `跳过 ${skippedCount} 个` : null,
+    failedCount > 0 ? `失败 ${failedCount} 个` : null,
   ].filter((part): part is string => !!part)
-  return parts.length > 0 ? parts.join(', ') : 'No invitation result'
+  return parts.length > 0 ? parts.join('，') : '暂无邀请结果'
 }
 
 function getInvitationResultClassName(status: OrganizationInvitationResultStatus) {
   if (status === 'sent') {
-    return 'border-green-500/25 bg-green-500/10 text-green-700'
+    return 'border-[var(--success)] bg-[var(--surface-2)] text-[var(--success)]'
   }
   if (status === 'failed' || status === 'invalid_email') {
-    return 'border-red-500/25 bg-red-500/10 text-red-700'
+    return 'border-[var(--error)] bg-[var(--surface-2)] text-[var(--text-error)]'
   }
-  return 'border-amber-500/25 bg-amber-500/10 text-amber-700'
+  return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--warning)]'
 }
 
 function formatActivityAction(action: string) {
   switch (action) {
     case 'member.invited':
-      return 'Member added'
+      return '已添加成员'
     case 'member.role_changed':
-      return 'Role updated'
+      return '已更新角色'
     case 'member.removed':
-      return 'Member removed'
+      return '已移除成员'
     case 'publication.created':
-      return 'Published showcase'
+      return '已发布成果'
     case 'publication.updated':
-      return 'Updated publication'
+      return '已更新发布'
     case 'publication.archived':
-      return 'Archived publication'
+      return '已归档发布'
     case 'publication.retracted':
-      return 'Retracted publication'
+      return '已撤回发布'
     case 'publication.restored':
-      return 'Restored publication'
+      return '已恢复发布'
     case 'skill.updated':
-      return 'Agent skill updated'
+      return '已更新 Agent 技能'
     case 'workspace.created':
-      return 'Team canvas initialized'
+      return '已初始化团队画布'
     default:
       return action
   }
@@ -466,22 +466,18 @@ export function WorkgroupTeamManagement() {
     0
   )
   const repairTargets = [
-    needsCanvasRepair ? 'initialize team canvas' : null,
-    needsWorkflowRepair ? 'create default workflow graph' : null,
+    needsCanvasRepair ? '初始化团队画布' : null,
+    needsWorkflowRepair ? '创建默认画布' : null,
     needsPermissionRepair
-      ? `sync ${permissionRepairUpdates.length} member permission${
-          permissionRepairUpdates.length === 1 ? '' : 's'
-        }`
+      ? `同步 ${permissionRepairUpdates.length} 位成员权限`
       : null,
   ].filter(Boolean)
   const canRepairTeamHealth = repairTargets.length > 0
   const teamHealthRepairSummary = canRepairTeamHealth
-    ? `Repair can ${repairTargets.join(', ')}.`
+    ? `可修复：${repairTargets.join('、')}`
     : manualPermissionMismatchCount > 0
-      ? `${manualPermissionMismatchCount} owner or billing-account permission mismatch${
-          manualPermissionMismatchCount === 1 ? '' : 'es'
-        } need manual review.`
-      : 'No automatic repair is currently needed for canvas setup, graph, or permissions.'
+      ? `${manualPermissionMismatchCount} 个所有者或计费账号权限需要人工确认`
+      : '团队画布、默认画布和成员权限均正常'
   const latestPublication = useMemo(
     () =>
       publications.reduce<(typeof publications)[number] | null>((latest, publication) => {
@@ -503,22 +499,22 @@ export function WorkgroupTeamManagement() {
   }> = [
     {
       id: 'canvas',
-      label: 'Team canvas',
+      label: '团队画布',
       detail: teamWorkspaceId
-        ? 'Initialized and linked to this workgroup.'
-        : 'Not initialized yet.',
+        ? '已初始化并绑定当前团队'
+        : '尚未初始化',
       tone: teamWorkspaceId ? 'healthy' : 'warning',
     },
     {
       id: 'workflow',
-      label: 'Workflow graph',
+      label: '默认画布',
       detail: !teamWorkspaceId
-        ? 'Initialize the team canvas first.'
+        ? '请先初始化团队画布'
         : isLoadingTeamWorkflows
-          ? 'Checking team workflows...'
+          ? '正在检查团队画布'
           : teamWorkflows.length > 0
-            ? `${teamWorkflows.length} workflow${teamWorkflows.length === 1 ? '' : 's'} available.`
-            : 'No workflow graph exists yet.',
+            ? `${teamWorkflows.length} 个画布可用`
+            : '尚未创建默认画布',
       tone: !teamWorkspaceId
         ? 'warning'
         : isLoadingTeamWorkflows
@@ -529,18 +525,16 @@ export function WorkgroupTeamManagement() {
     },
     {
       id: 'permissions',
-      label: 'Member permissions',
+      label: '成员权限',
       detail: !teamWorkspaceId
-        ? 'No team canvas permissions to sync yet.'
+        ? '暂无团队画布权限可同步'
         : isLoadingTeamWorkspacePermissions
-          ? 'Checking canvas permissions...'
+          ? '正在检查画布权限'
           : !teamWorkspacePermissions
-            ? 'Canvas permissions could not be checked.'
+            ? '无法检查画布权限'
             : permissionMismatches.length === 0
-              ? 'Every workgroup member has the expected team canvas role.'
-              : `${permissionMismatches.length} member${
-                  permissionMismatches.length === 1 ? '' : 's'
-                } need permission sync.`,
+              ? '所有成员权限一致'
+              : `${permissionMismatches.length} 位成员需要同步权限`,
       tone: !teamWorkspaceId
         ? 'warning'
         : isLoadingTeamWorkspacePermissions
@@ -551,16 +545,16 @@ export function WorkgroupTeamManagement() {
     },
     {
       id: 'publication',
-      label: 'Recent publication',
+      label: '最近发布',
       detail: isLoadingPublications
-        ? 'Checking showcase versions...'
+        ? '正在检查成果版本'
         : latestPublication
           ? `v${latestPublication.versionNumber} ${formatPublicationStatus(
               latestPublication.status
             )}, ${formatPublicationReviewState(latestPublication.reviewState)}, ${formatPublicationRiskLevel(
               latestPublication.riskLevel
             )}.`
-          : 'No showcase version has been published from this team.',
+          : '当前团队尚未发布成果',
       tone: isLoadingPublications
         ? 'loading'
         : latestPublication &&
@@ -621,7 +615,7 @@ export function WorkgroupTeamManagement() {
         ])
       }
       setTeamCanvasName('')
-      setStatusMessage('Team canvas initialized.')
+      setStatusMessage('团队画布已初始化')
       router.push(
         result.defaultWorkflowId
           ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
@@ -662,7 +656,7 @@ export function WorkgroupTeamManagement() {
               : Promise.resolve(),
           ])
         }
-        repaired.push('initialized the team canvas')
+        repaired.push('初始化团队画布')
       }
 
       if (
@@ -673,11 +667,11 @@ export function WorkgroupTeamManagement() {
       ) {
         await createWorkflow.mutateAsync({
           workspaceId: repairedWorkspaceId,
-          name: 'Team canvas',
-          description: `Default node graph for ${activeWorkgroup?.name ?? 'team canvas'}`,
+          name: '团队画布',
+          description: `${activeWorkgroup?.name ?? '团队'} 的默认画布`,
           color: '#3972F6',
         })
-        repaired.push('created a default workflow graph')
+        repaired.push('创建默认画布')
       }
 
       if (repairedWorkspaceId && needsPermissionRepair) {
@@ -687,9 +681,7 @@ export function WorkgroupTeamManagement() {
           updates: permissionRepairUpdates,
         })
         repaired.push(
-          `synced ${permissionRepairUpdates.length} member permission${
-            permissionRepairUpdates.length === 1 ? '' : 's'
-          }`
+          `同步 ${permissionRepairUpdates.length} 位成员权限`
         )
       }
 
@@ -697,8 +689,8 @@ export function WorkgroupTeamManagement() {
       if (repairedWorkspaceId) setTeamCanvasName('')
       setStatusMessage(
         repaired.length > 0
-          ? `Health repair completed: ${repaired.join(', ')}.`
-          : 'No automatic team canvas health repair is needed.'
+          ? `健康检查已修复：${repaired.join('、')}`
+          : '当前无需自动修复'
       )
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
@@ -716,7 +708,7 @@ export function WorkgroupTeamManagement() {
     })
     setInviteValue('')
     setInviteRole('member')
-    setStatusMessage('Member added to the team.')
+    setStatusMessage('成员已加入团队')
   }
 
   const handleEmailInvitation = async () => {
@@ -743,13 +735,13 @@ export function WorkgroupTeamManagement() {
       if (results.length === 0 || results.every((item) => item.status === 'sent')) {
         setEmailInvitationValue('')
       }
-      setStatusMessage(`Team invitation results: ${summarizeInvitationResults(results)}.`)
+      setStatusMessage(`邀请结果：${summarizeInvitationResults(results)}`)
     } catch (error) {
       const results = readInvitationResultsFromError(error)
       setEmailInvitationResults(results)
       setStatusMessage(
         results.length > 0
-          ? `Team invitation results: ${summarizeInvitationResults(results)}.`
+          ? `邀请结果：${summarizeInvitationResults(results)}`
           : readErrorMessage(error)
       )
     }
@@ -763,7 +755,7 @@ export function WorkgroupTeamManagement() {
         workspaceId: teamWorkspaceId,
         organizationId: activeWorkgroup?.organizationId,
       })
-      setStatusMessage('Pending invitation canceled.')
+      setStatusMessage('待处理邀请已取消')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -855,7 +847,7 @@ export function WorkgroupTeamManagement() {
         publicationVersionId: publication.id,
         visibility: draft.visibility,
         targetWorkgroupIds,
-        reason: `Visibility updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
+        reason: `团队管理更新 ${activeWorkgroup?.name ?? '团队'} 的成果可见性`,
       })
       await refetchPublications()
       await refetchActivity()
@@ -864,7 +856,7 @@ export function WorkgroupTeamManagement() {
         delete next[publication.id]
         return next
       })
-      setStatusMessage('Publication visibility updated.')
+      setStatusMessage('成果可见性已更新')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -899,7 +891,7 @@ export function WorkgroupTeamManagement() {
         publicationVersionId: publication.id,
         reviewState: draft.reviewState === 'unreviewed' ? null : draft.reviewState,
         riskLevel: draft.riskLevel === 'unset' ? null : draft.riskLevel,
-        reason: `Review updated from team management for ${activeWorkgroup?.name ?? 'team'}`,
+        reason: `团队管理更新 ${activeWorkgroup?.name ?? '团队'} 的成果审核`,
       })
       await refetchPublications()
       await refetchActivity()
@@ -908,7 +900,7 @@ export function WorkgroupTeamManagement() {
         delete next[publication.id]
         return next
       })
-      setStatusMessage('Publication review updated.')
+      setStatusMessage('成果审核已更新')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -938,7 +930,7 @@ export function WorkgroupTeamManagement() {
       setPublishTitle('')
       setPublishDescription('')
       setPublishTargetWorkgroupIds([])
-      setStatusMessage('Team canvas published to showcase.')
+      setStatusMessage('团队画布已发布到成果中心')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -948,7 +940,7 @@ export function WorkgroupTeamManagement() {
     if (!activeWorkgroupId) return
     try {
       await updateAgentSkill.mutateAsync({ workgroupId: activeWorkgroupId, skillId, enabled })
-      setStatusMessage(enabled ? 'Agent skill enabled.' : 'Agent skill disabled.')
+      setStatusMessage(enabled ? 'Agent 技能已启用' : 'Agent 技能已停用')
     } catch (error) {
       setStatusMessage(readErrorMessage(error))
     }
@@ -957,13 +949,13 @@ export function WorkgroupTeamManagement() {
   const handleRoleChange = async (userId: string, role: WorkgroupRole) => {
     if (!activeWorkgroupId) return
     await updateMember.mutateAsync({ workgroupId: activeWorkgroupId, userId, role })
-    setStatusMessage('Member role updated.')
+    setStatusMessage('成员角色已更新')
   }
 
   const handleRemove = async (userId: string) => {
     if (!activeWorkgroupId) return
     await removeMember.mutateAsync({ workgroupId: activeWorkgroupId, userId })
-    setStatusMessage('Member removed from the team.')
+    setStatusMessage('成员已移出团队')
   }
 
   if (pageState === 'loading') {
@@ -978,9 +970,9 @@ export function WorkgroupTeamManagement() {
     return (
       <div className='flex h-full items-center justify-center bg-[var(--bg)] px-6'>
         <div className='max-w-[360px] text-center'>
-          <h1 className='font-medium text-[18px] text-[var(--text-primary)]'>No active team</h1>
+          <h1 className='font-medium text-[18px] text-[var(--text-primary)]'>暂无可管理团队</h1>
           <p className='mt-2 text-[13px] text-[var(--text-muted)] leading-5'>
-            Join a workgroup before managing team members and the team canvas.
+            加入项目团队后即可管理成员、邀请和团队画布。
           </p>
         </div>
       </div>
@@ -995,11 +987,10 @@ export function WorkgroupTeamManagement() {
             <Shield className='h-[16px] w-[16px] text-[var(--text-icon)]' />
           </div>
           <h1 className='mt-4 font-medium text-[18px] text-[var(--text-primary)]'>
-            Team admin access required
+            需要团队管理员权限
           </h1>
           <p className='mt-2 text-[13px] text-[var(--text-muted)] leading-5'>
-            You can use the personal draft, team canvas, and showcase canvas, but only team admins
-            can invite members or initialize the team canvas.
+            普通成员可以使用个人画布和团队画布；成员邀请、角色调整和团队画布初始化由团队管理员处理。
           </p>
         </div>
       </div>
@@ -1015,11 +1006,10 @@ export function WorkgroupTeamManagement() {
               {activeWorkgroup?.discipline.name} / {activeWorkgroup?.name}
             </div>
             <h1 className='mt-1 font-medium text-[22px] text-[var(--text-primary)]'>
-              Team management
+              团队管理
             </h1>
             <p className='mt-2 max-w-[520px] text-[13px] text-[var(--text-muted)] leading-5'>
-              Manage members for this workgroup, initialize the shared team canvas, and keep
-              personal drafts separate from team administration.
+              管理成员、邀请、团队画布和 Agent 技能。
             </p>
           </div>
           <div className='flex flex-col gap-2 sm:min-w-[280px]'>
@@ -1027,7 +1017,7 @@ export function WorkgroupTeamManagement() {
               <Input
                 value={teamCanvasName}
                 onChange={(event) => setTeamCanvasName(event.target.value)}
-                placeholder={`${activeWorkgroup?.name ?? 'Team'} team canvas name`}
+                placeholder={`${activeWorkgroup?.name ?? '团队'}画布名称`}
                 disabled={isBusy}
               />
             )}
@@ -1046,7 +1036,7 @@ export function WorkgroupTeamManagement() {
               ) : (
                 <Users className='mr-2 h-[14px] w-[14px]' />
               )}
-              {teamWorkspaceId ? 'Open team canvas' : 'Initialize team canvas'}
+              {teamWorkspaceId ? '打开团队画布' : '初始化团队画布'}
             </Button>
           </div>
         </div>
@@ -1060,19 +1050,20 @@ export function WorkgroupTeamManagement() {
         <div
           className='grid gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-2 sm:grid-cols-2 lg:grid-cols-5'
           role='tablist'
-          aria-label='Team management sections'
+          aria-label='团队管理栏目'
         >
           {TEAM_MANAGEMENT_TABS.map((tab) => (
-            <button
+            <Button
               key={tab.id}
               type='button'
+              variant='ghost'
               role='tab'
               aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'rounded-[8px] border px-3 py-2 text-left transition-colors',
+                'h-auto flex-col items-stretch justify-start rounded-[8px] border px-3 py-2 text-left transition-colors',
                 activeTab === tab.id
-                  ? 'border-[var(--border)] bg-[var(--surface-1)]'
+                  ? 'border-[var(--brand-accent)] bg-[var(--surface-1)] shadow-subtle'
                   : 'border-transparent bg-transparent hover:border-[var(--border)] hover:bg-[var(--surface-1)]'
               )}
             >
@@ -1087,7 +1078,7 @@ export function WorkgroupTeamManagement() {
               <span className='mt-1 block text-[11px] text-[var(--text-muted)]'>
                 {tab.description}
               </span>
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -1097,11 +1088,10 @@ export function WorkgroupTeamManagement() {
               <Activity className='mt-0.5 h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Team canvas health
+                  团队画布状态
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Verify the shared canvas, workflow graph, member permission sync, and latest
-                  showcase status.
+                  检查画布、默认工作流、成员权限和最近成果。
                 </p>
                 <p className='mt-1 text-[11px] text-[var(--text-muted)]'>
                   {teamHealthRepairSummary}
@@ -1120,7 +1110,7 @@ export function WorkgroupTeamManagement() {
               ) : (
                 <RotateCcw className='mr-2 h-[14px] w-[14px]' />
               )}
-              Repair health
+              修复状态
             </Button>
           </div>
           <div className='grid gap-2 p-4 md:grid-cols-2 xl:grid-cols-4'>
@@ -1131,11 +1121,11 @@ export function WorkgroupTeamManagement() {
               >
                 <div className='flex items-center gap-2'>
                   {item.tone === 'healthy' ? (
-                    <CheckCircle2 className='h-[14px] w-[14px] text-emerald-500' />
+                    <CheckCircle2 className='h-[14px] w-[14px] text-[var(--success)]' />
                   ) : item.tone === 'loading' ? (
                     <Loader className='h-[14px] w-[14px] text-[var(--text-icon)]' animate />
                   ) : (
-                    <AlertTriangle className='h-[14px] w-[14px] text-amber-500' />
+                    <AlertTriangle className='h-[14px] w-[14px] text-[var(--warning)]' />
                   )}
                   <span className='font-medium text-[13px] text-[var(--text-primary)]'>
                     {item.label}
@@ -1153,10 +1143,10 @@ export function WorkgroupTeamManagement() {
               <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Add existing user
+                  添加已有用户
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Enter an existing account email or user ID, then choose the team role.
+                  输入账号邮箱或用户 ID，并选择团队角色。
                 </p>
               </div>
             </div>
@@ -1164,7 +1154,7 @@ export function WorkgroupTeamManagement() {
               <Input
                 value={inviteValue}
                 onChange={(event) => setInviteValue(event.target.value)}
-                placeholder='name@example.com or user ID'
+                placeholder='邮箱或用户 ID'
                 disabled={isBusy}
               />
               <select
@@ -1173,8 +1163,8 @@ export function WorkgroupTeamManagement() {
                 disabled={isBusy}
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
               >
-                <option value='member'>Member</option>
-                <option value='admin'>Admin</option>
+                <option value='member'>成员</option>
+                <option value='admin'>管理员</option>
               </select>
               <Button
                 variant='primary'
@@ -1182,7 +1172,7 @@ export function WorkgroupTeamManagement() {
                 disabled={!inviteValue.trim() || isBusy}
               >
                 {addMember.isPending ? <Loader className='mr-2 h-[14px] w-[14px]' animate /> : null}
-                Add member
+                添加成员
               </Button>
             </div>
           </section>
@@ -1194,17 +1184,16 @@ export function WorkgroupTeamManagement() {
               <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Create team invitation
+                  创建团队邀请
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Create an in-app invitation for a teammate. Accepting it grants team canvas access
-                  and joins this workgroup.
+                  邀请成员加入当前团队，并自动获得团队画布权限。
                 </p>
               </div>
             </div>
             <div className='grid gap-2 p-4 md:grid-cols-[minmax(0,1fr)_140px_auto]'>
               <div className='grid gap-1'>
-                <textarea
+                <Textarea
                   value={emailInvitationValue}
                   onChange={(event) => {
                     setEmailInvitationValue(event.target.value)
@@ -1213,14 +1202,12 @@ export function WorkgroupTeamManagement() {
                   placeholder='name@example.com, teammate@example.com'
                   rows={3}
                   disabled={isBusy || !teamWorkspaceId}
-                  className='min-h-[74px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text-body)] outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-60'
+                  className='min-h-[74px] text-[13px]'
                 />
                 <div className='text-[11px] text-[var(--text-muted)]'>
-                  Separate multiple emails with commas, spaces, or new lines.
+                  多个邮箱可用逗号、空格或换行分隔。
                   {emailInvitationEmails.length > 0
-                    ? ` ${emailInvitationEmails.length} unique recipient${
-                        emailInvitationEmails.length === 1 ? '' : 's'
-                      } ready.`
+                    ? ` 已识别 ${emailInvitationEmails.length} 个收件人。`
                     : ''}
                 </div>
               </div>
@@ -1233,8 +1220,8 @@ export function WorkgroupTeamManagement() {
                 disabled={isBusy || !teamWorkspaceId}
                 className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
               >
-                <option value='member'>Member</option>
-                <option value='admin'>Admin</option>
+                <option value='member'>成员</option>
+                <option value='admin'>管理员</option>
               </select>
               <Button
                 variant='primary'
@@ -1244,14 +1231,14 @@ export function WorkgroupTeamManagement() {
                 {inviteMember.isPending ? (
                   <Loader className='mr-2 h-[14px] w-[14px]' animate />
                 ) : null}
-                {emailInvitationEmails.length > 1 ? 'Create invites' : 'Create invite'}
+                创建邀请
               </Button>
             </div>
             {emailInvitationResults.length > 0 && (
               <div className='border-[var(--border)] border-t px-4 py-3'>
                 <div className='mb-2 flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
                   <AlertTriangle className='h-[13px] w-[13px]' />
-                  Batch result: {emailInvitationResultSummary}
+                  批量结果：{emailInvitationResultSummary}
                 </div>
                 <div className='grid gap-2 md:grid-cols-2'>
                   {emailInvitationResults.map((result) => (
@@ -1282,7 +1269,7 @@ export function WorkgroupTeamManagement() {
             )}
             {!teamWorkspaceId && (
               <div className='border-[var(--border)] border-t px-4 py-3 text-[12px] text-[var(--text-muted)]'>
-                Initialize the team canvas before sending a team invitation.
+                请先初始化团队画布，再发送团队邀请。
               </div>
             )}
           </section>
@@ -1293,10 +1280,9 @@ export function WorkgroupTeamManagement() {
             <div className='flex items-center gap-2 border-[var(--border)] border-b px-4 py-3'>
               <Users className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
-                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>Team members</h2>
+                <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>团队成员</h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Admins can update roles or remove members. The last admin is protected by the
-                  server.
+                  管理员可调整角色或移除成员；最后一位管理员会被系统保护。
                 </p>
               </div>
             </div>
@@ -1304,11 +1290,11 @@ export function WorkgroupTeamManagement() {
               {isLoadingMembers ? (
                 <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading members...
+                  正在加载成员...
                 </div>
               ) : members.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No team members yet.
+                  暂无团队成员。
                 </div>
               ) : (
                 members.map((member) => (
@@ -1337,8 +1323,8 @@ export function WorkgroupTeamManagement() {
                       disabled={isBusy}
                       className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                     >
-                      <option value='member'>Member</option>
-                      <option value='admin'>Admin</option>
+                      <option value='member'>成员</option>
+                      <option value='admin'>管理员</option>
                     </select>
                     <Button
                       variant='default'
@@ -1347,7 +1333,7 @@ export function WorkgroupTeamManagement() {
                       disabled={isBusy}
                     >
                       <UserMinus className='mr-2 h-[14px] w-[14px]' />
-                      Remove
+                      移除
                     </Button>
                   </div>
                 ))
@@ -1362,26 +1348,26 @@ export function WorkgroupTeamManagement() {
               <Send className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Publish team canvas
+                  发布团队成果
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Create a showcase snapshot from a team workflow and choose the initial visibility.
+                  从团队画布生成成果版本，并设置可见范围。
                 </p>
               </div>
             </div>
             <div className='grid gap-3 p-4'>
               {!teamWorkspaceId ? (
                 <div className='text-[13px] text-[var(--text-muted)]'>
-                  Initialize the team canvas before publishing showcase versions.
+                  请先初始化团队画布，再发布成果版本。
                 </div>
               ) : isLoadingTeamWorkflows ? (
                 <div className='flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading team workflows...
+                  正在加载团队画布...
                 </div>
               ) : publishableTeamWorkflows.length === 0 ? (
                 <div className='text-[13px] text-[var(--text-muted)]'>
-                  No workflows exist in the team canvas yet.
+                  团队画布中暂无工作流。
                 </div>
               ) : (
                 <>
@@ -1408,37 +1394,35 @@ export function WorkgroupTeamManagement() {
                       disabled={isBusy}
                       className='h-[38px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                     >
-                      <option value='organization'>Organization visible</option>
-                      <option value='selected_workgroups'>Selected teams</option>
+                      <option value='organization'>项目内可见</option>
+                      <option value='selected_workgroups'>指定团队可见</option>
                     </select>
                   </div>
                   <Input
                     value={publishTitle}
                     onChange={(event) => setPublishTitle(event.target.value)}
-                    placeholder={`Title: ${selectedPublishWorkflow?.name ?? 'Team plan'}`}
+                    placeholder={`标题：${selectedPublishWorkflow?.name ?? '团队方案'}`}
                     disabled={isBusy}
                   />
                   <Input
                     value={publishDescription}
                     onChange={(event) => setPublishDescription(event.target.value)}
-                    placeholder='Version note or review summary'
+                    placeholder='版本说明或审核摘要'
                     disabled={isBusy}
                   />
                   {publishVisibility === 'selected_workgroups' && (
                     <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] p-3'>
                       <div className='mb-2 text-[12px] text-[var(--text-muted)]'>
-                        Select active teams in this organization that can see this showcase
-                        snapshot. Organization admins can choose teams even if they are not members.
-                        If none are selected, only the current team is targeted.
+                        选择可查看该成果版本的团队。未选择时，仅当前团队可见。
                       </div>
                       {isLoadingOrganizationWorkgroups ? (
                         <div className='flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
                           <Loader className='h-[14px] w-[14px]' animate />
-                          Loading organization teams...
+                          正在加载项目团队...
                         </div>
                       ) : publishTargetWorkgroups.length === 0 ? (
                         <div className='text-[13px] text-[var(--text-muted)]'>
-                          No active teams are available in this organization.
+                          当前项目暂无可选团队。
                         </div>
                       ) : (
                         <div className='grid gap-2 md:grid-cols-2'>
@@ -1453,7 +1437,7 @@ export function WorkgroupTeamManagement() {
                               <Switch
                                 checked={publishTargetWorkgroupIds.includes(workgroup.id)}
                                 disabled={isBusy}
-                                aria-label={`Toggle ${workgroup.name} showcase visibility`}
+                                aria-label={`切换 ${workgroup.name} 成果可见性`}
                                 onCheckedChange={(checked) =>
                                   handlePublishTargetToggle(workgroup.id, checked)
                                 }
@@ -1466,8 +1450,7 @@ export function WorkgroupTeamManagement() {
                   )}
                   <div className='flex items-center justify-between gap-3'>
                     <div className='text-[12px] text-[var(--text-muted)]'>
-                      Publishing creates an immutable showcase version and supersedes older
-                      published versions for this workflow.
+                      发布后会生成一个新的成果版本。
                     </div>
                     <Button
                       variant='primary'
@@ -1481,7 +1464,7 @@ export function WorkgroupTeamManagement() {
                       ) : (
                         <Send className='mr-2 h-[14px] w-[14px]' />
                       )}
-                      Publish
+                      发布
                     </Button>
                   </div>
                 </>
@@ -1496,11 +1479,10 @@ export function WorkgroupTeamManagement() {
               <Archive className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Team publications
+                  团队成果
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Review the latest showcase versions from this workgroup and manage their
-                  lifecycle.
+                  查看当前团队发布过的成果版本。
                 </p>
               </div>
             </div>
@@ -1508,11 +1490,11 @@ export function WorkgroupTeamManagement() {
               {isLoadingPublications ? (
                 <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading publications...
+                  正在加载成果...
                 </div>
               ) : publications.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No showcase publications from this team yet.
+                  当前团队尚未发布成果。
                 </div>
               ) : (
                 publications.map((publication) => {
@@ -1532,7 +1514,7 @@ export function WorkgroupTeamManagement() {
                             </span>
                           </div>
                           <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                            {publication.description?.trim() || 'No description'} ·{' '}
+                            {publication.description?.trim() || '暂无说明'} ·{' '}
                             {formatPublicationDate(publication.publishedAt)}
                           </div>
                         </div>
@@ -1543,7 +1525,7 @@ export function WorkgroupTeamManagement() {
                           disabled={isBusy || publication.status === 'published'}
                         >
                           <RotateCcw className='mr-2 h-[14px] w-[14px]' />
-                          Make current
+                          设为当前
                         </Button>
                         <Button
                           variant='default'
@@ -1552,7 +1534,7 @@ export function WorkgroupTeamManagement() {
                           disabled={isBusy}
                         >
                           <Archive className='mr-2 h-[14px] w-[14px]' />
-                          Archive
+                          归档
                         </Button>
                         <Button
                           variant='default'
@@ -1561,7 +1543,7 @@ export function WorkgroupTeamManagement() {
                           disabled={isBusy}
                         >
                           <EyeOff className='mr-2 h-[14px] w-[14px]' />
-                          Retract
+                          撤回
                         </Button>
                       </div>
 
@@ -1578,8 +1560,8 @@ export function WorkgroupTeamManagement() {
                             disabled={isBusy}
                             className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                           >
-                            <option value='organization'>Organization visible</option>
-                            <option value='selected_workgroups'>Selected teams</option>
+                            <option value='organization'>项目内可见</option>
+                            <option value='selected_workgroups'>指定团队可见</option>
                           </select>
                           <Button
                             variant='default'
@@ -1591,18 +1573,18 @@ export function WorkgroupTeamManagement() {
                                 isLoadingOrganizationWorkgroups)
                             }
                           >
-                            Update visibility
+                            更新可见性
                           </Button>
                         </div>
                         {visibilityDraft.visibility === 'selected_workgroups' &&
                           (isLoadingOrganizationWorkgroups ? (
                             <div className='mt-3 flex items-center gap-2 text-[13px] text-[var(--text-muted)]'>
                               <Loader className='h-[14px] w-[14px]' animate />
-                              Loading organization teams...
+                              正在加载项目团队...
                             </div>
                           ) : publishTargetWorkgroups.length === 0 ? (
                             <div className='mt-3 text-[13px] text-[var(--text-muted)]'>
-                              No active teams are available in this organization.
+                              当前项目暂无可选团队。
                             </div>
                           ) : (
                             <div className='mt-3 grid gap-2 md:grid-cols-2'>
@@ -1619,7 +1601,7 @@ export function WorkgroupTeamManagement() {
                                       workgroup.id
                                     )}
                                     disabled={isBusy}
-                                    aria-label={`Toggle ${workgroup.name} publication visibility`}
+                                    aria-label={`切换 ${workgroup.name} 发布可见性`}
                                     onCheckedChange={(checked) =>
                                       handlePublicationTargetToggle(
                                         publication.id,
@@ -1651,12 +1633,12 @@ export function WorkgroupTeamManagement() {
                             disabled={isBusy}
                             className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                           >
-                            <option value='unreviewed'>Unreviewed</option>
-                            <option value='pending'>Pending review</option>
-                            <option value='in_review'>In review</option>
-                            <option value='approved'>Approved</option>
-                            <option value='changes_requested'>Changes requested</option>
-                            <option value='rejected'>Rejected</option>
+                            <option value='unreviewed'>未审核</option>
+                            <option value='pending'>待审核</option>
+                            <option value='in_review'>审核中</option>
+                            <option value='approved'>已通过</option>
+                            <option value='changes_requested'>需修改</option>
+                            <option value='rejected'>已拒绝</option>
                           </select>
                           <select
                             value={reviewDraft.riskLevel}
@@ -1668,11 +1650,11 @@ export function WorkgroupTeamManagement() {
                             disabled={isBusy}
                             className='h-[32px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-2 text-[13px] text-[var(--text-body)] outline-none'
                           >
-                            <option value='unset'>Risk unset</option>
-                            <option value='low'>Low risk</option>
-                            <option value='medium'>Medium risk</option>
-                            <option value='high'>High risk</option>
-                            <option value='critical'>Critical risk</option>
+                            <option value='unset'>未设置风险</option>
+                            <option value='low'>低风险</option>
+                            <option value='medium'>中风险</option>
+                            <option value='high'>高风险</option>
+                            <option value='critical'>严重风险</option>
                           </select>
                           <Button
                             variant='default'
@@ -1680,7 +1662,7 @@ export function WorkgroupTeamManagement() {
                             onClick={() => void handleUpdatePublicationReview(publication)}
                             disabled={isBusy}
                           >
-                            Update review
+                            更新审核
                           </Button>
                         </div>
                       </div>
@@ -1695,7 +1677,7 @@ export function WorkgroupTeamManagement() {
                 className='h-[32px]'
                 onClick={() => router.push(`/workspace/${workspaceId}/showcase`)}
               >
-                Open showcase canvas
+                打开项目总览
               </Button>
             </div>
           </section>
@@ -1707,28 +1689,26 @@ export function WorkgroupTeamManagement() {
               <Sparkles className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Team Agent Skills
+                  团队 Agent 技能
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Enable or disable skills available to the {agentSkillsData?.agent.name ?? 'team'}{' '}
-                  Copilot agent for this workgroup.
+                  管理 {agentSkillsData?.agent.name ?? '团队'} 可使用的 Copilot 技能。
                 </p>
               </div>
             </div>
             <div className='divide-y divide-[var(--border)]'>
               {!teamWorkspaceId ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  Initialize the team canvas before binding skills to the team agent.
+                  请先初始化团队画布，再绑定团队 Agent 技能。
                 </div>
               ) : isLoadingAgentSkills ? (
                 <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading agent skills...
+                  正在加载 Agent 技能...
                 </div>
               ) : agentSkills.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No skills exist in the team canvas yet. Create skills in the team canvas, then
-                  return here to bind them to the agent.
+                  团队画布中暂无技能。创建技能后，可在这里绑定到团队 Agent。
                 </div>
               ) : (
                 agentSkills.map((skill) => (
@@ -1741,11 +1721,11 @@ export function WorkgroupTeamManagement() {
                         {skill.name}
                       </div>
                       <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                        {skill.description?.trim() || 'No description'}
+                        {skill.description?.trim() || '暂无说明'}
                       </div>
                     </div>
                     <div className='flex items-center gap-2 text-[12px] text-[var(--text-muted)]'>
-                      {skill.enabled ? 'Enabled' : 'Disabled'}
+                      {skill.enabled ? '已启用' : '已停用'}
                       <Switch
                         checked={skill.enabled}
                         disabled={isBusy}
@@ -1767,10 +1747,10 @@ export function WorkgroupTeamManagement() {
               <Activity className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Team activity
+                  团队动态
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Recent member, publication, canvas, and Agent Skill changes for this workgroup.
+                  查看成员、成果、画布和 Agent 技能的最近变更。
                 </p>
               </div>
             </div>
@@ -1778,11 +1758,11 @@ export function WorkgroupTeamManagement() {
               {isLoadingActivity ? (
                 <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading team activity...
+                  正在加载团队动态...
                 </div>
               ) : activity.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No team activity has been recorded yet.
+                  暂无团队动态。
                 </div>
               ) : (
                 activity.map((entry) => (
@@ -1802,8 +1782,8 @@ export function WorkgroupTeamManagement() {
                         )}
                       </div>
                       <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                        {entry.description?.trim() || 'No additional details'} ·{' '}
-                        {entry.actorName || entry.actorEmail || 'Unknown actor'}
+                        {entry.description?.trim() || '暂无详情'} ·{' '}
+                        {entry.actorName || entry.actorEmail || '未知操作者'}
                       </div>
                     </div>
                     <div className='text-[12px] text-[var(--text-muted)] md:text-right'>
@@ -1822,26 +1802,26 @@ export function WorkgroupTeamManagement() {
               <Mail className='h-[15px] w-[15px] text-[var(--text-icon)]' />
               <div>
                 <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>
-                  Pending invitations
+                  待处理邀请
                 </h2>
                 <p className='text-[12px] text-[var(--text-muted)]'>
-                  Cancel team canvas invitations that have not been accepted yet.
+                  管理尚未接受的团队邀请。
                 </p>
               </div>
             </div>
             <div className='divide-y divide-[var(--border)]'>
               {!teamWorkspaceId ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  Initialize the team canvas before managing invitations.
+                  请先初始化团队画布，再管理邀请。
                 </div>
               ) : isLoadingPendingInvitations ? (
                 <div className='flex items-center gap-2 px-4 py-6 text-[13px] text-[var(--text-muted)]'>
                   <Loader className='h-[14px] w-[14px]' animate />
-                  Loading invitations...
+                  正在加载邀请...
                 </div>
               ) : pendingInvitations.length === 0 ? (
                 <div className='px-4 py-6 text-[13px] text-[var(--text-muted)]'>
-                  No pending team invitations.
+                  暂无待处理邀请。
                 </div>
               ) : (
                 pendingInvitations.map((invitation) => {
@@ -1861,9 +1841,9 @@ export function WorkgroupTeamManagement() {
                               className={cn(
                                 'shrink-0 rounded-[8px] border px-2 py-0.5 text-[11px]',
                                 expiryState.tone === 'danger'
-                                  ? 'border-red-500/30 text-red-500'
+                                  ? 'border-[var(--error)] text-[var(--text-error)]'
                                   : expiryState.tone === 'warning'
-                                    ? 'border-amber-500/30 text-amber-500'
+                                    ? 'border-[var(--caution)] text-[var(--warning)]'
                                     : 'border-[var(--border)] text-[var(--text-muted)]'
                               )}
                             >
@@ -1872,8 +1852,8 @@ export function WorkgroupTeamManagement() {
                           )}
                         </div>
                         <div className='truncate text-[12px] text-[var(--text-muted)]'>
-                          {invitation.permissionType === 'admin' ? 'Admin' : 'Member'} access
-                          {invitation.isExternal ? ' / external invite' : ''}
+                          {invitation.permissionType === 'admin' ? '管理员' : '成员'}权限
+                          {invitation.isExternal ? ' / 外部邀请' : ''}
                         </div>
                       </div>
                       <Button
@@ -1887,7 +1867,7 @@ export function WorkgroupTeamManagement() {
                         disabled={!invitation.invitationId || isBusy}
                       >
                         <X className='mr-2 h-[14px] w-[14px]' />
-                        Cancel
+                        取消
                       </Button>
                     </div>
                   )

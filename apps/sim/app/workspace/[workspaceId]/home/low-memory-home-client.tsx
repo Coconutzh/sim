@@ -395,7 +395,7 @@ function ProjectEntryCard({
 }) {
   const taskPercent = getPercent(project.taskStats.completed, project.taskStats.total)
   return (
-    <article className='group rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4 text-left transition-colors hover-hover:bg-[var(--surface-hover)]'>
+    <article className='group rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4 text-left shadow-subtle transition-all hover-hover:-translate-y-0.5 hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)] hover-hover:shadow-medium'>
       <div className='flex items-start justify-between gap-4'>
         <div className='flex items-start gap-3'>
           <div className='flex h-10 w-10 items-center justify-center overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
@@ -436,7 +436,7 @@ function ProjectEntryCard({
         variant='ghost'
         onClick={onOpen}
         disabled={isLoading}
-        className='mt-5 flex h-auto min-h-[128px] w-full flex-col items-stretch justify-start p-0 text-left disabled:opacity-60'
+        className='mt-5 flex h-auto min-h-[150px] w-full flex-col items-stretch justify-start rounded-[8px] border border-transparent bg-transparent p-0 text-left disabled:opacity-60'
       >
         <h2 className='truncate font-medium text-[18px] text-[var(--text-primary)]'>
           {project.name}
@@ -478,8 +478,8 @@ function ProjectEntryCard({
             />
           </div>
         </div>
-        <div className='mt-auto flex items-center justify-between gap-3 pt-5 text-[12px] text-[var(--text-tertiary)]'>
-          <span className='truncate'>进入项目工作区</span>
+        <div className='mt-auto flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-secondary)] transition-colors group-hover:border-[var(--border-1)] group-hover:text-[var(--text-primary)]'>
+          <span className='truncate font-medium'>进入项目</span>
           {isLoading ? (
             <Loader2 className='h-[15px] w-[15px] animate-spin text-[var(--text-icon)]' />
           ) : (
@@ -497,16 +497,14 @@ function CreateProjectCard({ disabled, onClick }: { disabled: boolean; onClick: 
       type='button'
       variant='ghost'
       disabled={disabled}
-      className='flex min-h-[300px] flex-col items-center justify-center rounded-[8px] border border-[var(--border)] border-dashed bg-[var(--surface-1)] p-4 text-center transition-colors hover-hover:bg-[var(--surface-hover)] disabled:opacity-60'
+      className='flex min-h-[300px] flex-col items-center justify-center rounded-[8px] border border-[var(--border)] border-dashed bg-[var(--surface-1)] p-4 text-center shadow-subtle transition-all hover-hover:-translate-y-0.5 hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)] hover-hover:shadow-medium disabled:opacity-60'
       onClick={onClick}
     >
       <span className='flex h-12 w-12 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'>
         <Plus className='h-5 w-5 text-[var(--text-icon)]' />
       </span>
       <span className='mt-4 font-medium text-[16px] text-[var(--text-primary)]'>新建项目</span>
-      <span className='mt-2 max-w-[14rem] text-[12px] text-[var(--text-muted)] leading-5'>
-        创建导演组团队画布，并自动进入项目列表。
-      </span>
+      <span className='mt-2 text-[12px] text-[var(--text-muted)]'>创建项目入口</span>
     </Button>
   )
 }
@@ -534,7 +532,7 @@ function ProjectPhaseEditor({
         <div>
           <div className='font-medium text-[13px] text-[var(--text-primary)]'>阶段 DDL</div>
           <div className='mt-0.5 text-[11px] text-[var(--text-tertiary)]'>
-            用于 Home 总排期视图，可随时调整。
+            用于项目排期视图，可随时调整。
           </div>
         </div>
         <Button
@@ -696,19 +694,19 @@ function ProjectSettingsModal({
 
 function getTaskNodeClassName(task: ProductionTask): string {
   if (getTimestamp(task.dueAt) !== null && getTimestamp(task.dueAt)! < Date.now()) {
-    return 'border-red-300 bg-red-50 text-red-700'
+    return 'border-[var(--error)] bg-[var(--surface-2)] text-[var(--text-error)]'
   }
   if (task.status === 'approved' || task.status === 'archived') {
-    return 'border-emerald-300 bg-emerald-50 text-emerald-700'
+    return 'border-[var(--success)] bg-[var(--surface-2)] text-[var(--success)]'
   }
   if (task.status === 'submitted') {
-    return 'border-blue-300 bg-blue-50 text-blue-700'
+    return 'border-[var(--brand-secondary)] bg-[var(--surface-2)] text-[var(--brand-secondary)]'
   }
   if (task.status === 'changes_requested') {
-    return 'border-amber-300 bg-amber-50 text-amber-700'
+    return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--warning)]'
   }
   if (task.status === 'in_progress') {
-    return 'border-cyan-300 bg-cyan-50 text-cyan-700'
+    return 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--brand-accent)]'
   }
   return 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)]'
 }
@@ -720,19 +718,19 @@ function getTaskClusterClassName(tasks: ProductionTask[]): string {
       (task) => getTimestamp(task.dueAt) !== null && getTimestamp(task.dueAt)! < Date.now()
     )
   ) {
-    return 'border-red-300 bg-red-50 text-red-700'
+    return 'border-[var(--error)] bg-[var(--surface-2)] text-[var(--text-error)]'
   }
   if (tasks.some((task) => task.status === 'submitted')) {
-    return 'border-blue-300 bg-blue-50 text-blue-700'
+    return 'border-[var(--brand-secondary)] bg-[var(--surface-2)] text-[var(--brand-secondary)]'
   }
   if (tasks.every((task) => task.status === 'approved' || task.status === 'archived')) {
-    return 'border-emerald-300 bg-emerald-50 text-emerald-700'
+    return 'border-[var(--success)] bg-[var(--surface-2)] text-[var(--success)]'
   }
   if (tasks.some((task) => task.status === 'changes_requested')) {
-    return 'border-amber-300 bg-amber-50 text-amber-700'
+    return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--warning)]'
   }
   if (tasks.some((task) => task.status === 'in_progress')) {
-    return 'border-cyan-300 bg-cyan-50 text-cyan-700'
+    return 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--brand-accent)]'
   }
   return 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)]'
 }
@@ -805,12 +803,12 @@ function TaskClusterMarker({
 
 function getProjectHealthClassName(health: 'attention' | 'blocked' | 'normal') {
   if (health === 'blocked') {
-    return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'
+    return 'border-[var(--error)] bg-[var(--surface-2)] text-[var(--text-error)]'
   }
   if (health === 'attention') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300'
+    return 'border-[var(--caution)] bg-[var(--surface-2)] text-[var(--warning)]'
   }
-  return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300'
+  return 'border-[var(--success)] bg-[var(--surface-2)] text-[var(--success)]'
 }
 
 function getProjectHealthLabel(health: 'attention' | 'blocked' | 'normal') {
@@ -1017,9 +1015,9 @@ function ProjectProgressAnalysisPanel({
                                 className={cn(
                                   'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px]',
                                   task.severity === 'critical'
-                                    ? 'border-red-200 text-red-600 dark:border-red-900/60 dark:text-red-300'
+                                    ? 'border-[var(--error)] text-[var(--text-error)]'
                                     : task.severity === 'warning'
-                                      ? 'border-amber-200 text-amber-600 dark:border-amber-900/60 dark:text-amber-300'
+                                      ? 'border-[var(--caution)] text-[var(--warning)]'
                                       : 'border-[var(--border)] text-[var(--text-tertiary)]'
                                 )}
                               >
@@ -1109,7 +1107,7 @@ function ProjectProgressAnalysisPanel({
             </div>
           ) : (
             <div className='flex h-[230px] items-center justify-center rounded-[8px] border border-[var(--border)] border-dashed bg-[var(--surface-2)] px-4 text-center text-[12px] text-[var(--text-muted)] leading-5'>
-              点击“分析当前进度”后，这里会显示固定高度的风险摘要和项目状态。
+              暂无分析结果
             </div>
           )}
         </div>
@@ -1159,7 +1157,7 @@ function ProjectProgressAnalysisPanel({
               ))
             ) : (
               <div className='rounded-[8px] border border-[var(--border)] border-dashed p-3 text-[12px] text-[var(--text-muted)] leading-5'>
-                可以问“哪些项目最危险”，也可以点异常任务的“问助手”追问版本和聊天记录。
+                暂无对话
               </div>
             )}
           </div>
@@ -1173,7 +1171,7 @@ function ProjectProgressAnalysisPanel({
             />
             <div className='mt-2 flex items-center justify-between gap-2'>
               <span className='text-[10px] text-[var(--text-tertiary)]'>
-                {focusedTask ? '后续追问会继续带上当前任务上下文' : '长回复会在窗口内滚动，不影响下方排期'}
+                {focusedTask ? '当前任务上下文已启用' : '项目上下文'}
               </span>
               <Button
                 type='submit'
@@ -1303,7 +1301,6 @@ function ProjectScheduleOverview({
         <div>
           <div className='font-semibold text-[15px] text-[var(--text-primary)]'>项目总排期</div>
           <div className='mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--text-tertiary)]'>
-            <span>拖动时间轴查看前后任务，今天线保持固定。</span>
             <span className='inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5'>
               <MoveHorizontal className='h-3 w-3' />
               当前视窗 {visibleDays} 天
@@ -1598,9 +1595,7 @@ export function LowMemoryHomeClient({ chatId, workspaceId }: LowMemoryHomeClient
             >
               我的项目
             </h1>
-            <p className='max-w-[46rem] text-[14px] text-[var(--text-muted)] leading-6'>
-              这里汇总你参与的所有团队项目。进入项目后，会自动打开你在该项目中被分配好的团队画布。
-            </p>
+            <p className='text-[14px] text-[var(--text-muted)]'>团队项目与排期</p>
           </div>
           <div className='flex shrink-0 items-center gap-2'>
             <ProductionNotificationBell
@@ -1615,30 +1610,50 @@ export function LowMemoryHomeClient({ chatId, workspaceId }: LowMemoryHomeClient
 
         {hasProjectCards ? <ProjectStatsOverview projects={canvas.projectEntries} /> : null}
 
-        <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-          <div className='inline-flex w-fit rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-1'>
+        <div className='mb-5 flex flex-col gap-3 lg:flex-row lg:items-stretch lg:justify-between'>
+          <div className='grid gap-3 sm:grid-cols-2 lg:min-w-[520px]'>
             <Button
               type='button'
-              size='sm'
-              variant={viewMode === 'cards' ? 'active' : 'ghost'}
+              variant='ghost'
+              className={cn(
+                'h-auto min-h-[72px] justify-start rounded-[8px] border p-4 text-left transition-all',
+                viewMode === 'cards'
+                  ? 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-medium'
+                  : 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)]'
+              )}
               onClick={() => setViewMode('cards')}
             >
-              项目
+              <BriefcaseBusiness className='mr-3 h-5 w-5 shrink-0 text-[var(--text-icon)]' />
+              <span className='flex min-w-0 flex-col items-start'>
+                <span className='font-medium text-[15px]'>项目</span>
+                <span className='mt-1 text-[11px] text-[var(--text-tertiary)]'>
+                  {canvas.projectEntries.length} 个项目
+                </span>
+              </span>
             </Button>
             <Button
               type='button'
-              size='sm'
-              variant={viewMode === 'schedule' ? 'active' : 'ghost'}
+              variant='ghost'
+              className={cn(
+                'h-auto min-h-[72px] justify-start rounded-[8px] border p-4 text-left transition-all',
+                viewMode === 'schedule'
+                  ? 'border-[var(--brand-accent)] bg-[var(--surface-2)] text-[var(--text-primary)] shadow-medium'
+                  : 'border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-secondary)] hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-hover)]'
+              )}
               onClick={() => setViewMode('schedule')}
             >
-              排期
+              <CalendarClock className='mr-3 h-5 w-5 shrink-0 text-[var(--text-icon)]' />
+              <span className='flex min-w-0 flex-col items-start'>
+                <span className='font-medium text-[15px]'>排期</span>
+                <span className='mt-1 text-[11px] text-[var(--text-tertiary)]'>全局时间线</span>
+              </span>
             </Button>
           </div>
           {viewMode === 'schedule' && canCreateProject ? (
             <Button
               type='button'
-              size='sm'
               variant='outline'
+              className='h-[44px] self-start rounded-[8px] px-4 lg:self-center'
               disabled={isProjectMutationPending}
               onClick={() => setIsCreateProjectOpen(true)}
             >

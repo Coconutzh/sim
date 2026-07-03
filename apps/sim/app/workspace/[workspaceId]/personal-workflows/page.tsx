@@ -25,11 +25,9 @@ export default function PersonalWorkflowsPage() {
                 ? `${canvas.activeWorkgroup.discipline.name} / ${canvas.activeWorkgroup.name}`
                 : '个人画布'}
             </div>
-            <h1 className='mt-2 font-semibold text-[28px] text-[var(--text-primary)]'>
-              Personal Workflows
-            </h1>
+            <h1 className='mt-2 font-semibold text-[28px] text-[var(--text-primary)]'>个人画布</h1>
             <p className='mt-2 max-w-[44rem] text-[14px] text-[var(--text-muted)] leading-6'>
-              这里仅用于个人草稿和测试，不会和项目团队画布混在一起。需要协作时请回到 Team Canvas。
+              用于个人草稿和测试，团队协作请回到团队画布。
             </p>
           </div>
           <Button

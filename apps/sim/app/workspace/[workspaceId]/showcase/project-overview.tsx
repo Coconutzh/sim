@@ -1079,23 +1079,24 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const renderTaskButton = (task: ProductionTask) => {
     const overdue = isOverdue(task)
     return (
-    <button
-      key={task.id}
-      type='button'
-      onClick={() => {
-        setIsCreateTaskOpen(false)
-        setSelectedTaskId(task.id)
-      }}
-      className={cn(
-        'grid w-full gap-3 rounded-[8px] border p-3 text-left transition-colors hover-hover:bg-[var(--surface-2)] md:grid-cols-[minmax(0,1fr)_150px]',
-        selectedTaskId === task.id
-          ? 'border-[var(--brand-accent)] bg-[var(--surface-3)]'
-          : overdue
-            ? 'border-red-200 bg-red-50/70'
-          : 'border-[var(--border)] bg-[var(--surface-1)]',
-        task.unreadMessageCount > 0 && 'ring-1 ring-[var(--badge-blue-text)]/25'
-      )}
-    >
+      <Button
+        key={task.id}
+        type='button'
+        variant='ghost'
+        onClick={() => {
+          setIsCreateTaskOpen(false)
+          setSelectedTaskId(task.id)
+        }}
+        className={cn(
+          'grid h-auto w-full justify-stretch gap-3 rounded-[8px] border p-3 text-left transition-colors hover-hover:bg-[var(--surface-2)] md:grid-cols-[minmax(0,1fr)_150px]',
+          selectedTaskId === task.id
+            ? 'border-[var(--brand-accent)] bg-[var(--surface-3)]'
+            : overdue
+              ? 'border-[var(--error)] bg-[var(--surface-2)]'
+              : 'border-[var(--border)] bg-[var(--surface-1)]',
+          task.unreadMessageCount > 0 && 'ring-1 ring-[var(--badge-blue-text)]/25'
+        )}
+      >
       <div className='min-w-0'>
         <div className='flex items-start gap-2'>
           <div className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', getTaskRailClassName(task))} />
@@ -1157,7 +1158,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
         </div>
         <ChevronRight className='h-4 w-4 shrink-0 text-[var(--text-tertiary)]' />
       </div>
-    </button>
+      </Button>
     )
   }
 
@@ -1285,10 +1286,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
               <h1 className='mt-2 font-semibold text-[28px] text-[var(--text-primary)]'>
                 项目总览
               </h1>
-              <p className='mt-2 max-w-[48rem] text-[14px] text-[var(--text-muted)] leading-6'>
-                汇总项目成果、任务进度、全局 DDL
-                和每次任务提交版本。这里不再展示主线画布，而是作为生产协作看板使用。
-              </p>
+              <p className='mt-2 text-[14px] text-[var(--text-muted)]'>成果、任务与提交版本</p>
             </div>
             <div className='grid grid-cols-2 gap-2 md:grid-cols-5 lg:min-w-[620px]'>
               <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2'>
@@ -1619,7 +1617,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                       任务进度
                     </h2>
                     <p className='mt-1 text-[12px] text-[var(--text-tertiary)]'>
-                      团队视图支持折叠；全局时间线按 DDL 排列所有任务。
+                      按团队或时间线查看任务。
                     </p>
                   </div>
                   <div className='flex flex-wrap items-center gap-2'>
@@ -1782,21 +1780,21 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                     </div>
                     <div className='min-h-0 flex-1 space-y-4 overflow-y-auto p-4'>
                       {isOverdue(selectedTask) ? (
-                        <div className='space-y-3 rounded-[8px] border border-red-300 bg-red-50 p-3 shadow-subtle'>
+                        <div className='space-y-3 rounded-[8px] border border-[var(--error)] bg-[var(--surface-2)] p-3 shadow-subtle'>
                           <div className='flex items-start justify-between gap-3'>
                             <div>
-                              <div className='font-semibold text-[13px] text-red-800'>
+                              <div className='font-semibold text-[13px] text-[var(--text-primary)]'>
                                 任务已过期，需要承接团队提交延期理由
                               </div>
                               {selectedTask.delayReasonUpdatedAt ? (
-                                <div className='mt-1 text-[11px] text-red-700'>
+                                <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
                                   最近提交：{formatDateTime(selectedTask.delayReasonUpdatedAt)}
                                   {selectedTask.delayReasonUpdatedBy?.name
                                     ? ` / ${selectedTask.delayReasonUpdatedBy.name}`
                                     : ''}
                                 </div>
                               ) : (
-                                <div className='mt-1 text-[11px] text-red-700'>
+                                <div className='mt-1 text-[11px] text-[var(--text-muted)]'>
                                   系统会每天提醒一次，直到延期理由提交完成。
                                 </div>
                               )}
@@ -1817,7 +1815,7 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                                 value={delayReasonDraft}
                                 onChange={(event) => setDelayReasonDraft(event.target.value)}
                                 placeholder='说明延期原因、预计补交时间、需要导演协调的事项'
-                                className='min-h-[88px] border-red-300 bg-white text-red-950 placeholder:text-red-400'
+                                className='min-h-[88px] border-[var(--error)]'
                               />
                               <div className='flex justify-end'>
                                 <Button
@@ -1831,13 +1829,13 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
                               </div>
                             </>
                           ) : (
-                            <div className='rounded-[7px] border border-red-200 bg-white p-3'>
+                            <div className='rounded-[7px] border border-[var(--border)] bg-[var(--surface-1)] p-3'>
                               {selectedTask.delayReason ? (
-                                <p className='whitespace-pre-wrap text-[12px] text-red-950 leading-5'>
+                                <p className='whitespace-pre-wrap text-[12px] text-[var(--text-primary)] leading-5'>
                                   {selectedTask.delayReason}
                                 </p>
                               ) : (
-                                <p className='text-[12px] text-red-700 leading-5'>
+                                <p className='text-[12px] text-[var(--text-muted)] leading-5'>
                                   承接团队尚未填写延期理由。
                                 </p>
                               )}

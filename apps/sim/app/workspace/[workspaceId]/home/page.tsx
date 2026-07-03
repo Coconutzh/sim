@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { Home } from './home'
 
 export const metadata: Metadata = {
-  title: 'Home',
+  title: '项目首页',
 }
 
 interface HomePageProps {

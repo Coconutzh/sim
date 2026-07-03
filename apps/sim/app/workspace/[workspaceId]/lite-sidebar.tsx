@@ -57,10 +57,10 @@ function ProjectNavItem({
   onClick,
 }: ProjectNavItemProps) {
   const className = cn(
-    'flex h-9 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] transition-colors',
+    'flex h-10 w-full items-center gap-2 rounded-[8px] border px-3 text-left text-[13px] transition-colors',
     active
-      ? 'bg-[var(--surface-active)] text-[var(--text-primary)]'
-      : 'text-[var(--text-muted)] hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-primary)]',
+      ? 'border-[var(--border-1)] bg-[var(--surface-active)] text-[var(--text-primary)] shadow-subtle'
+      : 'border-transparent text-[var(--text-muted)] hover-hover:border-[var(--border)] hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-primary)]',
     disabled && 'pointer-events-none opacity-50'
   )
   const content = (
@@ -174,7 +174,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
         </div>
 
         {isOpen && (
-          <div className='pointer-events-auto w-[236px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 shadow-overlay'>
+          <div className='pointer-events-auto w-[272px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 shadow-overlay'>
             <div className='px-2 py-1.5'>
               <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
                 {canvas.activeWorkgroup?.organization.name ?? '项目'}
@@ -191,14 +191,14 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                 active={isActive(`/workspace/${workspaceId}/home`)}
                 href={`/workspace/${workspaceId}/home`}
                 icon={Home}
-                label='Home'
+                label='项目首页'
               />
               <ProjectNavItem
                 active={canvas.teamWorkspaceId ? isActive(canvas.teamHref) : false}
                 disabled={!canvas.teamWorkspaceId && !canvas.canInitializeTeamCanvas}
                 href={canvas.teamWorkspaceId ? canvas.teamHref : undefined}
                 icon={Users}
-                label={canvas.teamWorkspaceId ? 'Team Canvas' : '初始化团队画布'}
+                label={canvas.teamWorkspaceId ? '团队画布' : '初始化团队画布'}
                 loading={canvas.isCreatingTeamWorkspace}
                 onClick={
                   !canvas.teamWorkspaceId && canvas.canInitializeTeamCanvas
@@ -212,7 +212,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                 active={isActive(personalWorkflowsHref)}
                 href={personalWorkflowsHref}
                 icon={PenLine}
-                label='Personal Workflows'
+                label='个人画布'
               />
               <ProjectNavItem
                 active={isActive(canvas.showcaseHref)}
@@ -225,7 +225,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                   active={isActive(teamManagementHref)}
                   href={teamManagementHref}
                   icon={Settings}
-                  label='Team Management'
+                  label='团队管理'
                 />
               )}
               {isDirectorTeam && (

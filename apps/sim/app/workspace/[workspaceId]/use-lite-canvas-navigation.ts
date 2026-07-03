@@ -3,7 +3,6 @@
 import { useCallback, useMemo } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
-import type { ProductionProjectPhase } from '@/lib/api/contracts/production-projects'
 import {
   useCreatePersonalWorkspace,
   useCreateTeamWorkspace,
@@ -19,6 +18,10 @@ import {
   useWorkspaceSettings,
   useWorkspacesQuery,
 } from '@/hooks/queries/workspace'
+import {
+  buildProjectWorkspaceEntries,
+  type ProjectWorkspaceEntry,
+} from '@/app/workspace/[workspaceId]/lite-canvas-projects'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
 const logger = createLogger('LiteCanvasNavigation')
@@ -34,43 +37,8 @@ function getWorkspaceEditorHref(workspaceId?: string, workflows?: WorkflowMetada
     : `/workspace/${workspaceId}/home`
 }
 
-function isDirectorLikeProjectWorkgroup(workgroup: {
-  discipline: { agentCode?: string | null; code?: string | null }
-}) {
-  return (
-    workgroup.discipline.agentCode === 'chief_director' ||
-    workgroup.discipline.agentCode === 'show_director' ||
-    workgroup.discipline.code === 'chief_director' ||
-    workgroup.discipline.code === 'show_director' ||
-    workgroup.discipline.code === 'pmo'
-  )
-}
-
 interface UseLiteCanvasNavigationProps {
   workspaceId: string
-}
-
-export interface ProjectWorkspaceEntry {
-  canManageProject: boolean
-  estimatedDueAt: string | null
-  id: string
-  name: string
-  logoUrl: string | null
-  primaryWorkgroupId: string
-  primaryWorkgroupName: string
-  phases: ProductionProjectPhase[]
-  disciplineName: string
-  role: 'admin' | 'member'
-  teamWorkspaceId: string
-  teamCount: number
-  memberCount: number
-  projectStatus: 'active' | 'completed'
-  taskStats: {
-    completed: number
-    total: number
-    unfinished: number
-  }
-  href: string
 }
 
 export interface CanvasContextSummary {
@@ -177,51 +145,11 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
   }
 
   const projectEntries = useMemo<ProjectWorkspaceEntry[]>(() => {
-    const groups = new Map<string, ProjectWorkspaceEntry>()
-    for (const group of workgroups) {
-      const existing = groups.get(group.organizationId)
-      const isDefault = group.id === workgroupsData?.defaultWorkgroupId
-      const existingWorkgroup = existing
-        ? workgroups.find((workgroup) => workgroup.id === existing.primaryWorkgroupId)
-        : undefined
-      const existingIsDirectorLike = existingWorkgroup
-        ? isDirectorLikeProjectWorkgroup(existingWorkgroup)
-        : false
-      const candidateIsDirectorLike = isDirectorLikeProjectWorkgroup(group)
-      const shouldUseAsPrimary =
-        !existing ||
-        (existingIsDirectorLike && !candidateIsDirectorLike) ||
-        (isDefault && existingIsDirectorLike === candidateIsDirectorLike)
-      const href = group.teamWorkspaceId
-        ? `/workspace/${group.teamWorkspaceId}/w`
-        : `/workspace/${workspaceId}/home`
-      if (shouldUseAsPrimary) {
-        groups.set(group.organizationId, {
-          canManageProject: group.organization.canManageProject,
-          estimatedDueAt: group.organization.estimatedDueAt,
-          id: group.organization.id,
-          name: group.organization.name,
-          logoUrl: group.organization.logo,
-          primaryWorkgroupId: group.id,
-          primaryWorkgroupName: group.name,
-          phases: group.organization.phases,
-          disciplineName: group.discipline.name,
-          role: group.role,
-          teamWorkspaceId: group.teamWorkspaceId,
-          teamCount: existing ? existing.teamCount + 1 : 1,
-          memberCount: existing ? existing.memberCount + group.memberCount : group.memberCount,
-          projectStatus: group.organization.projectStatus,
-          taskStats: group.organization.taskStats,
-          href,
-        })
-        continue
-      }
-      existing.teamCount += 1
-      existing.memberCount += group.memberCount
-      existing.canManageProject = existing.canManageProject || group.organization.canManageProject
-      existing.role = existing.role === 'admin' || group.role === 'admin' ? 'admin' : 'member'
-    }
-    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    return buildProjectWorkspaceEntries({
+      defaultWorkgroupId: workgroupsData?.defaultWorkgroupId,
+      fallbackWorkspaceId: workspaceId,
+      workgroups,
+    })
   }, [workgroups, workgroupsData?.defaultWorkgroupId, workspaceId])
 
   const createPersonalCanvas = useCallback(
