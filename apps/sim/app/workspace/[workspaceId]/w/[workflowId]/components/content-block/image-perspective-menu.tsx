@@ -346,9 +346,13 @@ export function ImagePerspectiveMenu({
             <input
               type='checkbox'
               checked={values.wideAngle}
-              onChange={(event) =>
-                setValues((current) => ({ ...current, wideAngle: event.currentTarget.checked }))
-              }
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                event.stopPropagation()
+                const wideAngle = event.currentTarget.checked
+                setValues((current) => ({ ...current, wideAngle }))
+              }}
               className='nodrag nopan h-4 w-4 accent-[var(--text-primary)]'
             />
           </label>
