@@ -1,6 +1,7 @@
 import { uniq } from 'es-toolkit/array'
 import { getContentReferenceCapability as getCatalogContentReferenceCapability } from '@/lib/content-canvas/model-catalog'
-import type { UserFileLike } from '@/lib/core/utils/user-file'
+import { resolveUserFileUrl, type UserFileLike } from '@/lib/core/utils/user-file'
+import { resolveStorageKeyFromFileInput } from '@/lib/uploads/utils/file-utils'
 
 export type {
   ContentNodeVariant,
@@ -170,6 +171,41 @@ function getRoleFromAutoLinkType(autoLinkType: unknown): ContentReferenceRole | 
   if (autoLinkType === 'video_first_frame') return 'video_first_frame'
   if (autoLinkType === 'video_last_frame') return 'video_last_frame'
   return null
+}
+
+function normalizeStructuredReferenceImage(
+  file: UserFileLike,
+  fallbackName: string
+): {
+  id?: string
+  name: string
+  url?: string
+  key: string
+  size: number
+  type?: string
+  context?: string
+  base64?: string
+} | null {
+  const url = resolveUserFileUrl(file)
+  const resolvedKey = resolveStorageKeyFromFileInput({
+    key: file.key,
+    path: file.path,
+    url,
+  })
+  const key = resolvedKey || url || file.name?.trim() || fallbackName
+
+  if (!key) return null
+
+  return {
+    id: file.id ?? '',
+    name: file.name?.trim() || fallbackName || key,
+    url,
+    key,
+    size: file.size ?? 0,
+    type: file.type,
+    context: file.context,
+    base64: file.base64,
+  }
 }
 
 function defaultCapabilityForVariant(
@@ -443,17 +479,14 @@ export function buildStructuredContentReferenceContext(params: {
       continue
     }
 
-    if (node.variant === 'image' && node.file?.key) {
-      images.push({
-        id: node.file.id ?? '',
-        name: node.file.name?.trim() || node.name?.trim() || node.file.key,
-        url: node.file.url ?? '',
-        key: node.file.key,
-        size: node.file.size ?? 0,
-        type: node.file.type,
-        context: node.file.context,
-        base64: node.file.base64,
-      })
+    if (node.variant === 'image' && node.file) {
+      const image = normalizeStructuredReferenceImage(
+        node.file,
+        node.name?.trim() || reference.sourceBlockId
+      )
+      if (image) {
+        images.push(image)
+      }
     }
   }
 

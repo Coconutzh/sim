@@ -103,6 +103,7 @@ import {
   resolvePresentationArtifactFileUrl,
 } from '@/lib/presentation/presentation-artifacts'
 import { getContentNodePreset } from '@/lib/product/content-node-presets'
+import { resolveStorageKeyFromFileInput } from '@/lib/uploads/utils/file-utils'
 import {
   CONTENT_REFERENCE_EDGE_KIND,
   createContentReferenceEdge,
@@ -110,6 +111,7 @@ import {
   getContentReferenceAutoLinkType,
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
+  getOrdinaryContentReferenceHandles,
   isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
@@ -846,6 +848,34 @@ function getShowcaseAttachmentsFromFile(
   }
 
   return url ? [{ source: 'url', name, url }] : []
+}
+
+function normalizeReferencedNodeFile(
+  file: UploadedFileValue | null,
+  fallbackName: string
+): PromptContextReferencedNode['file'] {
+  if (!file) return null
+
+  const url = resolveUserFileUrl(file)
+  const key =
+    resolveStorageKeyFromFileInput({
+      key: file.key,
+      path: file.path,
+      url,
+    }) ?? ''
+
+  if (!url && !key) return null
+
+  return {
+    id: file.id ?? '',
+    name: file.name?.trim() || fallbackName || key || 'reference image',
+    url,
+    key,
+    path: file.path,
+    size: file.size ?? 0,
+    type: file.type,
+    context: file.context,
+  }
 }
 
 function getReferenceChipLabel(
@@ -3742,15 +3772,20 @@ export const ContentBlock = memo(function ContentBlock({
         sourceX: edgeSourcePosition.x,
         targetX: edgeTargetPosition.x,
       })
+      const ordinaryHandles = getOrdinaryContentReferenceHandles()
 
       const edge = createContentReferenceEdge({
         id: generateId(),
         source: edgeSourceId,
         target: edgeTargetId,
-        sourceHandle: getContentReferenceSourceHandleId(
-          edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
-        ),
-        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        sourceHandle: isVideoFrameReference
+          ? getContentReferenceSourceHandleId(
+              edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
+            )
+          : ordinaryHandles.sourceHandle,
+        targetHandle: isVideoFrameReference
+          ? getContentReferenceTargetHandleId(targetAnchor)
+          : ordinaryHandles.targetHandle,
         autoLinkType: isVideoFrameReference ? referenceRole : undefined,
       })
 
@@ -4009,8 +4044,6 @@ export const ContentBlock = memo(function ContentBlock({
       x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
       y: sourcePosition.y,
     }
-    const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
-    const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
     const newBlock = prepareBlockState({
       id: targetBlockId,
       type: 'content',
@@ -4031,10 +4064,9 @@ export const ContentBlock = memo(function ContentBlock({
     }
     const edge = createContentReferenceEdge({
       id: generateId(),
-      source: id,
-      target: targetBlockId,
-      sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
-      targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+      source: targetBlockId,
+      target: id,
+      ...getOrdinaryContentReferenceHandles(),
     })
     const subBlockValues: Record<string, Record<string, unknown>> = {
       [targetBlockId]: {
@@ -4168,10 +4200,9 @@ export const ContentBlock = memo(function ContentBlock({
     }
     const edge = createContentReferenceEdge({
       id: generateId(),
-      source: id,
-      target: targetBlockId,
-      sourceHandle: getContentReferenceSourceHandleId('right'),
-      targetHandle: getContentReferenceTargetHandleId('left'),
+      source: targetBlockId,
+      target: id,
+      ...getOrdinaryContentReferenceHandles(),
     })
     const subBlockValues: Record<string, Record<string, unknown>> = {
       [targetBlockId]: {
@@ -4245,8 +4276,6 @@ export const ContentBlock = memo(function ContentBlock({
         x: sourcePosition.x + IMAGE_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
         y: sourcePosition.y,
       }
-      const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
-      const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
       const referenceRole =
         getDefaultReferenceRole({
           targetVariant: 'image',
@@ -4283,10 +4312,9 @@ export const ContentBlock = memo(function ContentBlock({
       }
       const edge = createContentReferenceEdge({
         id: generateId(),
-        source: id,
-        target: targetBlockId,
-        sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
-        targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+        source: targetBlockId,
+        target: id,
+        ...getOrdinaryContentReferenceHandles(),
       })
       const subBlockValues: Record<string, Record<string, unknown>> = {
         [targetBlockId]: {
@@ -4367,8 +4395,6 @@ export const ContentBlock = memo(function ContentBlock({
           x: sourcePosition.x + VIDEO_CARD_WIDTH + CONTENT_REFERENCE_CREATE_GAP,
           y: sourcePosition.y,
         }
-        const sourceAnchor = targetPosition.x >= sourcePosition.x ? 'right' : 'left'
-        const targetAnchor = targetPosition.x >= sourcePosition.x ? 'left' : 'right'
         const uploadedFile: UploadedFileValue = {
           id: trimResult.file.id,
           name: trimResult.file.name,
@@ -4399,10 +4425,9 @@ export const ContentBlock = memo(function ContentBlock({
         }
         const edge = createContentReferenceEdge({
           id: generateId(),
-          source: id,
-          target: targetBlockId,
-          sourceHandle: getContentReferenceSourceHandleId(sourceAnchor),
-          targetHandle: getContentReferenceTargetHandleId(targetAnchor),
+          source: targetBlockId,
+          target: id,
+          ...getOrdinaryContentReferenceHandles(),
         })
         const subBlockValues: Record<string, Record<string, unknown>> = {
           [targetBlockId]: {
@@ -5464,7 +5489,7 @@ export const ContentBlock = memo(function ContentBlock({
     (clientX: number, clientY: number): string | null => {
       const elements = document.elementsFromPoint(clientX, clientY)
       for (const element of elements) {
-        const nodeElement = element.closest('.react-flow__node') as HTMLElement | null
+        const nodeElement = element.closest('.react-flow__node[data-id]') as HTMLElement | null
         const nodeId = nodeElement?.getAttribute('data-id')
         if (!nodeId || nodeId === id) continue
         if (workflowBlocks[nodeId]?.type === 'content') return nodeId
@@ -5479,6 +5504,7 @@ export const ContentBlock = memo(function ContentBlock({
           if (!nodeId || nodeId === id || workflowBlocks[nodeId]?.type !== 'content') return null
 
           const rect = nodeElement.getBoundingClientRect()
+          if (rect.width <= 0 || rect.height <= 0) return null
           const containsPoint =
             clientX >= rect.left &&
             clientX <= rect.right &&
@@ -5486,13 +5512,17 @@ export const ContentBlock = memo(function ContentBlock({
             clientY <= rect.bottom
           if (!containsPoint) return null
 
+          const zIndex = Number.parseInt(window.getComputedStyle(nodeElement).zIndex || '0', 10)
           return {
             nodeId,
             area: rect.width * rect.height,
+            zIndex: Number.isFinite(zIndex) ? zIndex : 0,
           }
         })
-        .filter((candidate): candidate is { nodeId: string; area: number } => Boolean(candidate))
-        .sort((left, right) => left.area - right.area)
+        .filter((candidate): candidate is { nodeId: string; area: number; zIndex: number } =>
+          Boolean(candidate)
+        )
+        .sort((left, right) => right.zIndex - left.zIndex || left.area - right.area)
 
       if (matchingNodes[0]) return matchingNodes[0].nodeId
 
@@ -5502,19 +5532,35 @@ export const ContentBlock = memo(function ContentBlock({
   )
   const canCreateExistingContentReference = useCallback(
     (targetBlockId: string): boolean => {
-      const targetVariant = resolveBlockVariant(targetBlockId)
-      if (!targetVariant) return false
+      const targetBlockVariant = resolveBlockVariant(targetBlockId)
+      if (!targetBlockVariant) return false
 
-      const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const { referenceRole, disabledReason } = getNextContentReferencesForSource({
-        targetVariant,
+      const normalReference = getNextContentReferencesForSource({
+        targetVariant: resolvedVariant,
+        targetModel: selectionModel,
+        targetReferences: getCurrentContentReferencesForBlock(id),
+        sourceBlockId: targetBlockId,
+        sourceVariant: targetBlockVariant,
+      })
+      if (normalReference.referenceRole && !normalReference.disabledReason) return true
+
+      const targetModel = resolveBlockReferenceModel(targetBlockId, targetBlockVariant)
+      const videoFrameReference = getNextContentReferencesForSource({
+        targetVariant: targetBlockVariant,
         targetModel,
         targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
         sourceBlockId: id,
         sourceVariant: resolvedVariant,
       })
+      const isVideoFrameReference =
+        videoFrameReference.referenceRole === 'video_first_frame' ||
+        videoFrameReference.referenceRole === 'video_last_frame'
 
-      return Boolean(referenceRole && !disabledReason)
+      return Boolean(
+        isVideoFrameReference &&
+          videoFrameReference.referenceRole &&
+          !videoFrameReference.disabledReason
+      )
     },
     [
       getCurrentContentReferencesForBlock,
@@ -5522,44 +5568,74 @@ export const ContentBlock = memo(function ContentBlock({
       resolvedVariant,
       resolveBlockReferenceModel,
       resolveBlockVariant,
+      selectionModel,
     ]
   )
   const createExistingContentReference = useCallback(
     (targetBlockId: string, sourceAnchor: 'left' | 'right'): boolean => {
-      const targetVariant = resolveBlockVariant(targetBlockId)
-      if (!targetVariant) return false
+      const targetBlockVariant = resolveBlockVariant(targetBlockId)
+      if (!targetBlockVariant) return false
 
-      const targetModel = resolveBlockReferenceModel(targetBlockId, targetVariant)
-      const { referenceRole, nextReferences, disabledReason } = getNextContentReferencesForSource({
-        targetVariant,
-        targetModel,
-        targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
-        sourceBlockId: id,
-        sourceVariant: resolvedVariant,
+      const normalReference = getNextContentReferencesForSource({
+        targetVariant: resolvedVariant,
+        targetModel: selectionModel,
+        targetReferences: getCurrentContentReferencesForBlock(id),
+        sourceBlockId: targetBlockId,
+        sourceVariant: targetBlockVariant,
       })
+
+      let consumerBlockId = id
+      let referenceRole = normalReference.referenceRole
+      let nextReferences = normalReference.nextReferences
+      let disabledReason = normalReference.disabledReason
+      let isVideoFrameReference = false
+
+      if (!referenceRole || disabledReason) {
+        const targetModel = resolveBlockReferenceModel(targetBlockId, targetBlockVariant)
+        const videoFrameReference = getNextContentReferencesForSource({
+          targetVariant: targetBlockVariant,
+          targetModel,
+          targetReferences: getCurrentContentReferencesForBlock(targetBlockId),
+          sourceBlockId: id,
+          sourceVariant: resolvedVariant,
+        })
+        const isVideoFrameRole =
+          videoFrameReference.referenceRole === 'video_first_frame' ||
+          videoFrameReference.referenceRole === 'video_last_frame'
+
+        if (isVideoFrameRole) {
+          consumerBlockId = targetBlockId
+          referenceRole = videoFrameReference.referenceRole
+          nextReferences = videoFrameReference.nextReferences
+          disabledReason = videoFrameReference.disabledReason
+          isVideoFrameReference = true
+        }
+      }
+
       if (!referenceRole || disabledReason) return false
 
-      const isVideoFrameReference =
-        referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
-      const edgeSourceId = isVideoFrameReference ? id : targetBlockId
-      const edgeTargetId = isVideoFrameReference ? targetBlockId : id
+      const edgeSourceId = id
+      const edgeTargetId = targetBlockId
       const edgeSourcePosition = workflowBlocks[edgeSourceId]?.position ?? { x: 0, y: 0 }
       const edgeTargetPosition = workflowBlocks[edgeTargetId]?.position ?? { x: 0, y: 0 }
-      const derivedSourceAnchor = edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
       const derivedTargetAnchor = getContentReferenceAnchorForTarget({
         sourceX: edgeSourcePosition.x,
         targetX: edgeTargetPosition.x,
       })
 
-      collaborativeSetSubblockValue(targetBlockId, 'contentReferences', nextReferences)
+      collaborativeSetSubblockValue(consumerBlockId, 'contentReferences', nextReferences)
+      const autoLinkType =
+        referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+          ? referenceRole
+          : undefined
 
-      if (isVideoFrameReference) {
+      if (autoLinkType) {
         const previousAutoEdgeIds = workflowEdges
           .filter(
             (edge) =>
               isContentReferenceEdge(edge) &&
-              getContentReferenceAutoLinkType(edge) === referenceRole &&
-              edge.target === targetBlockId
+              getContentReferenceAutoLinkType(edge) === autoLinkType &&
+              edge.target === consumerBlockId
           )
           .map((edge) => edge.id)
         if (previousAutoEdgeIds.length > 0) {
@@ -5567,9 +5643,9 @@ export const ContentBlock = memo(function ContentBlock({
         }
 
         if (resolvedVariant === 'image' && resolvedFile?.key) {
-          const mediaType = referenceRole === 'video_first_frame' ? 'first_frame' : 'last_frame'
+          const mediaType = autoLinkType === 'video_first_frame' ? 'first_frame' : 'last_frame'
           const currentVideoMedia = normalizeVideoMedia(
-            extractStoredValue<unknown>(resolveBlockSourceValues(targetBlockId), 'videoMedia', [])
+            extractStoredValue<unknown>(resolveBlockSourceValues(consumerBlockId), 'videoMedia', [])
           )
           const nextVideoMedia = [
             ...currentVideoMedia.filter((item) => item.type !== mediaType),
@@ -5578,21 +5654,22 @@ export const ContentBlock = memo(function ContentBlock({
               file: resolvedFile,
             },
           ]
-          collaborativeSetSubblockValue(targetBlockId, 'videoMedia', nextVideoMedia)
+          collaborativeSetSubblockValue(consumerBlockId, 'videoMedia', nextVideoMedia)
         }
       }
 
+      const ordinaryHandles = getOrdinaryContentReferenceHandles()
       const edge = createContentReferenceEdge({
         id: generateId(),
         source: edgeSourceId,
         target: edgeTargetId,
-        sourceHandle: getContentReferenceSourceHandleId(
-          isVideoFrameReference ? sourceAnchor : derivedSourceAnchor
-        ),
-        targetHandle: getContentReferenceTargetHandleId(
-          isVideoFrameReference ? derivedTargetAnchor : sourceAnchor
-        ),
-        autoLinkType: isVideoFrameReference ? referenceRole : undefined,
+        sourceHandle: isVideoFrameReference
+          ? getContentReferenceSourceHandleId(sourceAnchor)
+          : ordinaryHandles.sourceHandle,
+        targetHandle: isVideoFrameReference
+          ? getContentReferenceTargetHandleId(derivedTargetAnchor)
+          : ordinaryHandles.targetHandle,
+        autoLinkType,
       })
 
       const alreadyLinked =
@@ -5622,6 +5699,7 @@ export const ContentBlock = memo(function ContentBlock({
       resolveBlockReferenceModel,
       resolveBlockSourceValues,
       resolveBlockVariant,
+      selectionModel,
       workflowBlocks,
       workflowEdges,
     ]
@@ -5654,16 +5732,7 @@ export const ContentBlock = memo(function ContentBlock({
                       )?.pptxFile ??
                       extractStoredValue<UploadedFileValue | null>(source, 'file', null))
                     : extractStoredValue<UploadedFileValue | null>(source, 'file', null)
-                if (!file?.key) return null
-                return {
-                  id: file.id ?? '',
-                  name: file.name ?? file.key,
-                  url: resolveUserFileUrl(file),
-                  key: file.key,
-                  size: file.size ?? 0,
-                  type: file.type,
-                  context: file.context,
-                }
+                return normalizeReferencedNodeFile(file, block.name || reference.sourceBlockId)
               })(),
       }
     }
@@ -5759,12 +5828,13 @@ export const ContentBlock = memo(function ContentBlock({
         updateDragState(moveEvent.clientX, moveEvent.clientY)
       }
 
-      const handlePointerUp = () => {
+      const handlePointerUp = (upEvent: PointerEvent) => {
         window.removeEventListener('pointermove', handlePointerMove, true)
         window.removeEventListener('pointerup', handlePointerUp, true)
         window.removeEventListener('pointercancel', handlePointerCancel, true)
 
         if (isDragging) {
+          updateDragState(upEvent.clientX, upEvent.clientY)
           if (latestTargetBlockId && latestCanConnect) {
             createExistingContentReference(latestTargetBlockId, anchor)
           }
@@ -5947,14 +6017,19 @@ export const ContentBlock = memo(function ContentBlock({
       const targetBlockId = isSourceToTargetRole ? id : reference.sourceBlockId
       const sourceX = workflowBlocks[sourceBlockId]?.position.x ?? 0
       const targetX = workflowBlocks[targetBlockId]?.position.x ?? 0
+      const ordinaryHandles = getOrdinaryContentReferenceHandles()
 
       return [
         {
           id: `${sourceBlockId}:${targetBlockId}:${reference.role}`,
           source: sourceBlockId,
           target: targetBlockId,
-          sourceHandle: getContentReferenceSourceHandleId(targetX >= sourceX ? 'right' : 'left'),
-          targetHandle: getContentReferenceTargetHandleId(targetX >= sourceX ? 'left' : 'right'),
+          sourceHandle: isSourceToTargetRole
+            ? getContentReferenceSourceHandleId(targetX >= sourceX ? 'right' : 'left')
+            : ordinaryHandles.sourceHandle,
+          targetHandle: isSourceToTargetRole
+            ? getContentReferenceTargetHandleId(targetX >= sourceX ? 'left' : 'right')
+            : ordinaryHandles.targetHandle,
           type: 'workflowEdge',
           data: {
             kind: CONTENT_REFERENCE_EDGE_KIND,

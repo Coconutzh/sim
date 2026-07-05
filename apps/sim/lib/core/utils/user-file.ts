@@ -1,7 +1,9 @@
 import type { UserFile } from '@/executor/types'
 
-export type UserFileLike = Pick<UserFile, 'id' | 'name' | 'url' | 'key'> &
-  Partial<Pick<UserFile, 'size' | 'type' | 'context' | 'base64'>>
+export type UserFileLike = Pick<UserFile, 'name'> &
+  Partial<Pick<UserFile, 'id' | 'url' | 'key' | 'size' | 'type' | 'context' | 'base64'>> & {
+    path?: string
+  }
 
 /**
  * Fields exposed for UserFile objects in UI (tag dropdown) and logs.
@@ -71,6 +73,9 @@ export function resolveUserFileUrl(fileInput: unknown): string {
   }
   if (typeof record.path === 'string' && record.path.trim()) {
     return record.path.trim()
+  }
+  if (typeof record.key === 'string' && record.key.trim()) {
+    return `/api/files/serve/${encodeURIComponent(record.key.trim())}?context=workspace`
   }
   return ''
 }

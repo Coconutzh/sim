@@ -15,10 +15,12 @@ import {
 interface UploadedFileValue {
   id?: string
   name?: string
+  url?: string
   path?: string
   key?: string
   size?: number
   type?: string
+  context?: string
 }
 
 interface UseImageContentAiSessionOptions {
@@ -133,10 +135,12 @@ export function useImageContentAiSession({
       onChangeFile({
         id: response.file.id,
         name: response.file.name,
+        url: response.file.url,
         path: response.file.url,
         key: response.file.key,
         size: response.file.size,
         type: response.file.type,
+        context: response.file.context,
       })
     } catch (caughtError) {
       if (controller.signal.aborted) return

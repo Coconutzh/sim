@@ -32,7 +32,7 @@ import type {
   LocalCanvasToolName,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
-import type { UserFileLike } from '@/lib/core/utils/user-file'
+import { resolveUserFileUrl, type UserFileLike } from '@/lib/core/utils/user-file'
 import { generateWorkspaceAudioFromPrompt } from '@/lib/generated-media/audio/audio-generation-service'
 import {
   DEFAULT_AUDIO_MODEL,
@@ -52,6 +52,7 @@ import {
   getVideoMediaFileForType,
   resolveVideoGenerationModelId,
 } from '@/lib/generated-media/video/video-generation-utils'
+import { resolveStorageKeyFromFileInput } from '@/lib/uploads/utils/file-utils'
 import {
   buildContentReferencePromptContext,
   buildStructuredContentReferenceContext,
@@ -788,10 +789,16 @@ function getIncomingImageFile(
 function toUserFileLike(value: unknown, fallbackName: string): UserFileLike | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const file = value as Record<string, unknown>
-  const key = typeof file.key === 'string' ? file.key : ''
-  if (!key) return null
   const url =
-    typeof file.path === 'string' ? file.path : typeof file.url === 'string' ? file.url : ''
+    resolveUserFileUrl(file) ||
+    (typeof file.path === 'string' ? file.path : typeof file.url === 'string' ? file.url : '')
+  const resolvedKey = resolveStorageKeyFromFileInput({
+    key: typeof file.key === 'string' ? file.key : undefined,
+    path: typeof file.path === 'string' ? file.path : undefined,
+    url,
+  })
+  const key = resolvedKey || url || ''
+  if (!key) return null
   return {
     id: typeof file.id === 'string' ? file.id : key,
     name: typeof file.name === 'string' ? file.name : fallbackName,

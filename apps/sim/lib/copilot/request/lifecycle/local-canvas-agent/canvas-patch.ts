@@ -26,6 +26,7 @@ import {
   getContentReferenceAnchorForTarget,
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
+  getOrdinaryContentReferenceHandles,
 } from '@/lib/workflows/content-reference-edges'
 import {
   type ContentNodeVariant,
@@ -217,8 +218,25 @@ function buildExistingConnections(sourceId: string, edges: CanvasEdge[]): Connec
 
 function buildContentConnection(
   source: CanvasNodeRecord,
-  target: CanvasNodeRecord
+  target: CanvasNodeRecord,
+  role?: ContentReferenceRole
 ): { sourceHandle: string; target: ConnectionTarget } {
+  if (
+    role &&
+    role !== 'video_first_frame' &&
+    role !== 'video_last_frame' &&
+    role !== 'video_frame_capture'
+  ) {
+    const ordinaryHandles = getOrdinaryContentReferenceHandles()
+    return {
+      sourceHandle: ordinaryHandles.sourceHandle,
+      target: {
+        block: target.id,
+        handle: ordinaryHandles.targetHandle,
+      },
+    }
+  }
+
   const sourceAnchor = target.position.x >= source.position.x ? 'right' : 'left'
   const targetAnchor = getContentReferenceAnchorForTarget({
     sourceX: source.position.x,
@@ -423,7 +441,7 @@ function buildContentReferenceEdgeOperation(
   }
 
   const connections = buildExistingConnections(edgeSourceId, snapshot.edges)
-  const connection = buildContentConnection(edgeSource, edgeTarget)
+  const connection = buildContentConnection(edgeSource, edgeTarget, resolved.role)
   appendConnectionTarget(connections, connection.sourceHandle, {
     ...connection.target,
     ...(autoLinkTypeForRole(resolved.role)
@@ -443,7 +461,7 @@ function buildVirtualContentReferenceEdge(resolved: ResolvedReferenceOperation):
   const target = resolved.consumer
   const edgeSource = edgeSourceId === resolved.sourceId ? source : target
   const edgeTarget = edgeTargetId === resolved.sourceId ? source : target
-  const connection = buildContentConnection(edgeSource, edgeTarget)
+  const connection = buildContentConnection(edgeSource, edgeTarget, resolved.role)
   return {
     source: edgeSourceId,
     target: edgeTargetId,

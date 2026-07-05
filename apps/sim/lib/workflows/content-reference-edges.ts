@@ -111,6 +111,16 @@ export function getContentReferenceTargetHandleId(anchor: ContentReferenceAnchor
   return `${CONTENT_REFERENCE_TARGET_HANDLE_PREFIX}-${anchor}`
 }
 
+export function getOrdinaryContentReferenceHandles(): {
+  sourceHandle: string
+  targetHandle: string
+} {
+  return {
+    sourceHandle: getContentReferenceSourceHandleId('left'),
+    targetHandle: getContentReferenceTargetHandleId('right'),
+  }
+}
+
 export function getContentReferenceAnchorForTarget(params: {
   sourceX: number
   targetX: number

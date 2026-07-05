@@ -364,6 +364,7 @@ describe('content reference prompt context', () => {
           name: 'Board',
           variant: 'image',
           file: {
+            id: 'workspace-file-1',
             name: 'board.png',
             url: 'https://example.com/board.png',
             key: 'workspace/board.png',
@@ -377,7 +378,7 @@ describe('content reference prompt context', () => {
     expect(context.text).toEqual(['Keep the scene quiet and cinematic.'])
     expect(context.images).toEqual([
       {
-        id: '',
+        id: 'workspace-file-1',
         name: 'board.png',
         url: 'https://example.com/board.png',
         key: 'workspace/board.png',
@@ -386,6 +387,42 @@ describe('content reference prompt context', () => {
         context: undefined,
         base64: undefined,
       },
+    ])
+  })
+
+  it('builds image request context from workspace file paths without an explicit key', () => {
+    const context = buildStructuredContentReferenceContext({
+      references: [
+        {
+          sourceBlockId: 'image-1',
+          sourceVariant: 'image',
+          role: 'image_reference',
+        },
+      ],
+      referencedNodes: {
+        'image-1': {
+          name: 'Referenced Image',
+          variant: 'image',
+          file: {
+            id: 'workspace-file-1',
+            name: 'source.png',
+            path: '/api/files/serve/workspace%2Fws-1%2Fsource.png?context=workspace',
+            size: 128,
+            type: 'image/png',
+          },
+        },
+      },
+    })
+
+    expect(context.images).toEqual([
+      expect.objectContaining({
+        id: 'workspace-file-1',
+        name: 'source.png',
+        url: '/api/files/serve/workspace%2Fws-1%2Fsource.png?context=workspace',
+        key: 'workspace/ws-1/source.png',
+        size: 128,
+        type: 'image/png',
+      }),
     ])
   })
 })

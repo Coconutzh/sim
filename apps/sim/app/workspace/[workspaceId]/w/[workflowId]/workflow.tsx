@@ -50,14 +50,13 @@ import {
   getContentReferenceAutoLinkType,
   getContentReferenceSourceHandleId,
   getContentReferenceTargetHandleId,
+  getOrdinaryContentReferenceHandles,
   isContentBlockState,
   isContentReferenceEdge,
 } from '@/lib/workflows/content-reference-edges'
 import {
   type ContentNodeVariant,
   type ContentReferenceRecord,
-  getDefaultReferenceRole,
-  getModelDisabledReason,
   normalizeContentReferences,
   upsertContentReference,
 } from '@/lib/workflows/content-references'
@@ -3801,57 +3800,91 @@ const WorkflowContent = React.memo(
 
         if (!sourceVariant || !targetVariant) return false
 
-        const targetModel = resolveContentBlockReferenceModel({
-          block: targetBlock,
-          values: targetValues,
-          variant: targetVariant,
+        const sourceModel = resolveContentBlockReferenceModel({
+          block: sourceBlock,
+          values: sourceValues,
+          variant: sourceVariant,
         })
-        const referenceRole = getDefaultReferenceRole({
-          targetVariant,
-          model: targetModel,
-          sourceVariant,
-        })
-        if (!referenceRole) return false
-
-        const currentReferences = normalizeContentReferences(
+        const sourceBlockReferences = normalizeContentReferences(
           getLiveContentSubblockValue({
-            block: targetBlock,
-            values: targetValues,
+            block: sourceBlock,
+            values: sourceValues,
             key: 'contentReferences',
           })
         )
-        const nextReferences = upsertContentReference(currentReferences, {
-          sourceBlockId,
-          sourceVariant,
-          role: referenceRole,
+        const normalReference = getNextContentReferencesForSource({
+          targetVariant: sourceVariant,
+          targetModel: sourceModel,
+          targetReferences: sourceBlockReferences,
+          sourceBlockId: targetBlockId,
+          sourceVariant: targetVariant,
         })
-        const disabledReason = getModelDisabledReason({
-          targetVariant,
-          model: targetModel,
-          references: nextReferences,
-        })
-        if (disabledReason) return false
 
-        const isVideoFrameReference =
-          referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
-        const edgeSourceId = isVideoFrameReference ? sourceBlockId : targetBlockId
-        const edgeTargetId = isVideoFrameReference ? targetBlockId : sourceBlockId
+        let consumerBlockId = sourceBlockId
+        let consumerBlock = sourceBlock
+        let consumerValues = sourceValues
+        let referenceRole = normalReference.referenceRole
+        let nextReferences = normalReference.nextReferences
+        let disabledReason = normalReference.disabledReason
+        let isVideoFrameReference = false
+
+        if (!referenceRole || disabledReason) {
+          const targetModel = resolveContentBlockReferenceModel({
+            block: targetBlock,
+            values: targetValues,
+            variant: targetVariant,
+          })
+          const targetBlockReferences = normalizeContentReferences(
+            getLiveContentSubblockValue({
+              block: targetBlock,
+              values: targetValues,
+              key: 'contentReferences',
+            })
+          )
+          const videoFrameReference = getNextContentReferencesForSource({
+            targetVariant,
+            targetModel,
+            targetReferences: targetBlockReferences,
+            sourceBlockId,
+            sourceVariant,
+          })
+          const isVideoFrameRole =
+            videoFrameReference.referenceRole === 'video_first_frame' ||
+            videoFrameReference.referenceRole === 'video_last_frame'
+
+          if (isVideoFrameRole) {
+            consumerBlockId = targetBlockId
+            consumerBlock = targetBlock
+            consumerValues = targetValues
+            referenceRole = videoFrameReference.referenceRole
+            nextReferences = videoFrameReference.nextReferences
+            disabledReason = videoFrameReference.disabledReason
+            isVideoFrameReference = true
+          }
+        }
+        if (!referenceRole || disabledReason) return false
+
+        const edgeSourceId = sourceBlockId
+        const edgeTargetId = targetBlockId
         const edgeSourcePosition = blocks[edgeSourceId]?.position ?? { x: 0, y: 0 }
         const edgeTargetPosition = blocks[edgeTargetId]?.position ?? { x: 0, y: 0 }
-        const derivedSourceAnchor = edgeTargetPosition.x >= edgeSourcePosition.x ? 'right' : 'left'
         const derivedTargetAnchor = getContentReferenceAnchorForTarget({
           sourceX: edgeSourcePosition.x,
           targetX: edgeTargetPosition.x,
         })
 
         setContentReferenceEdgeMenu(null)
-        collaborativeSetSubblockValue(targetBlockId, 'contentReferences', nextReferences)
+        collaborativeSetSubblockValue(consumerBlockId, 'contentReferences', nextReferences)
+        const autoLinkType =
+          referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
+            ? referenceRole
+            : undefined
 
-        if (isVideoFrameReference) {
+        if (autoLinkType) {
           const previousEdge = findAutoVideoContentReferenceEdge(
             edges,
-            targetBlockId,
-            referenceRole
+            consumerBlockId,
+            autoLinkType
           )
           if (previousEdge?.id) {
             collaborativeBatchRemoveEdges([previousEdge.id], { skipUndoRedo: true })
@@ -3865,37 +3898,34 @@ const WorkflowContent = React.memo(
           if (hasUploadedFileSnapshot(sourceFile)) {
             const currentVideoMedia = normalizeVideoMediaSnapshots(
               getLiveContentSubblockValue({
-                block: targetBlock,
-                values: targetValues,
+                block: consumerBlock,
+                values: consumerValues,
                 key: 'videoMedia',
               })
             )
             collaborativeSetSubblockValue(
-              targetBlockId,
+              consumerBlockId,
               'videoMedia',
               upsertVideoMediaFile(
                 currentVideoMedia,
-                referenceRole === 'video_first_frame' ? 'first_frame' : 'last_frame',
+                autoLinkType === 'video_first_frame' ? 'first_frame' : 'last_frame',
                 sourceFile
               )
             )
           }
         }
 
-        const autoLinkType =
-          referenceRole === 'video_first_frame' || referenceRole === 'video_last_frame'
-            ? referenceRole
-            : undefined
+        const ordinaryHandles = getOrdinaryContentReferenceHandles()
         const edge = createContentReferenceEdge({
           id: generateId(),
           source: edgeSourceId,
           target: edgeTargetId,
-          sourceHandle: getContentReferenceSourceHandleId(
-            isVideoFrameReference ? sourceAnchor : derivedSourceAnchor
-          ),
-          targetHandle: getContentReferenceTargetHandleId(
-            isVideoFrameReference ? derivedTargetAnchor : sourceAnchor
-          ),
+          sourceHandle: isVideoFrameReference
+            ? getContentReferenceSourceHandleId(sourceAnchor)
+            : ordinaryHandles.sourceHandle,
+          targetHandle: isVideoFrameReference
+            ? getContentReferenceTargetHandleId(derivedTargetAnchor)
+            : ordinaryHandles.targetHandle,
           autoLinkType,
         })
 
@@ -5166,16 +5196,14 @@ const WorkflowContent = React.memo(
           )
 
           if (!alreadyLinked) {
+            const ordinaryHandles = getOrdinaryContentReferenceHandles()
             collaborativeBatchAddEdges([
               createContentReferenceEdge({
                 id: generateId(),
                 source: contentReferenceSelection.sourceBlockId,
                 target: node.id,
-                ...buildContentReferenceHandles({
-                  sourceX: blocks[contentReferenceSelection.sourceBlockId]?.position.x ?? 0,
-                  targetX: blocks[node.id]?.position.x ?? 0,
-                  sourceAnchor: contentReferenceSelection.sourceAnchor,
-                }),
+                sourceHandle: ordinaryHandles.sourceHandle,
+                targetHandle: ordinaryHandles.targetHandle,
               }),
             ])
           }
@@ -5214,7 +5242,6 @@ const WorkflowContent = React.memo(
       [
         applyVideoFrameSelection,
         blocks,
-        buildContentReferenceHandles,
         clearContentReferenceSelection,
         collaborativeBatchAddEdges,
         contentReferenceSelection,

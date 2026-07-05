@@ -170,9 +170,9 @@ describe('local canvas patch validation', () => {
         block_id: 'image-1',
         params: {
           connections: {
-            'content-reference-source-right': {
+            'content-reference-source-left': {
               block: 'text-1',
-              handle: 'content-reference-target-left',
+              handle: 'content-reference-target-right',
             },
           },
         },
