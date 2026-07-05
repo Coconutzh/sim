@@ -769,6 +769,54 @@ describe('local canvas patch verification', () => {
     )
   })
 
+  it('verifies explicit move_node positions after patch', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 500, y: 200 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    } satisfies CanvasSnapshot)
+
+    const result = await verifyLocalCanvasPatch({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      selectedNodeIds: [],
+      patch: {
+        operations: [
+          {
+            type: 'move_node',
+            operationId: 'move-text',
+            nodeId: 'text-1',
+            position: { x: 500, y: 200 },
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+    expect(result.operationResults).toEqual([
+      expect.objectContaining({
+        operationId: 'move-text',
+        operationType: 'move_node',
+        nodeId: 'text-1',
+        expected: { x: 500, y: 200 },
+        actual: { x: 500, y: 200 },
+        success: true,
+      }),
+    ])
+  })
+
   it('verifies generated output by target node id and field', async () => {
     mockLoadCanvasSnapshot.mockResolvedValue({
       workflowId: 'workflow-1',

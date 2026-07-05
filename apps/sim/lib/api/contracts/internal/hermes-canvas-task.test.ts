@@ -133,6 +133,41 @@ describe('hermes canvas task contract', () => {
     })
   })
 
+  it('accepts structured arrange_nodes tasks with explicit zone columns', () => {
+    const parsed = hermesCanvasTaskRunBodySchema.parse({
+      operation: 'propose',
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      message: 'Arrange the selected workflow into two zones.',
+      task: {
+        taskType: 'arrange_nodes',
+        arrangement: {
+          layoutMode: 'structured',
+          zones: [
+            {
+              zoneId: 'left-flow',
+              origin: { x: 50, y: 120 },
+              verticalGap: 220,
+              columns: [
+                {
+                  x: 50,
+                  nodeIds: ['node-a', { type: 'existing_node', nodeId: 'node-b' }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(parsed.task?.taskType).toBe('arrange_nodes')
+    expect(parsed.task?.arrangement?.zones[0]?.columns[0]?.nodeIds[1]).toEqual({
+      type: 'existing_node',
+      nodeId: 'node-b',
+    })
+  })
+
   it('accepts capability discovery queries', () => {
     const parsed = hermesCanvasTaskRunBodySchema.parse({
       operation: 'query',

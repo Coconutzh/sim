@@ -626,6 +626,7 @@ function buildPatchMachineSummary(params: {
   const writeBackFields: Array<Record<string, unknown>> = []
   const referenceChanges: Array<Record<string, unknown>> = []
   const deletedNodeIds: string[] = []
+  const movedNodeIds: string[] = []
   params.patch.operations.forEach((operation, index) => {
     const operationId = getPatchOperationId(operation, index)
     const result = operationResults.find((item) => item.operationId === operationId)
@@ -654,6 +655,9 @@ function buildPatchMachineSummary(params: {
     }
     if (operation.type === 'delete_node') {
       deletedNodeIds.push(operation.nodeId)
+    }
+    if (operation.type === 'move_node') {
+      movedNodeIds.push(operation.nodeId)
     }
     if (
       operation.type === 'add_content_reference' ||
@@ -696,6 +700,7 @@ function buildPatchMachineSummary(params: {
     createdNodeMap,
     writeBackFields,
     deletedNodeIds,
+    movedNodeIds,
     referenceChanges,
     generationCandidates: generatedCandidates,
     fieldChecks,

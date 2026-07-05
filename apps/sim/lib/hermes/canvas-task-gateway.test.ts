@@ -478,4 +478,102 @@ describe('runHermesCanvasTaskGateway', () => {
       }),
     ])
   })
+
+  it('compiles arrange_nodes into move_node patch operations', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'node-a',
+          name: 'Node A',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'node-b',
+          name: 'Node B',
+          blockType: 'content',
+          kind: 'image',
+          position: { x: 360, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        summary: 'Arrangement applied',
+        output: {
+          machineSummary: { movedNodeIds: ['node-a', 'node-b'] },
+        },
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        summary: 'Arrangement verified',
+        output: {},
+      })
+
+    const result = await runHermesCanvasTaskGateway({
+      auditId: 'audit-1',
+      body: hermesCanvasTaskRunBodySchema.parse({
+        operation: 'propose',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+        message: 'Arrange these nodes into two columns.',
+        queryType: 'summary',
+        task: {
+          taskType: 'arrange_nodes',
+          arrangement: {
+            layoutMode: 'structured',
+            zones: [
+              {
+                zoneId: 'left',
+                origin: { x: 50, y: 100 },
+                verticalGap: 220,
+                columns: [{ x: 50, nodeIds: ['node-a'] }],
+              },
+              {
+                zoneId: 'right',
+                origin: { x: 430, y: 100 },
+                verticalGap: 220,
+                columns: [{ x: 430, nodeIds: ['node-b'] }],
+              },
+            ],
+          },
+        },
+      }),
+    })
+
+    expect(result.success, JSON.stringify(result)).toBe(true)
+    expect(result.changedNodeIds).toEqual(expect.arrayContaining(['node-a', 'node-b']))
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: {
+        patch: expect.objectContaining({
+          operations: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'move_node',
+              nodeId: 'node-a',
+              position: { x: 50, y: 100 },
+            }),
+            expect.objectContaining({
+              type: 'move_node',
+              nodeId: 'node-b',
+              position: { x: 430, y: 100 },
+            }),
+          ]),
+        }),
+      },
+    })
+  })
 })

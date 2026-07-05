@@ -244,6 +244,7 @@ export interface CanvasNodeAdapter {
 export type LocalCanvasPatchOperation =
   | LocalCanvasCreateNodeOperation
   | LocalCanvasUpdateNodeOperation
+  | LocalCanvasMoveNodeOperation
   | LocalCanvasDeleteNodeOperation
   | LocalCanvasConnectOperation
   | LocalCanvasAddContentReferenceOperation
@@ -271,6 +272,13 @@ export interface LocalCanvasUpdateNodeOperation {
   operationId?: string
   nodeId: string
   fields: Record<string, unknown>
+}
+
+export interface LocalCanvasMoveNodeOperation {
+  type: 'move_node'
+  operationId?: string
+  nodeId: string
+  position: { x: number; y: number }
 }
 
 export interface LocalCanvasDeleteNodeOperation {

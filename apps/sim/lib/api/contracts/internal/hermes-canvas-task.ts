@@ -48,6 +48,7 @@ export const hermesCanvasTaskTypeSchema = z.enum([
   'output_generate',
   'workflow_run',
   'layout_nodes',
+  'arrange_nodes',
   'batch',
   'preview_create',
   'preview_update',
@@ -183,6 +184,32 @@ const canvasTaskUpdateSpecSchema = z
   })
   .passthrough()
 
+const canvasArrangementNodeRefSchema = z.union([z.string().trim().min(1).max(200), canvasNodeRefSchema])
+
+const canvasTaskPlacementSchema = z.object({
+  node: canvasArrangementNodeRefSchema,
+  x: z.number(),
+  y: z.number(),
+})
+
+const canvasTaskArrangementColumnSchema = z.object({
+  x: z.number(),
+  nodeIds: z.array(canvasArrangementNodeRefSchema).max(100),
+})
+
+const canvasTaskArrangementZoneSchema = z.object({
+  zoneId: z.string().trim().min(1).max(100).optional(),
+  origin: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+    })
+    .optional(),
+  columns: z.array(canvasTaskArrangementColumnSchema).max(20).optional().default([]),
+  verticalGap: z.number().positive().optional(),
+  horizontalGap: z.number().positive().optional(),
+})
+
 const canvasTaskConnectionSpecSchema = z
   .object({
     source: z.string().trim().min(1).max(200).optional(),
@@ -222,6 +249,19 @@ const canvasTaskLayoutSchema = z
   })
   .optional()
 
+const canvasTaskArrangementSchema = z
+  .object({
+    layoutMode: z.enum(['absolute', 'structured', 'preset']).optional().default('absolute'),
+    placements: z.array(canvasTaskPlacementSchema).max(500).optional().default([]),
+    zones: z.array(canvasTaskArrangementZoneSchema).max(20).optional().default([]),
+    preset: z.enum(['horizontal', 'vertical', 'grid']).optional(),
+    targetNodeIds: z.array(canvasArrangementNodeRefSchema).max(200).optional().default([]),
+    gapX: z.number().positive().optional(),
+    gapY: z.number().positive().optional(),
+    columns: z.number().int().positive().max(20).optional(),
+  })
+  .optional()
+
 const canvasTaskGenerationSchema = z
   .object({
     targets: z
@@ -248,6 +288,7 @@ const canvasTaskPayloadSchema = z
     connections: z.array(canvasTaskConnectionSpecSchema).max(200).optional().default([]),
     references: z.array(canvasTaskReferenceSpecSchema).max(200).optional().default([]),
     layout: canvasTaskLayoutSchema,
+    arrangement: canvasTaskArrangementSchema,
     generation: canvasTaskGenerationSchema,
     content: canvasTaskContentSchema.optional(),
     fields: z.record(z.string(), z.unknown()).optional(),

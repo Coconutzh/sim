@@ -8,6 +8,7 @@ import type {
   LocalCanvasCreateNodeOperation,
   LocalCanvasDeleteNodeOperation,
   LocalCanvasLayoutOperation,
+  LocalCanvasMoveNodeOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
   LocalCanvasRemoveContentReferenceOperation,
@@ -262,6 +263,47 @@ function verifyFields(params: {
       ...(error ? { error } : {}),
     })
   }
+}
+
+function verifyMovedNode(params: {
+  snapshot: CanvasSnapshot
+  operation: LocalCanvasMoveNodeOperation
+  operationId: string
+  references: Map<string, string>
+  errors: string[]
+  operationResults: LocalCanvasVerifyOperationResult[]
+}): void {
+  const nodeId = resolvePatchNodeId(params.operation.nodeId, params.references)
+  const node = params.snapshot.nodes.find((item) => item.id === nodeId)
+  if (!node) {
+    const error = `Moved node "${params.operation.nodeId}" was not found after patch`
+    params.errors.push(error)
+    params.operationResults.push({
+      operationId: params.operationId,
+      operationType: params.operation.type,
+      nodeId: params.operation.nodeId,
+      actual: 'missing-node',
+      success: false,
+      error,
+    })
+    return
+  }
+
+  const success =
+    node.position.x === params.operation.position.x && node.position.y === params.operation.position.y
+  const error = success
+    ? undefined
+    : `Position for node "${nodeId}" was not written after patch`
+  if (error) params.errors.push(error)
+  params.operationResults.push({
+    operationId: params.operationId,
+    operationType: params.operation.type,
+    nodeId,
+    expected: params.operation.position,
+    actual: node.position,
+    success,
+    ...(error ? { error } : {}),
+  })
 }
 
 function verifyLayout(params: {
@@ -647,6 +689,16 @@ export async function verifyLocalCanvasPatch(params: {
           operationResults,
         })
       }
+    }
+    if (operation.type === 'move_node') {
+      verifyMovedNode({
+        snapshot,
+        operation,
+        operationId,
+        references: patchReferences,
+        errors,
+        operationResults,
+      })
     }
     if (operation.type === 'delete_node') {
       verifyDeletedNode({

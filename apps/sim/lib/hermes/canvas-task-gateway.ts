@@ -43,6 +43,7 @@ import { TraceCollector } from '@/lib/copilot/request/trace'
 import type { ExecutionContext, StreamingContext } from '@/lib/copilot/request/types'
 
 const CONTENT_NODE_KINDS = new Set(['text', 'image', 'video', 'audio', 'presentation'])
+const NODE_GAP_Y = 220
 
 type TaskNode = HermesCanvasTaskPayload['nodes'][number]
 type TaskUpdate = HermesCanvasTaskPayload['updates'][number]
@@ -51,6 +52,9 @@ type TaskFields = Record<string, unknown>
 type TaskConnection = HermesCanvasTaskPayload['connections'][number]
 type TaskReference = HermesCanvasTaskPayload['references'][number]
 type TaskTargetRef = NonNullable<HermesCanvasTaskPayload['generation']>['targets'][number]
+type TaskArrangement = NonNullable<HermesCanvasTaskPayload['arrangement']>
+type TaskArrangementPlacement = TaskArrangement['placements'][number]
+type TaskArrangementZone = TaskArrangement['zones'][number]
 type ExternalResourceRef = Exclude<HermesCanvasResourceRef, { type: 'node_output' }>
 
 interface CompiledCanvasTask {
@@ -175,6 +179,7 @@ function collectChangedNodeIds(observations: LocalAgentObservation[]): string[] 
     }
     for (const value of Object.values(createdNodeMap)) addString(value, ids)
     for (const nodeId of readStringArray(machineSummary.deletedNodeIds)) addString(nodeId, ids)
+    for (const nodeId of readStringArray(machineSummary.movedNodeIds)) addString(nodeId, ids)
     const writeBackFields = Array.isArray(machineSummary.writeBackFields)
       ? machineSummary.writeBackFields.map(asObservationRecord)
       : []
@@ -744,6 +749,119 @@ function compileLayoutOperation(params: {
   ]
 }
 
+function resolveArrangementNodeRef(params: {
+  value: string | HermesCanvasNodeRef
+  selectedNodeIds: string[]
+}): string {
+  return resolveNodeLikeRef({
+    value: params.value,
+    selectedNodeIds: params.selectedNodeIds,
+  })
+}
+
+function compileAbsoluteArrangementOperations(params: {
+  placements: TaskArrangementPlacement[]
+  selectedNodeIds: string[]
+}): LocalCanvasPatchOperation[] {
+  return params.placements.map((placement, index) => ({
+    type: 'move_node',
+    operationId: `arrange:absolute:${index + 1}`,
+    nodeId: resolveArrangementNodeRef({
+      value: placement.node,
+      selectedNodeIds: params.selectedNodeIds,
+    }),
+    position: {
+      x: placement.x,
+      y: placement.y,
+    },
+  }))
+}
+
+function compileStructuredArrangementOperations(params: {
+  arrangement: TaskArrangement
+  selectedNodeIds: string[]
+}): LocalCanvasPatchOperation[] {
+  const operations: LocalCanvasPatchOperation[] = []
+
+  params.arrangement.zones.forEach((zone: TaskArrangementZone, zoneIndex) => {
+    const originY = zone.origin?.y ?? 0
+    const verticalGap = zone.verticalGap ?? NODE_GAP_Y
+
+    zone.columns.forEach((column, columnIndex) => {
+      column.nodeIds.forEach((nodeRef, rowIndex) => {
+        operations.push({
+          type: 'move_node',
+          operationId: `arrange:structured:${zone.zoneId ?? zoneIndex + 1}:${columnIndex + 1}:${rowIndex + 1}`,
+          nodeId: resolveArrangementNodeRef({
+            value: nodeRef,
+            selectedNodeIds: params.selectedNodeIds,
+          }),
+          position: {
+            x: column.x,
+            y: originY + rowIndex * verticalGap,
+          },
+        })
+      })
+    })
+  })
+
+  return operations
+}
+
+function compilePresetArrangementOperations(params: {
+  arrangement: TaskArrangement
+  task: HermesCanvasTaskPayload
+  selectedNodeIds: string[]
+  snapshot: CanvasSnapshot
+}): LocalCanvasPatchOperation[] {
+  const targetNodeRefs = params.arrangement.targetNodeIds.length
+    ? params.arrangement.targetNodeIds
+    : [
+        ...params.task.nodes.map((node, index) => getTaskNodeClientId(node, index)),
+        ...targetNodeIds(params),
+      ]
+  if (targetNodeRefs.length === 0) return []
+  return [
+    {
+      type: 'layout_nodes',
+      operationId: 'arrange:preset',
+      nodeIds: targetNodeRefs.map((nodeRef) =>
+        resolveArrangementNodeRef({ value: nodeRef, selectedNodeIds: params.selectedNodeIds })
+      ),
+      direction: params.arrangement.preset ?? 'horizontal',
+    },
+  ]
+}
+
+function compileArrangeOperations(params: {
+  task: HermesCanvasTaskPayload
+  selectedNodeIds: string[]
+  snapshot: CanvasSnapshot
+}): LocalCanvasPatchOperation[] {
+  if (!params.task.arrangement) return []
+
+  if (params.task.arrangement.layoutMode === 'absolute') {
+    return compileAbsoluteArrangementOperations({
+      placements: params.task.arrangement.placements,
+      selectedNodeIds: params.selectedNodeIds,
+    })
+  }
+
+  if (params.task.arrangement.layoutMode === 'structured') {
+    return compileStructuredArrangementOperations({
+      arrangement: params.task.arrangement,
+      selectedNodeIds: params.selectedNodeIds,
+    })
+  }
+
+  return compilePresetArrangementOperations({
+    arrangement: params.task.arrangement,
+    task: params.task,
+    selectedNodeIds: params.selectedNodeIds,
+    snapshot: params.snapshot,
+  })
+}
+
 function resolveGenerationTarget(params: {
   target: TaskTargetRef
   task: HermesCanvasTaskPayload
@@ -995,6 +1113,7 @@ function compileCanvasTask(params: {
     ...materializedResources.operations,
     ...compileCreateNodeOperations({ nodes: params.task.nodes, task: params.task }),
     ...compileUpdateOperations(params),
+    ...compileArrangeOperations(params),
     ...compileDeleteOperations(params),
     ...compileConnectionOperations({ task: params.task, selectedNodeIds: params.selectedNodeIds }),
     ...compileReferenceOperations({
@@ -1165,6 +1284,7 @@ function buildCapabilityManifest() {
       'output_generate',
       'workflow_run',
       'layout_nodes',
+      'arrange_nodes',
       'batch',
       'preview_create',
       'preview_update',

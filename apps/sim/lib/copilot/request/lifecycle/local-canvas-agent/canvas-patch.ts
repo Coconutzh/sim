@@ -7,6 +7,7 @@ import type {
   LocalCanvasConnectOperation,
   LocalCanvasDeleteNodeOperation,
   LocalCanvasLayoutOperation,
+  LocalCanvasMoveNodeOperation,
   LocalCanvasPatch,
   LocalCanvasPatchOperation,
   LocalCanvasRemoveContentReferenceOperation,
@@ -42,6 +43,7 @@ const NODE_GAP_Y = 220
 const SUPPORTED_PATCH_OPERATION_TYPES = new Set([
   'create_node',
   'update_node',
+  'move_node',
   'delete_node',
   'connect',
   'add_content_reference',
@@ -600,6 +602,19 @@ export function validateLocalCanvasPatch(
       const result = adapter.validatePatch({ ...operation, nodeId } as LocalCanvasPatchOperation)
       errors.push(...result.errors)
     }
+    if (operation.type === 'move_node') {
+      const nodeId = resolveNodeId(operation.nodeId, idMap)
+      if (snapshot && !knownNodes.has(nodeId)) {
+        errors.push(`Node "${operation.nodeId}" was not found`)
+        continue
+      }
+      if (
+        !Number.isFinite(operation.position.x) ||
+        !Number.isFinite(operation.position.y)
+      ) {
+        errors.push(`Move position for node "${operation.nodeId}" must be finite`)
+      }
+    }
     if (operation.type === 'delete_node' && snapshot) {
       validateDeleteNodeOperation(operation, knownNodes, idMap, errors)
     }
@@ -635,6 +650,16 @@ function buildDeleteNodeOperation(nodeId: string): EditWorkflowOperation {
   return {
     operation_type: 'delete',
     block_id: nodeId,
+  }
+}
+
+function buildMoveNodeOperation(operation: LocalCanvasMoveNodeOperation): EditWorkflowOperation {
+  return {
+    operation_type: 'edit',
+    block_id: operation.nodeId,
+    params: {
+      position: operation.position,
+    },
   }
 }
 
@@ -684,6 +709,23 @@ export function buildEditWorkflowOperationsFromPatch(params: {
       knownNodes.set(nodeId, {
         ...node,
         values: { ...node.values, ...patchOperation.fields },
+      })
+      continue
+    }
+
+    if (patchOperation.type === 'move_node') {
+      const nodeId = resolveNodeId(patchOperation.nodeId, idMap)
+      const node = knownNodes.get(nodeId)
+      if (!node) continue
+      operations.push(
+        buildMoveNodeOperation({
+          ...patchOperation,
+          nodeId,
+        })
+      )
+      knownNodes.set(nodeId, {
+        ...node,
+        position: patchOperation.position,
       })
       continue
     }

@@ -310,4 +310,50 @@ describe('local canvas patch validation', () => {
     })
     expect(operations).toEqual([{ operation_type: 'delete', block_id: 'text-1' }])
   })
+
+  it('compiles move_node into a workflow edit position operation', () => {
+    const snapshot: CanvasSnapshot = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'text-1',
+          name: 'Text 1',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    }
+
+    const valid = validateLocalCanvasPatch(
+      {
+        operations: [
+          { type: 'move_node', operationId: 'move-text', nodeId: 'text-1', position: { x: 500, y: 200 } },
+        ],
+      },
+      snapshot
+    )
+    expect(valid).toEqual({ valid: true, errors: [] })
+
+    const { operations } = buildEditWorkflowOperationsFromPatch({
+      snapshot,
+      patch: {
+        operations: [
+          { type: 'move_node', operationId: 'move-text', nodeId: 'text-1', position: { x: 500, y: 200 } },
+        ],
+      },
+    })
+
+    expect(operations).toEqual([
+      {
+        operation_type: 'edit',
+        block_id: 'text-1',
+        params: { position: { x: 500, y: 200 } },
+      },
+    ])
+  })
 })
