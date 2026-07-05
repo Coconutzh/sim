@@ -92,6 +92,7 @@ import {
   isVideoFrameAspectRatioPreset,
   isVideoModelFamily,
   removeVideoMediaFileForType,
+  upsertVideoMediaFile,
   type VideoFrameAspectRatioPreset,
   type VideoGenerationModelId,
   type VideoMediaFileSlot,
@@ -2094,6 +2095,14 @@ function MediaContentCard({
       }),
     [contentReferences, referencedNodes]
   )
+  const referenceContextText = useMemo(
+    () =>
+      buildContentReferencePromptContext({
+        references: contentReferences,
+        referencedNodes,
+      }),
+    [contentReferences, referencedNodes]
+  )
   const resolvedImageModel = (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId
   const {
     modelOptions,
@@ -2130,6 +2139,7 @@ function MediaContentCard({
     durationSeconds: videoParameters.duration,
     firstFrameFile: getVideoMediaFileForType(videoMedia, 'first_frame'),
     lastFrameFile: getVideoMediaFileForType(videoMedia, 'last_frame'),
+    referenceContextText,
     onChangeFile,
   })
   const {
@@ -5647,13 +5657,7 @@ export const ContentBlock = memo(function ContentBlock({
           const currentVideoMedia = normalizeVideoMedia(
             extractStoredValue<unknown>(resolveBlockSourceValues(consumerBlockId), 'videoMedia', [])
           )
-          const nextVideoMedia = [
-            ...currentVideoMedia.filter((item) => item.type !== mediaType),
-            {
-              type: mediaType,
-              file: resolvedFile,
-            },
-          ]
+          const nextVideoMedia = upsertVideoMediaFile(currentVideoMedia, mediaType, resolvedFile)
           collaborativeSetSubblockValue(consumerBlockId, 'videoMedia', nextVideoMedia)
         }
       }
@@ -6172,13 +6176,17 @@ export const ContentBlock = memo(function ContentBlock({
           'relative z-[20] cursor-grab select-none overflow-visible transition-opacity content-drag-handle [&:active]:cursor-grabbing',
           (isReferenceSelectionDisabled || isFrameSelectionDisabled) && 'opacity-45'
         )}
-        onClick={handleClick}
+        onClick={() => {
+          if (frameSelection) return
+          handleClick()
+        }}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) {
             return
           }
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
+            if (frameSelection) return
             handleClick()
           }
         }}

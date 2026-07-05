@@ -13,6 +13,7 @@ import {
   getModelDisabledReason,
   inferContentReferencesFromCanvas,
   normalizeContentReferences,
+  upsertContentReference,
 } from '@/lib/workflows/content-references'
 
 describe('content reference capabilities', () => {
@@ -156,6 +157,37 @@ describe('content reference capabilities', () => {
         { role: 'video_last_frame', sourceVariants: ['image'] },
       ],
     })
+  })
+
+  it('keeps first-frame and last-frame video references in separate slots', () => {
+    const withFirst = upsertContentReference([], {
+      sourceBlockId: 'image-first',
+      sourceVariant: 'image',
+      role: 'video_first_frame',
+    })
+    const withBoth = upsertContentReference(withFirst, {
+      sourceBlockId: 'image-last',
+      sourceVariant: 'image',
+      role: 'video_last_frame',
+    })
+    const replacedLast = upsertContentReference(withBoth, {
+      sourceBlockId: 'image-last-2',
+      sourceVariant: 'image',
+      role: 'video_last_frame',
+    })
+
+    expect(replacedLast).toEqual([
+      {
+        sourceBlockId: 'image-first',
+        sourceVariant: 'image',
+        role: 'video_first_frame',
+      },
+      {
+        sourceBlockId: 'image-last-2',
+        sourceVariant: 'image',
+        role: 'video_last_frame',
+      },
+    ])
   })
 
   it('disables models that cannot satisfy the current references', () => {

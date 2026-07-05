@@ -37,6 +37,7 @@ interface UseVideoContentAiSessionOptions {
   durationSeconds: number
   firstFrameFile: UploadedFileValue | null
   lastFrameFile: UploadedFileValue | null
+  referenceContextText?: string
   onChangeFile: (value: UploadedFileValue | null) => void
 }
 
@@ -75,6 +76,7 @@ export function useVideoContentAiSession({
   durationSeconds,
   firstFrameFile,
   lastFrameFile,
+  referenceContextText,
   onChangeFile,
 }: UseVideoContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -106,24 +108,24 @@ export function useVideoContentAiSession({
   }, [])
 
   useEffect(() => {
-    if (error) {
-      setError(null)
-    }
+    setError(null)
   }, [
     aspectRatioPreset,
     durationSeconds,
-    error,
     firstFrameFile?.key,
     firstFrameFile?.path,
     lastFrameFile?.key,
     lastFrameFile?.path,
     modelFamily,
     prompt,
+    referenceContextText,
     resolution,
   ])
 
   const submitPrompt = useCallback(async () => {
-    const nextPrompt = prompt.trim()
+    const trimmedPrompt = prompt.trim()
+    const trimmedReferenceContext = referenceContextText?.trim()
+    const nextPrompt = [trimmedPrompt, trimmedReferenceContext].filter(Boolean).join('\n\n')
     if (!nextPrompt) {
       setError('请输入提示词。')
       return
@@ -215,6 +217,7 @@ export function useVideoContentAiSession({
     modelFamily,
     onChangeFile,
     prompt,
+    referenceContextText,
     resolution,
     workspaceId,
   ])
