@@ -2,6 +2,7 @@ import type {
   CanvasSnapshot,
   LocalAgentPlan,
   LocalCanvasGenerationTarget,
+  LocalCanvasNodeKind,
   LocalCanvasPatchOperation,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { SHOW_PLANNING_WORKFLOW_PRESET } from '@/lib/hermes/show-planning-skill'
@@ -93,6 +94,26 @@ function nodeExists(snapshot: CanvasSnapshot, nodeId: string): boolean {
   return snapshot.nodes.some((node) => node.id === nodeId)
 }
 
+function findPlanningNodeId(params: {
+  snapshot: CanvasSnapshot
+  nodeId: string
+  section?: string
+  kind?: LocalCanvasNodeKind
+}): string | null {
+  if (nodeExists(params.snapshot, params.nodeId)) return params.nodeId
+  if (params.section) {
+    const bySection = params.snapshot.nodes.find(
+      (node) => node.values.planningSection === params.section
+    )
+    if (bySection) return bySection.id
+  }
+  if (params.kind) {
+    const byKind = params.snapshot.nodes.find((node) => node.kind === params.kind)
+    if (byKind) return byKind.id
+  }
+  return null
+}
+
 function hasEdge(snapshot: CanvasSnapshot, source: string, target: string): boolean {
   return snapshot.edges.some((edge) => edge.source === source && edge.target === target)
 }
@@ -102,6 +123,14 @@ function readString(value: unknown): string {
 }
 
 function valueRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return valueRecord(parsed)
+    } catch {
+      return null
+    }
+  }
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
@@ -289,8 +318,11 @@ function fallbackPrograms(): ProgramVisualSpec[] {
   ]
 }
 
-function readProgramVisualSpecs(snapshot: CanvasSnapshot): ProgramVisualSpec[] {
-  const programNode = snapshot.nodes.find((node) => node.id === 'planning-programs')
+function readProgramVisualSpecs(
+  snapshot: CanvasSnapshot,
+  programNodeId: string
+): ProgramVisualSpec[] {
+  const programNode = snapshot.nodes.find((node) => node.id === programNodeId)
   if (!programNode) return fallbackPrograms()
 
   const fromData: ProgramVisualSpec[] = []
@@ -423,20 +455,13 @@ function connectIfMissing(params: {
   }
 }
 
-function addContentReferenceIfMissing(params: {
+function addContentReferenceIfMissing(_params: {
   snapshot: CanvasSnapshot
   consumerNodeId: string
   sourceNodeId: string
   operationId: string
 }): LocalCanvasPatchOperation | null {
-  if (hasEdge(params.snapshot, params.sourceNodeId, params.consumerNodeId)) return null
-  return {
-    type: 'add_content_reference',
-    operationId: params.operationId,
-    consumerNodeId: params.consumerNodeId,
-    sourceNodeId: params.sourceNodeId,
-    role: 'text_context',
-  }
+  return null
 }
 
 export function buildShowPlanningScaffoldOperations(): LocalCanvasPatchOperation[] {
@@ -452,7 +477,6 @@ export function buildShowPlanningScaffoldOperations(): LocalCanvasPatchOperation
       planningSection: node.section,
       planningStage: node.section,
       planningStatus: node.section === 'positioning' ? 'draft' : 'pending_review',
-      planningData: null,
       approvalNotes: '',
     },
   }))
@@ -479,9 +503,6 @@ export function buildShowPlanningScaffoldOperations(): LocalCanvasPatchOperation
       presentationSlideCountMode: 'auto',
       presentationSlideCount: 10,
       presentationStatus: 'idle',
-      presentationArtifact: null,
-      file: null,
-      contentReferences: [],
     },
   })
   operations.push({
@@ -498,16 +519,37 @@ export function buildShowPlanningScaffoldOperations(): LocalCanvasPatchOperation
 export function buildProgramDrivenVisualSystemPlan(
   snapshot: CanvasSnapshot
 ): LocalAgentPlan | null {
-  if (!nodeExists(snapshot, 'planning-programs') || !nodeExists(snapshot, 'planning-visual')) {
+  const programNodeId = findPlanningNodeId({
+    snapshot,
+    nodeId: 'planning-programs',
+    section: 'programs',
+  })
+  const visualNodeId = findPlanningNodeId({
+    snapshot,
+    nodeId: 'planning-visual',
+    section: 'visual',
+  })
+  const summaryNodeId = findPlanningNodeId({
+    snapshot,
+    nodeId: 'planning-summary',
+    section: 'summary',
+  })
+  const presentationNodeId = findPlanningNodeId({
+    snapshot,
+    nodeId: 'planning-presentation',
+    kind: 'presentation',
+  })
+
+  if (!programNodeId || !visualNodeId || !summaryNodeId) {
     return null
   }
 
-  const programs = readProgramVisualSpecs(snapshot)
+  const programs = readProgramVisualSpecs(snapshot, programNodeId)
   const generationTargets: LocalCanvasGenerationTarget[] = []
   const operations: LocalCanvasPatchOperation[] = [
     upsertTextNodeOperation({
       snapshot,
-      nodeId: 'planning-visual',
+      nodeId: visualNodeId,
       title: '视觉系统总控',
       position: { x: 2120, y: 120 },
       fields: {
@@ -518,11 +560,11 @@ export function buildProgramDrivenVisualSystemPlan(
         planningSection: 'visual',
         planningStage: 'visual_master',
         planningStatus: 'pending_review',
-        planningData: {
+        planningData: JSON.stringify({
           visualNodeMode: 'program_driven',
           programCount: programs.length,
           programNames: programs.map((program) => program.name),
-        },
+        }),
         approvalNotes: '',
       },
     }),
@@ -560,7 +602,7 @@ export function buildProgramDrivenVisualSystemPlan(
           planningSection: 'program_detail',
           planningStage: 'program_detail',
           planningStatus: 'pending_generation',
-          planningData: programData,
+          planningData: JSON.stringify(programData),
           approvalNotes: '',
         },
       }),
@@ -578,10 +620,10 @@ export function buildProgramDrivenVisualSystemPlan(
           planningSection: 'program_visual_plan',
           planningStage: 'program_visual_plan',
           planningStatus: 'pending_generation',
-          planningData: {
+          planningData: JSON.stringify({
             ...programData,
             sourceProgramDetailNodeId: detailNodeId,
-          },
+          }),
           approvalNotes: '',
         },
       }),
@@ -594,14 +636,6 @@ export function buildProgramDrivenVisualSystemPlan(
         fields: {
           aiPrompt: buildProgramImagePrompt(program, visualPlanNodeId),
           aiAspectRatio: '16:9',
-          planningSection: 'program_image',
-          planningStage: 'program_image',
-          planningStatus: 'pending_generation',
-          planningData: {
-            ...programData,
-            sourceProgramVisualPlanNodeId: visualPlanNodeId,
-          },
-          file: null,
         },
       })
     )
@@ -617,15 +651,6 @@ export function buildProgramDrivenVisualSystemPlan(
           fields: {
             videoPrompt: buildProgramVideoPrompt(program, visualPlanNodeId),
             videoFrameAspectRatioPreset: '16:9',
-            planningSection: 'program_video',
-            planningStage: 'program_video',
-            planningStatus: 'pending_generation',
-            planningData: {
-              ...programData,
-              sourceProgramVisualPlanNodeId: visualPlanNodeId,
-              sourceProgramImageNodeId: imageNodeId,
-            },
-            file: null,
           },
         })
       )
@@ -640,17 +665,10 @@ export function buildProgramDrivenVisualSystemPlan(
       },
       { clientNodeId: imageNodeId, kind: 'image', reason: `生成节目“${program.name}”关键视觉图` }
     )
-    if (programData.needsVideo) {
-      generationTargets.push({
-        clientNodeId: videoNodeId,
-        kind: 'video',
-        reason: `生成节目“${program.name}”动态视觉视频`,
-      })
-    }
 
     const programsToDetail = connectIfMissing({
       snapshot,
-      sourceNodeId: 'planning-programs',
+      sourceNodeId: programNodeId,
       targetNodeId: detailNodeId,
       operationId: `show_planning:connect:programs_to_detail:${index + 1}`,
     })
@@ -666,7 +684,7 @@ export function buildProgramDrivenVisualSystemPlan(
 
     const visualToProgramPlan = connectIfMissing({
       snapshot,
-      sourceNodeId: 'planning-visual',
+      sourceNodeId: visualNodeId,
       targetNodeId: visualPlanNodeId,
       operationId: `show_planning:connect:visual_to_program_plan:${index + 1}`,
     })
@@ -701,36 +719,10 @@ export function buildProgramDrivenVisualSystemPlan(
     const visualMasterReference = addContentReferenceIfMissing({
       snapshot,
       consumerNodeId: visualPlanNodeId,
-      sourceNodeId: 'planning-visual',
+      sourceNodeId: visualNodeId,
       operationId: `show_planning:reference:visual_master_to_visual_plan:${index + 1}`,
     })
     if (visualMasterReference) operations.push(visualMasterReference)
-
-    const imageReference = addContentReferenceIfMissing({
-      snapshot,
-      consumerNodeId: imageNodeId,
-      sourceNodeId: visualPlanNodeId,
-      operationId: `show_planning:reference:visual_plan_to_image:${index + 1}`,
-    })
-    if (imageReference) operations.push(imageReference)
-
-    if (programData.needsVideo) {
-      const videoVisualReference = addContentReferenceIfMissing({
-        snapshot,
-        consumerNodeId: videoNodeId,
-        sourceNodeId: visualPlanNodeId,
-        operationId: `show_planning:reference:visual_plan_to_video:${index + 1}`,
-      })
-      if (videoVisualReference) operations.push(videoVisualReference)
-
-      const videoImageReference = addContentReferenceIfMissing({
-        snapshot,
-        consumerNodeId: videoNodeId,
-        sourceNodeId: imageNodeId,
-        operationId: `show_planning:reference:image_to_video:${index + 1}`,
-      })
-      if (videoImageReference) operations.push(videoImageReference)
-    }
   })
 
   operations.push(
@@ -749,10 +741,10 @@ export function buildProgramDrivenVisualSystemPlan(
         planningSection: 'visual',
         planningStage: 'visual_summary',
         planningStatus: 'pending_generation',
-        planningData: {
+        planningData: JSON.stringify({
           visualNodeMode: 'program_driven',
           sourceProgramCount: programs.length,
-        },
+        }),
         approvalNotes: '',
       },
     })
@@ -793,7 +785,7 @@ export function buildProgramDrivenVisualSystemPlan(
 
     const detailSummaryReference = addContentReferenceIfMissing({
       snapshot,
-      consumerNodeId: 'planning-summary',
+      consumerNodeId: summaryNodeId,
       sourceNodeId: detailNodeId,
       operationId: `show_planning:reference:detail_to_summary:${index + 1}`,
     })
@@ -829,27 +821,18 @@ export function buildProgramDrivenVisualSystemPlan(
   const visualSummaryToPlanningSummary = connectIfMissing({
     snapshot,
     sourceNodeId: VISUAL_SUMMARY_NODE_ID,
-    targetNodeId: 'planning-summary',
+    targetNodeId: summaryNodeId,
     operationId: 'show_planning:connect:visual_summary_to_summary',
   })
   if (visualSummaryToPlanningSummary) operations.push(visualSummaryToPlanningSummary)
 
   const planningSummaryReference = addContentReferenceIfMissing({
     snapshot,
-    consumerNodeId: 'planning-summary',
+    consumerNodeId: summaryNodeId,
     sourceNodeId: VISUAL_SUMMARY_NODE_ID,
     operationId: 'show_planning:reference:visual_summary_to_summary',
   })
   if (planningSummaryReference) operations.push(planningSummaryReference)
-
-  if (nodeExists(snapshot, 'planning-presentation')) {
-    operations.push({
-      type: 'move_node',
-      operationId: 'show_planning:move:presentation',
-      nodeId: 'planning-presentation',
-      position: { x: 3320, y: 420 },
-    })
-  }
 
   generationTargets.push({
     clientNodeId: VISUAL_SUMMARY_NODE_ID,

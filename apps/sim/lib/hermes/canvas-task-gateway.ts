@@ -574,8 +574,25 @@ function mergeContentFields(params: {
     else if (text) output.contentHtml = normalizeTextHtml(text)
     const prompt = contentString('aiPrompt', 'prompt') || stringValue(direct('aiPrompt'))
     if (prompt) output.aiPrompt = prompt
-    for (const key of ['aiModel', 'blockStyle', 'backgroundColor', 'fontSize', 'width', 'height']) {
+    for (const key of [
+      'aiModel',
+      'blockStyle',
+      'backgroundColor',
+      'fontSize',
+      'width',
+      'height',
+      'planningSection',
+      'planningStage',
+      'planningStatus',
+      'approvalNotes',
+    ]) {
       if (fields[key] !== undefined) output[key] = fields[key]
+    }
+    if (fields.planningData !== undefined) {
+      output.planningData =
+        typeof fields.planningData === 'string'
+          ? fields.planningData
+          : JSON.stringify(fields.planningData)
     }
     return output
   }

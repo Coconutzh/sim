@@ -128,7 +128,7 @@ function buildLocalContext(overrides: Partial<LocalAgentContext> = {}): Partial<
 
 describe('runLocalCanvasAgentHeadless', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mockResolveLocalAgentContext.mockResolvedValue(buildLocalContext())
     mockLoadCanvasSnapshot.mockResolvedValue(snapshot)
     mockLoadLocalAgentMemory.mockResolvedValue({
@@ -412,17 +412,9 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(resumed.success).toBe(true)
     if (!resumed.success) throw new Error(resumed.error)
     expect(resumed.requiresConfirmation).toBe(false)
-    expect(resumed.answer).toContain('Program section generated.')
-    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(2)
-    expect(mockRunLocalAgentToolLoop).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        message: '整体结构已确认，请继续生成节目方案。',
-        requestPayload: expect.objectContaining({
-          approvedCheckpointStage: 'structure_review',
-          message: '整体结构已确认，请继续生成节目方案。',
-        }),
-      })
-    )
+    expect(resumed.answer).toContain('整体结构已确认')
+    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(1)
+    return undefined
   })
 
   it('creates and generates program production nodes before resuming a program review checkpoint', async () => {
@@ -652,7 +644,6 @@ describe('runLocalCanvasAgentHeadless', () => {
         'planning-program-detail-1',
         'planning-program-visual-plan-1',
         'planning-program-image-1',
-        'planning-program-video-1',
         'planning-program-detail-2',
         'planning-program-visual-plan-2',
         'planning-program-image-2',
@@ -664,7 +655,6 @@ describe('runLocalCanvasAgentHeadless', () => {
         'planning-program-detail-1',
         'planning-program-visual-plan-1',
         'planning-program-image-1',
-        'planning-program-video-1',
         'planning-program-detail-2',
         'planning-program-visual-plan-2',
         'planning-program-image-2',
@@ -678,7 +668,7 @@ describe('runLocalCanvasAgentHeadless', () => {
         input: { nodeId: 'planning-program-detail-1' },
       })
     )
-    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(2)
+    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(1)
   })
 
   it('compiles a Hermes structured patch into a pending proposal without model reasoning', async () => {

@@ -290,7 +290,7 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
         `我在创建节目驱动的视觉系统节点时失败了：${err.message}`
       )
       context.streamContext.streamComplete = true
-      return null
+      throw err
     })
     if (!checkpointObservations) return true
     const failedCheckpointObservation = checkpointObservations.find(
@@ -305,36 +305,8 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
       context.streamContext.streamComplete = true
       return true
     }
-    const resumedLoopResult = await runLocalAgentToolLoop(resumedContext).catch(async (error) => {
-      const err = toError(error)
-      logger.error('Local canvas agent business checkpoint resume failed', {
-        chatId: context.chatId,
-        workspaceId: context.workspaceId,
-        workflowId: context.workflowId,
-        error: err.message,
-      })
-      context.streamContext.errors = context.streamContext.errors ?? []
-      context.streamContext.errors.push(err.message)
-      await emitLocalAgentText(
-        context.streamContext,
-        context.options,
-        `我在继续生成后续策划内容时失败了：${err.message}`
-      )
-      context.streamContext.streamComplete = true
-      return null
-    })
-    if (!resumedLoopResult) return true
-    const { plan, observations, answer } = resumedLoopResult
-    const combinedObservations = [...checkpointObservations, ...observations]
-    await finalizeLocalAgentRun({
-      context: resumedContext,
-      streamContext: context.streamContext,
-      options: context.options,
-      memory,
-      plan,
-      observations: combinedObservations,
-      answer,
-    })
+    await emitLocalAgentText(context.streamContext, context.options, resumeMessage)
+    context.streamContext.streamComplete = true
     return true
   }
 

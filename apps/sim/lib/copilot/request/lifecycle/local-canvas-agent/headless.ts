@@ -764,19 +764,24 @@ async function runApplyAfterConfirmMode(params: {
   }
 
   if (consumed.pending.kind === 'business_checkpoint' && consumed.pending.plan.checkpoint) {
-    const resumeMessage = consumed.pending.plan.checkpoint.resumeMessage
+    const businessPending = consumed.pending
+    const checkpoint = businessPending.plan.checkpoint
+    if (!checkpoint) {
+      throw new Error('Missing business checkpoint')
+    }
+    const resumeMessage = checkpoint.resumeMessage
     const resumedContext: LocalAgentContext = {
       ...applyContext,
       message: resumeMessage,
       requestPayload: {
         ...applyContext.requestPayload,
         message: resumeMessage,
-        approvedCheckpointStage: consumed.pending.plan.checkpoint.stage,
+        approvedCheckpointStage: checkpoint.stage,
       },
     }
     const checkpointObservations = await executeApprovedShowPlanningCheckpointPlan({
       context: resumedContext,
-      stage: consumed.pending.plan.checkpoint.stage,
+      stage: checkpoint.stage,
     }).catch((error) => {
       const err = toError(error)
       logger.error('Hermes headless checkpoint preparation failed', {
@@ -811,8 +816,9 @@ async function runApplyAfterConfirmMode(params: {
         error: 'Failed to prepare the program-driven visual system nodes',
       }
     }
+    const checkpointObservationList = checkpointObservations
 
-    const failedCheckpointObservation = checkpointObservations.find(
+    const failedCheckpointObservation = checkpointObservationList.find(
       (observation) => !observation.success
     )
     if (failedCheckpointObservation) {
@@ -830,9 +836,9 @@ async function runApplyAfterConfirmMode(params: {
         requiresConfirmation: false,
         pendingActionId: params.input.pendingActionId,
         proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
-        changedNodeIds: collectChangedNodeIds(checkpointObservations),
-        generatedNodeIds: collectGeneratedNodeIds(checkpointObservations),
-        verificationSummary: buildVerificationSummary(checkpointObservations),
+        changedNodeIds: collectChangedNodeIds(checkpointObservationList),
+        generatedNodeIds: collectGeneratedNodeIds(checkpointObservationList),
+        verificationSummary: buildVerificationSummary(checkpointObservationList),
         auditId: params.auditId,
         traceId: params.input.traceId,
         errorCode,
@@ -840,82 +846,13 @@ async function runApplyAfterConfirmMode(params: {
       }
     }
 
-    const resumedLoopResult = await runLocalAgentToolLoop(resumedContext).catch((error) => {
-      const err = toError(error)
-      logger.error('Hermes headless business checkpoint resume failed', {
-        auditId: params.auditId,
-        traceId: params.input.traceId,
-        hermesRunId: params.input.hermesRunId,
-        userId: params.input.userId,
-        workspaceId: params.input.workspaceId,
-        workflowId: params.input.workflowId,
-        pendingActionId: params.input.pendingActionId,
-        error: err.message,
-      })
-      return null
-    })
+    const checkpointChangedNodeIds = collectChangedNodeIds(checkpointObservationList)
+    const checkpointGeneratedNodeIds = collectGeneratedNodeIds(checkpointObservationList)
+    const checkpointVerificationSummary = checkpointObservationList.length
+      ? buildVerificationSummary(checkpointObservationList)
+      : 'Business checkpoint confirmed; no deterministic canvas mutation was required.'
 
-    if (!resumedLoopResult) {
-      return {
-        success: false,
-        answer: '继续执行已确认的策划阶段时失败了，请重试。',
-        mode: params.input.mode,
-        intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
-        risk: consumed.pending.plan.risk,
-        requiresConfirmation: false,
-        pendingActionId: params.input.pendingActionId,
-        proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
-        changedNodeIds: [],
-        generatedNodeIds: [],
-        auditId: params.auditId,
-        traceId: params.input.traceId,
-        errorCode: 'TOOL_EXECUTION_FAILED',
-        error: 'Failed to resume the approved business checkpoint plan',
-      }
-    }
-
-    const combinedObservations = [...checkpointObservations, ...resumedLoopResult.observations]
-    const changedNodeIds = collectChangedNodeIds(combinedObservations)
-    const generatedNodeIds = collectGeneratedNodeIds(combinedObservations)
-    const verificationSummary = buildVerificationSummary(combinedObservations)
-    const failedObservation = combinedObservations.find(
-      (observation) => !observation.success
-    )
-
-    if (failedObservation) {
-      const error = getObservationErrorSummary(failedObservation)
-      const errorCode = errorCodeForFailedObservation(failedObservation)
-      return {
-        success: false,
-        answer:
-          errorCode === 'VERIFY_FAILED'
-            ? `阶段确认后的后续生成未通过验证：${error}`
-            : `阶段确认后的后续生成失败：${error}`,
-        mode: params.input.mode,
-        intent: resumedLoopResult.plan.userIntent ?? 'mutate_canvas',
-        risk: resumedLoopResult.plan.risk,
-        requiresConfirmation: false,
-        pendingActionId: params.input.pendingActionId,
-        proposedPatchSummary: summarizeProposalPlan(resumedLoopResult.plan),
-        changedNodeIds,
-        generatedNodeIds,
-        verificationSummary,
-        auditId: params.auditId,
-        traceId: params.input.traceId,
-        errorCode,
-        error,
-      }
-    }
-
-    const answer =
-      resumedLoopResult.answer.trim() ||
-      (await buildApplySuccessAnswer({
-        context: resumedContext,
-        plan: resumedLoopResult.plan,
-        observations: combinedObservations,
-      }))
-
-    logger.info('Hermes confirmed business checkpoint resumed successfully', {
+    logger.info('Hermes confirmed business checkpoint deterministic step completed', {
       auditId: params.auditId,
       traceId: params.input.traceId,
       hermesRunId: params.input.hermesRunId,
@@ -924,22 +861,22 @@ async function runApplyAfterConfirmMode(params: {
       workflowId: params.input.workflowId,
       pendingActionId: params.input.pendingActionId,
       stage: consumed.pending.plan.checkpoint.stage,
-      changedNodeCount: changedNodeIds.length,
-      generatedNodeCount: generatedNodeIds.length,
+      changedNodeCount: checkpointChangedNodeIds.length,
+      generatedNodeCount: checkpointGeneratedNodeIds.length,
     })
 
     return {
       success: true,
-      answer,
+      answer: resumeMessage,
       mode: params.input.mode,
-      intent: resumedLoopResult.plan.userIntent ?? 'mutate_canvas',
-      risk: resumedLoopResult.plan.risk,
+      intent: businessPending.plan.userIntent ?? 'mutate_canvas',
+      risk: businessPending.plan.risk,
       requiresConfirmation: false,
       pendingActionId: params.input.pendingActionId,
-      proposedPatchSummary: summarizeProposalPlan(resumedLoopResult.plan),
-      changedNodeIds,
-      generatedNodeIds,
-      verificationSummary,
+      proposedPatchSummary: summarizeProposalPlan(businessPending.plan),
+      changedNodeIds: checkpointChangedNodeIds,
+      generatedNodeIds: checkpointGeneratedNodeIds,
+      verificationSummary: checkpointVerificationSummary,
       auditId: params.auditId,
       traceId: params.input.traceId,
     }
