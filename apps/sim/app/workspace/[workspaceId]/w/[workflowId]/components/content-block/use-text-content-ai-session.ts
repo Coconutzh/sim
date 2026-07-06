@@ -4,18 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  generateContentCanvasTextContract,
   type ContentCanvasModelAvailabilitySnapshot,
+  generateContentCanvasTextContract,
 } from '@/lib/api/contracts/content-canvas'
+import {
+  hydrateReferenceImagesForTextAi,
+  type TextAiReferenceImageSource,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-request'
 import {
   applyGeneratedTextToContentHtml,
   DEFAULT_TEXT_AI_MODEL,
   getTextAiModelOptions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
-import {
-  hydrateReferenceImagesForTextAi,
-  type TextAiReferenceImageSource,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-request'
 
 interface UseTextContentAiSessionOptions {
   blockId: string
@@ -27,6 +27,8 @@ interface UseTextContentAiSessionOptions {
   referenceContextText?: string
   referenceImages?: TextAiReferenceImageSource[]
   onChangeHtml: (value: string) => void
+  onGenerationComplete?: () => void
+  onGenerationError?: (message: string) => void
 }
 
 function getErrorMessage(error: unknown): string {
@@ -49,6 +51,8 @@ export function useTextContentAiSession({
   referenceContextText,
   referenceImages,
   onChangeHtml,
+  onGenerationComplete,
+  onGenerationError,
 }: UseTextContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -133,16 +137,27 @@ export function useTextContentAiSession({
 
       setPendingGeneratedText(content)
       setPendingActionChoice(true)
+      onGenerationComplete?.()
     } catch (caughtError) {
       if (controller.signal.aborted) return
       if (requestSequenceRef.current !== requestId) return
-      setError(getErrorMessage(caughtError))
+      const message = getErrorMessage(caughtError)
+      setError(message)
+      onGenerationError?.(message)
     } finally {
       if (requestSequenceRef.current === requestId) {
         setIsGenerating(false)
       }
     }
-  }, [model, prompt, referenceContextText, referenceImages, workspaceId])
+  }, [
+    model,
+    onGenerationComplete,
+    onGenerationError,
+    prompt,
+    referenceContextText,
+    referenceImages,
+    workspaceId,
+  ])
 
   const applyPendingGeneratedText = useCallback(
     (mode: 'replace' | 'append') => {

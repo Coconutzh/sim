@@ -39,6 +39,8 @@ interface UseVideoContentAiSessionOptions {
   lastFrameFile: UploadedFileValue | null
   referenceContextText?: string
   onChangeFile: (value: UploadedFileValue | null) => void
+  onGenerationComplete?: () => void
+  onGenerationError?: (message: string) => void
 }
 
 function getErrorMessage(error: unknown): string {
@@ -78,6 +80,8 @@ export function useVideoContentAiSession({
   lastFrameFile,
   referenceContextText,
   onChangeFile,
+  onGenerationComplete,
+  onGenerationError,
 }: UseVideoContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -200,10 +204,13 @@ export function useVideoContentAiSession({
         type: response.file.type,
         context: response.file.context,
       })
+      onGenerationComplete?.()
     } catch (caughtError) {
       if (controller.signal.aborted) return
       if (requestSequenceRef.current !== requestId) return
-      setError(getErrorMessage(caughtError))
+      const message = getErrorMessage(caughtError)
+      setError(message)
+      onGenerationError?.(message)
     } finally {
       if (requestSequenceRef.current === requestId) {
         setIsGenerating(false)
@@ -216,6 +223,8 @@ export function useVideoContentAiSession({
     lastFrameFile,
     modelFamily,
     onChangeFile,
+    onGenerationComplete,
+    onGenerationError,
     prompt,
     referenceContextText,
     resolution,

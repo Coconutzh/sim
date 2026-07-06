@@ -42,6 +42,8 @@ interface HookProps {
   lastFrameFile: UploadedFileValue | null
   referenceContextText?: string
   onChangeFile: (value: UploadedFileValue | null) => void
+  onGenerationComplete?: () => void
+  onGenerationError?: (message: string) => void
 }
 
 type HookValue = ReturnType<typeof useVideoContentAiSession>
@@ -207,6 +209,48 @@ describe('useVideoContentAiSession', () => {
         }),
       })
     )
+    act(() => harness.root.unmount())
+    harness.container.remove()
+  })
+
+  it('calls the generation complete callback after writing the generated file', async () => {
+    const onChangeFile = vi.fn()
+    const onGenerationComplete = vi.fn()
+    const harness = renderHarness({
+      modelFamily: 'wan2.6',
+      onChangeFile,
+      onGenerationComplete,
+    })
+
+    await act(async () => {
+      await harness.getHook().submitPrompt()
+    })
+
+    expect(onChangeFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'generated-video',
+        path: 'https://example.com/generated.mp4',
+      })
+    )
+    expect(onGenerationComplete).toHaveBeenCalledTimes(1)
+    act(() => harness.root.unmount())
+    harness.container.remove()
+  })
+
+  it('calls the generation error callback when the async request fails', async () => {
+    const onGenerationError = vi.fn()
+    mockRequestJson.mockRejectedValueOnce(new Error('Provider timed out'))
+    const harness = renderHarness({
+      modelFamily: 'wan2.6',
+      onGenerationError,
+    })
+
+    await act(async () => {
+      await harness.getHook().submitPrompt()
+    })
+
+    expect(harness.getHook().error).toBe('Provider timed out')
+    expect(onGenerationError).toHaveBeenCalledWith('Provider timed out')
     act(() => harness.root.unmount())
     harness.container.remove()
   })

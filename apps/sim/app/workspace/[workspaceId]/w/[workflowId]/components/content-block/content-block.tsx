@@ -1051,6 +1051,26 @@ function isPointerOnScrollableScrollbar(
   return isOnVerticalScrollbar || isOnHorizontalScrollbar
 }
 
+function ContentGenerationLoadingState({
+  label,
+  className,
+}: {
+  label: string
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'nopan flex flex-col items-center justify-center gap-3 bg-[var(--surface-1)] px-6 text-center text-[var(--text-secondary)]',
+        className
+      )}
+    >
+      <Loader2 className='h-6 w-6 animate-spin text-[var(--brand-secondary)]' />
+      <div className='font-medium text-sm'>{label}</div>
+    </div>
+  )
+}
+
 function TextContentCard({
   blockId,
   selected,
@@ -1126,6 +1146,12 @@ function TextContentCard({
       }),
     [contentReferences, referencedNodes]
   )
+  const showTextGenerationCompleteToast = useCallback(() => {
+    toast.success('文本已生成，选中文本节点后可选择追加或替换')
+  }, [])
+  const showTextGenerationErrorToast = useCallback((message: string) => {
+    toast.error(message)
+  }, [])
   const {
     modelOptions,
     isGenerating,
@@ -1144,6 +1170,8 @@ function TextContentCard({
     referenceContextText,
     referenceImages: structuredReferenceContext.images,
     onChangeHtml,
+    onGenerationComplete: showTextGenerationCompleteToast,
+    onGenerationError: showTextGenerationErrorToast,
   })
   const currentModelDisabledReason = useMemo(
     () =>
@@ -1368,7 +1396,9 @@ function TextContentCard({
         className='relative rounded-2xl border border-[var(--border)] shadow-sm transition-shadow'
         style={{ backgroundColor, height: cardHeight }}
       >
-        {isEditing ? (
+        {isGenerating ? (
+          <ContentGenerationLoadingState label='文本生成中...' className='h-full' />
+        ) : isEditing ? (
           <div
             key='editing'
             ref={editorRef}
@@ -2104,6 +2134,24 @@ function MediaContentCard({
     [contentReferences, referencedNodes]
   )
   const resolvedImageModel = (aiModel || DEFAULT_IMAGE_AI_MODEL) as ImageGenerationModelId
+  const showImageGenerationCompleteToast = useCallback(() => {
+    toast.success('图片已生成')
+  }, [])
+  const showImageGenerationErrorToast = useCallback((message: string) => {
+    toast.error(message)
+  }, [])
+  const showVideoGenerationCompleteToast = useCallback(() => {
+    toast.success('视频已生成')
+  }, [])
+  const showVideoGenerationErrorToast = useCallback((message: string) => {
+    toast.error(message)
+  }, [])
+  const showAudioGenerationCompleteToast = useCallback(() => {
+    toast.success('音频已生成')
+  }, [])
+  const showAudioGenerationErrorToast = useCallback((message: string) => {
+    toast.error(message)
+  }, [])
   const {
     modelOptions,
     aspectRatioOptions,
@@ -2119,6 +2167,8 @@ function MediaContentCard({
     aspectRatio: resolvedAspectRatio,
     referenceContext: structuredReferenceContext,
     onChangeFile,
+    onGenerationComplete: showImageGenerationCompleteToast,
+    onGenerationError: showImageGenerationErrorToast,
   })
   const {
     modelOptions: videoModelOptions,
@@ -2141,6 +2191,8 @@ function MediaContentCard({
     lastFrameFile: getVideoMediaFileForType(videoMedia, 'last_frame'),
     referenceContextText,
     onChangeFile,
+    onGenerationComplete: showVideoGenerationCompleteToast,
+    onGenerationError: showVideoGenerationErrorToast,
   })
   const {
     modelOptions: audioModelOptions,
@@ -2156,6 +2208,8 @@ function MediaContentCard({
     parameters: audioParameters,
     referenceContext: { text: structuredReferenceContext.text },
     onChangeFile,
+    onGenerationComplete: showAudioGenerationCompleteToast,
+    onGenerationError: showAudioGenerationErrorToast,
   })
   const currentImageModelDisabledReason = useMemo(
     () =>
@@ -2285,6 +2339,10 @@ function MediaContentCard({
   )
 
   const hasMedia = Boolean(mediaPath) && !isBroken
+  const isOrdinaryGenerationPending =
+    variant === 'image' ? isGenerating : variant === 'video' ? isVideoGenerating : isAudioGenerating
+  const ordinaryGenerationLabel =
+    variant === 'image' ? '图片生成中...' : variant === 'video' ? '视频生成中...' : '音频生成中...'
   const isImageCutoutNode = variant === 'image' && generationKind === 'cutout'
   const isImageCutoutPending = isImageCutoutNode && generationStatus === 'pending' && !file
   const isImageCutoutError = isImageCutoutNode && generationStatus === 'error' && !file
@@ -2636,7 +2694,12 @@ function MediaContentCard({
           onChange={handleFileChange}
         />
 
-        {hasMedia ? (
+        {isOrdinaryGenerationPending ? (
+          <ContentGenerationLoadingState
+            label={ordinaryGenerationLabel}
+            className={variant === 'audio' ? 'h-[132px] w-full' : 'h-[240px] w-full'}
+          />
+        ) : hasMedia ? (
           variant === 'image' ? (
             <div
               className={cn(
