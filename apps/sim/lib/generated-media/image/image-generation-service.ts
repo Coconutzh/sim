@@ -16,11 +16,7 @@ import {
 } from '@/lib/generated-media/image/image-generation-utils'
 import { resolveMediaEditWorkspaceFile } from '@/lib/generated-media/image/media-edit-files'
 import { generateImageWithProvider } from '@/lib/generated-media/image/providers'
-import {
-  fetchWorkspaceFileBuffer,
-  getWorkspaceFile,
-  uploadWorkspaceFile,
-} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import type { UserFile } from '@/executor/types'
 
 interface GenerateWorkspaceImageFromPromptInput {
@@ -302,24 +298,28 @@ async function hydrateImageReferenceContext(
         base64: image.base64,
       }
 
-      if (image.base64 || !image.id) {
+      if (image.base64) {
         return normalizedImage
       }
 
       try {
-        const fileRecord = await getWorkspaceFile(workspaceId, image.id)
-        if (!fileRecord) {
+        const resolvedFile = await resolveMediaEditWorkspaceFile({
+          workspaceId,
+          file: normalizedImage,
+        })
+        if (!resolvedFile) {
           return normalizedImage
         }
-        const buffer = await fetchWorkspaceFileBuffer(fileRecord)
         return {
           ...normalizedImage,
-          name: image.name || fileRecord.name,
-          url: image.url || fileRecord.url || '',
-          key: image.key || fileRecord.key,
-          size: image.size ?? fileRecord.size,
-          type: image.type || fileRecord.type,
-          base64: buffer.toString('base64'),
+          id: resolvedFile.id,
+          name: image.name || resolvedFile.name,
+          url: image.url || resolvedFile.url || '',
+          key: resolvedFile.key,
+          size: image.size ?? resolvedFile.size ?? 0,
+          type: image.type || resolvedFile.type,
+          context: image.context || resolvedFile.context,
+          base64: resolvedFile.base64,
         } satisfies UserFileLike
       } catch {
         return normalizedImage

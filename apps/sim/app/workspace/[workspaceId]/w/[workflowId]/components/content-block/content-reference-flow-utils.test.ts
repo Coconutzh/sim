@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import {
+  createContentReferenceEdge,
+  getOrdinaryContentReferenceHandles,
+} from '@/lib/workflows/content-reference-edges'
 import { getAllowedReferenceSourceVariants } from '@/lib/workflows/content-references'
 import {
   getContentReferenceCreateTargetVariants,
@@ -15,20 +19,32 @@ describe('content block reference flow helpers', () => {
       targetVariant: 'image',
       targetModel: 'jimeng-4.5',
       targetReferences: [],
-      sourceBlockId: 'source-image',
+      sourceBlockId: 'image-b',
       sourceVariant: 'image',
+    })
+    const edge = createContentReferenceEdge({
+      id: 'edge-1',
+      source: 'image-a',
+      target: 'image-b',
+      ...getOrdinaryContentReferenceHandles(),
     })
 
     expect(result).toEqual({
       referenceRole: 'image_reference',
       nextReferences: [
         {
-          sourceBlockId: 'source-image',
+          sourceBlockId: 'image-b',
           sourceVariant: 'image',
           role: 'image_reference',
         },
       ],
       disabledReason: null,
+    })
+    expect(edge).toMatchObject({
+      source: 'image-a',
+      target: 'image-b',
+      sourceHandle: 'content-reference-source-left',
+      targetHandle: 'content-reference-target-right',
     })
   })
 
@@ -45,6 +61,13 @@ describe('content block reference flow helpers', () => {
 
     expect(result.referenceRole).toBe('image_reference')
     expect(result.disabledReason).toBeNull()
+    expect(result.nextReferences).toEqual([
+      {
+        sourceBlockId: 'selected-image',
+        sourceVariant: 'image',
+        role: 'image_reference',
+      },
+    ])
   })
 
   it('keeps image references blocked for image models without image-reference capability', () => {

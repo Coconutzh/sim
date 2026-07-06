@@ -19,6 +19,14 @@ describe('resolveUserFileUrl', () => {
     ).toBe('/api/files/image.png')
   })
 
+  it('falls back to a workspace serve URL when only key is present', () => {
+    expect(
+      resolveUserFileUrl({
+        key: 'workspace/ws-1/generated image.png',
+      })
+    ).toBe('/api/files/serve/workspace%2Fws-1%2Fgenerated%20image.png?context=workspace')
+  })
+
   it('returns an empty string when neither url nor path is usable', () => {
     expect(resolveUserFileUrl(null)).toBe('')
     expect(resolveUserFileUrl({})).toBe('')

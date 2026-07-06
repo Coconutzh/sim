@@ -46,11 +46,7 @@ import {
   resolveVideoGenerationModelId,
 } from '@/lib/generated-media/video/video-generation-utils'
 import { type ContentNodeVariant, getContentNodePreset } from '@/lib/product/content-node-presets'
-import {
-  getContentReferenceAnchorForTarget,
-  getContentReferenceSourceHandleId,
-  getContentReferenceTargetHandleId,
-} from '@/lib/workflows/content-reference-edges'
+import { getOrdinaryContentReferenceHandles } from '@/lib/workflows/content-reference-edges'
 import {
   buildTextNodeAiSystemPrompt,
   convertGeneratedTextToContentHtml,
@@ -2302,17 +2298,12 @@ function buildContentReferenceConnections(params: {
   sourceBlock: ContentCanvasBlockSnapshot
   targetBlock: ContentCanvasBlockSnapshot
 }): Record<string, { block: string; handle: string }> {
-  const sourceAnchor =
-    params.targetBlock.position.x >= params.sourceBlock.position.x ? 'right' : 'left'
-  const targetAnchor = getContentReferenceAnchorForTarget({
-    sourceX: params.sourceBlock.position.x,
-    targetX: params.targetBlock.position.x,
-  })
+  const ordinaryHandles = getOrdinaryContentReferenceHandles()
 
   return {
-    [getContentReferenceSourceHandleId(sourceAnchor)]: {
+    [ordinaryHandles.sourceHandle]: {
       block: params.targetBlock.id,
-      handle: getContentReferenceTargetHandleId(targetAnchor),
+      handle: ordinaryHandles.targetHandle,
     },
   }
 }

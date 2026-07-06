@@ -1,13 +1,31 @@
 /**
- * @vitest-environment node
+ * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest'
+import { act, createElement, type ReactElement, StrictMode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
 import type { ContentCanvasModelAvailabilitySnapshot } from '@/lib/api/contracts/content-canvas'
 import {
   applyPerspectiveDrag,
   buildImagePerspectivePrompt,
   getImagePerspectiveModel,
+  ImagePerspectiveMenu,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/image-perspective-menu'
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+function renderIntoDocument(element: ReactElement): {
+  container: HTMLDivElement
+  root: Root
+} {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  act(() => {
+    root.render(element)
+  })
+  return { container, root }
+}
 
 function availability(enabledModelIds: string[]): ContentCanvasModelAvailabilitySnapshot {
   return {
@@ -56,6 +74,18 @@ describe('image perspective menu helpers', () => {
     expect(prompt).toContain('not a CAD model or 3D renderer')
   })
 
+  it('uses standard lens wording when wide angle is disabled', () => {
+    const prompt = buildImagePerspectivePrompt({
+      rotation: 20,
+      tilt: 2,
+      zoom: -8,
+      wideAngle: false,
+    })
+
+    expect(prompt).toContain('natural standard lens')
+    expect(prompt).not.toContain('wide-angle lens')
+  })
+
   it('maps pointer deltas to clamped perspective values', () => {
     expect(
       applyPerspectiveDrag({ rotation: 0, tilt: 0, zoom: 0, wideAngle: false }, 200, -200)
@@ -65,5 +95,66 @@ describe('image perspective menu helpers', () => {
       zoom: 8,
       wideAngle: false,
     })
+  })
+
+  it('preserves rotation, tilt, and zoom when wide angle changes through drag state', () => {
+    expect(
+      applyPerspectiveDrag({ rotation: 12, tilt: -4, zoom: 9, wideAngle: true }, 0, 0)
+    ).toEqual({
+      rotation: 12,
+      tilt: -4,
+      zoom: 9,
+      wideAngle: true,
+    })
+  })
+
+  it('only updates checked state when wide angle is toggled', () => {
+    const onCreateVariant = vi.fn()
+    const onPointerDown = vi.fn()
+    const onClick = vi.fn()
+    const onChange = vi.fn()
+    const { container, root } = renderIntoDocument(
+      createElement(
+        'div',
+        { onPointerDown, onClick, onChange },
+        createElement(
+          StrictMode,
+          null,
+          createElement(ImagePerspectiveMenu, {
+            workspaceId: 'workspace-1',
+            sourceFile: {
+              id: 'file-1',
+              name: 'source.png',
+              path: '/api/files/serve/source.png',
+              key: 'workspace/source.png',
+              size: 100,
+              type: 'image/png',
+            },
+            availability: availability(['gemini-3-pro-image-preview']),
+            onCreateVariant,
+            onClose: vi.fn(),
+          })
+        )
+      )
+    )
+
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(checkbox).not.toBeNull()
+    expect(checkbox?.checked).toBe(false)
+
+    act(() => {
+      checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(checkbox?.checked).toBe(true)
+    expect(onCreateVariant).not.toHaveBeenCalled()
+    expect(onPointerDown).not.toHaveBeenCalled()
+    expect(onClick).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
   })
 })

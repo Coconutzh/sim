@@ -2405,9 +2405,9 @@ describe('content canvas agent', () => {
         block_id: 'image-1',
         params: {
           connections: {
-            [getContentReferenceSourceHandleId('right')]: {
+            [getContentReferenceSourceHandleId('left')]: {
               block: 'text-1',
-              handle: getContentReferenceTargetHandleId('left'),
+              handle: getContentReferenceTargetHandleId('right'),
             },
           },
         },

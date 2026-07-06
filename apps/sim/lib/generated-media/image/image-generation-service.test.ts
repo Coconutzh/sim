@@ -270,6 +270,72 @@ describe('generateWorkspaceImageFromPrompt', () => {
     )
   })
 
+  it('hydrates key-only referenced workspace images before calling the provider', async () => {
+    mockGetWorkspaceFileByKey.mockResolvedValue({
+      id: 'image-by-key',
+      name: 'reference.png',
+      key: 'workspace/reference.png',
+      url: '/api/files/serve/workspace/reference.png?context=workspace',
+      size: 101,
+      type: 'image/png',
+      context: 'workspace',
+    })
+    mockFetchWorkspaceFileBuffer.mockResolvedValue(Buffer.from('reference-binary'))
+    mockGenerateImageWithProvider.mockResolvedValue({
+      buffer: Buffer.from('image-binary'),
+      mimeType: 'image/png',
+      provider: 'gemini',
+      providerModel: 'gemini-3.1-flash-image-preview',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'wf_789',
+      name: 'generated-image.png',
+      size: 12,
+      type: 'image/png',
+      key: 'workspace/ws-1/generated-image.png',
+      url: '/api/files/serve/workspace/ws-1/generated-image.png?context=workspace',
+      context: 'workspace',
+    })
+
+    await generateWorkspaceImageFromPrompt({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      model: 'gemini-3.1-flash-image-preview',
+      prompt: 'Use the referenced image.',
+      aspectRatio: '1:1',
+      referenceContext: {
+        text: [],
+        images: [
+          {
+            id: '',
+            name: 'reference.png',
+            url: '/api/files/serve/workspace/reference.png?context=workspace',
+            key: 'workspace/reference.png',
+            size: 101,
+            type: 'image/png',
+          },
+        ],
+      },
+    })
+
+    expect(mockGetWorkspaceFileByKey).toHaveBeenCalledWith('ws-1', 'workspace/reference.png')
+    expect(mockGenerateImageWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceContext: {
+          text: [],
+          images: [
+            expect.objectContaining({
+              id: 'image-by-key',
+              key: 'workspace/reference.png',
+              url: '/api/files/serve/workspace/reference.png?context=workspace',
+              base64: Buffer.from('reference-binary').toString('base64'),
+            }),
+          ],
+        },
+      })
+    )
+  })
+
   it('resolves multi-angle auto aspect ratio from the source image dimensions', async () => {
     const sourcePng = await createSolidPng({
       width: 1600,

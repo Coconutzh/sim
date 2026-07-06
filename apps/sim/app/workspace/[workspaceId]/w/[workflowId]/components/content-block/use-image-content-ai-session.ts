@@ -15,10 +15,12 @@ import {
 interface UploadedFileValue {
   id?: string
   name?: string
+  url?: string
   path?: string
   key?: string
   size?: number
   type?: string
+  context?: string
 }
 
 interface UseImageContentAiSessionOptions {
@@ -42,6 +44,8 @@ interface UseImageContentAiSessionOptions {
     }>
   }
   onChangeFile: (value: UploadedFileValue | null) => void
+  onGenerationComplete?: () => void
+  onGenerationError?: (message: string) => void
 }
 
 function getErrorMessage(error: unknown): string {
@@ -63,6 +67,8 @@ export function useImageContentAiSession({
   aspectRatio,
   referenceContext,
   onChangeFile,
+  onGenerationComplete,
+  onGenerationError,
 }: UseImageContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -133,21 +139,35 @@ export function useImageContentAiSession({
       onChangeFile({
         id: response.file.id,
         name: response.file.name,
+        url: response.file.url,
         path: response.file.url,
         key: response.file.key,
         size: response.file.size,
         type: response.file.type,
+        context: response.file.context,
       })
+      onGenerationComplete?.()
     } catch (caughtError) {
       if (controller.signal.aborted) return
       if (requestSequenceRef.current !== requestId) return
-      setError(getErrorMessage(caughtError))
+      const message = getErrorMessage(caughtError)
+      setError(message)
+      onGenerationError?.(message)
     } finally {
       if (requestSequenceRef.current === requestId) {
         setIsGenerating(false)
       }
     }
-  }, [aspectRatio, model, onChangeFile, prompt, referenceContext, workspaceId])
+  }, [
+    aspectRatio,
+    model,
+    onChangeFile,
+    onGenerationComplete,
+    onGenerationError,
+    prompt,
+    referenceContext,
+    workspaceId,
+  ])
 
   return {
     modelOptions,

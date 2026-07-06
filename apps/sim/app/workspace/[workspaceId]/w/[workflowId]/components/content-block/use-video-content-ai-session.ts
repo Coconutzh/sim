@@ -37,7 +37,10 @@ interface UseVideoContentAiSessionOptions {
   durationSeconds: number
   firstFrameFile: UploadedFileValue | null
   lastFrameFile: UploadedFileValue | null
+  referenceContextText?: string
   onChangeFile: (value: UploadedFileValue | null) => void
+  onGenerationComplete?: () => void
+  onGenerationError?: (message: string) => void
 }
 
 function getErrorMessage(error: unknown): string {
@@ -75,7 +78,10 @@ export function useVideoContentAiSession({
   durationSeconds,
   firstFrameFile,
   lastFrameFile,
+  referenceContextText,
   onChangeFile,
+  onGenerationComplete,
+  onGenerationError,
 }: UseVideoContentAiSessionOptions) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -106,24 +112,24 @@ export function useVideoContentAiSession({
   }, [])
 
   useEffect(() => {
-    if (error) {
-      setError(null)
-    }
+    setError(null)
   }, [
     aspectRatioPreset,
     durationSeconds,
-    error,
     firstFrameFile?.key,
     firstFrameFile?.path,
     lastFrameFile?.key,
     lastFrameFile?.path,
     modelFamily,
     prompt,
+    referenceContextText,
     resolution,
   ])
 
   const submitPrompt = useCallback(async () => {
-    const nextPrompt = prompt.trim()
+    const trimmedPrompt = prompt.trim()
+    const trimmedReferenceContext = referenceContextText?.trim()
+    const nextPrompt = [trimmedPrompt, trimmedReferenceContext].filter(Boolean).join('\n\n')
     if (!nextPrompt) {
       setError('请输入提示词。')
       return
@@ -198,10 +204,13 @@ export function useVideoContentAiSession({
         type: response.file.type,
         context: response.file.context,
       })
+      onGenerationComplete?.()
     } catch (caughtError) {
       if (controller.signal.aborted) return
       if (requestSequenceRef.current !== requestId) return
-      setError(getErrorMessage(caughtError))
+      const message = getErrorMessage(caughtError)
+      setError(message)
+      onGenerationError?.(message)
     } finally {
       if (requestSequenceRef.current === requestId) {
         setIsGenerating(false)
@@ -214,7 +223,10 @@ export function useVideoContentAiSession({
     lastFrameFile,
     modelFamily,
     onChangeFile,
+    onGenerationComplete,
+    onGenerationError,
     prompt,
+    referenceContextText,
     resolution,
     workspaceId,
   ])
