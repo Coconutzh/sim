@@ -3,6 +3,7 @@ import { workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { eq } from 'drizzle-orm'
 import { EditWorkflow } from '@/lib/copilot/generated/tool-catalog-v1'
 import {
@@ -39,6 +40,16 @@ const IGNORABLE_LEGACY_WORKFLOW_ERROR_PATTERNS = [
   /Edge references non-existent source block '/,
   /Edge references non-existent target block '/,
 ] as const
+
+function buildEmptyWorkflowState(): WorkflowState {
+  return {
+    blocks: {},
+    edges: [],
+    loops: {},
+    parallels: {},
+    lastSaved: Date.now(),
+  }
+}
 
 function isIgnorableLegacyWorkflowError(error: string): boolean {
   return IGNORABLE_LEGACY_WORKFLOW_ERROR_PATTERNS.some((pattern) => pattern.test(error))
@@ -137,8 +148,25 @@ async function getCurrentWorkflowStateFromDb(
     .where(eq(workflowTable.id, workflowId))
     .limit(1)
   if (!workflowRecord) throw new Error(`Workflow ${workflowId} not found in database`)
-  const normalized = await loadWorkflowFromNormalizedTables(workflowId)
-  if (!normalized) throw new Error('Workflow has no normalized data')
+  let normalized = await loadWorkflowFromNormalizedTables(workflowId)
+  if (!normalized) {
+    const emptyWorkflowState = buildEmptyWorkflowState()
+    const saveResult = await saveWorkflowToNormalizedTables(workflowId, emptyWorkflowState)
+    if (!saveResult.success) {
+      throw new Error(`Failed to initialize empty workflow: ${saveResult.error}`)
+    }
+
+    logger.info('Initialized missing normalized workflow state before editing', {
+      workflowId,
+    })
+    normalized = {
+      blocks: emptyWorkflowState.blocks,
+      edges: emptyWorkflowState.edges,
+      loops: emptyWorkflowState.loops,
+      parallels: emptyWorkflowState.parallels,
+      isFromNormalizedTables: true,
+    }
+  }
 
   const { state: validatedState, warnings } = normalizeWorkflowState({
     blocks: normalized.blocks,

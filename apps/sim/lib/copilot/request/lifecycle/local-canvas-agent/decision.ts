@@ -557,6 +557,7 @@ export function buildLocalAgentDecisionPrompt(params: {
       'Discuss/plan requests: do not call mutation tools.',
       'Confirmation mode is not blanket confirmation; clear non-delete writes execute and verify.',
       'Ambiguous intent uses ask_clarification, not ask_confirmation.',
+      'Exception: when the enabled skill context explicitly defines a business checkpoint workflow (for example structure review or program review in show-planning), a verified non-destructive step may pause for user review before the next stage.',
       'For ask_confirmation pendingToolCall, pendingToolCall.input.patch.operations must be an array of operation objects, not strings.',
       'Use ask_confirmation only for delete_node or clear_canvas.',
       'Use type=tool_calls only for independent read-only concurrency-safe tools; never include mutation, generation, verification, or destructive tools in tool_calls.',

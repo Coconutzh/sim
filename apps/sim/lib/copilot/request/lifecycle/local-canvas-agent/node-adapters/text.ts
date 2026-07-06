@@ -19,6 +19,11 @@ const WRITABLE_FIELDS = [
   'aiPrompt',
   'aiModel',
   'contentReferences',
+  'planningSection',
+  'planningStage',
+  'planningStatus',
+  'planningData',
+  'approvalNotes',
 ] as const
 
 export const textNodeAdapter: CanvasNodeAdapter = {
@@ -59,14 +64,23 @@ export const textNodeAdapter: CanvasNodeAdapter = {
         aiPrompt: getValue(node.values, 'aiPrompt', ''),
         aiModel: getValue(node.values, 'aiModel', 'gemini-3.1-flash-lite-preview'),
         contentReferences: getValue(node.values, 'contentReferences', []),
+        planningSection: getValue(node.values, 'planningSection', ''),
+        planningStage: getValue(node.values, 'planningStage', ''),
+        planningStatus: getValue(node.values, 'planningStatus', 'draft'),
+        planningData: getValue(node.values, 'planningData', null),
+        approvalNotes: getValue(node.values, 'approvalNotes', ''),
       },
     })
   },
   getEditableFields() {
-    return WRITABLE_FIELDS.map((id) => ({
-      id,
-      type: id === 'fontSize' || id === 'width' || id === 'height' ? 'number' : 'string',
-    }))
+    return WRITABLE_FIELDS.map((id) => {
+      if (id === 'fontSize' || id === 'width' || id === 'height') {
+        return { id, type: 'number' as const }
+      }
+      if (id === 'contentReferences') return { id, type: 'array' as const }
+      if (id === 'planningData') return { id, type: 'object' as const }
+      return { id, type: 'string' as const }
+    })
   },
   buildCreateOperation(input) {
     return buildContentCreateOperation(input, {
@@ -80,6 +94,11 @@ export const textNodeAdapter: CanvasNodeAdapter = {
       aiPrompt: '',
       aiModel: 'gemini-3.1-flash-lite-preview',
       contentReferences: [],
+      planningSection: '',
+      planningStage: '',
+      planningStatus: 'draft',
+      planningData: null,
+      approvalNotes: '',
     })
   },
   buildUpdateOperation(input) {

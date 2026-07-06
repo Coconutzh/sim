@@ -76,6 +76,124 @@ describe('runHermesCanvasTaskGateway', () => {
     })
   })
 
+  it('rejects show-planning proposal writes that skip the required scaffold', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    })
+
+    const result = await runHermesCanvasTaskGateway({
+      auditId: 'audit-show-planning-invalid-first-write',
+      body: hermesCanvasTaskRunBodySchema.parse({
+        operation: 'propose',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+        message: '帮我做一个杭州中秋城市晚会的策划案和 PPT。',
+        queryType: 'summary',
+        task: {
+          taskType: 'create_nodes',
+          risk: 'medium',
+          goal: 'Create a Hangzhou Mid-Autumn gala proposal canvas.',
+          nodes: [
+            {
+              clientNodeId: 'planning-positioning',
+              kind: 'text',
+              title: '项目定位',
+            },
+          ],
+          expectedChanges: ['Create planning proposal nodes'],
+        },
+      }),
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.errorCode).toBe('INVALID_TASK')
+    expect(result.error).toContain('taskType="create_chain"')
+    expect(result.error).toContain('workflowPreset="show_planning_v1"')
+    expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('allows show-planning proposal first writes when they create the standard scaffold', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValueOnce({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [],
+      edges: [],
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        summary: 'Show-planning scaffold applied',
+        output: {
+          machineSummary: {
+            createdNodeMap: {
+              'planning-positioning': 'planning-positioning',
+              'planning-concept': 'planning-concept',
+              'planning-structure': 'planning-structure',
+              'planning-programs': 'planning-programs',
+              'planning-lineup': 'planning-lineup',
+              'planning-visual': 'planning-visual',
+              'planning-summary': 'planning-summary',
+              'planning-presentation': 'planning-presentation',
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        summary: 'Scaffold verified',
+        output: {},
+      })
+
+    const result = await runHermesCanvasTaskGateway({
+      auditId: 'audit-show-planning-valid-first-write',
+      body: hermesCanvasTaskRunBodySchema.parse({
+        operation: 'propose',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+        message: '帮我做一个杭州中秋城市晚会的策划案和 PPT。',
+        queryType: 'summary',
+        task: {
+          taskType: 'create_chain',
+          risk: 'medium',
+          goal: 'Create a Hangzhou Mid-Autumn gala proposal canvas.',
+          fields: {
+            workflowPreset: 'show_planning_v1',
+          },
+          expectedChanges: ['Create the standard show-planning scaffold'],
+        },
+      }),
+    })
+
+    expect(result.success, JSON.stringify(result)).toBe(true)
+    expect(result.requiresConfirmation).toBe(false)
+    expect(mockExecuteLocalAgentTool).toHaveBeenNthCalledWith(1, expect.anything(), {
+      name: 'canvas.apply_patch',
+      input: {
+        patch: expect.objectContaining({
+          operations: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'create_node',
+              clientNodeId: 'planning-positioning',
+            }),
+            expect.objectContaining({
+              type: 'create_node',
+              clientNodeId: 'planning-presentation',
+            }),
+          ]),
+        }),
+      },
+    })
+  })
+
   it('materializes external image resource refs before validating generation references', async () => {
     mockExecuteLocalAgentTool
       .mockResolvedValueOnce({
@@ -477,6 +595,97 @@ describe('runHermesCanvasTaskGateway', () => {
         nodeId: 'selected-car',
       }),
     ])
+  })
+
+  it('pauses show-planning tasks at business checkpoints after verified execution', async () => {
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'planning-structure',
+          name: '整体结构',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 0, y: 0 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    })
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        summary: 'Structure updated',
+        output: {
+          machineSummary: {
+            writeBackFields: [{ nodeId: 'planning-structure', field: 'contentHtml' }],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        summary: 'Structure verified',
+        output: {},
+      })
+
+    const result = await runHermesCanvasTaskGateway({
+      auditId: 'audit-show-planning-checkpoint',
+      body: hermesCanvasTaskRunBodySchema.parse({
+        operation: 'propose',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+        message: 'Write the planning structure section.',
+        queryType: 'summary',
+        task: {
+          taskType: 'node_update',
+          risk: 'medium',
+          goal: 'Write the overall structure section.',
+          fields: {
+            workflowPreset: 'show_planning_v1',
+            planningCheckpointStage: 'structure_review',
+          },
+          updates: [
+            {
+              target: { type: 'existing_node', nodeId: 'planning-structure' },
+              fields: {
+                contentHtml: '<p>Structure</p>',
+                planningSection: 'structure',
+                planningStage: 'structure',
+                planningStatus: 'draft',
+              },
+            },
+          ],
+          expectedChanges: ['Structure section is written and paused for review'],
+        },
+      }),
+    })
+
+    expect(result.success, JSON.stringify(result)).toBe(true)
+    expect(result.requiresConfirmation).toBe(true)
+    expect(result.pendingActionId).toBeTruthy()
+    expect(result.changedNodeIds).toEqual(['planning-structure'])
+    expect(result.answer).toContain('等待结构化确认')
+
+    const consumed = consumeLocalAgentPendingPlan({
+      context: {
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        chatId: 'chat-1',
+      } as LocalAgentContext,
+      pendingActionId: result.pendingActionId ?? '',
+    })
+
+    expect(consumed.status).toBe('found')
+    if (consumed.status !== 'found') throw new Error('expected pending checkpoint plan')
+    expect(consumed.pending.kind).toBe('business_checkpoint')
+    expect(consumed.pending.plan.checkpoint?.stage).toBe('structure_review')
   })
 
   it('compiles arrange_nodes into move_node patch operations', async () => {

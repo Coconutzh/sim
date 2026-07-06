@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { loadCanvasSnapshot } from '@/lib/copilot/request/lifecycle/local-canvas-agent/canvas-context'
 import { resolveLocalAgentContext } from '@/lib/copilot/request/lifecycle/local-canvas-agent/context-manager'
 import {
   appendLocalAgentToolResultRefs,
@@ -44,6 +45,7 @@ import type {
   OrchestratorOptions,
   StreamingContext,
 } from '@/lib/copilot/request/types'
+import { buildProgramDrivenVisualSystemPlan } from '@/lib/hermes/show-planning-workflow'
 
 const logger = createLogger('LocalCanvasAgentRuntime')
 
@@ -196,6 +198,21 @@ async function loadMemoryBestEffort(context: LocalAgentContext): Promise<LocalAg
   }
 }
 
+async function executeApprovedShowPlanningCheckpointPlan(params: {
+  context: LocalAgentContext
+  stage: 'structure_review' | 'program_review'
+}): Promise<LocalAgentObservation[]> {
+  if (params.stage !== 'program_review') return []
+
+  const snapshot = await loadCanvasSnapshot({
+    workflowId: params.context.workflowId,
+    workspaceId: params.context.workspaceId,
+  })
+  const plan = buildProgramDrivenVisualSystemPlan(snapshot)
+  if (!plan) return []
+  return executeConfirmedLocalAgentPlan(params.context, plan)
+}
+
 async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boolean> {
   const command = parseLocalAgentPendingPlanCommand(context.message)
   const pendingResult = peekLocalAgentPendingPlan(context)
@@ -240,6 +257,87 @@ async function maybeHandlePendingPlan(context: LocalAgentContext): Promise<boole
   }
 
   deleteLocalAgentPendingPlan(context)
+  if (pending.kind === 'business_checkpoint' && pending.plan.checkpoint) {
+    const memory = await loadMemoryBestEffort(context)
+    const resumeMessage = pending.plan.checkpoint.resumeMessage
+    const resumedContext = {
+      ...context,
+      message: resumeMessage,
+      requestPayload: {
+        ...context.requestPayload,
+        message: resumeMessage,
+        approvedCheckpointStage: pending.plan.checkpoint.stage,
+      },
+      memory,
+    }
+    const checkpointObservations = await executeApprovedShowPlanningCheckpointPlan({
+      context: resumedContext,
+      stage: pending.plan.checkpoint.stage,
+    }).catch(async (error) => {
+      const err = toError(error)
+      logger.error('Local canvas agent checkpoint preparation failed', {
+        chatId: context.chatId,
+        workspaceId: context.workspaceId,
+        workflowId: context.workflowId,
+        stage: pending.plan.checkpoint?.stage,
+        error: err.message,
+      })
+      context.streamContext.errors = context.streamContext.errors ?? []
+      context.streamContext.errors.push(err.message)
+      await emitLocalAgentText(
+        context.streamContext,
+        context.options,
+        `我在创建节目驱动的视觉系统节点时失败了：${err.message}`
+      )
+      context.streamContext.streamComplete = true
+      return null
+    })
+    if (!checkpointObservations) return true
+    const failedCheckpointObservation = checkpointObservations.find(
+      (observation) => !observation.success
+    )
+    if (failedCheckpointObservation) {
+      await emitLocalAgentText(
+        context.streamContext,
+        context.options,
+        `我在创建节目驱动的视觉系统节点时失败了：${failedCheckpointObservation.summary}`
+      )
+      context.streamContext.streamComplete = true
+      return true
+    }
+    const resumedLoopResult = await runLocalAgentToolLoop(resumedContext).catch(async (error) => {
+      const err = toError(error)
+      logger.error('Local canvas agent business checkpoint resume failed', {
+        chatId: context.chatId,
+        workspaceId: context.workspaceId,
+        workflowId: context.workflowId,
+        error: err.message,
+      })
+      context.streamContext.errors = context.streamContext.errors ?? []
+      context.streamContext.errors.push(err.message)
+      await emitLocalAgentText(
+        context.streamContext,
+        context.options,
+        `我在继续生成后续策划内容时失败了：${err.message}`
+      )
+      context.streamContext.streamComplete = true
+      return null
+    })
+    if (!resumedLoopResult) return true
+    const { plan, observations, answer } = resumedLoopResult
+    const combinedObservations = [...checkpointObservations, ...observations]
+    await finalizeLocalAgentRun({
+      context: resumedContext,
+      streamContext: context.streamContext,
+      options: context.options,
+      memory,
+      plan,
+      observations: combinedObservations,
+      answer,
+    })
+    return true
+  }
+
   const memory = await loadMemoryBestEffort(context)
   const contextWithMemory = { ...context, memory }
   const observations = await executeConfirmedLocalAgentPlan(contextWithMemory, pending.plan)
@@ -291,6 +389,7 @@ async function emitDeleteConfirmationOptions(params: {
     context: params.context,
     plan: params.plan,
     source: 'sim_ui',
+    kind: 'canvas_mutation',
   })
   await emitLocalAgentOptions({
     context: params.streamContext,
@@ -305,6 +404,39 @@ async function emitDeleteConfirmationOptions(params: {
       {
         id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
         label: '调整方案',
+        value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+      },
+    ],
+  })
+  params.streamContext.streamComplete = true
+}
+
+async function emitBusinessCheckpointOptions(params: {
+  context: LocalAgentContext
+  streamContext: StreamingContext
+  options: Pick<OrchestratorOptions, 'abortSignal' | 'onEvent'>
+  plan: LocalAgentPlan
+}): Promise<void> {
+  if (!params.plan.checkpoint) return
+  const pending = putLocalAgentPendingPlan({
+    context: params.context,
+    plan: params.plan,
+    source: 'sim_ui',
+    kind: 'business_checkpoint',
+  })
+  await emitLocalAgentOptions({
+    context: params.streamContext,
+    options: params.options,
+    text: params.plan.checkpoint.question,
+    optionItems: [
+      {
+        id: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+        label: '确认并继续',
+        value: `${LOCAL_CANVAS_CONFIRM_PREFIX}${pending.id}`,
+      },
+      {
+        id: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
+        label: '调整这一部分',
         value: `${LOCAL_CANVAS_REVISE_PREFIX}${pending.id}`,
       },
     ],
@@ -376,6 +508,15 @@ export async function runLocalCanvasAgent(params: {
     const { plan, observations, answer } = manualLoopResult
 
     if (hasSuccessfulVerifiedMutation(observations)) {
+      if (plan.checkpoint) {
+        await emitBusinessCheckpointOptions({
+          context: localContext,
+          streamContext: params.context,
+          options: params.options,
+          plan,
+        })
+        return
+      }
       await finalizeLocalAgentRun({
         context: manualLoopContext,
         streamContext: params.context,

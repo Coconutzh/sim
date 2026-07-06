@@ -22,6 +22,7 @@ export interface LocalAgentPendingPlan {
   workflowId: string
   chatId?: string
   plan: LocalAgentPlan
+  kind?: 'canvas_mutation' | 'business_checkpoint'
   source: 'sim_ui' | 'hermes'
   createdAt: number
 }
@@ -110,6 +111,7 @@ export function putLocalAgentPendingPlan(params: {
   context: LocalAgentContext
   plan: LocalAgentPlan
   source: LocalAgentPendingPlan['source']
+  kind?: LocalAgentPendingPlan['kind']
 }): LocalAgentPendingPlan {
   deleteExpiredPendingPlans()
   const pending: LocalAgentPendingPlan = {
@@ -119,6 +121,7 @@ export function putLocalAgentPendingPlan(params: {
     workflowId: params.context.workflowId,
     chatId: params.context.chatId,
     plan: params.plan,
+    kind: params.kind ?? 'canvas_mutation',
     source: params.source,
     createdAt: Date.now(),
   }

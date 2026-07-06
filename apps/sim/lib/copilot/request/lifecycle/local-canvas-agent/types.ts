@@ -382,6 +382,13 @@ export interface LocalAgentPlan {
   generateNodeIds?: string[]
   generationTargets?: LocalCanvasGenerationTarget[]
   readNodeIds?: string[]
+  checkpoint?: {
+    kind: 'business_checkpoint'
+    stage: 'structure_review' | 'program_review'
+    question: string
+    resumeMessage: string
+    targetNodeIds?: string[]
+  }
 }
 
 export interface LocalAgentToolCall {

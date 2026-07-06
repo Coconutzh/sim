@@ -36,6 +36,7 @@ import type {
   OrchestratorOptions,
   StreamingContext,
 } from '@/lib/copilot/request/types'
+import { buildProgramDrivenVisualSystemPlan } from '@/lib/hermes/show-planning-workflow'
 
 const logger = createLogger('LocalCanvasAgentHeadless')
 
@@ -231,6 +232,21 @@ async function loadMemoryForHeadless(context: LocalAgentContext): Promise<LocalA
     })
     return createEmptyHeadlessMemory(context)
   }
+}
+
+async function executeApprovedShowPlanningCheckpointPlan(params: {
+  context: LocalAgentContext
+  stage: 'structure_review' | 'program_review'
+}): Promise<LocalAgentObservation[]> {
+  if (params.stage !== 'program_review') return []
+
+  const snapshot = await loadCanvasSnapshot({
+    workflowId: params.context.workflowId,
+    workspaceId: params.context.workspaceId,
+  })
+  const plan = buildProgramDrivenVisualSystemPlan(snapshot)
+  if (!plan) return []
+  return executeConfirmedLocalAgentPlan(params.context, plan)
 }
 
 function summarizeProposalPlan(plan: LocalAgentPlan): string {
@@ -450,14 +466,18 @@ async function runProposalMode(params: {
   }
 
   const hasMutation = hasProposedMutation(loopResult.plan)
-  const requiresConfirmation = hasMutation || Boolean(loopResult.plan.requiresUserConfirmation)
-  const pending = hasMutation
-    ? putLocalAgentPendingPlan({
-        context: proposalContext,
-        plan: loopResult.plan,
-        source: 'hermes',
-      })
-    : null
+  const hasBusinessCheckpoint = Boolean(loopResult.plan.checkpoint)
+  const requiresConfirmation =
+    hasMutation || hasBusinessCheckpoint || Boolean(loopResult.plan.requiresUserConfirmation)
+  const pending =
+    hasMutation || hasBusinessCheckpoint
+      ? putLocalAgentPendingPlan({
+          context: proposalContext,
+          plan: loopResult.plan,
+          source: 'hermes',
+          kind: hasBusinessCheckpoint ? 'business_checkpoint' : 'canvas_mutation',
+        })
+      : null
 
   logger.info('Hermes proposal canvas agent request completed', {
     auditId: params.auditId,
@@ -742,6 +762,189 @@ async function runApplyAfterConfirmMode(params: {
       pendingActionId: params.input.pendingActionId,
     },
   }
+
+  if (consumed.pending.kind === 'business_checkpoint' && consumed.pending.plan.checkpoint) {
+    const resumeMessage = consumed.pending.plan.checkpoint.resumeMessage
+    const resumedContext: LocalAgentContext = {
+      ...applyContext,
+      message: resumeMessage,
+      requestPayload: {
+        ...applyContext.requestPayload,
+        message: resumeMessage,
+        approvedCheckpointStage: consumed.pending.plan.checkpoint.stage,
+      },
+    }
+    const checkpointObservations = await executeApprovedShowPlanningCheckpointPlan({
+      context: resumedContext,
+      stage: consumed.pending.plan.checkpoint.stage,
+    }).catch((error) => {
+      const err = toError(error)
+      logger.error('Hermes headless checkpoint preparation failed', {
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        hermesRunId: params.input.hermesRunId,
+        userId: params.input.userId,
+        workspaceId: params.input.workspaceId,
+        workflowId: params.input.workflowId,
+        pendingActionId: params.input.pendingActionId,
+        stage: consumed.pending.plan.checkpoint?.stage,
+        error: err.message,
+      })
+      return null
+    })
+
+    if (!checkpointObservations) {
+      return {
+        success: false,
+        answer: '创建节目驱动的视觉系统节点失败，请重试。',
+        mode: params.input.mode,
+        intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
+        risk: consumed.pending.plan.risk,
+        requiresConfirmation: false,
+        pendingActionId: params.input.pendingActionId,
+        proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
+        changedNodeIds: [],
+        generatedNodeIds: [],
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        errorCode: 'TOOL_EXECUTION_FAILED',
+        error: 'Failed to prepare the program-driven visual system nodes',
+      }
+    }
+
+    const failedCheckpointObservation = checkpointObservations.find(
+      (observation) => !observation.success
+    )
+    if (failedCheckpointObservation) {
+      const error = getObservationErrorSummary(failedCheckpointObservation)
+      const errorCode = errorCodeForFailedObservation(failedCheckpointObservation)
+      return {
+        success: false,
+        answer:
+          errorCode === 'VERIFY_FAILED'
+            ? `节目驱动的视觉系统节点未通过验证：${error}`
+            : `节目驱动的视觉系统节点创建失败：${error}`,
+        mode: params.input.mode,
+        intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
+        risk: consumed.pending.plan.risk,
+        requiresConfirmation: false,
+        pendingActionId: params.input.pendingActionId,
+        proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
+        changedNodeIds: collectChangedNodeIds(checkpointObservations),
+        generatedNodeIds: collectGeneratedNodeIds(checkpointObservations),
+        verificationSummary: buildVerificationSummary(checkpointObservations),
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        errorCode,
+        error,
+      }
+    }
+
+    const resumedLoopResult = await runLocalAgentToolLoop(resumedContext).catch((error) => {
+      const err = toError(error)
+      logger.error('Hermes headless business checkpoint resume failed', {
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        hermesRunId: params.input.hermesRunId,
+        userId: params.input.userId,
+        workspaceId: params.input.workspaceId,
+        workflowId: params.input.workflowId,
+        pendingActionId: params.input.pendingActionId,
+        error: err.message,
+      })
+      return null
+    })
+
+    if (!resumedLoopResult) {
+      return {
+        success: false,
+        answer: '继续执行已确认的策划阶段时失败了，请重试。',
+        mode: params.input.mode,
+        intent: consumed.pending.plan.userIntent ?? 'mutate_canvas',
+        risk: consumed.pending.plan.risk,
+        requiresConfirmation: false,
+        pendingActionId: params.input.pendingActionId,
+        proposedPatchSummary: summarizeProposalPlan(consumed.pending.plan),
+        changedNodeIds: [],
+        generatedNodeIds: [],
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        errorCode: 'TOOL_EXECUTION_FAILED',
+        error: 'Failed to resume the approved business checkpoint plan',
+      }
+    }
+
+    const combinedObservations = [...checkpointObservations, ...resumedLoopResult.observations]
+    const changedNodeIds = collectChangedNodeIds(combinedObservations)
+    const generatedNodeIds = collectGeneratedNodeIds(combinedObservations)
+    const verificationSummary = buildVerificationSummary(combinedObservations)
+    const failedObservation = combinedObservations.find(
+      (observation) => !observation.success
+    )
+
+    if (failedObservation) {
+      const error = getObservationErrorSummary(failedObservation)
+      const errorCode = errorCodeForFailedObservation(failedObservation)
+      return {
+        success: false,
+        answer:
+          errorCode === 'VERIFY_FAILED'
+            ? `阶段确认后的后续生成未通过验证：${error}`
+            : `阶段确认后的后续生成失败：${error}`,
+        mode: params.input.mode,
+        intent: resumedLoopResult.plan.userIntent ?? 'mutate_canvas',
+        risk: resumedLoopResult.plan.risk,
+        requiresConfirmation: false,
+        pendingActionId: params.input.pendingActionId,
+        proposedPatchSummary: summarizeProposalPlan(resumedLoopResult.plan),
+        changedNodeIds,
+        generatedNodeIds,
+        verificationSummary,
+        auditId: params.auditId,
+        traceId: params.input.traceId,
+        errorCode,
+        error,
+      }
+    }
+
+    const answer =
+      resumedLoopResult.answer.trim() ||
+      (await buildApplySuccessAnswer({
+        context: resumedContext,
+        plan: resumedLoopResult.plan,
+        observations: combinedObservations,
+      }))
+
+    logger.info('Hermes confirmed business checkpoint resumed successfully', {
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+      hermesRunId: params.input.hermesRunId,
+      userId: params.input.userId,
+      workspaceId: params.input.workspaceId,
+      workflowId: params.input.workflowId,
+      pendingActionId: params.input.pendingActionId,
+      stage: consumed.pending.plan.checkpoint.stage,
+      changedNodeCount: changedNodeIds.length,
+      generatedNodeCount: generatedNodeIds.length,
+    })
+
+    return {
+      success: true,
+      answer,
+      mode: params.input.mode,
+      intent: resumedLoopResult.plan.userIntent ?? 'mutate_canvas',
+      risk: resumedLoopResult.plan.risk,
+      requiresConfirmation: false,
+      pendingActionId: params.input.pendingActionId,
+      proposedPatchSummary: summarizeProposalPlan(resumedLoopResult.plan),
+      changedNodeIds,
+      generatedNodeIds,
+      verificationSummary,
+      auditId: params.auditId,
+      traceId: params.input.traceId,
+    }
+  }
+
   const observations = await executeConfirmedLocalAgentPlan(applyContext, consumed.pending.plan)
   const changedNodeIds = collectChangedNodeIds(observations)
   const generatedNodeIds = collectGeneratedNodeIds(observations)

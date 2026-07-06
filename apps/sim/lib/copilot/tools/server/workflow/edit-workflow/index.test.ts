@@ -14,6 +14,7 @@ const {
   mockValidateWorkflowSelectorIds,
   mockExtractAndPersistCustomTools,
   mockNormalizeWorkflowState,
+  mockDbSelectLimit,
   mockDbUpdateWhere,
 } = vi.hoisted(() => ({
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
@@ -26,6 +27,7 @@ const {
   mockValidateWorkflowSelectorIds: vi.fn(),
   mockExtractAndPersistCustomTools: vi.fn(),
   mockNormalizeWorkflowState: vi.fn(),
+  mockDbSelectLimit: vi.fn(),
   mockDbUpdateWhere: vi.fn(),
 }))
 
@@ -35,7 +37,13 @@ vi.mock('@sim/workflow-authz', () => ({
 
 vi.mock('@sim/db', () => ({
   db: {
-    select: vi.fn(),
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: mockDbSelectLimit,
+        })),
+      })),
+    })),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: mockDbUpdateWhere,
@@ -133,6 +141,9 @@ import { editWorkflowServerTool } from './index'
 describe('editWorkflowServerTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDbSelectLimit.mockResolvedValue([
+      { id: 'workflow-1', workspaceId: 'ws-1', name: 'Workflow One' },
+    ])
     mockDbUpdateWhere.mockResolvedValue(undefined)
     mockGetUserPermissionConfig.mockResolvedValue(null)
     mockPreValidateCredentialInputs.mockResolvedValue({
@@ -305,5 +316,100 @@ describe('editWorkflowServerTool', () => {
         sanitizationWarnings: expect.any(Array),
       })
     )
+  })
+
+  it('initializes missing normalized workflow state before applying edits', async () => {
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
+      allowed: true,
+      accessSource: 'workspace',
+      workflow: { id: 'workflow-1', workspaceId: 'ws-1', name: 'Workflow One' },
+    })
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValueOnce(null)
+    mockNormalizeWorkflowState.mockReturnValueOnce({
+      state: {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+      },
+      warnings: [],
+    })
+    mockPreValidateCredentialInputs.mockResolvedValue({
+      filteredOperations: [{ type: 'create_node', clientNodeId: 'node-1' }],
+      errors: [],
+    })
+    mockApplyOperationsToWorkflowState.mockReturnValueOnce({
+      state: {
+        blocks: {
+          'node-1': {
+            id: 'node-1',
+            type: 'content',
+            name: 'Node 1',
+            position: { x: 0, y: 0 },
+            subBlocks: {},
+            outputs: {},
+            data: {},
+            enabled: true,
+            horizontalHandles: true,
+            height: 0,
+          },
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      },
+      validationErrors: [],
+      skippedItems: [],
+    })
+    mockValidateWorkflowState
+      .mockReturnValueOnce({
+        valid: true,
+        errors: [],
+        warnings: [],
+        sanitizedState: undefined,
+      })
+      .mockReturnValueOnce({
+        valid: true,
+        errors: [],
+        warnings: [],
+        sanitizedState: undefined,
+      })
+
+    const result = await editWorkflowServerTool.execute(
+      {
+        workflowId: 'workflow-1',
+        operations: [{ type: 'create_node', clientNodeId: 'node-1' }],
+      } as never,
+      { userId: 'user-1', chatId: 'chat-1' }
+    )
+
+    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenNthCalledWith(
+      1,
+      'workflow-1',
+      expect.objectContaining({
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+      })
+    )
+    expect(mockApplyOperationsToWorkflowState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: {},
+        edges: [],
+      }),
+      [{ type: 'create_node', clientNodeId: 'node-1' }],
+      null
+    )
+    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenNthCalledWith(
+      2,
+      'workflow-1',
+      expect.objectContaining({
+        blocks: {
+          'node-1': expect.objectContaining({ id: 'node-1' }),
+        },
+      })
+    )
+    expect(result).toEqual(expect.objectContaining({ success: true }))
   })
 })

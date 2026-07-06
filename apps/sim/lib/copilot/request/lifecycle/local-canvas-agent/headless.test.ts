@@ -329,6 +329,358 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(mockRunLocalAgentToolLoop).toHaveBeenCalledOnce()
   })
 
+  it('stores business checkpoint proposals as pending confirmations and resumes on approval', async () => {
+    mockRunLocalAgentToolLoop
+      .mockResolvedValueOnce({
+        plan: {
+          goal: 'Draft the show planning structure',
+          risk: 'medium',
+          userIntent: 'mutate_canvas',
+          mutationPolicy: 'allow_mutation',
+          requiresUserConfirmation: false,
+          requiresClarification: false,
+          steps: [
+            {
+              id: 'step-1',
+              title: 'Write structure section',
+              intent: 'update',
+              toolHints: ['canvas.apply_patch'],
+              expectedObservation: 'Structure node is updated',
+            },
+          ],
+          successCriteria: ['Structure is ready for review'],
+          checkpoint: {
+            kind: 'business_checkpoint',
+            stage: 'structure_review',
+            question: '请确认整体结构后继续。',
+            resumeMessage: '整体结构已确认，请继续生成节目方案。',
+            targetNodeIds: ['planning-structure'],
+          },
+        },
+        observations: [],
+        answer: 'Structure draft is ready for review.',
+      })
+      .mockResolvedValueOnce({
+        plan: {
+          goal: 'Continue after structure approval',
+          risk: 'medium',
+          userIntent: 'mutate_canvas',
+          mutationPolicy: 'allow_mutation',
+          requiresUserConfirmation: false,
+          requiresClarification: false,
+          steps: [
+            {
+              id: 'step-2',
+              title: 'Write program section',
+              intent: 'update',
+              toolHints: ['canvas.apply_patch'],
+              expectedObservation: 'Program node is updated',
+            },
+          ],
+          successCriteria: ['Program section is generated'],
+        },
+        observations: [],
+        answer: 'Program section generated.',
+      })
+
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'start planning',
+      mode: 'propose',
+      auditId: 'audit-business-checkpoint-propose',
+    })
+
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+    expect(proposal.requiresConfirmation).toBe(true)
+    expect(proposal.pendingActionId).toEqual(expect.any(String))
+
+    const resumed = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'continue',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-business-checkpoint-apply',
+    })
+
+    expect(resumed.success).toBe(true)
+    if (!resumed.success) throw new Error(resumed.error)
+    expect(resumed.requiresConfirmation).toBe(false)
+    expect(resumed.answer).toContain('Program section generated.')
+    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(2)
+    expect(mockRunLocalAgentToolLoop).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: '整体结构已确认，请继续生成节目方案。',
+        requestPayload: expect.objectContaining({
+          approvedCheckpointStage: 'structure_review',
+          message: '整体结构已确认，请继续生成节目方案。',
+        }),
+      })
+    )
+  })
+
+  it('creates and generates program production nodes before resuming a program review checkpoint', async () => {
+    mockExecuteLocalAgentTool.mockReset()
+    mockLoadCanvasSnapshot.mockResolvedValue({
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      nodes: [
+        {
+          id: 'planning-programs',
+          name: '节目方案',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 1320, y: 120 },
+          values: {
+            planningData: {
+              programs: [
+                { name: '《月起西湖》', chapter: '第一章', priority: 'key', needsVideo: true },
+                { name: '《玉鸟来信》', chapter: '第二章', priority: 'normal' },
+              ],
+            },
+            contentHtml: '<p>节目方案</p>',
+          },
+          raw: {},
+        },
+        {
+          id: 'planning-visual',
+          name: '视觉系统总控',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 2120, y: 120 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'planning-summary',
+          name: '总策划案',
+          blockType: 'content',
+          kind: 'text',
+          position: { x: 2520, y: 120 },
+          values: {},
+          raw: {},
+        },
+        {
+          id: 'planning-presentation',
+          name: '策划提案 PPT',
+          blockType: 'content',
+          kind: 'presentation',
+          position: { x: 2520, y: 420 },
+          values: {},
+          raw: {},
+        },
+      ],
+      edges: [],
+    } satisfies CanvasSnapshot)
+    const createdNodeMap = {
+      'planning-program-detail-1': 'planning-program-detail-1',
+      'planning-program-detail-2': 'planning-program-detail-2',
+      'planning-program-visual-plan-1': 'planning-program-visual-plan-1',
+      'planning-program-visual-plan-2': 'planning-program-visual-plan-2',
+      'planning-program-image-1': 'planning-program-image-1',
+      'planning-program-image-2': 'planning-program-image-2',
+      'planning-program-video-1': 'planning-program-video-1',
+      'planning-visual-summary': 'planning-visual-summary',
+    }
+    mockExecuteLocalAgentTool
+      .mockResolvedValueOnce({
+        name: 'canvas.apply_patch',
+        success: true,
+        summary: 'Program production nodes created',
+        output: {
+          machineSummary: {
+            createdNodeMap,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        name: 'canvas.verify_patch',
+        success: true,
+        summary: 'Program production nodes verified',
+        output: {},
+      })
+      .mockImplementation(async (_context, call) => {
+        if (call.name === 'canvas.generate_node_output') {
+          const nodeId = typeof call.input.nodeId === 'string' ? call.input.nodeId : 'unknown-node'
+          const verifiedField =
+            nodeId.includes('image') || nodeId.includes('video') ? 'file' : 'contentHtml'
+          return {
+            name: 'canvas.generate_node_output',
+            success: true,
+            summary: `Generated ${nodeId}`,
+            output: { nodeId, kind: 'text', verifiedField },
+          }
+        }
+        if (call.name === 'canvas.verify_patch') {
+          return {
+            name: 'canvas.verify_patch',
+            success: true,
+            summary: 'Generated output verified',
+            output: {},
+          }
+        }
+        return {
+          name: call.name,
+          success: true,
+          summary: 'ok',
+          output: {},
+        }
+      })
+    mockRunLocalAgentToolLoop
+      .mockResolvedValueOnce({
+        plan: {
+          goal: 'Draft program section',
+          risk: 'medium',
+          userIntent: 'mutate_canvas',
+          mutationPolicy: 'allow_mutation',
+          requiresUserConfirmation: false,
+          requiresClarification: false,
+          steps: [
+            {
+              id: 'step-1',
+              title: 'Write program section',
+              intent: 'update',
+              toolHints: ['canvas.apply_patch'],
+              expectedObservation: 'Program node is updated',
+            },
+          ],
+          successCriteria: ['Program is ready for review'],
+          checkpoint: {
+            kind: 'business_checkpoint',
+            stage: 'program_review',
+            question: '请确认节目方案后继续。',
+            resumeMessage: '节目方案已确认，请继续生成后续节点。',
+            targetNodeIds: ['planning-programs'],
+          },
+        },
+        observations: [],
+        answer: 'Program draft is ready for review.',
+      })
+      .mockResolvedValueOnce({
+        plan: {
+          goal: 'Continue after program approval',
+          risk: 'medium',
+          userIntent: 'mutate_canvas',
+          mutationPolicy: 'allow_mutation',
+          requiresUserConfirmation: false,
+          requiresClarification: false,
+          steps: [],
+          successCriteria: ['Lineup, visual system, and summary are generated'],
+        },
+        observations: [],
+        answer: 'Lineup, visual system, and summary generated.',
+      })
+
+    const proposal = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'continue planning',
+      mode: 'propose',
+      auditId: 'audit-program-checkpoint-propose',
+    })
+
+    expect(proposal.success).toBe(true)
+    if (!proposal.success) throw new Error(proposal.error)
+
+    const resumed = await runLocalCanvasAgentHeadless({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      chatId: 'chat-1',
+      message: 'continue',
+      mode: 'apply_after_confirm',
+      pendingActionId: proposal.pendingActionId,
+      auditId: 'audit-program-checkpoint-apply',
+    })
+
+    expect(resumed.success).toBe(true)
+    if (!resumed.success) throw new Error(resumed.error)
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'canvas.apply_patch',
+        input: expect.objectContaining({
+          patch: expect.objectContaining({
+            operations: expect.arrayContaining([
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-detail-1',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-visual-plan-1',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-image-1',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-video-1',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-detail-2',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-visual-plan-2',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-program-image-2',
+              }),
+              expect.objectContaining({
+                type: 'create_node',
+                nodeId: 'planning-visual-summary',
+              }),
+            ]),
+          }),
+        }),
+      })
+    )
+    expect(resumed.changedNodeIds).toEqual(
+      expect.arrayContaining([
+        'planning-program-detail-1',
+        'planning-program-visual-plan-1',
+        'planning-program-image-1',
+        'planning-program-video-1',
+        'planning-program-detail-2',
+        'planning-program-visual-plan-2',
+        'planning-program-image-2',
+        'planning-visual-summary',
+      ])
+    )
+    expect(resumed.generatedNodeIds).toEqual(
+      expect.arrayContaining([
+        'planning-program-detail-1',
+        'planning-program-visual-plan-1',
+        'planning-program-image-1',
+        'planning-program-video-1',
+        'planning-program-detail-2',
+        'planning-program-visual-plan-2',
+        'planning-program-image-2',
+        'planning-visual-summary',
+      ])
+    )
+    expect(mockExecuteLocalAgentTool).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'canvas.generate_node_output',
+        input: { nodeId: 'planning-program-detail-1' },
+      })
+    )
+    expect(mockRunLocalAgentToolLoop).toHaveBeenCalledTimes(2)
+  })
+
   it('compiles a Hermes structured patch into a pending proposal without model reasoning', async () => {
     const result = await runLocalCanvasAgentHeadless({
       userId: 'user-1',
@@ -718,5 +1070,4 @@ describe('runLocalCanvasAgentHeadless', () => {
     expect(result.errorCode).toBe('CONFIRMATION_SUPERSEDED')
     expect(mockExecuteLocalAgentTool).not.toHaveBeenCalled()
   })
-
 })

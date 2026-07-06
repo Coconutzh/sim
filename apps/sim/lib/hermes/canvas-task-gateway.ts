@@ -41,9 +41,38 @@ import type {
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import type { ExecutionContext, StreamingContext } from '@/lib/copilot/request/types'
+import { SHOW_PLANNING_WORKFLOW_PRESET } from '@/lib/hermes/show-planning-skill'
+import {
+  buildShowPlanningScaffoldGenerationTargets,
+  buildShowPlanningScaffoldOperations,
+  isShowPlanningPreset,
+  readShowPlanningCheckpoint,
+} from '@/lib/hermes/show-planning-workflow'
 
 const CONTENT_NODE_KINDS = new Set(['text', 'image', 'video', 'audio', 'presentation'])
 const NODE_GAP_Y = 220
+const SHOW_PLANNING_SCAFFOLD_NODE_IDS = [
+  'planning-positioning',
+  'planning-concept',
+  'planning-structure',
+  'planning-programs',
+  'planning-lineup',
+  'planning-visual',
+  'planning-summary',
+] as const
+
+const SHOW_PLANNING_INTENT_PATTERNS = [
+  /策划案/,
+  /(?:晚会|演出|活动|节庆|盛典|发布会|品牌活动|文旅|城市).{0,12}(?:方案|策划|提案|创意|概念)/,
+  /(?:方案|策划|提案|创意|概念).{0,12}(?:晚会|演出|活动|节庆|盛典|发布会|品牌活动|文旅|城市)/,
+  /\b(?:gala|event|show|festival|ceremony|brand activation|city event)\b.{0,80}\b(?:proposal|planning|plan|concept|deck)\b/i,
+  /\b(?:proposal|planning|plan|concept|deck)\b.{0,80}\b(?:gala|event|show|festival|ceremony|brand activation|city event)\b/i,
+] as const
+
+const PRESENTATION_ONLY_PATTERNS = [
+  /(?:生成|制作|做|美化|润色|修改|整理).{0,12}(?:PPT|ppt|幻灯片|slides?|deck)/,
+  /\b(?:make|create|generate|polish|revise|format)\b.{0,40}\b(?:ppt|slides?|deck)\b/i,
+] as const
 
 type TaskNode = HermesCanvasTaskPayload['nodes'][number]
 type TaskUpdate = HermesCanvasTaskPayload['updates'][number]
@@ -62,6 +91,63 @@ interface CompiledCanvasTask {
   generateNodeIds?: string[]
   generationTargets?: LocalCanvasGenerationTarget[]
   proposedPatchSummary: string
+}
+
+function hasShowPlanningIntent(text: string): boolean {
+  const normalized = text.trim()
+  if (!normalized) return false
+
+  const hasPlanningSignal = SHOW_PLANNING_INTENT_PATTERNS.some((pattern) =>
+    pattern.test(normalized)
+  )
+  if (!hasPlanningSignal) return false
+
+  const hasPresentationOnlySignal = PRESENTATION_ONLY_PATTERNS.some((pattern) =>
+    pattern.test(normalized)
+  )
+  const hasProposalSignal =
+    /策划案|方案|活动方案|晚会方案|演出方案|event proposal|show proposal|gala proposal|planning/i.test(
+      normalized
+    )
+
+  return hasProposalSignal || !hasPresentationOnlySignal
+}
+
+function taskTextForIntent(params: {
+  body: ParsedHermesCanvasTaskRunBody
+  task: HermesCanvasTaskPayload
+}): string {
+  return [
+    params.body.message,
+    params.task.goal,
+    params.task.content?.text,
+    params.task.content?.prompt,
+    params.task.content?.presentationPrompt,
+    ...params.task.constraints,
+    ...params.task.expectedChanges,
+    ...params.task.userPreferences,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n')
+}
+
+function hasShowPlanningScaffold(snapshot: CanvasSnapshot): boolean {
+  const nodeIds = new Set(snapshot.nodes.map((node) => node.id))
+  return SHOW_PLANNING_SCAFFOLD_NODE_IDS.every((nodeId) => nodeIds.has(nodeId))
+}
+
+function validateShowPlanningFirstWrite(params: {
+  body: ParsedHermesCanvasTaskRunBody
+  task: HermesCanvasTaskPayload
+  snapshot: CanvasSnapshot
+}): string | null {
+  if (!hasShowPlanningIntent(taskTextForIntent(params))) return null
+  if (hasShowPlanningScaffold(params.snapshot)) return null
+  if (params.task.taskType === 'create_chain' && isShowPlanningPreset(params.task.fields)) {
+    return null
+  }
+
+  return `Show-planning proposal workflows must start by creating the standard scaffold: taskType="create_chain" with fields.workflowPreset="${SHOW_PLANNING_WORKFLOW_PRESET}". Use this only for event/show/activity proposal planning, not ordinary PPT-only generation.`
 }
 
 function createTaskStreamContext(params: { chatId?: string; traceId?: string }): StreamingContext {
@@ -1108,6 +1194,24 @@ function compileCanvasTask(params: {
   selectedNodeIds: string[]
   snapshot: CanvasSnapshot
 }): CompiledCanvasTask {
+  if (isShowPlanningPreset(params.task.fields) && params.task.taskType === 'create_chain') {
+    const patch = {
+      operations: buildShowPlanningScaffoldOperations(),
+      reason: params.task.goal || 'Create the standard show-planning canvas scaffold.',
+    } satisfies LocalCanvasPatch
+    return {
+      patch,
+      generateNodeIds: [],
+      generationTargets: buildShowPlanningScaffoldGenerationTargets(),
+      proposedPatchSummary: summarizeCompiledTask({
+        task: params.task,
+        patch,
+        generateNodeIds: [],
+        generationTargets: [],
+      }),
+    }
+  }
+
   const materializedResources = buildMaterializedResourceOperations({ task: params.task })
   const operations: LocalCanvasPatchOperation[] = [
     ...materializedResources.operations,
@@ -1201,6 +1305,7 @@ function buildPlan(params: {
     successCriteria: params.task.expectedChanges.length
       ? params.task.expectedChanges
       : ['The SIM canvas task is applied, generated if requested, and verified.'],
+    ...(params.task.fields ? { checkpoint: readShowPlanningCheckpoint(params.task.fields) } : {}),
     ...(params.compiled.patch ? { patch: params.compiled.patch } : {}),
     ...(params.compiled.generateNodeIds?.length
       ? { generateNodeIds: params.compiled.generateNodeIds }
@@ -1464,6 +1569,36 @@ async function runPropose(params: {
       }
     }
 
+    if (plan.checkpoint) {
+      const pending = putLocalAgentPendingPlan({
+        context: params.context,
+        plan,
+        source: 'hermes',
+        kind: 'business_checkpoint',
+      })
+
+      return {
+        success: true,
+        operation: 'propose',
+        answer: [
+          'SIM 已完成当前策划阶段的写入与校验，正在等待结构化确认后再继续下一阶段。',
+          plan.checkpoint.question,
+          `执行摘要：\n${compiled.proposedPatchSummary}`,
+        ].join('\n\n'),
+        risk: plan.risk,
+        requiresConfirmation: true,
+        pendingActionId: pending.id,
+        proposedPatchSummary: compiled.proposedPatchSummary,
+        changedNodeIds,
+        generatedNodeIds,
+        createdNodeMap,
+        generatedOutputs,
+        verificationSummary,
+        auditId: params.auditId,
+        traceId: params.body.traceId,
+      }
+    }
+
     return {
       success: true,
       operation: 'propose',
@@ -1534,6 +1669,25 @@ async function preparePlanFromTask(params: {
     workflowId: params.context.workflowId,
     workspaceId: params.context.workspaceId,
   })
+  const showPlanningFirstWriteError = validateShowPlanningFirstWrite({
+    body: params.body,
+    task: params.body.task,
+    snapshot,
+  })
+  if (showPlanningFirstWriteError) {
+    return {
+      success: false,
+      response: errorResponse({
+        body: params.body,
+        auditId: params.auditId,
+        errorCode: 'INVALID_TASK',
+        error: showPlanningFirstWriteError,
+        answer: showPlanningFirstWriteError,
+        risk: params.body.task.risk,
+      }),
+    }
+  }
+
   let compiled: CompiledCanvasTask
   try {
     compiled = compileCanvasTask({

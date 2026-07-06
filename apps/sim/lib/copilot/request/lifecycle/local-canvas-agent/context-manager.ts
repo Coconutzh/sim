@@ -18,6 +18,7 @@ import type {
   LocalAgentMessage,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { loadWorkgroupAgentProfile } from '@/lib/copilot/request/lifecycle/local-canvas-agent/workgroup-profile'
+import { buildShowPlanningSkill } from '@/lib/hermes/show-planning-skill'
 import type {
   ExecutionContext,
   OrchestratorOptions,
@@ -449,6 +450,15 @@ function buildAgentProfileContext(context: LocalAgentContext): string {
     .join('\n')
 }
 
+function mergeBuiltinSkills(skills: LocalAgentContext['skills']): LocalAgentContext['skills'] {
+  const merged = new Map(skills.map((skill) => [skill.name, skill]))
+  if (!merged.has('show-planning')) {
+    const skill = buildShowPlanningSkill()
+    merged.set(skill.name, skill)
+  }
+  return [...merged.values()]
+}
+
 export function buildTokenAwareLocalAgentContext(params: {
   context: LocalAgentContext
   snapshot: CanvasSnapshot
@@ -594,7 +604,7 @@ export async function resolveLocalAgentContext(params: {
     attachments: extractAttachments(params.requestPayload),
     attachedContexts,
     conversationHistory,
-    skills,
+    skills: mergeBuiltinSkills(skills),
     model: resolveLocalCanvasAgentModelConfig(),
     confirmationMode:
       params.requestPayload.confirmationMode === 'manual' ||
