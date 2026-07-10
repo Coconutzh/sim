@@ -880,6 +880,68 @@ export function buildProgramDrivenVisualSystemPlan(
   }
 }
 
+export type ShowPlanningCheckpointStage = 'structure_review' | 'program_review'
+
+export interface ShowPlanningCheckpointValidationResult {
+  valid: boolean
+  missing: string[]
+  message: string
+}
+
+function planningNodeBySection(
+  snapshot: CanvasSnapshot,
+  section: ShowPlanningSection
+): CanvasSnapshot['nodes'][number] | undefined {
+  return snapshot.nodes.find((node) => node.values.planningSection === section)
+}
+
+function hasDirectHermesContent(node: CanvasSnapshot['nodes'][number] | undefined): boolean {
+  const contentHtml = readString(node?.values.contentHtml)
+  const text = stripHtml(contentHtml).replace(/\s+/g, ' ').trim()
+  if (text.length < 24) return false
+  return !(/Hermes/.test(text) && text.length < 120)
+}
+
+function hasExplicitProgramPool(node: CanvasSnapshot['nodes'][number] | undefined): boolean {
+  if (!node) return false
+  const programs: ProgramVisualSpec[] = []
+  collectProgramsFromValue(node.values.planningData, programs)
+  return uniquePrograms(programs).length > 0
+}
+
+export function validateShowPlanningCheckpoint(params: {
+  snapshot: CanvasSnapshot
+  stage: ShowPlanningCheckpointStage
+}): ShowPlanningCheckpointValidationResult {
+  const missing: string[] = []
+  if (params.stage === 'structure_review') {
+    const requiredSections: Array<[ShowPlanningSection, string]> = [
+      ['positioning', 'project positioning'],
+      ['concept', 'core concept'],
+      ['structure', 'overall structure'],
+    ]
+    for (const [section, label] of requiredSections) {
+      if (!hasDirectHermesContent(planningNodeBySection(params.snapshot, section))) {
+        missing.push(label)
+      }
+    }
+  }
+
+  if (params.stage === 'program_review') {
+    const programNode = planningNodeBySection(params.snapshot, 'programs')
+    if (!hasDirectHermesContent(programNode)) missing.push('program control content')
+    if (!hasExplicitProgramPool(programNode)) missing.push('planningData.programs')
+  }
+
+  return {
+    valid: missing.length === 0,
+    missing,
+    message: missing.length
+      ? `Show-planning checkpoint is incomplete. Hermes must directly write: ${missing.join(', ')}.`
+      : 'Show-planning checkpoint is complete.',
+  }
+}
+
 export function readShowPlanningCheckpoint(
   taskFields: Record<string, unknown>
 ): LocalAgentPlan['checkpoint'] {

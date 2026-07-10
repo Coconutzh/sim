@@ -47,6 +47,7 @@ import {
   buildShowPlanningScaffoldOperations,
   isShowPlanningPreset,
   readShowPlanningCheckpoint,
+  validateShowPlanningCheckpoint,
 } from '@/lib/hermes/show-planning-workflow'
 
 const CONTENT_NODE_KINDS = new Set(['text', 'image', 'video', 'audio', 'presentation'])
@@ -1212,6 +1213,7 @@ function compileCanvasTask(params: {
   snapshot: CanvasSnapshot
 }): CompiledCanvasTask {
   if (isShowPlanningPreset(params.task.fields) && params.task.taskType === 'create_chain') {
+    const generationTargets = buildShowPlanningScaffoldGenerationTargets()
     const patch = {
       operations: buildShowPlanningScaffoldOperations(),
       reason: params.task.goal || 'Create the standard show-planning canvas scaffold.',
@@ -1219,12 +1221,12 @@ function compileCanvasTask(params: {
     return {
       patch,
       generateNodeIds: [],
-      generationTargets: buildShowPlanningScaffoldGenerationTargets(),
+      generationTargets,
       proposedPatchSummary: summarizeCompiledTask({
         task: params.task,
         patch,
         generateNodeIds: [],
-        generationTargets: [],
+        generationTargets,
       }),
     }
   }
@@ -1274,6 +1276,7 @@ function buildPlan(params: {
   task: HermesCanvasTaskPayload
   compiled: CompiledCanvasTask
 }): LocalAgentPlan {
+  const checkpoint = params.task.fields ? readShowPlanningCheckpoint(params.task.fields) : undefined
   const hasGeneration =
     Boolean(params.compiled.generateNodeIds?.length) ||
     Boolean(params.compiled.generationTargets?.length)
@@ -1322,7 +1325,7 @@ function buildPlan(params: {
     successCriteria: params.task.expectedChanges.length
       ? params.task.expectedChanges
       : ['The SIM canvas task is applied, generated if requested, and verified.'],
-    ...(params.task.fields ? { checkpoint: readShowPlanningCheckpoint(params.task.fields) } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
     ...(params.compiled.patch ? { patch: params.compiled.patch } : {}),
     ...(params.compiled.generateNodeIds?.length
       ? { generateNodeIds: params.compiled.generateNodeIds }
@@ -1587,6 +1590,34 @@ async function runPropose(params: {
     }
 
     if (plan.checkpoint) {
+      const checkpointSnapshot = await loadCanvasSnapshot({
+        workflowId: params.context.workflowId,
+        workspaceId: params.context.workspaceId,
+      })
+      const checkpointValidation = validateShowPlanningCheckpoint({
+        snapshot: checkpointSnapshot,
+        stage: plan.checkpoint.stage,
+      })
+      if (!checkpointValidation.valid) {
+        return {
+          success: false,
+          operation: 'propose',
+          answer: checkpointValidation.message,
+          risk: plan.risk,
+          requiresConfirmation: false,
+          proposedPatchSummary: compiled.proposedPatchSummary,
+          changedNodeIds,
+          generatedNodeIds,
+          createdNodeMap,
+          generatedOutputs,
+          verificationSummary,
+          auditId: params.auditId,
+          traceId: params.body.traceId,
+          errorCode: 'TOOL_EXECUTION_FAILED',
+          error: checkpointValidation.message,
+        }
+      }
+
       const pending = putLocalAgentPendingPlan({
         context: params.context,
         plan,
