@@ -5,6 +5,8 @@ import { Scissors } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   applyNodeChanges,
+  Background,
+  BackgroundVariant,
   ConnectionLineType,
   type Edge,
   type EdgeTypes,
@@ -325,6 +327,10 @@ const LazyWorkflowMinimap = lazy(() =>
 const logger = createLogger('Workflow')
 
 const DEFAULT_PASTE_OFFSET = { x: 50, y: 50 }
+const WORKFLOW_CANVAS_DOT_GRID_CLASS = [
+  '[--workflow-canvas-dot:color-mix(in_srgb,var(--text-muted)_32%,transparent)]',
+  'dark:[--workflow-canvas-dot:color-mix(in_srgb,var(--text-icon)_36%,transparent)]',
+].join(' ')
 const IS_LOW_MEMORY_DEV = process.env.NEXT_PUBLIC_SIM_LOW_MEMORY_DEV === 'true'
 
 /**
@@ -5649,7 +5655,7 @@ const WorkflowContent = React.memo(
                     !frameSelection &&
                     !contentReferenceSelection
                   }
-                  className={`workflow-container h-full bg-[var(--bg)] transition-opacity duration-150 ${reactFlowStyles} ${canvasOpacityClass} ${isHandMode ? 'canvas-mode-hand' : 'canvas-mode-cursor'}`}
+                  className={`workflow-container h-full bg-[var(--bg)] transition-opacity duration-150 ${WORKFLOW_CANVAS_DOT_GRID_CLASS} ${reactFlowStyles} ${canvasOpacityClass} ${isHandMode ? 'canvas-mode-hand' : 'canvas-mode-cursor'}`}
                   onNodeDrag={effectivePermissions.canEdit ? onNodeDrag : undefined}
                   onNodeDragStop={effectivePermissions.canEdit ? onNodeDragStop : undefined}
                   onSelectionDragStart={
@@ -5668,7 +5674,16 @@ const WorkflowContent = React.memo(
                   elevateNodesOnSelect={false}
                   autoPanOnConnect={effectivePermissions.canEdit}
                   autoPanOnNodeDrag={effectivePermissions.canEdit}
-                />
+                >
+                  <Background
+                    id='workflow-canvas-dot-grid'
+                    variant={BackgroundVariant.Dots}
+                    gap={28}
+                    size={2}
+                    color='var(--workflow-canvas-dot)'
+                    className='!block pointer-events-none'
+                  />
+                </ReactFlow>
 
                 {(contentReferenceSelection || frameSelection) && !embedded && (
                   <div className='-translate-x-1/2 pointer-events-none fixed top-5 left-1/2 z-[1150]'>
