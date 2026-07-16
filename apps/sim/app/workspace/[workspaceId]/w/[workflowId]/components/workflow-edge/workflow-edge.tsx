@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { X } from 'lucide-react'
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from 'reactflow'
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath } from 'reactflow'
 import { useShallow } from 'zustand/react/shallow'
 import type { EdgeDiffStatus } from '@/lib/workflows/diff/types'
 import { useLastRunEdges } from '@/stores/execution'
@@ -27,17 +27,14 @@ const WorkflowEdgeComponent = ({
   sourceHandle,
   targetHandle,
 }: WorkflowEdgeProps) => {
-  const isHorizontal = sourcePosition === 'right' || sourcePosition === 'left'
-
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-    borderRadius: 8,
-    offset: isHorizontal ? 30 : 20,
+    curvature: 0.4,
   })
 
   const isSelected = data?.isSelected ?? false
