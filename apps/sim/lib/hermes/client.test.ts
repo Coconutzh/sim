@@ -60,7 +60,7 @@ describe('Hermes client health probe', () => {
     resetEnv({
       HERMES_API_URL: 'http://hermes.local/',
       HERMES_API_KEY: 'test-key',
-      HERMES_REQUIRED_TOOLSETS: 'sim,memory',
+      HERMES_REQUIRED_TOOLSETS: 'sim,memory,knowledge_base',
     })
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       expect((init?.headers as Record<string, string>).authorization).toBe('Bearer test-key')
@@ -105,6 +105,7 @@ describe('Hermes client health probe', () => {
             ],
           },
           { name: 'memory', enabled: true, tools: ['memory'] },
+          { name: 'knowledge_base', enabled: true, tools: ['kb_search'] },
         ],
       })
     })
@@ -128,6 +129,7 @@ describe('Hermes client health probe', () => {
       'terminal',
     ])
     expect(result.toolsets?.enabledForbidden).toEqual([])
+    expect(result.toolsets?.requiredTools.knowledge_base).toEqual(['kb_search'])
     expect(result.toolsets?.missingTools).toEqual({})
     expect(fetch).toHaveBeenCalledTimes(3)
   })
@@ -174,6 +176,7 @@ describe('Hermes client health probe', () => {
           },
           { name: 'web', enabled: true, tools: ['web_search', 'web_extract'] },
           { name: 'vision', enabled: true, tools: ['vision_analyze'] },
+          { name: 'knowledge_base', enabled: true, tools: ['kb_search'] },
         ],
       })
     })

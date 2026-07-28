@@ -122,6 +122,16 @@ describe('callHermesSimAgent', () => {
     )
     expect(mockCallHermesResponse).toHaveBeenCalledWith(
       expect.objectContaining({
+        instructions: expect.stringContaining('call kb_search before answering'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringContaining('knowledge base did not contain enough evidence'),
+      })
+    )
+    expect(mockCallHermesResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
         instructions: expect.stringContaining('sim_canvas_media_prepare'),
       })
     )

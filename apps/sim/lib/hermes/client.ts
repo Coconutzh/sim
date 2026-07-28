@@ -291,6 +291,7 @@ const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
   ],
   web: ['web_search', 'web_extract'],
   vision: ['vision_analyze'],
+  knowledge_base: ['kb_search'],
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
