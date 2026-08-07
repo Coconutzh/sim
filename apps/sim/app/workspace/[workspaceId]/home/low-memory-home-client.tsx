@@ -16,6 +16,7 @@ import {
   MoveHorizontal,
   Plus,
   Send,
+  Settings,
   Sparkles,
   UserCircle,
   X,
@@ -257,13 +258,15 @@ interface HomeAccountMenuProps {
           email?: string | null
           image?: string | null
           name?: string | null
+          role?: string | null
         } | null
       }
     | null
     | undefined
+  workspaceId: string
 }
 
-function HomeAccountMenu({ session }: HomeAccountMenuProps) {
+function HomeAccountMenu({ session, workspaceId }: HomeAccountMenuProps) {
   const router = useRouter()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const userName = session?.user?.name?.trim() || session?.user?.email?.trim() || '当前账号'
@@ -308,6 +311,10 @@ function HomeAccountMenu({ session }: HomeAccountMenuProps) {
         <DropdownMenuItem onClick={() => void handleSignOut(true)}>
           <UserCircle className='mr-2 h-3.5 w-3.5' />
           切换账号
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push(`/workspace/${workspaceId}/settings/account`)}>
+          <Settings className='mr-2 h-3.5 w-3.5' />
+          设置
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void handleSignOut(false)}>
           <LogOut className='mr-2 h-3.5 w-3.5' />
@@ -1604,7 +1611,7 @@ export function LowMemoryHomeClient({ chatId, workspaceId }: LowMemoryHomeClient
               showLabel
               buttonClassName='shadow-subtle'
             />
-            <HomeAccountMenu session={session} />
+            <HomeAccountMenu session={session} workspaceId={workspaceId} />
           </div>
         </div>
 

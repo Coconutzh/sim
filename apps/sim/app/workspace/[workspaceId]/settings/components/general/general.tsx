@@ -100,9 +100,7 @@ export function General() {
           setUploadError(null)
         })
         .catch(() => {
-          setUploadError(
-            url ? 'Failed to update profile picture' : 'Failed to remove profile picture'
-          )
+          setUploadError(url ? '头像更新失败' : '头像移除失败')
         })
     },
     onError: (error: string) => {
@@ -264,7 +262,7 @@ export function General() {
                 return (
                   <Image
                     src={imageUrl}
-                    alt={profile?.name || 'User'}
+                    alt={profile?.name || '用户头像'}
                     width={36}
                     height={36}
                     unoptimized
@@ -332,7 +330,7 @@ export function General() {
                   className='h-[12px] w-[12px] flex-shrink-0 p-0'
                   onClick={handleUpdateName}
                   disabled={updateProfile.isPending}
-                  aria-label='Save name'
+                  aria-label='保存名称'
                 >
                   <Check className='h-[12px] w-[12px]' />
                 </Button>
@@ -344,7 +342,7 @@ export function General() {
                   variant='ghost'
                   className='h-[10.5px] w-[10.5px] flex-shrink-0 p-0'
                   onClick={() => setIsEditingName(true)}
-                  aria-label='Edit name'
+                  aria-label='编辑名称'
                 >
                   <Pencil className='h-[10.5px] w-[10.5px]' />
                 </Button>
@@ -357,7 +355,7 @@ export function General() {
       {uploadError && <p className='text-[var(--text-error)] text-sm'>{uploadError}</p>}
 
       <div className='flex items-center justify-between border-b pb-3'>
-        <Label htmlFor='theme-select'>Theme</Label>
+        <Label htmlFor='theme-select'>主题</Label>
         <div className='w-[100px]'>
           <Combobox
             size='sm'
@@ -365,11 +363,11 @@ export function General() {
             dropdownWidth={140}
             value={settings?.theme}
             onChange={handleThemeChange}
-            placeholder='Select theme'
+            placeholder='选择主题'
             options={[
-              { label: 'System', value: 'system' },
-              { label: 'Light', value: 'light' },
-              { label: 'Dark', value: 'dark' },
+              { label: '跟随系统', value: 'system' },
+              { label: '浅色', value: 'light' },
+              { label: '深色', value: 'dark' },
             ]}
           />
         </div>
@@ -377,16 +375,16 @@ export function General() {
 
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-1.5'>
-          <Label htmlFor='auto-connect'>Auto-connect on drop</Label>
+          <Label htmlFor='auto-connect'>拖入时自动连接</Label>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Info className='h-[14px] w-[14px] cursor-default text-[var(--text-muted)]' />
             </Tooltip.Trigger>
             <Tooltip.Content side='bottom' align='start'>
-              <p>Automatically connect blocks when dropped near each other</p>
+              <p>将模块拖到彼此附近时自动连接</p>
               <Tooltip.Preview
                 src='/tooltips/auto-connect-on-drop.mp4'
-                alt='Auto-connect on drop example'
+                alt='拖入时自动连接示例'
                 loop={true}
               />
             </Tooltip.Content>
@@ -401,16 +399,16 @@ export function General() {
 
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-1.5'>
-          <Label htmlFor='error-notifications'>Canvas error notifications</Label>
+          <Label htmlFor='error-notifications'>画布错误通知</Label>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Info className='h-[14px] w-[14px] cursor-default text-[var(--text-muted)]' />
             </Tooltip.Trigger>
             <Tooltip.Content side='bottom' align='start'>
-              <p>Show error popups on blocks when a workflow run fails</p>
+              <p>工作流运行失败时，在模块上显示错误弹窗</p>
               <Tooltip.Preview
                 src='/tooltips/canvas-error-notification.mp4'
-                alt='Canvas error notification example'
+                alt='画布错误通知示例'
               />
             </Tooltip.Content>
           </Tooltip.Root>
@@ -423,7 +421,7 @@ export function General() {
       </div>
 
       <div className='flex items-center justify-between'>
-        <Label htmlFor='snap-to-grid'>Snap to grid</Label>
+        <Label htmlFor='snap-to-grid'>网格吸附</Label>
         <div className='w-[100px]'>
           <Combobox
             size='sm'
@@ -431,9 +429,9 @@ export function General() {
             dropdownWidth={140}
             value={String(snapToGridValue)}
             onChange={handleSnapToGridChange}
-            placeholder='Select size'
+            placeholder='选择尺寸'
             options={[
-              { label: 'Off', value: '0' },
+              { label: '关闭', value: '0' },
               { label: '10px', value: '10' },
               { label: '20px', value: '20' },
               { label: '30px', value: '30' },
@@ -445,7 +443,7 @@ export function General() {
       </div>
 
       <div className='flex items-center justify-between'>
-        <Label htmlFor='show-action-bar'>Show canvas controls</Label>
+        <Label htmlFor='show-action-bar'>显示画布控制</Label>
         <Switch
           id='show-action-bar'
           checked={settings?.showActionBar ?? true}
@@ -454,7 +452,7 @@ export function General() {
       </div>
 
       <div className='flex items-center justify-between border-t pt-4'>
-        <Label htmlFor='telemetry'>Allow anonymous telemetry</Label>
+        <Label htmlFor='telemetry'>允许匿名遥测</Label>
         <Switch
           id='telemetry'
           checked={settings?.telemetryEnabled ?? true}
@@ -463,13 +461,12 @@ export function General() {
       </div>
 
       <p className='-mt-2 text-[var(--text-muted)] text-small'>
-        We use OpenTelemetry to collect anonymous usage data to improve Sim. You can opt-out at any
-        time.
+        我们使用 OpenTelemetry 收集匿名使用数据，用于改进 Sim。你可以随时关闭。
       </p>
 
       {isTrainingEnabled && (
         <div className='flex items-center justify-between'>
-          <Label htmlFor='training-controls'>Training controls</Label>
+          <Label htmlFor='training-controls'>训练控件</Label>
           <Switch
             id='training-controls'
             checked={settings?.showTrainingControls ?? false}
@@ -482,10 +479,10 @@ export function General() {
         {!isAuthDisabled && (
           <>
             <Button onClick={handleSignOut} variant='active'>
-              Sign out
+              退出登录
             </Button>
             <Button onClick={() => setShowResetPasswordModal(true)} variant='active'>
-              Reset password
+              重置密码
             </Button>
           </>
         )}
@@ -495,7 +492,7 @@ export function General() {
             variant='active'
             className='ml-auto'
           >
-            Home Page
+            首页
           </Button>
         )}
       </div>
@@ -503,12 +500,12 @@ export function General() {
       {/* Password Reset Confirmation Modal */}
       <Modal open={showResetPasswordModal} onOpenChange={setShowResetPasswordModal}>
         <ModalContent size='sm'>
-          <ModalHeader>Reset Password</ModalHeader>
+          <ModalHeader>重置密码</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
-              A password reset link will be sent to{' '}
+              密码重置链接将发送到{' '}
               <span className='font-medium text-[var(--text-primary)]'>{profile?.email}</span>.
-              Click the link in the email to create a new password.
+              请点击邮件中的链接创建新密码。
             </p>
             {resetPassword.error && (
               <p className='mt-2 text-[var(--text-error)] text-small'>
@@ -521,7 +518,7 @@ export function General() {
               onClick={() => setShowResetPasswordModal(false)}
               disabled={resetPassword.isPending || resetPassword.isSuccess}
             >
-              Cancel
+              取消
             </Button>
             <Button
               variant='primary'
@@ -529,10 +526,10 @@ export function General() {
               disabled={resetPassword.isPending || resetPassword.isSuccess}
             >
               {resetPassword.isPending
-                ? 'Sending...'
+                ? '发送中...'
                 : resetPassword.isSuccess
-                  ? 'Sent'
-                  : 'Send Reset Email'}
+                  ? '已发送'
+                  : '发送重置邮件'}
             </Button>
           </ModalFooter>
         </ModalContent>
