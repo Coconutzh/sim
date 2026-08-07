@@ -650,6 +650,62 @@ export const workspaceBYOKKeys = pgTable(
   })
 )
 
+export const platformProviderApiKey = pgTable(
+  'platform_provider_api_key',
+  {
+    id: text('id').primaryKey(),
+    providerId: text('provider_id').notNull(),
+    label: text('label').notNull(),
+    encryptedApiKey: text('encrypted_api_key').notNull(),
+    status: text('status').notNull().default('active'),
+    isDefault: boolean('is_default').notNull().default(false),
+    priority: integer('priority').notNull().default(0),
+    lastUsedAt: timestamp('last_used_at'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    providerStatusIdx: index('platform_provider_key_provider_status_idx').on(
+      table.providerId,
+      table.status
+    ),
+    defaultActiveUnique: uniqueIndex('platform_provider_key_default_active_unique')
+      .on(table.providerId)
+      .where(sql`${table.isDefault} = true AND ${table.status} = 'active'`),
+  })
+)
+
+export const adminConsoleAuditLog = pgTable(
+  'admin_console_audit_log',
+  {
+    id: text('id').primaryKey(),
+    actorUserId: text('actor_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id'),
+    action: text('action').notNull(),
+    reason: text('reason'),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    targetCreatedAtIdx: index('admin_console_audit_target_created_at_idx').on(
+      table.targetType,
+      table.targetId,
+      table.createdAt
+    ),
+    actorCreatedAtIdx: index('admin_console_audit_actor_created_at_idx').on(
+      table.actorUserId,
+      table.createdAt
+    ),
+  })
+)
+
 export const settings = pgTable('settings', {
   id: text('id').primaryKey(), // Use the user id as the key
   userId: text('user_id')

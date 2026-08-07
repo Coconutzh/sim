@@ -1,5 +1,6 @@
 export * from './academy'
 export * from './admin'
+export * from './admin-console'
 export * from './api-keys'
 export * from './audit-logs'
 export * from './byok-keys'
