@@ -6,8 +6,11 @@ import {
   getContentCanvasModelsByCapability,
   getContentCanvasModelsByFamily,
 } from '@/lib/content-canvas/model-catalog'
+import {
+  getPlatformContentServiceAvailability,
+  getPlatformContentServiceConfig,
+} from '@/lib/content-canvas/platform-service-config'
 import { getEnv } from '@/lib/core/config/env'
-import { getPlatformContentServiceConfig } from '@/lib/content-canvas/platform-service-config'
 
 export interface ContentServiceConfig {
   kind: ContentServiceKind
@@ -255,8 +258,16 @@ export async function resolveContentServiceForRuntime(params: {
     modelId: params.modelId,
   })
   if (platform) {
-    const fallback = getContentServiceConfig({ capability: params.capability, family: model.family })
-    return { kind: platform.kind, baseUrl: platform.baseUrl || fallback.baseUrl, apiKey: platform.apiKey, modelId: params.modelId }
+    const fallback = getContentServiceConfig({
+      capability: params.capability,
+      family: model.family,
+    })
+    return {
+      kind: platform.kind,
+      baseUrl: platform.baseUrl || fallback.baseUrl,
+      apiKey: platform.apiKey,
+      modelId: params.modelId,
+    }
   }
   return resolveContentService(params)
 }
@@ -289,6 +300,43 @@ export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabil
         defaultModelId = config.defaultModelId
       }
     }
+
+    availability[capability] = { enabledModelIds, defaultModelId }
+  }
+
+  return availability
+}
+
+/**
+ * Produces model options for user-facing canvas selectors, prioritizing active
+ * administrator-managed services over legacy environment configuration.
+ */
+export async function getContentCanvasModelAvailabilityForRuntime(): Promise<ContentCanvasModelAvailabilitySnapshot> {
+  const platformServices = await getPlatformContentServiceAvailability()
+  const availability = getContentCanvasModelAvailability()
+
+  for (const capability of ['text', 'image', 'audio', 'video'] as const) {
+    const managed = platformServices.filter((service) => service.capability === capability)
+    if (managed.length === 0) continue
+
+    const enabledModelIds = Array.from(
+      new Set(
+        managed.flatMap((service) => {
+          const familyModelIds = getContentCanvasModelsByFamily(capability, service.family).map(
+            (model) => model.id
+          )
+          return service.enabledModelIds.filter((modelId) => familyModelIds.includes(modelId))
+        })
+      )
+    )
+    const defaultModelId =
+      managed
+        .map((service) => service.defaultModelId)
+        .find((modelId): modelId is string =>
+          Boolean(modelId && enabledModelIds.includes(modelId))
+        ) ??
+      enabledModelIds[0] ??
+      null
 
     availability[capability] = { enabledModelIds, defaultModelId }
   }
