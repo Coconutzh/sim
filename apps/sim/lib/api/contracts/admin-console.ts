@@ -28,6 +28,9 @@ export const adminConsoleProviderIdSchema = z.enum([
   'zhipu',
   'cerebras',
   'cohere',
+  'ark',
+  'evolink',
+  'dashscope',
   'azure-openai',
   'azure-anthropic',
 ])

@@ -132,22 +132,18 @@ export async function getApiKeyWithBYOK(
     if (userProvidedKey) {
       return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
     }
-    return {
-      apiKey: env.AZURE_OPENAI_API_KEY || '',
-      isBYOK: false,
-      source: 'env-azure-openai-api-key',
-    }
+    const platformKey = await getPlatformProviderApiKey('azure-openai')
+    if (platformKey) return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
+    return { apiKey: env.AZURE_OPENAI_API_KEY || '', isBYOK: false, source: 'env-azure-openai-api-key' }
   }
 
   if (provider === 'azure-anthropic') {
     if (userProvidedKey) {
       return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
     }
-    return {
-      apiKey: env.AZURE_ANTHROPIC_API_KEY || '',
-      isBYOK: false,
-      source: 'env-azure-anthropic-api-key',
-    }
+    const platformKey = await getPlatformProviderApiKey('azure-anthropic')
+    if (platformKey) return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
+    return { apiKey: env.AZURE_ANTHROPIC_API_KEY || '', isBYOK: false, source: 'env-azure-anthropic-api-key' }
   }
 
   const isOpenAIModel = provider === 'openai'

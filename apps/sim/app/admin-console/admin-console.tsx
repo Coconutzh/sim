@@ -62,6 +62,9 @@ const PROVIDERS = [
   'zhipu',
   'cerebras',
   'cohere',
+  'ark',
+  'evolink',
+  'dashscope',
 ] as const
 
 const USAGE_SOURCES = [
