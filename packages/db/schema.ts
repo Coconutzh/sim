@@ -678,6 +678,40 @@ export const platformProviderApiKey = pgTable(
   })
 )
 
+/** Runtime routing for models owned by the platform rather than a workspace. */
+export const platformModelServiceConfig = pgTable(
+  'platform_model_service_config',
+  {
+    id: text('id').primaryKey(),
+    consumer: text('consumer').notNull(),
+    capability: text('capability').notNull(),
+    family: text('family').notNull(),
+    providerId: text('provider_id').notNull(),
+    serviceKind: text('service_kind').notNull(),
+    baseUrl: text('base_url'),
+    enabledModelIds: jsonb('enabled_model_ids').notNull(),
+    defaultModelId: text('default_model_id'),
+    status: text('status').notNull().default('active'),
+    priority: integer('priority').notNull().default(0),
+    configVersion: integer('config_version').notNull().default(1),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    consumerCapabilityIdx: index('platform_model_service_consumer_capability_idx').on(
+      table.consumer,
+      table.capability,
+      table.status
+    ),
+    consumerFamilyUnique: uniqueIndex('platform_model_service_consumer_family_unique').on(
+      table.consumer,
+      table.capability,
+      table.family
+    ),
+  })
+)
+
 export const adminConsoleAuditLog = pgTable(
   'admin_console_audit_log',
   {
