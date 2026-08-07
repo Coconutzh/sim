@@ -2,27 +2,31 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { requestJson } from '@/lib/api/client/request'
 import type { ContractBodyInput, ContractQueryInput } from '@/lib/api/contracts'
 import {
+  type AdminConsoleModelService,
   type AdminConsoleProviderKey,
   type AdminConsoleUser,
   type AdminConsoleUserDetail,
   type AdminConsoleUserMembershipsResponse,
   adminConsoleApplyCreditsContract,
   adminConsoleAuditEventsContract,
-  adminConsoleCreateUserContract,
   adminConsoleCreateProviderKeyContract,
+  adminConsoleCreateUserContract,
   adminConsoleGetUserContract,
+  adminConsoleListModelServicesContract,
   adminConsoleListProviderKeysContract,
   adminConsoleListUsersContract,
   adminConsoleSetOrganizationMembershipContract,
   adminConsoleSetWorkgroupMembershipContract,
   adminConsoleUpdateProviderKeyContract,
   adminConsoleUpdateUserContract,
-  adminConsoleUserMembershipsContract,
+  adminConsoleUpsertModelServiceContract,
   adminConsoleUsageContract,
+  adminConsoleUserMembershipsContract,
 } from '@/lib/api/contracts/admin-console'
 
 export type {
   AdminConsoleProviderKey,
+  AdminConsoleModelService,
   AdminConsoleUser,
   AdminConsoleUserDetail,
   AdminConsoleUserMembershipsResponse,
@@ -40,6 +44,9 @@ export const adminConsoleKeys = {
   providerKeys: () => [...adminConsoleKeys.all, 'provider-keys'] as const,
   providerKeyLists: () => [...adminConsoleKeys.providerKeys(), 'lists'] as const,
   providerKeyList: () => [...adminConsoleKeys.providerKeyLists()] as const,
+  modelServices: () => [...adminConsoleKeys.all, 'model-services'] as const,
+  modelServiceLists: () => [...adminConsoleKeys.modelServices(), 'lists'] as const,
+  modelServiceList: () => [...adminConsoleKeys.modelServiceLists()] as const,
   usageLists: () => [...adminConsoleKeys.all, 'usage', 'lists'] as const,
   usageList: (query: ContractQueryInput<typeof adminConsoleUsageContract>) =>
     [...adminConsoleKeys.usageLists(), query] as const,
@@ -216,6 +223,26 @@ export function useUpdateAdminConsoleProviderKey() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: adminConsoleKeys.providerKeyLists() })
       queryClient.invalidateQueries({ queryKey: adminConsoleKeys.auditEventLists() })
+    },
+  })
+}
+
+export function useAdminConsoleModelServices() {
+  return useQuery({
+    queryKey: adminConsoleKeys.modelServiceList(),
+    queryFn: ({ signal }) => requestJson(adminConsoleListModelServicesContract, { signal }),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useUpsertAdminConsoleModelService() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (body: ContractBodyInput<typeof adminConsoleUpsertModelServiceContract>) =>
+      requestJson(adminConsoleUpsertModelServiceContract, { body }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: adminConsoleKeys.modelServiceLists() })
     },
   })
 }

@@ -193,18 +193,34 @@ export const adminConsoleProviderKeySchema = z.object({
 })
 
 export const adminConsoleModelServiceSchema = z.object({
-  id: z.string(), consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']),
-  capability: z.string(), family: z.string(), providerId: adminConsoleProviderIdSchema,
-  serviceKind: z.string(), baseUrl: z.string().url().nullable(), enabledModelIds: z.array(z.string()),
-  defaultModelId: z.string().nullable(), status: z.enum(['active', 'disabled']), priority: z.number(), configVersion: z.number(),
+  id: z.string(),
+  consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']),
+  capability: z.string(),
+  family: z.string(),
+  providerId: adminConsoleProviderIdSchema,
+  serviceKind: z.string(),
+  baseUrl: z.string().url().nullable(),
+  enabledModelIds: z.array(z.string()),
+  defaultModelId: z.string().nullable(),
+  status: z.enum(['active', 'disabled']),
+  priority: z.number(),
+  configVersion: z.number(),
 })
 export const adminConsoleUpsertModelServiceBodySchema = z.object({
-  consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']), capability: z.string().min(1), family: z.string().min(1),
-  providerId: adminConsoleProviderIdSchema, serviceKind: z.string().min(1), baseUrl: z.string().url().nullable().optional(),
-  enabledModelIds: z.array(z.string().min(1)).min(1), defaultModelId: z.string().min(1).nullable().optional(),
-  status: z.enum(['active', 'disabled']).optional(), priority: z.number().int().min(0).max(1000).optional(),
+  consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']),
+  capability: z.string().min(1),
+  family: z.string().min(1),
+  providerId: adminConsoleProviderIdSchema,
+  serviceKind: z.string().min(1),
+  baseUrl: z.string().url().nullable().optional(),
+  enabledModelIds: z.array(z.string().min(1)).min(1),
+  defaultModelId: z.string().min(1).nullable().optional(),
+  status: z.enum(['active', 'disabled']).optional(),
+  priority: z.number().int().min(0).max(1000).optional(),
 })
-export type AdminConsoleUpsertModelServiceBody = z.input<typeof adminConsoleUpsertModelServiceBodySchema>
+export type AdminConsoleUpsertModelServiceBody = z.input<
+  typeof adminConsoleUpsertModelServiceBodySchema
+>
 
 export const adminConsoleCreateProviderKeyBodySchema = z.object({
   providerId: adminConsoleProviderIdSchema,
@@ -396,7 +412,10 @@ export const adminConsoleSetOrganizationMembershipContract = defineRouteContract
   body: adminConsoleSetOrganizationMembershipBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({ success: z.literal(true), memberships: adminConsoleUserMembershipsResponseSchema }),
+    schema: z.object({
+      success: z.literal(true),
+      memberships: adminConsoleUserMembershipsResponseSchema,
+    }),
   },
 })
 
@@ -407,7 +426,10 @@ export const adminConsoleSetWorkgroupMembershipContract = defineRouteContract({
   body: adminConsoleSetWorkgroupMembershipBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({ success: z.literal(true), memberships: adminConsoleUserMembershipsResponseSchema }),
+    schema: z.object({
+      success: z.literal(true),
+      memberships: adminConsoleUserMembershipsResponseSchema,
+    }),
   },
 })
 
@@ -441,8 +463,23 @@ export const adminConsoleUpdateProviderKeyContract = defineRouteContract({
   },
 })
 
-export const adminConsoleListModelServicesContract = defineRouteContract({ method: 'GET', path: '/api/admin-console/model-services', response: { mode: 'json', schema: z.object({ services: z.array(adminConsoleModelServiceSchema) }) } })
-export const adminConsoleUpsertModelServiceContract = defineRouteContract({ method: 'POST', path: '/api/admin-console/model-services', body: adminConsoleUpsertModelServiceBodySchema, response: { mode: 'json', schema: z.object({ success: z.literal(true), service: adminConsoleModelServiceSchema }) } })
+export const adminConsoleListModelServicesContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/admin-console/model-services',
+  response: {
+    mode: 'json',
+    schema: z.object({ services: z.array(adminConsoleModelServiceSchema) }),
+  },
+})
+export const adminConsoleUpsertModelServiceContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/admin-console/model-services',
+  body: adminConsoleUpsertModelServiceBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ success: z.literal(true), service: adminConsoleModelServiceSchema }),
+  },
+})
 
 export const adminConsoleUsageContract = defineRouteContract({
   method: 'GET',
@@ -476,6 +513,7 @@ export type AdminConsoleUserMembershipsResponse = ContractJsonResponse<
   typeof adminConsoleUserMembershipsContract
 >
 export type AdminConsoleProviderKey = z.output<typeof adminConsoleProviderKeySchema>
+export type AdminConsoleModelService = z.output<typeof adminConsoleModelServiceSchema>
 export type AdminConsoleUsageResponse = ContractJsonResponse<typeof adminConsoleUsageContract>
 export type AdminConsoleAuditEventsResponse = ContractJsonResponse<
   typeof adminConsoleAuditEventsContract

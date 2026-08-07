@@ -639,11 +639,58 @@ export async function updatePlatformProviderKey(params: {
 }
 
 function formatModelService(row: typeof platformModelServiceConfig.$inferSelect) {
-  return { ...row, consumer: row.consumer as 'sim-canvas' | 'hermes-agent' | 'hermes-ppt', providerId: row.providerId as never, baseUrl: row.baseUrl ?? null, enabledModelIds: row.enabledModelIds as string[], defaultModelId: row.defaultModelId ?? null, status: row.status === 'disabled' ? ('disabled' as const) : ('active' as const) }
+  return {
+    ...row,
+    consumer: row.consumer as 'sim-canvas' | 'hermes-agent' | 'hermes-ppt',
+    providerId: row.providerId as never,
+    baseUrl: row.baseUrl ?? null,
+    enabledModelIds: row.enabledModelIds as string[],
+    defaultModelId: row.defaultModelId ?? null,
+    status: row.status === 'disabled' ? ('disabled' as const) : ('active' as const),
+  }
 }
-export async function listPlatformModelServices() { return (await db.select().from(platformModelServiceConfig).orderBy(platformModelServiceConfig.consumer, platformModelServiceConfig.capability)).map(formatModelService) }
-export async function upsertPlatformModelService(params: { actorUserId: string; body: AdminConsoleUpsertModelServiceBody }) {
-  const [row] = await db.insert(platformModelServiceConfig).values({ id: generateShortId(), ...params.body, baseUrl: params.body.baseUrl ?? null, defaultModelId: params.body.defaultModelId ?? null, status: params.body.status ?? 'active', priority: params.body.priority ?? 0, createdBy: params.actorUserId }).onConflictDoUpdate({ target: [platformModelServiceConfig.consumer, platformModelServiceConfig.capability, platformModelServiceConfig.family], set: { providerId: params.body.providerId, serviceKind: params.body.serviceKind, baseUrl: params.body.baseUrl ?? null, enabledModelIds: params.body.enabledModelIds, defaultModelId: params.body.defaultModelId ?? null, status: params.body.status ?? 'active', priority: params.body.priority ?? 0, configVersion: sql`${platformModelServiceConfig.configVersion} + 1`, updatedAt: new Date() } }).returning()
+export async function listPlatformModelServices() {
+  return (
+    await db
+      .select()
+      .from(platformModelServiceConfig)
+      .orderBy(platformModelServiceConfig.consumer, platformModelServiceConfig.capability)
+  ).map(formatModelService)
+}
+export async function upsertPlatformModelService(params: {
+  actorUserId: string
+  body: AdminConsoleUpsertModelServiceBody
+}) {
+  const [row] = await db
+    .insert(platformModelServiceConfig)
+    .values({
+      id: generateShortId(),
+      ...params.body,
+      baseUrl: params.body.baseUrl ?? null,
+      defaultModelId: params.body.defaultModelId ?? null,
+      status: params.body.status ?? 'active',
+      priority: params.body.priority ?? 0,
+      createdBy: params.actorUserId,
+    })
+    .onConflictDoUpdate({
+      target: [
+        platformModelServiceConfig.consumer,
+        platformModelServiceConfig.capability,
+        platformModelServiceConfig.family,
+      ],
+      set: {
+        providerId: params.body.providerId,
+        serviceKind: params.body.serviceKind,
+        baseUrl: params.body.baseUrl ?? null,
+        enabledModelIds: params.body.enabledModelIds,
+        defaultModelId: params.body.defaultModelId ?? null,
+        status: params.body.status ?? 'active',
+        priority: params.body.priority ?? 0,
+        configVersion: sql`${platformModelServiceConfig.configVersion} + 1`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning()
   return formatModelService(row)
 }
 

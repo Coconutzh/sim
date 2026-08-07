@@ -29,9 +29,11 @@ import {
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
+  type AdminConsoleModelService,
   type AdminConsoleProviderKey,
   type AdminConsoleUser,
   useAdminConsoleAuditEvents,
+  useAdminConsoleModelServices,
   useAdminConsoleProviderKeys,
   useAdminConsoleUsage,
   useAdminConsoleUsers,
@@ -39,6 +41,7 @@ import {
   useCreateAdminConsoleProviderKey,
   useUpdateAdminConsoleProviderKey,
   useUpdateAdminConsoleUser,
+  useUpsertAdminConsoleModelService,
 } from '@/hooks/queries/admin-console'
 import { useImpersonateUser } from '@/hooks/queries/admin-users'
 
@@ -543,7 +546,206 @@ function ApiKeysPanel() {
         </Table>
         {keysQuery.isLoading && <LoadingOverlay />}
       </DataPanel>
+      <ModelServicesPanel />
     </section>
+  )
+}
+
+function ModelServicesPanel() {
+  const servicesQuery = useAdminConsoleModelServices()
+  const upsertService = useUpsertAdminConsoleModelService()
+  const [consumer, setConsumer] = useState<'sim-canvas' | 'hermes-agent' | 'hermes-ppt'>(
+    'sim-canvas'
+  )
+  const [capability, setCapability] = useState('image')
+  const [family, setFamily] = useState('image')
+  const [providerId, setProviderId] = useState<Exclude<(typeof PROVIDERS)[number], 'all'>>('openai')
+  const [serviceKind, setServiceKind] = useState('openai-compatible')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [modelIds, setModelIds] = useState('')
+  const [defaultModelId, setDefaultModelId] = useState('')
+
+  const submit = async () => {
+    const enabledModelIds = modelIds
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+    if (enabledModelIds.length === 0) {
+      toast.error('至少填写一个可用模型 ID')
+      return
+    }
+    await upsertService.mutateAsync({
+      consumer,
+      capability,
+      family,
+      providerId,
+      serviceKind,
+      baseUrl: baseUrl.trim() || null,
+      enabledModelIds,
+      defaultModelId: defaultModelId.trim() || null,
+      status: 'active',
+      priority: 100,
+    })
+    toast.success('模型服务配置已保存')
+  }
+
+  return (
+    <div className='flex flex-col gap-3'>
+      <PanelHeader
+        icon={<Database className='h-5 w-5' />}
+        title='模型服务配置'
+        description='画布优先读取 sim-canvas；Hermes PPT 读取 hermes-ppt。已启用模型必须与 Provider Key 对应。'
+      />
+      <DataPanel className='grid gap-3 md:grid-cols-3'>
+        <SelectField
+          label='使用方'
+          value={consumer}
+          onChange={setConsumer}
+          options={['sim-canvas', 'hermes-agent', 'hermes-ppt']}
+        />
+        <TextField
+          label='能力'
+          value={capability}
+          onChange={setCapability}
+          placeholder='例如 image、text'
+        />
+        <TextField
+          label='模型族'
+          value={family}
+          onChange={setFamily}
+          placeholder='例如 image、gemini'
+        />
+        <SelectField
+          label='Provider'
+          value={providerId}
+          onChange={setProviderId}
+          options={PROVIDERS.filter((item) => item !== 'all')}
+        />
+        <TextField
+          label='服务类型'
+          value={serviceKind}
+          onChange={setServiceKind}
+          placeholder='例如 openai-compatible'
+        />
+        <TextField
+          label='Base URL（可选）'
+          value={baseUrl}
+          onChange={setBaseUrl}
+          placeholder='https://api.example.com/v1'
+        />
+        <TextField
+          label='可用模型（逗号分隔）'
+          value={modelIds}
+          onChange={setModelIds}
+          placeholder='gpt-image-1,imagen-3.0-generate-002'
+        />
+        <TextField
+          label='默认模型（可选）'
+          value={defaultModelId}
+          onChange={setDefaultModelId}
+          placeholder='默认使用的模型 ID'
+        />
+        <div className='flex items-end'>
+          <Button
+            variant='primary'
+            className='w-full'
+            disabled={upsertService.isPending}
+            onClick={submit}
+          >
+            保存服务
+          </Button>
+        </div>
+      </DataPanel>
+      <DataPanel className='overflow-x-auto rounded-none border-x-0 p-0'>
+        <Table className='min-w-[900px]'>
+          <TableHeader>
+            <TableRow>
+              <TableHead>使用方</TableHead>
+              <TableHead>能力 / 模型族</TableHead>
+              <TableHead>Provider</TableHead>
+              <TableHead>服务</TableHead>
+              <TableHead>模型</TableHead>
+              <TableHead>状态</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(servicesQuery.data?.services ?? []).map((service) => (
+              <ModelServiceRow key={service.id} service={service} />
+            ))}
+          </TableBody>
+        </Table>
+        {servicesQuery.isLoading && <LoadingOverlay />}
+      </DataPanel>
+    </div>
+  )
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+}) {
+  return (
+    <div className='flex flex-col gap-2'>
+      <Label>{label}</Label>
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+}
+
+function SelectField<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string
+  value: T
+  onChange: (value: T) => void
+  options: readonly T[]
+}) {
+  return (
+    <div className='flex flex-col gap-2'>
+      <Label>{label}</Label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+        className='h-9 rounded-md border border-[var(--border-primary)] bg-transparent px-3 text-sm'
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function ModelServiceRow({ service }: { service: AdminConsoleModelService }) {
+  return (
+    <TableRow>
+      <TableCell>{service.consumer}</TableCell>
+      <TableCell>
+        {service.capability} / {service.family}
+      </TableCell>
+      <TableCell>{service.providerId}</TableCell>
+      <TableCell>{service.serviceKind}</TableCell>
+      <TableCell>{service.enabledModelIds.join(', ')}</TableCell>
+      <TableCell>
+        <Badge variant={service.status === 'active' ? 'green' : 'gray'}>{service.status}</Badge>
+      </TableCell>
+    </TableRow>
   )
 }
 
