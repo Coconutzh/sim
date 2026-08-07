@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { resolveContentService } from '@/lib/content-canvas/service-config'
+import { resolveContentServiceForRuntime } from '@/lib/content-canvas/service-config'
 import { ensureAbsoluteUrl, isLocalhostUrl } from '@/lib/core/utils/urls'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
@@ -253,7 +253,7 @@ export async function generateVideoWithProvider({
   abortSignal,
 }: GenerateVideoWithProviderInput): Promise<GeneratedVideoProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'video', modelId: model })
+  const service = await resolveContentServiceForRuntime({ capability: 'video', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas video model ${model}`)
   }

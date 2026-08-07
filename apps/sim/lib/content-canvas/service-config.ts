@@ -7,6 +7,7 @@ import {
   getContentCanvasModelsByFamily,
 } from '@/lib/content-canvas/model-catalog'
 import { getEnv } from '@/lib/core/config/env'
+import { getPlatformContentServiceConfig } from '@/lib/content-canvas/platform-service-config'
 
 export interface ContentServiceConfig {
   kind: ContentServiceKind
@@ -237,6 +238,27 @@ export function resolveContentService(params: {
     apiKey: config.apiKey,
     modelId: params.modelId,
   }
+}
+
+/** Uses an administrator-managed platform configuration when one is enabled. */
+export async function resolveContentServiceForRuntime(params: {
+  capability: ContentCapability
+  modelId: string
+}): Promise<ResolvedContentService> {
+  const model = getContentCanvasModel(params.modelId)
+  if (!model || model.capability !== params.capability) {
+    throw new Error(`Unknown content-canvas ${params.capability} model: ${params.modelId}`)
+  }
+  const platform = await getPlatformContentServiceConfig({
+    capability: params.capability,
+    family: model.family,
+    modelId: params.modelId,
+  })
+  if (platform) {
+    const fallback = getContentServiceConfig({ capability: params.capability, family: model.family })
+    return { kind: platform.kind, baseUrl: platform.baseUrl || fallback.baseUrl, apiKey: platform.apiKey, modelId: params.modelId }
+  }
+  return resolveContentService(params)
 }
 
 function getCapabilityFamilies(capability: ContentCapability): ContentModelFamily[] {

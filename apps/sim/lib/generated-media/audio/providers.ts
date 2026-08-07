@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { resolveContentService } from '@/lib/content-canvas/service-config'
+import { resolveContentServiceForRuntime } from '@/lib/content-canvas/service-config'
 import type {
   AudioGenerationModelId,
   AudioGenerationParametersValue,
@@ -193,7 +193,7 @@ export async function generateAudioWithProvider({
   abortSignal,
 }: GenerateAudioWithProviderInput): Promise<GeneratedAudioProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'audio', modelId: model })
+  const service = await resolveContentServiceForRuntime({ capability: 'audio', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas audio model ${model}`)
   }

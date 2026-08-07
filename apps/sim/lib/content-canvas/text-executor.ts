@@ -1,4 +1,4 @@
-import { resolveContentService } from '@/lib/content-canvas/service-config'
+import { resolveContentServiceForRuntime } from '@/lib/content-canvas/service-config'
 import { executeProviderRequest } from '@/providers'
 import type { Message, ProviderRequest, ProviderResponse } from '@/providers/types'
 import { getProviderFromModel } from '@/providers/utils'
@@ -147,7 +147,7 @@ function getUsageTokenCount(payload: unknown, key: string): number | undefined {
 export async function executeContentCanvasTextRequest(
   params: ExecuteContentCanvasTextInput
 ): Promise<ProviderResponse> {
-  const service = resolveContentService({
+  const service = await resolveContentServiceForRuntime({
     capability: 'text',
     modelId: params.model,
   })
