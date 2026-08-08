@@ -1,18 +1,20 @@
 'use client'
 
-import type React from 'react'
-import { useState } from 'react'
+import { type ComponentType, useMemo, useState } from 'react'
 import {
   BriefcaseBusiness,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardPlus,
+  FolderKanban,
   Home,
   Loader2,
-  Menu,
   PenLine,
+  Plus,
   Settings,
   UserPlus,
   Users,
-  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -37,71 +39,44 @@ interface LiteSidebarProps {
   workspaceId: string
 }
 
-interface ProjectNavItemProps {
-  active?: boolean
-  disabled?: boolean
-  href?: string
-  icon: React.ComponentType<{ className?: string }>
+interface CanvasNavItemProps {
+  active: boolean
+  collapsed: boolean
+  href: string
+  icon: ComponentType<{ className?: string }>
   label: string
-  loading?: boolean
-  onClick?: () => void
+  tone?: 'personal' | 'team'
 }
 
-function ProjectNavItem({
-  active = false,
-  disabled = false,
-  href,
-  icon: Icon,
-  label,
-  loading = false,
-  onClick,
-}: ProjectNavItemProps) {
-  const className = cn(
-    'flex h-10 w-full items-center gap-2 rounded-[8px] border px-3 text-left text-[13px] transition-colors',
-    active
-      ? 'border-[var(--border-1)] bg-[var(--surface-active)] text-[var(--text-primary)] shadow-subtle'
-      : 'border-transparent text-[var(--text-muted)] hover-hover:border-[var(--border)] hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-primary)]',
-    disabled && 'pointer-events-none opacity-50'
-  )
-  const content = (
-    <>
-      {loading ? (
-        <Loader2 className='h-4 w-4 shrink-0 animate-spin' />
-      ) : (
-        <Icon className='h-4 w-4 shrink-0' />
-      )}
-      <span className='min-w-0 truncate'>{label}</span>
-    </>
-  )
-
-  if (onClick) {
-    return (
-      <Button
-        type='button'
-        variant='ghost'
-        className={className}
-        disabled={disabled}
-        onClick={onClick}
-      >
-        {content}
-      </Button>
-    )
-  }
-
-  if (!href || disabled) {
-    return <div className={className}>{content}</div>
-  }
-
+function CanvasNavItem({ active, collapsed, href, icon: Icon, label, tone }: CanvasNavItemProps) {
   return (
-    <Link href={href} className={className}>
-      {content}
+    <Link
+      href={href}
+      title={collapsed ? label : undefined}
+      className={cn(
+        'flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-[12px] transition-colors',
+        active
+          ? 'bg-[var(--surface-active)] font-medium text-[var(--text-primary)]'
+          : 'text-[var(--text-secondary)] hover-hover:bg-[var(--surface-hover)] hover-hover:text-[var(--text-primary)]',
+        collapsed && 'justify-center px-0'
+      )}
+    >
+      <Icon
+        className={cn(
+          'h-4 w-4 shrink-0',
+          tone === 'personal' && 'text-[var(--badge-blue-text)]',
+          tone === 'team' && 'text-[var(--badge-success-text)]'
+        )}
+      />
+      {!collapsed && <span className='min-w-0 truncate'>{label}</span>}
     </Link>
   )
 }
 
 export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
   const pathname = usePathname()
-  const [isOpen, setIsOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isInviteOpen, setIsInviteOpen] = useState(false)
   const [inviteEmails, setInviteEmails] = useState('')
@@ -112,11 +87,45 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
   const scopedWorkspaceId = canvas.teamWorkspaceId ?? workspaceId
   const personalWorkflowsHref = `/workspace/${scopedWorkspaceId}/personal-workflows`
   const createTaskHref = `${canvas.showcaseHref}?tab=tasks&createTask=1`
-  const teamManagementHref = canvas.teamManagementHref
   const isDirectorTeam =
     agentProfile?.agent.code === 'chief_director' || agentProfile?.agent.code === 'show_director'
   const canManageTeams = canvas.isProjectAdmin || canvas.activeWorkgroup?.role === 'admin'
   const canInviteTeamMembers = Boolean(canvas.teamWorkspaceId && canvas.activeWorkgroupId)
+
+  const projectGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        id: string
+        name: string
+        workgroups: Array<{
+          id: string
+          name: string
+          personalCanvases: Array<{ id: string; name: string }>
+          teamWorkspaceId: string
+        }>
+      }
+    >()
+
+    for (const workgroup of canvas.workgroups) {
+      const project = groups.get(workgroup.organizationId) ?? {
+        id: workgroup.organizationId,
+        name: workgroup.organization.name,
+        workgroups: [],
+      }
+      project.workgroups.push({
+        id: workgroup.id,
+        name: `${workgroup.discipline.name} / ${workgroup.name}`,
+        personalCanvases: canvas.personalDraftWorkspaces
+          .filter((workspace) => workspace.workgroupId === workgroup.id)
+          .map((workspace) => ({ id: workspace.id, name: workspace.name })),
+        teamWorkspaceId: workgroup.teamWorkspaceId,
+      })
+      groups.set(workgroup.organizationId, project)
+    }
+
+    return [...groups.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+  }, [canvas.personalDraftWorkspaces, canvas.workgroups])
 
   function isActive(href?: string) {
     if (!href || !pathname) return false
@@ -124,151 +133,219 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
     return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`)
   }
 
-  const closeMenu = () => setIsOpen(false)
-  const isHomePath = pathname === `/workspace/${workspaceId}/home`
+  function toggleProject(projectId: string) {
+    setExpandedProjectIds((current) =>
+      current.includes(projectId)
+        ? current.filter((id) => id !== projectId)
+        : [...current, projectId]
+    )
+  }
 
+  const isHomePath = pathname === `/workspace/${workspaceId}/home`
   if (isHomePath) return null
 
   return (
     <>
-      <div className='pointer-events-none fixed top-3 left-3 z-[var(--z-popover)] flex flex-col items-start gap-2'>
-        <div className='pointer-events-auto flex items-center gap-2'>
+      <aside
+        className={cn(
+          'flex h-full shrink-0 flex-col border-[var(--border)] border-r bg-[var(--surface-1)] p-2 transition-[width] duration-200',
+          isCollapsed ? 'w-14' : 'w-72'
+        )}
+      >
+        <div className={cn('flex items-center gap-1', isCollapsed && 'flex-col')}>
           <Button
             type='button'
             variant='ghost'
-            aria-label={isOpen ? '收起项目导航' : '打开项目导航'}
-            aria-expanded={isOpen}
-            className={cn(
-              'flex h-11 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[13px] text-[var(--text-primary)] shadow-medium transition-colors hover-hover:bg-[var(--surface-hover)]',
-              isOpen && 'bg-[var(--surface-2)]'
-            )}
-            onClick={() => setIsOpen((value) => !value)}
+            aria-label={isCollapsed ? '展开项目导航' : '收起项目导航'}
+            className={cn('h-9 shrink-0 px-2', !isCollapsed && 'flex-1 justify-start')}
+            onClick={() => setIsCollapsed((value) => !value)}
           >
-            {isOpen ? <X className='h-4 w-4' /> : <Menu className='h-4 w-4' />}
-            <span className='max-w-[132px] truncate'>
-              {canvas.activeWorkgroup?.organization.name ?? '项目导航'}
-            </span>
+            {isCollapsed ? (
+              <ChevronRight className='h-4 w-4' />
+            ) : (
+              <ChevronLeft className='h-4 w-4' />
+            )}
+            {!isCollapsed && <span className='ml-1 font-medium'>项目</span>}
           </Button>
           <ProductionNotificationBell includeAllInvitations workspaceId={scopedWorkspaceId} />
         </div>
 
-        <div className='pointer-events-auto max-w-[320px] rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 shadow-subtle'>
-          <div className='flex items-center gap-2 text-[11px]'>
-            <span
-              className={cn(
-                'h-2 w-2 shrink-0 rounded-full',
-                canvas.canvasContext.kind === 'personal'
-                  ? 'bg-[var(--badge-blue-text)]'
-                  : canvas.canvasContext.kind === 'team'
-                    ? 'bg-[var(--badge-success-text)]'
-                    : 'bg-[var(--text-tertiary)]'
-              )}
-            />
-            <span className='shrink-0 font-medium text-[var(--text-primary)]'>
+        {!isCollapsed && (
+          <div className='mt-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+            <div className='text-[11px] text-[var(--text-tertiary)]'>
               {canvas.canvasContext.label}
-            </span>
-            <span className='min-w-0 truncate text-[var(--text-tertiary)]'>
+            </div>
+            <div className='mt-0.5 truncate font-medium text-[12px] text-[var(--text-primary)]'>
               {canvas.canvasContext.detail}
-            </span>
-          </div>
-        </div>
-
-        {isOpen && (
-          <div className='pointer-events-auto w-[272px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-2 shadow-overlay'>
-            <div className='px-2 py-1.5'>
-              <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
-                {canvas.activeWorkgroup?.organization.name ?? '项目'}
-              </div>
-              <div className='mt-0.5 truncate text-[11px] text-[var(--text-tertiary)]'>
-                {canvas.activeWorkgroup
-                  ? `${canvas.activeWorkgroup.discipline.name} / ${canvas.activeWorkgroup.name}`
-                  : '团队画布'}
-              </div>
-            </div>
-
-            <div className='mt-1 flex flex-col gap-1'>
-              <ProjectNavItem
-                active={isActive(`/workspace/${workspaceId}/home`)}
-                href={`/workspace/${workspaceId}/home`}
-                icon={Home}
-                label='项目首页'
-              />
-              <ProjectNavItem
-                active={canvas.teamWorkspaceId ? isActive(canvas.teamHref) : false}
-                disabled={!canvas.teamWorkspaceId && !canvas.canInitializeTeamCanvas}
-                href={canvas.teamWorkspaceId ? canvas.teamHref : undefined}
-                icon={Users}
-                label={canvas.teamWorkspaceId ? '团队画布' : '初始化团队画布'}
-                loading={canvas.isCreatingTeamWorkspace}
-                onClick={
-                  !canvas.teamWorkspaceId && canvas.canInitializeTeamCanvas
-                    ? () => {
-                        void canvas.initializeTeamCanvas().then(closeMenu)
-                      }
-                    : undefined
-                }
-              />
-              <ProjectNavItem
-                active={isActive(personalWorkflowsHref)}
-                href={personalWorkflowsHref}
-                icon={PenLine}
-                label='个人画布'
-              />
-              <ProjectNavItem
-                active={isActive(canvas.showcaseHref)}
-                href={canvas.showcaseHref}
-                icon={BriefcaseBusiness}
-                label='项目总览'
-              />
-              {canManageTeams && (
-                <ProjectNavItem
-                  active={isActive(teamManagementHref)}
-                  href={teamManagementHref}
-                  icon={Settings}
-                  label='团队管理'
-                />
-              )}
-              {isDirectorTeam && (
-                <ProjectNavItem
-                  active={isActive(createTaskHref)}
-                  href={createTaskHref}
-                  icon={ClipboardPlus}
-                  label='发布任务'
-                />
-              )}
-            </div>
-
-            <div className='mt-2 border-[var(--border)] border-t pt-2'>
-              <Button
-                type='button'
-                size='sm'
-                variant='ghost'
-                className='mb-1 w-full justify-start'
-                disabled={!canInviteTeamMembers || sendInvitations.isPending}
-                onClick={() => setIsInviteOpen(true)}
-              >
-                <UserPlus className='mr-2 h-3.5 w-3.5' />
-                邀请成员
-              </Button>
-              <Button
-                type='button'
-                size='sm'
-                variant='ghost'
-                className='w-full justify-start'
-                disabled={!canvas.canCreatePersonalCanvas || canvas.isCreatingPersonalWorkspace}
-                onClick={() => setIsCreateModalOpen(true)}
-              >
-                {canvas.isCreatingPersonalWorkspace ? (
-                  <Loader2 className='mr-2 h-3.5 w-3.5 animate-spin' />
-                ) : (
-                  <PenLine className='mr-2 h-3.5 w-3.5' />
-                )}
-                新建个人画布
-              </Button>
             </div>
           </div>
         )}
-      </div>
+
+        <Button
+          type='button'
+          size='sm'
+          variant='ghost'
+          title={isCollapsed ? '新建个人画布' : undefined}
+          className={cn(
+            'mt-3 h-9 text-[12px]',
+            isCollapsed ? 'justify-center px-0' : 'w-full justify-start'
+          )}
+          disabled={!canvas.canCreatePersonalCanvas || canvas.isCreatingPersonalWorkspace}
+          onClick={() => setIsCreateModalOpen(true)}
+        >
+          {canvas.isCreatingPersonalWorkspace ? (
+            <Loader2 className='h-4 w-4 animate-spin' />
+          ) : (
+            <Plus className='h-4 w-4' />
+          )}
+          {!isCollapsed && <span className='ml-2'>新建个人画布</span>}
+        </Button>
+
+        <div className='mt-4 min-h-0 flex-1 overflow-y-auto'>
+          {!isCollapsed && (
+            <div className='mb-1 px-2 font-medium text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide'>
+              项目画布
+            </div>
+          )}
+          <div className='space-y-1'>
+            {projectGroups.map((project) => {
+              const isExpanded =
+                expandedProjectIds.includes(project.id) ||
+                project.workgroups.some(
+                  (workgroup) =>
+                    workgroup.teamWorkspaceId === workspaceId ||
+                    workgroup.personalCanvases.some((workspace) => workspace.id === workspaceId)
+                )
+
+              if (isCollapsed) {
+                const targetWorkspaceId =
+                  project.workgroups.find((workgroup) => workgroup.personalCanvases.length > 0)
+                    ?.personalCanvases[0]?.id ?? project.workgroups[0]?.teamWorkspaceId
+                return targetWorkspaceId ? (
+                  <CanvasNavItem
+                    key={project.id}
+                    active={project.workgroups.some(
+                      (workgroup) =>
+                        workgroup.teamWorkspaceId === workspaceId ||
+                        workgroup.personalCanvases.some((workspace) => workspace.id === workspaceId)
+                    )}
+                    collapsed
+                    href={`/workspace/${targetWorkspaceId}/w`}
+                    icon={FolderKanban}
+                    label={project.name}
+                  />
+                ) : null
+              }
+
+              return (
+                <div key={project.id}>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    className='h-9 w-full justify-start px-2 text-[12px]'
+                    onClick={() => toggleProject(project.id)}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className='mr-1 h-3.5 w-3.5' />
+                    ) : (
+                      <ChevronRight className='mr-1 h-3.5 w-3.5' />
+                    )}
+                    <FolderKanban className='mr-2 h-4 w-4 text-[var(--text-tertiary)]' />
+                    <span className='min-w-0 truncate'>{project.name}</span>
+                  </Button>
+                  {isExpanded && (
+                    <div className='ml-3 border-[var(--border)] border-l pl-2'>
+                      {project.workgroups.map((workgroup) => (
+                        <div key={workgroup.id} className='mb-1'>
+                          <div className='px-2 py-1 text-[10px] text-[var(--text-tertiary)]'>
+                            {workgroup.name}
+                          </div>
+                          {workgroup.personalCanvases.map((personalCanvas) => (
+                            <CanvasNavItem
+                              key={personalCanvas.id}
+                              active={personalCanvas.id === workspaceId}
+                              collapsed={false}
+                              href={`/workspace/${personalCanvas.id}/w`}
+                              icon={PenLine}
+                              label={personalCanvas.name}
+                              tone='personal'
+                            />
+                          ))}
+                          {workgroup.teamWorkspaceId && (
+                            <CanvasNavItem
+                              active={workgroup.teamWorkspaceId === workspaceId}
+                              collapsed={false}
+                              href={`/workspace/${workgroup.teamWorkspaceId}/w`}
+                              icon={Users}
+                              label='团队画布'
+                              tone='team'
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {!isCollapsed && (
+          <div className='mt-2 space-y-1 border-[var(--border)] border-t pt-2'>
+            <CanvasNavItem
+              active={isActive(`/workspace/${workspaceId}/home`)}
+              collapsed={false}
+              href={`/workspace/${workspaceId}/home`}
+              icon={Home}
+              label='项目首页'
+            />
+            <CanvasNavItem
+              active={isActive(personalWorkflowsHref)}
+              collapsed={false}
+              href={personalWorkflowsHref}
+              icon={PenLine}
+              label='个人工作流'
+            />
+            <CanvasNavItem
+              active={isActive(canvas.showcaseHref)}
+              collapsed={false}
+              href={canvas.showcaseHref}
+              icon={BriefcaseBusiness}
+              label='项目总览'
+            />
+            {canManageTeams && (
+              <CanvasNavItem
+                active={isActive(canvas.teamManagementHref)}
+                collapsed={false}
+                href={canvas.teamManagementHref}
+                icon={Settings}
+                label='团队管理'
+              />
+            )}
+            {isDirectorTeam && (
+              <CanvasNavItem
+                active={isActive(createTaskHref)}
+                collapsed={false}
+                href={createTaskHref}
+                icon={ClipboardPlus}
+                label='发布任务'
+              />
+            )}
+            <Button
+              type='button'
+              size='sm'
+              variant='ghost'
+              className='h-9 w-full justify-start px-2 text-[12px]'
+              disabled={!canInviteTeamMembers || sendInvitations.isPending}
+              onClick={() => setIsInviteOpen(true)}
+            >
+              <UserPlus className='mr-2 h-4 w-4' />
+              邀请成员
+            </Button>
+          </div>
+        )}
+      </aside>
 
       <CreateWorkspaceModal
         open={isCreateModalOpen}
@@ -276,7 +353,6 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
         onConfirm={async (name) => {
           await canvas.createPersonalCanvas(name)
           setIsCreateModalOpen(false)
-          setIsOpen(false)
         }}
         isCreating={canvas.isCreatingPersonalWorkspace}
       />
@@ -286,7 +362,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
           <ModalHeader>邀请成员加入当前团队</ModalHeader>
           <ModalBody>
             <div className='space-y-3'>
-              <div className='rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
+              <div className='rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2'>
                 <div className='text-[11px] text-[var(--text-tertiary)]'>当前团队</div>
                 <div className='mt-0.5 truncate font-medium text-[13px] text-[var(--text-primary)]'>
                   {canvas.activeWorkgroup
@@ -294,18 +370,12 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                     : '团队画布'}
                 </div>
               </div>
-              <div className='space-y-1.5'>
-                <div className='font-medium text-[12px] text-[var(--text-secondary)]'>邀请邮箱</div>
-                <Textarea
-                  value={inviteEmails}
-                  onChange={(event) => setInviteEmails(event.target.value)}
-                  placeholder='输入一个或多个邮箱，换行、逗号或分号分隔'
-                  className='min-h-[100px]'
-                />
-                <div className='text-[11px] text-[var(--text-tertiary)]'>
-                  对方接受邀请后会加入当前工种团队，并获得团队画布编辑权限。
-                </div>
-              </div>
+              <Textarea
+                value={inviteEmails}
+                onChange={(event) => setInviteEmails(event.target.value)}
+                placeholder='输入一个或多个邮箱，以换行、逗号或分号分隔'
+                className='min-h-[100px]'
+              />
             </div>
           </ModalBody>
           <ModalFooter>
@@ -331,7 +401,6 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                   })
                   setInviteEmails('')
                   setIsInviteOpen(false)
-                  setIsOpen(false)
                   if (result.failed.length > 0) {
                     toast.error(
                       `${result.successful.length} 个邀请已发送，${result.failed.length} 个失败`
@@ -344,11 +413,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                 }
               }}
             >
-              {sendInvitations.isPending ? (
-                <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
-              ) : (
-                <UserPlus className='mr-1.5 h-3.5 w-3.5' />
-              )}
+              {sendInvitations.isPending && <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />}
               发送邀请
             </Button>
           </ModalFooter>

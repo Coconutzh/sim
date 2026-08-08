@@ -4,6 +4,10 @@ import { useCallback, useMemo } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import {
+  buildProjectWorkspaceEntries,
+  type ProjectWorkspaceEntry,
+} from '@/app/workspace/[workspaceId]/lite-canvas-projects'
+import {
   useCreatePersonalWorkspace,
   useCreateTeamWorkspace,
   useMyWorkgroups,
@@ -18,10 +22,6 @@ import {
   useWorkspaceSettings,
   useWorkspacesQuery,
 } from '@/hooks/queries/workspace'
-import {
-  buildProjectWorkspaceEntries,
-  type ProjectWorkspaceEntry,
-} from '@/app/workspace/[workspaceId]/lite-canvas-projects'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
 const logger = createLogger('LiteCanvasNavigation')
@@ -88,18 +88,17 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
   })
 
   const personalDraftWorkspaces = useMemo(
-    () =>
-      workspaces.filter((workspace) => {
-        if (workspace.canvasScope !== 'personal') return false
-        return !activeWorkgroupId || workspace.workgroupId === activeWorkgroupId
-      }),
-    [activeWorkgroupId, workspaces]
+    () => workspaces.filter((workspace) => workspace.canvasScope === 'personal'),
+    [workspaces]
   )
 
   const activePersonalDraftWorkspace =
     personalDraftWorkspaces.find((workspace) => workspace.id === workspaceId) ??
-    personalDraftWorkspaces.find((workspace) => workspace.id === personalWorkspaceId) ??
-    personalDraftWorkspaces[0] ??
+    personalDraftWorkspaces.find(
+      (workspace) =>
+        workspace.id === personalWorkspaceId && workspace.workgroupId === activeWorkgroupId
+    ) ??
+    personalDraftWorkspaces.find((workspace) => workspace.workgroupId === activeWorkgroupId) ??
     null
 
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
