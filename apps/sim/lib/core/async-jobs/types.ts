@@ -30,6 +30,7 @@ export type JobType =
   | 'cleanup-soft-deletes'
   | 'cleanup-tasks'
   | 'run-data-drain'
+  | 'canvas-node-transfer'
 
 export type AsyncExecutionCorrelationSource = 'workflow' | 'schedule' | 'webhook'
 
@@ -95,7 +96,7 @@ export interface EnqueueOptions {
    * row drives through `processing → completed | failed`. Receives the
    * payload and an `AbortSignal` driven by `cancelJob`.
    */
-  runner?: <TPayload>(payload: TPayload, signal: AbortSignal) => Promise<void>
+  runner?: <TPayload>(payload: TPayload, signal: AbortSignal) => Promise<unknown>
 }
 
 /**

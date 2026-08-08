@@ -1300,3 +1300,14 @@ export const copySelectionContract = defineRouteContract({
     }),
   },
 })
+
+export const queueCopySelectionContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workflows/[id]/copy-selection/async',
+  params: z.object({ id: workflowIdSchema }),
+  body: copySelectionBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ taskId: z.string() }),
+  },
+})

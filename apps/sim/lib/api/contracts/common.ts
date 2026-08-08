@@ -119,6 +119,8 @@ const jobStatusResponseSchema = z
   })
   .passthrough()
 
+export type JobStatusResponse = z.output<typeof jobStatusResponseSchema>
+
 export const getJobStatusContract = defineRouteContract({
   method: 'GET',
   path: '/api/jobs/[jobId]',

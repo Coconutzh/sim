@@ -25,6 +25,7 @@ const JOB_TYPE_TO_TASK_ID: Record<JobType, string> = {
   'cleanup-soft-deletes': 'cleanup-soft-deletes',
   'cleanup-tasks': 'cleanup-tasks',
   'run-data-drain': 'run-data-drain',
+  'canvas-node-transfer': 'canvas-node-transfer',
 }
 
 /**
@@ -110,7 +111,9 @@ export class TriggerDevJobQueue implements JobQueueBackend {
       const payload = run.payload as Record<string, unknown>
       const metadata: JobMetadata = {
         workflowId: payload?.workflowId as string | undefined,
+        workspaceId: payload?.workspaceId as string | undefined,
         userId: payload?.userId as string | undefined,
+        targetWorkflowId: payload?.targetWorkflowId as string | undefined,
         correlation:
           payload?.correlation && typeof payload.correlation === 'object'
             ? (payload.correlation as JobMetadata['correlation'])

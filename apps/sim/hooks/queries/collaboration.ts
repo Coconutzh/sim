@@ -46,6 +46,7 @@ import {
   type ProjectNotificationCenterQuery,
   type PublicationNotificationInboxQuery,
   type PublicationSummary,
+  queueCopySelectionContract,
   type RecordProjectAdminFailureBody,
   recordProjectAdminFailureContract,
   removeWorkgroupMemberContract,
@@ -1090,6 +1091,16 @@ export function useCopySelection() {
         queryKey: workflowKeys.list(variables.body.target.workspaceId),
       })
     },
+  })
+}
+
+export function useQueueCopySelection() {
+  return useMutation({
+    mutationFn: (variables: { workflowId: string; body: CopySelectionBody }) =>
+      requestJson(queueCopySelectionContract, {
+        params: { id: variables.workflowId },
+        body: variables.body,
+      }),
   })
 }
 
