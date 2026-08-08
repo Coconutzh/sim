@@ -25,6 +25,7 @@ export interface ResolvedContentService {
   baseUrl: string
   apiKey?: string
   modelId: string
+  providerId?: string
 }
 
 export interface ContentCanvasCapabilityAvailability {
@@ -258,15 +259,19 @@ export async function resolveContentServiceForRuntime(params: {
     modelId: params.modelId,
   })
   if (platform) {
-    const fallback = getContentServiceConfig({
-      capability: params.capability,
-      family: model.family,
-    })
+    const fallback =
+      platform.baseUrl || platform.kind === 'provider-native'
+        ? undefined
+        : getContentServiceConfig({
+            capability: params.capability,
+            family: model.family,
+          })
     return {
       kind: platform.kind,
-      baseUrl: platform.baseUrl || fallback.baseUrl,
+      baseUrl: platform.baseUrl || fallback?.baseUrl || '',
       apiKey: platform.apiKey,
       modelId: params.modelId,
+      providerId: platform.providerId,
     }
   }
   return resolveContentService(params)

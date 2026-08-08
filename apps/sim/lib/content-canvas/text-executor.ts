@@ -201,6 +201,31 @@ export async function executeContentCanvasTextRequest(
     return response
   }
 
+  if (service.kind === 'provider-native') {
+    const providerId = service.providerId === 'gemini' ? 'google' : service.providerId
+    if (!providerId)
+      throw new Error(`No provider configured for content-canvas model ${params.model}`)
+    return assertProviderResponse(
+      await executeProviderRequest(providerId, {
+        workspaceId: params.workspaceId,
+        model: params.model,
+        apiKey: service.apiKey,
+        systemPrompt: params.systemPrompt,
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+        responseFormat: params.responseFormat,
+        abortSignal: params.abortSignal,
+        messages: [
+          buildNativeGoogleMessage({
+            prompt: params.prompt,
+            referenceContextText: params.referenceContextText,
+            referenceImages: params.referenceImages,
+          }),
+        ],
+      })
+    )
+  }
+
   const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     signal: params.abortSignal,

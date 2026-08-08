@@ -65,6 +65,7 @@ const PROVIDERS = [
   'zhipu',
   'cerebras',
   'cohere',
+  'deepseek',
   'ark',
   'evolink',
   'dashscope',
