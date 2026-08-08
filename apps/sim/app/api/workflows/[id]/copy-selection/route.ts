@@ -10,6 +10,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { sanitizeWorkflowSnapshot } from '@/lib/collaboration/snapshot-sanitizer'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { copyWorkspaceFileReferences } from '@/lib/workflows/workspace-file-copy'
 
 const logger = createLogger('CopySelectionAPI')
 
@@ -109,11 +110,37 @@ export const POST = withRouteHandler(async (request, context) => {
     const edgeIdMap = new Map(insertedEdges.map((edge) => [edge.id, generateId()]))
     const insertedEdgeIds = insertedEdges.map((edge) => edgeIdMap.get(edge.id) as string)
     const placement = parsed.data.body.placement
+    const shouldCopyWorkspaceFiles = sourceScope === 'personal' && targetScope === 'team'
+    const sourceWorkspaceId = sourceAccess.workflow?.workspaceId
+    const targetWorkspaceId = targetAccess.workflow?.workspaceId
+
+    if (shouldCopyWorkspaceFiles && (!sourceWorkspaceId || !targetWorkspaceId)) {
+      return NextResponse.json({ error: 'Canvas workspace could not be resolved' }, { status: 400 })
+    }
+
+    const blocksWithCopiedFiles = await Promise.all(
+      blocks.map(async (block) => {
+        if (!shouldCopyWorkspaceFiles || !sourceWorkspaceId || !targetWorkspaceId) {
+          return block
+        }
+        const copiedValues = await copyWorkspaceFileReferences({
+          sourceWorkspaceId,
+          targetWorkspaceId,
+          targetUserId: session.user.id,
+          value: {
+            subBlocks: block.subBlocks,
+            outputs: block.outputs,
+            data: block.data,
+          },
+        })
+        return { ...block, ...copiedValues }
+      })
+    )
 
     await db.transaction(async (tx) => {
-      if (blocks.length > 0) {
+      if (blocksWithCopiedFiles.length > 0) {
         await tx.insert(workflowBlocks).values(
-          blocks.map((block) => ({
+          blocksWithCopiedFiles.map((block) => ({
             id: idMap.get(block.id) as string,
             workflowId: targetWorkflowId,
             type: block.type,
@@ -127,9 +154,15 @@ export const POST = withRouteHandler(async (request, context) => {
             triggerMode: block.triggerMode,
             locked: false,
             height: block.height,
-            subBlocks: sanitizeWorkflowSnapshot(block.subBlocks),
-            outputs: sanitizeWorkflowSnapshot(block.outputs),
-            data: sanitizeWorkflowSnapshot(block.data),
+            subBlocks: sanitizeWorkflowSnapshot(block.subBlocks, {
+              preserveWorkspaceFiles: shouldCopyWorkspaceFiles,
+            }),
+            outputs: sanitizeWorkflowSnapshot(block.outputs, {
+              preserveWorkspaceFiles: shouldCopyWorkspaceFiles,
+            }),
+            data: sanitizeWorkflowSnapshot(block.data, {
+              preserveWorkspaceFiles: shouldCopyWorkspaceFiles,
+            }),
             createdAt: now,
             updatedAt: now,
           }))

@@ -83,6 +83,39 @@ describe('sanitizeWorkflowSnapshot', () => {
     })
   })
 
+  it('preserves copied workspace files while continuing to redact credentials', () => {
+    const file = {
+      id: 'file-1',
+      name: 'draft.png',
+      url: '/api/files/serve/workspace%2Fsource%2Fdraft.png?context=workspace',
+      size: 42,
+      type: 'image/png',
+      key: 'workspace/target/draft.png',
+      context: 'workspace',
+    }
+
+    expect(
+      sanitizeWorkflowSnapshot(
+        {
+          subBlocks: {
+            file: { id: 'file', type: 'file', value: file },
+            credential: { id: 'credential', type: 'credential', value: 'credential-1' },
+          },
+        },
+        { preserveWorkspaceFiles: true }
+      )
+    ).toEqual({
+      subBlocks: {
+        file: { id: 'file', type: 'file', value: file },
+        credential: {
+          id: 'credential',
+          type: 'credential',
+          value: { type: 'credential', label: 'Configured credential' },
+        },
+      },
+    })
+  })
+
   it('keeps redacted workflow subBlocks compatible with workflowStateSchema', () => {
     const snapshot = {
       blocks: {

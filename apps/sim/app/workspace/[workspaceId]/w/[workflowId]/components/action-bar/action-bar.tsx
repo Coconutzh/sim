@@ -1,13 +1,38 @@
-﻿import { memo, useCallback } from 'react'
-import { ArrowLeftRight, ArrowUpDown, Circle, CircleOff, Lock, LogOut, Unlock } from 'lucide-react'
+import { memo, useCallback, useMemo, useState } from 'react'
+import {
+  ArrowLeftRight,
+  ArrowUpDown,
+  Circle,
+  CircleOff,
+  CopyPlus,
+  Lock,
+  LogOut,
+  Unlock,
+} from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
-import { Button, Copy, PlayOutline, Tooltip, Trash2 } from '@/components/emcn'
+import {
+  Button,
+  Copy,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  PlayOutline,
+  Tooltip,
+  Trash2,
+  toast,
+} from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { isPureCanvasBlockType } from '@/lib/workflows/blocks/pure-canvas-blocks'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-context'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { validateTriggerPaste } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
+import { useCopySelection, useMyWorkgroups } from '@/hooks/queries/collaboration'
+import { useWorkflows } from '@/hooks/queries/workflows'
+import { useWorkspacesQuery } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useExecutionStore, useIsCurrentWorkflowExecuting } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
@@ -118,6 +143,30 @@ export const ActionBar = memo(
     )
 
     const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+    const params = useParams<{ workspaceId: string }>()
+    const { data: workspaces = [] } = useWorkspacesQuery(true)
+    const { data: workgroupsData } = useMyWorkgroups(true)
+    const [isTransferOpen, setIsTransferOpen] = useState(false)
+    const [targetWorkspaceId, setTargetWorkspaceId] = useState<string | null>(null)
+    const copySelection = useCopySelection()
+    const isPersonalCanvas =
+      workspaces.find((workspace) => workspace.id === params.workspaceId)?.canvasScope ===
+      'personal'
+    const teamCanvases = useMemo(
+      () =>
+        (workgroupsData?.workgroups ?? []).map((workgroup) => ({
+          workspaceId: workgroup.teamWorkspaceId,
+          label: `${workgroup.organization.name} / ${workgroup.discipline.name} / ${workgroup.name}`,
+        })),
+      [workgroupsData?.workgroups]
+    )
+    const selectedTeamCanvas = teamCanvases.find(
+      (teamCanvas) => teamCanvas.workspaceId === targetWorkspaceId
+    )
+    const { data: targetWorkflows = [], isLoading: isLoadingTargetWorkflows } = useWorkflows(
+      targetWorkspaceId ?? undefined,
+      { enabled: Boolean(targetWorkspaceId) }
+    )
     const isExecuting = useIsCurrentWorkflowExecuting()
     const getLastExecutionSnapshot = useExecutionStore((s) => s.getLastExecutionSnapshot)
     const userPermissions = useUserPermissionsContext()
@@ -152,6 +201,44 @@ export const ActionBar = memo(
       handleRunFromBlock(blockId, activeWorkflowId)
     }, [blockId, activeWorkflowId, canRunFromBlock, handleRunFromBlock])
 
+    const handleCopyToTeamCanvas = useCallback(async () => {
+      if (!activeWorkflowId || !targetWorkspaceId) return
+      const targetWorkflow = targetWorkflows.find(
+        (workflow) => workflow.workspaceId === targetWorkspaceId && workflow.track !== 'published'
+      )
+      if (!targetWorkflow) {
+        toast.error('目标团队画布没有可用工作流')
+        return
+      }
+      try {
+        await copySelection.mutateAsync({
+          workflowId: activeWorkflowId,
+          body: {
+            source: { type: 'personal', workflowId: activeWorkflowId },
+            target: {
+              type: 'team',
+              workspaceId: targetWorkspaceId,
+              workflowId: targetWorkflow.id,
+            },
+            selection: { blockIds: [blockId], edgeIds: [] },
+            placement: { offsetX: 80, offsetY: 80 },
+          },
+        })
+        setIsTransferOpen(false)
+        setTargetWorkspaceId(null)
+        toast.success(`已复制到 ${selectedTeamCanvas?.label ?? '团队画布'}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '复制到团队画布失败')
+      }
+    }, [
+      activeWorkflowId,
+      blockId,
+      copySelection,
+      selectedTeamCanvas?.label,
+      targetWorkspaceId,
+      targetWorkflows,
+    ])
+
     /**
      * Get appropriate tooltip message based on disabled state
      *
@@ -176,6 +263,27 @@ export const ActionBar = memo(
           'dark:border-transparent dark:bg-[var(--surface-4)]'
         )}
       >
+        {isPersonalCanvas && blockType === 'content' && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Button
+                variant='ghost'
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setIsTransferOpen(true)
+                }}
+                className={ACTION_BUTTON_STYLES}
+                disabled={disabled || teamCanvases.length === 0}
+              >
+                <CopyPlus className={ICON_SIZE} />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              {teamCanvases.length === 0 ? '没有可写入的团队画布' : '复制到团队画布'}
+            </Tooltip.Content>
+          </Tooltip.Root>
+        )}
+
         {!isPureCanvasBlock && !isInsideSubflow && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
@@ -366,6 +474,52 @@ export const ActionBar = memo(
             {isLocked || isParentLocked ? 'Block is locked' : getTooltipMessage('Delete Block')}
           </Tooltip.Content>
         </Tooltip.Root>
+        <Modal open={isTransferOpen} onOpenChange={setIsTransferOpen}>
+          <ModalContent size='md'>
+            <ModalHeader>复制到团队画布</ModalHeader>
+            <ModalBody>
+              <div className='space-y-2'>
+                <p className='text-[12px] text-[var(--text-secondary)]'>
+                  将当前节点及其已生成内容复制为团队画布中的独立副本。
+                </p>
+                {teamCanvases.map((teamCanvas) => (
+                  <Button
+                    key={teamCanvas.workspaceId}
+                    type='button'
+                    variant='ghost'
+                    className={cn(
+                      'h-auto w-full justify-start rounded-md border px-3 py-3 text-left text-[12px]',
+                      teamCanvas.workspaceId === targetWorkspaceId
+                        ? 'border-[var(--brand-secondary)] bg-[var(--surface-active)]'
+                        : 'border-[var(--border)]'
+                    )}
+                    onClick={() => setTargetWorkspaceId(teamCanvas.workspaceId)}
+                  >
+                    <CopyPlus className='mr-2 h-4 w-4 shrink-0 text-[var(--badge-success-text)]' />
+                    <span className='min-w-0 truncate'>{teamCanvas.label}</span>
+                  </Button>
+                ))}
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button type='button' variant='default' onClick={() => setIsTransferOpen(false)}>
+                取消
+              </Button>
+              <Button
+                type='button'
+                disabled={
+                  !targetWorkspaceId ||
+                  isLoadingTargetWorkflows ||
+                  targetWorkflows.length === 0 ||
+                  copySelection.isPending
+                }
+                onClick={() => void handleCopyToTeamCanvas()}
+              >
+                {copySelection.isPending ? '正在复制…' : '复制节点'}
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       </div>
     )
   },

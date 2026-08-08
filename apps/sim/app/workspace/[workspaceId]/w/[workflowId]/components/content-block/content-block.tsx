@@ -6291,15 +6291,11 @@ export const ContentBlock = memo(function ContentBlock({
           </button>
         )}
 
-        {!data.isPreview &&
-          !data.isEmbedded &&
-          !(resolvedVariant === 'image' && resolvedFile) &&
-          !(resolvedVariant === 'video' && resolvedFile) &&
-          !(resolvedVariant === 'presentation' && resolvedPresentationFile) && (
-            <div className='nodrag nopan'>
-              <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
-            </div>
-          )}
+        {!data.isPreview && !data.isEmbedded && (
+          <div className='nodrag nopan'>
+            <ActionBar blockId={id} blockType='content' disabled={!canEditWorkflow} />
+          </div>
+        )}
 
         {resolvedVariant === 'presentation' ? (
           <PresentationContentCard
