@@ -481,6 +481,12 @@ export const adminConsoleUpsertModelServiceContract = defineRouteContract({
     schema: z.object({ success: z.literal(true), service: adminConsoleModelServiceSchema }),
   },
 })
+export const adminConsoleTestModelServiceContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/admin-console/model-services/[id]/test',
+  params: adminConsoleIdParamsSchema,
+  response: { mode: 'json', schema: z.object({ success: z.boolean(), message: z.string() }) },
+})
 
 export const adminConsoleUsageContract = defineRouteContract({
   method: 'GET',
