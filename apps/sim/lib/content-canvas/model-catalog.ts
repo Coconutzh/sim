@@ -12,6 +12,7 @@ export type ContentServiceKind =
   | 'evolink-audio'
   | 'dashscope-video'
   | 'provider-native'
+  | 'cohere-native'
 
 export type ContentModelFamily =
   | 'gemini'
@@ -26,6 +27,7 @@ export type ContentModelFamily =
   | 'fireworks'
   | 'cerebras'
   | 'deepseek'
+  | 'cohere'
 
 export interface ContentCanvasModelDefinition {
   id: string
@@ -134,6 +136,15 @@ const PRESENTATION_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> =
 }
 
 export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition[] = [
+  {
+    id: 'command-a-plus-05-2026',
+    capability: 'text',
+    family: 'cohere',
+    serviceKind: 'cohere-native',
+    label: 'Command A Plus',
+    description: 'Cohere Command model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
   {
     id: 'gpt-4.1',
     capability: 'text',

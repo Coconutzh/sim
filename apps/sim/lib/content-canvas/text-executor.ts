@@ -144,6 +144,47 @@ function getUsageTokenCount(payload: unknown, key: string): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
+async function executeCohereTextRequest(params: {
+  apiKey: string
+  model: string
+  systemPrompt: string
+  prompt: string
+  referenceContextText?: string
+  abortSignal?: AbortSignal
+}): Promise<ProviderResponse> {
+  const response = await fetch('https://api.cohere.ai/v2/chat', {
+    method: 'POST',
+    signal: params.abortSignal,
+    headers: { Authorization: `Bearer ${params.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: params.model,
+      stream: false,
+      messages: [
+        { role: 'system', content: params.systemPrompt },
+        { role: 'user', content: buildPrompt(params.prompt, params.referenceContextText) },
+      ],
+    }),
+  })
+  const payload: unknown = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(extractErrorMessage(payload) || 'Cohere text request failed')
+  const record = isRecord(payload) ? payload : {}
+  const message = isRecord(record.message) ? record.message : {}
+  const content = Array.isArray(message.content)
+    ? message.content
+        .map((part) => (isRecord(part) ? (getStringRecordValue(part, 'text') ?? '') : ''))
+        .join('')
+        .trim()
+    : ''
+  return {
+    content,
+    model: params.model,
+    tokens: {
+      input: getUsageTokenCount(payload, 'input_tokens'),
+      output: getUsageTokenCount(payload, 'output_tokens'),
+    },
+  }
+}
+
 export async function executeContentCanvasTextRequest(
   params: ExecuteContentCanvasTextInput
 ): Promise<ProviderResponse> {
@@ -224,6 +265,17 @@ export async function executeContentCanvasTextRequest(
         ],
       })
     )
+  }
+
+  if (service.kind === 'cohere-native') {
+    return executeCohereTextRequest({
+      apiKey: service.apiKey,
+      model: params.model,
+      systemPrompt: params.systemPrompt,
+      prompt: params.prompt,
+      referenceContextText: params.referenceContextText,
+      abortSignal: params.abortSignal,
+    })
   }
 
   const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {
