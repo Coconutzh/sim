@@ -3,8 +3,8 @@ import {
   adminConsoleAuditLog,
   member,
   organization,
-  platformProviderApiKey,
   platformModelServiceConfig,
+  platformProviderApiKey,
   usageLog,
   user,
   userStats,
@@ -16,11 +16,12 @@ import { generateShortId } from '@sim/utils/id'
 import { and, count, desc, eq, gte, ilike, lte, or, type SQL, sql } from 'drizzle-orm'
 import { recordAdminConsoleAudit } from '@/lib/admin/audit'
 import type {
-  AdminConsoleCreateUserBody,
   AdminConsoleCreateProviderKeyBody,
+  AdminConsoleCreateUserBody,
   AdminConsoleCreditActionBody,
   AdminConsoleSetOrganizationMembershipBody,
   AdminConsoleSetWorkgroupMembershipBody,
+  AdminConsoleUpdateModelServiceBody,
   AdminConsoleUpdateProviderKeyBody,
   AdminConsoleUpsertModelServiceBody,
   AdminConsoleUserActionBody,
@@ -31,6 +32,12 @@ import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { ensureUserStatsExists } from '@/lib/billing/core/usage'
 import { addCredits, getCreditBalance, removeCredits } from '@/lib/billing/credits/balance'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
+import {
+  type ContentCapability,
+  type ContentModelFamily,
+  type ContentServiceKind,
+  getContentCanvasModelsByFamily,
+} from '@/lib/content-canvas/model-catalog'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 
 const logger = createLogger('AdminConsole')
@@ -527,6 +534,45 @@ function providerIdCast() {
   return 'openai' as const
 }
 
+function validateCanvasModelServiceConfig(params: {
+  consumer: string
+  capability: string
+  family: string
+  serviceKind: string
+  enabledModelIds: string[]
+  defaultModelId?: string | null
+}) {
+  if (params.consumer !== 'sim-canvas') return
+
+  const models = getContentCanvasModelsByFamily(
+    params.capability as ContentCapability,
+    params.family as ContentModelFamily
+  )
+  if (models.length === 0) {
+    throw new Error(`Unsupported canvas model family: ${params.capability}/${params.family}`)
+  }
+
+  const supportedModelIds = new Set(models.map((model) => model.id))
+  const unsupportedModelIds = params.enabledModelIds.filter(
+    (modelId) => !supportedModelIds.has(modelId)
+  )
+  if (unsupportedModelIds.length > 0) {
+    throw new Error(`Unsupported canvas models: ${unsupportedModelIds.join(', ')}`)
+  }
+
+  if (params.defaultModelId && !params.enabledModelIds.includes(params.defaultModelId)) {
+    throw new Error('The default model must be included in enabled models')
+  }
+
+  const serviceKinds = new Set<ContentServiceKind>(models.map((model) => model.serviceKind))
+  if (params.family === 'gemini') serviceKinds.add('openai-compatible')
+  if (!serviceKinds.has(params.serviceKind as ContentServiceKind)) {
+    throw new Error(
+      `Unsupported service kind ${params.serviceKind} for canvas family ${params.family}`
+    )
+  }
+}
+
 export async function listPlatformProviderKeys() {
   const rows = await db
     .select()
@@ -661,6 +707,7 @@ export async function upsertPlatformModelService(params: {
   actorUserId: string
   body: AdminConsoleUpsertModelServiceBody
 }) {
+  validateCanvasModelServiceConfig(params.body)
   const [row] = await db
     .insert(platformModelServiceConfig)
     .values({
@@ -691,7 +738,106 @@ export async function upsertPlatformModelService(params: {
       },
     })
     .returning()
+
+  await recordAdminConsoleAudit({
+    actorUserId: params.actorUserId,
+    targetType: 'model_service',
+    targetId: row.id,
+    action: 'model_service_upserted',
+    after: {
+      consumer: row.consumer,
+      capability: row.capability,
+      family: row.family,
+      providerId: row.providerId,
+      serviceKind: row.serviceKind,
+      status: row.status,
+      priority: row.priority,
+    },
+  })
   return formatModelService(row)
+}
+
+export async function updatePlatformModelService(params: {
+  actorUserId: string
+  serviceId: string
+  body: AdminConsoleUpdateModelServiceBody
+}) {
+  const [before] = await db
+    .select()
+    .from(platformModelServiceConfig)
+    .where(eq(platformModelServiceConfig.id, params.serviceId))
+    .limit(1)
+  if (!before) return null
+
+  const next = {
+    consumer: params.body.consumer ?? before.consumer,
+    capability: params.body.capability ?? before.capability,
+    family: params.body.family ?? before.family,
+    providerId: params.body.providerId ?? before.providerId,
+    serviceKind: params.body.serviceKind ?? before.serviceKind,
+    baseUrl: params.body.baseUrl === undefined ? before.baseUrl : params.body.baseUrl,
+    enabledModelIds: params.body.enabledModelIds ?? (before.enabledModelIds as string[]),
+    defaultModelId:
+      params.body.defaultModelId === undefined ? before.defaultModelId : params.body.defaultModelId,
+    status: params.body.status ?? before.status,
+    priority: params.body.priority ?? before.priority,
+  }
+  validateCanvasModelServiceConfig(next)
+
+  const [after] = await db
+    .update(platformModelServiceConfig)
+    .set({
+      ...next,
+      configVersion: sql`${platformModelServiceConfig.configVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(platformModelServiceConfig.id, params.serviceId))
+    .returning()
+
+  await recordAdminConsoleAudit({
+    actorUserId: params.actorUserId,
+    targetType: 'model_service',
+    targetId: params.serviceId,
+    action: 'model_service_updated',
+    before: {
+      providerId: before.providerId,
+      serviceKind: before.serviceKind,
+      status: before.status,
+      priority: before.priority,
+    },
+    after: {
+      providerId: after.providerId,
+      serviceKind: after.serviceKind,
+      status: after.status,
+      priority: after.priority,
+    },
+  })
+  return formatModelService(after)
+}
+
+export async function deletePlatformModelService(params: {
+  actorUserId: string
+  serviceId: string
+}) {
+  const [deleted] = await db
+    .delete(platformModelServiceConfig)
+    .where(eq(platformModelServiceConfig.id, params.serviceId))
+    .returning()
+  if (!deleted) return false
+
+  await recordAdminConsoleAudit({
+    actorUserId: params.actorUserId,
+    targetType: 'model_service',
+    targetId: params.serviceId,
+    action: 'model_service_deleted',
+    before: {
+      consumer: deleted.consumer,
+      capability: deleted.capability,
+      family: deleted.family,
+      providerId: deleted.providerId,
+    },
+  })
+  return true
 }
 
 export async function getAdminConsoleUsage(params: {

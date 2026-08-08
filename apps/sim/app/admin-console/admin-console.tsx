@@ -27,6 +27,13 @@ import {
   Textarea,
   toast,
 } from '@/components/emcn'
+import {
+  type ContentCapability,
+  type ContentModelFamily,
+  type ContentServiceKind,
+  getContentCanvasModelsByCapability,
+  getContentCanvasModelsByFamily,
+} from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
 import {
   type AdminConsoleModelService,
@@ -39,6 +46,8 @@ import {
   useAdminConsoleUsers,
   useApplyAdminConsoleCredits,
   useCreateAdminConsoleProviderKey,
+  useDeleteAdminConsoleModelService,
+  useUpdateAdminConsoleModelService,
   useUpdateAdminConsoleProviderKey,
   useUpdateAdminConsoleUser,
   useUpsertAdminConsoleModelService,
@@ -69,6 +78,8 @@ const PROVIDERS = [
   'ark',
   'evolink',
   'dashscope',
+  'azure-openai',
+  'azure-anthropic',
 ] as const
 
 const USAGE_SOURCES = [
@@ -81,6 +92,17 @@ const USAGE_SOURCES = [
   'mothership_block',
   'knowledge-base',
   'voice-input',
+] as const
+
+const CANVAS_CAPABILITIES = ['text', 'image', 'audio', 'video'] as const
+const CONTENT_SERVICE_KINDS = [
+  'openai-compatible',
+  'google-native',
+  'ark-image',
+  'evolink-audio',
+  'dashscope-video',
+  'provider-native',
+  'cohere-native',
 ] as const
 
 function formatMoney(value: number) {
@@ -555,16 +577,51 @@ function ApiKeysPanel() {
 function ModelServicesPanel() {
   const servicesQuery = useAdminConsoleModelServices()
   const upsertService = useUpsertAdminConsoleModelService()
+  const updateService = useUpdateAdminConsoleModelService()
+  const deleteService = useDeleteAdminConsoleModelService()
   const [consumer, setConsumer] = useState<'sim-canvas' | 'hermes-agent' | 'hermes-ppt'>(
     'sim-canvas'
   )
-  const [capability, setCapability] = useState('image')
-  const [family, setFamily] = useState('image')
-  const [providerId, setProviderId] = useState<Exclude<(typeof PROVIDERS)[number], 'all'>>('openai')
-  const [serviceKind, setServiceKind] = useState('openai-compatible')
+  const [capability, setCapability] = useState('text')
+  const [family, setFamily] = useState('gemini')
+  const [providerId, setProviderId] = useState<Exclude<(typeof PROVIDERS)[number], 'all'>>('google')
+  const [serviceKind, setServiceKind] = useState<ContentServiceKind>('google-native')
   const [baseUrl, setBaseUrl] = useState('')
-  const [modelIds, setModelIds] = useState('')
-  const [defaultModelId, setDefaultModelId] = useState('')
+  const [modelIds, setModelIds] = useState('gemini-3.1-flash-lite-preview,gemini-2.5-flash')
+  const [defaultModelId, setDefaultModelId] = useState('gemini-3.1-flash-lite-preview')
+  const [serviceStatus, setServiceStatus] = useState<'active' | 'disabled'>('active')
+  const [priority, setPriority] = useState('100')
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
+
+  const selectCanvasFamily = (
+    nextCapability: ContentCapability,
+    nextFamily: ContentModelFamily
+  ) => {
+    const models = getContentCanvasModelsByFamily(nextCapability, nextFamily)
+    const firstModel = models[0]
+    setCapability(nextCapability)
+    setFamily(nextFamily)
+    setModelIds(models.map((model) => model.id).join(','))
+    setDefaultModelId(firstModel?.id ?? '')
+    if (firstModel) setServiceKind(firstModel.serviceKind)
+  }
+
+  const availableFamilies = Array.from(
+    new Set(
+      getContentCanvasModelsByCapability(capability as ContentCapability).map(
+        (model) => model.family
+      )
+    )
+  )
+  const availableServiceKinds = Array.from(
+    new Set(
+      getContentCanvasModelsByFamily(
+        capability as ContentCapability,
+        family as ContentModelFamily
+      ).map((model) => model.serviceKind)
+    )
+  )
+  if (family === 'gemini') availableServiceKinds.push('openai-compatible')
 
   const submit = async () => {
     const enabledModelIds = modelIds
@@ -575,7 +632,7 @@ function ModelServicesPanel() {
       toast.error('至少填写一个可用模型 ID')
       return
     }
-    await upsertService.mutateAsync({
+    const body = {
       consumer,
       capability,
       family,
@@ -584,10 +641,30 @@ function ModelServicesPanel() {
       baseUrl: baseUrl.trim() || null,
       enabledModelIds,
       defaultModelId: defaultModelId.trim() || null,
-      status: 'active',
-      priority: 100,
-    })
+      status: serviceStatus,
+      priority: Number(priority) || 0,
+    }
+    if (editingServiceId) {
+      await updateService.mutateAsync({ serviceId: editingServiceId, body })
+    } else {
+      await upsertService.mutateAsync(body)
+    }
+    setEditingServiceId(null)
     toast.success('模型服务配置已保存')
+  }
+
+  const editService = (service: AdminConsoleModelService) => {
+    setEditingServiceId(service.id)
+    setConsumer(service.consumer)
+    setCapability(service.capability)
+    setFamily(service.family)
+    setProviderId(service.providerId)
+    setServiceKind(service.serviceKind as ContentServiceKind)
+    setBaseUrl(service.baseUrl ?? '')
+    setModelIds(service.enabledModelIds.join(','))
+    setDefaultModelId(service.defaultModelId ?? '')
+    setServiceStatus(service.status)
+    setPriority(service.priority.toString())
   }
 
   return (
@@ -604,30 +681,60 @@ function ModelServicesPanel() {
           onChange={setConsumer}
           options={['sim-canvas', 'hermes-agent', 'hermes-ppt']}
         />
-        <TextField
-          label='能力'
-          value={capability}
-          onChange={setCapability}
-          placeholder='例如 image、text'
-        />
-        <TextField
-          label='模型族'
-          value={family}
-          onChange={setFamily}
-          placeholder='例如 image、gemini'
-        />
+        {consumer === 'sim-canvas' ? (
+          <SelectField
+            label='能力'
+            value={capability}
+            onChange={(value) =>
+              selectCanvasFamily(
+                value as ContentCapability,
+                getContentCanvasModelsByCapability(value as ContentCapability)[0]?.family ??
+                  'gemini'
+              )
+            }
+            options={CANVAS_CAPABILITIES}
+          />
+        ) : (
+          <TextField
+            label='能力'
+            value={capability}
+            onChange={setCapability}
+            placeholder='例如 text'
+          />
+        )}
+        {consumer === 'sim-canvas' ? (
+          <SelectField
+            label='模型族'
+            value={family}
+            onChange={(value) =>
+              selectCanvasFamily(capability as ContentCapability, value as ContentModelFamily)
+            }
+            options={availableFamilies}
+          />
+        ) : (
+          <TextField label='模型族' value={family} onChange={setFamily} placeholder='例如 gemini' />
+        )}
         <SelectField
           label='Provider'
           value={providerId}
           onChange={setProviderId}
           options={PROVIDERS.filter((item) => item !== 'all')}
         />
-        <TextField
-          label='服务类型'
-          value={serviceKind}
-          onChange={setServiceKind}
-          placeholder='例如 openai-compatible'
-        />
+        {consumer === 'sim-canvas' ? (
+          <SelectField
+            label='服务类型'
+            value={serviceKind}
+            onChange={(value) => setServiceKind(value as ContentServiceKind)}
+            options={availableServiceKinds}
+          />
+        ) : (
+          <SelectField
+            label='服务类型'
+            value={serviceKind}
+            onChange={(value) => setServiceKind(value as ContentServiceKind)}
+            options={CONTENT_SERVICE_KINDS}
+          />
+        )}
         <TextField
           label='Base URL（可选）'
           value={baseUrl}
@@ -646,14 +753,21 @@ function ModelServicesPanel() {
           onChange={setDefaultModelId}
           placeholder='默认使用的模型 ID'
         />
+        <SelectField
+          label='状态'
+          value={serviceStatus}
+          onChange={setServiceStatus}
+          options={['active', 'disabled'] as const}
+        />
+        <TextField label='优先级' value={priority} onChange={setPriority} placeholder='100' />
         <div className='flex items-end'>
           <Button
             variant='primary'
             className='w-full'
-            disabled={upsertService.isPending}
+            disabled={upsertService.isPending || updateService.isPending || deleteService.isPending}
             onClick={submit}
           >
-            保存服务
+            {editingServiceId ? '更新服务' : '保存服务'}
           </Button>
         </div>
       </DataPanel>
@@ -667,11 +781,23 @@ function ModelServicesPanel() {
               <TableHead>服务</TableHead>
               <TableHead>模型</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead className='text-right'>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(servicesQuery.data?.services ?? []).map((service) => (
-              <ModelServiceRow key={service.id} service={service} />
+              <ModelServiceRow
+                key={service.id}
+                service={service}
+                onEdit={editService}
+                onToggleStatus={(item) =>
+                  updateService.mutate({
+                    serviceId: item.id,
+                    body: { status: item.status === 'active' ? 'disabled' : 'active' },
+                  })
+                }
+                onDelete={(item) => deleteService.mutate(item.id)}
+              />
             ))}
           </TableBody>
         </Table>
@@ -733,7 +859,17 @@ function SelectField<T extends string>({
   )
 }
 
-function ModelServiceRow({ service }: { service: AdminConsoleModelService }) {
+function ModelServiceRow({
+  service,
+  onEdit,
+  onToggleStatus,
+  onDelete,
+}: {
+  service: AdminConsoleModelService
+  onEdit: (service: AdminConsoleModelService) => void
+  onToggleStatus: (service: AdminConsoleModelService) => void
+  onDelete: (service: AdminConsoleModelService) => void
+}) {
   return (
     <TableRow>
       <TableCell>{service.consumer}</TableCell>
@@ -745,6 +881,31 @@ function ModelServiceRow({ service }: { service: AdminConsoleModelService }) {
       <TableCell>{service.enabledModelIds.join(', ')}</TableCell>
       <TableCell>
         <Badge variant={service.status === 'active' ? 'green' : 'gray'}>{service.status}</Badge>
+      </TableCell>
+      <TableCell>
+        <div className='flex justify-end gap-1.5'>
+          <Button
+            variant='active'
+            className='h-7 px-2 text-caption'
+            onClick={() => onEdit(service)}
+          >
+            编辑
+          </Button>
+          <Button
+            variant='active'
+            className='h-7 px-2 text-caption'
+            onClick={() => onToggleStatus(service)}
+          >
+            {service.status === 'active' ? '停用' : '启用'}
+          </Button>
+          <Button
+            variant='destructive'
+            className='h-7 px-2 text-caption'
+            onClick={() => onDelete(service)}
+          >
+            删除
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )

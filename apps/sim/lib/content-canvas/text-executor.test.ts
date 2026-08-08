@@ -12,6 +12,10 @@ vi.mock('@/providers', () => ({
   executeProviderRequest: (...args: unknown[]) => mockExecuteProviderRequest(...args),
 }))
 
+vi.mock('@/lib/content-canvas/platform-service-config', () => ({
+  getPlatformContentServiceConfig: vi.fn().mockResolvedValue(null),
+}))
+
 function resetExecutorEnv() {
   process.env = { ...ORIGINAL_ENV }
   process.env.CONTENT_TEXT_GEMINI_BASE_URL = undefined

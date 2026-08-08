@@ -133,8 +133,13 @@ export async function getApiKeyWithBYOK(
       return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
     }
     const platformKey = await getPlatformProviderApiKey('azure-openai')
-    if (platformKey) return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
-    return { apiKey: env.AZURE_OPENAI_API_KEY || '', isBYOK: false, source: 'env-azure-openai-api-key' }
+    if (platformKey)
+      return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
+    return {
+      apiKey: env.AZURE_OPENAI_API_KEY || '',
+      isBYOK: false,
+      source: 'env-azure-openai-api-key',
+    }
   }
 
   if (provider === 'azure-anthropic') {
@@ -142,8 +147,13 @@ export async function getApiKeyWithBYOK(
       return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
     }
     const platformKey = await getPlatformProviderApiKey('azure-anthropic')
-    if (platformKey) return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
-    return { apiKey: env.AZURE_ANTHROPIC_API_KEY || '', isBYOK: false, source: 'env-azure-anthropic-api-key' }
+    if (platformKey)
+      return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
+    return {
+      apiKey: env.AZURE_ANTHROPIC_API_KEY || '',
+      isBYOK: false,
+      source: 'env-azure-anthropic-api-key',
+    }
   }
 
   const isOpenAIModel = provider === 'openai'
@@ -233,6 +243,9 @@ export async function getApiKeyWithBYOK(
       logger.debug('No BYOK key found, falling back', { provider, model, workspaceId })
 
       if (isModelHosted) {
+        if (userProvidedKey) {
+          return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
+        }
         try {
           const platformKey = await getPlatformProviderApiKey(isGeminiModel ? 'google' : provider)
           if (platformKey) {
@@ -241,24 +254,26 @@ export async function getApiKeyWithBYOK(
           const serverKey = getRotatingApiKey(isGeminiModel ? 'gemini' : provider)
           return { apiKey: serverKey, isBYOK: false, source: 'hosted-rotating-key' }
         } catch (_error) {
-          if (userProvidedKey) {
-            return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
-          }
           throw new Error(`No API key available for ${provider} ${model}`)
         }
       }
     }
   }
 
-  if (!userProvidedKey) {
-    logger.debug('BYOK not applicable, no user key provided', {
-      provider,
-      model,
-      workspaceId,
-      isHosted,
-    })
-    throw new Error(`API key is required for ${provider} ${model}`)
+  if (userProvidedKey) {
+    return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
   }
 
-  return { apiKey: userProvidedKey, isBYOK: false, source: 'request-api-key' }
+  const platformKey = await getPlatformProviderApiKey(isGeminiModel ? 'google' : provider)
+  if (platformKey) {
+    return { apiKey: platformKey.apiKey, isBYOK: false, source: platformKey.source }
+  }
+
+  logger.debug('No BYOK, request, or platform key is available', {
+    provider,
+    model,
+    workspaceId,
+    isHosted,
+  })
+  throw new Error(`API key is required for ${provider} ${model}`)
 }

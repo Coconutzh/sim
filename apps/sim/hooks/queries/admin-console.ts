@@ -11,12 +11,14 @@ import {
   adminConsoleAuditEventsContract,
   adminConsoleCreateProviderKeyContract,
   adminConsoleCreateUserContract,
+  adminConsoleDeleteModelServiceContract,
   adminConsoleGetUserContract,
   adminConsoleListModelServicesContract,
   adminConsoleListProviderKeysContract,
   adminConsoleListUsersContract,
   adminConsoleSetOrganizationMembershipContract,
   adminConsoleSetWorkgroupMembershipContract,
+  adminConsoleUpdateModelServiceContract,
   adminConsoleUpdateProviderKeyContract,
   adminConsoleUpdateUserContract,
   adminConsoleUpsertModelServiceContract,
@@ -241,6 +243,39 @@ export function useUpsertAdminConsoleModelService() {
   return useMutation({
     mutationFn: async (body: ContractBodyInput<typeof adminConsoleUpsertModelServiceContract>) =>
       requestJson(adminConsoleUpsertModelServiceContract, { body }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: adminConsoleKeys.modelServiceLists() })
+    },
+  })
+}
+
+export function useUpdateAdminConsoleModelService() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      serviceId,
+      body,
+    }: {
+      serviceId: string
+      body: ContractBodyInput<typeof adminConsoleUpdateModelServiceContract>
+    }) =>
+      requestJson(adminConsoleUpdateModelServiceContract, {
+        params: { id: serviceId },
+        body,
+      }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: adminConsoleKeys.modelServiceLists() })
+    },
+  })
+}
+
+export function useDeleteAdminConsoleModelService() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (serviceId: string) =>
+      requestJson(adminConsoleDeleteModelServiceContract, { params: { id: serviceId } }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: adminConsoleKeys.modelServiceLists() })
     },

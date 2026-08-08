@@ -278,6 +278,16 @@ export function createMockDb() {
 export const databaseMock = {
   db: createMockDb(),
   sql: createMockSql(),
+  platformModelServiceConfig: {
+    id: 'id',
+    consumer: 'consumer',
+    capability: 'capability',
+    family: 'family',
+    providerId: 'providerId',
+    serviceKind: 'serviceKind',
+    status: 'status',
+    priority: 'priority',
+  },
   ...createMockSqlOperators(),
 }
 

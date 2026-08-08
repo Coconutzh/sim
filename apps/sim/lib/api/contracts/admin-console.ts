@@ -223,6 +223,13 @@ export type AdminConsoleUpsertModelServiceBody = z.input<
   typeof adminConsoleUpsertModelServiceBodySchema
 >
 
+export const adminConsoleUpdateModelServiceBodySchema = adminConsoleUpsertModelServiceBodySchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, 'At least one service field is required')
+export type AdminConsoleUpdateModelServiceBody = z.input<
+  typeof adminConsoleUpdateModelServiceBodySchema
+>
+
 export const adminConsoleCreateProviderKeyBodySchema = z.object({
   providerId: adminConsoleProviderIdSchema,
   label: z.string().trim().min(1, 'label is required').max(120),
@@ -480,6 +487,22 @@ export const adminConsoleUpsertModelServiceContract = defineRouteContract({
     mode: 'json',
     schema: z.object({ success: z.literal(true), service: adminConsoleModelServiceSchema }),
   },
+})
+export const adminConsoleUpdateModelServiceContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/admin-console/model-services/[id]',
+  params: adminConsoleIdParamsSchema,
+  body: adminConsoleUpdateModelServiceBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ success: z.literal(true), service: adminConsoleModelServiceSchema }),
+  },
+})
+export const adminConsoleDeleteModelServiceContract = defineRouteContract({
+  method: 'DELETE',
+  path: '/api/admin-console/model-services/[id]',
+  params: adminConsoleIdParamsSchema,
+  response: { mode: 'json', schema: z.object({ success: z.literal(true) }) },
 })
 export const adminConsoleTestModelServiceContract = defineRouteContract({
   method: 'POST',
