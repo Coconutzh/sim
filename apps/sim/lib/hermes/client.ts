@@ -286,6 +286,8 @@ const REQUIRED_TOOLS_BY_TOOLSET: Record<string, string[]> = {
     'sim_presentation_generate_slide_images',
     'sim_presentation_assemble_deck',
     'sim_presentation_artifact_upload',
+    'sim_presentation_editable_source_prepare',
+    'sim_presentation_editable_runtime',
     'sim_skill_proposal_run',
     'sim_external_evidence_prepare',
   ],

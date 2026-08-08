@@ -221,6 +221,7 @@ import {
   useContentCanvasModelAvailability,
   useGenerateContentCanvasPresentation,
 } from '@/hooks/queries/content-canvas'
+import { useRebuildEditablePresentation } from '@/hooks/queries/editable-presentations'
 import { useCreateProductionShowcaseItem } from '@/hooks/queries/production-showcase-items'
 import { useUploadWorkspaceFile } from '@/hooks/queries/workspace-files'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
@@ -1693,6 +1694,8 @@ function PresentationContentCard({
   onChangeSlideCountMode,
   onChangeSlideCount,
   onGenerate,
+  isEditableRebuildPending,
+  onCreateEditableVersion,
 }: {
   canEdit: boolean
   isPreview: boolean
@@ -1714,8 +1717,11 @@ function PresentationContentCard({
   onChangeSlideCountMode: (value: PresentationSlideCountMode) => void
   onChangeSlideCount: (value: number) => void
   onGenerate: () => void
+  isEditableRebuildPending: boolean
+  onCreateEditableVersion: () => void
 }) {
-  const pptxFile = artifact?.pptxFile ?? fallbackFile
+  const pptxFile = artifact?.originalPptxFile ?? artifact?.pptxFile ?? fallbackFile
+  const editablePptxFile = artifact?.editablePptxFile ?? null
   const coverImageFile = artifact?.coverImageFile ?? null
   const pptxUrl = resolvePresentationArtifactFileUrl(pptxFile)
   const coverImageUrl = resolvePresentationArtifactFileUrl(coverImageFile)
@@ -1728,6 +1734,8 @@ function PresentationContentCard({
   const selectedStyle = artifact?.manifest?.selectedStyle?.trim()
   const isGenerating = status === 'pending' || isGeneratePending
   const hasArtifact = Boolean(pptxUrl)
+  const editablePptxUrl = resolvePresentationArtifactFileUrl(editablePptxFile)
+  const editableStatus = artifact?.editableStatus ?? 'not_requested'
   const slideCountSummary = hasArtifact
     ? `${resolvedSlideCount} pages`
     : slideCountMode === 'manual'
@@ -1790,19 +1798,73 @@ function PresentationContentCard({
               </div>
             </div>
             {pptxUrl ? (
-              <a
-                href={pptxUrl}
-                target='_blank'
-                rel='noreferrer'
-                className='nodrag nopan inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <Download className='h-3.5 w-3.5' />
-                <span>下载</span>
-              </a>
+              <div className='flex shrink-0 flex-col items-end gap-1.5'>
+                <a
+                  href={pptxUrl}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Download className='h-3.5 w-3.5' />
+                  <span>下载原始版</span>
+                </a>
+                {editablePptxUrl ? (
+                  <a
+                    href={editablePptxUrl}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--brand-secondary)] bg-[var(--surface-1)] px-3 text-[var(--brand-secondary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)]'
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Download className='h-3.5 w-3.5' />
+                    <span>下载可编辑版</span>
+                  </a>
+                ) : canEdit ? (
+                  <button
+                    type='button'
+                    className='nodrag nopan inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--brand-secondary)] bg-[var(--surface-1)] px-3 text-[var(--brand-secondary)] text-xs shadow-sm hover-hover:bg-[var(--surface-3)] disabled:cursor-not-allowed disabled:opacity-60'
+                    disabled={
+                      isEditableRebuildPending ||
+                      editableStatus === 'queued' ||
+                      editableStatus === 'processing'
+                    }
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onCreateEditableVersion()
+                    }}
+                  >
+                    {isEditableRebuildPending ||
+                    editableStatus === 'queued' ||
+                    editableStatus === 'processing' ? (
+                      <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                    ) : (
+                      <Sparkles className='h-3.5 w-3.5' />
+                    )}
+                    <span>{editableStatus === 'error' ? '重试可编辑版' : '生成可编辑版'}</span>
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
+
+          {hasArtifact && editableStatus !== 'not_requested' && !editablePptxUrl ? (
+            <div
+              className={cn(
+                'rounded-lg px-3 py-2 text-xs',
+                editableStatus === 'error'
+                  ? 'bg-[var(--error-muted)] text-[var(--text-error)]'
+                  : 'bg-[var(--surface-3)] text-[var(--text-secondary)]'
+              )}
+            >
+              {editableStatus === 'error'
+                ? artifact?.editableError || '可编辑版生成失败，可重试。'
+                : '正在生成可编辑版；原始 PPT 可继续下载。'}
+            </div>
+          ) : null}
 
           {!isPreview && !isEmbedded && !hasArtifact ? (
             <div className='rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-[var(--text-secondary)] text-xs'>
@@ -3153,6 +3215,7 @@ export const ContentBlock = memo(function ContentBlock({
   const uploadWorkspaceFileMutation = useUploadWorkspaceFile()
   const createShowcaseItem = useCreateProductionShowcaseItem()
   const generatePresentation = useGenerateContentCanvasPresentation()
+  const rebuildEditablePresentation = useRebuildEditablePresentation()
   const variant = data.contentVariant as ContentVariant | undefined
 
   const { activeWorkflowId, handleClick, hasRing, ringStyles } = useBlockVisual({
@@ -3702,6 +3765,40 @@ export const ContentBlock = memo(function ContentBlock({
       setPresentationStatusValue('error')
       setPresentationErrorValue(message)
       toast({ message, duration: 3200 })
+    }
+  }
+
+  const createEditablePresentationVersion = async () => {
+    const sourceWorkflowId = activeWorkflowId || params.workflowId
+    if (!params.workspaceId || !sourceWorkflowId) {
+      toast({ message: '缺少项目或画布上下文，无法生成可编辑版 PPT。', duration: 2600 })
+      return
+    }
+    if (!resolvedPresentationArtifact) {
+      toast({ message: '请先生成原始 PPT。', duration: 2200 })
+      return
+    }
+
+    try {
+      const result = await rebuildEditablePresentation.mutateAsync({
+        workspaceId: params.workspaceId,
+        workflowId: sourceWorkflowId,
+        nodeId: id,
+      })
+      setPresentationArtifactValue({
+        ...resolvedPresentationArtifact,
+        originalPptxFile:
+          resolvedPresentationArtifact.originalPptxFile ?? resolvedPresentationArtifact.pptxFile,
+        editableStatus: 'queued',
+        editableTaskId: result.taskId,
+        editableError: undefined,
+      })
+      toast({ message: '已开始生成可编辑版 PPT，可继续使用原始版。', duration: 2800 })
+    } catch (error) {
+      toast({
+        message: error instanceof Error ? error.message : '无法启动可编辑 PPT 生成任务',
+        duration: 3200,
+      })
     }
   }
 
@@ -6313,6 +6410,7 @@ export const ContentBlock = memo(function ContentBlock({
             contentReferences={resolvedContentReferences}
             referencedNodes={referencedNodes}
             isGeneratePending={generatePresentation.isPending}
+            isEditableRebuildPending={rebuildEditablePresentation.isPending}
             onAddReference={() => startExistingReferenceSelection()}
             onRemoveReference={removeReferenceAndEdges}
             onChangePrompt={(value) => {
@@ -6328,6 +6426,9 @@ export const ContentBlock = memo(function ContentBlock({
             }}
             onGenerate={() => {
               void generatePresentationFromNode()
+            }}
+            onCreateEditableVersion={() => {
+              void createEditablePresentationVersion()
             }}
           />
         ) : resolvedVariant === 'image' ||

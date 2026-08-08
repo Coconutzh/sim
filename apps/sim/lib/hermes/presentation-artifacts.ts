@@ -36,6 +36,10 @@ export interface StoredHermesPresentationArtifact {
   manifest: {
     title: string
     source: string
+    backendName?: string
+    backendType?: 'editable' | 'image_based'
+    renderer?: string
+    editable?: boolean
     slideCount?: number
     selectedStyle?: string
     styleBrief?: string
@@ -125,6 +129,10 @@ function buildManifest(params: {
   return {
     title: params.body.title,
     source: params.body.source,
+    ...(params.body.backendName ? { backendName: params.body.backendName } : {}),
+    ...(params.body.backendType ? { backendType: params.body.backendType } : {}),
+    ...(params.body.renderer ? { renderer: params.body.renderer } : {}),
+    ...(typeof params.body.editable === 'boolean' ? { editable: params.body.editable } : {}),
     ...(params.body.slideCount ? { slideCount: params.body.slideCount } : {}),
     ...(params.body.selectedStyle ? { selectedStyle: params.body.selectedStyle } : {}),
     ...(params.body.styleBrief ? { styleBrief: params.body.styleBrief } : {}),

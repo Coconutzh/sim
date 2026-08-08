@@ -26,6 +26,7 @@ const JOB_TYPE_TO_TASK_ID: Record<JobType, string> = {
   'cleanup-tasks': 'cleanup-tasks',
   'run-data-drain': 'run-data-drain',
   'canvas-node-transfer': 'canvas-node-transfer',
+  'editable-presentation-rebuild': 'editable-presentation-rebuild',
 }
 
 /**

@@ -31,6 +31,7 @@ export type JobType =
   | 'cleanup-tasks'
   | 'run-data-drain'
   | 'canvas-node-transfer'
+  | 'editable-presentation-rebuild'
 
 export type AsyncExecutionCorrelationSource = 'workflow' | 'schedule' | 'webhook'
 
