@@ -490,8 +490,12 @@ function buildEditablePresentationInstructions(): string {
     'You are Hermes running a SIM editable-PPT rebuild job.',
     'Rebuild the supplied original PPTX into a second, object-level editable PPTX. Do not overwrite or delete the original artifact.',
     'First call sim_presentation_editable_source_prepare with the ORIGINAL_PPTX_URL. Use its inputPath in sim_presentation_editable_runtime prepare.',
-    'Use sim_presentation_editable_runtime for the deterministic editppt lifecycle: prepare, next, dispatch/rebuild each page, record, and finalize.',
-    'A multi-page deck must use page workers. Never use a full-slide screenshot as the resulting PPT page background with editable text over it.',
+    'After prepare, follow every nextAction returned by sim_presentation_editable_runtime. Call next with the exact runDir returned by prepare.',
+    'When next returns dispatch_pages or rebuild_page_locally, call operation=page_prompt once for every suggested page using the exact runDir and pageId from nextAction.',
+    'For multi-page dispatch_pages results, call each page_prompt one at a time. page_prompt internally creates and waits for the delegated page worker; never call operation=dispatch, operation=record, or delegate_task from the parent agent. The runtime binds dispatch and record to the internal worker identity; do not invent agentId or promptFile.',
+    'For a single-page rebuild_page_locally result, follow the page_prompt nextAction in the parent agent and use its dispatchArgs/recordArgs exactly. Do not call delegate_task for local mode.',
+    'After every page_prompt succeeds, follow its nextAction and call operation=next again. Continue until nextAction requests finalize, then finalize the exact runDir.',
+    'A multi-page deck must use delegated page workers. Never use a full-slide screenshot as the resulting PPT page background with editable text over it.',
     'After finalization, call sim_presentation_artifact_upload for the rebuilt PPTX and set backendName="image-to-editable-ppt", backendType="editable", renderer="editppt", editable=true.',
     'Report only the uploaded SIM artifact; do not expose local paths or intermediate files.',
   ].join('\n')
@@ -631,6 +635,28 @@ export function extractHermesPresentationArtifactUpload(
         manifest: candidate.manifest as PresentationArtifactUploadResult['manifest'],
       }
     }
+  }
+
+  return null
+}
+
+export function extractHermesPresentationFailure(payload: unknown): string | null {
+  const failures = responseOutputItems(payload)
+    .filter((item) => item.type === 'function_call_output')
+    .map((item) => parseJsonObject(item.output))
+    .filter((item): item is Record<string, unknown> =>
+      Boolean(item && item.success === false && typeof item.error === 'string')
+    )
+    .reverse()
+
+  for (const failure of failures) {
+    const error = String(failure.error).trim()
+    if (!error) continue
+    const errorCode =
+      typeof failure.errorCode === 'string' && failure.errorCode.trim()
+        ? failure.errorCode.trim()
+        : null
+    return errorCode ? `${errorCode}: ${error}` : error
   }
 
   return null
@@ -807,8 +833,20 @@ export async function rebuildPresentationAsEditable(
   }
 
   const originalPptxFile = artifact.originalPptxFile ?? artifact.pptxFile
-  const sourceUrl = ensureAbsoluteUrl(resolveUserFileUrl(originalPptxFile))
-  if (!sourceUrl) throw new Error('The original PPT file is no longer available')
+  if (!resolveUserFileUrl(originalPptxFile)) {
+    throw new Error('The original PPT file is no longer available')
+  }
+  const traceId = `editable-presentation:${params.workflowId}:${params.nodeId}`
+  const sourceQuery = new URLSearchParams({
+    userId: params.actorUserId,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId,
+    nodeId: params.nodeId,
+    traceId,
+  })
+  const sourceUrl = ensureAbsoluteUrl(
+    `/api/internal/hermes/presentation-artifacts/source?${sourceQuery.toString()}`
+  )
 
   const processingArtifact = {
     ...artifact,
@@ -829,7 +867,6 @@ export async function rebuildPresentationAsEditable(
   })
 
   try {
-    const traceId = `editable-presentation:${params.workflowId}:${params.nodeId}`
     const hermesResult = await callHermesResponse({
       instructions: buildEditablePresentationInstructions(),
       input: [
@@ -862,7 +899,10 @@ export async function rebuildPresentationAsEditable(
       truncation: 'auto',
     })
     const rebuilt = extractHermesPresentationArtifactUpload(hermesResult.raw)
-    if (!rebuilt) throw new Error('Hermes completed without uploading the editable PPT artifact')
+    if (!rebuilt) {
+      const failure = extractHermesPresentationFailure(hermesResult.raw)
+      throw new Error(failure ?? 'Hermes completed without uploading the editable PPT artifact')
+    }
     if (rebuilt.manifest.editable !== true && rebuilt.manifest.backendType !== 'editable') {
       throw new Error('Hermes uploaded a PPT that was not marked as object-level editable')
     }

@@ -3,6 +3,7 @@ import { nonEmptyIdSchema, userFileSchema, workspaceIdSchema } from '@/lib/api/c
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 const MAX_BASE64_CHARS = 140 * 1024 * 1024
+const lastQueryValue = (value: unknown) => (Array.isArray(value) ? value.at(-1) : value)
 
 export const hermesPresentationArtifactFileSchema = z.object({
   fileName: z.string().trim().min(1, 'File name is required').max(500),
@@ -115,6 +116,28 @@ export const hermesPresentationArtifactUploadContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: hermesPresentationArtifactUploadResponseSchema,
+    status: [200, 400, 401, 403, 404, 413, 500],
+  },
+})
+
+export const hermesPresentationSourceQuerySchema = z.object({
+  userId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  organizationId: z.preprocess(lastQueryValue, nonEmptyIdSchema.optional()),
+  workspaceId: z.preprocess(lastQueryValue, workspaceIdSchema),
+  workflowId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  nodeId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  traceId: z.preprocess(lastQueryValue, z.string().trim().min(1).max(200).optional()),
+})
+export type ParsedHermesPresentationSourceQuery = z.output<
+  typeof hermesPresentationSourceQuerySchema
+>
+
+export const hermesPresentationSourceContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/internal/hermes/presentation-artifacts/source',
+  query: hermesPresentationSourceQuerySchema,
+  response: {
+    mode: 'binary',
     status: [200, 400, 401, 403, 404, 413, 500],
   },
 })

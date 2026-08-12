@@ -9,6 +9,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getPlatformProviderApiKey } from '@/lib/api-key/platform'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { getLegacyHermesRuntimeConfig } from '@/lib/hermes/runtime-config'
 
 const logger = createLogger('HermesRuntimeConfigAPI')
 
@@ -41,21 +42,39 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   const { capability, consumer, family } = parsed.data.query
-  const [service] = await db
-    .select()
-    .from(platformModelServiceConfig)
-    .where(
-      and(
-        eq(platformModelServiceConfig.consumer, consumer),
-        eq(platformModelServiceConfig.capability, capability),
-        eq(platformModelServiceConfig.family, family),
-        eq(platformModelServiceConfig.status, 'active')
+  let service: typeof platformModelServiceConfig.$inferSelect | undefined
+  try {
+    const services = await db
+      .select()
+      .from(platformModelServiceConfig)
+      .where(
+        and(
+          eq(platformModelServiceConfig.consumer, consumer),
+          eq(platformModelServiceConfig.capability, capability),
+          eq(platformModelServiceConfig.family, family),
+          eq(platformModelServiceConfig.status, 'active')
+        )
       )
-    )
-    .orderBy(desc(platformModelServiceConfig.priority))
-    .limit(1)
+      .orderBy(desc(platformModelServiceConfig.priority))
+      .limit(1)
+    service = services[0]
+  } catch (error) {
+    logger.warn('Unable to load managed Hermes runtime service; using legacy fallback', {
+      consumer,
+      capability,
+      family,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return NextResponse.json({
+      config: getLegacyHermesRuntimeConfig({ consumer, capability, family }),
+    })
+  }
 
-  if (!service) return NextResponse.json({ config: null })
+  if (!service) {
+    return NextResponse.json({
+      config: getLegacyHermesRuntimeConfig({ consumer, capability, family }),
+    })
+  }
 
   const key = await getPlatformProviderApiKey(service.providerId)
   if (!key) {
@@ -65,7 +84,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       family,
       providerId: service.providerId,
     })
-    return NextResponse.json({ config: null })
+    return NextResponse.json({
+      config: getLegacyHermesRuntimeConfig({ consumer, capability, family }),
+    })
   }
 
   return NextResponse.json({
