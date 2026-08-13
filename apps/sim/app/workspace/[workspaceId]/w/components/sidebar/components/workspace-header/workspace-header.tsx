@@ -24,7 +24,11 @@ import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { cn } from '@/lib/core/utils/cn'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
-import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
+import {
+  type CreatePersonalCanvasInput,
+  CreateWorkspaceModal,
+  type ProjectOption,
+} from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 import type { Workspace, WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -56,7 +60,9 @@ interface WorkspaceHeaderProps {
   /** Callback when workspace is switched */
   onWorkspaceSwitch: (workspace: Workspace) => void
   /** Callback when create workspace is confirmed with a name */
-  onCreateWorkspace: (name: string) => Promise<void>
+  onCreateWorkspace: (input: CreatePersonalCanvasInput) => Promise<void>
+  /** Projects available for a new personal canvas */
+  projects: ProjectOption[]
   /** Callback to rename the workspace */
   onRenameWorkspace: (workspaceId: string, newName: string) => Promise<void>
   /** Callback to delete the workspace */
@@ -94,6 +100,7 @@ function WorkspaceHeaderImpl({
   setIsWorkspaceMenuOpen,
   onWorkspaceSwitch,
   onCreateWorkspace,
+  projects,
   onRenameWorkspace,
   onDeleteWorkspace,
   isDeletingWorkspace,
@@ -713,11 +720,12 @@ function WorkspaceHeaderImpl({
         <CreateWorkspaceModal
           open={isCreateModalOpen}
           onOpenChange={setIsCreateModalOpen}
-          onConfirm={async (name) => {
-            await onCreateWorkspace(name)
+          onConfirm={async (input) => {
+            await onCreateWorkspace(input)
             setIsCreateModalOpen(false)
           }}
           isCreating={isCreatingWorkspace}
+          projects={projects}
         />
       )}
 

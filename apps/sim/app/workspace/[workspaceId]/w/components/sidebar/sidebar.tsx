@@ -74,11 +74,13 @@ import {
   CollapsedTaskFlyoutItem,
   CollapsedWorkflowFlyoutItem,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/collapsed-sidebar-menu/collapsed-sidebar-menu'
+import { CreditBalance } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/credit-balance/credit-balance'
 import { NavItemContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/nav-item-context-menu'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { WorkflowList } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/workflow-list'
 import { WorkspaceHeader } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header'
+import type { CreatePersonalCanvasInput } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import {
   useContextMenu,
   useFlyoutInlineRename,
@@ -108,6 +110,7 @@ import {
 } from '@/hooks/queries/collaboration'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
+import { useCreateProductionProject } from '@/hooks/queries/production-projects'
 import { useTablesList } from '@/hooks/queries/tables'
 import {
   useCreateTask,
@@ -518,6 +521,8 @@ export const Sidebar = memo(function Sidebar() {
   )
   const { mutateAsync: createPersonalWorkspace, isPending: isCreatingPersonalWorkspace } =
     useCreatePersonalWorkspace()
+  const { mutateAsync: createProductionProject, isPending: isCreatingProductionProject } =
+    useCreateProductionProject()
   const { mutateAsync: createTeamWorkspace, isPending: isCreatingTeamWorkspace } =
     useCreateTeamWorkspace()
   const personalCanvasWorkspaceId = personalWorkspaceData?.workspace.id ?? workspaceId
@@ -1256,15 +1261,34 @@ export const Sidebar = memo(function Sidebar() {
     [workspaceId, switchWorkspace]
   )
 
+  const projectOptions = useMemo(() => {
+    const projects = new Map<string, { id: string; name: string }>()
+    for (const workgroup of workgroups) {
+      projects.set(workgroup.organizationId, {
+        id: workgroup.organizationId,
+        name: workgroup.organization.name,
+      })
+    }
+    return [...projects.values()].sort((left, right) =>
+      left.name.localeCompare(right.name, 'zh-CN')
+    )
+  }, [workgroups])
+
   const handleCreatePersonalCanvas = useCallback(
-    async (name: string) => {
-      if (!activeWorkgroupId) {
-        await handleCreateWorkspace(name)
-        return
+    async ({ canvasName, projectId, projectName }: CreatePersonalCanvasInput) => {
+      let workgroupId = projectId
+        ? workgroups.find((workgroup) => workgroup.organizationId === projectId)?.id
+        : undefined
+
+      if (projectName) {
+        const { project } = await createProductionProject({ name: projectName })
+        workgroupId = project.primaryWorkgroupId ?? undefined
       }
+
+      if (!workgroupId) return
       const result = await createPersonalWorkspace({
-        workgroupId: activeWorkgroupId,
-        name,
+        workgroupId,
+        name: canvasName,
       })
       await switchWorkspace({
         ...result.workspace,
@@ -1276,7 +1300,7 @@ export const Sidebar = memo(function Sidebar() {
       })
       router.push(`/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`)
     },
-    [activeWorkgroupId, createPersonalWorkspace, handleCreateWorkspace, router, switchWorkspace]
+    [createPersonalWorkspace, createProductionProject, router, switchWorkspace, workgroups]
   )
 
   const handleSidebarClick = (e: React.MouseEvent<HTMLElement>) => {
@@ -1594,11 +1618,14 @@ export const Sidebar = memo(function Sidebar() {
                     workspaceCanvasCreationCapabilities?.canCreatePersonalCanvas === true
                 )}
                 isWorkspacesLoading={isWorkspacesLoading}
-                isCreatingWorkspace={isCreatingWorkspace || isCreatingPersonalWorkspace}
+                isCreatingWorkspace={
+                  isCreatingWorkspace || isCreatingPersonalWorkspace || isCreatingProductionProject
+                }
                 isWorkspaceMenuOpen={isWorkspaceMenuOpen}
                 setIsWorkspaceMenuOpen={setIsWorkspaceMenuOpen}
                 onWorkspaceSwitch={handleWorkspaceSwitch}
                 onCreateWorkspace={handleCreatePersonalCanvas}
+                projects={projectOptions}
                 onRenameWorkspace={handleRenameWorkspace}
                 onDeleteWorkspace={handleDeleteWorkspace}
                 isDeletingWorkspace={isDeletingWorkspace}
@@ -2070,6 +2097,7 @@ export const Sidebar = memo(function Sidebar() {
                 />
               </>
             )}
+            <CreditBalance isCollapsed={isCollapsed} />
           </div>
         </aside>
 

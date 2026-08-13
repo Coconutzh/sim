@@ -1,6 +1,7 @@
 import { db, workflow, workflowBlocks } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import type { BlockState } from '@sim/workflow-types/workflow'
 import { and, eq } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
@@ -13,6 +14,8 @@ import {
 } from '@/lib/hermes/client'
 import { buildHermesSessionId, buildHermesSessionKey } from '@/lib/hermes/sim-agent'
 import { buildSimPresentationHermesGuidance } from '@/lib/presentation/hermes-presentation-guidance'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { releaseCredits, reserveCredits } from '@/lib/credits/wallet'
 import { normalizePresentationArtifact } from '@/lib/presentation/presentation-artifacts'
 import {
   type ContentReferenceRecord,
@@ -528,6 +531,8 @@ function buildHermesPresentationInput(params: {
   nodeId: string
   context: PresentationGenerationContext
   traceId: string
+  creditOperationId: string
+  creditSlideLimit: number
 }): HermesResponseInput {
   const primaryContentTextPolicy = buildPrimaryContentTextPolicy(params.context)
 
@@ -540,6 +545,9 @@ function buildHermesPresentationInput(params: {
     '',
     'PAGE COUNT PREFERENCE:',
     buildPageCountPreferenceText(params.context.slideCountPreference),
+    '',
+    'CREDIT PAGE LIMIT:',
+    `Generate no more than ${params.creditSlideLimit} slides. This is the pre-authorized page limit for this task.`,
     '',
     ...(primaryContentTextPolicy
       ? ['PRIMARY CONTENT TEXT POLICY:', primaryContentTextPolicy, '']
@@ -569,6 +577,7 @@ function buildHermesPresentationInput(params: {
       organizationId: params.organizationId,
       slideCountPreference: params.context.slideCountPreference,
       traceId: params.traceId,
+      creditOperationId: params.creditOperationId,
       source: 'codex-ppt-skill',
       imageBackend: 'codex-ppt/scripts/image_gen.py',
       imageProvider: 'evolink',
@@ -695,6 +704,13 @@ export async function generatePresentationForCanvasNode(params: {
   signal?: AbortSignal
 }): Promise<PresentationNodeGenerationResult> {
   const context = await loadPresentationGenerationContext(params)
+  const creditOperationId = generateId()
+  const estimatedSlideCount =
+    context.slideCountPreference.mode === 'manual'
+      ? context.slideCountPreference.count ?? DEFAULT_PRESENTATION_SLIDE_COUNT
+      : DEFAULT_PRESENTATION_SLIDE_COUNT
+  const estimatedCredits =
+    getMediaCreditQuote({ capability: 'presentation', modelId: 'gpt-image-2' }) * estimatedSlideCount
 
   await updatePresentationNodeState({
     workflowId: params.workflowId,
@@ -712,9 +728,28 @@ export async function generatePresentationForCanvasNode(params: {
   })
 
   try {
+    await reserveCredits({
+      userId: params.userId,
+      operationId: creditOperationId,
+      credits: estimatedCredits,
+      capability: 'presentation',
+      modelId: 'gpt-image-2',
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      metadata: {
+        estimatedSlideCount,
+        unitCredits: estimatedCredits / estimatedSlideCount,
+        nodeId: params.nodeId,
+      },
+    })
     const hermesResult = await callHermesResponse({
       instructions: buildHermesPresentationInstructions(),
-      input: buildHermesPresentationInput({ ...params, context }),
+      input: buildHermesPresentationInput({
+        ...params,
+        context,
+        creditOperationId,
+        creditSlideLimit: estimatedSlideCount,
+      }),
       sessionId: buildHermesSessionId({
         userId: params.userId,
         workspaceId: params.workspaceId,
@@ -734,6 +769,7 @@ export async function generatePresentationForCanvasNode(params: {
           selectedNodeIds: [params.nodeId, ...context.references.map((ref) => ref.sourceBlockId)],
           traceId: params.traceId,
           targetNodeId: params.nodeId,
+          creditOperationId,
         },
         presentation: {
           slideCountPreference: context.slideCountPreference,
@@ -766,6 +802,23 @@ export async function generatePresentationForCanvasNode(params: {
       hermesResult,
     }
   } catch (error) {
+    await releaseCredits({
+      userId: params.userId,
+      operationId: creditOperationId,
+      capability: 'presentation',
+      modelId: 'gpt-image-2',
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      metadata: { nodeId: params.nodeId, error: toError(error).message },
+    }).catch((releaseError) => {
+      logger.error('Failed to release presentation credit reservation', {
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        nodeId: params.nodeId,
+        error: toError(releaseError).message,
+      })
+    })
     const message = toError(error).message
     await updatePresentationNodeState({
       workflowId: params.workflowId,

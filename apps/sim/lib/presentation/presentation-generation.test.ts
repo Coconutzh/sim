@@ -4,11 +4,19 @@
 import type { BlockState } from '@sim/workflow-types/workflow'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCallHermesResponse, mockDbUpdate, mockLoadWorkflowFromNormalizedTables } = vi.hoisted(
+const {
+  mockCallHermesResponse,
+  mockDbUpdate,
+  mockLoadWorkflowFromNormalizedTables,
+  mockReleaseCredits,
+  mockReserveCredits,
+} = vi.hoisted(
   () => ({
     mockCallHermesResponse: vi.fn(),
     mockDbUpdate: vi.fn(),
     mockLoadWorkflowFromNormalizedTables: vi.fn(),
+    mockReleaseCredits: vi.fn(),
+    mockReserveCredits: vi.fn(),
   })
 )
 
@@ -62,6 +70,11 @@ vi.mock('@/lib/core/utils/urls', () => ({
 
 vi.mock('@/lib/hermes/client', () => ({
   callHermesResponse: mockCallHermesResponse,
+}))
+
+vi.mock('@/lib/credits/wallet', () => ({
+  releaseCredits: mockReleaseCredits,
+  reserveCredits: mockReserveCredits,
 }))
 
 vi.mock('@/lib/hermes/sim-agent', () => ({

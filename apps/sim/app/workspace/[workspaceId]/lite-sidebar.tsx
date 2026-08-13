@@ -350,11 +350,12 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
       <CreateWorkspaceModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
-        onConfirm={async (name) => {
-          await canvas.createPersonalCanvas(name)
+        onConfirm={async (input) => {
+          await canvas.createPersonalCanvas(input)
           setIsCreateModalOpen(false)
         }}
         isCreating={canvas.isCreatingPersonalWorkspace}
+        projects={canvas.projectOptions}
       />
 
       <Modal open={isInviteOpen} onOpenChange={setIsInviteOpen}>

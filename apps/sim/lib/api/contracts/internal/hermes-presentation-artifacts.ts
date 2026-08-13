@@ -39,6 +39,7 @@ export const hermesPresentationArtifactUploadBodySchema = z.object({
   coverImage: hermesPresentationArtifactFileSchema.optional(),
   traceId: z.string().trim().min(1).max(200).optional(),
   hermesRunId: z.string().trim().min(1).max(200).optional(),
+  creditOperationId: z.string().trim().min(1).max(200).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type HermesPresentationArtifactUploadBody = z.input<

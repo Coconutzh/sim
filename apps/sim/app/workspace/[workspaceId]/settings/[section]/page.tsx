@@ -8,6 +8,7 @@ import { SettingsPage } from './settings'
 
 const SECTION_TITLES: Record<string, string> = {
   account: '账号',
+  'my-credits': '我的积分',
   general: '账号',
   integrations: '集成',
   secrets: '密钥',

@@ -53,6 +53,13 @@ const General = dynamic(
     ),
   { loading: () => <GeneralSkeleton /> }
 )
+const MyCredits = dynamic(
+  () =>
+    import('@/app/workspace/[workspaceId]/settings/components/my-credits/my-credits').then(
+      (m) => m.MyCredits
+    ),
+  { loading: () => <SettingsSectionSkeleton /> }
+)
 const AdminConsole = dynamic(
   () => import('@/app/admin-console/admin-console').then((m) => m.AdminConsole),
   { loading: () => <SettingsSectionSkeleton /> }
@@ -246,6 +253,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
     >
       <h2 className='mb-7 font-medium text-[22px] text-[var(--text-primary)]'>{label}</h2>
       {(effectiveSection === 'account' || effectiveSection === 'general') && <General />}
+      {effectiveSection === 'my-credits' && <MyCredits />}
       {effectiveSection === 'admin-console-users' && <AdminConsole section='users' embedded />}
       {effectiveSection === 'admin-console-credits' && <AdminConsole section='credits' embedded />}
       {effectiveSection === 'admin-console-api-keys' && (

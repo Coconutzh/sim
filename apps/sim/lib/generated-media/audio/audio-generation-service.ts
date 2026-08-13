@@ -1,3 +1,6 @@
+import { generateId } from '@sim/utils/id'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { releaseCredits, reserveCredits, settleCredits } from '@/lib/credits/wallet'
 import type {
   AudioGenerationModelId,
   AudioGenerationParametersValue,
@@ -44,28 +47,52 @@ export async function generateWorkspaceAudioFromPrompt({
   referenceContext,
   abortSignal,
 }: GenerateWorkspaceAudioFromPromptInput): Promise<GenerateWorkspaceAudioFromPromptResult> {
-  const generatedAudio = await generateAudioWithProvider({
-    model,
-    prompt,
-    parameters,
-    referenceContext,
-    abortSignal,
-  })
-
-  const file = await uploadWorkspaceFile(
-    workspaceId,
+  const operationId = generateId()
+  const credits = getMediaCreditQuote({ capability: 'audio', modelId: model })
+  await reserveCredits({
     userId,
-    generatedAudio.buffer,
-    getGeneratedAudioFileName(generatedAudio.mimeType),
-    generatedAudio.mimeType
-  )
+    operationId,
+    credits,
+    capability: 'audio',
+    modelId: model,
+    workspaceId,
+  })
+  try {
+    const generatedAudio = await generateAudioWithProvider({
+      model,
+      prompt,
+      parameters,
+      referenceContext,
+      abortSignal,
+    })
 
-  return {
-    file,
-    metadata: {
-      provider: generatedAudio.provider,
-      providerModel: generatedAudio.providerModel,
-      taskId: generatedAudio.taskId,
-    },
+    const file = await uploadWorkspaceFile(
+      workspaceId,
+      userId,
+      generatedAudio.buffer,
+      getGeneratedAudioFileName(generatedAudio.mimeType),
+      generatedAudio.mimeType
+    )
+
+    await settleCredits({ userId, operationId, capability: 'audio', modelId: model, workspaceId })
+
+    return {
+      file,
+      metadata: {
+        provider: generatedAudio.provider,
+        providerModel: generatedAudio.providerModel,
+        taskId: generatedAudio.taskId,
+      },
+    }
+  } catch (error) {
+    await releaseCredits({
+      userId,
+      operationId,
+      capability: 'audio',
+      modelId: model,
+      workspaceId,
+      metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+    })
+    throw error
   }
 }

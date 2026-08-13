@@ -15,7 +15,7 @@ const ADMIN_CONSOLE_SECTIONS = [
   'admin-console-usage',
 ] as const
 
-const BASIC_SECTIONS = ['account'] as const
+const BASIC_SECTIONS = ['account', 'my-credits'] as const
 const ADMIN_SECTIONS = [...ADMIN_CONSOLE_SECTIONS, 'user-management'] as const
 
 interface SettingsShellProps {

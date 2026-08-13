@@ -28,10 +28,7 @@ import type {
 } from '@/lib/api/contracts/admin-console'
 import { maskApiKey } from '@/lib/api-key/platform'
 import { signUp } from '@/lib/auth'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { ensureUserStatsExists } from '@/lib/billing/core/usage'
-import { addCredits, getCreditBalance, removeCredits } from '@/lib/billing/credits/balance'
-import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import {
   type ContentCapability,
   type ContentModelFamily,
@@ -39,6 +36,7 @@ import {
   getContentCanvasModelsByFamily,
 } from '@/lib/content-canvas/model-catalog'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
+import { adjustCredits, getCreditWallet } from '@/lib/credits/wallet'
 
 const logger = createLogger('AdminConsole')
 
@@ -87,7 +85,7 @@ export async function formatAdminConsoleUser(row: {
 }) {
   const currentUsageLimit = toNumber(row.currentUsageLimit)
   const currentPeriodCost = toNumber(row.currentPeriodCost)
-  const creditBalanceInfo = await getCreditBalance(row.id).catch(() => null)
+  const creditWallet = await getCreditWallet(row.id)
   return {
     id: row.id,
     name: row.name,
@@ -100,7 +98,7 @@ export async function formatAdminConsoleUser(row: {
     currentUsageLimit,
     currentPeriodCost,
     remainingUsage: Math.max(0, currentUsageLimit - currentPeriodCost),
-    creditBalance: creditBalanceInfo?.balance ?? toNumber(row.creditBalance),
+    creditBalance: creditWallet.availableCredits,
     billingBlocked: row.billingBlocked ?? false,
   }
 }
@@ -320,30 +318,22 @@ export async function applyAdminConsoleCredits(params: {
   userId: string
   body: AdminConsoleCreditActionBody
 }) {
-  await ensureUserStatsExists(params.userId)
-
-  const amount = Math.abs(params.body.amount)
-  const subscription = await getHighestPrioritySubscription(params.userId)
-  const orgScoped = isOrgScopedSubscription(subscription, params.userId)
-  const entityType = orgScoped && subscription ? 'organization' : 'user'
-  const entityId = orgScoped && subscription ? subscription.referenceId : params.userId
-  const before = await getCreditBalance(params.userId)
-
-  if (params.body.operation === 'add') {
-    await addCredits(entityType, entityId, amount)
-  } else {
-    await removeCredits(entityType, entityId, amount)
-  }
-
-  const after = await getCreditBalance(params.userId)
+  const amount = Math.abs(Math.trunc(params.body.amount))
+  if (amount === 0) throw new Error('Credit amount must be greater than zero')
+  const after = await adjustCredits({
+    userId: params.userId,
+    actorUserId: params.actorUserId,
+    amount: params.body.operation === 'add' ? amount : -amount,
+    reason: params.body.reason?.trim() || 'Administrator adjustment',
+  })
   await recordAdminConsoleAudit({
     actorUserId: params.actorUserId,
-    targetType: entityType,
-    targetId: entityId,
-    action: `credits_${params.body.operation}`,
+    targetType: 'user',
+    targetId: params.userId,
+    action: `platform_credits_${params.body.operation}`,
     reason: params.body.reason,
-    before: { creditBalance: before.balance },
-    after: { creditBalance: after.balance, amount },
+    before: null,
+    after: { availableCredits: after.availableCredits, amount },
   })
 
   return {
@@ -351,7 +341,7 @@ export async function applyAdminConsoleCredits(params: {
     userId: params.userId,
     operation: params.body.operation,
     amount,
-    creditBalance: after.balance,
+    creditBalance: after.availableCredits,
   }
 }
 

@@ -6,6 +6,9 @@ import type {
 } from '@/lib/api/contracts/internal/hermes-presentation-artifacts'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace'
 import { getWorkspaceMembershipAccess } from '@/app/api/workflows/utils'
+import { getPptxSlideCount } from '@/lib/presentation/pptx-slide-count'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { getReservedCreditsForOperation, settleCredits } from '@/lib/credits/wallet'
 import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('HermesPresentationArtifacts')
@@ -173,6 +176,20 @@ export async function storeHermesPresentationArtifact(
     maxBytes: MAX_PPTX_BYTES,
   })
   const pptxFileName = ensureExtension(pptx.fileName, '.pptx')
+  const actualSlideCount = await getPptxSlideCount(pptx.buffer)
+  if (body.creditOperationId) {
+    const expectedCredits = getMediaCreditQuote({
+      capability: 'presentation',
+      modelId: 'gpt-image-2',
+    }) * actualSlideCount
+    const reservedCredits = await getReservedCreditsForOperation(body.creditOperationId)
+    if (reservedCredits < expectedCredits) {
+      throw new HermesPresentationArtifactError(
+        'PRESENTATION_FILE_INVALID',
+        'Generated PPTX exceeds the pre-authorized slide limit'
+      )
+    }
+  }
 
   const coverImage = body.coverImage
     ? decodeBase64File({
@@ -200,7 +217,10 @@ export async function storeHermesPresentationArtifact(
           coverImage.contentType
         )
       : undefined
-    const manifest = buildManifest({ body, createdAt: new Date().toISOString() })
+    const manifest = buildManifest({
+      body: { ...body, slideCount: actualSlideCount },
+      createdAt: new Date().toISOString(),
+    })
     const manifestBuffer = Buffer.from(
       JSON.stringify(
         {
@@ -232,6 +252,28 @@ export async function storeHermesPresentationArtifact(
       MANIFEST_CONTENT_TYPE
     )
 
+    if (body.creditOperationId) {
+      const unitCredits = getMediaCreditQuote({
+        capability: 'presentation',
+        modelId: 'gpt-image-2',
+      })
+      await settleCredits({
+        userId: body.userId,
+        operationId: body.creditOperationId,
+        consumedCredits: actualSlideCount * unitCredits,
+        capability: 'presentation',
+        modelId: 'gpt-image-2',
+        workspaceId: body.workspaceId,
+        workflowId: body.workflowId,
+        metadata: {
+          actualSlideCount,
+          hermesSlideCount: body.slideCount ?? null,
+          unitCredits,
+          pptxFileId: pptxFile.id,
+        },
+      })
+    }
+
     logger.info('Stored Hermes presentation artifact', {
       userId: body.userId,
       workspaceId: body.workspaceId,
@@ -239,7 +281,7 @@ export async function storeHermesPresentationArtifact(
       pptxFileId: pptxFile.id,
       coverImageFileId: coverImageFile?.id,
       manifestFileId: manifestFile.id,
-      slideCount: body.slideCount,
+      slideCount: actualSlideCount,
       source: body.source,
     })
 

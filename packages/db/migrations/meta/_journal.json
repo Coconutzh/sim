@@ -1569,6 +1569,13 @@
       "when": 1786152000001,
       "tag": "0224_platform_model_service_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0225_platform_credit_wallets",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,6 @@
+$ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop-local-dev.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-local-db.ps1 && bun run preview:full
+$ bun turbo run start --parallel --filter=sim --filter=@sim/realtime
+ WARNING  --parallel is deprecated and will be removed in a future major version. Instead, define task behavior in your turbo.json task definitions using `persistent` and `with`.
+• turbo 2.9.6
+error: script "preview:full" exited with code 255
+error: script "preview:full:local" exited with code 255

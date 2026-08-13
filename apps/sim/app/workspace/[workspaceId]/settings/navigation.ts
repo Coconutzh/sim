@@ -25,6 +25,7 @@ import { getEnv, isTruthy } from '@/lib/core/config/env'
 
 export type SettingsSection =
   | 'account'
+  | 'my-credits'
   | 'general'
   | 'admin-console-users'
   | 'admin-console-credits'
@@ -106,6 +107,7 @@ export const sectionConfig: { key: NavigationSection; title: string }[] = [
 
 export const allNavigationItems: NavigationItem[] = [
   { id: 'account', label: '账号', icon: Settings, section: 'account' },
+  { id: 'my-credits', label: '我的积分', icon: Card, section: 'account' },
   {
     id: 'admin-console-users',
     label: '用户与权限',

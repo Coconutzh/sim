@@ -3673,6 +3673,58 @@ export const usageLog = pgTable(
   })
 )
 
+/** Product-credit wallet used for platform-managed media generation. */
+export const platformCreditWallet = pgTable(
+  'platform_credit_wallet',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    availableCredits: integer('available_credits').notNull().default(0),
+    reservedCredits: integer('reserved_credits').notNull().default(0),
+    totalConsumedCredits: integer('total_consumed_credits').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userUnique: uniqueIndex('platform_credit_wallet_user_unique').on(table.userId),
+  })
+)
+
+/** Immutable audit trail for product-credit balance changes. */
+export const platformCreditLedger = pgTable(
+  'platform_credit_ledger',
+  {
+    id: text('id').primaryKey(),
+    walletId: text('wallet_id')
+      .notNull()
+      .references(() => platformCreditWallet.id, { onDelete: 'cascade' }),
+    operationId: text('operation_id').notNull(),
+    eventType: text('event_type').notNull(),
+    availableDelta: integer('available_delta').notNull(),
+    reservedDelta: integer('reserved_delta').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    capability: text('capability'),
+    modelId: text('model_id'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    walletCreatedAtIdx: index('platform_credit_ledger_wallet_created_at_idx').on(
+      table.walletId,
+      table.createdAt
+    ),
+    operationEventUnique: uniqueIndex('platform_credit_ledger_operation_event_unique').on(
+      table.operationId,
+      table.eventType
+    ),
+  })
+)
+
 export const credentialTypeEnum = pgEnum('credential_type', [
   'oauth',
   'env_workspace',
