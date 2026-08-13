@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
+import { normalizeInternalFileUrl, resolveUserFileUrl } from '@/lib/core/utils/user-file'
 
 describe('resolveUserFileUrl', () => {
   it('prefers an explicit url when present', () => {
@@ -30,5 +30,37 @@ describe('resolveUserFileUrl', () => {
   it('returns an empty string when neither url nor path is usable', () => {
     expect(resolveUserFileUrl(null)).toBe('')
     expect(resolveUserFileUrl({})).toBe('')
+  })
+
+  it('keeps authenticated internal files on the current browser origin', () => {
+    expect(
+      resolveUserFileUrl({
+        url: 'http://8.133.178.111:3000/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace',
+      })
+    ).toBe('/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace')
+  })
+})
+
+describe('normalizeInternalFileUrl', () => {
+  it('preserves external image URLs', () => {
+    expect(normalizeInternalFileUrl('https://cdn.example.com/image.png')).toBe(
+      'https://cdn.example.com/image.png'
+    )
+  })
+
+  it('does not mistake an external query value for an internal file URL', () => {
+    expect(
+      normalizeInternalFileUrl(
+        'https://cdn.example.com/image.png?redirect=/api/files/serve/workspace/image.png'
+      )
+    ).toBe('https://cdn.example.com/image.png?redirect=/api/files/serve/workspace/image.png')
+  })
+
+  it('normalizes an absolute internal file URL without changing its encoded key', () => {
+    expect(
+      normalizeInternalFileUrl(
+        'https://old.example.com/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace'
+      )
+    ).toBe('/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace')
   })
 })

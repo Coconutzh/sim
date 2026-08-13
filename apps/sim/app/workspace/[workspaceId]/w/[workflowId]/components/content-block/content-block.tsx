@@ -892,11 +892,12 @@ function getReferenceChipLabel(
 }
 
 function getReferenceChipPreview(node: PromptContextReferencedNode | undefined): ReactNode {
-  if (node?.variant === 'image' && node.file?.url) {
+  const previewUrl = resolveUserFileUrl(node?.file)
+  if (node?.variant === 'image' && previewUrl) {
     return (
       <img
-        src={node.file.url}
-        alt={node.file.name || node.name || 'reference image'}
+        src={previewUrl}
+        alt={node?.file?.name || node?.name || 'reference image'}
         className='h-8 w-8 rounded-lg object-cover'
       />
     )

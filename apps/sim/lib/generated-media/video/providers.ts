@@ -116,6 +116,10 @@ function getImageMimeType(file: UserFileLike) {
 }
 
 async function resolveDashScopeImageInput(file: UserFileLike) {
+  if (file.base64) {
+    return `data:${getImageMimeType(file)};base64,${file.base64}`
+  }
+
   const originalUrl = file.url?.trim()
   if (!originalUrl) {
     throw new Error('Frame images must have a valid URL before sending to DashScope.')
@@ -123,6 +127,11 @@ async function resolveDashScopeImageInput(file: UserFileLike) {
 
   if (originalUrl.startsWith('data:image/')) {
     return originalUrl
+  }
+
+  if (isInternalFileUrl(originalUrl)) {
+    const fileBuffer = await downloadFileFromUrl(originalUrl)
+    return `data:${getImageMimeType(file)};base64,${arrayBufferToBase64(fileBuffer)}`
   }
 
   const absoluteUrl = ensureAbsoluteUrl(originalUrl)
@@ -142,9 +151,7 @@ async function resolveDashScopeImageInput(file: UserFileLike) {
     return parsedUrl.toString()
   }
 
-  const fileBuffer = await downloadFileFromUrl(
-    isInternalFileUrl(originalUrl) ? originalUrl : absoluteUrl
-  )
+  const fileBuffer = await downloadFileFromUrl(absoluteUrl)
 
   return `data:${getImageMimeType(file)};base64,${arrayBufferToBase64(fileBuffer)}`
 }

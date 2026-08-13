@@ -3,13 +3,22 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGenerateVideoWithProvider, mockUploadWorkspaceFile } = vi.hoisted(() => ({
+const {
+  mockGenerateVideoWithProvider,
+  mockResolveMediaEditWorkspaceFile,
+  mockUploadWorkspaceFile,
+} = vi.hoisted(() => ({
   mockGenerateVideoWithProvider: vi.fn(),
+  mockResolveMediaEditWorkspaceFile: vi.fn(),
   mockUploadWorkspaceFile: vi.fn(),
 }))
 
 vi.mock('@/lib/generated-media/video/providers', () => ({
   generateVideoWithProvider: (...args: unknown[]) => mockGenerateVideoWithProvider(...args),
+}))
+
+vi.mock('@/lib/generated-media/image/media-edit-files', () => ({
+  resolveMediaEditWorkspaceFile: (...args: unknown[]) => mockResolveMediaEditWorkspaceFile(...args),
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
@@ -152,5 +161,105 @@ describe('generateWorkspaceVideoFromPrompt', () => {
         }),
       })
     )
+  })
+
+  it('loads internal frames through the workspace file boundary before provider generation', async () => {
+    mockResolveMediaEditWorkspaceFile.mockResolvedValue({
+      id: 'frame-1',
+      name: 'first.png',
+      url: '/api/files/serve/workspace%2Fws-1%2Ffirst.png?context=workspace',
+      key: 'workspace/ws-1/first.png',
+      size: 12,
+      type: 'image/png',
+      context: 'workspace',
+      base64: 'ZnJhbWUtYmluYXJ5',
+    })
+    mockGenerateVideoWithProvider.mockResolvedValue({
+      buffer: Buffer.from('video-binary'),
+      mimeType: 'video/mp4',
+      provider: 'dashscope',
+      providerModel: 'wan2.6-i2v-flash',
+      taskId: 'task-internal',
+    })
+    mockUploadWorkspaceFile.mockResolvedValue({
+      id: 'video-1',
+      name: 'generated-video.mp4',
+      size: 10,
+      type: 'video/mp4',
+      key: 'workspace/ws-1/generated-video.mp4',
+      url: '/api/files/serve/workspace%2Fws-1%2Fgenerated-video.mp4?context=workspace',
+      context: 'workspace',
+    })
+
+    await generateWorkspaceVideoFromPrompt({
+      workspaceId: 'ws-1',
+      userId: 'user-1',
+      model: 'wan2.6-i2v-flash',
+      prompt: 'Prompt',
+      media: [
+        {
+          type: 'first_frame',
+          file: {
+            name: 'first.png',
+            url: 'http://8.133.178.111:3000/api/files/serve/workspace%2Fws-1%2Ffirst.png?context=workspace',
+            key: 'workspace/ws-1/first.png',
+            type: 'image/png',
+          },
+        },
+      ],
+      parameters: {
+        aspectRatioPreset: '16:9',
+        resolution: '720P',
+        duration: 5,
+        promptExtend: true,
+        watermark: false,
+      },
+    })
+
+    expect(mockResolveMediaEditWorkspaceFile).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      file: expect.objectContaining({ key: 'workspace/ws-1/first.png' }),
+    })
+    expect(mockGenerateVideoWithProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media: [
+          expect.objectContaining({
+            file: expect.objectContaining({ base64: 'ZnJhbWUtYmluYXJ5' }),
+          }),
+        ],
+      })
+    )
+  })
+
+  it('rejects an internal frame that does not belong to the requested workspace', async () => {
+    mockResolveMediaEditWorkspaceFile.mockResolvedValue(null)
+
+    await expect(
+      generateWorkspaceVideoFromPrompt({
+        workspaceId: 'ws-1',
+        userId: 'user-1',
+        model: 'wan2.6-i2v-flash',
+        prompt: 'Prompt',
+        media: [
+          {
+            type: 'first_frame',
+            file: {
+              name: 'first.png',
+              url: '/api/files/serve/workspace%2Fws-2%2Ffirst.png?context=workspace',
+              key: 'workspace/ws-2/first.png',
+              type: 'image/png',
+            },
+          },
+        ],
+        parameters: {
+          aspectRatioPreset: '16:9',
+          resolution: '720P',
+          duration: 5,
+          promptExtend: true,
+          watermark: false,
+        },
+      })
+    ).rejects.toThrow('first_frame image was not found in this workspace.')
+    expect(mockGenerateVideoWithProvider).not.toHaveBeenCalled()
   })
 })

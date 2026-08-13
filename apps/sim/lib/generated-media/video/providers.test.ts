@@ -22,9 +22,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'https://app.example.com',
     }
-    delete process.env.DASHSCOPE_BASE_URL
-    delete process.env.CONTENT_VIDEO_BASE_URL
-    delete process.env.CONTENT_VIDEO_API_KEY
+    Reflect.deleteProperty(process.env, 'DASHSCOPE_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_API_KEY')
   })
 
   it('creates a Wan 2.7 task, polls until success, and downloads the mp4 result', async () => {
@@ -203,9 +203,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     }
-    delete process.env.DASHSCOPE_BASE_URL
-    delete process.env.CONTENT_VIDEO_BASE_URL
-    delete process.env.CONTENT_VIDEO_API_KEY
+    Reflect.deleteProperty(process.env, 'DASHSCOPE_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_API_KEY')
 
     mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
 
@@ -278,13 +278,127 @@ describe('generateVideoWithProvider', () => {
     ])
   })
 
+  it('reads absolute production internal frame URLs from storage instead of exposing them to DashScope', async () => {
+    mockDownloadFileFromUrl
+      .mockResolvedValueOnce(Buffer.from('first-frame'))
+      .mockResolvedValueOnce(Buffer.from('last-frame'))
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          output: {
+            task_id: 'task-production-27',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/generated.mp4',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'video/mp4' }),
+        arrayBuffer: async () => Buffer.from('video-binary'),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateVideoWithProvider } = await import('@/lib/generated-media/video/providers')
+    const firstUrl =
+      'http://8.133.178.111:3000/api/files/serve/workspace%2Fws-1%2Ffirst.png?context=workspace'
+    const lastUrl =
+      'http://8.133.178.111:3000/api/files/serve/workspace%2Fws-1%2Flast.png?context=workspace'
+
+    await generateVideoWithProvider({
+      model: 'wan2.7-i2v',
+      prompt: 'Prompt',
+      media: [
+        {
+          type: 'first_frame',
+          file: { name: 'first.png', url: firstUrl, type: 'image/png' },
+        },
+        {
+          type: 'last_frame',
+          file: { name: 'last.png', url: lastUrl, type: 'image/png' },
+        },
+      ],
+      parameters: {
+        aspectRatioPreset: '16:9',
+        resolution: '720P',
+        duration: 5,
+        promptExtend: true,
+        watermark: false,
+      },
+    })
+
+    expect(mockDownloadFileFromUrl).toHaveBeenNthCalledWith(1, firstUrl)
+    expect(mockDownloadFileFromUrl).toHaveBeenNthCalledWith(2, lastUrl)
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(payload.input.media).toEqual([
+      { type: 'first_frame', url: 'data:image/png;base64,Zmlyc3QtZnJhbWU=' },
+      { type: 'last_frame', url: 'data:image/png;base64,bGFzdC1mcmFtZQ==' },
+    ])
+  })
+
+  it('uses workspace-validated base64 frames without downloading their stored URL', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          output: {
+            task_id: 'task-hydrated-26',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/generated.mp4',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'video/mp4' }),
+        arrayBuffer: async () => Buffer.from('video-binary'),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateVideoWithProvider } = await import('@/lib/generated-media/video/providers')
+    await generateVideoWithProvider({
+      model: 'wan2.6-i2v-flash',
+      prompt: 'Prompt',
+      media: [
+        {
+          type: 'first_frame',
+          file: {
+            name: 'first.png',
+            url: '/api/files/serve/workspace%2Fws-1%2Ffirst.png?context=workspace',
+            type: 'image/png',
+            base64: 'dmFsaWRhdGVkLWZyYW1l',
+          },
+        },
+      ],
+      parameters: {
+        aspectRatioPreset: '16:9',
+        resolution: '720P',
+        duration: 5,
+        promptExtend: true,
+        watermark: false,
+      },
+    })
+
+    expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(payload.input.img_url).toBe('data:image/png;base64,dmFsaWRhdGVkLWZyYW1l')
+  })
+
   it('creates a Wan 2.6 text-to-video task without media URLs', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          output: { task_id: 'task-26-t2v', task_status: 'SUCCEEDED', video_url: 'https://example.com/t2v.mp4' },
+          output: {
+            task_id: 'task-26-t2v',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/t2v.mp4',
+          },
           request_id: 'req-create',
         }),
       })
@@ -335,7 +449,11 @@ describe('generateVideoWithProvider', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          output: { task_id: 'task-26-i2v', task_status: 'SUCCEEDED', video_url: 'https://example.com/i2v.mp4' },
+          output: {
+            task_id: 'task-26-i2v',
+            task_status: 'SUCCEEDED',
+            video_url: 'https://example.com/i2v.mp4',
+          },
           request_id: 'req-create',
         }),
       })
@@ -396,9 +514,9 @@ describe('generateVideoWithProvider', () => {
       DASHSCOPE_API_KEY: 'dashscope-test-key',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     }
-    delete process.env.DASHSCOPE_BASE_URL
-    delete process.env.CONTENT_VIDEO_BASE_URL
-    delete process.env.CONTENT_VIDEO_API_KEY
+    Reflect.deleteProperty(process.env, 'DASHSCOPE_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_BASE_URL')
+    Reflect.deleteProperty(process.env, 'CONTENT_VIDEO_API_KEY')
 
     mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('frame-binary'))
 

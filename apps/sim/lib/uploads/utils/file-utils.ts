@@ -527,7 +527,12 @@ export function extractStorageKey(filePath: string): string {
  * Check if a URL is an internal file serve URL
  */
 export function isInternalFileUrl(fileUrl: string): boolean {
-  return fileUrl.includes('/api/files/serve/')
+  try {
+    const parsed = new URL(fileUrl, 'http://internal-file.local')
+    return parsed.pathname.startsWith('/api/files/serve/')
+  } catch {
+    return false
+  }
 }
 
 /**

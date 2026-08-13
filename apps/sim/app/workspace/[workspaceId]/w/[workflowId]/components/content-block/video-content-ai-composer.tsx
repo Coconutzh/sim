@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Check, Clock3, ImageIcon, Settings2, Sparkles, Volume2, X } from 'lucide-react'
 import { toast } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { resolveUserFileUrl } from '@/lib/core/utils/user-file'
 import {
   buildVideoGenerationSummary,
   type VideoFrameAspectRatioPreset,
@@ -19,6 +20,7 @@ import {
 interface UploadedFileValue {
   name?: string
   path?: string
+  url?: string
   key?: string
   size?: number
   type?: string
@@ -167,7 +169,7 @@ function FrameSlotChip({
   onSelect: () => void
   onClear: () => void
 }) {
-  const previewPath = file?.path ?? ''
+  const previewPath = resolveUserFileUrl(file)
 
   return (
     <button

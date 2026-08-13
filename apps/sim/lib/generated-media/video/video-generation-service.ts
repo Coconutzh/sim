@@ -1,4 +1,5 @@
 import type { UserFileLike } from '@/lib/core/utils/user-file'
+import { resolveMediaEditWorkspaceFile } from '@/lib/generated-media/image/media-edit-files'
 import { generateVideoWithProvider } from '@/lib/generated-media/video/providers'
 import type {
   VideoFrameAspectRatioPreset,
@@ -7,6 +8,7 @@ import type {
   VideoResolution,
 } from '@/lib/generated-media/video/video-generation-utils'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import type { UserFile } from '@/executor/types'
 
 interface GenerateWorkspaceVideoFromPromptInput {
@@ -44,6 +46,35 @@ function getGeneratedVideoFileName(mimeType: string) {
   return 'generated-video.mp4'
 }
 
+async function hydrateInternalVideoMedia(
+  workspaceId: string,
+  media: GenerateWorkspaceVideoFromPromptInput['media']
+): Promise<GenerateWorkspaceVideoFromPromptInput['media']> {
+  return Promise.all(
+    media.map(async (item) => {
+      const fileUrl = item.file.url?.trim() || item.file.path?.trim() || ''
+      if (item.file.base64 || !isInternalFileUrl(fileUrl)) return item
+
+      const resolvedFile = await resolveMediaEditWorkspaceFile({
+        workspaceId,
+        file: item.file,
+      })
+      if (!resolvedFile?.base64) {
+        throw new Error(`${item.type} image was not found in this workspace.`)
+      }
+
+      return {
+        ...item,
+        file: {
+          ...item.file,
+          ...resolvedFile,
+          base64: resolvedFile.base64,
+        },
+      }
+    })
+  )
+}
+
 export async function generateWorkspaceVideoFromPrompt({
   workspaceId,
   userId,
@@ -53,10 +84,11 @@ export async function generateWorkspaceVideoFromPrompt({
   parameters,
   abortSignal,
 }: GenerateWorkspaceVideoFromPromptInput): Promise<GenerateWorkspaceVideoFromPromptResult> {
+  const hydratedMedia = await hydrateInternalVideoMedia(workspaceId, media)
   const generatedVideo = await generateVideoWithProvider({
     model,
     prompt,
-    media,
+    media: hydratedMedia,
     parameters,
     abortSignal,
   })

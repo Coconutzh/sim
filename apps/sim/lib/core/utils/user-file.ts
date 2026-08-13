@@ -69,15 +69,29 @@ export function resolveUserFileUrl(fileInput: unknown): string {
 
   const record = fileInput as Record<string, unknown>
   if (typeof record.url === 'string' && record.url.trim()) {
-    return record.url.trim()
+    return normalizeInternalFileUrl(record.url.trim())
   }
   if (typeof record.path === 'string' && record.path.trim()) {
-    return record.path.trim()
+    return normalizeInternalFileUrl(record.path.trim())
   }
   if (typeof record.key === 'string' && record.key.trim()) {
     return `/api/files/serve/${encodeURIComponent(record.key.trim())}?context=workspace`
   }
   return ''
+}
+
+/**
+ * Keeps authenticated file requests on the browser's current origin.
+ * Historical canvas data can contain absolute URLs from a previous deployment origin.
+ */
+export function normalizeInternalFileUrl(url: string): string {
+  try {
+    const parsed = new URL(url, 'http://internal-file.local')
+    if (!parsed.pathname.startsWith('/api/files/serve/')) return url
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return url
+  }
 }
 
 /**

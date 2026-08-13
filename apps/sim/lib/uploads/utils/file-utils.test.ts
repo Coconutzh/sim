@@ -2,7 +2,26 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { isAbortError, isNetworkError } from '@/lib/uploads/utils/file-utils'
+import { isAbortError, isInternalFileUrl, isNetworkError } from '@/lib/uploads/utils/file-utils'
+
+describe('isInternalFileUrl', () => {
+  it.each([
+    '/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace',
+    'http://8.133.178.111:3000/api/files/serve/workspace%2Fws-1%2Fimage.png?context=workspace',
+    'https://old.example.com/api/files/serve/workspace/image.png',
+  ])('recognizes internal file paths across deployment origins: %s', (url) => {
+    expect(isInternalFileUrl(url)).toBe(true)
+  })
+
+  it.each([
+    'https://cdn.example.com/image.png',
+    'https://cdn.example.com/image.png?redirect=/api/files/serve/workspace/image.png',
+    'https://cdn.example.com/assets/api/files/serve/image.png',
+    'not a url',
+  ])('does not classify external or invalid values as internal files: %s', (url) => {
+    expect(isInternalFileUrl(url)).toBe(false)
+  })
+})
 
 describe('isAbortError', () => {
   it('returns true for AbortError-named errors', () => {
