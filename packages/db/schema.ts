@@ -650,6 +650,96 @@ export const workspaceBYOKKeys = pgTable(
   })
 )
 
+export const platformProviderApiKey = pgTable(
+  'platform_provider_api_key',
+  {
+    id: text('id').primaryKey(),
+    providerId: text('provider_id').notNull(),
+    label: text('label').notNull(),
+    encryptedApiKey: text('encrypted_api_key').notNull(),
+    status: text('status').notNull().default('active'),
+    isDefault: boolean('is_default').notNull().default(false),
+    priority: integer('priority').notNull().default(0),
+    lastUsedAt: timestamp('last_used_at'),
+    createdBy: text('created_by').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    providerStatusIdx: index('platform_provider_key_provider_status_idx').on(
+      table.providerId,
+      table.status
+    ),
+    defaultActiveUnique: uniqueIndex('platform_provider_key_default_active_unique')
+      .on(table.providerId)
+      .where(sql`${table.isDefault} = true AND ${table.status} = 'active'`),
+  })
+)
+
+/** Runtime routing for models owned by the platform rather than a workspace. */
+export const platformModelServiceConfig = pgTable(
+  'platform_model_service_config',
+  {
+    id: text('id').primaryKey(),
+    consumer: text('consumer').notNull(),
+    capability: text('capability').notNull(),
+    family: text('family').notNull(),
+    providerId: text('provider_id').notNull(),
+    serviceKind: text('service_kind').notNull(),
+    baseUrl: text('base_url'),
+    enabledModelIds: jsonb('enabled_model_ids').notNull(),
+    defaultModelId: text('default_model_id'),
+    status: text('status').notNull().default('active'),
+    priority: integer('priority').notNull().default(0),
+    configVersion: integer('config_version').notNull().default(1),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    consumerCapabilityIdx: index('platform_model_service_consumer_capability_idx').on(
+      table.consumer,
+      table.capability,
+      table.status
+    ),
+    consumerFamilyUnique: uniqueIndex('platform_model_service_consumer_family_unique').on(
+      table.consumer,
+      table.capability,
+      table.family
+    ),
+  })
+)
+
+export const adminConsoleAuditLog = pgTable(
+  'admin_console_audit_log',
+  {
+    id: text('id').primaryKey(),
+    actorUserId: text('actor_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id'),
+    action: text('action').notNull(),
+    reason: text('reason'),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    targetCreatedAtIdx: index('admin_console_audit_target_created_at_idx').on(
+      table.targetType,
+      table.targetId,
+      table.createdAt
+    ),
+    actorCreatedAtIdx: index('admin_console_audit_actor_created_at_idx').on(
+      table.actorUserId,
+      table.createdAt
+    ),
+  })
+)
+
 export const settings = pgTable('settings', {
   id: text('id').primaryKey(), // Use the user id as the key
   userId: text('user_id')
@@ -3579,6 +3669,58 @@ export const usageLog = pgTable(
     workspaceCreatedAtIdx: index('usage_log_workspace_created_at_idx').on(
       table.workspaceId,
       table.createdAt
+    ),
+  })
+)
+
+/** Product-credit wallet used for platform-managed media generation. */
+export const platformCreditWallet = pgTable(
+  'platform_credit_wallet',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    availableCredits: integer('available_credits').notNull().default(0),
+    reservedCredits: integer('reserved_credits').notNull().default(0),
+    totalConsumedCredits: integer('total_consumed_credits').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userUnique: uniqueIndex('platform_credit_wallet_user_unique').on(table.userId),
+  })
+)
+
+/** Immutable audit trail for product-credit balance changes. */
+export const platformCreditLedger = pgTable(
+  'platform_credit_ledger',
+  {
+    id: text('id').primaryKey(),
+    walletId: text('wallet_id')
+      .notNull()
+      .references(() => platformCreditWallet.id, { onDelete: 'cascade' }),
+    operationId: text('operation_id').notNull(),
+    eventType: text('event_type').notNull(),
+    availableDelta: integer('available_delta').notNull(),
+    reservedDelta: integer('reserved_delta').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    capability: text('capability'),
+    modelId: text('model_id'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    walletCreatedAtIdx: index('platform_credit_ledger_wallet_created_at_idx').on(
+      table.walletId,
+      table.createdAt
+    ),
+    operationEventUnique: uniqueIndex('platform_credit_ledger_operation_event_unique').on(
+      table.operationId,
+      table.eventType
     ),
   })
 )

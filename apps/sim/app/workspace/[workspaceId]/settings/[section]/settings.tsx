@@ -53,6 +53,24 @@ const General = dynamic(
     ),
   { loading: () => <GeneralSkeleton /> }
 )
+const MyCredits = dynamic(
+  () =>
+    import('@/app/workspace/[workspaceId]/settings/components/my-credits/my-credits').then(
+      (m) => m.MyCredits
+    ),
+  { loading: () => <SettingsSectionSkeleton /> }
+)
+const AdminConsole = dynamic(
+  () => import('@/app/admin-console/admin-console').then((m) => m.AdminConsole),
+  { loading: () => <SettingsSectionSkeleton /> }
+)
+const UserManagement = dynamic(
+  () =>
+    import(
+      '@/app/workspace/[workspaceId]/settings/components/user-management/user-management'
+    ).then((m) => m.UserManagement),
+  { loading: () => <SettingsSectionSkeleton /> }
+)
 const Integrations = dynamic(
   () =>
     import('@/app/workspace/[workspaceId]/settings/components/integrations/integrations').then(
@@ -202,16 +220,21 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const posthog = usePostHog()
 
   const isAdminRole = session?.user?.role === 'admin'
-  const effectiveSection =
-    !isBillingEnabled && (section === 'subscription' || section === 'organization')
-      ? 'general'
-      : section === 'credential-sets' && !isCredentialSetsEnabled
-        ? 'general'
-        : section === 'admin' && !sessionLoading && !isAdminRole
-          ? 'general'
-          : section === 'mothership' && !sessionLoading && !isAdminRole
-            ? 'general'
-            : section
+  let effectiveSection: SettingsSection = section
+  if (!isBillingEnabled && (section === 'subscription' || section === 'organization')) {
+    effectiveSection = 'account'
+  } else if (section === 'credential-sets' && !isCredentialSetsEnabled) {
+    effectiveSection = 'account'
+  } else if (
+    !sessionLoading &&
+    !isAdminRole &&
+    (section === 'admin' ||
+      section === 'mothership' ||
+      section === 'user-management' ||
+      section.startsWith('admin-console-'))
+  ) {
+    effectiveSection = 'account'
+  }
 
   const label =
     allNavigationItems.find((item) => item.id === effectiveSection)?.label ?? effectiveSection
@@ -229,7 +252,15 @@ export function SettingsPage({ section }: SettingsPageProps) {
       )}
     >
       <h2 className='mb-7 font-medium text-[22px] text-[var(--text-primary)]'>{label}</h2>
-      {effectiveSection === 'general' && <General />}
+      {(effectiveSection === 'account' || effectiveSection === 'general') && <General />}
+      {effectiveSection === 'my-credits' && <MyCredits />}
+      {effectiveSection === 'admin-console-users' && <AdminConsole section='users' embedded />}
+      {effectiveSection === 'admin-console-credits' && <AdminConsole section='credits' embedded />}
+      {effectiveSection === 'admin-console-api-keys' && (
+        <AdminConsole section='api-keys' embedded />
+      )}
+      {effectiveSection === 'admin-console-usage' && <AdminConsole section='usage' embedded />}
+      {effectiveSection === 'user-management' && <UserManagement />}
       {effectiveSection === 'integrations' && <Integrations />}
       {effectiveSection === 'secrets' && <Secrets />}
       {/* {effectiveSection === 'template-profile' && <TemplateProfile />} */}

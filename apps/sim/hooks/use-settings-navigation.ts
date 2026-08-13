@@ -26,7 +26,7 @@ export function useSettingsNavigation(): UseSettingsNavigationReturn {
 
   const getSettingsHref = useCallback(
     (options?: SettingsNavigationOptions): string => {
-      const section = options?.section || 'general'
+      const section = options?.section || 'account'
       const searchParams = options?.mcpServerId ? `?mcpServerId=${options.mcpServerId}` : ''
       return `${settingsPrefix}${section}${searchParams}`
     },

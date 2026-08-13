@@ -1,0 +1,485 @@
+waiting for server to start.... done
+server started
+
+   • Packages in scope: @sim/realtime, sim
+   • Running start in 2 packages
+   • Remote caching disabled
+
+@sim/realtime:start: cache bypass, force executing 99b0664800b12677
+sim:start: cache bypass, force executing 5ea835a5c030614b
+@sim/realtime:start: $ bun src/index.ts
+sim:start: $ next start
+sim:start: ▲ Next.js 16.2.4
+sim:start: - Local:         http://localhost:3000
+sim:start: - Network:       http://192.168.4.35:3000
+sim:start: ✓ Ready in 257ms
+@sim/realtime:start: [2026-08-13T02:32:40.988Z] [INFO] [CollaborativeSocketServer] Starting Socket.IO server... {
+@sim/realtime:start:   "port": 3002,
+@sim/realtime:start:   "nodeEnv": "development",
+@sim/realtime:start:   "hasDatabase": true,
+@sim/realtime:start:   "hasAuth": true,
+@sim/realtime:start:   "hasRedis": false
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:32:40.989Z] [INFO] [SocketIOConfig] Socket.IO CORS configuration: {
+@sim/realtime:start:   "allowedOrigins": [
+@sim/realtime:start:     "http://localhost:3000",
+@sim/realtime:start:     "http://localhost:3000",
+@sim/realtime:start:     "http://localhost:3001"
+@sim/realtime:start:   ]
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:32:40.991Z] [WARN] [SocketIOConfig] REDIS_URL not configured - running in single-pod mode
+@sim/realtime:start: [2026-08-13T02:32:40.991Z] [INFO] [SocketIOConfig] Socket.IO server configured with: {
+@sim/realtime:start:   "allowedOrigins": 3,
+@sim/realtime:start:   "transports": [
+@sim/realtime:start:     "websocket",
+@sim/realtime:start:     "polling"
+@sim/realtime:start:   ],
+@sim/realtime:start:   "pingTimeout": 60000,
+@sim/realtime:start:   "pingInterval": 25000,
+@sim/realtime:start:   "maxHttpBufferSize": 1000000,
+@sim/realtime:start:   "cookieSecure": false,
+@sim/realtime:start:   "corsCredentials": true,
+@sim/realtime:start:   "redisAdapter": false
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:32:40.993Z] [WARN] [CollaborativeSocketServer] No REDIS_URL configured - using in-memory RoomManager (single-pod only)
+@sim/realtime:start: [2026-08-13T02:32:40.993Z] [INFO] [MemoryRoomManager] MemoryRoomManager initialized (single-pod mode)
+@sim/realtime:start: [2026-08-13T02:32:41.022Z] [INFO] [CollaborativeSocketServer] Socket.IO server running on port 3002
+@sim/realtime:start: [2026-08-13T02:32:41.022Z] [INFO] [CollaborativeSocketServer] Health check available at: http://localhost:3002/health
+sim:start: Accessing resource attributes before async attributes settled
+sim:start: Accessing resource attributes before async attributes settled
+sim:start: {"timestamp":"2026-08-13T02:33:41.498Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":32,"heapTotalMB":34,"rssMB":94,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":2,"activeResources":3,"uptimeMin":1}
+sim:start: [2m2026-08-13T02:34:08.792Z[0m [33mWARN[0m [1m[Better Auth]:[0m Social provider github is missing clientId or clientSecret
+sim:start: [2m2026-08-13T02:34:08.792Z[0m [33mWARN[0m [1m[Better Auth]:[0m Social provider google is missing clientId or clientSecret
+@sim/realtime:start: [2026-08-13T02:34:09.263Z] [INFO] [SocketAuth] Socket IQ0Ows8LUa_z8enIAAAB authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:34:09.263Z] [DEBUG] [SocketAuth] Attempting token validation for socket IQ0Ows8LUa_z8enIAAAB {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:34:09.352Z] [INFO] [CollaborativeSocketServer] New socket connection: IQ0Ows8LUa_z8enIAAAB
+sim:start: [2m2026-08-13T02:34:09.720Z[0m [33mWARN[0m [1m[Better Auth]:[0m Social provider github is missing clientId or clientSecret
+sim:start: [2m2026-08-13T02:34:09.720Z[0m [33mWARN[0m [1m[Better Auth]:[0m Social provider google is missing clientId or clientSecret
+sim:start: {"timestamp":"2026-08-13T02:34:10.347Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:34:24.043Z] [INFO] [WorkflowHandlers] Join workflow request from test_user_director_member (导演团队普通用户) for workflow test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:34:24.082Z] [DEBUG] [SocketPermissions] User test_user_director_member has write access to workflow test_wf_director_team (导演团队画布) via team canvas
+@sim/realtime:start: [2026-08-13T02:34:24.086Z] [DEBUG] [MemoryRoomManager] Added user test_user_director_member to workflow test_wf_director_team (socket: IQ0Ows8LUa_z8enIAAAB)
+@sim/realtime:start: [2026-08-13T02:34:24.218Z] [INFO] [WorkflowHandlers] User test_user_director_member (导演团队普通用户) joined workflow test_wf_director_team. Room now has 1 unique users.
+sim:start: {"timestamp":"2026-08-13T02:34:24.495Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":9,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:34:25.521Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":14,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:34:41.505Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":259,"heapTotalMB":268,"rssMB":341,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":35,"activeResources":28,"uptimeMin":2}
+@sim/realtime:start: [2026-08-13T02:34:51.874Z] [INFO] [MemoryRoomManager] Cleaned up empty workflow room: test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:34:51.874Z] [DEBUG] [MemoryRoomManager] Removed socket IQ0Ows8LUa_z8enIAAAB from workflow test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:34:51.874Z] [INFO] [WorkflowHandlers] User test_user_director_member (导演团队普通用户) left workflow test_wf_director_team
+sim:start: {"timestamp":"2026-08-13T02:35:40.354Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:35:40.456Z] [INFO] [SocketAuth] Socket AztutYtayxqEQHqYAAAD authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:35:40.456Z] [DEBUG] [SocketAuth] Attempting token validation for socket AztutYtayxqEQHqYAAAD {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:35:40.520Z] [INFO] [CollaborativeSocketServer] New socket connection: AztutYtayxqEQHqYAAAD
+sim:start: {"timestamp":"2026-08-13T02:35:41.507Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":270,"heapTotalMB":285,"rssMB":391,"externalMB":37,"arrayBuffersMB":33,"heapSizeLimitMB":4288,"nativeContexts":39,"activeResources":32,"uptimeMin":3}
+sim:start: {"timestamp":"2026-08-13T02:36:41.508Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":273,"heapTotalMB":280,"rssMB":360,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":46,"activeResources":40,"uptimeMin":4}
+sim:start: {"timestamp":"2026-08-13T02:37:41.517Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":276,"heapTotalMB":283,"rssMB":363,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":46,"activeResources":40,"uptimeMin":5}
+sim:start: {"timestamp":"2026-08-13T02:37:51.339Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:37:51.439Z] [INFO] [SocketAuth] Socket -xn4OYvzyJvMlNrMAAAF authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:37:51.439Z] [DEBUG] [SocketAuth] Attempting token validation for socket -xn4OYvzyJvMlNrMAAAF {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:37:51.492Z] [INFO] [CollaborativeSocketServer] New socket connection: -xn4OYvzyJvMlNrMAAAF
+@sim/realtime:start: [2026-08-13T02:38:34.892Z] [INFO] [WorkflowHandlers] Join workflow request from 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) for workflow 22506d18-1f74-44ef-96c0-75d16fc6614c
+@sim/realtime:start: [2026-08-13T02:38:34.969Z] [DEBUG] [SocketPermissions] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS has admin access to workflow 22506d18-1f74-44ef-96c0-75d16fc6614c (Personal draft) via personal canvas
+@sim/realtime:start: [2026-08-13T02:38:34.973Z] [DEBUG] [MemoryRoomManager] Added user 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS to workflow 22506d18-1f74-44ef-96c0-75d16fc6614c (socket: -xn4OYvzyJvMlNrMAAAF)
+@sim/realtime:start: [2026-08-13T02:38:35.101Z] [INFO] [WorkflowHandlers] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) joined workflow 22506d18-1f74-44ef-96c0-75d16fc6614c. Room now has 1 unique users.
+sim:start: {"timestamp":"2026-08-13T02:38:41.527Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":288,"heapTotalMB":296,"rssMB":415,"externalMB":39,"arrayBuffersMB":35,"heapSizeLimitMB":4288,"nativeContexts":48,"activeResources":45,"uptimeMin":6}
+@sim/realtime:start: [2026-08-13T02:39:26.738Z] [INFO] [WorkflowHandlers] Join workflow request from 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) for workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38
+@sim/realtime:start: [2026-08-13T02:39:26.747Z] [DEBUG] [SocketPermissions] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS has admin access to workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38 (Personal draft) via personal canvas
+@sim/realtime:start: [2026-08-13T02:39:26.747Z] [INFO] [MemoryRoomManager] Cleaned up empty workflow room: 22506d18-1f74-44ef-96c0-75d16fc6614c
+@sim/realtime:start: [2026-08-13T02:39:26.747Z] [DEBUG] [MemoryRoomManager] Removed socket -xn4OYvzyJvMlNrMAAAF from workflow 22506d18-1f74-44ef-96c0-75d16fc6614c
+@sim/realtime:start: [2026-08-13T02:39:26.752Z] [DEBUG] [MemoryRoomManager] Added user 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS to workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38 (socket: -xn4OYvzyJvMlNrMAAAF)
+@sim/realtime:start: [2026-08-13T02:39:26.885Z] [INFO] [WorkflowHandlers] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) joined workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38. Room now has 1 unique users.
+sim:start: {"timestamp":"2026-08-13T02:39:41.534Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":279,"heapTotalMB":305,"rssMB":380,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":48,"activeResources":47,"uptimeMin":7}
+sim:start: {"timestamp":"2026-08-13T02:40:41.544Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":276,"heapTotalMB":291,"rssMB":381,"externalMB":4,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":48,"activeResources":16,"uptimeMin":8}
+sim:start: {"timestamp":"2026-08-13T02:41:41.551Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":276,"heapTotalMB":291,"rssMB":381,"externalMB":4,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":48,"activeResources":12,"uptimeMin":9}
+sim:start: {"timestamp":"2026-08-13T02:42:41.557Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":278,"heapTotalMB":291,"rssMB":382,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":48,"activeResources":16,"uptimeMin":10}
+@sim/realtime:start: [2026-08-13T02:43:06.558Z] [INFO] [SocketDatabase] Batch removing 1 blocks from workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38
+@sim/realtime:start: [2026-08-13T02:43:06.572Z] [INFO] [SocketDatabase] Successfully batch removed 1 blocks from workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38
+@sim/realtime:start: [2026-08-13T02:43:08.026Z] [INFO] [MemoryRoomManager] Cleaned up empty workflow room: 8b8b3478-14c8-49bf-9eba-a863b291fd38
+@sim/realtime:start: [2026-08-13T02:43:08.026Z] [DEBUG] [MemoryRoomManager] Removed socket -xn4OYvzyJvMlNrMAAAF from workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38
+@sim/realtime:start: [2026-08-13T02:43:08.026Z] [INFO] [WorkflowHandlers] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) left workflow 8b8b3478-14c8-49bf-9eba-a863b291fd38
+sim:start: {"timestamp":"2026-08-13T02:43:08.067Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:43:08.269Z] [INFO] [WorkflowHandlers] Join workflow request from 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) for workflow test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:43:08.280Z] [DEBUG] [SocketPermissions] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS has write access to workflow test_wf_director_team (导演团队画布) via team canvas
+@sim/realtime:start: [2026-08-13T02:43:08.284Z] [DEBUG] [MemoryRoomManager] Added user 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS to workflow test_wf_director_team (socket: -xn4OYvzyJvMlNrMAAAF)
+@sim/realtime:start: [2026-08-13T02:43:08.377Z] [INFO] [WorkflowHandlers] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) joined workflow test_wf_director_team. Room now has 1 unique users.
+sim:start: {"timestamp":"2026-08-13T02:43:08.408Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":8,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:43:09.492Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":7,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:43:41.564Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":281,"heapTotalMB":301,"rssMB":390,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":49,"activeResources":32,"uptimeMin":11}
+sim:start: {"timestamp":"2026-08-13T02:44:41.576Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":284,"heapTotalMB":298,"rssMB":391,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":49,"activeResources":32,"uptimeMin":12}
+sim:start: {"timestamp":"2026-08-13T02:45:19.485Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":11,"error":"Unsupported content-canvas service family: text/openai"}
+sim:start: {"timestamp":"2026-08-13T02:45:41.585Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":286,"heapTotalMB":298,"rssMB":391,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":49,"activeResources":32,"uptimeMin":13}
+sim:start: {"timestamp":"2026-08-13T02:45:57.909Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":12,"error":"Unsupported content-canvas service family: text/openai"}
+sim:start: {"timestamp":"2026-08-13T02:46:02.409Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":13,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:46:06.815Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":25,"error":"Unsupported content-canvas service family: text/anthropic"}
+sim:start: {"timestamp":"2026-08-13T02:46:10.544Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":14,"error":"Unsupported content-canvas service family: text/mistral"}
+sim:start: {"timestamp":"2026-08-13T02:46:13.364Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":15,"error":"Unsupported content-canvas service family: text/fireworks"}
+sim:start: {"timestamp":"2026-08-13T02:46:16.204Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":13,"error":"Unsupported content-canvas service family: text/cerebras"}
+sim:start: {"timestamp":"2026-08-13T02:46:18.809Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":7,"error":"Unsupported content-canvas service family: text/deepseek"}
+sim:start: {"timestamp":"2026-08-13T02:46:41.586Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":289,"heapTotalMB":298,"rssMB":390,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":49,"activeResources":32,"uptimeMin":14}
+@sim/realtime:start: [2026-08-13T02:47:36.772Z] [INFO] [SocketDatabase] Batch adding blocks to workflow test_wf_director_team {
+@sim/realtime:start:   "blockCount": 1,
+@sim/realtime:start:   "edgeCount": 1,
+@sim/realtime:start:   "loopCount": 0,
+@sim/realtime:start:   "parallelCount": 0
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:47:36.838Z] [INFO] [SocketDatabase] Successfully batch added blocks to workflow test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:47:36.842Z] [WARN] [SocketDatabase] Slow socket DB operation: {
+@sim/realtime:start:   "operation": "batch-add-blocks",
+@sim/realtime:start:   "target": "blocks",
+@sim/realtime:start:   "duration": "144ms",
+@sim/realtime:start:   "workflowId": "test_wf_..."
+@sim/realtime:start: }
+sim:start: {"timestamp":"2026-08-13T02:47:41.592Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":291,"heapTotalMB":297,"rssMB":391,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":49,"activeResources":21,"uptimeMin":15}
+@sim/realtime:start: [2026-08-13T02:48:00.884Z] [INFO] [MemoryRoomManager] Cleaned up empty workflow room: test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:48:00.884Z] [DEBUG] [MemoryRoomManager] Removed socket -xn4OYvzyJvMlNrMAAAF from workflow test_wf_director_team
+@sim/realtime:start: [2026-08-13T02:48:00.884Z] [INFO] [WorkflowHandlers] User 5JNjBzQYXRimm3GQlSp7hfG7AQUoZ3DS (bb) left workflow test_wf_director_team
+sim:start: {"timestamp":"2026-08-13T02:48:41.596Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":302,"heapTotalMB":312,"rssMB":396,"externalMB":7,"arrayBuffersMB":3,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":42,"uptimeMin":16}
+sim:start: {"timestamp":"2026-08-13T02:49:41.608Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":302,"heapTotalMB":312,"rssMB":396,"externalMB":7,"arrayBuffersMB":3,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":8,"uptimeMin":17}
+sim:start: {"timestamp":"2026-08-13T02:49:54.695Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:49:54.804Z] [INFO] [SocketAuth] Socket 1fFYmEKb9GZcR6YtAAAH authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:49:54.804Z] [DEBUG] [SocketAuth] Attempting token validation for socket 1fFYmEKb9GZcR6YtAAAH {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:49:54.863Z] [INFO] [CollaborativeSocketServer] New socket connection: 1fFYmEKb9GZcR6YtAAAH
+sim:start: {"timestamp":"2026-08-13T02:50:41.621Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":283,"heapTotalMB":329,"rssMB":405,"externalMB":39,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":14,"uptimeMin":18}
+sim:start: {"timestamp":"2026-08-13T02:51:41.623Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":283,"heapTotalMB":329,"rssMB":405,"externalMB":39,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":14,"uptimeMin":19}
+sim:start: {"timestamp":"2026-08-13T02:52:41.631Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":282,"heapTotalMB":291,"rssMB":373,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":14,"uptimeMin":20}
+sim:start: [2m2026-08-13T02:53:35.817Z[0m [31mERROR[0m [1m[Better Auth]:[0m User not found { email: '1234567896@qq.com' }
+sim:start: {"timestamp":"2026-08-13T02:53:41.631Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":282,"heapTotalMB":293,"rssMB":419,"externalMB":36,"arrayBuffersMB":32,"heapSizeLimitMB":4288,"nativeContexts":53,"activeResources":25,"uptimeMin":21}
+sim:start: {"timestamp":"2026-08-13T02:53:41.815Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:53:41.918Z] [INFO] [SocketAuth] Socket rP8PeuUlT4h1eBioAAAJ authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:53:41.918Z] [DEBUG] [SocketAuth] Attempting token validation for socket rP8PeuUlT4h1eBioAAAJ {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:53:41.975Z] [INFO] [CollaborativeSocketServer] New socket connection: rP8PeuUlT4h1eBioAAAJ
+sim:start: {"timestamp":"2026-08-13T02:53:54.585Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:53:54.776Z] [INFO] [SocketAuth] Socket 6XtcTYahl1rUY18kAAAL authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:53:54.776Z] [DEBUG] [SocketAuth] Attempting token validation for socket 6XtcTYahl1rUY18kAAAL {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:53:54.780Z] [INFO] [CollaborativeSocketServer] New socket connection: 6XtcTYahl1rUY18kAAAL
+sim:start: {"timestamp":"2026-08-13T02:53:57.022Z","level":"ERROR","module":"TelemetryAPI","message":"Telemetry request timed out","endpoint":"https://telemetry.simstudio.ai/v1/traces"}
+sim:start: {"timestamp":"2026-08-13T02:54:41.640Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":284,"heapTotalMB":294,"rssMB":379,"externalMB":4,"arrayBuffersMB":0,"heapSizeLimitMB":4288,"nativeContexts":54,"activeResources":46,"uptimeMin":22}
+sim:start: {"timestamp":"2026-08-13T02:55:02.762Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T02:55:02.937Z] [INFO] [SocketAuth] Socket pKFH9zsgd3qU3KShAAAN authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:55:02.937Z] [DEBUG] [SocketAuth] Attempting token validation for socket pKFH9zsgd3qU3KShAAAN {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:55:02.999Z] [INFO] [CollaborativeSocketServer] New socket connection: pKFH9zsgd3qU3KShAAAN
+@sim/realtime:start: [2026-08-13T02:55:08.874Z] [INFO] [WorkflowHandlers] Join workflow request from rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM (sheng) for workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:55:08.900Z] [DEBUG] [SocketPermissions] User rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM has write access to workflow test_wf_lighting_team (灯光团队画布) via team canvas
+@sim/realtime:start: [2026-08-13T02:55:08.901Z] [DEBUG] [MemoryRoomManager] Added user rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM to workflow test_wf_lighting_team (socket: pKFH9zsgd3qU3KShAAAN)
+@sim/realtime:start: [2026-08-13T02:55:09.019Z] [INFO] [WorkflowHandlers] User rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM (sheng) joined workflow test_wf_lighting_team. Room now has 1 unique users.
+sim:start: {"timestamp":"2026-08-13T02:55:09.070Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":6,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:55:13.154Z","level":"ERROR","module":"RouteHandler","message":"Unhandled route error","duration":5,"error":"Unsupported content-canvas service family: text/cohere"}
+sim:start: {"timestamp":"2026-08-13T02:55:26.140Z","level":"ERROR","module":"HermesClient","message":"Hermes Responses API request failed","baseUrl":"http://127.0.0.1:8642","path":"/v1/responses","durationMs":5,"timeoutMs":1800000,"error":"fetch failed","causeName":"Error","causeCode":"ECONNREFUSED","causeMessage":"connect ECONNREFUSED 127.0.0.1:8642"}
+@sim/realtime:start: [2026-08-13T02:55:26.148Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:55:26.148Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:55:26.153Z","level":"ERROR","module":"ContentCanvasPresentationGenerateAPI","message":"PPT generation failed","userId":"rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM","workspaceId":"test_ws_lighting_team","workflowId":"test_wf_lighting_team","nodeId":"f8bd7515-d646-416c-9809-ee7234f30cd1","status":503,"error":"Hermes Responses API request failed: fetch failed (ECONNREFUSED)"}
+sim:start: {"timestamp":"2026-08-13T02:55:26.153Z","level":"ERROR","module":"RouteHandler","message":"Server error response","status":503,"duration":50}
+@sim/realtime:start: [2026-08-13T02:55:26.154Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:55:26.154Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:55:41.641Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":322,"heapTotalMB":331,"rssMB":454,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":41,"uptimeMin":23}
+@sim/realtime:start: [2026-08-13T02:56:05.234Z] [INFO] [SocketDatabase] Batch adding blocks to workflow test_wf_lighting_team {
+@sim/realtime:start:   "blockCount": 1,
+@sim/realtime:start:   "edgeCount": 0,
+@sim/realtime:start:   "loopCount": 0,
+@sim/realtime:start:   "parallelCount": 0
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T02:56:05.242Z] [INFO] [SocketDatabase] Successfully batch added blocks to workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:56:05.438Z] [INFO] [SocketDatabase] Batch adding 1 edges to workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:56:05.443Z] [DEBUG] [SocketDatabase] Batch added 1 edges to workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:56:18.706Z] [INFO] [SocketDatabase] Batch removing 1 blocks from workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:56:18.727Z] [INFO] [SocketDatabase] Successfully batch removed 1 blocks from workflow test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:56:41.647Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":323,"heapTotalMB":331,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":41,"uptimeMin":24}
+sim:start: {"timestamp":"2026-08-13T02:57:05.650Z","level":"ERROR","module":"HermesClient","message":"Hermes Responses API request failed","baseUrl":"http://127.0.0.1:8642","path":"/v1/responses","durationMs":2,"timeoutMs":1800000,"error":"fetch failed","causeName":"Error","causeCode":"ECONNREFUSED","causeMessage":"connect ECONNREFUSED 127.0.0.1:8642"}
+@sim/realtime:start: [2026-08-13T02:57:05.659Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T02:57:05.659Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:57:05.665Z","level":"ERROR","module":"ContentCanvasPresentationGenerateAPI","message":"PPT generation failed","userId":"rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM","workspaceId":"test_ws_lighting_team","workflowId":"test_wf_lighting_team","nodeId":"f8bd7515-d646-416c-9809-ee7234f30cd1","status":503,"error":"Hermes Responses API request failed: fetch failed (ECONNREFUSED)"}
+@sim/realtime:start: [2026-08-13T02:57:05.666Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:57:05.665Z","level":"ERROR","module":"RouteHandler","message":"Server error response","status":503,"duration":77}
+@sim/realtime:start: [2026-08-13T02:57:05.666Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T02:57:41.658Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":324,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":10,"uptimeMin":25}
+sim:start: {"timestamp":"2026-08-13T02:58:41.664Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":324,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":10,"uptimeMin":26}
+sim:start: {"timestamp":"2026-08-13T02:59:41.674Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":324,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":6,"uptimeMin":27}
+sim:start: {"timestamp":"2026-08-13T03:00:41.684Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":324,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":4,"uptimeMin":28}
+sim:start: {"timestamp":"2026-08-13T03:01:41.698Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":324,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":4,"uptimeMin":29}
+@sim/realtime:start: [2026-08-13T03:02:28.804Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T03:02:28.804Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T03:02:41.703Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":326,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":19,"uptimeMin":30}
+sim:start: {"timestamp":"2026-08-13T03:02:44.427Z","level":"ERROR","module":"ContentCanvasPresentationGenerateAPI","message":"PPT generation failed","userId":"rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM","workspaceId":"test_ws_lighting_team","workflowId":"test_wf_lighting_team","nodeId":"f8bd7515-d646-416c-9809-ee7234f30cd1","status":500,"error":"Hermes completed without uploading a PPT artifact to SIM"}
+sim:start: {"timestamp":"2026-08-13T03:02:44.427Z","level":"ERROR","module":"RouteHandler","message":"Server error response","status":500,"duration":15726}
+@sim/realtime:start: [2026-08-13T03:02:44.436Z] [INFO] [MemoryRoomManager] Handling workflow update notification for test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T03:02:44.436Z] [INFO] [MemoryRoomManager] Notified 1 users about workflow update: test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T03:03:41.714Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":328,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":16,"uptimeMin":31}
+sim:start: {"timestamp":"2026-08-13T03:04:41.724Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":328,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":4,"uptimeMin":32}
+sim:start: {"timestamp":"2026-08-13T03:05:41.736Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":328,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":4,"uptimeMin":33}
+sim:start: {"timestamp":"2026-08-13T03:06:41.737Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":328,"heapTotalMB":333,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":57,"activeResources":4,"uptimeMin":34}
+sim:start: {"timestamp":"2026-08-13T03:07:41.739Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":330,"heapTotalMB":337,"rssMB":455,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":16,"uptimeMin":35}
+sim:start: {"timestamp":"2026-08-13T03:08:41.746Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":322,"heapTotalMB":338,"rssMB":460,"externalMB":10,"arrayBuffersMB":5,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":14,"uptimeMin":36}
+@sim/realtime:start: [2026-08-13T03:09:16.531Z] [INFO] [MemoryRoomManager] Cleaned up empty workflow room: test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T03:09:16.531Z] [DEBUG] [MemoryRoomManager] Removed socket pKFH9zsgd3qU3KShAAAN from workflow test_wf_lighting_team
+@sim/realtime:start: [2026-08-13T03:09:16.531Z] [INFO] [WorkflowHandlers] User rWGn5NfiMC6UNq2kQpVy4Z4y6TVLLKLM (sheng) left workflow test_wf_lighting_team
+sim:start: {"timestamp":"2026-08-13T03:09:22.670Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T03:09:22.843Z] [INFO] [SocketAuth] Socket u-08l9UGrs4GdWg8AAAP authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T03:09:22.843Z] [DEBUG] [SocketAuth] Attempting token validation for socket u-08l9UGrs4GdWg8AAAP {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T03:09:22.859Z] [INFO] [CollaborativeSocketServer] New socket connection: u-08l9UGrs4GdWg8AAAP
+sim:start: {"timestamp":"2026-08-13T03:09:41.760Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":332,"heapTotalMB":348,"rssMB":492,"externalMB":39,"arrayBuffersMB":35,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":39,"uptimeMin":37}
+sim:start: {"timestamp":"2026-08-13T03:10:32.247Z","level":"ERROR","module":"OllamaModelsAPI","message":"Failed to fetch Ollama models","error":"fetch failed","host":"http://localhost:11434"}
+@sim/realtime:start: [2026-08-13T03:10:32.723Z] [INFO] [SocketAuth] Socket m8VEB0nvBam0EZYcAAAR authentication attempt: {
+@sim/realtime:start:   "hasToken": true,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T03:10:32.723Z] [DEBUG] [SocketAuth] Attempting token validation for socket m8VEB0nvBam0EZYcAAAR {
+@sim/realtime:start:   "tokenLength": 32,
+@sim/realtime:start:   "origin": "http://localhost:3000"
+@sim/realtime:start: }
+@sim/realtime:start: [2026-08-13T03:10:32.774Z] [INFO] [CollaborativeSocketServer] New socket connection: m8VEB0nvBam0EZYcAAAR
+sim:start: {"timestamp":"2026-08-13T03:10:41.761Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":339,"heapTotalMB":353,"rssMB":496,"externalMB":41,"arrayBuffersMB":37,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":43,"uptimeMin":38}
+sim:start: {"timestamp":"2026-08-13T03:11:41.766Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":335,"rssMB":422,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":10,"uptimeMin":39}
+sim:start: {"timestamp":"2026-08-13T03:12:41.773Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":335,"rssMB":422,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":10,"uptimeMin":40}
+sim:start: {"timestamp":"2026-08-13T03:13:41.779Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":10,"uptimeMin":41}
+sim:start: {"timestamp":"2026-08-13T03:14:41.791Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":6,"uptimeMin":42}
+sim:start: {"timestamp":"2026-08-13T03:15:41.800Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":43}
+sim:start: {"timestamp":"2026-08-13T03:16:41.808Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":44}
+sim:start: {"timestamp":"2026-08-13T03:17:41.822Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":45}
+sim:start: {"timestamp":"2026-08-13T03:18:41.822Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":46}
+sim:start: {"timestamp":"2026-08-13T03:19:41.833Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":47}
+sim:start: {"timestamp":"2026-08-13T03:20:41.862Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":48}
+sim:start: {"timestamp":"2026-08-13T03:21:41.935Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":49}
+sim:start: {"timestamp":"2026-08-13T03:22:41.966Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":50}
+sim:start: {"timestamp":"2026-08-13T03:23:42.069Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":414,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":51}
+sim:start: {"timestamp":"2026-08-13T03:24:42.074Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":321,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":52}
+sim:start: {"timestamp":"2026-08-13T03:25:42.077Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":53}
+sim:start: {"timestamp":"2026-08-13T03:26:42.087Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":54}
+sim:start: {"timestamp":"2026-08-13T03:27:42.102Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":55}
+sim:start: {"timestamp":"2026-08-13T03:28:42.108Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":56}
+sim:start: {"timestamp":"2026-08-13T03:29:42.120Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":57}
+sim:start: {"timestamp":"2026-08-13T03:30:42.121Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":58}
+sim:start: {"timestamp":"2026-08-13T03:31:42.127Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":59}
+sim:start: {"timestamp":"2026-08-13T03:32:42.127Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":60}
+sim:start: {"timestamp":"2026-08-13T03:33:42.129Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":61}
+sim:start: {"timestamp":"2026-08-13T03:34:42.132Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":62}
+sim:start: {"timestamp":"2026-08-13T03:35:42.145Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":63}
+sim:start: {"timestamp":"2026-08-13T03:36:42.146Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":64}
+sim:start: {"timestamp":"2026-08-13T03:37:42.156Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":65}
+sim:start: {"timestamp":"2026-08-13T03:38:42.168Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":66}
+sim:start: {"timestamp":"2026-08-13T03:39:42.183Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":67}
+sim:start: {"timestamp":"2026-08-13T03:40:42.184Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":68}
+sim:start: {"timestamp":"2026-08-13T03:41:42.184Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":69}
+sim:start: {"timestamp":"2026-08-13T03:42:42.195Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":87,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":70}
+sim:start: {"timestamp":"2026-08-13T03:43:42.201Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":71}
+sim:start: {"timestamp":"2026-08-13T03:44:42.216Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":72}
+sim:start: {"timestamp":"2026-08-13T03:45:42.221Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":73}
+sim:start: {"timestamp":"2026-08-13T03:46:42.224Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":74}
+sim:start: {"timestamp":"2026-08-13T03:47:42.230Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":75}
+sim:start: {"timestamp":"2026-08-13T03:48:42.240Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":76}
+sim:start: {"timestamp":"2026-08-13T03:49:42.254Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":77}
+sim:start: {"timestamp":"2026-08-13T03:50:42.256Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":78}
+sim:start: {"timestamp":"2026-08-13T03:51:42.260Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":79}
+sim:start: {"timestamp":"2026-08-13T03:52:42.270Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":80}
+sim:start: {"timestamp":"2026-08-13T03:53:42.275Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":81}
+sim:start: {"timestamp":"2026-08-13T03:54:42.281Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":82}
+sim:start: {"timestamp":"2026-08-13T03:55:42.281Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":83}
+sim:start: {"timestamp":"2026-08-13T03:56:42.285Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":84}
+sim:start: {"timestamp":"2026-08-13T03:57:42.298Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":85}
+sim:start: {"timestamp":"2026-08-13T03:58:42.304Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":86}
+sim:start: {"timestamp":"2026-08-13T03:59:42.305Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":87}
+sim:start: {"timestamp":"2026-08-13T04:00:42.313Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":88}
+sim:start: {"timestamp":"2026-08-13T04:01:42.325Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":89}
+sim:start: {"timestamp":"2026-08-13T04:02:42.325Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":90}
+sim:start: {"timestamp":"2026-08-13T04:03:42.330Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":91}
+sim:start: {"timestamp":"2026-08-13T04:04:42.331Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":92}
+sim:start: {"timestamp":"2026-08-13T04:05:42.334Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":93}
+sim:start: {"timestamp":"2026-08-13T04:06:42.348Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":94}
+sim:start: {"timestamp":"2026-08-13T04:07:42.362Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":95}
+sim:start: {"timestamp":"2026-08-13T04:08:42.372Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":96}
+sim:start: {"timestamp":"2026-08-13T04:09:42.375Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":97}
+sim:start: {"timestamp":"2026-08-13T04:10:42.387Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":98}
+sim:start: {"timestamp":"2026-08-13T04:11:42.391Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":99}
+sim:start: {"timestamp":"2026-08-13T04:12:42.393Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":100}
+sim:start: {"timestamp":"2026-08-13T04:13:42.399Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":101}
+sim:start: {"timestamp":"2026-08-13T04:14:42.405Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":102}
+sim:start: {"timestamp":"2026-08-13T04:15:42.417Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":103}
+sim:start: {"timestamp":"2026-08-13T04:16:42.423Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":104}
+sim:start: {"timestamp":"2026-08-13T04:17:42.434Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":105}
+sim:start: {"timestamp":"2026-08-13T04:18:42.443Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":106}
+sim:start: {"timestamp":"2026-08-13T04:19:42.453Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":107}
+sim:start: {"timestamp":"2026-08-13T04:20:42.463Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":108}
+sim:start: {"timestamp":"2026-08-13T04:21:42.471Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":109}
+sim:start: {"timestamp":"2026-08-13T04:22:42.474Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":110}
+sim:start: {"timestamp":"2026-08-13T04:23:42.478Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":111}
+sim:start: {"timestamp":"2026-08-13T04:24:42.483Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":112}
+sim:start: {"timestamp":"2026-08-13T04:25:42.487Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":113}
+sim:start: {"timestamp":"2026-08-13T04:26:42.502Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":114}
+sim:start: {"timestamp":"2026-08-13T04:27:42.514Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":115}
+sim:start: {"timestamp":"2026-08-13T04:28:42.529Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":116}
+sim:start: {"timestamp":"2026-08-13T04:29:42.541Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":117}
+sim:start: {"timestamp":"2026-08-13T04:30:42.551Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":118}
+sim:start: {"timestamp":"2026-08-13T04:31:42.556Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":119}
+sim:start: {"timestamp":"2026-08-13T04:32:42.563Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":120}
+sim:start: {"timestamp":"2026-08-13T04:33:42.576Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":121}
+sim:start: {"timestamp":"2026-08-13T04:34:42.589Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":122}
+sim:start: {"timestamp":"2026-08-13T04:35:42.602Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":123}
+sim:start: {"timestamp":"2026-08-13T04:36:42.606Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":124}
+sim:start: {"timestamp":"2026-08-13T04:37:42.611Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":125}
+sim:start: {"timestamp":"2026-08-13T04:38:42.616Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":126}
+sim:start: {"timestamp":"2026-08-13T04:39:42.626Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":127}
+sim:start: {"timestamp":"2026-08-13T04:40:42.629Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":128}
+sim:start: {"timestamp":"2026-08-13T04:41:42.637Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":129}
+sim:start: {"timestamp":"2026-08-13T04:42:42.640Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":130}
+sim:start: {"timestamp":"2026-08-13T04:43:42.645Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":131}
+sim:start: {"timestamp":"2026-08-13T04:44:42.649Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":132}
+sim:start: {"timestamp":"2026-08-13T04:45:42.659Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":133}
+sim:start: {"timestamp":"2026-08-13T04:46:42.662Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":327,"rssMB":92,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":134}
+sim:start: {"timestamp":"2026-08-13T04:47:42.664Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":135}
+sim:start: {"timestamp":"2026-08-13T04:48:42.672Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":136}
+sim:start: {"timestamp":"2026-08-13T04:49:42.680Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":137}
+sim:start: {"timestamp":"2026-08-13T04:50:42.695Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":138}
+sim:start: {"timestamp":"2026-08-13T04:51:42.699Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":139}
+sim:start: {"timestamp":"2026-08-13T04:52:42.713Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":140}
+sim:start: {"timestamp":"2026-08-13T04:53:42.724Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":141}
+sim:start: {"timestamp":"2026-08-13T04:54:42.736Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":142}
+sim:start: {"timestamp":"2026-08-13T04:55:42.745Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":143}
+sim:start: {"timestamp":"2026-08-13T04:56:42.758Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":144}
+sim:start: {"timestamp":"2026-08-13T04:57:42.772Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":145}
+sim:start: {"timestamp":"2026-08-13T04:58:42.775Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":146}
+sim:start: {"timestamp":"2026-08-13T04:59:42.779Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":147}
+sim:start: {"timestamp":"2026-08-13T05:00:42.790Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":148}
+sim:start: {"timestamp":"2026-08-13T05:01:42.799Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":95,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":149}
+sim:start: {"timestamp":"2026-08-13T05:02:42.805Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":150}
+sim:start: {"timestamp":"2026-08-13T05:03:42.805Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":151}
+sim:start: {"timestamp":"2026-08-13T05:04:42.807Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":152}
+sim:start: {"timestamp":"2026-08-13T05:05:42.815Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":153}
+sim:start: {"timestamp":"2026-08-13T05:06:42.821Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":154}
+sim:start: {"timestamp":"2026-08-13T05:07:42.835Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":155}
+sim:start: {"timestamp":"2026-08-13T05:08:42.837Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":156}
+sim:start: {"timestamp":"2026-08-13T05:09:42.843Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":157}
+sim:start: {"timestamp":"2026-08-13T05:10:42.858Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":158}
+sim:start: {"timestamp":"2026-08-13T05:11:42.867Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":159}
+sim:start: {"timestamp":"2026-08-13T05:12:42.880Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":160}
+sim:start: {"timestamp":"2026-08-13T05:13:42.889Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":161}
+sim:start: {"timestamp":"2026-08-13T05:14:42.890Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":162}
+sim:start: {"timestamp":"2026-08-13T05:15:42.895Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":163}
+sim:start: {"timestamp":"2026-08-13T05:16:42.898Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":164}
+sim:start: {"timestamp":"2026-08-13T05:17:42.913Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":165}
+sim:start: {"timestamp":"2026-08-13T05:18:42.925Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":166}
+sim:start: {"timestamp":"2026-08-13T05:19:42.930Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":167}
+sim:start: {"timestamp":"2026-08-13T05:20:42.931Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":168}
+sim:start: {"timestamp":"2026-08-13T05:21:42.940Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":169}
+sim:start: {"timestamp":"2026-08-13T05:22:42.943Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":170}
+sim:start: {"timestamp":"2026-08-13T05:23:42.944Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":171}
+sim:start: {"timestamp":"2026-08-13T05:24:42.959Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":172}
+sim:start: {"timestamp":"2026-08-13T05:25:42.960Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":173}
+sim:start: {"timestamp":"2026-08-13T05:26:42.962Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":174}
+sim:start: {"timestamp":"2026-08-13T05:27:42.975Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":175}
+sim:start: {"timestamp":"2026-08-13T05:28:42.980Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":176}
+sim:start: {"timestamp":"2026-08-13T05:29:42.994Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":177}
+sim:start: {"timestamp":"2026-08-13T05:30:43.006Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":178}
+sim:start: {"timestamp":"2026-08-13T05:31:43.016Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":179}
+sim:start: {"timestamp":"2026-08-13T05:32:43.027Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":180}
+sim:start: {"timestamp":"2026-08-13T05:33:43.030Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":181}
+sim:start: {"timestamp":"2026-08-13T05:34:43.035Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":182}
+sim:start: {"timestamp":"2026-08-13T05:35:43.037Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":183}
+sim:start: {"timestamp":"2026-08-13T05:36:43.045Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":184}
+sim:start: {"timestamp":"2026-08-13T05:37:43.053Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":319,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":185}
+sim:start: {"timestamp":"2026-08-13T05:38:43.057Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":186}
+sim:start: {"timestamp":"2026-08-13T05:39:43.064Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":187}
+sim:start: {"timestamp":"2026-08-13T05:40:43.067Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":188}
+sim:start: {"timestamp":"2026-08-13T05:41:43.073Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":189}
+sim:start: {"timestamp":"2026-08-13T05:42:43.077Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":190}
+sim:start: {"timestamp":"2026-08-13T05:43:43.078Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":191}
+sim:start: {"timestamp":"2026-08-13T05:44:43.081Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":192}
+sim:start: {"timestamp":"2026-08-13T05:45:43.091Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":193}
+sim:start: {"timestamp":"2026-08-13T05:46:43.096Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":194}
+sim:start: {"timestamp":"2026-08-13T05:47:43.111Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":195}
+sim:start: {"timestamp":"2026-08-13T05:48:43.116Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":196}
+sim:start: {"timestamp":"2026-08-13T05:49:43.119Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":197}
+sim:start: {"timestamp":"2026-08-13T05:50:43.121Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":198}
+sim:start: {"timestamp":"2026-08-13T05:51:43.135Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":199}
+sim:start: {"timestamp":"2026-08-13T05:52:43.150Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":200}
+sim:start: {"timestamp":"2026-08-13T05:53:43.164Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":201}
+sim:start: {"timestamp":"2026-08-13T05:54:43.171Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":202}
+sim:start: {"timestamp":"2026-08-13T05:55:43.172Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":203}
+sim:start: {"timestamp":"2026-08-13T05:56:43.178Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":204}
+sim:start: {"timestamp":"2026-08-13T05:57:43.180Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":205}
+sim:start: {"timestamp":"2026-08-13T05:58:43.191Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":206}
+sim:start: {"timestamp":"2026-08-13T05:59:43.192Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":207}
+sim:start: {"timestamp":"2026-08-13T06:00:43.206Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":208}
+sim:start: {"timestamp":"2026-08-13T06:01:43.214Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":209}
+sim:start: {"timestamp":"2026-08-13T06:02:43.216Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":210}
+sim:start: {"timestamp":"2026-08-13T06:03:43.228Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":211}
+sim:start: {"timestamp":"2026-08-13T06:04:43.240Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":212}
+sim:start: {"timestamp":"2026-08-13T06:05:43.244Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":213}
+sim:start: {"timestamp":"2026-08-13T06:06:43.258Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":96,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":214}
+sim:start: {"timestamp":"2026-08-13T06:07:43.266Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":215}
+sim:start: {"timestamp":"2026-08-13T06:08:43.269Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":216}
+sim:start: {"timestamp":"2026-08-13T06:09:43.279Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":217}
+sim:start: {"timestamp":"2026-08-13T06:10:43.282Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":218}
+sim:start: {"timestamp":"2026-08-13T06:11:43.292Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":219}
+sim:start: {"timestamp":"2026-08-13T06:12:43.300Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":220}
+sim:start: {"timestamp":"2026-08-13T06:13:43.315Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":221}
+sim:start: {"timestamp":"2026-08-13T06:14:43.320Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":222}
+sim:start: {"timestamp":"2026-08-13T06:15:43.323Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":223}
+sim:start: {"timestamp":"2026-08-13T06:16:43.324Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":224}
+sim:start: {"timestamp":"2026-08-13T06:17:43.329Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":225}
+sim:start: {"timestamp":"2026-08-13T06:18:43.332Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":226}
+sim:start: {"timestamp":"2026-08-13T06:19:43.332Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":227}
+sim:start: {"timestamp":"2026-08-13T06:20:43.339Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":228}
+sim:start: {"timestamp":"2026-08-13T06:21:43.347Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":229}
+sim:start: {"timestamp":"2026-08-13T06:22:43.361Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":230}
+sim:start: {"timestamp":"2026-08-13T06:23:43.367Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":231}
+sim:start: {"timestamp":"2026-08-13T06:24:43.372Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":232}
+sim:start: {"timestamp":"2026-08-13T06:25:43.378Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":233}
+sim:start: {"timestamp":"2026-08-13T06:26:43.379Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":234}
+sim:start: {"timestamp":"2026-08-13T06:27:43.385Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":235}
+sim:start: {"timestamp":"2026-08-13T06:28:43.387Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":236}
+sim:start: {"timestamp":"2026-08-13T06:29:43.400Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":237}
+sim:start: {"timestamp":"2026-08-13T06:30:43.405Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":238}
+sim:start: {"timestamp":"2026-08-13T06:31:43.408Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":239}
+sim:start: {"timestamp":"2026-08-13T06:32:43.414Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":240}
+sim:start: {"timestamp":"2026-08-13T06:33:43.483Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":241}
+sim:start: {"timestamp":"2026-08-13T06:34:43.553Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":242}
+sim:start: {"timestamp":"2026-08-13T06:35:43.632Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":243}
+sim:start: {"timestamp":"2026-08-13T06:36:43.649Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":97,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":244}
+sim:start: {"timestamp":"2026-08-13T06:37:43.652Z","level":"INFO","module":"MemoryTelemetry","message":"Memory snapshot","heapUsedMB":320,"heapTotalMB":328,"rssMB":66,"externalMB":5,"arrayBuffersMB":1,"heapSizeLimitMB":4288,"nativeContexts":58,"activeResources":4,"uptimeMin":245}

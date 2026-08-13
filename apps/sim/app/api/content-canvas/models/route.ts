@@ -2,8 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getContentCanvasModelsContract } from '@/lib/api/contracts/content-canvas'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { getContentCanvasModelAvailabilityForRuntime } from '@/lib/content-canvas/service-config'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getContentCanvasModelAvailability } from '@/lib/content-canvas/service-config'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +24,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
   return NextResponse.json({
     success: true,
-    models: getContentCanvasModelAvailability(),
+    models: await getContentCanvasModelAvailabilityForRuntime(),
   })
 })

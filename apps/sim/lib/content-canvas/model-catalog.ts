@@ -11,8 +11,23 @@ export type ContentServiceKind =
   | 'ark-image'
   | 'evolink-audio'
   | 'dashscope-video'
+  | 'provider-native'
+  | 'cohere-native'
 
-export type ContentModelFamily = 'gemini' | 'glm' | 'ark' | 'suno' | 'wan2.6' | 'wan2.7'
+export type ContentModelFamily =
+  | 'gemini'
+  | 'glm'
+  | 'ark'
+  | 'suno'
+  | 'wan2.6'
+  | 'wan2.7'
+  | 'openai'
+  | 'anthropic'
+  | 'mistral'
+  | 'fireworks'
+  | 'cerebras'
+  | 'deepseek'
+  | 'cohere'
 
 export interface ContentCanvasModelDefinition {
   id: string
@@ -121,6 +136,69 @@ const PRESENTATION_MULTI_CAPABILITY: Omit<ContentReferenceCapability, 'model'> =
 }
 
 export const CONTENT_CANVAS_MODEL_CATALOG: readonly ContentCanvasModelDefinition[] = [
+  {
+    id: 'command-a-plus-05-2026',
+    capability: 'text',
+    family: 'cohere',
+    serviceKind: 'cohere-native',
+    label: 'Command A Plus',
+    description: 'Cohere Command model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
+  {
+    id: 'gpt-4.1',
+    capability: 'text',
+    family: 'openai',
+    serviceKind: 'provider-native',
+    label: 'GPT-4.1',
+    description: 'OpenAI general model',
+    referenceCapability: TEXT_MULTIMODAL_CAPABILITY,
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    capability: 'text',
+    family: 'anthropic',
+    serviceKind: 'provider-native',
+    label: 'Claude Sonnet 4.6',
+    description: 'Anthropic balanced model',
+    referenceCapability: TEXT_MULTIMODAL_CAPABILITY,
+  },
+  {
+    id: 'mistral-large-latest',
+    capability: 'text',
+    family: 'mistral',
+    serviceKind: 'provider-native',
+    label: 'Mistral Large',
+    description: 'Mistral general model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
+  {
+    id: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+    capability: 'text',
+    family: 'fireworks',
+    serviceKind: 'provider-native',
+    label: 'Llama 3.3 70B Instruct',
+    description: 'Fireworks hosted model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
+  {
+    id: 'cerebras/gpt-oss-120b',
+    capability: 'text',
+    family: 'cerebras',
+    serviceKind: 'provider-native',
+    label: 'GPT OSS 120B',
+    description: 'Cerebras hosted model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
+  {
+    id: 'deepseek-chat',
+    capability: 'text',
+    family: 'deepseek',
+    serviceKind: 'provider-native',
+    label: 'DeepSeek Chat',
+    description: 'DeepSeek chat model',
+    referenceCapability: TEXT_MULTI_CAPABILITY,
+  },
   {
     id: 'gemini-3.1-flash-lite-preview',
     capability: 'text',

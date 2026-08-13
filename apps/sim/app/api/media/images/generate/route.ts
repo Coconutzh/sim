@@ -5,6 +5,7 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { generateWorkspaceImageFromPrompt } from '@/lib/generated-media/image/image-generation-service'
+import { InsufficientCreditsError } from '@/lib/credits/wallet'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
@@ -38,6 +39,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Image generation failed.'
+    if (error instanceof InsufficientCreditsError) {
+      return NextResponse.json({ error: message }, { status: 402 })
+    }
     logger.error('Image generation failed', {
       workspaceId,
       userId: auth.userId,

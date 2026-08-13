@@ -6,12 +6,18 @@ import {
   getContentCanvasModelsByCapability,
   getContentCanvasModelsByFamily,
 } from '@/lib/content-canvas/model-catalog'
+import {
+  getPlatformContentServiceAvailability,
+  getPlatformContentServiceConfig,
+} from '@/lib/content-canvas/platform-service-config'
 import { getEnv } from '@/lib/core/config/env'
+import { compareManagedModels, comparePlatformProviders } from '@/lib/platform-models/catalog'
 
 export interface ContentServiceConfig {
   kind: ContentServiceKind
   baseUrl: string
   apiKey?: string
+  apiKeys?: Array<{ apiKey: string; keyId: string }>
   enabledModelIds: string[]
   defaultModelId: string
 }
@@ -20,7 +26,9 @@ export interface ResolvedContentService {
   kind: ContentServiceKind
   baseUrl: string
   apiKey?: string
+  apiKeys?: Array<{ apiKey: string; keyId: string }>
   modelId: string
+  providerId?: string
 }
 
 export interface ContentCanvasCapabilityAvailability {
@@ -239,6 +247,33 @@ export function resolveContentService(params: {
   }
 }
 
+/** Resolves content runtime configuration exclusively from administrator-managed services. */
+export async function resolveContentServiceForRuntime(params: {
+  capability: ContentCapability
+  modelId: string
+}): Promise<ResolvedContentService> {
+  const model = getContentCanvasModel(params.modelId)
+  if (!model || model.capability !== params.capability) {
+    throw new Error(`Unknown content-canvas ${params.capability} model: ${params.modelId}`)
+  }
+  const platform = await getPlatformContentServiceConfig({
+    capability: params.capability,
+    family: model.family,
+    modelId: params.modelId,
+  })
+  if (!platform) {
+    throw new Error('平台管理员尚未配置此服务，请联系管理员完成模型与 API Key 配置')
+  }
+  return {
+    kind: platform.kind,
+    baseUrl: platform.baseUrl || '',
+    apiKey: platform.apiKey,
+    apiKeys: platform.apiKeys,
+    modelId: params.modelId,
+    providerId: platform.providerId,
+  }
+}
+
 function getCapabilityFamilies(capability: ContentCapability): ContentModelFamily[] {
   return Array.from(
     new Set(getContentCanvasModelsByCapability(capability).map((model) => model.family))
@@ -267,6 +302,54 @@ export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabil
         defaultModelId = config.defaultModelId
       }
     }
+
+    availability[capability] = { enabledModelIds, defaultModelId }
+  }
+
+  return availability
+}
+
+/**
+ * Produces model options for user-facing canvas selectors, prioritizing active
+ * administrator-managed services over legacy environment configuration.
+ */
+export async function getContentCanvasModelAvailabilityForRuntime(): Promise<ContentCanvasModelAvailabilitySnapshot> {
+  const availability: ContentCanvasModelAvailabilitySnapshot = {
+    text: { enabledModelIds: [], defaultModelId: null },
+    image: { enabledModelIds: [], defaultModelId: null },
+    audio: { enabledModelIds: [], defaultModelId: null },
+    video: { enabledModelIds: [], defaultModelId: null },
+  }
+  let platformServices: Awaited<ReturnType<typeof getPlatformContentServiceAvailability>>
+  try {
+    platformServices = await getPlatformContentServiceAvailability()
+  } catch {
+    return availability
+  }
+
+  for (const capability of ['text', 'image', 'audio', 'video'] as const) {
+    const managed = platformServices.filter((service) => service.capability === capability)
+    if (managed.length === 0) continue
+
+    const enabledModelIds = Array.from(
+      new Set(
+        managed.flatMap((service) => {
+          const familyModelIds = getContentCanvasModelsByFamily(capability, service.family).map(
+            (model) => model.id
+          )
+          return service.enabledModelIds.filter((modelId) => familyModelIds.includes(modelId))
+        })
+      )
+    ).sort((left, right) => {
+      const leftService = managed.find((service) => service.enabledModelIds.includes(left))
+      const rightService = managed.find((service) => service.enabledModelIds.includes(right))
+      const providerOrder = comparePlatformProviders(
+        leftService?.providerId ?? '',
+        rightService?.providerId ?? ''
+      )
+      return providerOrder || compareManagedModels(`canvas-${capability}`, left, right)
+    })
+    const defaultModelId = enabledModelIds[0] ?? null
 
     availability[capability] = { enabledModelIds, defaultModelId }
   }

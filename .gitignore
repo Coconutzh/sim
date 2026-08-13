@@ -97,3 +97,4 @@ imgs
 logs/
 tmp-*
 generated-ppt-extracts/
+.tmp/

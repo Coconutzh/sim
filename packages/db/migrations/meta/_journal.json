@@ -1555,6 +1555,27 @@
       "when": 1779369954343,
       "tag": "0222_production_task_delay_reasons",
       "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1786152000000,
+      "tag": "0223_admin_console_provider_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1786152000001,
+      "tag": "0224_platform_model_service_configs",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0225_platform_credit_wallets",
+      "breakpoints": true
     }
   ]
 }

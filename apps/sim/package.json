@@ -29,7 +29,8 @@
     "lint:check": "biome check .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "generate-docs": "bun run ../../scripts/generate-docs.ts"
+    "generate-docs": "bun run ../../scripts/generate-docs.ts",
+    "migrate:platform-model-keys": "bun run scripts/migrate-platform-model-keys.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "0.3.7",

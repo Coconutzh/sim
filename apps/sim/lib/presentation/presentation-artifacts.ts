@@ -15,6 +15,10 @@ export interface PresentationArtifactFileValue {
 export interface PresentationArtifactManifestValue {
   title?: string
   source?: string
+  backendName?: string
+  backendType?: 'editable' | 'image_based'
+  renderer?: string
+  editable?: boolean
   slideCount?: number
   selectedStyle?: string
   styleBrief?: string
@@ -30,6 +34,11 @@ export interface PresentationArtifactManifestValue {
 
 export interface PresentationArtifactValue {
   pptxFile?: PresentationArtifactFileValue | null
+  originalPptxFile?: PresentationArtifactFileValue | null
+  editablePptxFile?: PresentationArtifactFileValue | null
+  editableStatus?: 'not_requested' | 'queued' | 'processing' | 'complete' | 'error'
+  editableTaskId?: string | null
+  editableError?: string | null
   coverImageFile?: PresentationArtifactFileValue | null
   manifestFile?: PresentationArtifactFileValue | null
   manifest?: PresentationArtifactManifestValue | null
@@ -70,6 +79,12 @@ function normalizeManifest(value: unknown): PresentationArtifactManifestValue | 
   return {
     ...(typeof record.title === 'string' ? { title: record.title } : {}),
     ...(typeof record.source === 'string' ? { source: record.source } : {}),
+    ...(typeof record.backendName === 'string' ? { backendName: record.backendName } : {}),
+    ...(record.backendType === 'editable' || record.backendType === 'image_based'
+      ? { backendType: record.backendType }
+      : {}),
+    ...(typeof record.renderer === 'string' ? { renderer: record.renderer } : {}),
+    ...(typeof record.editable === 'boolean' ? { editable: record.editable } : {}),
     ...(typeof record.slideCount === 'number' ? { slideCount: record.slideCount } : {}),
     ...(typeof record.selectedStyle === 'string' ? { selectedStyle: record.selectedStyle } : {}),
     ...(typeof record.styleBrief === 'string' ? { styleBrief: record.styleBrief } : {}),
@@ -101,14 +116,28 @@ export function normalizePresentationArtifact(value: unknown): PresentationArtif
   if (!record) return null
 
   const pptxFile = normalizeFile(record.pptxFile)
+  const originalPptxFile = normalizeFile(record.originalPptxFile) ?? pptxFile
+  const editablePptxFile = normalizeFile(record.editablePptxFile)
   const coverImageFile = normalizeFile(record.coverImageFile)
   const manifestFile = normalizeFile(record.manifestFile)
   const manifest = normalizeManifest(record.manifest)
 
-  if (!pptxFile && !coverImageFile && !manifest) return null
+  if (!pptxFile && !originalPptxFile && !editablePptxFile && !coverImageFile && !manifest)
+    return null
 
   return {
     ...(pptxFile ? { pptxFile } : {}),
+    ...(originalPptxFile ? { originalPptxFile } : {}),
+    ...(editablePptxFile ? { editablePptxFile } : {}),
+    ...(record.editableStatus === 'not_requested' ||
+    record.editableStatus === 'queued' ||
+    record.editableStatus === 'processing' ||
+    record.editableStatus === 'complete' ||
+    record.editableStatus === 'error'
+      ? { editableStatus: record.editableStatus }
+      : {}),
+    ...(typeof record.editableTaskId === 'string' ? { editableTaskId: record.editableTaskId } : {}),
+    ...(typeof record.editableError === 'string' ? { editableError: record.editableError } : {}),
     ...(coverImageFile ? { coverImageFile } : {}),
     ...(manifestFile ? { manifestFile } : {}),
     ...(manifest ? { manifest } : {}),

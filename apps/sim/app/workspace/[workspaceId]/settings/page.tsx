@@ -8,5 +8,5 @@ interface SettingsPageProps {
 
 export default async function SettingsPage({ params }: SettingsPageProps) {
   const { workspaceId } = await params
-  redirect(`/workspace/${workspaceId}/settings/general`)
+  redirect(`/workspace/${workspaceId}/settings/account`)
 }

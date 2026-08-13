@@ -1,9 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { ArrowRight, Loader2, PenLine, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useState } from 'react'
 import { Button } from '@/components/emcn'
 import { useLiteCanvasNavigation } from '@/app/workspace/[workspaceId]/use-lite-canvas-navigation'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
@@ -85,11 +85,12 @@ export default function PersonalWorkflowsPage() {
       <CreateWorkspaceModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
-        onConfirm={async (name) => {
-          await canvas.createPersonalCanvas(name)
+        onConfirm={async (input) => {
+          await canvas.createPersonalCanvas(input)
           setIsCreateModalOpen(false)
         }}
         isCreating={canvas.isCreatingPersonalWorkspace}
+        projects={canvas.projectOptions}
       />
     </div>
   )

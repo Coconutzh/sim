@@ -3,6 +3,7 @@ import { nonEmptyIdSchema, userFileSchema, workspaceIdSchema } from '@/lib/api/c
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 const MAX_BASE64_CHARS = 140 * 1024 * 1024
+const lastQueryValue = (value: unknown) => (Array.isArray(value) ? value.at(-1) : value)
 
 export const hermesPresentationArtifactFileSchema = z.object({
   fileName: z.string().trim().min(1, 'File name is required').max(500),
@@ -21,6 +22,10 @@ export const hermesPresentationArtifactUploadBodySchema = z.object({
   targetNodeId: nonEmptyIdSchema.optional(),
   title: z.string().trim().min(1, 'Presentation title is required').max(500),
   source: z.string().trim().min(1).max(200).optional().default('codex-ppt-skill'),
+  backendName: z.string().trim().min(1).max(200).optional(),
+  backendType: z.enum(['editable', 'image_based']).optional(),
+  renderer: z.string().trim().min(1).max(200).optional(),
+  editable: z.boolean().optional(),
   slideCount: z.number().int().min(1).max(200).optional(),
   selectedStyle: z.string().trim().min(1).max(200).optional(),
   styleBrief: z.string().trim().min(1).max(4000).optional(),
@@ -34,6 +39,7 @@ export const hermesPresentationArtifactUploadBodySchema = z.object({
   coverImage: hermesPresentationArtifactFileSchema.optional(),
   traceId: z.string().trim().min(1).max(200).optional(),
   hermesRunId: z.string().trim().min(1).max(200).optional(),
+  creditOperationId: z.string().trim().min(1).max(200).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type HermesPresentationArtifactUploadBody = z.input<
@@ -59,6 +65,10 @@ export type HermesPresentationArtifactErrorCode = z.output<
 export const hermesPresentationArtifactManifestSchema = z.object({
   title: z.string(),
   source: z.string(),
+  backendName: z.string().optional(),
+  backendType: z.enum(['editable', 'image_based']).optional(),
+  renderer: z.string().optional(),
+  editable: z.boolean().optional(),
   slideCount: z.number().int().positive().optional(),
   selectedStyle: z.string().optional(),
   styleBrief: z.string().optional(),
@@ -107,6 +117,28 @@ export const hermesPresentationArtifactUploadContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: hermesPresentationArtifactUploadResponseSchema,
+    status: [200, 400, 401, 403, 404, 413, 500],
+  },
+})
+
+export const hermesPresentationSourceQuerySchema = z.object({
+  userId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  organizationId: z.preprocess(lastQueryValue, nonEmptyIdSchema.optional()),
+  workspaceId: z.preprocess(lastQueryValue, workspaceIdSchema),
+  workflowId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  nodeId: z.preprocess(lastQueryValue, nonEmptyIdSchema),
+  traceId: z.preprocess(lastQueryValue, z.string().trim().min(1).max(200).optional()),
+})
+export type ParsedHermesPresentationSourceQuery = z.output<
+  typeof hermesPresentationSourceQuerySchema
+>
+
+export const hermesPresentationSourceContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/internal/hermes/presentation-artifacts/source',
+  query: hermesPresentationSourceQuerySchema,
+  response: {
+    mode: 'binary',
     status: [200, 400, 401, 403, 404, 413, 500],
   },
 })

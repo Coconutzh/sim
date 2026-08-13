@@ -86,6 +86,11 @@ export type GenerateContentCanvasPresentationBody = z.input<
 
 export const contentCanvasPresentationArtifactSchema = z.object({
   pptxFile: userFileSchema,
+  originalPptxFile: userFileSchema.optional(),
+  editablePptxFile: userFileSchema.optional(),
+  editableStatus: z.enum(['not_requested', 'queued', 'processing', 'complete', 'error']).optional(),
+  editableTaskId: z.string().optional(),
+  editableError: z.string().optional(),
   coverImageFile: userFileSchema.optional(),
   manifestFile: userFileSchema,
   manifest: hermesPresentationArtifactManifestSchema,
@@ -117,5 +122,33 @@ export const generateContentCanvasPresentationContract = defineRouteContract({
     mode: 'json',
     schema: generateContentCanvasPresentationResponseSchema,
     status: [200, 400, 401, 403, 404, 500, 503],
+  },
+})
+
+export const rebuildContentCanvasPresentationEditableBodySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  workflowId: nonEmptyIdSchema,
+  nodeId: nonEmptyIdSchema,
+})
+export type RebuildContentCanvasPresentationEditableBody = z.input<
+  typeof rebuildContentCanvasPresentationEditableBodySchema
+>
+
+export const rebuildContentCanvasPresentationEditableResponseSchema = z.object({
+  success: z.literal(true),
+  taskId: z.string(),
+})
+export type RebuildContentCanvasPresentationEditableResponse = z.output<
+  typeof rebuildContentCanvasPresentationEditableResponseSchema
+>
+
+export const rebuildContentCanvasPresentationEditableContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/content-canvas/presentations/editable/rebuild',
+  body: rebuildContentCanvasPresentationEditableBodySchema,
+  response: {
+    mode: 'json',
+    schema: rebuildContentCanvasPresentationEditableResponseSchema,
+    status: [200, 400, 401, 403, 404, 409, 500, 503],
   },
 })

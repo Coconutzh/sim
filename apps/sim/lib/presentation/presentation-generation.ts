@@ -1,10 +1,11 @@
 import { db, workflow, workflowBlocks } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import type { BlockState } from '@sim/workflow-types/workflow'
 import { and, eq } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
-import { getSocketServerUrl } from '@/lib/core/utils/urls'
+import { ensureAbsoluteUrl, getSocketServerUrl } from '@/lib/core/utils/urls'
 import { resolveUserFileUrl, type UserFileLike } from '@/lib/core/utils/user-file'
 import {
   callHermesResponse,
@@ -13,6 +14,8 @@ import {
 } from '@/lib/hermes/client'
 import { buildHermesSessionId, buildHermesSessionKey } from '@/lib/hermes/sim-agent'
 import { buildSimPresentationHermesGuidance } from '@/lib/presentation/hermes-presentation-guidance'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { releaseCredits, reserveCredits } from '@/lib/credits/wallet'
 import { normalizePresentationArtifact } from '@/lib/presentation/presentation-artifacts'
 import {
   type ContentReferenceRecord,
@@ -40,11 +43,20 @@ export interface PresentationArtifactUploadResult {
   auditId: string
   traceId?: string
   pptxFile: PresentationArtifactFile
+  originalPptxFile?: PresentationArtifactFile
+  editablePptxFile?: PresentationArtifactFile
+  editableStatus?: 'not_requested' | 'queued' | 'processing' | 'complete' | 'error'
+  editableTaskId?: string
+  editableError?: string
   coverImageFile?: PresentationArtifactFile
   manifestFile: PresentationArtifactFile
   manifest: {
     title: string
     source: string
+    backendName?: string
+    backendType?: 'editable' | 'image_based'
+    renderer?: string
+    editable?: boolean
     slideCount?: number
     selectedStyle?: string
     styleBrief?: string
@@ -63,6 +75,14 @@ export interface PresentationNodeGenerationResult {
   answer: string
   artifact: PresentationArtifactUploadResult
   hermesResult: HermesChatCompletionResult
+}
+
+export interface EditablePresentationRebuildPayload {
+  actorUserId: string
+  workspaceId: string
+  workflowId: string
+  nodeId: string
+  taskId?: string
 }
 
 interface ReferencedPresentationNode {
@@ -96,7 +116,7 @@ interface UpdatePresentationNodeParams {
   prompt?: string
   slideCount?: number
   slideCountMode?: PresentationSlideCountMode
-  artifact?: PresentationArtifactUploadResult | null
+  artifact?: unknown
   errorMessage?: string | null
   file?: UserFileLike | null
 }
@@ -468,6 +488,22 @@ function buildHermesPresentationInstructions(): string {
   ].join('\n')
 }
 
+function buildEditablePresentationInstructions(): string {
+  return [
+    'You are Hermes running a SIM editable-PPT rebuild job.',
+    'Rebuild the supplied original PPTX into a second, object-level editable PPTX. Do not overwrite or delete the original artifact.',
+    'First call sim_presentation_editable_source_prepare with the ORIGINAL_PPTX_URL. Use its inputPath in sim_presentation_editable_runtime prepare.',
+    'After prepare, follow every nextAction returned by sim_presentation_editable_runtime. Call next with the exact runDir returned by prepare.',
+    'When next returns dispatch_pages or rebuild_page_locally, call operation=page_prompt once for every suggested page using the exact runDir and pageId from nextAction.',
+    'For multi-page dispatch_pages results, call each page_prompt one at a time. page_prompt internally creates and waits for the delegated page worker; never call operation=dispatch, operation=record, or delegate_task from the parent agent. The runtime binds dispatch and record to the internal worker identity; do not invent agentId or promptFile.',
+    'For a single-page rebuild_page_locally result, follow the page_prompt nextAction in the parent agent and use its dispatchArgs/recordArgs exactly. Do not call delegate_task for local mode.',
+    'After every page_prompt succeeds, follow its nextAction and call operation=next again. Continue until nextAction requests finalize, then finalize the exact runDir.',
+    'A multi-page deck must use delegated page workers. Never use a full-slide screenshot as the resulting PPT page background with editable text over it.',
+    'After finalization, call sim_presentation_artifact_upload for the rebuilt PPTX and set backendName="image-to-editable-ppt", backendType="editable", renderer="editppt", editable=true.',
+    'Report only the uploaded SIM artifact; do not expose local paths or intermediate files.',
+  ].join('\n')
+}
+
 function buildPageCountPreferenceText(preference: PresentationSlideCountPreference): string {
   if (preference.mode === 'manual' && preference.count) {
     return [
@@ -495,6 +531,8 @@ function buildHermesPresentationInput(params: {
   nodeId: string
   context: PresentationGenerationContext
   traceId: string
+  creditOperationId: string
+  creditSlideLimit: number
 }): HermesResponseInput {
   const primaryContentTextPolicy = buildPrimaryContentTextPolicy(params.context)
 
@@ -507,6 +545,9 @@ function buildHermesPresentationInput(params: {
     '',
     'PAGE COUNT PREFERENCE:',
     buildPageCountPreferenceText(params.context.slideCountPreference),
+    '',
+    'CREDIT PAGE LIMIT:',
+    `Generate no more than ${params.creditSlideLimit} slides. This is the pre-authorized page limit for this task.`,
     '',
     ...(primaryContentTextPolicy
       ? ['PRIMARY CONTENT TEXT POLICY:', primaryContentTextPolicy, '']
@@ -536,6 +577,7 @@ function buildHermesPresentationInput(params: {
       organizationId: params.organizationId,
       slideCountPreference: params.context.slideCountPreference,
       traceId: params.traceId,
+      creditOperationId: params.creditOperationId,
       source: 'codex-ppt-skill',
       imageBackend: 'codex-ppt/scripts/image_gen.py',
       imageProvider: 'evolink',
@@ -593,6 +635,8 @@ export function extractHermesPresentationArtifactUpload(
         auditId: candidate.auditId,
         traceId: typeof candidate.traceId === 'string' ? candidate.traceId : undefined,
         pptxFile: candidate.pptxFile as PresentationArtifactFile,
+        originalPptxFile: candidate.pptxFile as PresentationArtifactFile,
+        editableStatus: 'not_requested',
         coverImageFile: asRecord(candidate.coverImageFile)
           ? (candidate.coverImageFile as PresentationArtifactFile)
           : undefined,
@@ -600,6 +644,28 @@ export function extractHermesPresentationArtifactUpload(
         manifest: candidate.manifest as PresentationArtifactUploadResult['manifest'],
       }
     }
+  }
+
+  return null
+}
+
+export function extractHermesPresentationFailure(payload: unknown): string | null {
+  const failures = responseOutputItems(payload)
+    .filter((item) => item.type === 'function_call_output')
+    .map((item) => parseJsonObject(item.output))
+    .filter((item): item is Record<string, unknown> =>
+      Boolean(item && item.success === false && typeof item.error === 'string')
+    )
+    .reverse()
+
+  for (const failure of failures) {
+    const error = String(failure.error).trim()
+    if (!error) continue
+    const errorCode =
+      typeof failure.errorCode === 'string' && failure.errorCode.trim()
+        ? failure.errorCode.trim()
+        : null
+    return errorCode ? `${errorCode}: ${error}` : error
   }
 
   return null
@@ -638,6 +704,13 @@ export async function generatePresentationForCanvasNode(params: {
   signal?: AbortSignal
 }): Promise<PresentationNodeGenerationResult> {
   const context = await loadPresentationGenerationContext(params)
+  const creditOperationId = generateId()
+  const estimatedSlideCount =
+    context.slideCountPreference.mode === 'manual'
+      ? context.slideCountPreference.count ?? DEFAULT_PRESENTATION_SLIDE_COUNT
+      : DEFAULT_PRESENTATION_SLIDE_COUNT
+  const estimatedCredits =
+    getMediaCreditQuote({ capability: 'presentation', modelId: 'gpt-image-2' }) * estimatedSlideCount
 
   await updatePresentationNodeState({
     workflowId: params.workflowId,
@@ -655,9 +728,28 @@ export async function generatePresentationForCanvasNode(params: {
   })
 
   try {
+    await reserveCredits({
+      userId: params.userId,
+      operationId: creditOperationId,
+      credits: estimatedCredits,
+      capability: 'presentation',
+      modelId: 'gpt-image-2',
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      metadata: {
+        estimatedSlideCount,
+        unitCredits: estimatedCredits / estimatedSlideCount,
+        nodeId: params.nodeId,
+      },
+    })
     const hermesResult = await callHermesResponse({
       instructions: buildHermesPresentationInstructions(),
-      input: buildHermesPresentationInput({ ...params, context }),
+      input: buildHermesPresentationInput({
+        ...params,
+        context,
+        creditOperationId,
+        creditSlideLimit: estimatedSlideCount,
+      }),
       sessionId: buildHermesSessionId({
         userId: params.userId,
         workspaceId: params.workspaceId,
@@ -677,6 +769,7 @@ export async function generatePresentationForCanvasNode(params: {
           selectedNodeIds: [params.nodeId, ...context.references.map((ref) => ref.sourceBlockId)],
           traceId: params.traceId,
           targetNodeId: params.nodeId,
+          creditOperationId,
         },
         presentation: {
           slideCountPreference: context.slideCountPreference,
@@ -709,6 +802,23 @@ export async function generatePresentationForCanvasNode(params: {
       hermesResult,
     }
   } catch (error) {
+    await releaseCredits({
+      userId: params.userId,
+      operationId: creditOperationId,
+      capability: 'presentation',
+      modelId: 'gpt-image-2',
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      metadata: { nodeId: params.nodeId, error: toError(error).message },
+    }).catch((releaseError) => {
+      logger.error('Failed to release presentation credit reservation', {
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        nodeId: params.nodeId,
+        error: toError(releaseError).message,
+      })
+    })
     const message = toError(error).message
     await updatePresentationNodeState({
       workflowId: params.workflowId,
@@ -717,6 +827,161 @@ export async function generatePresentationForCanvasNode(params: {
       errorMessage: message,
     }).catch((writebackError) => {
       logger.warn('Failed to write presentation generation error to canvas node', {
+        workflowId: params.workflowId,
+        nodeId: params.nodeId,
+        error: toError(writebackError).message,
+      })
+    })
+    throw error
+  }
+}
+
+/** Queues the original PPT node state before the long-running editable rebuild begins. */
+export async function markPresentationEditableRebuildQueued(params: {
+  workflowId: string
+  nodeId: string
+  taskId: string
+}): Promise<void> {
+  const normalized = await loadWorkflowFromNormalizedTables(params.workflowId)
+  const block = normalized?.blocks[params.nodeId]
+  const artifact = block
+    ? normalizePresentationArtifact(
+        readSubBlockValue(block.subBlocks, 'presentationArtifact', null)
+      )
+    : null
+  if (!artifact?.pptxFile || !artifact.manifestFile || !artifact.manifest || !artifact.auditId) {
+    throw new Error('Generate the original PPT before creating an editable version')
+  }
+
+  await updatePresentationNodeState({
+    workflowId: params.workflowId,
+    nodeId: params.nodeId,
+    status: 'complete',
+    artifact: {
+      ...artifact,
+      originalPptxFile: artifact.originalPptxFile ?? artifact.pptxFile,
+      editableStatus: 'queued',
+      editableTaskId: params.taskId,
+      editableError: undefined,
+    },
+  })
+}
+
+/**
+ * Rebuilds an existing image-based PPT into a separate editable artifact. The
+ * original node artifact remains the default downloadable PPT throughout.
+ */
+export async function rebuildPresentationAsEditable(
+  params: EditablePresentationRebuildPayload & { signal?: AbortSignal }
+): Promise<{ editablePptxFile: PresentationArtifactFile }> {
+  const normalized = await loadWorkflowFromNormalizedTables(params.workflowId)
+  const block = normalized?.blocks[params.nodeId]
+  const artifact = block
+    ? normalizePresentationArtifact(
+        readSubBlockValue(block.subBlocks, 'presentationArtifact', null)
+      )
+    : null
+  if (!artifact?.pptxFile || !artifact.manifestFile || !artifact.manifest || !artifact.auditId) {
+    throw new Error('Generate the original PPT before creating an editable version')
+  }
+
+  const originalPptxFile = artifact.originalPptxFile ?? artifact.pptxFile
+  if (!resolveUserFileUrl(originalPptxFile)) {
+    throw new Error('The original PPT file is no longer available')
+  }
+  const traceId = `editable-presentation:${params.workflowId}:${params.nodeId}`
+  const sourceQuery = new URLSearchParams({
+    userId: params.actorUserId,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId,
+    nodeId: params.nodeId,
+    traceId,
+  })
+  const sourceUrl = ensureAbsoluteUrl(
+    `/api/internal/hermes/presentation-artifacts/source?${sourceQuery.toString()}`
+  )
+
+  const processingArtifact = {
+    ...artifact,
+    pptxFile: artifact.pptxFile as PresentationArtifactFile,
+    originalPptxFile: originalPptxFile as PresentationArtifactFile,
+    manifestFile: artifact.manifestFile as PresentationArtifactFile,
+    auditId: artifact.auditId,
+    manifest: artifact.manifest,
+    editableStatus: 'processing',
+    editableTaskId: params.taskId,
+    editableError: undefined,
+  }
+  await updatePresentationNodeState({
+    workflowId: params.workflowId,
+    nodeId: params.nodeId,
+    status: 'complete',
+    artifact: processingArtifact,
+  })
+
+  try {
+    const hermesResult = await callHermesResponse({
+      instructions: buildEditablePresentationInstructions(),
+      input: [
+        'TASK TYPE: Rebuild a SIM presentation as an editable PPTX.',
+        `ORIGINAL_PPTX_URL: ${sourceUrl}`,
+        `SIM context: userId=${params.actorUserId}, workspaceId=${params.workspaceId}, workflowId=${params.workflowId}, targetNodeId=${params.nodeId}, traceId=${traceId}`,
+        'Call sim_presentation_editable_source_prepare with ORIGINAL_PPTX_URL before calling sim_presentation_editable_runtime prepare.',
+        'Preserve slide count and speaker notes when available. The final upload must have editable=true.',
+      ].join('\n'),
+      sessionId: buildHermesSessionId({
+        userId: params.actorUserId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        chatId: `editable-presentation:${params.nodeId}`,
+      }),
+      sessionKey: buildHermesSessionKey({ userId: params.actorUserId }),
+      metadata: {
+        sim: {
+          userId: params.actorUserId,
+          workspaceId: params.workspaceId,
+          workflowId: params.workflowId,
+          selectedNodeIds: [params.nodeId],
+          traceId,
+          targetNodeId: params.nodeId,
+        },
+        presentation: { source: 'content-canvas-editable-presentation-rebuild' },
+      },
+      signal: params.signal,
+      store: false,
+      truncation: 'auto',
+    })
+    const rebuilt = extractHermesPresentationArtifactUpload(hermesResult.raw)
+    if (!rebuilt) {
+      const failure = extractHermesPresentationFailure(hermesResult.raw)
+      throw new Error(failure ?? 'Hermes completed without uploading the editable PPT artifact')
+    }
+    if (rebuilt.manifest.editable !== true && rebuilt.manifest.backendType !== 'editable') {
+      throw new Error('Hermes uploaded a PPT that was not marked as object-level editable')
+    }
+
+    const completedArtifact = {
+      ...processingArtifact,
+      editablePptxFile: rebuilt.pptxFile,
+      editableStatus: 'complete',
+      editableError: undefined,
+    }
+    await updatePresentationNodeState({
+      workflowId: params.workflowId,
+      nodeId: params.nodeId,
+      status: 'complete',
+      artifact: completedArtifact,
+    })
+    return { editablePptxFile: rebuilt.pptxFile }
+  } catch (error) {
+    const message = toError(error).message
+    await updatePresentationNodeState({
+      workflowId: params.workflowId,
+      nodeId: params.nodeId,
+      status: 'complete',
+      artifact: { ...processingArtifact, editableStatus: 'error', editableError: message },
+    }).catch((writebackError) => {
+      logger.warn('Failed to save editable PPT rebuild error', {
         workflowId: params.workflowId,
         nodeId: params.nodeId,
         error: toError(writebackError).message,

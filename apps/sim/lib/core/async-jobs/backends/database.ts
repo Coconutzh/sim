@@ -246,8 +246,8 @@ export class DatabaseJobQueue implements JobQueueBackend {
       }
       try {
         await this.startJob(jobId)
-        await runner(payload, abortController.signal)
-        await this.completeJob(jobId, null)
+        const output = await runner(payload, abortController.signal)
+        await this.completeJob(jobId, output)
       } catch (err) {
         const message = toError(err).message
         logger.error(`[${type}] Inline job ${jobId} failed`, { error: message })

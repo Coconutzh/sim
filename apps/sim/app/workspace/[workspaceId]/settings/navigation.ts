@@ -24,7 +24,14 @@ import { AgentSkillsIcon, McpIcon } from '@/components/icons'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 
 export type SettingsSection =
+  | 'account'
+  | 'my-credits'
   | 'general'
+  | 'admin-console-users'
+  | 'admin-console-credits'
+  | 'admin-console-api-keys'
+  | 'admin-console-usage'
+  | 'user-management'
   | 'integrations'
   | 'secrets'
   | 'template-profile'
@@ -55,6 +62,7 @@ export type NavigationSection =
   | 'tools'
   | 'system'
   | 'enterprise'
+  | 'platform'
   | 'superuser'
 
 export interface NavigationItem {
@@ -88,20 +96,56 @@ export const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 export { isCredentialSetsEnabled }
 
 export const sectionConfig: { key: NavigationSection; title: string }[] = [
-  { key: 'account', title: 'Account' },
-  { key: 'tools', title: 'Tools' },
-  { key: 'subscription', title: 'Subscription' },
-  { key: 'system', title: 'System' },
-  { key: 'enterprise', title: 'Enterprise' },
-  { key: 'superuser', title: 'Superuser' },
+  { key: 'account', title: '账号' },
+  { key: 'platform', title: '平台管理' },
+  { key: 'tools', title: '工具' },
+  { key: 'subscription', title: '订阅' },
+  { key: 'system', title: '系统' },
+  { key: 'enterprise', title: '企业' },
+  { key: 'superuser', title: '高级管理' },
 ]
 
 export const allNavigationItems: NavigationItem[] = [
-  { id: 'general', label: 'General', icon: Settings, section: 'account' },
-  // { id: 'template-profile', label: 'Template Profile', icon: User, section: 'account' },
+  { id: 'account', label: '账号', icon: Settings, section: 'account' },
+  { id: 'my-credits', label: '我的积分', icon: Card, section: 'account' },
+  {
+    id: 'admin-console-users',
+    label: '用户与权限',
+    icon: Users,
+    section: 'platform',
+    requiresAdminRole: true,
+  },
+  {
+    id: 'admin-console-credits',
+    label: '额度与积分',
+    icon: Card,
+    section: 'platform',
+    requiresAdminRole: true,
+  },
+  {
+    id: 'admin-console-api-keys',
+    label: 'API Key 管理',
+    icon: KeySquare,
+    section: 'platform',
+    requiresAdminRole: true,
+  },
+  {
+    id: 'admin-console-usage',
+    label: '使用记录',
+    icon: Database,
+    section: 'platform',
+    requiresAdminRole: true,
+  },
+  {
+    id: 'user-management',
+    label: '用户管理',
+    icon: Users,
+    section: 'platform',
+    requiresAdminRole: true,
+  },
   {
     id: 'access-control',
-    label: 'Access Control',
+    label: '访问控制',
     icon: ShieldCheck,
     section: 'enterprise',
     requiresHosted: true,
@@ -110,7 +154,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'audit-logs',
-    label: 'Audit Logs',
+    label: '审计日志',
     icon: ClipboardList,
     section: 'enterprise',
     requiresHosted: true,
@@ -119,24 +163,24 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'subscription',
-    label: 'Subscription',
+    label: '订阅',
     icon: Card,
     section: 'subscription',
     hideWhenBillingDisabled: true,
   },
   {
     id: 'organization',
-    label: 'Organization',
+    label: '组织',
     icon: Users,
     section: 'subscription',
     hideWhenBillingDisabled: true,
     requiresHosted: true,
     requiresTeam: true,
   },
-  { id: 'integrations', label: 'Integrations', icon: Connections, section: 'account' },
-  { id: 'secrets', label: 'Secrets', icon: Key, section: 'account' },
-  { id: 'custom-tools', label: 'Custom Tools', icon: Wrench, section: 'tools' },
-  { id: 'skills', label: 'Skills', icon: AgentSkillsIcon, section: 'tools' },
+  { id: 'integrations', label: '集成', icon: Connections, section: 'account' },
+  { id: 'secrets', label: '密钥', icon: Key, section: 'account' },
+  { id: 'custom-tools', label: '自定义工具', icon: Wrench, section: 'tools' },
+  { id: 'skills', label: '技能', icon: AgentSkillsIcon, section: 'tools' },
   { id: 'mcp', label: 'MCP Tools', icon: McpIcon, section: 'tools' },
   { id: 'apikeys', label: 'Sim Keys', icon: TerminalWindow, section: 'system' },
   { id: 'workflow-mcp-servers', label: 'MCP Servers', icon: Server, section: 'system' },
@@ -174,10 +218,10 @@ export const allNavigationItems: NavigationItem[] = [
         },
       ]
     : []),
-  { id: 'recently-deleted', label: 'Recently Deleted', icon: TrashOutline, section: 'system' },
+  { id: 'recently-deleted', label: '最近删除', icon: TrashOutline, section: 'system' },
   {
     id: 'sso',
-    label: 'Single Sign-On',
+    label: '单点登录',
     icon: LogIn,
     section: 'enterprise',
     requiresHosted: true,
@@ -186,7 +230,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'data-retention',
-    label: 'Data Retention',
+    label: '数据保留',
     icon: Database,
     section: 'enterprise',
     requiresHosted: true,
@@ -195,7 +239,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'data-drains',
-    label: 'Data Drains',
+    label: '数据导出',
     icon: Upload,
     section: 'enterprise',
     requiresHosted: true,
@@ -204,7 +248,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'whitelabeling',
-    label: 'Whitelabeling',
+    label: '白标',
     icon: Palette,
     section: 'enterprise',
     requiresHosted: true,
@@ -213,7 +257,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   {
     id: 'admin',
-    label: 'Admin',
+    label: '管理',
     icon: Lock,
     section: 'superuser',
     requiresAdminRole: true,

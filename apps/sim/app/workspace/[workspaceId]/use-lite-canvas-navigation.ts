@@ -4,6 +4,10 @@ import { useCallback, useMemo } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import {
+  buildProjectWorkspaceEntries,
+  type ProjectWorkspaceEntry,
+} from '@/app/workspace/[workspaceId]/lite-canvas-projects'
+import {
   useCreatePersonalWorkspace,
   useCreateTeamWorkspace,
   useMyWorkgroups,
@@ -12,16 +16,13 @@ import {
   useSetActiveWorkgroup,
   useTeamWorkspace,
 } from '@/hooks/queries/collaboration'
+import { useCreateProductionProject } from '@/hooks/queries/production-projects'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import {
   useWorkspaceCanvasCreationCapabilities,
   useWorkspaceSettings,
   useWorkspacesQuery,
 } from '@/hooks/queries/workspace'
-import {
-  buildProjectWorkspaceEntries,
-  type ProjectWorkspaceEntry,
-} from '@/app/workspace/[workspaceId]/lite-canvas-projects'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
 const logger = createLogger('LiteCanvasNavigation')
@@ -57,6 +58,8 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     useSetActiveWorkgroup()
   const { mutateAsync: createPersonalWorkspace, isPending: isCreatingPersonalWorkspace } =
     useCreatePersonalWorkspace()
+  const { mutateAsync: createProductionProject, isPending: isCreatingProductionProject } =
+    useCreateProductionProject()
   const { mutateAsync: createTeamWorkspace, isPending: isCreatingTeamWorkspace } =
     useCreateTeamWorkspace()
 
@@ -88,18 +91,17 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
   })
 
   const personalDraftWorkspaces = useMemo(
-    () =>
-      workspaces.filter((workspace) => {
-        if (workspace.canvasScope !== 'personal') return false
-        return !activeWorkgroupId || workspace.workgroupId === activeWorkgroupId
-      }),
-    [activeWorkgroupId, workspaces]
+    () => workspaces.filter((workspace) => workspace.canvasScope === 'personal'),
+    [workspaces]
   )
 
   const activePersonalDraftWorkspace =
     personalDraftWorkspaces.find((workspace) => workspace.id === workspaceId) ??
-    personalDraftWorkspaces.find((workspace) => workspace.id === personalWorkspaceId) ??
-    personalDraftWorkspaces[0] ??
+    personalDraftWorkspaces.find(
+      (workspace) =>
+        workspace.id === personalWorkspaceId && workspace.workgroupId === activeWorkgroupId
+    ) ??
+    personalDraftWorkspaces.find((workspace) => workspace.workgroupId === activeWorkgroupId) ??
     null
 
   const isActiveWorkgroupAdmin = activeWorkgroup?.role === 'admin'
@@ -152,11 +154,33 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     })
   }, [workgroups, workgroupsData?.defaultWorkgroupId, workspaceId])
 
+  const projectOptions = useMemo(
+    () => projectEntries.map((project) => ({ id: project.id, name: project.name })),
+    [projectEntries]
+  )
+
   const createPersonalCanvas = useCallback(
-    async (name: string) => {
-      if (!activeWorkgroupId) return
+    async ({
+      canvasName,
+      projectId,
+      projectName,
+    }: {
+      canvasName: string
+      projectId?: string
+      projectName?: string
+    }) => {
+      let workgroupId = projectId
+        ? projectEntries.find((project) => project.id === projectId)?.primaryWorkgroupId
+        : undefined
+
+      if (projectName) {
+        const { project } = await createProductionProject({ name: projectName })
+        workgroupId = project.primaryWorkgroupId ?? undefined
+      }
+
+      if (!workgroupId) return
       try {
-        const result = await createPersonalWorkspace({ workgroupId: activeWorkgroupId, name })
+        const result = await createPersonalWorkspace({ workgroupId, name: canvasName })
         router.push(
           result.defaultWorkflowId
             ? `/workspace/${result.workspace.id}/w/${result.defaultWorkflowId}`
@@ -165,12 +189,12 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
       } catch (error) {
         logger.error('Failed to create low-memory personal draft canvas', {
           error: error instanceof Error ? error.message : 'Unknown error',
-          workgroupId: activeWorkgroupId,
+          workgroupId,
         })
         throw error
       }
     },
-    [activeWorkgroupId, createPersonalWorkspace, router]
+    [createPersonalWorkspace, createProductionProject, projectEntries, router]
   )
 
   const initializeTeamCanvas = useCallback(async () => {
@@ -252,7 +276,7 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     canInitializeTeamCanvas,
     createPersonalCanvas,
     initializeTeamCanvas,
-    isCreatingPersonalWorkspace,
+    isCreatingPersonalWorkspace: isCreatingPersonalWorkspace || isCreatingProductionProject,
     isCreatingTeamWorkspace,
     isLoading: isWorkspacesLoading || isWorkgroupsLoading,
     isProjectAdmin,
@@ -262,6 +286,7 @@ export function useLiteCanvasNavigation({ workspaceId }: UseLiteCanvasNavigation
     personalHref,
     personalWorkspaceId,
     projectEntries,
+    projectOptions,
     showcaseHref: `/workspace/${teamScopedWorkspaceId}/showcase`,
     splitHref: `/workspace/${teamScopedWorkspaceId}/split`,
     switchWorkgroup,

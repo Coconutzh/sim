@@ -1,6 +1,8 @@
-import { generateShortId } from '@sim/utils/id'
+import { generateId, generateShortId } from '@sim/utils/id'
 import sharp from 'sharp'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { releaseCredits, reserveCredits, settleCredits } from '@/lib/credits/wallet'
 import type {
   ImageAspectRatioValue,
   ImageGenerationModelId,
@@ -788,40 +790,67 @@ export async function generateWorkspaceImageFromPrompt({
   referenceContext,
   abortSignal,
 }: GenerateWorkspaceImageFromPromptInput): Promise<GenerateWorkspaceImageFromPromptResult> {
-  const hydratedReferenceContext = await hydrateImageReferenceContext(workspaceId, referenceContext)
-  const resolvedAspectRatio =
-    model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && aspectRatio === 'auto'
-      ? await resolveHydratedImageAspectRatio(hydratedReferenceContext?.images?.[0])
-      : aspectRatio
-
-  const generatedImage = await generateImageWithProvider({
-    model,
-    prompt,
-    aspectRatio: resolvedAspectRatio,
-    referenceContext: hydratedReferenceContext,
-    logContext: {
-      tool: getPromptImageTool({ model, referenceContext: hydratedReferenceContext }),
-      sourceBytes: getUserFileByteSize(hydratedReferenceContext?.images?.[0]),
-      referenceBytes: sumUserFileByteSizes(hydratedReferenceContext?.images?.slice(1) ?? []),
-    },
-    abortSignal,
-  })
-
-  const file = await uploadWorkspaceFile(
-    workspaceId,
+  const operationId = generateId()
+  const credits = getMediaCreditQuote({ capability: 'image', modelId: model })
+  await reserveCredits({
     userId,
-    generatedImage.buffer,
-    getGeneratedFileName(generatedImage.mimeType),
-    generatedImage.mimeType
-  )
+    operationId,
+    credits,
+    capability: 'image',
+    modelId: model,
+    workspaceId,
+  })
+  try {
+    const hydratedReferenceContext = await hydrateImageReferenceContext(
+      workspaceId,
+      referenceContext
+    )
+    const resolvedAspectRatio =
+      model === DEFAULT_IMAGE_PERSPECTIVE_MODEL && aspectRatio === 'auto'
+        ? await resolveHydratedImageAspectRatio(hydratedReferenceContext?.images?.[0])
+        : aspectRatio
 
-  return {
-    file,
-    metadata: {
-      provider: generatedImage.provider,
-      providerModel: generatedImage.providerModel,
-      revisedPrompt: generatedImage.revisedPrompt,
-    },
+    const generatedImage = await generateImageWithProvider({
+      model,
+      prompt,
+      aspectRatio: resolvedAspectRatio,
+      referenceContext: hydratedReferenceContext,
+      logContext: {
+        tool: getPromptImageTool({ model, referenceContext: hydratedReferenceContext }),
+        sourceBytes: getUserFileByteSize(hydratedReferenceContext?.images?.[0]),
+        referenceBytes: sumUserFileByteSizes(hydratedReferenceContext?.images?.slice(1) ?? []),
+      },
+      abortSignal,
+    })
+
+    const file = await uploadWorkspaceFile(
+      workspaceId,
+      userId,
+      generatedImage.buffer,
+      getGeneratedFileName(generatedImage.mimeType),
+      generatedImage.mimeType
+    )
+
+    await settleCredits({ userId, operationId, capability: 'image', modelId: model, workspaceId })
+
+    return {
+      file,
+      metadata: {
+        provider: generatedImage.provider,
+        providerModel: generatedImage.providerModel,
+        revisedPrompt: generatedImage.revisedPrompt,
+      },
+    }
+  } catch (error) {
+    await releaseCredits({
+      userId,
+      operationId,
+      capability: 'image',
+      modelId: model,
+      workspaceId,
+      metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+    })
+    throw error
   }
 }
 

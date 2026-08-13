@@ -1,4 +1,4 @@
-import { resolveContentService } from '@/lib/content-canvas/service-config'
+import { resolveContentServiceForRuntime } from '@/lib/content-canvas/service-config'
 import { executeProviderRequest } from '@/providers'
 import type { Message, ProviderRequest, ProviderResponse } from '@/providers/types'
 import { getProviderFromModel } from '@/providers/utils'
@@ -144,10 +144,51 @@ function getUsageTokenCount(payload: unknown, key: string): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
+async function executeCohereTextRequest(params: {
+  apiKey: string
+  model: string
+  systemPrompt: string
+  prompt: string
+  referenceContextText?: string
+  abortSignal?: AbortSignal
+}): Promise<ProviderResponse> {
+  const response = await fetch('https://api.cohere.ai/v2/chat', {
+    method: 'POST',
+    signal: params.abortSignal,
+    headers: { Authorization: `Bearer ${params.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: params.model,
+      stream: false,
+      messages: [
+        { role: 'system', content: params.systemPrompt },
+        { role: 'user', content: buildPrompt(params.prompt, params.referenceContextText) },
+      ],
+    }),
+  })
+  const payload: unknown = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(extractErrorMessage(payload) || 'Cohere text request failed')
+  const record = isRecord(payload) ? payload : {}
+  const message = isRecord(record.message) ? record.message : {}
+  const content = Array.isArray(message.content)
+    ? message.content
+        .map((part) => (isRecord(part) ? (getStringRecordValue(part, 'text') ?? '') : ''))
+        .join('')
+        .trim()
+    : ''
+  return {
+    content,
+    model: params.model,
+    tokens: {
+      input: getUsageTokenCount(payload, 'input_tokens'),
+      output: getUsageTokenCount(payload, 'output_tokens'),
+    },
+  }
+}
+
 export async function executeContentCanvasTextRequest(
   params: ExecuteContentCanvasTextInput
 ): Promise<ProviderResponse> {
-  const service = resolveContentService({
+  const service = await resolveContentServiceForRuntime({
     capability: 'text',
     modelId: params.model,
   })
@@ -199,6 +240,42 @@ export async function executeContentCanvasTextRequest(
       })
     )
     return response
+  }
+
+  if (service.kind === 'provider-native') {
+    const providerId = service.providerId === 'gemini' ? 'google' : service.providerId
+    if (!providerId)
+      throw new Error(`No provider configured for content-canvas model ${params.model}`)
+    return assertProviderResponse(
+      await executeProviderRequest(providerId, {
+        workspaceId: params.workspaceId,
+        model: params.model,
+        apiKey: service.apiKey,
+        systemPrompt: params.systemPrompt,
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+        responseFormat: params.responseFormat,
+        abortSignal: params.abortSignal,
+        messages: [
+          buildNativeGoogleMessage({
+            prompt: params.prompt,
+            referenceContextText: params.referenceContextText,
+            referenceImages: params.referenceImages,
+          }),
+        ],
+      })
+    )
+  }
+
+  if (service.kind === 'cohere-native') {
+    return executeCohereTextRequest({
+      apiKey: service.apiKey,
+      model: params.model,
+      systemPrompt: params.systemPrompt,
+      prompt: params.prompt,
+      referenceContextText: params.referenceContextText,
+      abortSignal: params.abortSignal,
+    })
   }
 
   const response = await fetch(`${service.baseUrl.replace(/\/$/, '')}/chat/completions`, {

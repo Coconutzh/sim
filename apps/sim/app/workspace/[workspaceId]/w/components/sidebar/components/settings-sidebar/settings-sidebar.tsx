@@ -6,11 +6,14 @@ import { useParams, usePathname, useRouter } from 'next/navigation'
 import {
   Button,
   ChevronDown,
+  Database,
+  KeySquare,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Settings,
   Skeleton,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
@@ -52,6 +55,17 @@ const SKELETON_SECTIONS = sectionConfig
   )
   .filter((count) => count > 0)
 
+const ADMIN_CONSOLE_SECTIONS = [
+  'admin-console-users',
+  'admin-console-credits',
+  'admin-console-api-keys',
+  'admin-console-usage',
+] as const
+
+function isAdminConsoleSection(section: SettingsSection) {
+  return (ADMIN_CONSOLE_SECTIONS as readonly string[]).includes(section)
+}
+
 interface SettingsSidebarProps {
   isCollapsed?: boolean
   showCollapsedTooltips?: boolean
@@ -73,6 +87,7 @@ export function SettingsSidebar({
   const cancelNavigation = useSettingsDirtyStore((s) => s.cancelNavigation)
   const isDirty = useSettingsDirtyStore((s) => s.isDirty)
   const [showDiscardDialog, setShowDiscardDialog] = useState(false)
+  const [adminConsoleOpen, setAdminConsoleOpen] = useState(true)
 
   const { data: session, isPending: sessionLoading } = useSession()
   const { data: organizationsData, isLoading: orgsLoading } = useOrganizations()
@@ -196,12 +211,13 @@ export function SettingsSidebar({
     if (settingsIdx !== -1 && segments[settingsIdx + 1]) {
       return segments[settingsIdx + 1] as SettingsSection
     }
-    return 'general'
+    return 'account'
   }, [pathname])
 
   const handlePrefetch = useCallback(
     (itemId: string) => {
       switch (itemId) {
+        case 'account':
         case 'general':
           prefetchGeneralSettings(queryClient)
           void import('@/app/workspace/[workspaceId]/settings/components/general/general')
@@ -224,6 +240,18 @@ export function SettingsSidebar({
   )
 
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
+
+  const navigateToSection = useCallback(
+    (section: SettingsSection) => {
+      if (section === activeSection) return
+      if (!requestNavigation(section)) {
+        setShowDiscardDialog(true)
+        return
+      }
+      router.replace(getSettingsHref({ section }), { scroll: false })
+    },
+    [activeSection, getSettingsHref, requestNavigation, router]
+  )
 
   const handleBack = useCallback(() => {
     if (isDirty) {
@@ -252,7 +280,7 @@ export function SettingsSidebar({
     <>
       {/* Back button */}
       <div className='mt-2.5 flex flex-shrink-0 flex-col gap-0.5 px-2'>
-        <SidebarTooltip label='Back' enabled={showCollapsedTooltips}>
+        <SidebarTooltip label='返回' enabled={showCollapsedTooltips}>
           <button
             type='button'
             onClick={handleBack}
@@ -261,7 +289,7 @@ export function SettingsSidebar({
             <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center text-[var(--text-icon)]'>
               <ChevronDown className='h-[10px] w-[10px] rotate-90' />
             </div>
-            <span className='truncate font-base text-[var(--text-body)]'>Back</span>
+            <span className='truncate font-base text-[var(--text-body)]'>返回</span>
           </button>
         </SidebarTooltip>
       </div>
@@ -296,6 +324,13 @@ export function SettingsSidebar({
           : sectionConfig.map(({ key, title }) => {
               const sectionItems = navigationItems.filter((item) => item.section === key)
               if (sectionItems.length === 0) return null
+              const adminConsoleItems = sectionItems.filter((item) =>
+                isAdminConsoleSection(item.id)
+              )
+              const visibleSectionItems =
+                key === 'platform'
+                  ? sectionItems.filter((item) => !isAdminConsoleSection(item.id))
+                  : sectionItems
 
               return (
                 <div key={key} className='flex flex-shrink-0 flex-col'>
@@ -303,7 +338,61 @@ export function SettingsSidebar({
                     <div className='font-base text-[var(--text-icon)] text-small'>{title}</div>
                   </div>
                   <div className='flex flex-col gap-0.5 px-2'>
-                    {sectionItems.map((item) => {
+                    {key === 'platform' && adminConsoleItems.length > 0 && (
+                      <>
+                        <button
+                          type='button'
+                          className={cn(
+                            'group mx-0.5 flex h-[30px] items-center gap-2 rounded-[8px] px-2 text-[14px]',
+                            isAdminConsoleSection(activeSection)
+                              ? 'bg-[var(--surface-active)]'
+                              : 'hover-hover:bg-[var(--surface-hover)]'
+                          )}
+                          onClick={() => setAdminConsoleOpen((open) => !open)}
+                        >
+                          <Settings className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                          <span className='min-w-0 truncate font-base text-[var(--text-body)]'>
+                            控制台
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              'ml-auto h-[12px] w-[12px] text-[var(--text-icon)] transition-transform',
+                              !adminConsoleOpen && '-rotate-90'
+                            )}
+                          />
+                        </button>
+                        {adminConsoleOpen &&
+                          adminConsoleItems.map((item) => {
+                            const Icon =
+                              item.id === 'admin-console-api-keys'
+                                ? KeySquare
+                                : item.id === 'admin-console-usage'
+                                  ? Database
+                                  : item.icon
+                            const active = activeSection === item.id
+                            return (
+                              <button
+                                key={item.id}
+                                type='button'
+                                className={cn(
+                                  'group mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] pr-2 pl-8 text-[13px]',
+                                  !active && 'hover-hover:bg-[var(--surface-hover)]',
+                                  active && 'bg-[var(--surface-active)]'
+                                )}
+                                onMouseEnter={() => handlePrefetch(item.id)}
+                                onFocus={() => handlePrefetch(item.id)}
+                                onClick={() => navigateToSection(item.id)}
+                              >
+                                <Icon className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-icon)]' />
+                                <span className='min-w-0 truncate font-base text-[var(--text-body)]'>
+                                  {item.label}
+                                </span>
+                              </button>
+                            )
+                          })}
+                      </>
+                    )}
+                    {visibleSectionItems.map((item) => {
                       const Icon = item.icon
                       const active = activeSection === item.id
                       const isLocked = item.requiresMax && !subscriptionAccess.hasUsableMaxAccess
@@ -343,12 +432,7 @@ export function SettingsSidebar({
                           onFocus={() => handlePrefetch(item.id)}
                           onClick={() => {
                             const section = item.id as SettingsSection
-                            if (section === activeSection) return
-                            if (!requestNavigation(section)) {
-                              setShowDiscardDialog(true)
-                              return
-                            }
-                            router.replace(getSettingsHref({ section }), { scroll: false })
+                            navigateToSection(section)
                           }}
                         >
                           {content}
@@ -373,18 +457,18 @@ export function SettingsSidebar({
 
       <Modal open={showDiscardDialog} onOpenChange={(open) => !open && handleCancelDiscard()}>
         <ModalContent size='sm'>
-          <ModalHeader>Unsaved Changes</ModalHeader>
+          <ModalHeader>未保存的更改</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)]'>
-              You have unsaved changes. Are you sure you want to discard them?
+              当前有未保存的更改，确定要放弃这些更改吗？
             </p>
           </ModalBody>
           <ModalFooter>
             <Button variant='default' onClick={handleCancelDiscard}>
-              Keep Editing
+              继续编辑
             </Button>
             <Button variant='destructive' onClick={handleConfirmDiscard}>
-              Discard Changes
+              放弃更改
             </Button>
           </ModalFooter>
         </ModalContent>

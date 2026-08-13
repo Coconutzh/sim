@@ -1,7 +1,7 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
-import { resolveContentService } from '@/lib/content-canvas/service-config'
+import { resolveContentServiceForRuntime } from '@/lib/content-canvas/service-config'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
 import {
   type ImageAspectRatioValue,
@@ -598,7 +598,7 @@ async function generateImageWithGeminiNative({
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'image', modelId: model })
+  const service = await resolveContentServiceForRuntime({ capability: 'image', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
@@ -667,7 +667,7 @@ async function generateImageWithGeminiCompatible({
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({
+  const service = await resolveContentServiceForRuntime({
     capability: 'image',
     modelId: resolveGeminiCompatibleServiceModel(model),
   })
@@ -845,7 +845,7 @@ async function generateImageWithArk({
   abortSignal,
 }: GenerateImageWithProviderInput): Promise<GeneratedImageProviderResult> {
   throwIfAborted(abortSignal)
-  const service = resolveContentService({ capability: 'image', modelId: model })
+  const service = await resolveContentServiceForRuntime({ capability: 'image', modelId: model })
   if (!service.apiKey) {
     throw new Error(`No API key configured for content-canvas image model ${model}`)
   }
@@ -951,7 +951,7 @@ export async function generateImageWithProvider(
     return generateImageWithGeminiCompatible(params)
   }
 
-  const service = resolveContentService({ capability: 'image', modelId: params.model })
+  const service = await resolveContentServiceForRuntime({ capability: 'image', modelId: params.model })
 
   if (
     params.model === 'gemini-3.1-flash-image-preview' ||

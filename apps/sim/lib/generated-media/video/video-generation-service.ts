@@ -1,4 +1,7 @@
+import { generateId } from '@sim/utils/id'
 import type { UserFileLike } from '@/lib/core/utils/user-file'
+import { getMediaCreditQuote } from '@/lib/credits/media-pricing'
+import { releaseCredits, reserveCredits, settleCredits } from '@/lib/credits/wallet'
 import { resolveMediaEditWorkspaceFile } from '@/lib/generated-media/image/media-edit-files'
 import { generateVideoWithProvider } from '@/lib/generated-media/video/providers'
 import type {
@@ -85,29 +88,59 @@ export async function generateWorkspaceVideoFromPrompt({
   abortSignal,
 }: GenerateWorkspaceVideoFromPromptInput): Promise<GenerateWorkspaceVideoFromPromptResult> {
   const hydratedMedia = await hydrateInternalVideoMedia(workspaceId, media)
-  const generatedVideo = await generateVideoWithProvider({
-    model,
-    prompt,
-    media: hydratedMedia,
-    parameters,
-    abortSignal,
+  const operationId = generateId()
+  const credits = getMediaCreditQuote({
+    capability: 'video',
+    modelId: model,
+    durationSeconds: parameters.duration,
+    resolution: parameters.resolution,
   })
-
-  const file = await uploadWorkspaceFile(
-    workspaceId,
+  await reserveCredits({
     userId,
-    generatedVideo.buffer,
-    getGeneratedVideoFileName(generatedVideo.mimeType),
-    generatedVideo.mimeType
-  )
+    operationId,
+    credits,
+    capability: 'video',
+    modelId: model,
+    workspaceId,
+    metadata: { duration: parameters.duration, resolution: parameters.resolution },
+  })
+  try {
+    const generatedVideo = await generateVideoWithProvider({
+      model,
+      prompt,
+      media: hydratedMedia,
+      parameters,
+      abortSignal,
+    })
 
-  return {
-    file,
-    metadata: {
-      provider: generatedVideo.provider,
-      providerModel: generatedVideo.providerModel,
-      taskId: generatedVideo.taskId,
-      revisedPrompt: generatedVideo.revisedPrompt,
-    },
+    const file = await uploadWorkspaceFile(
+      workspaceId,
+      userId,
+      generatedVideo.buffer,
+      getGeneratedVideoFileName(generatedVideo.mimeType),
+      generatedVideo.mimeType
+    )
+
+    await settleCredits({ userId, operationId, capability: 'video', modelId: model, workspaceId })
+
+    return {
+      file,
+      metadata: {
+        provider: generatedVideo.provider,
+        providerModel: generatedVideo.providerModel,
+        taskId: generatedVideo.taskId,
+        revisedPrompt: generatedVideo.revisedPrompt,
+      },
+    }
+  } catch (error) {
+    await releaseCredits({
+      userId,
+      operationId,
+      capability: 'video',
+      modelId: model,
+      workspaceId,
+      metadata: { error: error instanceof Error ? error.message : 'Unknown error' },
+    })
+    throw error
   }
 }

@@ -56,7 +56,7 @@ describe('GET /api/content-canvas/models', () => {
     process.env = ORIGINAL_ENV
   })
 
-  it('returns only env-enabled content-canvas models and exposes sanitized defaults', async () => {
+  it('does not expose env-configured models before the administrator migrates configuration', async () => {
     process.env.CONTENT_TEXT_GEMINI_API_KEY = 'text-key'
     process.env.CONTENT_TEXT_GEMINI_ENABLED_MODELS = 'gemini-2.5-flash, gemini-2.5-pro'
     process.env.CONTENT_TEXT_GEMINI_DEFAULT_MODEL = 'gemini-2.5-pro'
@@ -76,19 +76,9 @@ describe('GET /api/content-canvas/models', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body).toMatchObject({
-      success: true,
-      models: {
-        text: {
-          defaultModelId: 'gemini-2.5-pro',
-          enabledModelIds: ['gemini-2.5-flash', 'gemini-2.5-pro'],
-        },
-        image: {
-          defaultModelId: 'jimeng-4.5',
-          enabledModelIds: ['jimeng-4.5'],
-        },
-      },
-    })
+    expect(body).toMatchObject({ success: true })
+    expect(body.models.text.enabledModelIds).toEqual([])
+    expect(body.models.image.enabledModelIds).toEqual([])
     expect(body.models.audio.enabledModelIds).toEqual([])
     expect(body.models.video.enabledModelIds).toEqual([])
     expect(JSON.stringify(body)).not.toContain('text-key')

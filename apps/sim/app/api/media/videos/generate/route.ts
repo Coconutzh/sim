@@ -4,12 +4,17 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { generateWorkspaceVideoFromPrompt } from '@/lib/generated-media/video/video-generation-service'
+import { InsufficientCreditsError } from '@/lib/credits/wallet'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 export const dynamic = 'force-dynamic'
 
 function getVideoGenerationErrorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Video generation failed'
+
+  if (error instanceof InsufficientCreditsError) {
+    return NextResponse.json({ error: message }, { status: 402 })
+  }
 
   if (message.includes('not configured')) {
     return NextResponse.json({ error: message }, { status: 500 })
