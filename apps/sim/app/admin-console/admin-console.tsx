@@ -27,14 +27,14 @@ import {
   Textarea,
   toast,
 } from '@/components/emcn'
-import {
-  type ContentCapability,
-  type ContentModelFamily,
-  type ContentServiceKind,
-  getContentCanvasModelsByCapability,
-  getContentCanvasModelsByFamily,
-} from '@/lib/content-canvas/model-catalog'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  getManagedModelOptions,
+  PLATFORM_FUNCTIONS,
+  PLATFORM_PROVIDERS,
+  type PlatformFunctionId,
+  type PlatformProviderId,
+} from '@/lib/platform-models/catalog'
 import {
   type AdminConsoleModelService,
   type AdminConsoleProviderKey,
@@ -47,6 +47,7 @@ import {
   useApplyAdminConsoleCredits,
   useCreateAdminConsoleProviderKey,
   useDeleteAdminConsoleModelService,
+  useDeleteAdminConsoleProviderKey,
   useUpdateAdminConsoleModelService,
   useUpdateAdminConsoleProviderKey,
   useUpdateAdminConsoleUser,
@@ -92,17 +93,6 @@ const USAGE_SOURCES = [
   'mothership_block',
   'knowledge-base',
   'voice-input',
-] as const
-
-const CANVAS_CAPABILITIES = ['text', 'image', 'audio', 'video'] as const
-const CONTENT_SERVICE_KINDS = [
-  'openai-compatible',
-  'google-native',
-  'ark-image',
-  'evolink-audio',
-  'dashscope-video',
-  'provider-native',
-  'cohere-native',
 ] as const
 
 function formatMoney(value: number) {
@@ -484,7 +474,8 @@ function ApiKeysPanel() {
   const keysQuery = useAdminConsoleProviderKeys()
   const createKey = useCreateAdminConsoleProviderKey()
   const updateKey = useUpdateAdminConsoleProviderKey()
-  const [providerId, setProviderId] = useState<Exclude<(typeof PROVIDERS)[number], 'all'>>('openai')
+  const deleteKey = useDeleteAdminConsoleProviderKey()
+  const [providerId, setProviderId] = useState<PlatformProviderId>('openai')
   const [label, setLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
 
@@ -513,14 +504,12 @@ function ApiKeysPanel() {
           <Label>Provider</Label>
           <select
             value={providerId}
-            onChange={(event) =>
-              setProviderId(event.target.value as Exclude<(typeof PROVIDERS)[number], 'all'>)
-            }
+            onChange={(event) => setProviderId(event.target.value as PlatformProviderId)}
             className='h-9 rounded-md border border-[var(--border-primary)] bg-transparent px-3 text-sm'
           >
-            {PROVIDERS.filter((provider) => provider !== 'all').map((provider) => (
-              <option key={provider} value={provider}>
-                {provider}
+            {PLATFORM_PROVIDERS.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.label}
               </option>
             ))}
           </select>
@@ -548,26 +537,39 @@ function ApiKeysPanel() {
           </Button>
         </div>
       </DataPanel>
-      <DataPanel className='overflow-x-auto rounded-none border-x-0 p-0'>
-        <Table className='min-w-[980px] table-fixed'>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Provider</TableHead>
-              <TableHead>标签</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>默认</TableHead>
-              <TableHead>最后使用</TableHead>
-              <TableHead className='w-[320px] whitespace-nowrap pr-4 text-right'>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(keysQuery.data?.keys ?? []).map((key) => (
-              <ProviderKeyRow key={key.id} item={key} updateKey={updateKey.mutate} />
+      <DataPanel className='grid gap-3'>
+        <div className='text-sm text-[var(--text-secondary)]'>
+          服务商列表始终展示。未配置时先添加 Key；Key 只会以脱敏形式显示。
+        </div>
+        {(keysQuery.data?.providers ?? []).map((provider) => (
+          <div
+            key={provider.providerId}
+            className='rounded-lg border border-[var(--border-primary)] p-3'
+          >
+            <div className='flex items-center justify-between gap-3'>
+              <div>
+                <div className='font-medium'>{provider.label}</div>
+                <div className='text-xs text-[var(--text-secondary)]'>
+                  {provider.capabilities.join('、')} ·{' '}
+                  {provider.keys.length ? `已配置 ${provider.keys.length} 个 Key` : '未配置'}
+                </div>
+              </div>
+              <Badge
+                variant={provider.keys.some((key) => key.status === 'active') ? 'green' : 'gray'}
+              >
+                {provider.keys.some((key) => key.status === 'active') ? '已配置' : '未配置'}
+              </Badge>
+            </div>
+            {provider.keys.map((key) => (
+              <ProviderKeyRow
+                key={key.id}
+                item={key}
+                updateKey={updateKey.mutate}
+                deleteKey={deleteKey.mutate}
+              />
             ))}
-          </TableBody>
-        </Table>
-        {keysQuery.isLoading && <LoadingOverlay />}
+          </div>
+        ))}
       </DataPanel>
       <ModelServicesPanel />
     </section>
@@ -577,94 +579,37 @@ function ApiKeysPanel() {
 function ModelServicesPanel() {
   const servicesQuery = useAdminConsoleModelServices()
   const upsertService = useUpsertAdminConsoleModelService()
-  const updateService = useUpdateAdminConsoleModelService()
   const deleteService = useDeleteAdminConsoleModelService()
-  const [consumer, setConsumer] = useState<'sim-canvas' | 'hermes-agent' | 'hermes-ppt'>(
-    'sim-canvas'
-  )
-  const [capability, setCapability] = useState('text')
-  const [family, setFamily] = useState('gemini')
-  const [providerId, setProviderId] = useState<Exclude<(typeof PROVIDERS)[number], 'all'>>('google')
-  const [serviceKind, setServiceKind] = useState<ContentServiceKind>('google-native')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [modelIds, setModelIds] = useState('gemini-3.1-flash-lite-preview,gemini-2.5-flash')
-  const [defaultModelId, setDefaultModelId] = useState('gemini-3.1-flash-lite-preview')
-  const [serviceStatus, setServiceStatus] = useState<'active' | 'disabled'>('active')
-  const [priority, setPriority] = useState('100')
-  const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
-
-  const selectCanvasFamily = (
-    nextCapability: ContentCapability,
-    nextFamily: ContentModelFamily
+  const updateService = useUpdateAdminConsoleModelService()
+  const keysQuery = useAdminConsoleProviderKeys()
+  const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({})
+  const [selectedModels, setSelectedModels] = useState<Record<string, string[]>>({})
+  const saveFunction = async (
+    functionId: PlatformFunctionId,
+    fallbackProviderId: string,
+    fallbackModels: string[]
   ) => {
-    const models = getContentCanvasModelsByFamily(nextCapability, nextFamily)
-    const firstModel = models[0]
-    setCapability(nextCapability)
-    setFamily(nextFamily)
-    setModelIds(models.map((model) => model.id).join(','))
-    setDefaultModelId(firstModel?.id ?? '')
-    if (firstModel) setServiceKind(firstModel.serviceKind)
-  }
-
-  const availableFamilies = Array.from(
-    new Set(
-      getContentCanvasModelsByCapability(capability as ContentCapability).map(
-        (model) => model.family
-      )
+    const definition = PLATFORM_FUNCTIONS.find((item) => item.id === functionId)
+    const providerId = selectedProviders[functionId] ?? fallbackProviderId
+    const enabledModelIds = selectedModels[functionId] ?? fallbackModels
+    const first = getManagedModelOptions(functionId).find(
+      (model) => model.id === enabledModelIds[0] && model.providerId === providerId
     )
-  )
-  const availableServiceKinds = Array.from(
-    new Set(
-      getContentCanvasModelsByFamily(
-        capability as ContentCapability,
-        family as ContentModelFamily
-      ).map((model) => model.serviceKind)
-    )
-  )
-  if (family === 'gemini') availableServiceKinds.push('openai-compatible')
-
-  const submit = async () => {
-    const enabledModelIds = modelIds
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-    if (enabledModelIds.length === 0) {
-      toast.error('至少填写一个可用模型 ID')
-      return
-    }
-    const body = {
-      consumer,
-      capability,
-      family,
-      providerId,
-      serviceKind,
-      baseUrl: baseUrl.trim() || null,
+    if (!definition || !first || !providerId) return toast.error('请选择服务商和模型')
+    await upsertService.mutateAsync({
+      functionId,
+      consumer: definition.consumer,
+      capability: definition.capability,
+      family: first.family,
+      providerId: providerId as never,
+      serviceKind: first.serviceKind,
+      baseUrl: first.baseUrl,
       enabledModelIds,
-      defaultModelId: defaultModelId.trim() || null,
-      status: serviceStatus,
-      priority: Number(priority) || 0,
-    }
-    if (editingServiceId) {
-      await updateService.mutateAsync({ serviceId: editingServiceId, body })
-    } else {
-      await upsertService.mutateAsync(body)
-    }
-    setEditingServiceId(null)
-    toast.success('模型服务配置已保存')
-  }
-
-  const editService = (service: AdminConsoleModelService) => {
-    setEditingServiceId(service.id)
-    setConsumer(service.consumer)
-    setCapability(service.capability)
-    setFamily(service.family)
-    setProviderId(service.providerId)
-    setServiceKind(service.serviceKind as ContentServiceKind)
-    setBaseUrl(service.baseUrl ?? '')
-    setModelIds(service.enabledModelIds.join(','))
-    setDefaultModelId(service.defaultModelId ?? '')
-    setServiceStatus(service.status)
-    setPriority(service.priority.toString())
+      defaultModelId: enabledModelIds[0] ?? null,
+      status: 'active',
+      priority: 100,
+    })
+    toast.success('功能模型配置已保存')
   }
 
   return (
@@ -674,103 +619,141 @@ function ModelServicesPanel() {
         title='模型服务配置'
         description='画布优先读取 sim-canvas；Hermes PPT 读取 hermes-ppt。已启用模型必须与 Provider Key 对应。'
       />
-      <DataPanel className='grid gap-3 md:grid-cols-3'>
-        <SelectField
-          label='使用方'
-          value={consumer}
-          onChange={setConsumer}
-          options={['sim-canvas', 'hermes-agent', 'hermes-ppt']}
-        />
-        {consumer === 'sim-canvas' ? (
-          <SelectField
-            label='能力'
-            value={capability}
-            onChange={(value) =>
-              selectCanvasFamily(
-                value as ContentCapability,
-                getContentCanvasModelsByCapability(value as ContentCapability)[0]?.family ??
-                  'gemini'
-              )
-            }
-            options={CANVAS_CAPABILITIES}
-          />
-        ) : (
-          <TextField
-            label='能力'
-            value={capability}
-            onChange={setCapability}
-            placeholder='例如 text'
-          />
-        )}
-        {consumer === 'sim-canvas' ? (
-          <SelectField
-            label='模型族'
-            value={family}
-            onChange={(value) =>
-              selectCanvasFamily(capability as ContentCapability, value as ContentModelFamily)
-            }
-            options={availableFamilies}
-          />
-        ) : (
-          <TextField label='模型族' value={family} onChange={setFamily} placeholder='例如 gemini' />
-        )}
-        <SelectField
-          label='Provider'
-          value={providerId}
-          onChange={setProviderId}
-          options={PROVIDERS.filter((item) => item !== 'all')}
-        />
-        {consumer === 'sim-canvas' ? (
-          <SelectField
-            label='服务类型'
-            value={serviceKind}
-            onChange={(value) => setServiceKind(value as ContentServiceKind)}
-            options={availableServiceKinds}
-          />
-        ) : (
-          <SelectField
-            label='服务类型'
-            value={serviceKind}
-            onChange={(value) => setServiceKind(value as ContentServiceKind)}
-            options={CONTENT_SERVICE_KINDS}
-          />
-        )}
-        <TextField
-          label='Base URL（可选）'
-          value={baseUrl}
-          onChange={setBaseUrl}
-          placeholder='https://api.example.com/v1'
-        />
-        <TextField
-          label='可用模型（逗号分隔）'
-          value={modelIds}
-          onChange={setModelIds}
-          placeholder='gpt-image-1,imagen-3.0-generate-002'
-        />
-        <TextField
-          label='默认模型（可选）'
-          value={defaultModelId}
-          onChange={setDefaultModelId}
-          placeholder='默认使用的模型 ID'
-        />
-        <SelectField
-          label='状态'
-          value={serviceStatus}
-          onChange={setServiceStatus}
-          options={['active', 'disabled'] as const}
-        />
-        <TextField label='优先级' value={priority} onChange={setPriority} placeholder='100' />
-        <div className='flex items-end'>
-          <Button
-            variant='primary'
-            className='w-full'
-            disabled={upsertService.isPending || updateService.isPending || deleteService.isPending}
-            onClick={submit}
-          >
-            {editingServiceId ? '更新服务' : '保存服务'}
-          </Button>
-        </div>
-      </DataPanel>
+      <div className='grid gap-3'>
+        {PLATFORM_FUNCTIONS.map((definition) => {
+          const providerId = selectedProviders[definition.id] ?? ''
+          const savedService = (servicesQuery.data?.services ?? []).find(
+            (service) =>
+              service.consumer === definition.consumer &&
+              service.capability === definition.capability
+          )
+          const resolvedProviderId = providerId || savedService?.providerId || ''
+          const options = getManagedModelOptions(definition.id).filter(
+            (model) => !resolvedProviderId || model.providerId === resolvedProviderId
+          )
+          const models = selectedModels[definition.id] ?? savedService?.enabledModelIds ?? []
+          const hasActiveKey = (keysQuery.data?.providers ?? []).some(
+            (provider) =>
+              provider.providerId === resolvedProviderId &&
+              provider.keys.some((key) => key.status === 'active')
+          )
+          return (
+            <DataPanel key={definition.id} className='grid gap-3 md:grid-cols-3'>
+              <div>
+                <div className='font-medium'>{definition.label}</div>
+                <div className='text-xs text-[var(--text-secondary)]'>
+                  {definition.multipleModels
+                    ? '可多选并排序，第一项为默认模型'
+                    : '仅允许选择一个已适配模型'}
+                </div>
+              </div>
+              <SelectField
+                label='服务商'
+                value={resolvedProviderId}
+                onChange={(value) => {
+                  setSelectedProviders((current) => ({ ...current, [definition.id]: value }))
+                  setSelectedModels((current) => ({ ...current, [definition.id]: [] }))
+                }}
+                options={[
+                  '',
+                  ...Array.from(
+                    new Set(getManagedModelOptions(definition.id).map((model) => model.providerId))
+                  ),
+                ]}
+              />
+              <div className='flex flex-col gap-2'>
+                <div className='flex flex-wrap gap-2'>
+                  {options.map((model) => (
+                    <Button
+                      key={model.id}
+                      variant={models.includes(model.id) ? 'primary' : 'outline'}
+                      onClick={() =>
+                        setSelectedModels((current) => ({
+                          ...current,
+                          [definition.id]: definition.multipleModels
+                            ? models.includes(model.id)
+                              ? models.filter((id) => id !== model.id)
+                              : [...models, model.id]
+                            : [model.id],
+                        }))
+                      }
+                    >
+                      {model.label}
+                    </Button>
+                  ))}
+                </div>
+                {models.length > 0 && (
+                  <div className='flex flex-wrap items-center gap-1 text-xs'>
+                    <span className='mr-1 text-[var(--text-secondary)]'>启用顺序：</span>
+                    {models.map((modelId, index) => (
+                      <span
+                        key={modelId}
+                        className='inline-flex items-center gap-1 rounded border border-[var(--border-secondary)] px-1.5 py-1'
+                      >
+                        {index + 1}.{' '}
+                        {getManagedModelOptions(definition.id).find((model) => model.id === modelId)
+                          ?.label ?? modelId}
+                        {definition.multipleModels && (
+                          <>
+                            <button
+                              type='button'
+                              disabled={index === 0}
+                              onClick={() =>
+                                setSelectedModels((current) => ({
+                                  ...current,
+                                  [definition.id]: models.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? models[index - 1]
+                                      : itemIndex === index - 1
+                                        ? modelId
+                                        : item
+                                  ),
+                                }))
+                              }
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type='button'
+                              disabled={index === models.length - 1}
+                              onClick={() =>
+                                setSelectedModels((current) => ({
+                                  ...current,
+                                  [definition.id]: models.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? models[index + 1]
+                                      : itemIndex === index + 1
+                                        ? modelId
+                                        : item
+                                  ),
+                                }))
+                              }
+                            >
+                              ↓
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {!hasActiveKey && resolvedProviderId && (
+                  <p className='text-amber-600 text-xs'>
+                    请先在上方为该服务商添加一个启用中的 API Key。
+                  </p>
+                )}
+                <Button
+                  variant='primary'
+                  disabled={upsertService.isPending || !hasActiveKey || models.length === 0}
+                  onClick={() => saveFunction(definition.id, resolvedProviderId, models)}
+                >
+                  保存
+                </Button>
+              </div>
+            </DataPanel>
+          )
+        })}
+      </div>
       <DataPanel className='overflow-x-auto rounded-none border-x-0 p-0'>
         <Table className='min-w-[900px]'>
           <TableHeader>
@@ -789,43 +772,19 @@ function ModelServicesPanel() {
               <ModelServiceRow
                 key={service.id}
                 service={service}
-                onEdit={editService}
-                onToggleStatus={(item) =>
+                onDelete={(item) => deleteService.mutate(item.id)}
+                onToggle={(item) =>
                   updateService.mutate({
                     serviceId: item.id,
                     body: { status: item.status === 'active' ? 'disabled' : 'active' },
                   })
                 }
-                onDelete={(item) => deleteService.mutate(item.id)}
               />
             ))}
           </TableBody>
         </Table>
         {servicesQuery.isLoading && <LoadingOverlay />}
       </DataPanel>
-    </div>
-  )
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className='flex flex-col gap-2'>
-      <Label>{label}</Label>
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-      />
     </div>
   )
 }
@@ -861,14 +820,12 @@ function SelectField<T extends string>({
 
 function ModelServiceRow({
   service,
-  onEdit,
-  onToggleStatus,
   onDelete,
+  onToggle,
 }: {
   service: AdminConsoleModelService
-  onEdit: (service: AdminConsoleModelService) => void
-  onToggleStatus: (service: AdminConsoleModelService) => void
   onDelete: (service: AdminConsoleModelService) => void
+  onToggle: (service: AdminConsoleModelService) => void
 }) {
   return (
     <TableRow>
@@ -887,14 +844,7 @@ function ModelServiceRow({
           <Button
             variant='active'
             className='h-7 px-2 text-caption'
-            onClick={() => onEdit(service)}
-          >
-            编辑
-          </Button>
-          <Button
-            variant='active'
-            className='h-7 px-2 text-caption'
-            onClick={() => onToggleStatus(service)}
+            onClick={() => onToggle(service)}
           >
             {service.status === 'active' ? '停用' : '启用'}
           </Button>
@@ -914,64 +864,72 @@ function ModelServiceRow({
 function ProviderKeyRow({
   item,
   updateKey,
+  deleteKey,
 }: {
   item: AdminConsoleProviderKey
   updateKey: ReturnType<typeof useUpdateAdminConsoleProviderKey>['mutate']
+  deleteKey: ReturnType<typeof useDeleteAdminConsoleProviderKey>['mutate']
 }) {
   const [replacement, setReplacement] = useState('')
 
   return (
-    <TableRow>
-      <TableCell>{item.providerId}</TableCell>
-      <TableCell>{item.label}</TableCell>
-      <TableCell>{item.maskedKey}</TableCell>
-      <TableCell>
+    <div className='mt-3 flex flex-wrap items-center gap-2 rounded border border-[var(--border-secondary)] p-2 text-xs'>
+      <span className='font-medium'>{item.label}</span>
+      <span className='font-mono'>{item.maskedKey}</span>
+      <span>
         <Badge variant={item.status === 'active' ? 'green' : 'gray'}>{item.status}</Badge>
-      </TableCell>
-      <TableCell>{item.isDefault ? <Badge variant='blue'>默认</Badge> : '-'}</TableCell>
-      <TableCell>{item.lastUsedAt ? new Date(item.lastUsedAt).toLocaleString() : '-'}</TableCell>
-      <TableCell className='pr-4'>
-        <div className='flex flex-nowrap justify-end gap-1.5 whitespace-nowrap'>
-          <Input
-            value={replacement}
-            onChange={(event) => setReplacement(event.target.value)}
-            placeholder='替换 key'
-            type='password'
-            className='h-7 w-[160px] shrink-0'
-          />
-          <Button
-            variant='active'
-            className='h-7 whitespace-nowrap px-2 text-caption'
-            disabled={!replacement}
-            onClick={() => {
-              updateKey({ keyId: item.id, apiKey: replacement, reason: 'Key replacement' })
-              setReplacement('')
-            }}
-          >
-            替换
-          </Button>
-          <Button
-            variant='active'
-            className='h-7 whitespace-nowrap px-2 text-caption'
-            onClick={() => updateKey({ keyId: item.id, isDefault: true })}
-          >
-            默认
-          </Button>
-          <Button
-            variant='active'
-            className='h-7 whitespace-nowrap px-2 text-caption'
-            onClick={() =>
-              updateKey({
-                keyId: item.id,
-                status: item.status === 'active' ? 'disabled' : 'active',
-              })
-            }
-          >
-            {item.status === 'active' ? '停用' : '启用'}
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+      </span>
+      {item.isDefault && <Badge variant='blue'>主 Key</Badge>}
+      <span className='text-[var(--text-secondary)]'>
+        最近使用：{item.lastUsedAt ? new Date(item.lastUsedAt).toLocaleString() : '—'}
+      </span>
+      <div className='ml-auto flex flex-wrap items-center gap-1.5'>
+        <Input
+          value={replacement}
+          onChange={(event) => setReplacement(event.target.value)}
+          placeholder='替换 key'
+          type='password'
+          className='h-7 w-[160px] shrink-0'
+        />
+        <Button
+          variant='active'
+          className='h-7 whitespace-nowrap px-2 text-caption'
+          disabled={!replacement}
+          onClick={() => {
+            updateKey({ keyId: item.id, apiKey: replacement, reason: 'Key replacement' })
+            setReplacement('')
+          }}
+        >
+          替换
+        </Button>
+        <Button
+          variant='active'
+          className='h-7 whitespace-nowrap px-2 text-caption'
+          onClick={() => updateKey({ keyId: item.id, isDefault: true })}
+        >
+          默认
+        </Button>
+        <Button
+          variant='active'
+          className='h-7 whitespace-nowrap px-2 text-caption'
+          onClick={() =>
+            updateKey({
+              keyId: item.id,
+              status: item.status === 'active' ? 'disabled' : 'active',
+            })
+          }
+        >
+          {item.status === 'active' ? '停用' : '启用'}
+        </Button>
+        <Button
+          variant='destructive'
+          className='h-7 whitespace-nowrap px-2 text-caption'
+          onClick={() => deleteKey(item.id)}
+        >
+          删除
+        </Button>
+      </div>
+    </div>
   )
 }
 

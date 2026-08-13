@@ -12,6 +12,7 @@ import {
   adminConsoleCreateProviderKeyContract,
   adminConsoleCreateUserContract,
   adminConsoleDeleteModelServiceContract,
+  adminConsoleDeleteProviderKeyContract,
   adminConsoleGetUserContract,
   adminConsoleListModelServicesContract,
   adminConsoleListProviderKeysContract,
@@ -222,6 +223,18 @@ export function useUpdateAdminConsoleProviderKey() {
         params: { id: keyId },
         body,
       }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: adminConsoleKeys.providerKeyLists() })
+      queryClient.invalidateQueries({ queryKey: adminConsoleKeys.auditEventLists() })
+    },
+  })
+}
+
+export function useDeleteAdminConsoleProviderKey() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (keyId: string) =>
+      requestJson(adminConsoleDeleteProviderKeyContract, { params: { id: keyId } }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: adminConsoleKeys.providerKeyLists() })
       queryClient.invalidateQueries({ queryKey: adminConsoleKeys.auditEventLists() })

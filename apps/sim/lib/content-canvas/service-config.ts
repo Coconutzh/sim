@@ -16,6 +16,7 @@ export interface ContentServiceConfig {
   kind: ContentServiceKind
   baseUrl: string
   apiKey?: string
+  apiKeys?: Array<{ apiKey: string; keyId: string }>
   enabledModelIds: string[]
   defaultModelId: string
 }
@@ -24,6 +25,7 @@ export interface ResolvedContentService {
   kind: ContentServiceKind
   baseUrl: string
   apiKey?: string
+  apiKeys?: Array<{ apiKey: string; keyId: string }>
   modelId: string
   providerId?: string
 }
@@ -244,7 +246,7 @@ export function resolveContentService(params: {
   }
 }
 
-/** Uses an administrator-managed platform configuration when one is enabled. */
+/** Resolves content runtime configuration exclusively from administrator-managed services. */
 export async function resolveContentServiceForRuntime(params: {
   capability: ContentCapability
   modelId: string
@@ -258,23 +260,17 @@ export async function resolveContentServiceForRuntime(params: {
     family: model.family,
     modelId: params.modelId,
   })
-  if (platform) {
-    const fallback =
-      platform.baseUrl || platform.kind === 'provider-native'
-        ? undefined
-        : getContentServiceConfig({
-            capability: params.capability,
-            family: model.family,
-          })
-    return {
-      kind: platform.kind,
-      baseUrl: platform.baseUrl || fallback?.baseUrl || '',
-      apiKey: platform.apiKey,
-      modelId: params.modelId,
-      providerId: platform.providerId,
-    }
+  if (!platform) {
+    throw new Error('平台管理员尚未配置此服务，请联系管理员完成模型与 API Key 配置')
   }
-  return resolveContentService(params)
+  return {
+    kind: platform.kind,
+    baseUrl: platform.baseUrl || '',
+    apiKey: platform.apiKey,
+    apiKeys: platform.apiKeys,
+    modelId: params.modelId,
+    providerId: platform.providerId,
+  }
 }
 
 function getCapabilityFamilies(capability: ContentCapability): ContentModelFamily[] {
@@ -318,7 +314,12 @@ export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabil
  */
 export async function getContentCanvasModelAvailabilityForRuntime(): Promise<ContentCanvasModelAvailabilitySnapshot> {
   const platformServices = await getPlatformContentServiceAvailability()
-  const availability = getContentCanvasModelAvailability()
+  const availability: ContentCanvasModelAvailabilitySnapshot = {
+    text: { enabledModelIds: [], defaultModelId: null },
+    image: { enabledModelIds: [], defaultModelId: null },
+    audio: { enabledModelIds: [], defaultModelId: null },
+    video: { enabledModelIds: [], defaultModelId: null },
+  }
 
   for (const capability of ['text', 'image', 'audio', 'video'] as const) {
     const managed = platformServices.filter((service) => service.capability === capability)

@@ -1,6 +1,6 @@
 import { db, platformModelServiceConfig } from '@sim/db'
 import { and, desc, eq } from 'drizzle-orm'
-import { getPlatformProviderApiKey } from '@/lib/api-key/platform'
+import { getPlatformProviderApiKeys } from '@/lib/api-key/platform'
 import type {
   ContentCapability,
   ContentModelFamily,
@@ -11,6 +11,7 @@ export interface PlatformContentServiceConfig {
   kind: ContentServiceKind
   baseUrl?: string
   apiKey: string
+  apiKeys: Array<{ apiKey: string; keyId: string }>
   modelId: string
   providerId: string
 }
@@ -43,7 +44,7 @@ export async function getPlatformContentServiceAvailability(): Promise<
   for (const service of services) {
     const hasKey =
       keyAvailability.get(service.providerId) ??
-      Boolean(await getPlatformProviderApiKey(service.providerId))
+      (await getPlatformProviderApiKeys(service.providerId)).length > 0
     keyAvailability.set(service.providerId, hasKey)
     if (!hasKey || !Array.isArray(service.enabledModelIds)) continue
     result.push({
@@ -83,12 +84,14 @@ export async function getPlatformContentServiceConfig(params: {
   ) {
     return null
   }
-  const key = await getPlatformProviderApiKey(service.providerId)
+  const keys = await getPlatformProviderApiKeys(service.providerId)
+  const key = keys[0]
   if (!key) return null
   return {
     kind: service.serviceKind as ContentServiceKind,
     baseUrl: service.baseUrl ?? undefined,
     apiKey: key.apiKey,
+    apiKeys: keys.map((candidate) => ({ apiKey: candidate.apiKey, keyId: candidate.keyId })),
     modelId: params.modelId,
     providerId: service.providerId,
   }

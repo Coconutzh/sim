@@ -1,7 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/admin/auth'
-import { createPlatformProviderKey, listPlatformProviderKeys } from '@/lib/admin/console'
+import {
+  createPlatformProviderKey,
+  listPlatformProviderKeySummaries,
+  listPlatformProviderKeys,
+} from '@/lib/admin/console'
 import {
   adminConsoleCreateProviderKeyContract,
   adminConsoleListProviderKeysContract,
@@ -19,7 +23,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   try {
-    return NextResponse.json({ keys: await listPlatformProviderKeys() })
+    const keys = await listPlatformProviderKeys()
+    return NextResponse.json({ keys, providers: await listPlatformProviderKeySummaries() })
   } catch (error) {
     logger.error('Failed to list platform provider keys', { error })
     return NextResponse.json({ error: 'Failed to list provider keys' }, { status: 500 })

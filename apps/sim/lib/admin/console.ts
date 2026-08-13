@@ -26,7 +26,7 @@ import type {
   AdminConsoleUpsertModelServiceBody,
   AdminConsoleUserActionBody,
 } from '@/lib/api/contracts/admin-console'
-import { maskApiKey } from '@/lib/api-key/platform'
+import { getPlatformProviderApiKey, maskApiKey } from '@/lib/api-key/platform'
 import { signUp } from '@/lib/auth'
 import { ensureUserStatsExists } from '@/lib/billing/core/usage'
 import {
@@ -37,6 +37,12 @@ import {
 } from '@/lib/content-canvas/model-catalog'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 import { adjustCredits, getCreditWallet } from '@/lib/credits/wallet'
+import {
+  getFunctionDefinition,
+  getManagedModelOption,
+  PLATFORM_PROVIDERS,
+  type PlatformFunctionId,
+} from '@/lib/platform-models/catalog'
 
 const logger = createLogger('AdminConsole')
 
@@ -563,12 +569,60 @@ function validateCanvasModelServiceConfig(params: {
   }
 }
 
+async function validateManagedFunctionConfig(params: {
+  functionId?: PlatformFunctionId
+  consumer: string
+  capability: string
+  providerId: string
+  enabledModelIds: string[]
+  status?: string
+}) {
+  if (!params.functionId) return
+  const definition = getFunctionDefinition(params.functionId)
+  if (definition.consumer !== params.consumer || definition.capability !== params.capability) {
+    throw new Error('Function configuration does not match its runtime target')
+  }
+  if (
+    params.enabledModelIds.length === 0 ||
+    (!definition.multipleModels && params.enabledModelIds.length !== 1)
+  ) {
+    throw new Error(
+      definition.multipleModels ? 'Select at least one model' : 'Select exactly one model'
+    )
+  }
+  if (
+    params.enabledModelIds.some(
+      (modelId) =>
+        !getManagedModelOption({
+          functionId: params.functionId as PlatformFunctionId,
+          providerId: params.providerId,
+          modelId,
+        })
+    )
+  ) {
+    throw new Error('Selected provider or model is not supported by this function')
+  }
+  if (params.status !== 'disabled' && !(await getPlatformProviderApiKey(params.providerId))) {
+    throw new Error('Add an active provider API key before enabling this function')
+  }
+}
+
 export async function listPlatformProviderKeys() {
   const rows = await db
     .select()
     .from(platformProviderApiKey)
     .orderBy(platformProviderApiKey.providerId, desc(platformProviderApiKey.isDefault))
   return Promise.all(rows.map(formatProviderKey))
+}
+
+export async function listPlatformProviderKeySummaries() {
+  const keys = await listPlatformProviderKeys()
+  return PLATFORM_PROVIDERS.map((provider) => ({
+    providerId: provider.id,
+    label: provider.label,
+    capabilities: provider.capabilities,
+    keys: keys.filter((key) => key.providerId === provider.id),
+  }))
 }
 
 export async function createPlatformProviderKey(params: {
@@ -625,6 +679,34 @@ export async function updatePlatformProviderKey(params: {
     .limit(1)
   if (!before) return null
 
+  if (before.status === 'active' && params.body.status === 'disabled') {
+    const activeKeys = await db
+      .select({ id: platformProviderApiKey.id })
+      .from(platformProviderApiKey)
+      .where(
+        and(
+          eq(platformProviderApiKey.providerId, before.providerId),
+          eq(platformProviderApiKey.status, 'active')
+        )
+      )
+    if (activeKeys.length === 1) {
+      const enabledServices = await db
+        .select({ id: platformModelServiceConfig.id })
+        .from(platformModelServiceConfig)
+        .where(
+          and(
+            eq(platformModelServiceConfig.providerId, before.providerId),
+            eq(platformModelServiceConfig.status, 'active')
+          )
+        )
+      if (enabledServices.length > 0) {
+        throw new Error(
+          'This is the last active key for an enabled function. Add or enable a backup key first.'
+        )
+      }
+    }
+  }
+
   if (params.body.isDefault === true) {
     await db
       .update(platformProviderApiKey)
@@ -674,6 +756,50 @@ export async function updatePlatformProviderKey(params: {
   return formatProviderKey(after)
 }
 
+export async function deletePlatformProviderKey(params: { actorUserId: string; keyId: string }) {
+  const [before] = await db
+    .select()
+    .from(platformProviderApiKey)
+    .where(eq(platformProviderApiKey.id, params.keyId))
+    .limit(1)
+  if (!before) return false
+
+  const activeKeys = await db
+    .select({ id: platformProviderApiKey.id })
+    .from(platformProviderApiKey)
+    .where(
+      and(
+        eq(platformProviderApiKey.providerId, before.providerId),
+        eq(platformProviderApiKey.status, 'active')
+      )
+    )
+  if (before.status === 'active' && activeKeys.length === 1) {
+    const enabledServices = await db
+      .select({ id: platformModelServiceConfig.id })
+      .from(platformModelServiceConfig)
+      .where(
+        and(
+          eq(platformModelServiceConfig.providerId, before.providerId),
+          eq(platformModelServiceConfig.status, 'active')
+        )
+      )
+    if (enabledServices.length > 0) {
+      throw new Error(
+        'This is the last active key for an enabled function. Add or enable a backup key first.'
+      )
+    }
+  }
+  await db.delete(platformProviderApiKey).where(eq(platformProviderApiKey.id, params.keyId))
+  await recordAdminConsoleAudit({
+    actorUserId: params.actorUserId,
+    targetType: 'provider_key',
+    targetId: params.keyId,
+    action: 'provider_key_deleted',
+    before: { providerId: before.providerId, label: before.label },
+  })
+  return true
+}
+
 function formatModelService(row: typeof platformModelServiceConfig.$inferSelect) {
   return {
     ...row,
@@ -697,14 +823,36 @@ export async function upsertPlatformModelService(params: {
   actorUserId: string
   body: AdminConsoleUpsertModelServiceBody
 }) {
+  await validateManagedFunctionConfig(params.body)
   validateCanvasModelServiceConfig(params.body)
+  const managedModel = params.body.functionId
+    ? getManagedModelOption({
+        functionId: params.body.functionId,
+        providerId: params.body.providerId,
+        modelId: params.body.enabledModelIds[0],
+      })
+    : null
+
+  if (params.body.functionId) {
+    await db
+      .update(platformModelServiceConfig)
+      .set({ status: 'disabled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(platformModelServiceConfig.consumer, params.body.consumer),
+          eq(platformModelServiceConfig.capability, params.body.capability),
+          eq(platformModelServiceConfig.status, 'active')
+        )
+      )
+  }
   const [row] = await db
     .insert(platformModelServiceConfig)
     .values({
       id: generateShortId(),
       ...params.body,
-      baseUrl: params.body.baseUrl ?? null,
-      defaultModelId: params.body.defaultModelId ?? null,
+      serviceKind: managedModel?.serviceKind ?? params.body.serviceKind,
+      baseUrl: managedModel?.baseUrl ?? params.body.baseUrl ?? null,
+      defaultModelId: params.body.enabledModelIds[0] ?? null,
       status: params.body.status ?? 'active',
       priority: params.body.priority ?? 0,
       createdBy: params.actorUserId,
@@ -717,10 +865,10 @@ export async function upsertPlatformModelService(params: {
       ],
       set: {
         providerId: params.body.providerId,
-        serviceKind: params.body.serviceKind,
-        baseUrl: params.body.baseUrl ?? null,
+        serviceKind: managedModel?.serviceKind ?? params.body.serviceKind,
+        baseUrl: managedModel?.baseUrl ?? params.body.baseUrl ?? null,
         enabledModelIds: params.body.enabledModelIds,
-        defaultModelId: params.body.defaultModelId ?? null,
+        defaultModelId: params.body.enabledModelIds[0] ?? null,
         status: params.body.status ?? 'active',
         priority: params.body.priority ?? 0,
         configVersion: sql`${platformModelServiceConfig.configVersion} + 1`,

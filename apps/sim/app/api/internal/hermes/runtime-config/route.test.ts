@@ -29,12 +29,7 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-vi.mock('@/lib/core/config/env', () => ({
-  env: {
-    HERMES_SERVICE_TOKEN: 'service-token',
-    EVOLINK_API_KEY: 'evolink-secret',
-  },
-}))
+vi.mock('@/lib/core/config/env', () => ({ env: { HERMES_SERVICE_TOKEN: 'service-token' } }))
 
 vi.mock('@/lib/api-key/platform', () => ({
   getPlatformProviderApiKey: vi.fn(),
@@ -43,7 +38,7 @@ vi.mock('@/lib/api-key/platform', () => ({
 import { GET } from '@/app/api/internal/hermes/runtime-config/route'
 
 describe('GET /api/internal/hermes/runtime-config', () => {
-  it('uses the legacy image backend when the managed config query fails', async () => {
+  it('returns unavailable when managed configuration cannot be read', async () => {
     mockLimit.mockRejectedValueOnce(new Error('relation does not exist'))
     const request = new NextRequest(
       'http://localhost:3000/api/internal/hermes/runtime-config' +
@@ -55,17 +50,9 @@ describe('GET /api/internal/hermes/runtime-config', () => {
 
     const response = await GET(request)
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
-      config: {
-        providerId: 'evolink',
-        serviceKind: 'openai-compatible',
-        baseUrl: 'https://api.evolink.ai/v1',
-        apiKey: 'evolink-secret',
-        enabledModelIds: ['gpt-image-2'],
-        defaultModelId: 'gpt-image-2',
-        configVersion: 0,
-      },
+      config: null,
     })
   })
 })

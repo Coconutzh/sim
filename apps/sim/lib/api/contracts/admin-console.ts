@@ -193,6 +193,13 @@ export const adminConsoleProviderKeySchema = z.object({
   updatedAt: z.string(),
 })
 
+export const adminConsoleProviderSummarySchema = z.object({
+  providerId: adminConsoleProviderIdSchema,
+  label: z.string(),
+  capabilities: z.array(z.string()),
+  keys: z.array(adminConsoleProviderKeySchema),
+})
+
 export const adminConsoleModelServiceSchema = z.object({
   id: z.string(),
   consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']),
@@ -208,6 +215,16 @@ export const adminConsoleModelServiceSchema = z.object({
   configVersion: z.number(),
 })
 export const adminConsoleUpsertModelServiceBodySchema = z.object({
+  functionId: z
+    .enum([
+      'canvas-text',
+      'canvas-image',
+      'canvas-audio',
+      'canvas-video',
+      'hermes-agent',
+      'hermes-ppt-image',
+    ])
+    .optional(),
   consumer: z.enum(['sim-canvas', 'hermes-agent', 'hermes-ppt']),
   capability: z.string().min(1),
   family: z.string().min(1),
@@ -446,7 +463,10 @@ export const adminConsoleListProviderKeysContract = defineRouteContract({
   path: '/api/admin-console/provider-keys',
   response: {
     mode: 'json',
-    schema: z.object({ keys: z.array(adminConsoleProviderKeySchema) }),
+    schema: z.object({
+      keys: z.array(adminConsoleProviderKeySchema),
+      providers: z.array(adminConsoleProviderSummarySchema),
+    }),
   },
 })
 
@@ -469,6 +489,13 @@ export const adminConsoleUpdateProviderKeyContract = defineRouteContract({
     mode: 'json',
     schema: z.object({ success: z.literal(true), key: adminConsoleProviderKeySchema }),
   },
+})
+
+export const adminConsoleDeleteProviderKeyContract = defineRouteContract({
+  method: 'DELETE',
+  path: '/api/admin-console/provider-keys/[id]',
+  params: adminConsoleIdParamsSchema,
+  response: { mode: 'json', schema: z.object({ success: z.literal(true) }) },
 })
 
 export const adminConsoleListModelServicesContract = defineRouteContract({
