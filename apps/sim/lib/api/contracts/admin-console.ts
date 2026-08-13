@@ -234,7 +234,6 @@ export const adminConsoleUpsertModelServiceBodySchema = z.object({
   enabledModelIds: z.array(z.string().min(1)).min(1),
   defaultModelId: z.string().min(1).nullable().optional(),
   status: z.enum(['active', 'disabled']).optional(),
-  priority: z.number().int().min(0).max(1000).optional(),
 })
 export type AdminConsoleUpsertModelServiceBody = z.input<
   typeof adminConsoleUpsertModelServiceBodySchema

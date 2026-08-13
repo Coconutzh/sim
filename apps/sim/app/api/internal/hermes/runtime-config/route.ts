@@ -1,7 +1,7 @@
 import { db, platformModelServiceConfig } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { safeCompare } from '@sim/security/compare'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { hermesRuntimeConfigContract } from '@/lib/api/contracts/internal/hermes-runtime-config'
@@ -9,6 +9,7 @@ import { parseRequest } from '@/lib/api/server'
 import { getPlatformProviderApiKey } from '@/lib/api-key/platform'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { comparePlatformProviders } from '@/lib/platform-models/catalog'
 
 const logger = createLogger('HermesRuntimeConfigAPI')
 
@@ -54,9 +55,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           eq(platformModelServiceConfig.status, 'active')
         )
       )
-      .orderBy(desc(platformModelServiceConfig.priority))
-      .limit(1)
-    service = services[0]
+    service = services.sort((left, right) =>
+      comparePlatformProviders(left.providerId, right.providerId)
+    )[0]
   } catch (error) {
     logger.error('Unable to load managed Hermes runtime service', {
       consumer,

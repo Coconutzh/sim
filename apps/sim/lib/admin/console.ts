@@ -13,7 +13,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
-import { and, count, desc, eq, gte, ilike, lte, or, type SQL, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, ilike, lte, ne, or, type SQL, sql } from 'drizzle-orm'
 import { recordAdminConsoleAudit } from '@/lib/admin/audit'
 import type {
   AdminConsoleCreateProviderKeyBody,
@@ -41,6 +41,8 @@ import {
   getFunctionDefinition,
   getManagedModelOption,
   PLATFORM_PROVIDERS,
+  compareManagedModels,
+  comparePlatformProviders,
   type PlatformFunctionId,
 } from '@/lib/platform-models/catalog'
 
@@ -812,12 +814,15 @@ function formatModelService(row: typeof platformModelServiceConfig.$inferSelect)
   }
 }
 export async function listPlatformModelServices() {
-  return (
-    await db
-      .select()
-      .from(platformModelServiceConfig)
-      .orderBy(platformModelServiceConfig.consumer, platformModelServiceConfig.capability)
-  ).map(formatModelService)
+  return (await db.select().from(platformModelServiceConfig))
+    .map(formatModelService)
+    .sort((left, right) => {
+      const functionOrder = `${left.consumer}/${left.capability}`.localeCompare(
+        `${right.consumer}/${right.capability}`,
+        'zh-CN'
+      )
+      return functionOrder || comparePlatformProviders(left.providerId, right.providerId)
+    })
 }
 export async function upsertPlatformModelService(params: {
   actorUserId: string
@@ -832,19 +837,30 @@ export async function upsertPlatformModelService(params: {
         modelId: params.body.enabledModelIds[0],
       })
     : null
+  const enabledModelIds = params.body.functionId
+    ? [...params.body.enabledModelIds].sort((left, right) =>
+        compareManagedModels(params.body.functionId as PlatformFunctionId, left, right)
+      )
+    : params.body.enabledModelIds
 
   if (params.body.functionId) {
-    await db
-      .update(platformModelServiceConfig)
-      .set({ status: 'disabled', updatedAt: new Date() })
+    const duplicateProviderService = await db
+      .select({ id: platformModelServiceConfig.id })
+      .from(platformModelServiceConfig)
       .where(
         and(
           eq(platformModelServiceConfig.consumer, params.body.consumer),
           eq(platformModelServiceConfig.capability, params.body.capability),
-          eq(platformModelServiceConfig.status, 'active')
+          eq(platformModelServiceConfig.providerId, params.body.providerId),
+          ne(platformModelServiceConfig.family, managedModel?.family ?? params.body.family)
         )
       )
+      .limit(1)
+    if (duplicateProviderService[0]) {
+      throw new Error('A provider can only have one model-family configuration per function')
+    }
   }
+
   const [row] = await db
     .insert(platformModelServiceConfig)
     .values({
@@ -852,9 +868,10 @@ export async function upsertPlatformModelService(params: {
       ...params.body,
       serviceKind: managedModel?.serviceKind ?? params.body.serviceKind,
       baseUrl: managedModel?.baseUrl ?? params.body.baseUrl ?? null,
-      defaultModelId: params.body.enabledModelIds[0] ?? null,
+      enabledModelIds,
+      defaultModelId: enabledModelIds[0] ?? null,
       status: params.body.status ?? 'active',
-      priority: params.body.priority ?? 0,
+      priority: 0,
       createdBy: params.actorUserId,
     })
     .onConflictDoUpdate({
@@ -867,10 +884,10 @@ export async function upsertPlatformModelService(params: {
         providerId: params.body.providerId,
         serviceKind: managedModel?.serviceKind ?? params.body.serviceKind,
         baseUrl: managedModel?.baseUrl ?? params.body.baseUrl ?? null,
-        enabledModelIds: params.body.enabledModelIds,
-        defaultModelId: params.body.enabledModelIds[0] ?? null,
+        enabledModelIds,
+        defaultModelId: enabledModelIds[0] ?? null,
         status: params.body.status ?? 'active',
-        priority: params.body.priority ?? 0,
+        priority: 0,
         configVersion: sql`${platformModelServiceConfig.configVersion} + 1`,
         updatedAt: new Date(),
       },
@@ -918,7 +935,7 @@ export async function updatePlatformModelService(params: {
     defaultModelId:
       params.body.defaultModelId === undefined ? before.defaultModelId : params.body.defaultModelId,
     status: params.body.status ?? before.status,
-    priority: params.body.priority ?? before.priority,
+    priority: before.priority,
   }
   validateCanvasModelServiceConfig(next)
 

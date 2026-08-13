@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 import {
   getManagedModelOptions,
+  getPlatformProviderLabel,
   PLATFORM_FUNCTIONS,
   PLATFORM_PROVIDERS,
   type PlatformFunctionId,
@@ -582,16 +583,23 @@ function ModelServicesPanel() {
   const deleteService = useDeleteAdminConsoleModelService()
   const updateService = useUpdateAdminConsoleModelService()
   const keysQuery = useAdminConsoleProviderKeys()
-  const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({})
+  const [providersToAdd, setProvidersToAdd] = useState<Record<string, string>>({})
   const [selectedModels, setSelectedModels] = useState<Record<string, string[]>>({})
-  const saveFunction = async (
+
+  const activeProviderIds = new Set(
+    (keysQuery.data?.providers ?? [])
+      .filter((provider) => provider.keys.some((key) => key.status === 'active'))
+      .map((provider) => provider.providerId)
+  )
+
+  const saveProvider = async (
     functionId: PlatformFunctionId,
-    fallbackProviderId: string,
+    providerId: string,
     fallbackModels: string[]
   ) => {
     const definition = PLATFORM_FUNCTIONS.find((item) => item.id === functionId)
-    const providerId = selectedProviders[functionId] ?? fallbackProviderId
-    const enabledModelIds = selectedModels[functionId] ?? fallbackModels
+    const selectionKey = `${functionId}/${providerId}`
+    const enabledModelIds = selectedModels[selectionKey] ?? fallbackModels
     const first = getManagedModelOptions(functionId).find(
       (model) => model.id === enabledModelIds[0] && model.providerId === providerId
     )
@@ -607,7 +615,11 @@ function ModelServicesPanel() {
       enabledModelIds,
       defaultModelId: enabledModelIds[0] ?? null,
       status: 'active',
-      priority: 100,
+    })
+    setSelectedModels((current) => {
+      const next = { ...current }
+      delete next[selectionKey]
+      return next
     })
     toast.success('功能模型配置已保存')
   }
@@ -621,135 +633,175 @@ function ModelServicesPanel() {
       />
       <div className='grid gap-3'>
         {PLATFORM_FUNCTIONS.map((definition) => {
-          const providerId = selectedProviders[definition.id] ?? ''
-          const savedService = (servicesQuery.data?.services ?? []).find(
-            (service) =>
-              service.consumer === definition.consumer &&
-              service.capability === definition.capability
+          const savedServices = (servicesQuery.data?.services ?? [])
+            .filter(
+              (service) =>
+                service.consumer === definition.consumer &&
+                service.capability === definition.capability
+            )
+            .sort((left, right) =>
+              getPlatformProviderLabel(left.providerId).localeCompare(
+                getPlatformProviderLabel(right.providerId),
+                'zh-CN'
+              )
+            )
+          const configuredProviderIds = new Set(savedServices.map((service) => service.providerId))
+          const availableProviderIds = Array.from(
+            new Set(getManagedModelOptions(definition.id).map((model) => model.providerId))
+          ).filter(
+            (providerId) =>
+              activeProviderIds.has(providerId) && !configuredProviderIds.has(providerId)
           )
-          const resolvedProviderId = providerId || savedService?.providerId || ''
-          const options = getManagedModelOptions(definition.id).filter(
-            (model) => !resolvedProviderId || model.providerId === resolvedProviderId
-          )
-          const models = selectedModels[definition.id] ?? savedService?.enabledModelIds ?? []
-          const hasActiveKey = (keysQuery.data?.providers ?? []).some(
-            (provider) =>
-              provider.providerId === resolvedProviderId &&
-              provider.keys.some((key) => key.status === 'active')
-          )
+          const providerToAdd = providersToAdd[definition.id] ?? ''
+
           return (
-            <DataPanel key={definition.id} className='grid gap-3 md:grid-cols-3'>
+            <DataPanel key={definition.id} className='flex flex-col gap-3'>
               <div>
                 <div className='font-medium'>{definition.label}</div>
                 <div className='text-xs text-[var(--text-secondary)]'>
                   {definition.multipleModels
-                    ? '可多选并排序，第一项为默认模型'
-                    : '仅允许选择一个已适配模型'}
+                    ? '可同时启用多个服务商的已适配模型。'
+                    : '每个服务商仅能选择一个已适配模型。'}
                 </div>
               </div>
-              <SelectField
-                label='服务商'
-                value={resolvedProviderId}
-                onChange={(value) => {
-                  setSelectedProviders((current) => ({ ...current, [definition.id]: value }))
-                  setSelectedModels((current) => ({ ...current, [definition.id]: [] }))
-                }}
-                options={[
-                  '',
-                  ...Array.from(
-                    new Set(getManagedModelOptions(definition.id).map((model) => model.providerId))
-                  ),
-                ]}
-              />
-              <div className='flex flex-col gap-2'>
-                <div className='flex flex-wrap gap-2'>
-                  {options.map((model) => (
-                    <Button
-                      key={model.id}
-                      variant={models.includes(model.id) ? 'primary' : 'outline'}
-                      onClick={() =>
-                        setSelectedModels((current) => ({
-                          ...current,
-                          [definition.id]: definition.multipleModels
-                            ? models.includes(model.id)
-                              ? models.filter((id) => id !== model.id)
-                              : [...models, model.id]
-                            : [model.id],
-                        }))
-                      }
-                    >
-                      {model.label}
-                    </Button>
-                  ))}
-                </div>
-                {models.length > 0 && (
-                  <div className='flex flex-wrap items-center gap-1 text-xs'>
-                    <span className='mr-1 text-[var(--text-secondary)]'>启用顺序：</span>
-                    {models.map((modelId, index) => (
-                      <span
-                        key={modelId}
-                        className='inline-flex items-center gap-1 rounded border border-[var(--border-secondary)] px-1.5 py-1'
+              {savedServices.map((service) => {
+                const selectionKey = `${definition.id}/${service.providerId}`
+                const models = selectedModels[selectionKey] ?? service.enabledModelIds
+                const options = getManagedModelOptions(definition.id)
+                  .filter((model) => model.providerId === service.providerId)
+                  .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+                return (
+                  <div
+                    key={service.id}
+                    className='grid gap-3 rounded border border-[var(--border-secondary)] p-3 md:grid-cols-[220px_minmax(0,1fr)_auto]'
+                  >
+                    <div>
+                      <div className='font-medium'>
+                        {getPlatformProviderLabel(service.providerId)}
+                      </div>
+                      <Badge variant={service.status === 'active' ? 'green' : 'gray'}>
+                        {service.status}
+                      </Badge>
+                    </div>
+                    <div className='flex flex-wrap gap-2'>
+                      {options.map((model) => (
+                        <Button
+                          key={model.id}
+                          variant={models.includes(model.id) ? 'primary' : 'outline'}
+                          onClick={() =>
+                            setSelectedModels((current) => ({
+                              ...current,
+                              [selectionKey]: definition.multipleModels
+                                ? models.includes(model.id)
+                                  ? models.filter((id) => id !== model.id)
+                                  : [...models, model.id]
+                                : [model.id],
+                            }))
+                          }
+                        >
+                          {model.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className='flex flex-wrap items-start gap-2'>
+                      <Button
+                        variant='primary'
+                        disabled={upsertService.isPending || models.length === 0}
+                        onClick={() => saveProvider(definition.id, service.providerId, models)}
                       >
-                        {index + 1}.{' '}
-                        {getManagedModelOptions(definition.id).find((model) => model.id === modelId)
-                          ?.label ?? modelId}
-                        {definition.multipleModels && (
-                          <>
-                            <button
-                              type='button'
-                              disabled={index === 0}
-                              onClick={() =>
-                                setSelectedModels((current) => ({
-                                  ...current,
-                                  [definition.id]: models.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? models[index - 1]
-                                      : itemIndex === index - 1
-                                        ? modelId
-                                        : item
-                                  ),
-                                }))
-                              }
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type='button'
-                              disabled={index === models.length - 1}
-                              onClick={() =>
-                                setSelectedModels((current) => ({
-                                  ...current,
-                                  [definition.id]: models.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? models[index + 1]
-                                      : itemIndex === index + 1
-                                        ? modelId
-                                        : item
-                                  ),
-                                }))
-                              }
-                            >
-                              ↓
-                            </button>
-                          </>
-                        )}
-                      </span>
-                    ))}
+                        保存
+                      </Button>
+                      <Button
+                        variant='active'
+                        onClick={() =>
+                          updateService.mutate({
+                            serviceId: service.id,
+                            body: { status: service.status === 'active' ? 'disabled' : 'active' },
+                          })
+                        }
+                      >
+                        {service.status === 'active' ? '停用' : '启用'}
+                      </Button>
+                      <Button
+                        variant='destructive'
+                        onClick={() => deleteService.mutate(service.id)}
+                      >
+                        移除
+                      </Button>
+                    </div>
                   </div>
-                )}
-                {!hasActiveKey && resolvedProviderId && (
-                  <p className='text-amber-600 text-xs'>
-                    请先在上方为该服务商添加一个启用中的 API Key。
-                  </p>
-                )}
-                <Button
-                  variant='primary'
-                  disabled={upsertService.isPending || !hasActiveKey || models.length === 0}
-                  onClick={() => saveFunction(definition.id, resolvedProviderId, models)}
-                >
-                  保存
-                </Button>
-              </div>
+                )
+              })}
+              {availableProviderIds.length > 0 && (
+                <div className='flex flex-wrap items-end gap-2 rounded border border-dashed border-[var(--border-secondary)] p-3'>
+                  <SelectField
+                    label='添加服务商'
+                    value={providerToAdd}
+                    onChange={(value) =>
+                      setProvidersToAdd((current) => ({ ...current, [definition.id]: value }))
+                    }
+                    options={['', ...availableProviderIds]}
+                  />
+                  <Button
+                    variant='primary'
+                    disabled={!providerToAdd}
+                    onClick={() =>
+                      setProvidersToAdd((current) => ({
+                        ...current,
+                        [definition.id]: providerToAdd,
+                      }))
+                    }
+                  >
+                    添加
+                  </Button>
+                  <p className='text-xs text-[var(--text-secondary)]'>添加后选择模型并保存。</p>
+                </div>
+              )}
+              {savedServices.length === 0 && availableProviderIds.length === 0 && (
+                <p className='text-amber-600 text-xs'>
+                  没有可添加的服务商，请先配置并启用对应 API Key。
+                </p>
+              )}
+              {providerToAdd &&
+                (() => {
+                  const selectionKey = `${definition.id}/${providerToAdd}`
+                  const models = selectedModels[selectionKey] ?? []
+                  const options = getManagedModelOptions(definition.id)
+                    .filter((model) => model.providerId === providerToAdd)
+                    .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+                  return (
+                    <div className='grid gap-3 rounded border border-[var(--border-primary)] p-3 md:grid-cols-[220px_minmax(0,1fr)_auto]'>
+                      <div className='font-medium'>{getPlatformProviderLabel(providerToAdd)}</div>
+                      <div className='flex flex-wrap gap-2'>
+                        {options.map((model) => (
+                          <Button
+                            key={model.id}
+                            variant={models.includes(model.id) ? 'primary' : 'outline'}
+                            onClick={() =>
+                              setSelectedModels((current) => ({
+                                ...current,
+                                [selectionKey]: definition.multipleModels
+                                  ? models.includes(model.id)
+                                    ? models.filter((id) => id !== model.id)
+                                    : [...models, model.id]
+                                  : [model.id],
+                              }))
+                            }
+                          >
+                            {model.label}
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        variant='primary'
+                        disabled={upsertService.isPending || models.length === 0}
+                        onClick={() => saveProvider(definition.id, providerToAdd, models)}
+                      >
+                        保存服务商
+                      </Button>
+                    </div>
+                  )
+                })()}
             </DataPanel>
           )
         })}

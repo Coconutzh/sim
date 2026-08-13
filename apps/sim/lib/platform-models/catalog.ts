@@ -77,6 +77,28 @@ export const PLATFORM_PROVIDERS: readonly PlatformProviderDefinition[] = [
   { id: 'azure-anthropic', label: 'Azure Anthropic', capabilities: ['文本'] },
 ] as const
 
+export function getPlatformProviderLabel(providerId: string): string {
+  return PLATFORM_PROVIDERS.find((provider) => provider.id === providerId)?.label ?? providerId
+}
+
+export function comparePlatformProviders(leftProviderId: string, rightProviderId: string): number {
+  return getPlatformProviderLabel(leftProviderId).localeCompare(
+    getPlatformProviderLabel(rightProviderId),
+    'zh-CN'
+  )
+}
+
+export function compareManagedModels(
+  functionId: PlatformFunctionId,
+  leftModelId: string,
+  rightModelId: string
+): number {
+  const models = getManagedModelOptions(functionId)
+  const leftLabel = models.find((model) => model.id === leftModelId)?.label ?? leftModelId
+  const rightLabel = models.find((model) => model.id === rightModelId)?.label ?? rightModelId
+  return leftLabel.localeCompare(rightLabel, 'zh-CN')
+}
+
 export const PLATFORM_FUNCTIONS: readonly PlatformFunctionDefinition[] = [
   {
     id: 'canvas-text',

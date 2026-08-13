@@ -1,6 +1,7 @@
 import { db, platformModelServiceConfig } from '@sim/db'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getPlatformProviderApiKeys } from '@/lib/api-key/platform'
+import { comparePlatformProviders } from '@/lib/platform-models/catalog'
 import type {
   ContentCapability,
   ContentModelFamily,
@@ -19,6 +20,7 @@ export interface PlatformContentServiceConfig {
 export interface PlatformContentServiceAvailability {
   capability: ContentCapability
   family: ContentModelFamily
+  providerId: string
   enabledModelIds: string[]
   defaultModelId: string | null
   priority: number
@@ -28,16 +30,23 @@ export interface PlatformContentServiceAvailability {
 export async function getPlatformContentServiceAvailability(): Promise<
   PlatformContentServiceAvailability[]
 > {
-  const services = await db
-    .select()
-    .from(platformModelServiceConfig)
-    .where(
-      and(
-        eq(platformModelServiceConfig.consumer, 'sim-canvas'),
-        eq(platformModelServiceConfig.status, 'active')
-      )
-    )
-    .orderBy(desc(platformModelServiceConfig.priority))
+  let services: Array<typeof platformModelServiceConfig.$inferSelect>
+  try {
+    services =
+      (await db
+        .select()
+        .from(platformModelServiceConfig)
+        .where(
+          and(
+            eq(platformModelServiceConfig.consumer, 'sim-canvas'),
+            eq(platformModelServiceConfig.status, 'active')
+          )
+        )) ?? []
+  } catch {
+    return []
+  }
+
+  services.sort((left, right) => comparePlatformProviders(left.providerId, right.providerId))
 
   const keyAvailability = new Map<string, boolean>()
   const result: PlatformContentServiceAvailability[] = []
@@ -50,6 +59,7 @@ export async function getPlatformContentServiceAvailability(): Promise<
     result.push({
       capability: service.capability as ContentCapability,
       family: service.family as ContentModelFamily,
+      providerId: service.providerId,
       enabledModelIds: service.enabledModelIds as string[],
       defaultModelId: service.defaultModelId ?? null,
       priority: service.priority,
@@ -64,24 +74,31 @@ export async function getPlatformContentServiceConfig(params: {
   family: ContentModelFamily
   modelId: string
 }): Promise<PlatformContentServiceConfig | null> {
-  const [service] = await db
-    .select()
-    .from(platformModelServiceConfig)
-    .where(
-      and(
-        eq(platformModelServiceConfig.consumer, 'sim-canvas'),
-        eq(platformModelServiceConfig.capability, params.capability),
-        eq(platformModelServiceConfig.family, params.family),
-        eq(platformModelServiceConfig.status, 'active')
-      )
+  let services: Array<typeof platformModelServiceConfig.$inferSelect>
+  try {
+    services =
+      (await db
+        .select()
+        .from(platformModelServiceConfig)
+        .where(
+          and(
+            eq(platformModelServiceConfig.consumer, 'sim-canvas'),
+            eq(platformModelServiceConfig.capability, params.capability),
+            eq(platformModelServiceConfig.family, params.family),
+            eq(platformModelServiceConfig.status, 'active')
+          )
+        )) ?? []
+  } catch {
+    return null
+  }
+  const service = services
+    .filter(
+      (candidate) =>
+        Array.isArray(candidate.enabledModelIds) &&
+        candidate.enabledModelIds.includes(params.modelId)
     )
-    .orderBy(desc(platformModelServiceConfig.priority))
-    .limit(1)
-  if (
-    !service ||
-    !Array.isArray(service.enabledModelIds) ||
-    !service.enabledModelIds.includes(params.modelId)
-  ) {
+    .sort((left, right) => comparePlatformProviders(left.providerId, right.providerId))[0]
+  if (!service) {
     return null
   }
   const keys = await getPlatformProviderApiKeys(service.providerId)
