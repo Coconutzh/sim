@@ -4,8 +4,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const originalEnv = process.env
-const { mockDownloadFileFromUrl } = vi.hoisted(() => ({
+const { mockDownloadFileFromUrl, mockResolveContentServiceForRuntime } = vi.hoisted(() => ({
   mockDownloadFileFromUrl: vi.fn(),
+  mockResolveContentServiceForRuntime: vi.fn(),
+}))
+
+vi.mock('@/lib/content-canvas/service-config', () => ({
+  resolveContentServiceForRuntime: (...args: unknown[]) =>
+    mockResolveContentServiceForRuntime(...args),
 }))
 
 vi.mock('@/lib/uploads/utils/file-utils.server', () => ({
@@ -17,6 +23,12 @@ describe('generateVideoWithProvider', () => {
     vi.resetModules()
     vi.restoreAllMocks()
     mockDownloadFileFromUrl.mockReset()
+    mockResolveContentServiceForRuntime.mockImplementation(({ modelId }: { modelId: string }) => ({
+      kind: 'dashscope-video',
+      baseUrl: 'https://dashscope-intl.aliyuncs.com/api/v1',
+      apiKey: 'dashscope-test-key',
+      modelId,
+    }))
     process.env = {
       ...originalEnv,
       DASHSCOPE_API_KEY: 'dashscope-test-key',

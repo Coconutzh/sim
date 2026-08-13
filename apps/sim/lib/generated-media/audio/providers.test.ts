@@ -4,6 +4,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const originalEnv = process.env
+const { mockResolveContentServiceForRuntime } = vi.hoisted(() => ({
+  mockResolveContentServiceForRuntime: vi.fn(),
+}))
+
+vi.mock('@/lib/content-canvas/service-config', () => ({
+  resolveContentServiceForRuntime: (...args: unknown[]) =>
+    mockResolveContentServiceForRuntime(...args),
+}))
 
 describe('generateAudioWithProvider', () => {
   beforeEach(() => {
@@ -14,6 +22,12 @@ describe('generateAudioWithProvider', () => {
       CONTENT_AUDIO_API_KEY: 'evolink-test-key',
       EVOLINK_API_KEY: 'evolink-test-key',
     }
+    mockResolveContentServiceForRuntime.mockImplementation(({ modelId }: { modelId: string }) => ({
+      kind: 'evolink-audio',
+      baseUrl: 'https://api.evolink.ai/v1',
+      apiKey: 'evolink-test-key',
+      modelId,
+    }))
   })
 
   it('creates a simple Suno task, polls until success, and downloads the first audio result', async () => {

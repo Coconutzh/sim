@@ -5,12 +5,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockGenerateVideoWithProvider,
+  mockReleaseCredits,
   mockResolveMediaEditWorkspaceFile,
+  mockReserveCredits,
+  mockSettleCredits,
   mockUploadWorkspaceFile,
 } = vi.hoisted(() => ({
   mockGenerateVideoWithProvider: vi.fn(),
+  mockReleaseCredits: vi.fn(),
   mockResolveMediaEditWorkspaceFile: vi.fn(),
+  mockReserveCredits: vi.fn(),
+  mockSettleCredits: vi.fn(),
   mockUploadWorkspaceFile: vi.fn(),
+}))
+
+vi.mock('@/lib/credits/wallet', () => ({
+  releaseCredits: (...args: unknown[]) => mockReleaseCredits(...args),
+  reserveCredits: (...args: unknown[]) => mockReserveCredits(...args),
+  settleCredits: (...args: unknown[]) => mockSettleCredits(...args),
 }))
 
 vi.mock('@/lib/generated-media/video/providers', () => ({

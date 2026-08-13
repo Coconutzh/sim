@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const originalEnv = process.env
-const { loggerMock } = vi.hoisted(() => ({
+const { loggerMock, mockResolveContentServiceForRuntime } = vi.hoisted(() => ({
   loggerMock: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -15,6 +15,7 @@ const { loggerMock } = vi.hoisted(() => ({
     child: vi.fn(),
     withMetadata: vi.fn(),
   },
+  mockResolveContentServiceForRuntime: vi.fn(),
 }))
 
 loggerMock.child.mockReturnValue(loggerMock)
@@ -22,6 +23,11 @@ loggerMock.withMetadata.mockReturnValue(loggerMock)
 
 vi.mock('@sim/logger', () => ({
   createLogger: vi.fn(() => loggerMock),
+}))
+
+vi.mock('@/lib/content-canvas/service-config', () => ({
+  resolveContentServiceForRuntime: (...args: unknown[]) =>
+    mockResolveContentServiceForRuntime(...args),
 }))
 
 describe('generateImageWithProvider', () => {
@@ -37,6 +43,21 @@ describe('generateImageWithProvider', () => {
     process.env.ARK_API_KEY = undefined
     process.env.CONTENT_IMAGE_GEMINI_BASE_URL = undefined
     process.env.CONTENT_IMAGE_GEMINI_API_KEY = undefined
+    mockResolveContentServiceForRuntime.mockImplementation(({ modelId }: { modelId: string }) =>
+      modelId.startsWith('jimeng-')
+        ? {
+            kind: 'ark-image',
+            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+            apiKey: 'test-ark-api-key',
+            modelId,
+          }
+        : {
+            kind: 'openai-compatible',
+            baseUrl: 'https://api.evolink.ai/v1',
+            apiKey: 'test-evolink-image-key',
+            modelId,
+          }
+    )
   })
 
   afterEach(() => {
