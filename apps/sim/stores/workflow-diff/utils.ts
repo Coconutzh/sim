@@ -7,10 +7,8 @@ import {
   type WorkflowStateContractInput,
 } from '@/lib/api/contracts/workflows'
 import { stripWorkflowDiffMarkers } from '@/lib/workflows/diff'
-import { useVariablesStore } from '@/stores/variables/store'
-import type { Variable } from '@/stores/variables/types'
+import { cloneWorkflowState } from '@/stores/workflows/workflow-state-sync'
 import { useWorkflowRegistry } from '../workflows/registry/store'
-import { useSubBlockStore } from '../workflows/subblock/store'
 import { mergeSubblockState } from '../workflows/utils'
 import { useWorkflowStore } from '../workflows/workflow/store'
 import type { WorkflowState } from '../workflows/workflow/types'
@@ -19,86 +17,12 @@ import type { WorkflowDiffState } from './types'
 const logger = createLogger('WorkflowDiffStore')
 export const WORKFLOW_DIFF_SETTLED_EVENT = 'workflow-diff-settled'
 
-export function cloneWorkflowState(state: WorkflowState): WorkflowState {
-  return {
-    ...state,
-    blocks: structuredClone(state.blocks || {}),
-    edges: structuredClone(state.edges || []),
-    loops: structuredClone(state.loops || {}),
-    parallels: structuredClone(state.parallels || {}),
-  }
-}
-
-export function extractSubBlockValues(
-  workflowState: WorkflowState
-): Record<string, Record<string, any>> {
-  const values: Record<string, Record<string, any>> = {}
-  Object.entries(workflowState.blocks || {}).forEach(([blockId, block]) => {
-    values[blockId] = {}
-    Object.entries(block.subBlocks || {}).forEach(([subBlockId, subBlock]) => {
-      values[blockId][subBlockId] = subBlock?.value ?? null
-    })
-  })
-  return values
-}
-
-export function applyWorkflowStateToStores(
-  workflowId: string,
-  workflowState: WorkflowState,
-  options?: { updateLastSaved?: boolean }
-) {
-  logger.debug('[applyWorkflowStateToStores] Applying state', {
-    workflowId,
-    blockCount: Object.keys(workflowState.blocks || {}).length,
-    edgeCount: workflowState.edges?.length ?? 0,
-    edgePreview: workflowState.edges?.slice(0, 3).map((e) => `${e.source} -> ${e.target}`),
-  })
-  const workflowStore = useWorkflowStore.getState()
-  const cloned = cloneWorkflowState(workflowState)
-  logger.debug('[applyWorkflowStateToStores] Cloned state edges', {
-    clonedEdgeCount: cloned.edges?.length ?? 0,
-  })
-  workflowStore.replaceWorkflowState(cloned, options)
-  const subBlockValues = extractSubBlockValues(workflowState)
-  useSubBlockStore.getState().setWorkflowValues(workflowId, subBlockValues)
-  if (Object.hasOwn(workflowState, 'variables')) {
-    applyWorkflowVariablesToStore(workflowId, workflowState.variables)
-  }
-
-  // Verify what's in the store after apply
-  const afterState = workflowStore.getWorkflowState()
-  logger.info('[applyWorkflowStateToStores] Applied workflow state to stores', {
-    workflowId,
-    afterEdgeCount: afterState.edges?.length ?? 0,
-  })
-}
-
-export function applyWorkflowVariablesToStore(
-  workflowId: string,
-  variables?: WorkflowState['variables'] | null
-) {
-  const stampedVariables: Record<string, Variable> = {}
-
-  Object.entries(variables || {}).forEach(([id, variable]) => {
-    if (!variable?.name) return
-    stampedVariables[id] = {
-      id: variable.id || id,
-      workflowId,
-      name: variable.name,
-      type: variable.type || 'plain',
-      value: Object.hasOwn(variable, 'value') ? variable.value : '',
-    }
-  })
-
-  useVariablesStore.setState((state) => ({
-    variables: {
-      ...Object.fromEntries(
-        Object.entries(state.variables).filter(([, variable]) => variable.workflowId !== workflowId)
-      ),
-      ...stampedVariables,
-    },
-  }))
-}
+export {
+  applyWorkflowStateToStores,
+  applyWorkflowVariablesToStore,
+  cloneWorkflowState,
+  extractSubBlockValues,
+} from '@/stores/workflows/workflow-state-sync'
 
 export function captureBaselineSnapshot(workflowId: string): WorkflowState {
   const workflowStore = useWorkflowStore.getState()

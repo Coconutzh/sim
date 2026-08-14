@@ -253,13 +253,13 @@ export function CopilotTab({
     [copilotChatId, loadCopilotChats, setCopilotChatId]
   )
 
-  const reloadWorkflowAfterLocalCanvasMutation = useCallback(
+  const refreshWorkflowAfterLocalCanvasMutation = useCallback(
     (workflowId: string, source: string, toolName?: string) => {
       useWorkflowRegistry
         .getState()
-        .loadWorkflowState(workflowId)
+        .refreshWorkflowState(workflowId, { reason: source })
         .catch((err) => {
-          logger.error('Failed to reload workflow after local canvas mutation', {
+          logger.error('Failed to refresh workflow after local canvas mutation', {
             error: toError(err).message,
             source,
             ...(toolName ? { toolName } : {}),
@@ -278,7 +278,7 @@ export function CopilotTab({
       if (!workflowId) return
 
       if (LOCAL_CANVAS_MUTATION_TOOLS.has(toolName)) {
-        reloadWorkflowAfterLocalCanvasMutation(workflowId, 'tool-result', toolName)
+        refreshWorkflowAfterLocalCanvasMutation(workflowId, 'tool-result', toolName)
         return
       }
 
@@ -299,16 +299,16 @@ export function CopilotTab({
           })
         })
     },
-    [activeWorkflowId, reloadWorkflowAfterLocalCanvasMutation]
+    [activeWorkflowId, refreshWorkflowAfterLocalCanvasMutation]
   )
 
   const handleCopilotStreamEnd = useCallback(
     (_chatId: string) => {
       const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
       if (!workflowId) return
-      reloadWorkflowAfterLocalCanvasMutation(workflowId, 'stream-end')
+      refreshWorkflowAfterLocalCanvasMutation(workflowId, 'stream-end')
     },
-    [activeWorkflowId, reloadWorkflowAfterLocalCanvasMutation]
+    [activeWorkflowId, refreshWorkflowAfterLocalCanvasMutation]
   )
 
   const {
@@ -389,13 +389,9 @@ export function CopilotTab({
   useEffect(() => {
     if (wasCopilotSendingRef.current && !copilotIsSending) {
       loadCopilotChats()
-      const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
-      if (workflowId) {
-        reloadWorkflowAfterLocalCanvasMutation(workflowId, 'send-settled')
-      }
     }
     wasCopilotSendingRef.current = copilotIsSending
-  }, [activeWorkflowId, copilotIsSending, loadCopilotChats, reloadWorkflowAfterLocalCanvasMutation])
+  }, [copilotIsSending, loadCopilotChats])
 
   const handleCopilotStopGeneration = useCallback(() => {
     captureEvent(posthogRef.current, 'task_generation_aborted', {

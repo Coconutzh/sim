@@ -15,8 +15,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isEqual } from 'es-toolkit'
 import type { Edge } from 'reactflow'
 import { useShallow } from 'zustand/react/shallow'
-import { requestJson } from '@/lib/api/client/request'
-import { getWorkflowStateContract } from '@/lib/api/contracts'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   type WorkflowSearchSubflowFieldId,
@@ -39,25 +37,12 @@ import { usePanelEditorStore } from '@/stores/panel'
 import { useCodeUndoRedoStore, useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
-import {
-  applyWorkflowStateToStores,
-  WORKFLOW_DIFF_SETTLED_EVENT,
-} from '@/stores/workflow-diff/utils'
+import { WORKFLOW_DIFF_SETTLED_EVENT } from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import {
-  canHydrateWorkflowInWorkspace,
-  getWorkflowWorkspaceScopeError,
-} from '@/stores/workflows/registry/workspace-scope'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { filterNewEdges, filterValidEdges, mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import type {
-  BlockState,
-  Loop,
-  Parallel,
-  Position,
-  WorkflowState,
-} from '@/stores/workflows/workflow/types'
+import type { BlockState, Loop, Parallel, Position } from '@/stores/workflows/workflow/types'
 import { findAllDescendantNodes, isBlockProtected } from '@/stores/workflows/workflow/utils'
 
 const logger = createLogger('CollaborativeWorkflow')
@@ -187,8 +172,6 @@ export function useCollaborativeWorkflow() {
 
   // Track if we're applying remote changes to avoid infinite loops
   const isApplyingRemoteChange = useRef(false)
-  const reloadSequencesRef = useRef<Record<string, number>>({})
-
   const {
     addToQueue,
     confirmOperation,
@@ -627,159 +610,6 @@ export function useCollaborativeWorkflow() {
       }
     }
 
-    const reloadWorkflowFromApi = async (workflowId: string, reason: string): Promise<boolean> => {
-      const reloadSequence = (reloadSequencesRef.current[workflowId] ?? 0) + 1
-      reloadSequencesRef.current[workflowId] = reloadSequence
-      const isLatestReload = () => reloadSequencesRef.current[workflowId] === reloadSequence
-      const pendingExternalUpdateAtStart =
-        useWorkflowDiffStore.getState().pendingExternalUpdates[workflowId] ?? 0
-      useWorkflowDiffStore.getState().setWorkflowReconciliationInProgress(workflowId, true)
-      const failLatestReconciliation = (message: string) => {
-        if (!isLatestReload()) return
-        const diffStore = useWorkflowDiffStore.getState()
-        if ((diffStore.pendingExternalUpdates[workflowId] ?? 0) <= pendingExternalUpdateAtStart) {
-          diffStore.clearExternalUpdatePending(workflowId)
-        }
-        diffStore.setWorkflowReconciliationInProgress(workflowId, false)
-        diffStore.setWorkflowReconciliationError(workflowId, message)
-        if ((useWorkflowDiffStore.getState().pendingExternalUpdates[workflowId] ?? 0) > 0) {
-          window.dispatchEvent(
-            new CustomEvent(WORKFLOW_DIFF_SETTLED_EVENT, { detail: { workflowId } })
-          )
-        }
-      }
-      // The contract's `state` is `workflowStateSchema` (loose at the wire
-      // level — `subBlocks.value` is `unknown`, optional flags omitted),
-      // but downstream consumers (replaceWorkflowState, the undo/redo
-      // graph) operate on the store's narrower `WorkflowState`. The
-      // server-of-record persists store-shaped values, so the runtime
-      // shape is the store type; we narrow once here at the trust
-      // boundary instead of sprinkling per-field casts.
-      let workflowState: WorkflowState | null = null
-      try {
-        const responseData = await requestJson(getWorkflowStateContract, {
-          params: { id: workflowId },
-        })
-        const currentWorkspaceId = useWorkflowRegistry.getState().hydration.workspaceId
-        if (!currentWorkspaceId) {
-          throw new Error(`Cannot reload workflow ${workflowId} without an active workspace scope`)
-        }
-        if (!canHydrateWorkflowInWorkspace(responseData.data.workspaceId, currentWorkspaceId)) {
-          throw new Error(
-            getWorkflowWorkspaceScopeError(
-              workflowId,
-              responseData.data.workspaceId,
-              currentWorkspaceId
-            )
-          )
-        }
-        const wireState = responseData.data?.state
-        if (wireState) {
-          // double-cast-allowed: workflowStateSchema is structurally a supertype of the store's WorkflowState (subBlocks.value is `unknown`, optional booleans, etc.); the server persists store-shaped values so the runtime shape matches
-          workflowState = wireState as unknown as WorkflowState
-          if (Object.hasOwn(responseData.data, 'variables')) {
-            workflowState.variables = responseData.data.variables || {}
-          }
-        }
-      } catch (error) {
-        logger.error(`Failed to fetch workflow data after ${reason}`, { error })
-        failLatestReconciliation(
-          'Failed to sync the latest workflow changes. Refresh and try again.'
-        )
-        return false
-      }
-
-      if (!isLatestReload()) {
-        logger.debug(`Ignoring stale workflow reload after ${reason}`, { workflowId })
-        return false
-      }
-
-      if (!workflowState) {
-        logger.error(`No state found in workflow data after ${reason}`, { workflowId })
-        failLatestReconciliation('No workflow state was returned while syncing latest changes.')
-        return false
-      }
-
-      if (useWorkflowRegistry.getState().activeWorkflowId !== workflowId) {
-        logger.debug(`Ignoring workflow reload after active workflow changed`, { workflowId })
-        if (isLatestReload()) {
-          useWorkflowDiffStore.getState().setWorkflowReconciliationInProgress(workflowId, false)
-        }
-        return false
-      }
-
-      const diffStateBeforeApply = useWorkflowDiffStore.getState()
-      const pendingExternalUpdateBeforeApply =
-        diffStateBeforeApply.pendingExternalUpdates[workflowId] ?? 0
-      if (
-        diffStateBeforeApply.hasActiveDiff ||
-        pendingExternalUpdateBeforeApply > pendingExternalUpdateAtStart ||
-        useOperationQueueStore.getState().hasPendingOperations(workflowId)
-      ) {
-        logger.info(`Deferring workflow reload apply after ${reason}`, { workflowId })
-        useWorkflowDiffStore.getState().markExternalUpdatePending(workflowId)
-        if (isLatestReload()) {
-          useWorkflowDiffStore.getState().setWorkflowReconciliationInProgress(workflowId, false)
-          if (useWorkflowRegistry.getState().activeWorkflowId === workflowId) {
-            void replayPendingExternalUpdate(
-              workflowId,
-              'deferred external update after reload apply was skipped'
-            )
-          }
-        }
-        return false
-      }
-
-      isApplyingRemoteChange.current = true
-      try {
-        const stateToApply: WorkflowState = {
-          blocks: workflowState.blocks || {},
-          edges: workflowState.edges || [],
-          loops: workflowState.loops || {},
-          parallels: workflowState.parallels || {},
-          lastSaved: workflowState.lastSaved || Date.now(),
-        }
-        if (Object.hasOwn(workflowState, 'variables')) {
-          stateToApply.variables = workflowState.variables || {}
-        }
-        applyWorkflowStateToStores(workflowId, stateToApply)
-
-        const graph = {
-          blocksById: workflowState.blocks || {},
-          edgesById: Object.fromEntries((workflowState.edges || []).map((e) => [e.id, e])),
-        }
-
-        const undoRedoStore = useUndoRedoStore.getState()
-        const stackKeys = Object.keys(undoRedoStore.stacks)
-        stackKeys.forEach((key) => {
-          const [wfId, userId] = key.split(':')
-          if (wfId === workflowId) {
-            undoRedoStore.pruneInvalidEntries(wfId, userId, graph)
-          }
-        })
-
-        logger.info(`Successfully reloaded workflow state after ${reason}`, { workflowId })
-        const diffStore = useWorkflowDiffStore.getState()
-        const pendingExternalUpdate = diffStore.pendingExternalUpdates[workflowId] ?? 0
-        if (pendingExternalUpdate <= pendingExternalUpdateAtStart) {
-          diffStore.clearExternalUpdatePending(workflowId)
-        }
-        diffStore.setWorkflowReconciliationError(workflowId, null)
-        return true
-      } finally {
-        isApplyingRemoteChange.current = false
-        if (isLatestReload()) {
-          useWorkflowDiffStore.getState().setWorkflowReconciliationInProgress(workflowId, false)
-          if (useWorkflowRegistry.getState().activeWorkflowId === workflowId) {
-            void replayPendingExternalUpdate(
-              workflowId,
-              'deferred external update after reconciliation'
-            )
-          }
-        }
-      }
-    }
-
     const replayPendingExternalUpdate = async (workflowId: string, reason: string) => {
       const diffStore = useWorkflowDiffStore.getState()
       if (
@@ -797,7 +627,7 @@ export function useCollaborativeWorkflow() {
       }
 
       try {
-        await reloadWorkflowFromApi(workflowId, reason)
+        await useWorkflowRegistry.getState().refreshWorkflowState(workflowId, { reason })
       } catch (error) {
         logger.error(`Error reloading workflow state after ${reason}:`, error)
       }
@@ -811,7 +641,7 @@ export function useCollaborativeWorkflow() {
       useWorkflowDiffStore.getState().markRemoteUpdateSeen(workflowId)
 
       try {
-        await reloadWorkflowFromApi(workflowId, 'revert')
+        await useWorkflowRegistry.getState().refreshWorkflowState(workflowId, { reason: 'revert' })
       } catch (error) {
         logger.error('Error reloading workflow state after revert:', error)
       }
@@ -866,7 +696,9 @@ export function useCollaborativeWorkflow() {
 
       diffStore.markRemoteUpdateSeen(workflowId)
       try {
-        await reloadWorkflowFromApi(workflowId, 'external update')
+        await useWorkflowRegistry
+          .getState()
+          .refreshWorkflowState(workflowId, { reason: 'external update' })
       } catch (error) {
         logger.error('Error reloading workflow state after external update:', error)
       }

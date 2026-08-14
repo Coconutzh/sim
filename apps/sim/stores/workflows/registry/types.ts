@@ -51,6 +51,7 @@ export interface WorkflowRegistryState {
 export interface WorkflowRegistryActions {
   setActiveWorkflow: (id: string) => Promise<void>
   loadWorkflowState: (workflowId: string) => Promise<void>
+  refreshWorkflowState: (workflowId: string, options?: { reason?: string }) => Promise<void>
   switchToWorkspace: (id: string) => void
   markWorkflowCreating: (workflowId: string) => void
   markWorkflowCreated: (workflowId: string | null) => void

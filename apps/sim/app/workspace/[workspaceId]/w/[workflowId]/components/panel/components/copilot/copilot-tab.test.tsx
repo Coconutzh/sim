@@ -8,11 +8,13 @@ import type { ChatSendOptions } from '@/app/workspace/[workspaceId]/home/types'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-const { mockLoadWorkflowState, mockUseChat, mockRequestJson } = vi.hoisted(() => ({
-  mockLoadWorkflowState: vi.fn(),
+const { mockRefreshWorkflowState, mockUseChat, mockRequestJson } = vi.hoisted(() => ({
+  mockRefreshWorkflowState: vi.fn(),
   mockUseChat: vi.fn(),
   mockRequestJson: vi.fn(),
 }))
+
+let mockIsSending = false
 
 let capturedUseChatOptions:
   | {
@@ -30,6 +32,7 @@ vi.mock('posthog-js/react', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     setQueryData: vi.fn(),
+    invalidateQueries: vi.fn(),
   }),
 }))
 
@@ -127,7 +130,7 @@ vi.mock('@/stores/workflows/registry/store', () => ({
   useWorkflowRegistry: {
     getState: () => ({
       activeWorkflowId: 'workflow-1',
-      loadWorkflowState: mockLoadWorkflowState,
+      refreshWorkflowState: mockRefreshWorkflowState,
     }),
   },
 }))
@@ -168,12 +171,13 @@ describe('CopilotTab local canvas live refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     capturedUseChatOptions = undefined
-    mockLoadWorkflowState.mockResolvedValue(undefined)
+    mockIsSending = false
+    mockRefreshWorkflowState.mockResolvedValue(undefined)
     mockUseChat.mockImplementation((_workspaceId, _chatId, options) => {
       capturedUseChatOptions = options
       return {
         messages: [],
-        isSending: false,
+        isSending: mockIsSending,
         isReconnecting: false,
         sendMessage: vi.fn(),
         stopGeneration: vi.fn(),
@@ -194,13 +198,15 @@ describe('CopilotTab local canvas live refresh', () => {
       capturedUseChatOptions?.onToolResult?.('canvas.apply_patch', true, {})
     })
 
-    expect(mockLoadWorkflowState).toHaveBeenCalledWith('workflow-1')
+    expect(mockRefreshWorkflowState).toHaveBeenCalledWith('workflow-1', {
+      reason: 'tool-result',
+    })
 
     act(() => {
       capturedUseChatOptions?.onToolResult?.('canvas.generate_node_output', true, {})
     })
 
-    expect(mockLoadWorkflowState).toHaveBeenCalledTimes(2)
+    expect(mockRefreshWorkflowState).toHaveBeenCalledTimes(2)
 
     act(() => root.unmount())
     container.remove()
@@ -214,7 +220,7 @@ describe('CopilotTab local canvas live refresh', () => {
       capturedUseChatOptions?.onToolResult?.('search_docs', true, {})
     })
 
-    expect(mockLoadWorkflowState).not.toHaveBeenCalled()
+    expect(mockRefreshWorkflowState).not.toHaveBeenCalled()
 
     act(() => root.unmount())
     container.remove()
@@ -227,7 +233,39 @@ describe('CopilotTab local canvas live refresh', () => {
       capturedUseChatOptions?.onStreamEnd?.('chat-1')
     })
 
-    expect(mockLoadWorkflowState).toHaveBeenCalledWith('workflow-1')
+    expect(mockRefreshWorkflowState).toHaveBeenCalledWith('workflow-1', {
+      reason: 'stream-end',
+    })
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('does not duplicate the stream-end refresh when sending settles', () => {
+    mockIsSending = true
+    const { container, root } = renderCopilotTab()
+
+    act(() => {
+      capturedUseChatOptions?.onStreamEnd?.('chat-1')
+    })
+
+    mockIsSending = false
+    act(() => {
+      root.render(
+        <CopilotTab
+          workspaceId='workspace-1'
+          activeWorkflowId='workflow-1'
+          isActive
+          pendingMessage={null}
+          onPendingMessageConsumed={vi.fn()}
+        />
+      )
+    })
+
+    expect(mockRefreshWorkflowState).toHaveBeenCalledTimes(1)
+    expect(mockRefreshWorkflowState).toHaveBeenCalledWith('workflow-1', {
+      reason: 'stream-end',
+    })
 
     act(() => root.unmount())
     container.remove()

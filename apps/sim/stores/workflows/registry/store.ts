@@ -8,13 +8,17 @@ import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { WorkflowDeploymentInfo } from '@/hooks/queries/deployments'
 import { deploymentKeys } from '@/hooks/queries/deployments'
 import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
+import { useOperationQueueStore } from '@/stores/operation-queue/store'
+import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useVariablesStore } from '@/stores/variables/store'
 import type { Variable } from '@/stores/variables/types'
+import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import type { HydrationState, WorkflowRegistry } from '@/stores/workflows/registry/types'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getUniqueBlockName, regenerateBlockIds } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
+import { applyWorkflowStateToStores } from '@/stores/workflows/workflow-state-sync'
 import { canHydrateWorkflowInWorkspace, getWorkflowWorkspaceScopeError } from './workspace-scope'
 
 const logger = createLogger('WorkflowRegistry')
@@ -27,6 +31,49 @@ const initialHydration: HydrationState = {
 }
 
 const createRequestId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+interface WorkflowRefreshFlight {
+  promise: Promise<void>
+  queued: boolean
+}
+
+const workflowRefreshFlights = new Map<string, WorkflowRefreshFlight>()
+const deferredOperationRefreshes = new Map<string, Promise<void>>()
+
+function pruneWorkflowUndoRedo(workflowId: string, workflowState: WorkflowState) {
+  const graph = {
+    blocksById: workflowState.blocks || {},
+    edgesById: Object.fromEntries((workflowState.edges || []).map((edge) => [edge.id, edge])),
+  }
+  const undoRedoStore = useUndoRedoStore.getState()
+  Object.keys(undoRedoStore.stacks).forEach((key) => {
+    const [stackWorkflowId, userId] = key.split(':')
+    if (stackWorkflowId === workflowId) {
+      undoRedoStore.pruneInvalidEntries(stackWorkflowId, userId, graph)
+    }
+  })
+}
+
+function updateDeploymentCache(
+  workflowId: string,
+  workflowData: {
+    isDeployed: boolean
+    deployedAt: Date | null
+    isPublicApi: boolean
+  }
+) {
+  const deployedAt = workflowData.deployedAt ? workflowData.deployedAt.toISOString() : null
+  getQueryClient().setQueryData<WorkflowDeploymentInfo>(
+    deploymentKeys.info(workflowId),
+    (prev) => ({
+      isDeployed: workflowData.isDeployed,
+      deployedAt,
+      apiKey: prev?.apiKey ?? null,
+      needsRedeployment: prev?.needsRedeployment ?? false,
+      isPublicApi: workflowData.isPublicApi,
+    })
+  )
+}
 
 function resetWorkflowStores() {
   useWorkflowStore.setState({
@@ -104,18 +151,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             )
           }
 
-          const deployedAt = workflowData.deployedAt ? workflowData.deployedAt.toISOString() : null
-
-          getQueryClient().setQueryData<WorkflowDeploymentInfo>(
-            deploymentKeys.info(workflowId),
-            (prev) => ({
-              isDeployed: workflowData.isDeployed,
-              deployedAt,
-              apiKey: prev?.apiKey ?? null,
-              needsRedeployment: prev?.needsRedeployment ?? false,
-              isPublicApi: workflowData.isPublicApi,
-            })
-          )
+          updateDeploymentCache(workflowId, workflowData)
 
           let workflowState: WorkflowState
 
@@ -226,6 +262,226 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           }))
           throw error
         }
+      },
+
+      refreshWorkflowState: async (workflowId, options) => {
+        const existingFlight = workflowRefreshFlights.get(workflowId)
+        if (existingFlight) {
+          existingFlight.queued = true
+          logger.debug('Coalesced workflow refresh into queued follow-up', {
+            workflowId,
+            reason: options?.reason,
+          })
+          return existingFlight.promise
+        }
+
+        const flight: WorkflowRefreshFlight = {
+          promise: Promise.resolve(),
+          queued: false,
+        }
+
+        const runRefresh = async () => {
+          const registryAtStart = get()
+          const hydrationAtStart = registryAtStart.hydration
+          if (
+            registryAtStart.activeWorkflowId !== workflowId ||
+            hydrationAtStart.phase !== 'ready' ||
+            hydrationAtStart.workflowId !== workflowId ||
+            !hydrationAtStart.workspaceId
+          ) {
+            logger.debug('Skipping silent workflow refresh because workflow is not ready', {
+              workflowId,
+              reason: options?.reason,
+            })
+            return
+          }
+
+          const diffStoreAtStart = useWorkflowDiffStore.getState()
+          if (diffStoreAtStart.hasActiveDiff) {
+            logger.info('Deferring silent workflow refresh while a diff is active', { workflowId })
+            diffStoreAtStart.markExternalUpdatePending(workflowId)
+            return
+          }
+
+          const operationQueueAtStart = useOperationQueueStore.getState()
+          if (operationQueueAtStart.hasPendingOperations(workflowId)) {
+            logger.info('Deferring silent workflow refresh while local operations are pending', {
+              workflowId,
+            })
+            diffStoreAtStart.markExternalUpdatePending(workflowId)
+            if (!deferredOperationRefreshes.has(workflowId)) {
+              const deferredRefresh = operationQueueAtStart
+                .waitForWorkflowOperations(workflowId)
+                .then(async (ready) => {
+                  if (ready) {
+                    await get().refreshWorkflowState(workflowId, {
+                      reason: 'deferred refresh after local operations',
+                    })
+                    return
+                  }
+
+                  const latestQueue = useOperationQueueStore.getState()
+                  if (
+                    latestQueue.hasPendingOperations(workflowId) &&
+                    !latestQueue.hasOperationError
+                  ) {
+                    return
+                  }
+                  const latestDiffStore = useWorkflowDiffStore.getState()
+                  latestDiffStore.clearExternalUpdatePending(workflowId)
+                  latestDiffStore.setWorkflowReconciliationError(
+                    workflowId,
+                    'Failed to save local workflow changes before syncing external updates.'
+                  )
+                })
+                .finally(() => {
+                  deferredOperationRefreshes.delete(workflowId)
+                })
+              deferredOperationRefreshes.set(workflowId, deferredRefresh)
+            }
+            return
+          }
+
+          const workspaceId = hydrationAtStart.workspaceId
+          const hydrationRequestId = hydrationAtStart.requestId
+          const pendingExternalUpdateAtStart =
+            diffStoreAtStart.pendingExternalUpdates[workflowId] ?? 0
+          diffStoreAtStart.setWorkflowReconciliationInProgress(workflowId, true)
+          let replayAfterCurrent = false
+
+          try {
+            const { data: workflowData } = await requestJson(getWorkflowStateContract, {
+              params: { id: workflowId },
+            })
+
+            const currentRegistry = get()
+            const currentHydration = currentRegistry.hydration
+            if (
+              currentRegistry.activeWorkflowId !== workflowId ||
+              currentHydration.phase !== 'ready' ||
+              currentHydration.workflowId !== workflowId ||
+              currentHydration.workspaceId !== workspaceId ||
+              currentHydration.requestId !== hydrationRequestId
+            ) {
+              logger.info('Discarding stale silent workflow refresh result', { workflowId })
+              return
+            }
+
+            if (!canHydrateWorkflowInWorkspace(workflowData.workspaceId, workspaceId)) {
+              throw new Error(
+                getWorkflowWorkspaceScopeError(workflowId, workflowData.workspaceId, workspaceId)
+              )
+            }
+
+            const diffStoreBeforeApply = useWorkflowDiffStore.getState()
+            const pendingExternalUpdateBeforeApply =
+              diffStoreBeforeApply.pendingExternalUpdates[workflowId] ?? 0
+            const hasPendingOperations = useOperationQueueStore
+              .getState()
+              .hasPendingOperations(workflowId)
+            if (
+              diffStoreBeforeApply.hasActiveDiff ||
+              pendingExternalUpdateBeforeApply > pendingExternalUpdateAtStart ||
+              hasPendingOperations
+            ) {
+              logger.info('Deferring silent workflow refresh apply due to newer local state', {
+                workflowId,
+              })
+              diffStoreBeforeApply.markExternalUpdatePending(workflowId)
+              replayAfterCurrent = !diffStoreBeforeApply.hasActiveDiff && !hasPendingOperations
+              if (hasPendingOperations && !deferredOperationRefreshes.has(workflowId)) {
+                const deferredRefresh = useOperationQueueStore
+                  .getState()
+                  .waitForWorkflowOperations(workflowId)
+                  .then((ready) => {
+                    if (!ready) return
+                    return get().refreshWorkflowState(workflowId, {
+                      reason: 'deferred refresh after local operations during fetch',
+                    })
+                  })
+                  .finally(() => {
+                    deferredOperationRefreshes.delete(workflowId)
+                  })
+                deferredOperationRefreshes.set(workflowId, deferredRefresh)
+              }
+              return
+            }
+
+            const wireState = workflowData.state as Pick<
+              WorkflowState,
+              'blocks' | 'edges' | 'loops' | 'parallels'
+            >
+            const workflowState: WorkflowState = {
+              currentWorkflowId: workflowId,
+              blocks: wireState.blocks || {},
+              edges: wireState.edges || [],
+              loops: wireState.loops || {},
+              parallels: wireState.parallels || {},
+              lastSaved: Date.now(),
+            }
+            if (Object.hasOwn(workflowData, 'variables')) {
+              workflowState.variables = workflowData.variables || {}
+            }
+
+            applyWorkflowStateToStores(workflowId, workflowState)
+            pruneWorkflowUndoRedo(workflowId, workflowState)
+            updateDeploymentCache(workflowId, workflowData)
+
+            const diffStoreAfterApply = useWorkflowDiffStore.getState()
+            if (
+              (diffStoreAfterApply.pendingExternalUpdates[workflowId] ?? 0) <=
+              pendingExternalUpdateAtStart
+            ) {
+              diffStoreAfterApply.clearExternalUpdatePending(workflowId)
+            }
+            diffStoreAfterApply.setWorkflowReconciliationError(workflowId, null)
+            logger.info('Silently refreshed workflow state', {
+              workflowId,
+              reason: options?.reason,
+            })
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : `Failed to silently refresh workflow ${workflowId}`
+            logger.error('Failed to silently refresh workflow state', {
+              error: message,
+              workflowId,
+              reason: options?.reason,
+            })
+            const latestDiffStore = useWorkflowDiffStore.getState()
+            if (
+              (latestDiffStore.pendingExternalUpdates[workflowId] ?? 0) <=
+              pendingExternalUpdateAtStart
+            ) {
+              latestDiffStore.clearExternalUpdatePending(workflowId)
+            }
+            latestDiffStore.setWorkflowReconciliationError(
+              workflowId,
+              'Failed to sync the latest workflow changes. Refresh and try again.'
+            )
+            throw error
+          } finally {
+            useWorkflowDiffStore.getState().setWorkflowReconciliationInProgress(workflowId, false)
+            if (replayAfterCurrent && get().activeWorkflowId === workflowId) {
+              void get().refreshWorkflowState(workflowId, {
+                reason: 'queued newer external update',
+              })
+            }
+          }
+        }
+
+        flight.promise = runRefresh().finally(async () => {
+          if (workflowRefreshFlights.get(workflowId) !== flight) return
+          workflowRefreshFlights.delete(workflowId)
+          if (flight.queued && get().activeWorkflowId === workflowId) {
+            await get().refreshWorkflowState(workflowId, {
+              reason: 'coalesced queued refresh',
+            })
+          }
+        })
+        workflowRefreshFlights.set(workflowId, flight)
+        return flight.promise
       },
 
       setActiveWorkflow: async (id: string) => {
