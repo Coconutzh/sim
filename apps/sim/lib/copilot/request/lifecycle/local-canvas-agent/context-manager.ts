@@ -18,12 +18,12 @@ import type {
   LocalAgentMessage,
 } from '@/lib/copilot/request/lifecycle/local-canvas-agent/types'
 import { loadWorkgroupAgentProfile } from '@/lib/copilot/request/lifecycle/local-canvas-agent/workgroup-profile'
-import { buildShowPlanningSkill } from '@/lib/hermes/show-planning-skill'
 import type {
   ExecutionContext,
   OrchestratorOptions,
   StreamingContext,
 } from '@/lib/copilot/request/types'
+import { buildShowPlanningSkill } from '@/lib/hermes/show-planning-skill'
 import type { ChatContext } from '@/stores/panel'
 
 const CONTEXT_BUDGET = {
@@ -605,7 +605,7 @@ export async function resolveLocalAgentContext(params: {
     attachedContexts,
     conversationHistory,
     skills: mergeBuiltinSkills(skills),
-    model: resolveLocalCanvasAgentModelConfig(),
+    model: await resolveLocalCanvasAgentModelConfig(),
     confirmationMode:
       params.requestPayload.confirmationMode === 'manual' ||
       params.requestPayload.confirmationMode === 'auto'

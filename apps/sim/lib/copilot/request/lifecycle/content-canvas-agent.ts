@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { z } from 'zod'
-import { getContentCanvasModelAvailability } from '@/lib/content-canvas/service-config'
+import { getContentCanvasModelAvailabilityForRuntime } from '@/lib/content-canvas/service-config'
 import {
   executeContentCanvasTextRequest,
   generateContentCanvasText,
@@ -30,7 +30,6 @@ import type {
   EditWorkflowOperation,
   EditWorkflowParams,
 } from '@/lib/copilot/tools/server/workflow/edit-workflow/types'
-import { getEnv } from '@/lib/core/config/env'
 import { generateWorkspaceAudioFromPrompt } from '@/lib/generated-media/audio/audio-generation-service'
 import {
   DEFAULT_AUDIO_MODEL,
@@ -52,9 +51,8 @@ import {
   convertGeneratedTextToContentHtml,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/content-block/text-content-ai-utils'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
-import { executeStructuredActorRequest } from '@/providers'
-import type { ProviderId, ProviderResponse } from '@/providers/types'
-import { extractAndParseJSON, getProviderFromModel } from '@/providers/utils'
+import type { ProviderResponse } from '@/providers/types'
+import { extractAndParseJSON } from '@/providers/utils'
 
 const logger = createLogger('ContentCanvasAgent')
 
@@ -293,8 +291,6 @@ type ContentCanvasRequestKind =
 interface ContentCanvasActorConfig {
   model: string
   mode: 'structured' | 'tool-call'
-  provider?: ProviderId
-  apiKey?: string
   useContentCanvasTextResolver?: boolean
 }
 
@@ -594,67 +590,17 @@ function buildSnapshotPrompt(
   return ['Blocks:', ...blockLines, '', 'Edges:', edgeLines].join('\n')
 }
 
-function normalizeActorProvider(value: string | undefined): ProviderId | null {
-  if (!value) return null
-  const normalized = value.trim().toLowerCase()
-  return normalized ? (normalized as ProviderId) : null
-}
-
-function resolveActorApiKey(provider: ProviderId): string | undefined {
-  const shared = getEnv('LOCAL_COPILOT_API_KEY')?.trim()
-  if (shared) return shared
-  if (provider === 'deepseek') return getEnv('DEEPSEEK_API_KEY')?.trim()
-  if (provider === 'openai') return getEnv('OPENAI_API_KEY')?.trim()
-  return undefined
-}
-
-function hasExplicitContentCanvasTextConfig() {
-  return Boolean(
-    getEnv('CONTENT_TEXT_GEMINI_API_KEY')?.trim() || getEnv('CONTENT_TEXT_GLM_API_KEY')?.trim()
-  )
-}
-
-function resolveContentCanvasActorConfig(): ContentCanvasActorConfig {
-  const contentCanvasAvailability = getContentCanvasModelAvailability()
-  if (hasExplicitContentCanvasTextConfig() && contentCanvasAvailability.text.defaultModelId) {
-    return {
-      model: contentCanvasAvailability.text.defaultModelId,
-      mode: 'structured',
-      useContentCanvasTextResolver: true,
-    }
-  }
-
-  const explicitProvider = normalizeActorProvider(getEnv('CONTENT_CANVAS_ACTOR_PROVIDER'))
-  const explicitModel = getEnv('CONTENT_CANVAS_ACTOR_MODEL')?.trim()
-  const explicitMode =
-    getEnv('CONTENT_CANVAS_ACTOR_MODE') === 'tool-call' ? 'tool-call' : 'structured'
-
-  if (explicitProvider && explicitModel) {
-    return {
-      provider: explicitProvider,
-      model: explicitModel,
-      mode: explicitMode,
-      apiKey: resolveActorApiKey(explicitProvider),
-    }
-  }
-
-  const legacyProvider = normalizeActorProvider(getEnv('LOCAL_COPILOT_PROVIDER'))
-  const legacyModel = getEnv('LOCAL_COPILOT_MODEL')?.trim()
-  const inferredProvider =
-    legacyProvider ??
-    (legacyModel ? normalizeActorProvider(getProviderFromModel(legacyModel) ?? undefined) : null)
-
-  if (!legacyModel || !inferredProvider) {
-    throw new Error(
-      'Content canvas Copilot requires content-canvas text env, CONTENT_CANVAS_ACTOR_PROVIDER/MODEL, or LOCAL_COPILOT_MODEL with LOCAL_COPILOT_PROVIDER'
-    )
+async function resolveContentCanvasActorConfig(): Promise<ContentCanvasActorConfig> {
+  const availability = await getContentCanvasModelAvailabilityForRuntime()
+  const model = availability.text.defaultModelId
+  if (!model) {
+    throw new Error('平台管理员尚未配置画布文本模型与 API Key')
   }
 
   return {
-    provider: inferredProvider,
-    model: legacyModel,
+    model,
     mode: 'structured',
-    apiKey: resolveActorApiKey(inferredProvider),
+    useContentCanvasTextResolver: true,
   }
 }
 
@@ -2177,7 +2123,7 @@ async function decideNextCanvasActions(params: {
   abortSignal?: AbortSignal
   repairContext?: string
 }): Promise<ContentCanvasActionDecision> {
-  const config = resolveContentCanvasActorConfig()
+  const config = await resolveContentCanvasActorConfig()
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const repairContext =
@@ -2188,7 +2134,6 @@ async function decideNextCanvasActions(params: {
 
     const request = {
       model: config.model,
-      apiKey: config.apiKey,
       systemPrompt: buildActorSystemPrompt(params.thinkingLevel, params.requestKind),
       messages: [
         {
@@ -2213,17 +2158,15 @@ async function decideNextCanvasActions(params: {
       abortSignal: params.abortSignal,
     }
 
-    const response = config.useContentCanvasTextResolver
-      ? await executeContentCanvasTextRequest({
-          workspaceId: '',
-          model: request.model,
-          systemPrompt: request.systemPrompt,
-          prompt: String(request.messages[0]?.content ?? ''),
-          temperature: request.temperature,
-          maxTokens: request.maxTokens,
-          responseFormat: request.responseFormat,
-        })
-      : await executeStructuredActorRequest(config.provider!, request)
+    const response = await executeContentCanvasTextRequest({
+      workspaceId: '',
+      model: request.model,
+      systemPrompt: request.systemPrompt,
+      prompt: String(request.messages[0]?.content ?? ''),
+      temperature: request.temperature,
+      maxTokens: request.maxTokens,
+      responseFormat: request.responseFormat,
+    })
 
     try {
       let decision = parseActorBatchResponse(response?.content || '')
@@ -4113,20 +4056,10 @@ function toUserFacingErrorMessage(message: string, error: unknown): string {
     return invalidWorkflowEditMessage
   }
 
-  if (rawMessage.includes('LOCAL_COPILOT_PROVIDER=deepseek')) {
+  if (rawMessage.includes('平台管理员尚未配置画布文本模型与 API Key')) {
     return chinese
-      ? 'Content Canvas Copilot \u7f3a\u5c11 DeepSeek \u914d\u7f6e\uff1a\u8bf7\u8bbe\u7f6e `LOCAL_COPILOT_PROVIDER=deepseek`\u3002'
-      : 'Content canvas Copilot is missing DeepSeek configuration: set `LOCAL_COPILOT_PROVIDER=deepseek`.'
-  }
-  if (rawMessage.includes('LOCAL_COPILOT_MODEL')) {
-    return chinese
-      ? 'Content Canvas Copilot \u7f3a\u5c11 `LOCAL_COPILOT_MODEL`\u3002'
-      : 'Content canvas Copilot is missing `LOCAL_COPILOT_MODEL`.'
-  }
-  if (rawMessage.includes('DEEPSEEK_API_KEY')) {
-    return chinese
-      ? 'Content Canvas Copilot \u7f3a\u5c11 `DEEPSEEK_API_KEY`\u3002'
-      : 'Content canvas Copilot is missing `DEEPSEEK_API_KEY`.'
+      ? '平台管理员尚未配置画布文本模型与 API Key，请先在“模型服务配置”中启用画布文本模型并配置有效 Key。'
+      : 'The platform administrator has not configured a canvas text model and active API key.'
   }
   if (rawMessage.includes('invalid JSON')) {
     return chinese

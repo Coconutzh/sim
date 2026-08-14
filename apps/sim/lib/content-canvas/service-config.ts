@@ -280,6 +280,12 @@ function getCapabilityFamilies(capability: ContentCapability): ContentModelFamil
   ) as ContentModelFamily[]
 }
 
+/**
+ * Legacy environment-variable availability resolver.
+ *
+ * Runtime Copilot and canvas requests must use
+ * {@link getContentCanvasModelAvailabilityForRuntime} instead.
+ */
 export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabilitySnapshot {
   const capabilities: ContentCapability[] = ['text', 'image', 'audio', 'video']
   const availability: ContentCanvasModelAvailabilitySnapshot = {
