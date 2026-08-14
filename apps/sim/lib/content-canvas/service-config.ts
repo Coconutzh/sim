@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import {
   type ContentCapability,
   type ContentModelFamily,
@@ -12,6 +13,8 @@ import {
 } from '@/lib/content-canvas/platform-service-config'
 import { getEnv } from '@/lib/core/config/env'
 import { compareManagedModels, comparePlatformProviders } from '@/lib/platform-models/catalog'
+
+const logger = createLogger('ContentCanvasServiceConfig')
 
 export interface ContentServiceConfig {
   kind: ContentServiceKind
@@ -90,7 +93,7 @@ function resolveLegacyApiKey(capability: ContentCapability, family: ContentModel
 function getServiceEnvMapping(
   capability: ContentCapability,
   family: ContentModelFamily
-): ContentServiceEnvMapping {
+): ContentServiceEnvMapping | null {
   if (capability === 'text' && family === 'gemini') {
     return {
       defaultKind: 'google-native',
@@ -152,7 +155,7 @@ function getServiceEnvMapping(
     }
   }
 
-  throw new Error(`Unsupported content-canvas service family: ${capability}/${family}`)
+  return null
 }
 
 function resolveServiceKind(params: {
@@ -172,6 +175,11 @@ export function getContentServiceConfig(params: {
   family: ContentModelFamily
 }): ContentServiceConfig {
   const mapping = getServiceEnvMapping(params.capability, params.family)
+  if (!mapping) {
+    throw new Error(
+      `Unsupported legacy content-canvas service family: ${params.capability}/${params.family}`
+    )
+  }
   const familyModels = getContentCanvasModelsByFamily(params.capability, params.family).map(
     (model) => model.id
   )
@@ -247,7 +255,7 @@ export function resolveContentService(params: {
   }
 }
 
-/** Resolves content runtime configuration exclusively from administrator-managed services. */
+/** Resolves administrator-managed runtime configuration before legacy environment fallback. */
 export async function resolveContentServiceForRuntime(params: {
   capability: ContentCapability
   modelId: string
@@ -256,22 +264,32 @@ export async function resolveContentServiceForRuntime(params: {
   if (!model || model.capability !== params.capability) {
     throw new Error(`Unknown content-canvas ${params.capability} model: ${params.modelId}`)
   }
-  const platform = await getPlatformContentServiceConfig({
-    capability: params.capability,
-    family: model.family,
-    modelId: params.modelId,
-  })
-  if (!platform) {
-    throw new Error('平台管理员尚未配置此服务，请联系管理员完成模型与 API Key 配置')
+  let platform: Awaited<ReturnType<typeof getPlatformContentServiceConfig>> = null
+  try {
+    platform = await getPlatformContentServiceConfig({
+      capability: params.capability,
+      family: model.family,
+      modelId: params.modelId,
+    })
+  } catch {
+    logger.warn('Failed to read managed content service; using legacy environment fallback', {
+      capability: params.capability,
+      modelId: params.modelId,
+    })
   }
-  return {
-    kind: platform.kind,
-    baseUrl: platform.baseUrl || '',
-    apiKey: platform.apiKey,
-    apiKeys: platform.apiKeys,
-    modelId: params.modelId,
-    providerId: platform.providerId,
+
+  if (platform) {
+    return {
+      kind: platform.kind,
+      baseUrl: platform.baseUrl || '',
+      apiKey: platform.apiKey,
+      apiKeys: platform.apiKeys,
+      modelId: params.modelId,
+      providerId: platform.providerId,
+    }
   }
+
+  return resolveContentService(params)
 }
 
 function getCapabilityFamilies(capability: ContentCapability): ContentModelFamily[] {
@@ -300,6 +318,7 @@ export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabil
     let defaultModelId: string | null = null
 
     for (const family of getCapabilityFamilies(capability)) {
+      if (!getServiceEnvMapping(capability, family)) continue
       const config = getContentServiceConfig({ capability, family })
       if (!config.apiKey) continue
 
@@ -320,18 +339,16 @@ export function getContentCanvasModelAvailability(): ContentCanvasModelAvailabil
  * administrator-managed services over legacy environment configuration.
  */
 export async function getContentCanvasModelAvailabilityForRuntime(): Promise<ContentCanvasModelAvailabilitySnapshot> {
-  const availability: ContentCanvasModelAvailabilitySnapshot = {
-    text: { enabledModelIds: [], defaultModelId: null },
-    image: { enabledModelIds: [], defaultModelId: null },
-    audio: { enabledModelIds: [], defaultModelId: null },
-    video: { enabledModelIds: [], defaultModelId: null },
-  }
+  const legacyAvailability = getContentCanvasModelAvailability()
   let platformServices: Awaited<ReturnType<typeof getPlatformContentServiceAvailability>>
   try {
     platformServices = await getPlatformContentServiceAvailability()
   } catch {
-    return availability
+    logger.warn('Failed to read managed model availability; using legacy environment fallback')
+    return legacyAvailability
   }
+
+  const availability: ContentCanvasModelAvailabilitySnapshot = { ...legacyAvailability }
 
   for (const capability of ['text', 'image', 'audio', 'video'] as const) {
     const managed = platformServices.filter((service) => service.capability === capability)
@@ -357,7 +374,9 @@ export async function getContentCanvasModelAvailabilityForRuntime(): Promise<Con
     })
     const defaultModelId = enabledModelIds[0] ?? null
 
-    availability[capability] = { enabledModelIds, defaultModelId }
+    if (enabledModelIds.length > 0) {
+      availability[capability] = { enabledModelIds, defaultModelId }
+    }
   }
 
   return availability

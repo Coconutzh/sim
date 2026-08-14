@@ -594,7 +594,7 @@ async function resolveContentCanvasActorConfig(): Promise<ContentCanvasActorConf
   const availability = await getContentCanvasModelAvailabilityForRuntime()
   const model = availability.text.defaultModelId
   if (!model) {
-    throw new Error('平台管理员尚未配置画布文本模型与 API Key')
+    throw new Error('尚未配置可用的画布文本模型与 API Key')
   }
 
   return {
@@ -4056,10 +4056,10 @@ function toUserFacingErrorMessage(message: string, error: unknown): string {
     return invalidWorkflowEditMessage
   }
 
-  if (rawMessage.includes('平台管理员尚未配置画布文本模型与 API Key')) {
+  if (rawMessage.includes('尚未配置可用的画布文本模型与 API Key')) {
     return chinese
-      ? '平台管理员尚未配置画布文本模型与 API Key，请先在“模型服务配置”中启用画布文本模型并配置有效 Key。'
-      : 'The platform administrator has not configured a canvas text model and active API key.'
+      ? '尚未配置可用的画布文本模型与 API Key，请在“模型服务配置”或运行环境中完成配置。'
+      : 'No canvas text model with an active API key is configured in managed services or the runtime environment.'
   }
   if (rawMessage.includes('invalid JSON')) {
     return chinese

@@ -2435,7 +2435,7 @@ describe('content canvas agent', () => {
     ])
   })
 
-  it('uses the administrator-managed canvas text model for planner config', async () => {
+  it('uses the shared runtime canvas text model for planner config', async () => {
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
     process.env.CONTENT_CANVAS_ACTOR_MODE = 'structured'
@@ -2452,17 +2452,17 @@ describe('content canvas agent', () => {
     })
   })
 
-  it('does not allow legacy content-canvas environment variables to select the planner model', async () => {
+  it('accepts the planner model returned by the legacy env fallback', async () => {
     process.env.CONTENT_TEXT_GLM_API_KEY = 'content-glm-key'
     process.env.CONTENT_TEXT_GLM_ENABLED_MODELS = 'glm-4.7'
     process.env.CONTENT_TEXT_GLM_DEFAULT_MODEL = 'glm-4.7'
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
 
-    mockManagedCanvasTextModel('gpt-4.1-mini')
+    mockManagedCanvasTextModel('glm-4.7')
 
     await expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).resolves.toEqual({
-      model: 'gpt-4.1-mini',
+      model: 'glm-4.7',
       mode: 'structured',
       useContentCanvasTextResolver: true,
     })

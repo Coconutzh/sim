@@ -4,8 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ORIGINAL_ENV = process.env
-const { mockExecuteProviderRequest } = vi.hoisted(() => ({
+const { mockExecuteProviderRequest, mockGetPlatformContentServiceConfig } = vi.hoisted(() => ({
   mockExecuteProviderRequest: vi.fn(),
+  mockGetPlatformContentServiceConfig: vi.fn(),
 }))
 
 vi.mock('@/providers', () => ({
@@ -13,7 +14,7 @@ vi.mock('@/providers', () => ({
 }))
 
 vi.mock('@/lib/content-canvas/platform-service-config', () => ({
-  getPlatformContentServiceConfig: vi.fn().mockResolvedValue(null),
+  getPlatformContentServiceConfig: mockGetPlatformContentServiceConfig,
 }))
 
 function resetExecutorEnv() {
@@ -32,6 +33,7 @@ describe('content-canvas text executor', () => {
     vi.resetModules()
     vi.clearAllMocks()
     resetExecutorEnv()
+    mockGetPlatformContentServiceConfig.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -154,5 +156,46 @@ describe('content-canvas text executor', () => {
       })
     )
     expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+  })
+
+  it('uses managed text transport and credentials ahead of env configuration', async () => {
+    process.env.CONTENT_TEXT_GLM_BASE_URL = 'https://env.example.com/v1'
+    process.env.CONTENT_TEXT_GLM_API_KEY = 'env-key'
+    mockGetPlatformContentServiceConfig.mockResolvedValue({
+      kind: 'openai-compatible',
+      baseUrl: 'https://managed.example.com/v1',
+      apiKey: 'managed-key',
+      apiKeys: [{ apiKey: 'managed-key', keyId: 'key-1' }],
+      modelId: 'glm-4.7',
+      providerId: 'zhipu',
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'managed result' } }],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateContentCanvasText } = await import('@/lib/content-canvas/text-executor')
+
+    await expect(
+      generateContentCanvasText({
+        workspaceId: 'ws-1',
+        model: 'glm-4.7',
+        systemPrompt: 'System prompt',
+        prompt: 'Write a caption',
+      })
+    ).resolves.toBe('managed result')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://managed.example.com/v1/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer managed-key',
+        }),
+      })
+    )
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('env-key')
   })
 })

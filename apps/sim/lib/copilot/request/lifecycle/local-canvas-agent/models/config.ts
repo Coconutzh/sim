@@ -9,9 +9,9 @@ import type { ProviderResponse } from '@/providers/types'
 
 const logger = createLogger('LocalCanvasAgentModelConfig')
 
-const CONTENT_CANVAS_TEXT_CONFIGURATION_ERROR = '平台管理员尚未配置画布文本模型与 API Key'
+const CONTENT_CANVAS_TEXT_CONFIGURATION_ERROR = '尚未配置可用的画布文本模型与 API Key'
 
-/** Resolves the Copilot model exclusively from administrator-managed canvas services. */
+/** Resolves the Copilot model from managed services or legacy environment fallback. */
 export async function resolveLocalCanvasAgentModelConfig(): Promise<LocalAgentModelConfig> {
   const availability = await getContentCanvasModelAvailabilityForRuntime()
   const model = availability.text.defaultModelId
@@ -61,7 +61,7 @@ export async function executeLocalAgentModelRequest(
   const startedAt = Date.now()
   try {
     if (!config.useContentCanvasTextResolver) {
-      throw new Error('Local canvas agent must use the administrator-managed canvas text model')
+      throw new Error('Local canvas agent must use the content-canvas text resolver')
     }
 
     const response = await executeContentCanvasTextRequest({

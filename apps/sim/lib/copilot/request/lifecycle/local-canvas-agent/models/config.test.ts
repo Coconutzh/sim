@@ -43,7 +43,7 @@ describe('local canvas agent model config', () => {
     )
   })
 
-  it('uses the administrator-managed default model and ignores legacy environment variables', async () => {
+  it('uses the shared runtime default model and ignores unrelated legacy agent variables', async () => {
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
     process.env.LOCAL_COPILOT_MODEL = 'deepseek-chat'
@@ -56,12 +56,23 @@ describe('local canvas agent model config', () => {
     })
   })
 
-  it('gives an administrator configuration error when no text model is enabled', async () => {
+  it('gives a configuration error when no text model is enabled', async () => {
     mockGetContentCanvasModelAvailabilityForRuntime.mockResolvedValue(createAvailability(null))
 
     await expect(resolveLocalCanvasAgentModelConfig()).rejects.toThrow(
-      '平台管理员尚未配置画布文本模型与 API Key'
+      '尚未配置可用的画布文本模型与 API Key'
     )
+  })
+
+  it('accepts a text model returned by the legacy env fallback', async () => {
+    process.env.CONTENT_TEXT_GLM_API_KEY = 'legacy-key'
+    mockGetContentCanvasModelAvailabilityForRuntime.mockResolvedValue(createAvailability('glm-4.7'))
+
+    await expect(resolveLocalCanvasAgentModelConfig()).resolves.toEqual({
+      model: 'glm-4.7',
+      mode: 'structured',
+      useContentCanvasTextResolver: true,
+    })
   })
 
   it('uses the managed canvas text executor for all local agent roles', async () => {

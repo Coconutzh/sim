@@ -1,12 +1,15 @@
 import { db, platformModelServiceConfig } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { getPlatformProviderApiKeys } from '@/lib/api-key/platform'
-import { comparePlatformProviders } from '@/lib/platform-models/catalog'
 import type {
   ContentCapability,
   ContentModelFamily,
   ContentServiceKind,
 } from '@/lib/content-canvas/model-catalog'
+import { comparePlatformProviders } from '@/lib/platform-models/catalog'
+
+const logger = createLogger('PlatformContentServiceConfig')
 
 export interface PlatformContentServiceConfig {
   kind: ContentServiceKind
@@ -43,6 +46,7 @@ export async function getPlatformContentServiceAvailability(): Promise<
           )
         )) ?? []
   } catch {
+    logger.warn('Failed to read managed content service availability; returning no services')
     return []
   }
 
@@ -89,6 +93,11 @@ export async function getPlatformContentServiceConfig(params: {
           )
         )) ?? []
   } catch {
+    logger.warn('Failed to read managed content service configuration; returning no service', {
+      capability: params.capability,
+      family: params.family,
+      modelId: params.modelId,
+    })
     return null
   }
   const service = services
