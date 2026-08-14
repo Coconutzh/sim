@@ -16,24 +16,29 @@ const {
   mockGenerateWorkspaceImageFromPrompt,
   mockGenerateWorkspaceAudioFromPrompt,
   mockGenerateWorkspaceVideoFromPrompt,
-} = vi.hoisted(() => ({
-  mockGenerateId: vi.fn(),
-  mockExecuteProviderRequest: vi.fn(),
-  mockEditWorkflowExecute: vi.fn(),
-  mockLoadWorkflowFromNormalizedTables: vi.fn(),
-  mockSetTerminalToolCallState: vi.fn(),
-  mockCreateLogger: vi.fn(() => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  })),
-  mockExecuteContentCanvasTextRequest: vi.fn(),
-  mockGenerateContentCanvasText: vi.fn(),
-  mockGenerateWorkspaceImageFromPrompt: vi.fn(),
-  mockGenerateWorkspaceAudioFromPrompt: vi.fn(),
-  mockGenerateWorkspaceVideoFromPrompt: vi.fn(),
-}))
+  mockGetContentCanvasModelAvailabilityForRuntime,
+} = vi.hoisted(() => {
+  const mockExecuteProviderRequest = vi.fn()
+  return {
+    mockGenerateId: vi.fn(),
+    mockExecuteProviderRequest,
+    mockEditWorkflowExecute: vi.fn(),
+    mockLoadWorkflowFromNormalizedTables: vi.fn(),
+    mockSetTerminalToolCallState: vi.fn(),
+    mockCreateLogger: vi.fn(() => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    })),
+    mockExecuteContentCanvasTextRequest: mockExecuteProviderRequest,
+    mockGenerateContentCanvasText: vi.fn(),
+    mockGenerateWorkspaceImageFromPrompt: vi.fn(),
+    mockGenerateWorkspaceAudioFromPrompt: vi.fn(),
+    mockGenerateWorkspaceVideoFromPrompt: vi.fn(),
+    mockGetContentCanvasModelAvailabilityForRuntime: vi.fn(),
+  }
+})
 
 vi.mock('@sim/utils/id', () => ({
   generateId: mockGenerateId,
@@ -49,8 +54,12 @@ vi.mock('@/providers', () => ({
 }))
 
 vi.mock('@/lib/content-canvas/text-executor', () => ({
-  executeContentCanvasTextRequest: mockExecuteContentCanvasTextRequest,
+  executeContentCanvasTextRequest: mockExecuteProviderRequest,
   generateContentCanvasText: mockGenerateContentCanvasText,
+}))
+
+vi.mock('@/lib/content-canvas/service-config', () => ({
+  getContentCanvasModelAvailabilityForRuntime: mockGetContentCanvasModelAvailabilityForRuntime,
 }))
 
 vi.mock('@/lib/copilot/tools/server/workflow/edit-workflow', () => ({
@@ -112,6 +121,15 @@ function resetContentCanvasAgentTestEnv() {
   process.env.LOCAL_COPILOT_PROVIDER = 'deepseek'
   process.env.LOCAL_COPILOT_MODEL = 'deepseek-chat'
   process.env.DEEPSEEK_API_KEY = 'test-key'
+}
+
+function mockManagedCanvasTextModel(model = 'gemini-2.5-flash') {
+  mockGetContentCanvasModelAvailabilityForRuntime.mockResolvedValue({
+    text: { enabledModelIds: [model], defaultModelId: model },
+    image: { enabledModelIds: [], defaultModelId: null },
+    audio: { enabledModelIds: [], defaultModelId: null },
+    video: { enabledModelIds: [], defaultModelId: null },
+  })
 }
 
 describe.skip('generic goal fallback legacy', () => {
@@ -427,6 +445,7 @@ describe('generic goal fallback', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     resetContentCanvasAgentTestEnv()
+    mockManagedCanvasTextModel()
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(createEmptyWorkflowState())
     mockEditWorkflowExecute.mockResolvedValue({ success: true })
     mockGenerateContentCanvasText.mockResolvedValue('生成的文本内容')
@@ -842,6 +861,7 @@ describe('content canvas agent', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     resetContentCanvasAgentTestEnv()
+    mockManagedCanvasTextModel()
     mockGenerateId
       .mockReturnValueOnce('pending-plan-1')
       .mockReturnValueOnce('new-block-1')
@@ -2415,7 +2435,7 @@ describe('content canvas agent', () => {
     ])
   })
 
-  it('prefers explicit content canvas actor env vars for planner config', () => {
+  it('uses the administrator-managed canvas text model for planner config', async () => {
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
     process.env.CONTENT_CANVAS_ACTOR_MODE = 'structured'
@@ -2423,23 +2443,26 @@ describe('content canvas agent', () => {
     Reflect.deleteProperty(process.env, 'LOCAL_COPILOT_MODEL')
     Reflect.deleteProperty(process.env, 'DEEPSEEK_API_KEY')
 
-    expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).toEqual({
-      provider: 'openai',
-      model: 'gpt-4.1-mini',
+    mockManagedCanvasTextModel('gemini-2.5-flash')
+
+    await expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).resolves.toEqual({
+      model: 'gemini-2.5-flash',
       mode: 'structured',
-      apiKey: undefined,
+      useContentCanvasTextResolver: true,
     })
   })
 
-  it('prefers the new content-canvas text env before legacy actor env', () => {
+  it('does not allow legacy content-canvas environment variables to select the planner model', async () => {
     process.env.CONTENT_TEXT_GLM_API_KEY = 'content-glm-key'
     process.env.CONTENT_TEXT_GLM_ENABLED_MODELS = 'glm-4.7'
     process.env.CONTENT_TEXT_GLM_DEFAULT_MODEL = 'glm-4.7'
     process.env.CONTENT_CANVAS_ACTOR_PROVIDER = 'openai'
     process.env.CONTENT_CANVAS_ACTOR_MODEL = 'gpt-4.1-mini'
 
-    expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).toEqual({
-      model: 'glm-4.7',
+    mockManagedCanvasTextModel('gpt-4.1-mini')
+
+    await expect(__contentCanvasAgentTestUtils.resolveContentCanvasActorConfig()).resolves.toEqual({
+      model: 'gpt-4.1-mini',
       mode: 'structured',
       useContentCanvasTextResolver: true,
     })
