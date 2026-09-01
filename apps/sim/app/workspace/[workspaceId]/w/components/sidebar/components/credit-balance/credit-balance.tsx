@@ -20,11 +20,11 @@ export function CreditBalance({ isCollapsed }: CreditBalanceProps) {
       type='button'
       title={creditLabel === undefined ? '加载积分中' : `可用积分：${creditLabel}`}
       onClick={() => navigateToSettings({ section: 'my-credits' })}
-      className='mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-hover)]'
+      className='flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover-hover:bg-[var(--surface-hover)]'
     >
       <Coins className='h-4 w-4 flex-shrink-0' />
       {!isCollapsed && (
-        <span className='text-sm tabular-nums'>{creditLabel ?? '—'} 积分</span>
+        <span className='min-w-0 truncate tabular-nums'>{creditLabel ?? '—'} 积分</span>
       )}
     </button>
   )

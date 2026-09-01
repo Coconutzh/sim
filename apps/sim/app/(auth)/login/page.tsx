@@ -3,7 +3,7 @@ import { getOAuthProviderStatus } from '@/app/(auth)/components/oauth-provider-c
 import LoginForm from '@/app/(auth)/login/login-form'
 
 export const metadata: Metadata = {
-  title: 'Log In',
+  title: '登录',
 }
 
 export const dynamic = 'force-dynamic'

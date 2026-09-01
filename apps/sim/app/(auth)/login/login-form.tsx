@@ -34,13 +34,13 @@ const validateEmailField = (emailValue: string): string[] => {
   const errors: string[] = []
 
   if (!emailValue || !emailValue.trim()) {
-    errors.push('Email is required.')
+    errors.push('请输入邮箱')
     return errors
   }
 
   const validation = quickValidateEmail(emailValue.trim().toLowerCase())
   if (!validation.isValid) {
-    errors.push(validation.reason || 'Please enter a valid email address.')
+    errors.push(validation.reason || '请输入有效的邮箱地址')
   }
 
   return errors
@@ -49,11 +49,11 @@ const validateEmailField = (emailValue: string): string[] => {
 const PASSWORD_VALIDATIONS = {
   required: {
     test: (value: string) => Boolean(value && typeof value === 'string'),
-    message: 'Password is required.',
+    message: '请输入密码',
   },
   notEmpty: {
     test: (value: string) => value.trim().length > 0,
-    message: 'Password cannot be empty.',
+    message: '密码不能为空',
   },
 }
 
@@ -112,9 +112,7 @@ export default function LoginPage({
   const [emailErrors, setEmailErrors] = useState<string[]>([])
   const [showEmailValidationError, setShowEmailValidationError] = useState(false)
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(() =>
-    searchParams?.get('resetSuccess') === 'true'
-      ? 'Password reset successful. Please sign in with your new password.'
-      : null
+    searchParams?.get('resetSuccess') === 'true' ? '密码重置成功，请使用新密码登录。' : null
   )
 
   useEffect(() => {
@@ -189,41 +187,37 @@ export default function LoginPage({
             }
 
             errorHandled = true
-            const errorMessage: string[] = ['Invalid email or password']
+            const errorMessage: string[] = ['邮箱或密码错误']
 
             if (
               ctx.error.code?.includes('BAD_REQUEST') ||
               ctx.error.message?.includes('Email and password sign in is not enabled')
             ) {
-              errorMessage.push('Email sign in is currently disabled.')
+              errorMessage.push('当前未开放邮箱密码登录。')
             } else if (
               ctx.error.code?.includes('INVALID_CREDENTIALS') ||
               ctx.error.message?.includes('invalid password')
             ) {
-              errorMessage.push('Invalid email or password. Please try again.')
+              errorMessage.push('邮箱或密码错误，请重试。')
             } else if (
               ctx.error.code?.includes('USER_NOT_FOUND') ||
               ctx.error.message?.includes('not found')
             ) {
-              errorMessage.push('No account found with this email. Please sign up first.')
+              errorMessage.push('该邮箱未注册，请先注册。')
             } else if (ctx.error.code?.includes('MISSING_CREDENTIALS')) {
-              errorMessage.push('Please enter both email and password.')
+              errorMessage.push('请输入邮箱和密码。')
             } else if (ctx.error.code?.includes('EMAIL_PASSWORD_DISABLED')) {
-              errorMessage.push('Email and password login is disabled.')
+              errorMessage.push('邮箱密码登录已停用。')
             } else if (ctx.error.code?.includes('FAILED_TO_CREATE_SESSION')) {
-              errorMessage.push('Failed to create session. Please try again later.')
+              errorMessage.push('创建会话失败，请稍后重试。')
             } else if (ctx.error.code?.includes('too many attempts')) {
-              errorMessage.push(
-                'Too many login attempts. Please try again later or reset your password.'
-              )
+              errorMessage.push('登录尝试次数过多，请稍后重试或重置密码。')
             } else if (ctx.error.code?.includes('account locked')) {
-              errorMessage.push(
-                'Your account has been locked for security. Please reset your password.'
-              )
+              errorMessage.push('账号已被安全锁定，请重置密码。')
             } else if (ctx.error.code?.includes('network')) {
-              errorMessage.push('Network error. Please check your connection and try again.')
+              errorMessage.push('网络异常，请检查网络后重试。')
             } else if (ctx.error.message?.includes('rate limit')) {
-              errorMessage.push('Too many requests. Please wait a moment before trying again.')
+              errorMessage.push('请求过于频繁，请稍后再试。')
             }
 
             setResetSuccessMessage(null)
@@ -237,7 +231,7 @@ export default function LoginPage({
         // Show error if not already handled by onError callback
         if (!errorHandled) {
           setResetSuccessMessage(null)
-          const errorMessage = result?.error?.message || 'Login failed. Please try again.'
+          const errorMessage = result?.error?.message || '登录失败，请重试。'
           setPasswordErrors([errorMessage])
           setShowValidationError(true)
         }
@@ -266,7 +260,7 @@ export default function LoginPage({
     if (!forgotPasswordEmail) {
       setResetStatus({
         type: 'error',
-        message: 'Please enter your email address',
+        message: '请输入邮箱地址',
       })
       return
     }
@@ -275,7 +269,7 @@ export default function LoginPage({
     if (!emailValidation.isValid) {
       setResetStatus({
         type: 'error',
-        message: 'Please enter a valid email address',
+        message: '请输入有效的邮箱地址',
       })
       return
     }
@@ -292,21 +286,20 @@ export default function LoginPage({
           },
         })
       } catch (requestError) {
-        let errorMessage =
-          requestError instanceof Error ? requestError.message : 'Failed to request password reset'
+        let errorMessage = requestError instanceof Error ? requestError.message : '密码重置请求失败'
 
         if (
           errorMessage.includes('Invalid body parameters') ||
           errorMessage.includes('invalid email')
         ) {
-          errorMessage = 'Please enter a valid email address'
+          errorMessage = '请输入有效的邮箱地址'
         } else if (errorMessage.includes('Email is required')) {
-          errorMessage = 'Please enter your email address'
+          errorMessage = '请输入邮箱地址'
         } else if (
           errorMessage.includes('user not found') ||
           errorMessage.includes('User not found')
         ) {
-          errorMessage = 'No account found with this email address'
+          errorMessage = '该邮箱未注册'
         }
 
         throw new Error(errorMessage)
@@ -314,7 +307,7 @@ export default function LoginPage({
 
       setResetStatus({
         type: 'success',
-        message: 'Password reset link sent to your email',
+        message: '密码重置链接已发送至您的邮箱',
       })
 
       setTimeout(() => {
@@ -325,7 +318,7 @@ export default function LoginPage({
       logger.error('Error requesting password reset:', { error })
       setResetStatus({
         type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to request password reset',
+        message: error instanceof Error ? error.message : '密码重置请求失败',
       })
     } finally {
       setIsSubmittingReset(false)
@@ -344,10 +337,10 @@ export default function LoginPage({
     <>
       <div className='space-y-1 text-center'>
         <h1 className='text-balance font-[430] font-season text-[40px] text-white leading-[110%] tracking-[-0.02em]'>
-          Sign in
+          登录
         </h1>
         <p className='font-[430] font-season text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
-          Enter your details
+          请输入账号信息
         </p>
       </div>
 
@@ -364,12 +357,12 @@ export default function LoginPage({
           <div className='space-y-6'>
             <div className='space-y-2'>
               <div className='flex items-center justify-between'>
-                <Label htmlFor='email'>Email</Label>
+                <Label htmlFor='email'>邮箱</Label>
               </div>
               <Input
                 id='email'
                 name='email'
-                placeholder='Enter your email'
+                placeholder='请输入邮箱'
                 required
                 autoCapitalize='none'
                 autoComplete='email'
@@ -392,13 +385,13 @@ export default function LoginPage({
             </div>
             <div className='space-y-2'>
               <div className='flex items-center justify-between'>
-                <Label htmlFor='password'>Password</Label>
+                <Label htmlFor='password'>密码</Label>
                 <button
                   type='button'
                   onClick={() => setForgotPasswordOpen(true)}
                   className='font-medium text-[var(--landing-text-muted)] text-xs transition hover:text-[var(--landing-text)]'
                 >
-                  Forgot password?
+                  忘记密码？
                 </button>
               </div>
               <div className='relative'>
@@ -410,7 +403,7 @@ export default function LoginPage({
                   autoCapitalize='none'
                   autoComplete='current-password'
                   autoCorrect='off'
-                  placeholder='Enter your password'
+                  placeholder='请输入密码'
                   value={password}
                   onChange={handlePasswordChange}
                   className={cn(
@@ -424,7 +417,7 @@ export default function LoginPage({
                   type='button'
                   onClick={() => setShowPassword(!showPassword)}
                   className='-translate-y-1/2 absolute top-1/2 right-3 text-[var(--landing-text-muted)] transition hover:text-[var(--landing-text)]'
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -455,10 +448,10 @@ export default function LoginPage({
             {isLoading ? (
               <span className='flex items-center gap-2'>
                 <Loader className='h-4 w-4' animate />
-                Signing in...
+                登录中...
               </span>
             ) : (
-              'Sign in'
+              '登录'
             )}
           </button>
         </form>
@@ -472,7 +465,7 @@ export default function LoginPage({
           </div>
           <div className='relative flex justify-center text-sm'>
             <span className='bg-[var(--landing-bg)] px-4 font-[340] text-[var(--landing-text-muted)]'>
-              Or continue with
+              或使用其他方式登录
             </span>
           </div>
         </div>
@@ -496,40 +489,43 @@ export default function LoginPage({
       {/* Only show signup link if email/password signup is enabled */}
       {!isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
         <div className='pt-6 text-center font-light text-[14px]'>
-          <span className='font-normal'>Don't have an account? </span>
+          <span className='font-normal'>还没有账号？ </span>
           <Link
             href={isInviteFlow ? `/signup?invite_flow=true&callbackUrl=${callbackUrl}` : '/signup'}
             className='font-medium text-[var(--landing-text)] underline-offset-4 transition hover:text-white hover:underline'
           >
-            Sign up
+            注册
           </Link>
         </div>
       )}
 
-      <div className='absolute right-0 bottom-0 left-0 px-8 pb-8 text-center font-[340] text-[13px] text-[var(--landing-text-muted)] leading-relaxed sm:px-8 md:px-11'>
-        By signing in, you agree to our{' '}
-        <Link
-          href='/terms'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='text-[var(--landing-text-muted)] underline-offset-4 transition hover:text-[var(--landing-text)] hover:underline'
-        >
-          Terms of Service
-        </Link>{' '}
-        and{' '}
-        <Link
-          href='/privacy'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='text-[var(--landing-text-muted)] underline-offset-4 transition hover:text-[var(--landing-text)] hover:underline'
-        >
-          Privacy Policy
-        </Link>
+      <div className='absolute right-0 bottom-0 left-0 px-8 pb-6 text-center font-[340] text-[13px] text-[var(--landing-text-muted)] leading-relaxed sm:px-8 md:px-11'>
+        <p>
+          登录即代表您已阅读并同意{' '}
+          <Link
+            href='/terms'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-[var(--landing-text-muted)] underline-offset-4 transition hover:text-[var(--landing-text)] hover:underline'
+          >
+            《服务条款》
+          </Link>{' '}
+          与{' '}
+          <Link
+            href='/privacy'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-[var(--landing-text-muted)] underline-offset-4 transition hover:text-[var(--landing-text)] hover:underline'
+          >
+            《隐私政策》
+          </Link>
+        </p>
+        <p className='mt-1'>© 2026 大智若娱・大型活动 AI 数智平台</p>
       </div>
 
       <Modal open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
         <ModalContent className='dark' size='sm'>
-          <ModalHeader>Reset Password</ModalHeader>
+          <ModalHeader>重置密码</ModalHeader>
           <ModalBody>
             <form
               onSubmit={(e) => {
@@ -538,17 +534,16 @@ export default function LoginPage({
               }}
             >
               <ModalDescription className='mb-4 text-[var(--text-muted)] text-sm'>
-                Enter your email address and we'll send you a link to reset your password if your
-                account exists.
+                请输入您的邮箱，如果账号存在，我们将向您发送密码重置链接。
               </ModalDescription>
               <div className='space-y-4'>
                 <div className='space-y-2'>
-                  <Label htmlFor='reset-email'>Email</Label>
+                  <Label htmlFor='reset-email'>邮箱</Label>
                   <Input
                     id='reset-email'
                     value={forgotPasswordEmail}
                     onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                    placeholder='Enter your email'
+                    placeholder='请输入邮箱'
                     required
                     type='email'
                     className={cn(
@@ -570,10 +565,10 @@ export default function LoginPage({
                   {isSubmittingReset ? (
                     <span className='flex items-center gap-2'>
                       <Loader className='h-4 w-4' animate />
-                      Sending...
+                      发送中...
                     </span>
                   ) : (
-                    'Send Reset Link'
+                    '发送重置链接'
                   )}
                 </button>
               </div>

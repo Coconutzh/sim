@@ -39,16 +39,16 @@ export function SocialLoginButtons({
     try {
       await client.signIn.social({ provider: 'github', callbackURL })
     } catch (err: any) {
-      let errorMessage = 'Failed to sign in with GitHub'
+      let errorMessage = 'GitHub 登录失败'
 
       if (err.message?.includes('account exists')) {
-        errorMessage = 'An account with this email already exists. Please sign in instead.'
+        errorMessage = '该邮箱已注册，请直接登录。'
       } else if (err.message?.includes('cancelled')) {
-        errorMessage = 'GitHub sign in was cancelled. Please try again.'
+        errorMessage = 'GitHub 登录已取消，请重试。'
       } else if (err.message?.includes('network')) {
-        errorMessage = 'Network error. Please check your connection and try again.'
+        errorMessage = '网络异常，请检查网络后重试。'
       } else if (err.message?.includes('rate limit')) {
-        errorMessage = 'Too many attempts. Please try again later.'
+        errorMessage = '尝试次数过多，请稍后重试。'
       }
     } finally {
       setIsGithubLoading(false)
@@ -62,16 +62,16 @@ export function SocialLoginButtons({
     try {
       await client.signIn.social({ provider: 'google', callbackURL })
     } catch (err: any) {
-      let errorMessage = 'Failed to sign in with Google'
+      let errorMessage = 'Google 登录失败'
 
       if (err.message?.includes('account exists')) {
-        errorMessage = 'An account with this email already exists. Please sign in instead.'
+        errorMessage = '该邮箱已注册，请直接登录。'
       } else if (err.message?.includes('cancelled')) {
-        errorMessage = 'Google sign in was cancelled. Please try again.'
+        errorMessage = 'Google 登录已取消，请重试。'
       } else if (err.message?.includes('network')) {
-        errorMessage = 'Network error. Please check your connection and try again.'
+        errorMessage = '网络异常，请检查网络后重试。'
       } else if (err.message?.includes('rate limit')) {
-        errorMessage = 'Too many attempts. Please try again later.'
+        errorMessage = '尝试次数过多，请稍后重试。'
       }
     } finally {
       setIsGoogleLoading(false)
@@ -86,7 +86,7 @@ export function SocialLoginButtons({
       onClick={signInWithGithub}
     >
       <GithubIcon className='!h-[18px] !w-[18px] mr-1' />
-      {isGithubLoading ? 'Connecting...' : 'GitHub'}
+      {isGithubLoading ? '连接中...' : '使用 GitHub 登录'}
     </Button>
   )
 
@@ -98,7 +98,7 @@ export function SocialLoginButtons({
       onClick={signInWithGoogle}
     >
       <GoogleIcon className='!h-[18px] !w-[18px] mr-1' />
-      {isGoogleLoading ? 'Connecting...' : 'Google'}
+      {isGoogleLoading ? '连接中...' : '使用 Google 登录'}
     </Button>
   )
 

@@ -31,6 +31,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 import { ProductionNotificationBell } from '@/app/workspace/[workspaceId]/components/production-notification-bell'
 import { useLiteCanvasNavigation } from '@/app/workspace/[workspaceId]/use-lite-canvas-navigation'
+import { CreditBalance } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/credit-balance/credit-balance'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { useCopilotAgentProfile } from '@/hooks/queries/collaboration'
 import { useBatchSendWorkspaceInvitations } from '@/hooks/queries/invitations'
@@ -345,6 +346,9 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
             </Button>
           </div>
         )}
+        <div className='mt-2'>
+          <CreditBalance isCollapsed={isCollapsed} />
+        </div>
       </aside>
 
       <CreateWorkspaceModal

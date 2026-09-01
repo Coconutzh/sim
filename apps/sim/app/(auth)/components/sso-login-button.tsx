@@ -39,7 +39,7 @@ export function SSOLoginButton({
       variant={variant === 'outline' ? 'outline' : undefined}
       className={cn(variant === 'outline' ? outlineBtnClasses : AUTH_SUBMIT_BTN, className)}
     >
-      Sign in with SSO
+      使用 SSO 登录
     </Button>
   )
 }
