@@ -6,7 +6,11 @@ import {
 } from '@/lib/api/contracts/production-tasks'
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { createProductionTask, listProductionTasks } from '@/lib/production-tasks/service'
+import {
+  createProductionTask,
+  getProductionTaskCapabilities,
+  listProductionTasks,
+} from '@/lib/production-tasks/service'
 import {
   getProductionTaskSessionUserId,
   productionTaskErrorResponse,
@@ -22,15 +26,21 @@ export const GET = withRouteHandler(async (request) => {
   if (!parsed.success) return parsed.response
 
   try {
-    const tasks = await listProductionTasks({
-      userId,
-      workspaceId: parsed.data.query.workspaceId,
-      workflowId: parsed.data.query.workflowId,
-      scope: parsed.data.query.scope,
-      status: parsed.data.query.status,
-      limit: parsed.data.query.limit,
-    })
-    return NextResponse.json({ tasks })
+    const [tasks, capabilities] = await Promise.all([
+      listProductionTasks({
+        userId,
+        workspaceId: parsed.data.query.workspaceId,
+        workflowId: parsed.data.query.workflowId,
+        scope: parsed.data.query.scope,
+        status: parsed.data.query.status,
+        limit: parsed.data.query.limit,
+      }),
+      getProductionTaskCapabilities({
+        userId,
+        workspaceId: parsed.data.query.workspaceId,
+      }),
+    ])
+    return NextResponse.json({ tasks, capabilities })
   } catch (error) {
     return productionTaskErrorResponse(logger, 'Failed to list production tasks', error)
   }

@@ -526,11 +526,11 @@ export function ProjectOverview({ workspaceId }: ProjectOverviewProps) {
   const isDirectorLike =
     agentProfile?.agent.code === 'chief_director' || agentProfile?.agent.code === 'show_director'
   const { data: myWorkgroupsData } = useMyWorkgroups(true)
-  const canCreateTask = isDirectorLike
   const { data: orgWorkgroupsData } = useOrganizationWorkgroups(
     isDirectorLike ? agentProfile?.workgroup.organizationId : undefined
   )
   const { data: taskData } = useProductionTasks(workspaceId, { scope: 'auto', limit: 100 })
+  const canCreateTask = taskData?.capabilities.canCreateProductionTask ?? isDirectorLike
   const { data: showcaseData } = useProductionShowcaseItems(workspaceId, { limit: 100 })
   const { data: routedShowcaseItemData } = useProductionShowcaseItem(
     routedResultItemId,

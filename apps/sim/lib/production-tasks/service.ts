@@ -3,6 +3,7 @@ import { db } from '@sim/db'
 import {
   discipline,
   member,
+  organization,
   personalCanvasWorkspace,
   productionShowcaseAttachment,
   productionShowcaseItem,
@@ -23,7 +24,29 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import type { SQL } from 'drizzle-orm'
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, not, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  not,
+  or,
+  sql,
+} from 'drizzle-orm'
+import type {
+  MobileAssignableWorkgroup,
+  MobileProjectDetailResponse,
+  MobileProjectMetrics,
+  MobileProjectSummary,
+  MobileTaskFilter,
+  MobileTaskSummary,
+} from '@/lib/api/contracts/mobile-production'
 import type {
   ProductionShowcaseCategory,
   ProductionShowcaseItem,
@@ -39,6 +62,7 @@ import type {
   ProductionTaskSubmission,
 } from '@/lib/api/contracts/production-tasks'
 import { type AgentCode, isAgentCode } from '@/lib/collaboration/definitions'
+import { canCreateProductionTask } from '@/lib/production-tasks/permissions'
 import { notifyProductionTaskRealtime } from '@/lib/production-tasks/realtime'
 import { getWorkspaceFile } from '@/lib/uploads/contexts/workspace'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -81,6 +105,64 @@ const MUTABLE_SUBMISSION_STATUSES = [
   'in_progress',
   'changes_requested',
 ] as const satisfies readonly ProductionTaskStatus[]
+const COMPLETED_TASK_STATUSES = new Set<ProductionTaskStatus>(['approved', 'archived'])
+const MOBILE_PROJECT_DETAIL_LIMIT = 30
+
+interface MobileMetricTask {
+  dueAt: Date | null
+  status: ProductionTaskStatus
+  unreadMessageCount: number
+  adopted: boolean
+}
+
+export function computeMobileProjectMetrics(
+  tasks: readonly MobileMetricTask[],
+  now = new Date()
+): MobileProjectMetrics {
+  const dueSoonBoundary = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  const metrics: MobileProjectMetrics = {
+    total: tasks.length,
+    completed: 0,
+    overdue: 0,
+    dueSoon: 0,
+    pendingReview: 0,
+    unreadMessages: 0,
+    adoptedResults: 0,
+  }
+
+  for (const task of tasks) {
+    const completed = COMPLETED_TASK_STATUSES.has(task.status)
+    if (completed) metrics.completed += 1
+    if (!completed && task.dueAt && task.dueAt < now) metrics.overdue += 1
+    if (!completed && task.dueAt && task.dueAt >= now && task.dueAt <= dueSoonBoundary) {
+      metrics.dueSoon += 1
+    }
+    if (task.status === 'submitted') metrics.pendingReview += 1
+    metrics.unreadMessages += task.unreadMessageCount
+    if (task.adopted) metrics.adoptedResults += 1
+  }
+
+  return metrics
+}
+
+function readMobileProjectMetadata(value: unknown): {
+  estimatedDueAt: string | null
+  productionProject: boolean
+  status: 'active' | 'completed'
+} {
+  const metadata =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  return {
+    estimatedDueAt:
+      typeof metadata.estimatedDueAt === 'string' && metadata.estimatedDueAt.trim()
+        ? metadata.estimatedDueAt
+        : null,
+    productionProject: metadata.productionProject === true,
+    status: metadata.projectStatus === 'completed' ? 'completed' : 'active',
+  }
+}
 
 export class ProductionTaskServiceError extends Error {
   constructor(
@@ -161,13 +243,7 @@ function isOrganizationAdmin(role: OrganizationRole): boolean {
 }
 
 function isDirectorLikeMembership(membership: ActorMembership): boolean {
-  return (
-    membership.agentCode === 'chief_director' ||
-    membership.agentCode === 'show_director' ||
-    membership.disciplineCode === 'chief_director' ||
-    membership.disciplineCode === 'show_director' ||
-    membership.disciplineCode === 'pmo'
-  )
+  return canCreateProductionTask([membership])
 }
 
 function isDirectorLikeContext(context: ActorTaskContext): boolean {
@@ -1538,6 +1614,298 @@ export async function listProductionTasks(params: {
     .limit(params.limit ?? 50)
 
   return enrichTasks(rows, context)
+}
+
+export async function getProductionTask(params: {
+  userId: string
+  workspaceId: string
+  taskId: string
+}): Promise<ProductionTask> {
+  const workspaceContext = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  const row = await getTaskRow(params.taskId)
+  assertAllowed(
+    row.organizationId === workspaceContext.organizationId,
+    'Production task access denied'
+  )
+  return enrichTask(row, params.userId)
+}
+
+export async function getProductionTaskCapabilities(params: {
+  userId: string
+  workspaceId: string
+}): Promise<{ canCreateProductionTask: boolean }> {
+  const context = await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  return { canCreateProductionTask: isDirectorLikeContext(context) }
+}
+
+interface MobileProjectAccess {
+  organizationId: string
+  workspaceId: string
+  name: string
+  metadata: unknown
+  context: ActorTaskContext
+}
+
+async function getMobileProjectAccess(userId: string): Promise<MobileProjectAccess[]> {
+  const rows = await db
+    .select({
+      organizationId: organization.id,
+      organizationName: organization.name,
+      organizationMetadata: organization.metadata,
+      workspaceId: workgroup.teamWorkspaceId,
+    })
+    .from(workgroup)
+    .innerJoin(organization, eq(workgroup.organizationId, organization.id))
+    .where(and(isNull(workgroup.archivedAt), isNotNull(workgroup.teamWorkspaceId)))
+    .orderBy(asc(workgroup.createdAt))
+
+  const byOrganization = new Map<string, (typeof rows)[number]>()
+  for (const row of rows) {
+    if (!row.workspaceId || byOrganization.has(row.organizationId)) continue
+    const metadata = readMobileProjectMetadata(row.organizationMetadata)
+    if (metadata.productionProject) byOrganization.set(row.organizationId, row)
+  }
+
+  const candidates = await Promise.all(
+    [...byOrganization.values()].map(async (row) => {
+      const context = await getActorTaskContext(userId, row.organizationId).catch(() => null)
+      if (!context) return null
+      const canAccess =
+        isOrganizationAdmin(context.organizationRole) || context.memberships.length > 0
+      if (!canAccess) return null
+      return {
+        organizationId: row.organizationId,
+        workspaceId: row.workspaceId as string,
+        name: row.organizationName,
+        metadata: row.organizationMetadata,
+        context,
+      }
+    })
+  )
+  return candidates.filter((project): project is MobileProjectAccess => project !== null)
+}
+
+async function getMobileMetricTasks(
+  userId: string,
+  projects: readonly MobileProjectAccess[]
+): Promise<Map<string, Array<MobileMetricTask & { row: ProductionTaskRow }>>> {
+  if (projects.length === 0) return new Map()
+  const visibilityConditions = projects.map((project) => {
+    const canSeeOrganization =
+      isOrganizationAdmin(project.context.organizationRole) ||
+      isDirectorLikeContext(project.context)
+    if (canSeeOrganization) return eq(productionTask.organizationId, project.organizationId)
+    const workgroupIds = getVisibleWorkgroupIds(project.context)
+    return and(
+      eq(productionTask.organizationId, project.organizationId),
+      or(
+        inArray(productionTask.sourceWorkgroupId, workgroupIds),
+        inArray(productionTask.assigneeWorkgroupId, workgroupIds)
+      )
+    )
+  })
+  const rows = await db
+    .select()
+    .from(productionTask)
+    .where(or(...visibilityConditions))
+
+  if (rows.length === 0) return new Map()
+  const taskIds = rows.map((row) => row.id)
+  const [messageRows, receiptRows, adoptedRows] = await Promise.all([
+    db
+      .select({
+        taskId: productionTaskMessage.taskId,
+        senderUserId: productionTaskMessage.senderUserId,
+        createdAt: productionTaskMessage.createdAt,
+      })
+      .from(productionTaskMessage)
+      .where(inArray(productionTaskMessage.taskId, taskIds)),
+    db
+      .select({
+        taskId: productionTaskReadReceipt.taskId,
+        lastReadAt: productionTaskReadReceipt.lastReadAt,
+      })
+      .from(productionTaskReadReceipt)
+      .where(
+        and(
+          eq(productionTaskReadReceipt.userId, userId),
+          inArray(productionTaskReadReceipt.taskId, taskIds)
+        )
+      ),
+    db
+      .select({ taskId: productionTaskSubmission.taskId })
+      .from(productionTaskSubmission)
+      .where(
+        and(
+          inArray(productionTaskSubmission.taskId, taskIds),
+          sql`${productionTaskSubmission.adoptedAt} is not null`
+        )
+      ),
+  ])
+  const lastReadByTask = new Map(receiptRows.map((row) => [row.taskId, row.lastReadAt]))
+  const unreadByTask = new Map<string, number>()
+  for (const message of messageRows) {
+    const lastRead = lastReadByTask.get(message.taskId)
+    if (message.senderUserId !== userId && (!lastRead || message.createdAt > lastRead)) {
+      unreadByTask.set(message.taskId, (unreadByTask.get(message.taskId) ?? 0) + 1)
+    }
+  }
+  const adoptedTaskIds = new Set(adoptedRows.map((row) => row.taskId))
+  const byOrganization = new Map<string, Array<MobileMetricTask & { row: ProductionTaskRow }>>()
+  for (const row of rows) {
+    const current = byOrganization.get(row.organizationId) ?? []
+    current.push({
+      row,
+      dueAt: row.dueAt,
+      status: row.status,
+      unreadMessageCount: unreadByTask.get(row.id) ?? 0,
+      adopted: adoptedTaskIds.has(row.id),
+    })
+    byOrganization.set(row.organizationId, current)
+  }
+  return byOrganization
+}
+
+function toMobileProjectSummary(
+  project: MobileProjectAccess,
+  tasks: readonly MobileMetricTask[]
+): MobileProjectSummary {
+  const metadata = readMobileProjectMetadata(project.metadata)
+  return {
+    workspaceId: project.workspaceId,
+    organizationId: project.organizationId,
+    name: project.name,
+    status: metadata.status,
+    estimatedDueAt: metadata.estimatedDueAt,
+    canCreateProductionTask: isDirectorLikeContext(project.context),
+    metrics: computeMobileProjectMetrics(tasks),
+  }
+}
+
+export async function listMobileProductionProjects(params: {
+  userId: string
+}): Promise<MobileProjectSummary[]> {
+  const projects = await getMobileProjectAccess(params.userId)
+  const tasksByOrganization = await getMobileMetricTasks(params.userId, projects)
+  return projects
+    .map((project) =>
+      toMobileProjectSummary(project, tasksByOrganization.get(project.organizationId) ?? [])
+    )
+    .sort((left, right) => {
+      const leftRisk =
+        left.metrics.overdue * 100 + left.metrics.pendingReview * 10 + left.metrics.dueSoon
+      const rightRisk =
+        right.metrics.overdue * 100 + right.metrics.pendingReview * 10 + right.metrics.dueSoon
+      return rightRisk - leftRisk || left.name.localeCompare(right.name, 'zh-CN')
+    })
+}
+
+function matchesMobileTaskFilter(status: ProductionTaskStatus, filter: MobileTaskFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'in_progress') {
+    return status === 'todo' || status === 'in_progress' || status === 'changes_requested'
+  }
+  if (filter === 'pending_review') return status === 'submitted'
+  return COMPLETED_TASK_STATUSES.has(status)
+}
+
+function getMobileTaskPriority(task: MobileMetricTask, now: Date): number {
+  if (!COMPLETED_TASK_STATUSES.has(task.status) && task.dueAt && task.dueAt < now) return 0
+  if (task.status === 'submitted') return 1
+  if (
+    !COMPLETED_TASK_STATUSES.has(task.status) &&
+    task.dueAt &&
+    task.dueAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  ) {
+    return 2
+  }
+  if (COMPLETED_TASK_STATUSES.has(task.status)) return 4
+  return 3
+}
+
+export async function getMobileProductionProject(params: {
+  userId: string
+  workspaceId: string
+  taskFilter?: MobileTaskFilter
+  limit?: number
+  offset?: number
+}): Promise<MobileProjectDetailResponse> {
+  await resolveWorkspaceTaskContext(params.userId, params.workspaceId)
+  const projects = await getMobileProjectAccess(params.userId)
+  const project = assertFound(
+    projects.find((item) => item.workspaceId === params.workspaceId),
+    'Production project not found'
+  )
+  const tasksByOrganization = await getMobileMetricTasks(params.userId, [project])
+  const metricTasks = tasksByOrganization.get(project.organizationId) ?? []
+  const filter = params.taskFilter ?? 'all'
+  const now = new Date()
+  const filtered = metricTasks
+    .filter((task) => matchesMobileTaskFilter(task.status, filter))
+    .sort((left, right) => {
+      const priority = getMobileTaskPriority(left, now) - getMobileTaskPriority(right, now)
+      if (priority !== 0) return priority
+      return (
+        (left.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+        (right.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER)
+      )
+    })
+  const offset = params.offset ?? 0
+  const limit = params.limit ?? MOBILE_PROJECT_DETAIL_LIMIT
+  const pageRows = filtered.slice(offset, offset + limit)
+  const workgroups = await getWorkgroupSummaries(
+    pageRows.map((task) => task.row.assigneeWorkgroupId)
+  )
+  const tasks: MobileTaskSummary[] = pageRows.map((task) => ({
+    id: task.row.id,
+    title: task.row.title,
+    status: task.row.status,
+    dueAt: toIso(task.row.dueAt),
+    delayReason: task.row.delayReason,
+    unreadMessageCount: task.unreadMessageCount,
+    assigneeWorkgroup:
+      workgroups.get(task.row.assigneeWorkgroupId) ??
+      fallbackWorkgroup(task.row.assigneeWorkgroupId),
+  }))
+  const [showcaseItems, assignableRows] = await Promise.all([
+    listProductionShowcaseItems({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      limit: 30,
+    }),
+    db
+      .select({ id: workgroup.id, name: workgroup.name, disciplineName: discipline.name })
+      .from(workgroup)
+      .leftJoin(discipline, eq(workgroup.disciplineId, discipline.id))
+      .where(
+        and(eq(workgroup.organizationId, project.organizationId), isNull(workgroup.archivedAt))
+      )
+      .orderBy(asc(discipline.sortOrder), asc(workgroup.name)),
+  ])
+  const assignableWorkgroups: MobileAssignableWorkgroup[] = assignableRows
+
+  return {
+    project: toMobileProjectSummary(project, metricTasks),
+    tasks,
+    taskPage: {
+      total: filtered.length,
+      offset,
+      limit,
+      hasMore: offset + tasks.length < filtered.length,
+    },
+    showcaseItems: showcaseItems.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      content: item.content,
+      category: item.category,
+      status: item.status,
+      sourceWorkgroup: item.sourceWorkgroup,
+      createdAt: item.createdAt,
+      attachments: item.attachments,
+    })),
+    assignableWorkgroups,
+  }
 }
 
 export async function createProductionTask(params: {

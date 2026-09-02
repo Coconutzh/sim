@@ -1,15 +1,37 @@
 import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
-import { updateProductionTaskContract } from '@/lib/api/contracts/production-tasks'
+import {
+  getProductionTaskContract,
+  updateProductionTaskContract,
+} from '@/lib/api/contracts/production-tasks'
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { updateProductionTask } from '@/lib/production-tasks/service'
+import { getProductionTask, updateProductionTask } from '@/lib/production-tasks/service'
 import {
   getProductionTaskSessionUserId,
   productionTaskErrorResponse,
 } from '@/app/api/production-tasks/_utils'
 
 const logger = createLogger('ProductionTaskDetailAPI')
+
+export const GET = withRouteHandler(async (request, context) => {
+  const userId = await getProductionTaskSessionUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const parsed = await parseRequest(getProductionTaskContract, request, context)
+  if (!parsed.success) return parsed.response
+
+  try {
+    const task = await getProductionTask({
+      userId,
+      workspaceId: parsed.data.query.workspaceId,
+      taskId: parsed.data.params.taskId,
+    })
+    return NextResponse.json({ task })
+  } catch (error) {
+    return productionTaskErrorResponse(logger, 'Failed to get production task', error)
+  }
+})
 
 export const PATCH = withRouteHandler(async (request, context) => {
   const userId = await getProductionTaskSessionUserId()

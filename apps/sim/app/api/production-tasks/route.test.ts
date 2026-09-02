@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   MockProductionTaskServiceError,
   mockCreateProductionTask,
+  mockGetProductionTaskCapabilities,
   mockGetSession,
+  mockGetProductionTask,
   mockListProductionTasks,
   mockReviewProductionTask,
   mockScanProductionTaskReminders,
@@ -29,7 +31,9 @@ const {
   return {
     MockProductionTaskServiceError,
     mockCreateProductionTask: vi.fn(),
+    mockGetProductionTaskCapabilities: vi.fn(),
     mockGetSession: vi.fn(),
+    mockGetProductionTask: vi.fn(),
     mockListProductionTasks: vi.fn(),
     mockReviewProductionTask: vi.fn(),
     mockScanProductionTaskReminders: vi.fn(),
@@ -47,6 +51,8 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/production-tasks/service', () => ({
   ProductionTaskServiceError: MockProductionTaskServiceError,
   createProductionTask: mockCreateProductionTask,
+  getProductionTaskCapabilities: mockGetProductionTaskCapabilities,
+  getProductionTask: mockGetProductionTask,
   listProductionTasks: mockListProductionTasks,
   reviewProductionTask: mockReviewProductionTask,
   scanProductionTaskReminders: mockScanProductionTaskReminders,
@@ -59,7 +65,7 @@ vi.mock('@/lib/auth/internal', () => ({
 }))
 
 import { PATCH as REVIEW } from './[taskId]/review/route'
-import { PATCH as UPDATE } from './[taskId]/route'
+import { GET as GET_DETAIL, PATCH as UPDATE } from './[taskId]/route'
 import { POST as SUBMIT } from './[taskId]/submit/route'
 import { GET as SCAN_REMINDERS } from './reminders/scan/route'
 import { POST as CREATE, GET } from './route'
@@ -70,6 +76,8 @@ describe('production task routes', () => {
     mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
     mockListProductionTasks.mockResolvedValue([{ id: 'task-1' }])
     mockCreateProductionTask.mockResolvedValue({ id: 'task-1' })
+    mockGetProductionTaskCapabilities.mockResolvedValue({ canCreateProductionTask: true })
+    mockGetProductionTask.mockResolvedValue({ id: 'task-1' })
     mockSubmitProductionTask.mockResolvedValue({
       id: 'task-1',
       status: 'submitted',
@@ -107,6 +115,21 @@ describe('production task routes', () => {
     expect(mockListProductionTasks).not.toHaveBeenCalled()
   })
 
+  it('authenticates task detail requests before parsing', async () => {
+    mockGetSession.mockResolvedValueOnce(null)
+    const response = await GET_DETAIL(
+      createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/production-tasks/task-1?workspaceId=ws-1'
+      ),
+      { params: Promise.resolve({ taskId: 'task-1' }) }
+    )
+    expect(response.status).toBe(401)
+    expect(mockGetProductionTask).not.toHaveBeenCalled()
+  })
+
   it('lists production tasks through the service with parsed filters', async () => {
     const response = await GET(
       createMockRequest(
@@ -120,6 +143,7 @@ describe('production task routes', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       tasks: [{ id: 'task-1' }],
+      capabilities: { canCreateProductionTask: true },
     })
     expect(mockListProductionTasks).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -158,6 +182,26 @@ describe('production task routes', () => {
       dueAt,
       dependencyTaskIds: ['task-parent'],
       attachments: [{ source: 'url', name: 'cue 表', url: 'https://example.com/cue' }],
+    })
+  })
+
+  it('surfaces a server-side permission rejection when publishing', async () => {
+    mockCreateProductionTask.mockRejectedValueOnce(
+      new MockProductionTaskServiceError(
+        'Production task creation requires director team access',
+        403
+      )
+    )
+    const response = await CREATE(
+      createMockRequest('POST', {
+        workspaceId: 'ws-1',
+        assigneeWorkgroupId: 'wg-lighting',
+        title: '普通成员不应发布',
+      })
+    )
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Production task creation requires director team access',
     })
   })
 

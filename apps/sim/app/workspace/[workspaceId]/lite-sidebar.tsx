@@ -35,6 +35,7 @@ import { CreditBalance } from '@/app/workspace/[workspaceId]/w/components/sideba
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { useCopilotAgentProfile } from '@/hooks/queries/collaboration'
 import { useBatchSendWorkspaceInvitations } from '@/hooks/queries/invitations'
+import { useProductionTasks } from '@/hooks/queries/production-tasks'
 
 interface LiteSidebarProps {
   workspaceId: string
@@ -90,6 +91,16 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
   const createTaskHref = `${canvas.showcaseHref}?tab=tasks&createTask=1`
   const isDirectorTeam =
     agentProfile?.agent.code === 'chief_director' || agentProfile?.agent.code === 'show_director'
+  const { data: productionTaskData } = useProductionTasks(
+    scopedWorkspaceId,
+    {
+      scope: 'auto',
+      limit: 1,
+    },
+    { refetchIntervalMs: false }
+  )
+  const canCreateProductionTask =
+    productionTaskData?.capabilities.canCreateProductionTask ?? isDirectorTeam
   const canManageTeams = canvas.isProjectAdmin || canvas.activeWorkgroup?.role === 'admin'
   const canInviteTeamMembers = Boolean(canvas.teamWorkspaceId && canvas.activeWorkgroupId)
 
@@ -324,7 +335,7 @@ export function LiteSidebar({ workspaceId }: LiteSidebarProps) {
                 label='团队管理'
               />
             )}
-            {isDirectorTeam && (
+            {canCreateProductionTask && (
               <CanvasNavItem
                 active={isActive(createTaskHref)}
                 collapsed={false}

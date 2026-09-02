@@ -263,6 +263,9 @@ export type ProductionTaskMessage = z.output<typeof productionTaskMessageSchema>
 
 export const productionTasksResponseSchema = z.object({
   tasks: z.array(productionTaskSchema),
+  capabilities: z.object({
+    canCreateProductionTask: z.boolean(),
+  }),
 })
 export type ProductionTasksResponse = z.output<typeof productionTasksResponseSchema>
 
@@ -296,6 +299,14 @@ export const createProductionTaskContract = defineRouteContract({
   method: 'POST',
   path: '/api/production-tasks',
   body: createProductionTaskBodySchema,
+  response: { mode: 'json', schema: productionTaskResponseSchema },
+})
+
+export const getProductionTaskContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/production-tasks/[taskId]',
+  params: productionTaskParamsSchema,
+  query: z.object({ workspaceId: workspaceIdSchema }),
   response: { mode: 'json', schema: productionTaskResponseSchema },
 })
 

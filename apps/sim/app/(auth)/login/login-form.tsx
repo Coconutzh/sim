@@ -353,7 +353,7 @@ export default function LoginPage({
 
       {/* Email/Password Form - show unless explicitly disabled */}
       {!isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
-        <form onSubmit={onSubmit} className='mt-8 space-y-8'>
+        <form method='post' onSubmit={onSubmit} className='mt-8 space-y-8'>
           <div className='space-y-6'>
             <div className='space-y-2'>
               <div className='flex items-center justify-between'>
